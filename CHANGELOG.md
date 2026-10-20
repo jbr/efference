@@ -136,6 +136,8 @@ behind a change, see [`journal/`](journal/).
 - **A worktree toggle in the new-session forms** (docs/tui.md, docs/web-session-creation.md): the web and TUI forms offer *start in its own worktree* (its own checkout and branch at `.efference/worktrees/<id>`), sent as `worktree: true` on creation; outside a git work tree the host refuses it like any other creation.
 
 ### Fixed
+- **A `search` call's `paths` are judged by `[paths]`** (docs/permissions.md): the permission check read a `path` key `search` does not have, so every search cleared wherever `.` was readable.
+- **The web client labels a separate triage model's cache keepalive** "warming the cache", as the terminal does.
 - **A continue at a finished turn is declined in every dialect** (docs/control-api.md): the precondition read the Messages encoding, which drops Responses and Completions assistant turns, so Codex, OpenAI and Completions sessions re-prompted a finished turn and typically got an empty or repeated answer.
 - **A capped settle no longer reads as settled** (docs/control-api.md, docs/operating.md): the host marks a settle wait that hit its 300 s cap `efference-settled: false`, and `settle` and `turn`/`approve` with `wait` re-poll it until the session settles or their own `timeout_s` runs out, so an omitted `timeout_s` has no bound.
 - **A fold is accepted while triage holds results** (docs/control-api.md, docs/triage.md): `POST /loop/fold` no longer refuses a loop held at a triage gate as "running", and the continue that retries the gate peeks the folded projection, so a hold that outlived the cache can be summarized instead of read uncached.

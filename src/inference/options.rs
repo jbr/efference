@@ -450,9 +450,8 @@ impl InferenceRegistry {
     }
 
     /// The effective triage client is what a session would actually get: the
-    /// request's choice, else `[defaults].triage`, else main's own client. An
-    /// omitted triage must not report `shared` while creation would build a
-    /// separate client from the configured default.
+    /// request's choice, else main's own client: there is no configured triage
+    /// default (docs/transport.md).
     fn resolve_triage(
         &self,
         options: &SessionOptions,

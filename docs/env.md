@@ -54,8 +54,8 @@ changing or dropping bytes. Empty names, `=` in names, and NUL bytes are rejecte
 `EnvPolicy::build_snapshot` retains this base for masking and constructs the fixed
 child policy from it. At each spawn, `ChildEnv::apply` clears inheritance, installs
 the base, removes stripped names, then injects resolved values. Bash's session
-`TMPDIR` is applied afterward and the root secret is removed last. A stdio MCP
-stanza overlays its own env after the table, with the same final root removal.
+`TMPDIR` is applied afterward. A stdio MCP
+stanza overlays its own env after the table.
 Context exec uses the child policy too. Reference commands use the base directly,
 before table values have been resolved, and never inherit additional host values.
 
@@ -379,8 +379,7 @@ nothing connecting the two.
 
 Injection, like strip, is **fixed at boot** with the spawn sites that hold it, so
 a reference added by a config edit is resolved (and masked) immediately but
-reaches children on the next session. The machine root is not injectable for the
-same reason it is always stripped.
+reaches children on the next session.
 
 A session's inference credential does **not** ride this resolver: the host holds
 it ([transport.md](transport.md)). The selected roles' secrets are registered
@@ -422,7 +421,8 @@ and applied at every place the harness starts a subprocess:
 At the MCP site the table is applied *before* the stanza's own `env` map: a
 server explicitly handed a variable in its own config is being given it
 deliberately, and neither a blanket strip nor a table-wide value should silently
-undo that. The machine root is removed unconditionally at all four.
+undo that. The machine root is never in an environment to remove: it lives only in the
+secret store ([secrets.md](secrets.md)).
 
 ## Deliberately not built
 

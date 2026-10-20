@@ -20,6 +20,7 @@ const REQUEST_ORDER: RequestOrigin[] = [
   "title",
   "triage_primer",
   "keepalive",
+  "triage_keepalive",
 ];
 
 /** "45s", "2m 10s", "1h 05m": whole seconds up to a minute, then minutes. */
@@ -60,6 +61,7 @@ function requestText(request: OpenRequest, model: string, now: number): string {
       return `writing the summary · ${since}`;
     case "triage_primer":
     case "keepalive":
+    case "triage_keepalive":
       return `warming the cache · ${since}`;
   }
 }

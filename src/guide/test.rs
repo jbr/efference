@@ -239,7 +239,7 @@ fn only_read_resolves_on_the_prefix() {
         ("write", json!({ "path": path("editing"), "contents": "x" })),
         ("edit", json!({ "file_path": path("editing") })),
         ("list", json!({ "path": MOUNT })),
-        ("search", json!({ "path": MOUNT })),
+        ("search", json!({ "paths": [MOUNT] })),
     ] {
         let result = reject_non_read(&call(name, input))
             .unwrap_or_else(|| panic!("`{name}` on the prefix should be refused"));

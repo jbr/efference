@@ -175,6 +175,7 @@ export type RequestOrigin =
   | "title"
   | "spot"
   | "keepalive"
+  | "triage_keepalive"
   | "triage_primer"
   | "compaction"
   | "consolidation"

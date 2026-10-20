@@ -100,7 +100,9 @@ The fork is not an optimisation applied selectively above a threshold. Every too
 result is triaged once, and only the selection is appended. Triaging a small result
 is cheap, and uniformity removes a special case. The payoff is **window economy**
 and cache-chain longevity: the canonical context stays maximally lean. The cost is
-one extra round-trip per result — latency, not tokens — explicitly accepted. The
+one extra request per completion's batch of results, explicitly accepted: latency, plus
+the uncached tail (the numbered output and the ask) and any thinking, since the fork
+reads the cached prefix. The
 point is agent-facing: the agent never has to fear reading a whole file, because
 only the relevant parts come back (see [positions.md](positions.md)).
 
@@ -621,7 +623,7 @@ the fork's audit record of it as a `Triage` entry right after (in `src/log.rs`):
 | field | meaning |
 | --- | --- |
 | `for_result` | `seq` of the `ToolResult` this verdict triaged (`None` for a standalone idle triage) |
-| `origin` | `Model` (a real `retain` call) or `Fallback` (the triage failed — the result projects a withheld-output error) |
+| `origin` | `Model` (a real `retain` call) or `Fallback` (no model produced it: a shape bypass, or a triage interrupted before a verdict; `raw_keep` says which). A triage that fails holds the session rather than recording a verdict. |
 | `raw_keep` | the model's exact `keep` string, pre-parse — the audit breadcrumb |
 | `inbox` | per-notification dispositions chosen in this triage, by arrival `seq` |
 | `retries` | one attempt-stamped breadcrumb per non-compliant triage attempt, recovered or not — the durable compliance record (triage-scoped; rides the last `Triage` of a batch, like `inbox`) |

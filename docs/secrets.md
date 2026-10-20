@@ -63,9 +63,11 @@ Any process running as the user can read an item through `security` or the
 Secret Service, and a signed binary's items are readable by that binary
 wherever it is invoked from. So the agent's own bash tool can read what the
 harness can: the guard is the permission gate on those invocations and the
-masker's needle set, which holds every loaded value, not the store. That is the
-same floor `op read` sits on, and it is above a file: the value is encrypted at
-rest, unlocked with the session, and never in a diff.
+masker's needle set, not the store. The needles are the credentials the
+session's model roles use, not every item: MCP grants and the web-bind root are
+not masked ([env.md](env.md)). That is the same floor `op read` sits on, and it
+is above a file: the value is encrypted at rest, unlocked with the session, and
+never in a diff.
 
 ## Failure
 

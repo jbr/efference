@@ -239,7 +239,7 @@ fn thinking_block(body: Vec<DocumentNode<'static>>) -> DocumentNode<'static> {
 
 /// The affordance shown beside a pending call (docs/tui.md), where its result will
 /// land once the gate resolves. The accent-colored lead-in marks "your turn"; the muted
-/// tail names the composer's two direct answers — the full verb set (allow…/abort) lives
+/// tail names the composer's two direct answers — the full verb set (approve/abort) lives
 /// on the control strip, which is the legend now.
 ///
 /// It carries the `⏸` marker, on an entry of its own: the call's marker says what the

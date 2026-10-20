@@ -14,7 +14,7 @@ pub(crate) fn path_spec(name: &str) -> Option<(&'static str, Perm, Option<&'stat
         "read" => ("paths", Perm::Read, None),
         "read_image" => ("path", Perm::Read, None),
         "list" => ("path", Perm::Read, Some(".")),
-        "search" => ("path", Perm::Read, Some(".")),
+        "search" => ("paths", Perm::Read, Some(".")),
         "find_anchor" => ("file_path", Perm::Read, None),
         // Writes: the target must be under a write grant. `edit` is where the edit pipeline names
         // its file, so write is enforced here; `undo_edit` (no path) clears on the name grant.

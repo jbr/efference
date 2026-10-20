@@ -373,14 +373,13 @@ inference is configured. Per connection it asks the provider, a name, and where
 the credential comes from — and stops there. **Adding a connection asks nothing
 about models.** Which endpoints are configured and which model each role runs are
 separate questions, and folding the second into the first asked it once per
-connection while answering it at most once. A first run then asks one more
-thing: the model sessions use by default, on a connection that can take a turn —
-not skippable, since a file with no main model starts no session. The spotter and
-triage roles are not asked: each has a default that runs, and a new user cannot
-yet know what either is. The defaults editor reaches all three from the
-management list. `TypeSafe` is on the provider menu as a decision-model provider
-backing the spotter; since it takes no turns, a first run that adds only it is
-asked for another provider before the model question.
+connection while answering it at most once. A first run ends with no default model
+either: the new-session form names the model, prefilled from past picks where they
+apply. The spotter and triage roles are not asked: each has a default that runs, and a
+new user cannot yet know what either is. The defaults editor on the management list
+sets `[defaults].spotter`. `TypeSafe` is on the provider menu as a decision-model
+provider backing the spotter; since it takes no turns, a first run that adds only it is
+asked for another provider.
 The credential source is an environment variable (prefilled with the provider's
 conventional name), a key pasted now and kept in the OS credential store as
 `inference:<name>` ([secrets.md](secrets.md); the file then records only

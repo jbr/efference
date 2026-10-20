@@ -377,9 +377,10 @@ fn identifies_as_iterm2() -> bool {
         .any(|v| matches!(v.as_deref(), Ok(term) if term.contains("iTerm")))
 }
 
-/// One paint, timed when `--frame-cost` asked for it. The measurement wraps the
-/// whole `draw` — the document measure pass and the paint are one unit of work, and
-/// splitting them would attribute layout cost to whichever half ran second.
+/// One paint, timed when `frame-cost` under `[tui]` (or `dev gallery --frame-cost`)
+/// asked for it. The measurement wraps the whole `draw` — the document measure pass
+/// and the paint are one unit of work, and splitting them would attribute layout
+/// cost to whichever half ran second.
 fn draw_measured(
     terminal: &mut Terminal<impl Backend<Error = io::Error> + Write>,
     state: &mut InteractiveState<'_>,

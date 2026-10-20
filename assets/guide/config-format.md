@@ -53,7 +53,8 @@ carry named exceptions and nesting is unbounded. A key that is not a single simp
 (`"git | rm"`) fails the whole file.
 
 `clear` skips both the spotter and the human. `watch` and `gate` send the move to the rung
-that gates it. `deny` refuses without spending a spotter call.
+that gates it. `deny` skips the spotter and goes straight to the operator, who can still
+allow it; only an autonomous session declines it outright.
 
 A grant here only matters once the command is structurally simple: pipes, substitutions,
 globs, expansions, and env-assignment prefixes are rejected *before* any prefix is matched,
@@ -76,9 +77,10 @@ exclusion out of a broader one, and `write` implies `read`. Matching is lexical 
 treated as inside it: these are guardrails against a mistake, not access control.
 
 A path-bearing tool clears only when its name is in `tools` **and** its target is granted
-here. `bash` is never judged by this table — a shell command answers to `[commands]` and
-the spotter — so a deny here guards the structured tools against a mistaken call and
-nothing else. `.efference/` is denied by the harness underneath this table, with the
+here. A shell command's arguments are not judged by this table — a shell command answers
+to `[commands]` and the spotter — except for two shapes: a leading `cd <dir> &&` needs the
+directory read-granted, and a single `>` or here-doc write needs its target write-granted.
+So a deny here guards the structured tools against a mistaken call and little else. `.efference/` is denied by the harness underneath this table, with the
 session's own `config.toml` re-allowed read-only; a template needs no entry for it.
 
 ## `[context]` — what the session boots knowing

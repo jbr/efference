@@ -57,6 +57,31 @@ fn read_with_multiple_paths_needs_all_granted() {
     assert_eq!(structured(&role, &c), Verdict::Gate);
 }
 
+/// `search` names its targets in `paths` (an array), as fs-mcp's schema does: a search
+/// outside every grant gates, and only an omitted `paths` defaults to the cwd. Keyed on
+/// `path` before, every search read as omitted and cleared wherever `.` was readable.
+#[test]
+fn search_is_judged_by_its_paths() {
+    let role = fs_role();
+    let search = |input| structured(&role, &call("search", input));
+    assert_eq!(
+        search(serde_json::json!({ "pattern": "x", "paths": ["src"] })),
+        Verdict::Clear
+    );
+    assert_eq!(
+        search(serde_json::json!({ "pattern": "x", "paths": ["/etc"] })),
+        Verdict::Gate
+    );
+    assert_eq!(
+        search(serde_json::json!({ "pattern": "x", "paths": ["src", "/etc"] })),
+        Verdict::Gate
+    );
+    assert_eq!(
+        search(serde_json::json!({ "pattern": "x" })),
+        Verdict::Clear
+    );
+}
+
 #[test]
 fn list_defaults_to_cwd_when_path_omitted() {
     let role = fs_role();

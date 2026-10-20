@@ -168,9 +168,9 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `request`, `history`, `user_default`, `main_provider`, `decision_connection`,
   `project_config`, `provider_default`, `shared_main` — and only the branches that
   apply to a field occur for it.
-  `triage` resolves to `{"mode": "shared"}` or a flattened separate selection, so
-  an inherited `[defaults].triage` previews as the separate client creation would
-  build rather than as sharing main.
+  `triage` resolves to `{"mode": "shared"}` or a flattened separate selection; with
+  no triage in the request it is `shared`, since there is no configured triage
+  default.
 
   **Fields resolve independently.** One unusable value never empties another: a
   field with an issue has `value: null` *and* `source: null`, while a field nothing

@@ -357,7 +357,7 @@ impl<'a> InteractiveState<'a> {
             }
             // Scoped mnemonic: a plain letter that names a shown item fires it,
             // wherever focus currently sits (a shortcut, not a focus move). Items
-            // whose hint isn't a bare letter (Esc's `⎋`, `allow…`'s empty hint) are
+            // whose hint isn't a bare letter (Esc's `⎋`, approve's `⏎`, abort's empty hint) are
             // driven by their own key or the arrows, never matched here.
             KeyCode::Char(c) if !ctrl => {
                 match self
