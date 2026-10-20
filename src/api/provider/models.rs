@@ -126,24 +126,32 @@ impl Endpoint {
 
 /// The `openai` platform menu (docs/model-catalog.md): the catalog's suggested
 /// entries whose id the platform listing also names, in the catalog's order and
-/// with its fields. With no catalog, the listing's own rows without those whose
-/// `shutdown_date` is before `today` (`YYYY-MM-DD`, UTC), and the catalog's
-/// failure logged as the capability path logs it (`provider/codex.rs`).
+/// with its fields. With no catalog, or a catalog that names none of the
+/// listing's models, the listing's own rows without those whose `shutdown_date`
+/// is before `today` (`YYYY-MM-DD`, UTC); the first case logs the catalog's
+/// failure as the capability path does (`provider/codex.rs`).
 fn platform_rows(
     body: &str,
     catalog: Result<codex::Listing, Error>,
     today: &str,
 ) -> Result<Vec<ListedModel>, Error> {
     match catalog {
-        Ok(catalog) => Ok(catalog.rows_served(&listing::ids(body)?)),
-        Err(error) => {
+        Ok(catalog) => {
+            let rows = catalog.rows_served(&listing::ids(body)?);
+            if !rows.is_empty() {
+                return Ok(rows);
+            }
             log::warn!(
-                "the openai model catalog could not be read ({error}); the menu is the \
-                 platform listing without models past their shutdown date"
+                "the openai model catalog named none of the platform listing's models; the \
+                 menu is the platform listing without models past their shutdown date"
             );
-            listing::rows_not_shut_down(body, today)
         }
+        Err(error) => log::warn!(
+            "the openai model catalog could not be read ({error}); the menu is the \
+             platform listing without models past their shutdown date"
+        ),
     }
+    listing::rows_not_shut_down(body, today)
 }
 
 #[cfg(test)]

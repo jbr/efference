@@ -56,9 +56,10 @@ absent. `recent` is added at read time, not stored.
   its menu is the Codex catalog's suggested entries (the same set `openai-codex` offers)
   whose id the listing also names, in the catalog's order and with the catalog's fields.
   The catalog is read through the cache the capability path shares
-  (docs/transport.md, "OpenAI capabilities"). When it cannot be read, the menu is the
-  listing without entries whose `shutdown_date` is before today (UTC), arranged as any
-  listing is, and the failure is logged as the capability path logs it. No id-prefix
+  (docs/transport.md, "OpenAI capabilities"). When it cannot be read, or names none of
+  the listing's models, the menu is the listing without entries whose `shutdown_date` is
+  before today (UTC), arranged as any listing is, and the reason is logged (the failure,
+  as the capability path logs it, or that the catalog named none). No id-prefix
   rule applies in either case. Dropped models stay reachable as a typed id, and a recent
   pick keeps its place.
 - **Price:** OpenRouter's per-token decimal strings times 10^6; a negative value (`-1`,

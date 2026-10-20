@@ -127,3 +127,20 @@ fn an_unreadable_shutdown_date_says_nothing() {
     let rows = listing::rows_not_shut_down(body, "2026-10-19").unwrap();
     assert_eq!(models(&rows).len(), 3);
 }
+
+/// A catalog that reads but names none of the listing's models (an empty one, or
+/// one whose entries are all hidden or absent from the listing) would leave an
+/// empty menu, so the menu falls back as it does with no catalog.
+#[test]
+fn a_catalog_naming_none_of_the_listing_falls_back_to_the_listing() {
+    for catalog in [
+        r#"{"models": []}"#,
+        r#"{"models": [{"slug": "gpt-reserve", "visibility": "hide"}, {"slug": "gpt-elsewhere"}]}"#,
+    ] {
+        let rows =
+            platform_rows(LISTING, Ok(codex::parse(catalog).unwrap()), "2026-10-19").unwrap();
+        let fallback = platform_rows(LISTING, Err("no route".into()), "2026-10-19").unwrap();
+        assert_eq!(rows, fallback);
+        assert!(!models(&rows).contains(&"gpt-5.1-codex"));
+    }
+}
