@@ -14,8 +14,9 @@ document — the flags, the listener shape, the credential layer, and the gate �
 than shipping a second one. The gate's only listener-dependent decision is carried as
 a `Surface`, and it is not a set of guarded prefixes: the anonymous surface is
 enumerated, so every path outside it takes a credential whatever its name. What a
-surface settles is the two paths that name a bind's shape rather than its content —
-`/files` is a session bind's narrower cookie-only surface, and `GET /sessions` is the
+surface settles is where the paths that name a bind's shape rather than its content
+sit — `/files` is the narrower cookie-only surface, at a session bind's root and under
+`/sessions/<id>` on a host, and `GET /sessions` is the
 probe that has to reach a session bind's router so its `404` says "not a host".
 `Surface::Host` is the interface the in-process host mounts its session routes behind, so
 the gate's decision is the same shape on both.
@@ -209,13 +210,14 @@ Runs before every TCP route, in order:
    which is no route of its — the web client's probe to tell the two bindings
       apart reads the `404` a session daemon gives it as "not a host"
    ([web-client.md](web-client.md)).
-   Everything else takes cookie-or-bearer, whatever its prefix: `/v1`, `/files`,
-   a host's `/sessions` tree, and the host's own routes at its root. The
+   Everything else takes cookie-or-bearer, whatever its prefix: `/v1`, a host's
+   `/sessions` tree except its `/files`, and the host's own routes at its root. The
    `dev-proxy` build widens the free surface to the dev server's module URLs
    ([web-client.md](web-client.md)), because a shell that cannot load is a page
    with no login view on it.
-   `/files` is guarded more narrowly still: it takes the **cookie only**, and a
-   valid bearer gets `403 forbidden` there rather than `401`, because the credential
+   `/files` is guarded more narrowly still: on a session bind, and on a host as
+   `/sessions/<id>/files`, it takes the **cookie only**, and a valid bearer gets
+   `403 forbidden` there rather than `401`, because the credential
    is fine and presenting it again would not help.
 
 The `401`/`403`/`429` codes are `ErrorCode` variants in the standard error envelope

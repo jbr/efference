@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A host's `/sessions/<id>/files` takes the cookie only, as a session bind's `/files` does; a valid bearer gets `403` (docs/web-bind.md).
 - `GET /sessions/:id` for a dormant session answers its recorded `selections` (in the shapes `PATCH` takes) and `context_tokens`, the last main-loop prompt a cold read would pay; the archived listing is unchanged (docs/control-api.md).
 - Triage shows a result's lines in a `12 │ text` margin, and the result header says that numbers after the margin are part of the text and `keep` uses the margin's, so a `read` or `grep -n` result's own line numbers are not mistaken for the view's; `EFFERENCE_TRIAGE_LINES` is gone (docs/triage.md).
 - `--name` is `tui`'s flag (attach, or the new session's id) and the `dev` readers'; `--socket` is `host`'s bind path; `control` and `mcp` take neither, `agent` is required on the MCP tools that act on an agent, and a named session resolves through the host alone (the per-session `control.sock` lookup is gone).

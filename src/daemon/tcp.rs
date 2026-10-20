@@ -331,16 +331,17 @@ enum CodeRejection {
 ///
 /// A surface names two paths that differ by bind rather than a set of guarded
 /// prefixes: [`Surface::zone`] prices everything against the anonymous list, so
-/// what a surface settles is `/files` taking the cookie only on a session bind,
-/// and the binding probe reaching a session bind's router.
+/// what a surface settles is where `/files` sits (at the root on a session bind,
+/// under `/sessions/<id>` on a host), and the binding probe reaching a session
+/// bind's router.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Surface {
     /// A session bind: `/v1` takes either credential, `/files` the cookie
     /// only (docs/web-bind.md).
     Session,
     /// A multi-session host: everything under `/sessions` takes either credential —
-    /// the session listing and every session-prefixed control path alike
-    /// (docs/web-bind.md).
+    /// the session listing and every session-prefixed control path alike — except
+    /// `/sessions/<id>/files`, which takes the cookie only (docs/web-bind.md).
     Host,
 }
 
@@ -384,8 +385,13 @@ impl Surface {
         // is the operator's read surface over the working directory, so it takes
         // the cookie only (docs/web-bind.md). A bearer holder reading it would
         // bypass `[paths]`, including the deny that keeps a session out of other
-        // sessions' logs.
-        if matches!(self, Surface::Session) && under(path, "/files") {
+        // sessions' logs. A host mounts the same surface under each session's
+        // prefix, so `/sessions/<id>/files` costs the same.
+        let files = match self {
+            Surface::Session => under(path, "/files"),
+            Surface::Host => session_scoped(path).is_some_and(|route| under(route, "/files")),
+        };
+        if files {
             return Zone::CookieOnly;
         }
         if self.anonymous(method, path) {

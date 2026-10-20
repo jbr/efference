@@ -186,6 +186,27 @@ fn the_anonymous_surface_is_named() {
             "/sessions/work/v1/state",
             credential,
         ),
+        // A host mounts `/files` under each session's prefix; it is as cookie-only
+        // there as at a session bind's root. A top-level `/files` is no host route.
+        (
+            Surface::Host,
+            Method::Get,
+            "/sessions/work/files",
+            cookie_only,
+        ),
+        (
+            Surface::Host,
+            Method::Get,
+            "/sessions/work/files/notes.md",
+            cookie_only,
+        ),
+        (
+            Surface::Host,
+            Method::Get,
+            "/sessions/work/filesystem",
+            credential,
+        ),
+        (Surface::Host, Method::Get, "/files/notes.md", credential),
         // The host's own routes were the reason the rule was inverted: they sit
         // outside `/sessions` and were readable without a credential.
         (Surface::Host, Method::Get, "/inference", credential),
@@ -349,6 +370,50 @@ async fn files_takes_the_cookie_and_refuses_the_bearer() {
         .with_request_header(KnownHeaderName::Cookie, cookie)
         .await
         .assert_status(200);
+}
+
+/// The cookie-only rule holds on both surfaces through the gate itself: a valid
+/// bearer gets `403` at a session bind's `/files` and at a host's
+/// `/sessions/<id>/files`, while `/v1` and the session-prefixed control paths still
+/// take it. The routes behind the gate are a stub; only the gate's answer is
+/// under test.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn files_refuses_the_bearer_on_both_surfaces() {
+    let auth = armed("files-both-surfaces");
+    let bearer = format!("Bearer {}", auth.bearer());
+    for (surface, files, open) in [
+        (Surface::Session, "/files/notes.md", "/v1/state"),
+        (
+            Surface::Host,
+            "/sessions/work/files/notes.md",
+            "/sessions/work/v1/state",
+        ),
+        (Surface::Host, "/sessions/work/files", "/sessions"),
+    ] {
+        let server = TestServer::new((
+            trillium_cookies::CookiesHandler::new(),
+            gate(Arc::clone(&auth), surface),
+            |conn: trillium::Conn| async move { conn.ok("reached") },
+        ))
+        .await
+        .with_host("localhost");
+        server
+            .get(open)
+            .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+            .await
+            .assert_status(200);
+        server
+            .get(files)
+            .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+            .await
+            .assert_status(403)
+            .assert_body_contains(r#""code":"forbidden""#);
+        server
+            .get(files)
+            .await
+            .assert_status(401)
+            .assert_body_contains(r#""code":"unauthorized""#);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
