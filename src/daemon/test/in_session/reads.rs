@@ -82,6 +82,35 @@ async fn the_overview_marks_the_sessions_you_drive() {
     fixture.host.swansong().shut_down().await;
 }
 
+/// A project with no other agent says so and names the in-session spelling of the verb
+/// that starts one; a session addressing itself is told what would work, and no
+/// refusal sends the reader to a doc.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_empty_overview_and_a_refusal_name_what_works() {
+    let fixture = Fixture::new();
+    let overview = status(None)
+        .execute(fixture.control("stranger"), RequestContext::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        overview,
+        "no other agents in this project; `agents__create` starts one"
+    );
+
+    let itself = status(Some("parent"))
+        .execute(fixture.control("parent"), RequestContext::default())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        itself,
+        "refused: \"parent\" is you — a session cannot address itself; name another agent, \
+         as `agents__status` lists them"
+    );
+
+    fixture.host.swansong().shut_down().await;
+}
+
 fn read(seq: Option<&str>) -> Transcript {
     Transcript {
         agent: Some("child".into()),

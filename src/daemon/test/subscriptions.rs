@@ -155,7 +155,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
     let is_gate = |source: &str, body: &str, slot: Option<&str>| {
         source == "child"
             && slot == Some("session:child")
-            && body.starts_with("child: waiting for your decision on fs.list")
+            && body.starts_with("waiting for your decision on fs.list")
             && body.contains("intent: locating siblings")
             && body.contains("decide: agents__decide(agent: \"child\"")
     };
@@ -188,7 +188,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
         heard(&parent, |source, body, slot| {
             source == "child"
                 && slot == Some("session:child")
-                && body.starts_with("child: idle, its turn is done")
+                && body.starts_with("idle, its turn is done")
         })
         .is_some()
     })
@@ -255,7 +255,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
         .unwrap();
     let _rx = child.register_pending(&curl, None);
     let gate = format!(
-        "child: waiting for your decision on bash `curl -sI https://example.com` (seq \
+        "waiting for your decision on bash `curl -sI https://example.com` (seq \
          {issued})\nintent: fetch only the response headers\nheld because: its reviewer is \
          unsure this fits the session's scope; no earlier call like it was allowed\ndecide: \
          agents__decide(agent: \"child\", seq: \"{issued}\", decision: \"allow\" | \"deny\", \
@@ -290,7 +290,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
         .unwrap();
     child.going_idle();
     let idle = format!(
-        "child: idle, its turn is done (seq {said})\nsaid: {}\nnext: agents__message(agent: \
+        "idle, its turn is done (seq {said})\nsaid: {}\nnext: agents__message(agent: \
          \"child\", text: \"<message>\") sends its next message; agents__archive(agent: \
          \"child\") ends it",
         report.trim()
@@ -318,7 +318,7 @@ async fn a_childs_question_wakes_the_parent() {
         heard(&parent, |source, body, slot| {
             source == "child"
                 && slot == Some("session:child")
-                && body.starts_with("child: asking a question")
+                && body.starts_with("asking a question")
                 && body.contains("Which branch?")
                 && body.contains("agents__message(agent: \"child\", text: \"<answer>\"")
         })
@@ -338,7 +338,7 @@ async fn a_childs_question_wakes_the_parent() {
         heard(&parent, |source, body, slot| {
             source == "child"
                 && slot == Some("session:child")
-                && body.starts_with("child: idle, its turn is done")
+                && body.starts_with("idle, its turn is done")
         })
         .is_some()
     })
@@ -379,7 +379,7 @@ async fn a_question_tells_a_driver_its_message_came_back() {
     wait_until("the subscribed child heard the question", || {
         heard(&child, |source, body, _| {
             source == "grandchild"
-                && body.starts_with("grandchild: asking a question")
+                && body.starts_with("asking a question")
                 && !body.contains("returned:")
         })
         .is_some()
@@ -411,7 +411,7 @@ async fn an_end_is_posted_and_cascades_to_non_detached_children() {
         parent
             .pending_notifications()
             .iter()
-            .any(|n| n.body.starts_with("child: ended"))
+            .any(|n| n.body.starts_with("ended"))
     })
     .await;
     let pending = parent.pending_notifications();

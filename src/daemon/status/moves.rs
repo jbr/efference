@@ -32,6 +32,8 @@ pub(crate) struct Moves {
     pub(crate) transcript: fn(&Target) -> String,
     /// Read the session's whole status.
     pub(crate) status: fn(&Target) -> String,
+    /// The verb that starts a session, by the name this mount gives it.
+    pub(crate) create: fn() -> String,
 }
 
 impl Moves {
@@ -52,6 +54,7 @@ impl Moves {
             archive: |target| calls::archive(P::PREFIX, target),
             transcript: |target| calls::transcript(P::PREFIX, target),
             status: |target| calls::status(P::PREFIX, target),
+            create: || format!("{}create", P::PREFIX),
         }
     }
 }

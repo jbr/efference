@@ -69,7 +69,7 @@ impl HostExecutor {
         if target == self.caller {
             return Err(anyhow!(
                 "refused: {target:?} is you — a session cannot address itself; name another \
-                 agent, as `status` lists them (docs/tools.md)"
+                 agent, as `agents__status` lists them"
             ));
         }
         Ok(target)
@@ -123,7 +123,8 @@ impl HostExecutor {
         if !self.drives(&target)? {
             return Err(anyhow!(
                 "refused: you don't drive {target:?} — a driving verb reaches the sessions you \
-                 created, supervise, or succeed (docs/tools.md)"
+                 created, supervise, or succeed; `agents__status` and `agents__transcript` still read \
+                 it, and `agents__message` leaves it a note"
             ));
         }
         Ok((session, target))
@@ -281,7 +282,8 @@ impl HostExecutor {
             }
             if !seen.insert(next.clone()) {
                 return Err(anyhow!(
-                    "refused: the decision chain revisits {next:?} — a cycle (docs/tools.md)"
+                    "refused: the decision chain revisits {next:?} — a cycle, which no decision can follow to its end; deny \
+                     the held decision, with a message saying why"
                 ));
             }
             session = self.in_project(&next)?;

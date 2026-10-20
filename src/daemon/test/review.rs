@@ -196,7 +196,7 @@ async fn a_level_change_reroutes_a_pending_gate() {
     let _gate = child.register_pending(&leaf(), None);
     wait_until("the creator observed the gate", || {
         heard(&root, |body| {
-            body.starts_with("child: waiting for a decision from the operator or you on fs.list")
+            body.starts_with("waiting for a decision from the operator or you on fs.list")
         })
     })
     .await;

@@ -46,7 +46,7 @@ A question (its status says asking) is answered by `message` with `reply_to` set
 question's seq; a message without it is refused while a question is pending.
 
 `transcript` is what an agent said and did, new since your last read by default; `seq` \
-zooms into one entry. `interrupt` stops what it is doing; `archive` ends it and the \
+reads one entry in full. `interrupt` stops what it is doing; `archive` ends it and the \
 agents it created.
 
 Waiting: in Claude Code, open a Monitor on the `follow:` URL that `create` or \

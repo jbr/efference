@@ -102,8 +102,15 @@ impl Host {
             _ => None,
         };
         let now = crate::log::Timestamp::now().0;
-        let body =
-            |relation, reader: &str| render(&view, &Reader::notification(relation, reader), now);
+        // The notification's source is the session's id, and the pinned block reads
+        // `⟢ <source>: <body>`, so the status opens without the id it would repeat.
+        let body = |relation, reader: &str| {
+            let text = render(&view, &Reader::notification(relation, reader), now);
+            match text.strip_prefix(&format!("{id}: ")) {
+                Some(rest) => rest.to_string(),
+                None => text,
+            }
+        };
         let subscribers = self.subscribers(id);
         let returned_to: Vec<String> = match &view.condition {
             Condition::Asking { returned, .. } => returned

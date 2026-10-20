@@ -244,8 +244,8 @@ impl Tool<Control> for Create {
                 if base != project {
                     anyhow::bail!(
                         "refused: {} is outside this project — a session creates only under \
-                         its own `.efference/` base ({}) so it can reach what it made \
-                         (docs/tools.md)",
+                         its own `.efference/` base ({}) so it can reach what it made; \
+                         create under this project's directory instead",
                         cwd.display(),
                         project.display()
                     );

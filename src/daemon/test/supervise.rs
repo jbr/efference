@@ -230,9 +230,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
     a.going_idle();
 
     wait_until("a's idle reached b", || {
-        heard(&b, "a", |body| {
-            body.starts_with("a: idle, its turn is done")
-        })
+        heard(&b, "a", |body| body.starts_with("idle, its turn is done"))
     })
     .await;
 
@@ -296,6 +294,10 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
     .unwrap_err()
     .to_string();
     assert!(err.contains("you don't drive \"kid\""), "{err}");
+    assert!(
+        err.contains("`agents__message` leaves it a note") && !err.contains("docs/"),
+        "{err}"
+    );
 
     fixture.host.swansong().shut_down().await;
 }

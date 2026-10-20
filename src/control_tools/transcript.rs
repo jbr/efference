@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 /// Read what an agent said and did: its messages in full, and each call on one line
 /// with what became of it. By default, what is new since your last read; `seq`
-/// zooms into one entry in full.
+/// reads one entry in full.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "transcript")]
 pub struct Transcript {
@@ -64,14 +64,15 @@ impl ToolMeta for Transcript {
 }
 
 impl Transcript {
-    /// The zoom's handle, refused beside a window bound.
+    /// The handle of the one entry to read in full (the zoom), refused beside a window
+    /// bound.
     fn zoom(&self) -> Result<Option<Handle>> {
         let Some(seq) = &self.seq else {
             return Ok(None);
         };
         if self.since.is_some() || self.tail.is_some() {
             return Err(anyhow!(
-                "seq zooms into one entry, so it takes no since or tail; read a window with \
+                "seq reads one entry in full, so it takes no since or tail; read a window with \
                  since or tail alone"
             ));
         }

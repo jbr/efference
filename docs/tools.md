@@ -240,7 +240,8 @@ round trip over the socket. The calling identity is what makes three rules
 enforceable, and they are enforced by the executor rather than by config:
 
 - **The caller is never its own target.** A call naming the caller, or naming no
-  agent (which defaults to it), is refused on every verb.
+  agent (which defaults to it), is refused on every verb. The refusal says to name
+  another agent, as `agents__status` lists them.
 - **A driving verb reaches the sessions the caller drives.** A session *drives* another
   when the other is its descendant (its `created_by` chain reaches the caller), when the
   host's supervisor pointer names the caller ([permissions.md](permissions.md)), or when
@@ -259,7 +260,11 @@ enforceable, and they are enforced by the executor rather than by config:
   target: `refused: you don't supervise "c", so its gates are not yours to decide — its
   supervisor, "q", and the operator decide them; agents__message and agents__interrupt
   still reach it` (`it has no supervisor, so the operator decides them` for a session with
-  none; `agents__message leaves it a note` to a caller that does not drive it).
+  none; `agents__message leaves it a note` to a caller that does not drive it). The
+  other refusals end the same way, in what would work: a driving verb on a session the
+  caller does not drive says that `agents__status` and `agents__transcript` still read it
+  and `agents__message` leaves it a note, and none cites a doc, since the reading agent
+  may not have this repository.
 
 `message` does what the relation says. From a driver it is the target's next user
 message, carrying `source: session[<caller id>]`, which the projection opens as
@@ -303,14 +308,14 @@ the transcript prints the note on the call's line; `deny` with a message rejects
 caller's relation to it; with no agent it is one line per session in the caller's
 project — each status's first line — the sessions the caller drives marked `(yours)`.
 `transcript(agent, seq?, since?, tail?)` is the conversation grain
-(docs/control-api.md): `seq` zooms into one entry; with neither `since` nor `tail` it
+(docs/control-api.md): `seq` reads one entry in full (the zoom); with neither `since` nor `tail` it
 is what is new since this reader's last read. The host holds that read cursor per reader
 and target as control state on the target's hosted entry, never logged
 (`src/daemon/host/agents.rs`); a reader with no cursor — a first read, or any read
 after a host restart — gets the last 40 conversation lines, and the header says so.
 `tail` counts conversation lines as the transcript prints them, not log entries
 (docs/control-api.md). `since`/`tail`
-reads move the cursor to the end of what they returned; a zoom does not
+reads move the cursor to the end of what they returned; a `seq` read does not
 (`src/daemon/transcript/cursor.rs`). `interrupt` answers with what it stopped, read from
 the status just before it signals, and signals nothing at an idle session. `archive`
 answers with the sessions that ended with it, its non-detached descendants
@@ -404,13 +409,15 @@ its arguments filled in. The verbs' own answers are rendered beside it
   named supervisor. A question names its place (`question 2 of 3`) and the `message`
   call with `reply_to` that answers it. An idle carries the whole closing message up to
   about 4 KB, and names `message` for the next message and `archive`; past the cap, a
-  `cut:` line says how much was left out and which `transcript` zoom reads it. A stop or
+  `cut:` line says how much was left out and which `transcript` read has it. A stop or
   a pause names the empty message, which continues it.
 - **Observer** — a subscriber without wake, or a session reading one it does not drive:
   the same conditions without moves, and an idle's closing message cut to its first
   line, with a `cut:` line saying how many lines remain.
 
-A notification leaves out the footer a read of the status carries (the model, context
+A notification opens without the session's id, which is its `source` and which the
+pinned block (`⟢ <source>: <body>`) shows first; the status's first line names the id in
+a read (`post_status`, `src/daemon/subscriptions.rs`). A notification leaves out the footer a read of the status carries (the model, context
 fill, cost, background processes, and queued turns by sender), and a config repair's
 parse error, which the notification names the `status` read for.
 

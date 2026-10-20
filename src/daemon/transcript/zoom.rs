@@ -1,6 +1,7 @@
 //! The zoom (`GET /transcript?seq=8.2`, docs/control-api.md): one entry in full, as
 //! plain text. The raw body is cut at the entry view's inline cap (`entry_view.rs`), so
-//! a zoom answer is no larger than a window element; `GET /log/:seq` serves the rest.
+//! a zoom answer is no larger than a window element; `GET /log/:seq` serves the rest, and
+//! names itself only to a reader that can call it (`Reading::reads_by_route`).
 
 use super::index::Index;
 use super::*;
@@ -220,7 +221,7 @@ impl<'a> Zoom<'a, '_> {
                     ));
                 }
                 self.lines.push(format!(
-                    "each call zooms by its handle: {}",
+                    "read each call in full by its handle: {}",
                     handles(seq, calls.len())
                 ));
             }
@@ -349,18 +350,26 @@ impl<'a> Zoom<'a, '_> {
             self.lines
                 .push(raw.content[..kept].trim_end_matches('\n').to_string());
             if kept < raw.content.len() {
-                self.lines.push(format!(
-                    "cut: {} more of {}; GET /log/{seq} serves the whole result",
+                let mut cut = format!(
+                    "cut: {} more of {}",
                     size(raw.content.len() - kept),
                     size(raw.content.len())
-                ));
+                );
+                if self.reading.reads_by_route() {
+                    let _ = write!(cut, "; GET /log/{seq} serves the whole result");
+                }
+                self.lines.push(cut);
             }
         }
         for (i, image) in raw.images.iter().enumerate() {
-            self.lines.push(format!(
-                "image {i}: {} {}×{}, at GET /log/{seq}/images/{i}",
+            let mut line = format!(
+                "image {i}: {} {}×{}",
                 image.media_type, image.width, image.height
-            ));
+            );
+            if self.reading.reads_by_route() {
+                let _ = write!(line, ", at GET /log/{seq}/images/{i}");
+            }
+            self.lines.push(line);
         }
     }
 

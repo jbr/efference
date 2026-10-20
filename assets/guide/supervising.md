@@ -49,8 +49,8 @@ names have the id and seq filled in.
 - `asking a question (seq 12)` — `question:` is the question, `answer:` the reply that
   answers it.
 - `idle, its turn is done (seq 30)` — `said:` is its closing message up to about 4 KB, a
-  `cut:` line names the zoom with the rest, and `next:` names the message that starts its
-  next turn and the archive that ends it.
+  `cut:` line names the `transcript` read with the rest, and `next:` names the message
+  that starts its next turn and the archive that ends it.
 - `stopped: <reason>` — its last turn gave up. An empty message retries.
 - `paused before re-reading its context uncached (48k tokens)` — its prompt cache expired
   mid-turn. An empty message goes ahead and pays that read.
@@ -121,7 +121,7 @@ With no other argument, it is what is new since your last read; a first read is 
 is printed under one seq: a message, a call with its outcome, a question with its reply;
 log entries that say nothing (telemetry, titles) are not lines. A read never opens on a
 result without its call, so it can run a few lines past what you asked for, and the header
-says how many lines come before it. `seq: "14"` zooms into one entry: the exact input, the
+says how many lines come before it. `seq: "14"` reads one entry in full: the exact input, the
 reviewer's verdict and reason, who decided it, the raw result (up to 16 KiB), and which
 lines the agent saw.
 
@@ -177,7 +177,7 @@ branch kept unless merged. Agents you create end when you do, unless created `de
 
 ## Cost
 
-Every status, answer and transcript you read stays in your context; zoom into one entry
+Every status, answer and transcript you read stays in your context; read one entry in full
 rather than reading long windows. An agent's status footer reports its context and cost.
 
 The host keeps an agent's prompt cache warm for about 30 minutes after its last turn. Past

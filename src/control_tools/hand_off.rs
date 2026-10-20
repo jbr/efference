@@ -43,7 +43,7 @@ impl Tool<Control> for HandOff {
         match &control.executor {
             Executor::Client(_) => anyhow::bail!(
                 "`hand_off` is a session handing off its own work; from outside a session, \
-                 `create` starts one (docs/tools.md)"
+                 `create` starts one"
             ),
             Executor::Host(state) => {
                 // The successor starts where the caller works, with the caller's

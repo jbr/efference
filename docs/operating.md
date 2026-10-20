@@ -223,9 +223,9 @@ Each read is at its own grain.
   the reader (`you`, `operator`, an id), and each call on one line with what became of
   it — who allowed or denied it, whether it is still running, its result's size, and how
   much of it the session saw (`it saw 1: the status line`). Spotter, triage, config and
-  telemetry lines are left out. `GET /transcript?seq=8.2` zooms into one call: its exact
+  telemetry lines are left out. `GET /transcript?seq=8.2` reads one call in full: its exact
   input, the spotter's reason and who decided the gate, and the raw result, capped at
-  16 KiB ([control-api.md](control-api.md)); the tool's `seq` is the same zoom. With
+  16 KiB ([control-api.md](control-api.md)); the tool's `seq` is the same read. With
   neither `since` nor `tail`, the tool reads what is new since this reader's last read,
   by a read cursor its mount holds per agent; a reader with no cursor — every command-line
   run is one — gets the last 40 entries, and the header says so.

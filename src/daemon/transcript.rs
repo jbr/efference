@@ -66,6 +66,13 @@ impl Reading<'_> {
         }
     }
 
+    /// Whether the reader can fetch a body by route (`GET /log/:seq`): the operator's
+    /// command line and a plain HTTP client name no reader, where a named reader (an
+    /// in-session agent, an MCP driver) has only the tools.
+    fn reads_by_route(&self) -> bool {
+        self.me.is_none()
+    }
+
     /// The label on the session's own prose: its id, or `assistant` with none.
     fn speaker(&self) -> &str {
         self.session.unwrap_or("assistant")

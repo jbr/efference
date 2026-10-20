@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- Agent-facing texts name only what the reader can use: refusals say what would work instead of citing a doc, the empty overview names its mount's own `create`, an agent's transcript read of one entry in full drops the `GET /log` routes (the command line keeps them) and no text says "zoom", and a pinned status notification no longer repeats the session's id (docs/tools.md, docs/control-api.md).
 - A transcript's first read and `tail: <n>` count conversation lines (last 40 on a first read), extended back so no result, verdict or answer shows without its call; an allow's note prints on the call's line, and a call whose input contains backticks is fenced by a longer run in both the transcript and the status (docs/control-api.md).
 - Web link-styled buttons underline on hover and press instead of inheriting a square button halo; the gallery shows their interaction states beside ordinary links.
 

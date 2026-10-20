@@ -87,8 +87,10 @@ fn a_gated_call_shows_its_decision_trail_and_raw_result() {
     );
 }
 
-/// A body past the inline cap is cut on a char boundary, with how much was cut and
-/// where the whole result is; images are listed by their addresses.
+/// A body past the inline cap is cut on a char boundary, with how much was cut; the
+/// operator's reader (no `me`) is told the route that serves the rest and each image, a
+/// named reader (an agent, an MCP driver), which cannot call it, only the size and the
+/// image.
 #[test]
 fn a_long_result_is_capped_and_its_images_are_addressed() {
     let mut log = Fixture::new();
@@ -123,6 +125,11 @@ fn a_long_result_is_capped_and_its_images_are_addressed() {
         text.contains("decision: none; the gate did not hold it\n"),
         "{text}"
     );
+
+    let named = zoom(log.entries(), handle("0"), &child(Some("parent"))).unwrap();
+    assert!(named.contains("cut: 3.5 KB more of 19.5 KB\n"), "{named}");
+    assert!(named.ends_with("image 0: image/png 800×600\n"), "{named}");
+    assert!(!named.contains("/log/"), "{named}");
 }
 
 /// A prose entry is its whole text under its sender; a turn by its bare seq lists the
@@ -149,7 +156,7 @@ fn a_prose_entry_is_whole() {
          Two things to check.\n\
          1.1  bash `ls`\n\
          1.2  bash `pwd`\n\
-         each call zooms by its handle: 1.1 and 1.2\n"
+         read each call in full by its handle: 1.1 and 1.2\n"
     );
 }
 

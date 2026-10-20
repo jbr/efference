@@ -1412,8 +1412,13 @@ pending`, the recorded decision with how it was decided and the seq that records
 line count and bytes; what the session saw (`it saw: lines 1–3, 7 of 120: <note>`, `all
 of it`, `none of it`, or nothing yet), with triage's remark on the intent when it made
 one; the raw body, cut at the same 16 KiB as a window's `content_elided` with a `cut:`
-line saying how much was cut and that `GET /log/:seq` serves the whole result; and each
-image by its `GET /log/:seq/images/:idx` address. An `ask` shows its question and its
+line saying how much was cut; and each image by its media type and size. A reader that
+names no `me` (the command line, a plain HTTP client) is also told that `GET /log/:seq`
+serves the whole result and each image's `GET /log/:seq/images/:idx` address; a named
+reader, an in-session agent or an MCP driver, has neither route, so its lines carry only
+the size and the image. A multi-call turn lists its calls by handle and says to read each
+in full by its handle. The word "zoom" is the code's; the `transcript` tool tells agents
+"reads one entry in full". An `ask` shows its question and its
 answer. A result's seq zooms into its call; an assistant turn's bare seq shows its prose
 and its one call in full, or lists several by handle; a user turn, a notification or a
 summary is its whole text; any other entry is a one-line description.

@@ -77,7 +77,13 @@ impl Tool<Control> for Status {
                         let reader = operator_reader(&view, me.as_deref());
                         lines.push(answers::overview_line(&view, &reader, false, now));
                     }
-                    return Ok(answers::overview(lines, "the host holds no agents"));
+                    return Ok(answers::overview(
+                        lines,
+                        &format!(
+                            "the host holds no agents; `{}` starts one",
+                            (Moves::MCP.create)()
+                        ),
+                    ));
                 }
                 let client = state.client(self.agent.as_deref()).await?;
                 let view = status_in(&state_of(&client).await?)?;
@@ -100,7 +106,10 @@ impl Tool<Control> for Status {
                     }
                     return Ok(answers::overview(
                         lines,
-                        "no other agents in this project; `create` starts one",
+                        &format!(
+                            "no other agents in this project; `{}` starts one",
+                            (Moves::IN_SESSION.create)()
+                        ),
                     ));
                 };
                 let (target, id) = state.resolve(Some(agent))?;

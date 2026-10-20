@@ -169,7 +169,7 @@ async fn the_supervisor_may_decide_a_gate_routed_to_the_operator_and_is_not_woke
     assert_eq!(held.reviewer, Reviewer::Operator, "the operator is asked");
 
     let first = format!(
-        "c: waiting for a decision from the operator or you on bash `curl -sI \
+        "waiting for a decision from the operator or you on bash `curl -sI \
          https://example.com` (seq {seq})"
     );
     let wake = {
@@ -190,7 +190,7 @@ async fn the_supervisor_may_decide_a_gate_routed_to_the_operator_and_is_not_woke
     let status = status_of_c(&fixture, "p").await;
     assert!(
         status.starts_with(&format!(
-            "{first}\nintent: fetch only the response headers\ndecide: the operator is asked; \
+            "c: {first}\nintent: fetch only the response headers\ndecide: the operator is asked; \
              as c's supervisor you may decide it too: agents__decide(agent: \"c\", seq: \
              \"{seq}\", decision: \"allow\" | \"deny\", message?)"
         )),
