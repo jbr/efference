@@ -231,7 +231,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
 
 **The hand-off's completion.** An `agents__archive` call that names the caller's own
 predecessor clears on the fast path, ahead of the rungs below it, with no spotter round-trip
-and no `Spot` entry (`judge` in `src/agent/step.rs`, `Toolbox::completes_hand_off`). A hand-off
+and no `Spot` entry (`judge` in `src/agent/step/judge.rs`, `Toolbox::completes_hand_off`). A hand-off
 is a conversation, and only the successor knows when no clarification remains, so its
 archiving the predecessor is the completion the successor's brief tells it to make
 ([tools.md](tools.md), "Hand-off"). The rule reads the host's succession record, written

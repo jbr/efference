@@ -590,7 +590,7 @@ says it worked.
 
 Every completed tool call appends a `Payload::ToolTelemetry` entry beside its
 result (`src/agent/telemetry.rs`, derived at the dispatch point in
-`src/agent/step.rs`). It **projects to nothing** — log metadata in the same sense
+`src/agent/step/execute.rs`). It **projects to nothing** — log metadata in the same sense
 timestamps are — which is what lets it be written unconditionally; the pin that
 says so is `project::test::tool_telemetry_projects_to_identical_bytes`, the same
 shape as the `Triage.thinking` pin.

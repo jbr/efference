@@ -118,7 +118,7 @@ the trajectory without reporting anything and is not a juncture.
 
 ## The agent-called tool
 
-`consolidate(summary)` is dispatched structurally by `src/agent/step.rs`, not
+`consolidate(summary)` is dispatched structurally by `src/agent/step/consolidate_call.rs`, not
 through a world-facing provider. After the normal permission cascade approves
 it, the loop validates a complete new span and a summary of at least 100 words,
 then appends a summary and a paired `ToolResult`. Invalid requests receive an
