@@ -149,7 +149,7 @@ pub(crate) enum DevCommand {
         connection: Option<String>,
     },
     /// Read a recorded session in the TUI, inert: the same transcript rendering as
-    /// `tui`, over a session's `log.jsonl` instead of a live daemon. Nothing can be
+    /// an attached TUI, over a session's `log.jsonl` instead of a live daemon. Nothing can be
     /// sent — no composer, no approvals, no loop verbs — and the log is read once,
     /// so a session that is still running shows as of the moment it was opened.
     /// q closes, ? for help, t for the theme picker.
@@ -160,28 +160,30 @@ pub(crate) enum DevCommand {
         session: Option<String>,
         #[command(flatten)]
         read: ReadName,
-        /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
-        /// "Catppuccin Frappe".
-        #[arg(long, env = "EFFERENCE_THEME")]
+        /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Overrides
+        /// `[tui] theme`.
+        #[arg(long)]
         theme: Option<String>,
         /// Result-image rendering: "auto" queries the terminal, "kitty"/"iterm2"
-        /// force a protocol detection missed (tmux), "off" disables.
-        #[arg(long, env = "EFFERENCE_IMAGES", value_enum, default_value_t)]
-        images: ImagesArg,
+        /// force a protocol detection missed (tmux), "off" disables. Overrides
+        /// `[tui] images`.
+        #[arg(long, value_enum)]
+        images: Option<ImagesArg>,
     },
     /// Element gallery: launch the TUI on a fixed "one of each" transcript (rich
     /// markdown, a shell call, a colored diff, a collapsed long result, an error, a
     /// triaged result, a summary) — no daemon. A live design page for
     /// iterating on transcript rendering. q quits, ? for help, t for the theme picker.
     Gallery {
-        /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
-        /// "Catppuccin Frappe".
-        #[arg(long, env = "EFFERENCE_THEME")]
+        /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Overrides
+        /// `[tui] theme`.
+        #[arg(long)]
         theme: Option<String>,
         /// Result-image rendering: "auto" queries the terminal, "kitty"/"iterm2"
-        /// force a protocol detection missed (tmux), "off" disables.
-        #[arg(long, env = "EFFERENCE_IMAGES", value_enum, default_value_t)]
-        images: ImagesArg,
+        /// force a protocol detection missed (tmux), "off" disables. Overrides
+        /// `[tui] images`.
+        #[arg(long, value_enum)]
+        images: Option<ImagesArg>,
         /// Also play a scripted live stream into the gallery on a timer: a long
         /// file write whose JSON input arrives fragment by fragment, then a command
         /// whose output streams. Drives the render behaviours that only exist at
@@ -196,8 +198,8 @@ pub(crate) enum DevCommand {
         #[arg(long, default_value_t = 16, requires = "stream")]
         interval: u64,
         /// Time each paint and print the distribution (p50/p90/p99/max, and how
-        /// many frames ran over the 30ms tick) on exit. Development
-        /// instrumentation for the streaming render.
+        /// many frames ran over the 30ms tick) on exit, as `[tui] frame-cost`
+        /// does for every TUI.
         #[arg(long)]
         frame_cost: bool,
     },
@@ -553,7 +555,14 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             read,
             theme,
             images,
-        } => view(session, read.name, theme, images.into()).await,
+        } => {
+            view(
+                session,
+                read.name,
+                display::over(display()?, theme, images, false),
+            )
+            .await
+        }
         DevCommand::Gallery {
             theme,
             images,
@@ -561,7 +570,10 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             chunk,
             interval,
             frame_cost,
-        } => gallery(theme, images.into(), stream, chunk, interval, frame_cost).await,
+        } => {
+            let display = display::over(display()?, theme, images, frame_cost);
+            gallery(display, stream, chunk, interval).await
+        }
         DevCommand::Wire {
             path,
             messages,
@@ -760,21 +772,21 @@ pub(crate) fn parse_path_grant(spec: &str) -> (String, efference::config::Perms)
 /// Launch the TUI on the fixed element gallery — no daemon, no socket. With
 /// `stream`, a scripted emitter plays live tool-call events over it on a timer.
 pub(crate) async fn gallery(
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
+    display: efference::inference::TuiConfig,
     stream: bool,
     chunk: usize,
     interval: u64,
-    frame_cost: bool,
 ) -> CliResult {
     let script = stream.then(|| efference::tui::StreamScript {
         chunk,
         interval: std::time::Duration::from_millis(interval),
     });
-    efference::tui::run_gallery(theme, images, script, frame_cost).await?;
+    efference::tui::run_gallery(display.theme, display.images, script, display.frame_cost).await?;
     Ok(())
 }
 
+mod display;
+use display::ImagesArg;
 #[cfg(test)]
 mod test;
 mod wire;
@@ -787,7 +799,7 @@ use wire::{LEGACY_WIRE_MODEL, wire_model, wire_placements};
 /// the Unix socket only.
 async fn open(print: bool, bearer: bool) -> CliResult {
     // The credential routes live at the socket root: the first live host's.
-    let host = live_host().ok_or("no host is running; start one with `efference host`")?;
+    let host = live_host().ok_or("no host is running; start one with `efference --host`")?;
     let client = ControlClient::new(host);
     if bearer {
         println!("{}", client.auth_bearer().await?);
@@ -809,8 +821,7 @@ async fn open(print: bool, bearer: bool) -> CliResult {
 async fn view(
     session: Option<String>,
     name: Option<String>,
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
+    display: efference::inference::TuiConfig,
 ) -> CliResult {
     let Some(target) = session.or(name) else {
         return Err(format!(
@@ -824,6 +835,6 @@ async fn view(
     if entries.is_empty() {
         return Err(format!("{} holds no entries", path.display()).into());
     }
-    efference::tui::run_view(entries, label, theme, images).await?;
+    efference::tui::run_view(entries, label, display.theme, display.images).await?;
     Ok(())
 }

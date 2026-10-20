@@ -12,7 +12,7 @@ use toml_edit::{DocumentMut, InlineTable, Item, Table, value};
 use super::*;
 
 const HEADER: &str = "\
-# efference host configuration, written by `efference setup`.
+# The efference user configuration, written by `efference setup`.
 # Connections name a provider and where its credential comes from; the
 # credential itself is never in this file. Sessions select a model as
 # <connection>/<native model>; [defaults] names the spotter.

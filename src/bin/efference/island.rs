@@ -1,7 +1,7 @@
 //! No host running: start a terminal-owned island, create a session here (or
 //! resume one), and attach (docs/operating.md).
 //!
-//! The host is a separate process from birth (`efference host --island`): its own
+//! The host is a separate process from birth (`efference --host --island`): its own
 //! OS session, so the terminal's Ctrl-C and hangup never reach it; stdout and
 //! stderr to a log file, so nothing it prints lands over the full-screen UI and a
 //! host that outlives its launcher never writes into a closed pipe; and stdin a
@@ -51,7 +51,7 @@ impl Island {
         let log_file = std::fs::File::create(&log)?;
         let mut command = std::process::Command::new(std::env::current_exe()?);
         command
-            .args(["host", "--island", "--socket"])
+            .args(["--host", "--island", "--socket"])
             .arg(&socket)
             .args(bind.map(|bind| ["--bind", bind]).into_iter().flatten())
             .stdin(Stdio::piped())
@@ -134,11 +134,6 @@ impl Island {
 
 /// How the island's session is created once its host answers.
 pub(crate) enum Creation {
-    /// From what the command line named (`tui --new`), with no questions.
-    Direct {
-        name: Option<String>,
-        flags: SessionFlags,
-    },
     /// Through the new-session form, drawn inline against the island's own host —
     /// the same form a running host's picker opens (docs/tui.md), so the model and
     /// its settings are chosen the same way with or without one.
@@ -177,10 +172,6 @@ pub(crate) async fn start(
         return Err(error);
     }
     let created = match creation {
-        Creation::Direct { name, flags } => create_here(island.socket(), name, flags)
-            .await
-            .map(Some)
-            .inspect_err(|_| end_status(false)),
         Creation::Form { theme } => {
             end_status(true);
             let client = ControlClient::new(island.socket());
@@ -223,9 +214,7 @@ pub(crate) async fn start(
 pub(crate) async fn run(
     bind: Option<&str>,
     creation: Creation,
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
-    frame_cost: bool,
+    display: efference::inference::TuiConfig,
 ) -> CliResult {
     if let Some(bind) = bind {
         return run_browser(bind, creation).await;
@@ -233,7 +222,7 @@ pub(crate) async fn run(
     let Some((island, id)) = start(None, creation).await? else {
         return Ok(());
     };
-    let attached = attach_created(island.socket(), &id, theme, images, frame_cost, true).await;
+    let attached = attach_created(island.socket(), &id, display, true).await;
     island.end().await;
     attached
 }

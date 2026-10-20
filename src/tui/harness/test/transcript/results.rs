@@ -290,7 +290,7 @@ fn a_partial_selection_of_an_edit_shows_the_triaged_lines() {
          @@ -12,3 +12,4 @@\n\
          \x20- In-process MCP tools (fs-mcp, semantic-edit-mcp).\n\
          +- `read` tool line-range support in `fs-mcp`.\n\
-         \x20- Interactive TUI (`efference tui`).",
+         \x20- Interactive TUI (`efference`).",
         false,
         WireState::from(
             Triaged::new(Keep::Ranges(vec![(1, 1)]))
@@ -338,7 +338,7 @@ fn a_partly_kept_diff_is_still_a_diff() {
          @@ -12,3 +12,4 @@\n\
          \x20- In-process MCP tools (fs-mcp, semantic-edit-mcp).\n\
          +- `read` tool line-range support in `fs-mcp`.\n\
-         \x20- Interactive TUI (`efference tui`).",
+         \x20- Interactive TUI (`efference`).",
         false,
         WireState::from(Triaged::new(Keep::Ranges(vec![(4, 6)]))),
     );
@@ -387,7 +387,7 @@ fn a_complete_selection_keeps_its_per_tool_rendering() {
          @@ -12,3 +12,4 @@\n\
          \x20- In-process MCP tools (fs-mcp, semantic-edit-mcp).\n\
          +- `read` tool line-range support in `fs-mcp`.\n\
-         \x20- Interactive TUI (`efference tui`).",
+         \x20- Interactive TUI (`efference`).",
         false,
         WireState::from(Triaged::new(Keep::All)),
     );

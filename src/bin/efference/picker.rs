@@ -1,15 +1,15 @@
-//! `efference tui` with no flags: an inline picker before the full-screen view
-//! (docs/operating.md).
+//! Bare `efference` with no `--name`: an inline picker before the full-screen
+//! view (docs/operating.md).
 //!
 //! The top page is the entry that creates a session here, then the host's
 //! sessions whose cwd is this directory — the listing `GET /sessions` returns,
 //! scoped the way every project-local client scopes it
 //! (docs/control-channel.md) — then, when this directory has dormant sessions, an
 //! entry that opens the resume page: every resumable archived session here, most
-//! recent first, under a query line. The outcomes converge on the paths the
-//! explicit flags take: a live row is the attach `tui` does, the create entry is
-//! `tui --new`, and an archived row is revived with `PATCH {"state": "active"}`
-//! (docs/control-api.md) and then attached the same way. The archived rows come
+//! recent first, under a query line. A live row is the attach `--name` does,
+//! the create entry opens the new-session form, and an archived row is revived
+//! with `PATCH {"state": "active"}` (docs/control-api.md) and then attached the
+//! same way. The archived rows come
 //! from `GET /sessions?state=archived` when a host is running and from the
 //! host-free scan in `src/inventory.rs` when none is.
 //!
@@ -136,12 +136,8 @@ pub(crate) async fn live_listings() -> Result<Vec<(PathBuf, Vec<ListedSession>)>
 
 /// The verb: gather what the live hosts hold here, ask, and hand off to the
 /// path the explicit flag would have taken.
-pub(crate) async fn run(
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
-    frame_cost: bool,
-    bind: Option<&str>,
-) -> CliResult {
+pub(crate) async fn run(display: efference::inference::TuiConfig, bind: Option<&str>) -> CliResult {
+    let theme = display.theme.clone();
     let here = std::env::current_dir()?;
     let listings = live_listings().await?;
     if listings.is_empty() {
@@ -166,9 +162,9 @@ pub(crate) async fn run(
         // Nowhere to create or resume: start a host owned by this terminal and
         // do it there (docs/operating.md). A `bind` makes it the browser island
         // rather than the TUI.
-        return island::run(bind, creation, theme, images, frame_cost).await;
+        return island::run(bind, creation, display).await;
     }
-    // The first live candidate: the host `tui --new` creates on, and so the one
+    // The first live candidate: the host the form creates on, and so the one
     // an archived session is revived on (docs/control-channel.md).
     let archived = match ControlClient::new(&listings[0].0)
         .archived_sessions(&here)
@@ -184,21 +180,15 @@ pub(crate) async fn run(
     // Without a terminal to draw in there is nothing to ask with; resolve the
     // way an explicit target resolves instead.
     if !inline::interactive() {
-        return tui(
-            resolve_client_target(None).await?,
-            theme,
-            images,
-            frame_cost,
-        )
-        .await;
+        return tui(resolve_client_target(None).await?, display).await;
     }
     let Some(pick) = app::ask(&menu, &here, inline::styles(theme.clone())?)? else {
         return Ok(());
     };
     let host = listings[0].0.clone();
     match hosted_target(pick, &host).await? {
-        Some(target) => tui(target, theme, images, frame_cost).await,
-        None => create_through_form(host, theme, images, frame_cost).await,
+        Some(target) => tui(target, display).await,
+        None => create_through_form(host, display).await,
     }
 }
 
@@ -247,18 +237,18 @@ pub(crate) async fn resume_on(client: &ControlClient, id: &str) -> Result<(), Cl
 /// Create a session on `host` through the new-session form and attach to it.
 /// The picker answered "what are you doing"; the form is the rest of that
 /// question, so it runs inline where the picker just was rather than creating
-/// from bare defaults (docs/tui.md). `tui --new` is the non-interactive path.
+/// from bare defaults (docs/tui.md). `efference control create` is the
+/// non-interactive path.
 pub(crate) async fn create_through_form(
     host: PathBuf,
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
-    frame_cost: bool,
+    display: efference::inference::TuiConfig,
 ) -> CliResult {
     let client = ControlClient::new(&host);
-    let Some(id) = efference::tui::session_form::run_hosted(client, theme.clone()).await? else {
+    let Some(id) = efference::tui::session_form::run_hosted(client, display.theme.clone()).await?
+    else {
         return Ok(());
     };
-    tui(ClientTarget::hosted(host, &id), theme, images, frame_cost).await
+    tui(ClientTarget::hosted(host, &id), display).await
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-//! `efference host` — bind the control socket and host sessions created over it (docs/control-channel.md).
+//! `efference --host` — bind the control socket and host sessions created over it (docs/control-channel.md).
 
 use super::*;
 
@@ -342,9 +342,9 @@ pub(crate) async fn spotter_check(
     Ok(())
 }
 
-/// `efference host`: a hosting process with no sessions until `POST /sessions`.
+/// `efference --host`: a hosting process with no sessions until `POST /sessions`.
 /// Binds the user's host socket, `~/.efference/host.sock`, which every project's
-/// clients look for after their own directory; `socket` (`host --socket`)
+/// clients look for after their own directory; `socket` (`--socket`)
 /// binds elsewhere — `.efference/host.sock` for a project-local host
 /// (docs/control-channel.md).
 ///

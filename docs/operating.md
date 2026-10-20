@@ -13,7 +13,16 @@ it creates in-session reads `efference://guide/supervising` (`assets/guide/super
 
 ## The command groups
 
-`efference --help` lists only what a person types: `host`, `tui`, `check`. The rest is grouped by who it is for.
+A bare `efference` is the terminal client: setup on a machine with no configuration,
+otherwise the picker, or an island when no host runs (below). `--name <id>` attaches to
+that session without asking. `efference --host` is the host instead, with the flags only a
+host takes beside it: `--socket` (the bind path), `--public-url`, `--tls-cert`,
+`--tls-key`, `--open` ([web-bind.md](web-bind.md)); `--bind` is global and reaches the host
+or the island alike. Neither `--host` nor `--name` is accepted beside a subcommand. How the
+TUI draws is not a flag: `theme`, `images` and `frame-cost` under `[tui]` in
+`~/.efference/config.toml`, read by whichever surface draws it ([tui.md](tui.md)).
+`efference --help` lists the subcommands a person types, `setup`, `auth` and `check`,
+beside the groups below.
 
 - **`efference control <verb>`** — the calls that drive a *running* session. The agent
   verbs: `create` (a session in a working directory, this process's environment as its
@@ -47,10 +56,11 @@ it creates in-session reads `efference://guide/supervising` (`assets/guide/super
   web-bind bootstrap-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
   cargo feature, which is in `default`; a release build passes `--no-default-features`.
 
-`--name` belongs to the verbs that name a session to attach, create or read: `tui`
-(attach, or the id `--new` gives), and the `dev` readers (`cache`, `stops`, `digest`,
-`compact`, `view`), where it is the positional's other spelling. `--socket` is `host`'s
-bind path. `control` and `mcp` take neither; `--host-socket` addresses a host.
+`--name` belongs to what names a session to attach or read: bare `efference` (attach),
+and the `dev` readers (`cache`, `stops`, `digest`, `compact`, `view`), where it is the
+positional's other spelling; `control create --name` is the id a new session takes.
+`--socket` is the host's bind path, beside `--host`. `control` and `mcp` take neither;
+`--host-socket` addresses a host.
 
 ### Mounting the control tools in another harness
 
@@ -201,7 +211,7 @@ one-line title beside it in the TUI header and the session list does
   boot and independent of it thereafter.
 
 The session has no socket of its own: its host serves it under `/sessions/<id>/`. A client
-verb finds a session by `--name <id>` (`tui`) or `--agent <id>` (`control`), or by asking
+verb finds a session by `--name <id>` (bare `efference`) or `--agent <id>` (`control`), or by asking
 the live hosts for the single session they list in this directory
 ([control-channel.md](control-channel.md)).
 
@@ -240,18 +250,14 @@ Each read is at its own grain.
   arriving, live process output), and whole-topic state replacements. A client holding this
   stream never needs to poll.
 
-`efference tui` is the interactive view of all three; `efference dev view <session>` opens a
-recorded log in the same rendering, inert. `efference tui --new` first creates a session on a
-running `efference host` (the first live of `.efference/host.sock` here and
-`~/.efference/host.sock`, or `--host-socket <path>`) from this
-directory, this shell's environment, `--name`, and the session flags,
-then attaches under `/sessions/<id>/`; quitting detaches, and the session stays on the host
-([control-api.md](control-api.md)). With no host running, it starts an island instead
-(below). Without `--new`, `tui --name <id>` attaches to that
-session through the host that lists it here. Without `--new`, a session flag is an error rather than
-silently ignored.
+The TUI (bare `efference`) is the interactive view of all three; `efference dev view
+<session>` opens a recorded log in the same rendering, inert. `efference --name <id>`
+attaches to that session through the host that lists it here; quitting detaches, and the
+session stays on the host ([control-api.md](control-api.md)). A script creates with
+`efference control create` — this directory, this shell's environment, `--name`, and the
+session options it takes — and attaches nothing.
 
-A bare `efference tui` — no `--new`, no `--name` — asks first
+A bare `efference` with no `--name` asks first
 (`src/bin/efference/picker/`): an inline ratatui prompt drawn with the same list, theme and
 keys as the new-session form ([tui.md](tui.md)). The top page is the entry that creates a
 session here, then, when the live hosts hold sessions whose cwd is this directory, a
@@ -274,8 +280,8 @@ picking an archived one prints a `resuming <id>…` line, revives it with
 re-establishes the environment and mounts the session's MCP servers
 ([control-api.md](control-api.md)) — and attaches the same way; picking the create entry
 opens the new-session form ([tui.md](tui.md)) as a second inline viewport where the
-picker's was (the picker's lines are erased first), and attaches to what it creates. `tui --new` stays the non-interactive path: it creates from the flags and
-the host's defaults without asking. Sessions the same hosts hold in other directories are
+picker's was (the picker's lines are erased first), and attaches to what it creates.
+`efference control create` is the non-interactive path. Sessions the same hosts hold in other directories are
 counted in a line above the menu rather than listed — attaching from here to a session
 rooted elsewhere would put the TUI's directory and the session's out of step. With no live
 or archived session here the prompt is skipped and the form opens directly — its one entry
@@ -286,8 +292,9 @@ against it, so a session is configured the same way with or without a running ho
 lines are erased once answered. Esc leaves without attaching.
 
 **Islands** (`src/bin/efference/island.rs`, `src/daemon/island.rs`). A TUI that finds no host
-runs its own: `efference host --island` as a child process, a session created in this
-directory from the host's defaults (or an archived one resumed, from the picker), and the TUI attached to it. Nothing outlives the TUI.
+runs its own: `efference --host` as a child process, marked an island by a hidden
+`--island` the launcher passes, a session created in this directory through the
+new-session form (or an archived one resumed, from the picker), and the TUI attached to it. Nothing outlives the TUI.
 The host is a separate process from birth: its own OS session (`setsid`), so the terminal's
 Ctrl-C and hangup never reach it; stdout and stderr to `host.log`, so nothing it prints lands
 over the full-screen UI; and stdin a pipe the TUI holds and never writes. That pipe is the
@@ -333,12 +340,12 @@ stdin or stdout is not a terminal there is nothing to draw in, and the invocatio
 as it would with an explicit target.
 
 The host owns inference: `~/.efference/config.toml` names its connections and
-where each credential comes from, and `efference host` loads them once at launch —
-from the secret store, or from its own environment, where `op run -- efference host`
+where each credential comes from, and `efference --host` loads them once at launch —
+from the secret store, or from its own environment, where `op run -- efference --host`
 unlocks the vault once for every session the host will create
 ([transport.md](transport.md)). A creating TUI
-passes model selections (`--model <connection>/<model>`) and no inference
-credentials; with no `--model`, past picks apply (the project mode, else the
+passes model selections (`<connection>/<model>`, from the new-session form or
+`control create --model`) and no inference credentials; with none, past picks apply (the project mode, else the
 system-wide aggregate), else creation refuses naming the choice and the
 new-session form names one. A
 host with no config file refuses to start, naming `efference setup`. So does one
@@ -357,8 +364,8 @@ logs the same roles at `debug` (the boot report).
 
 **First run: `efference setup`** (`src/setup.rs`). A bare `efference` on a machine
 with no `~/.efference/config.toml` runs it. With one, a directory holding neither an
-`efference.toml` nor any session gets the hand-off question below; any other is
-`efference tui` — the picker, or an island when no host is running.
+`efference.toml` nor any session gets the hand-off question below; any other gets the
+picker, or an island when no host is running.
 Setup is a sequence of inline terminal prompts, not a full-screen view, and it
 needs no host and no model: it is the one path that has to work before any
 inference is configured. Per connection it asks the provider, a name, and where

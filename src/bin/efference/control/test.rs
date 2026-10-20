@@ -107,7 +107,8 @@ fn the_acting_verbs_require_an_agent() {
 }
 
 /// `control` has no `--name` or `--socket`: a verb names its agent with `--agent`, and
-/// `--host-socket` addresses a host.
+/// `--host-socket` addresses a host. Before the verb, each is bare `efference`'s and is
+/// refused beside a subcommand, as `main` parses.
 #[test]
 fn control_takes_neither_name_nor_socket() {
     for flag in ["--name", "--socket"] {
@@ -116,7 +117,8 @@ fn control_takes_neither_name_nor_socket() {
             &["efference", "control", flag, "x", "state"],
             &["efference", "control", "state", flag, "x"],
         ] {
-            assert!(Cli::try_parse_from(argv).is_err(), "{argv:?}");
+            let parsed = Cli::try_parse_from(argv).and_then(Cli::checked);
+            assert!(parsed.is_err(), "{argv:?}");
         }
     }
 }

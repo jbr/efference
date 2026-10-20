@@ -47,7 +47,7 @@ interface, scripts, and other agents are all clients of it.
 
 - **A plain `efference`** with no host running starts one for that terminal — an
   *island* — and ends it, with its sessions, when the terminal UI exits.
-- **`efference host`** starts a host that stays up until stopped, at
+- **`efference --host`** starts a host that stays up until stopped, at
   `~/.efference/host.sock`, where every project's `efference` finds it. Sessions then
   outlive any window showing them, several projects share it, and it is the host the web
   interface is served from. It reads its model credentials when it starts, so a key in an
@@ -56,8 +56,8 @@ interface, scripts, and other agents are all clients of it.
 ## The web interface
 
 The host can also listen over HTTP, serving a browser client for the same sessions. The
-`[host]` table in the user-wide config says where; a flag on `efference host` overrides
-each key for one launch.
+`[host]` table in the user-wide config says where; a flag beside `efference --host`
+overrides each key for one launch.
 
 On this machine only, over loopback:
 
@@ -66,8 +66,8 @@ On this machine only, over loopback:
 bind = "127.0.0.1:7878"
 ```
 
-`efference host` then prints a link carrying a one-time code; opening it signs the browser
-in (`efference host --open` opens it). A loopback bind is plain HTTP, which browsers treat
+`efference --host` then prints a link carrying a one-time code; opening it signs the browser
+in (`efference --host --open` opens it). A loopback bind is plain HTTP, which browsers treat
 as secure for `localhost`.
 
 ## From a phone or another computer: Tailscale
@@ -102,7 +102,7 @@ tls-cert = "~/.tls/laptop.tail1234.ts.net.crt"
 tls-key = "~/.tls/laptop.tail1234.ts.net.key"
 ```
 
-4. Start the host with `efference host`. It prints an `https://…ts.net:7878` link; opening
+4. Start the host with `efference --host`. It prints an `https://…ts.net:7878` link; opening
    it on the other device signs that browser in.
 
 The host listens only on the Tailscale address, so only the operator's own devices can
@@ -119,7 +119,7 @@ public-url = "https://laptop.tail1234.ts.net"   # where Tailscale serves it: por
 ```
 
 Then `tailscale serve --bg http://127.0.0.1:7878` once; the setting persists in Tailscale
-until `tailscale serve --https=443 off`. Start the host with `efference host`, and open the
+until `tailscale serve --https=443 off`. Start the host with `efference --host`, and open the
 `https://…ts.net` link it prints on the other device. `public-url` is what makes this work:
 the host prints and accepts the address browsers use, which here is not the one it listens
 on. It gives up HTTP/3, which needs the host to terminate TLS itself; it shares port 443
@@ -145,7 +145,7 @@ path to the `efference` binary (`command -v efference`):
 <dict>
   <key>Label</key><string>dev.efference.host</string>
   <key>ProgramArguments</key>
-  <array><string>/Users/you/.cargo/bin/efference</string><string>host</string></array>
+  <array><string>/Users/you/.cargo/bin/efference</string><string>--host</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardErrorPath</key><string>/Users/you/.efference/host.log</string>
@@ -160,10 +160,10 @@ Load it with `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.effere
 
 ```ini
 [Unit]
-Description=efference host
+Description=Host for efference sessions
 
 [Service]
-ExecStart=%h/.cargo/bin/efference host
+ExecStart=%h/.cargo/bin/efference --host
 Restart=on-failure
 
 [Install]

@@ -62,7 +62,7 @@ before table values have been resolved, and never inherit additional host values
 Later config edits reevaluate masking against the retained base, not the host's
 current environment; reference commands continue using the same base and cwd.
 Offline convenience constructors still capture the local environment at
-construction. `tui --new` captures the caller's snapshot and sends its entries
+construction. `control create` and the new-session form capture the caller's snapshot and send its entries
 in `CreateSession` over the host's Unix socket. The host constructs an `EnvSnapshot`
 from those entries before preparation; the creation response does not echo them.
 Every creation route establishes a base: a request that carries `env` is used

@@ -1,6 +1,6 @@
 # The TCP bind — the web client's front door
 
-`efference host --bind <addr:port>` adds a TCP listener beside the Unix socket. Both
+`efference --host --bind <addr:port>` adds a TCP listener beside the Unix socket. Both
 serve the same `/v1` routes ([control-api.md](control-api.md)); the TCP listener wraps
 them in a hardening + auth gate, while the UDS stays auth-exempt (filesystem permissions
 are its trust model) and remains the CLI verbs' channel. Implemented in
@@ -23,7 +23,7 @@ the gate's decision is the same shape on both.
 
 The bind is configured by the `[host]` table of the user configuration,
 `~/.efference/config.toml` (`bind`, `public-url`, `tls-cert`, `tls-key`;
-`src/inference/host.rs`), with a flag on `efference host` overriding each key alone —
+`src/inference/host.rs`), with a flag beside `efference --host` overriding each key alone —
 `--bind ""` turns a configured bind off for one launch. The table describes the machine's
 host rather than a shell, which is what lets a host started by a service manager, with no
 interactive environment, carry the same bind. A leading `~/` in a certificate path
@@ -34,7 +34,7 @@ its address from `--bind` alone ([operating.md](operating.md)).
 the same credential. A port (`--bind 8080`) is the loopback address with that port, an
 address is read as written (`127.0.0.1:8000`, `0.0.0.0:0` for a port the kernel picks),
 and a bare port can never widen exposure past the loopback rule below because it *is*
-loopback. On `efference host` it is the machine's front door; on any other invocation it
+loopback. With `--host` it is the machine's front door; on any other invocation it
 is the island's, and the island answers in the browser on that address rather than in the
 TUI ([operating.md](operating.md)).
 
@@ -153,7 +153,7 @@ enforcement ([secrets.md](secrets.md)).
 
 ## The bootstrap dance
 
-`host --bind` prints `https://<host>:<port>/#token=<current code>`; `--open` also
+`--host --bind` prints `https://<host>:<port>/#token=<current code>`; `--open` also
 launches the browser. `efference dev open` re-mints against a running daemon — the re-auth
 path when at the host, and the answer to lost scrollback. It is a `dev` verb rather than a
 `control` tool because it mints credentials for the HTTP surface, and `control` is the set

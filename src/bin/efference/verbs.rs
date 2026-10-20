@@ -1,95 +1,34 @@
-//! The human top-level verbs that talk to a running daemon or read a recorded
-//! session (docs/operating.md).
+//! The human entry points that talk to a running host (docs/operating.md).
 //!
 //! The verbs that *drive* a session live in `control/` instead, as one
-//! mcplease tool each; what is left here is what a person types: the two TUI
-//! entry points and the bootstrap-link minter.
+//! mcplease tool each; what is left here is what a person types: attaching the
+//! TUI, and the display settings every TUI it draws reads.
 
 use super::*;
+use efference::inference::TuiConfig;
 
-/// `efference tui --new`: create a session on a running host and attach to it
-/// (docs/control-api.md). This process's cwd is the session's working root and
-/// its environment the session's base; the host prepares the session (its boot
-/// report goes to the host's stderr) and answers with the id, which is then the
-/// attach prefix `/sessions/<id>/`. Quitting the TUI detaches; the session
-/// outlives it on the host.
-pub(crate) async fn tui_new(
-    host_socket: PathBuf,
-    name: Option<String>,
-    flags: SessionFlags,
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
-    frame_cost: bool,
-) -> CliResult {
-    eprintln!("creating a session on {}…", host_socket.display());
-    let id = create_here(&host_socket, name, flags).await?;
-    attach_created(&host_socket, &id, theme, images, frame_cost, false).await
-}
-
-/// Create a session in this directory, with this process's environment, on the
-/// host at `host_socket`; returns its id.
-pub(crate) async fn create_here(
-    host_socket: &Path,
-    name: Option<String>,
-    flags: SessionFlags,
-) -> Result<String, CliError> {
-    let cwd = std::env::current_dir()?;
-    let env = efference::env_table::EnvSnapshot::capture()?.into_entries();
-    let triage = flags.triage();
-    let SessionFlags {
-        model,
-        spotter_model,
-        config,
-        temperature,
-        effort,
-        upstream,
-        autonomous,
-        reauth,
-        keep_scratch,
-        worktree,
-        ..
-    } = flags;
-    let request = efference::daemon::CreateSession {
-        name,
-        cwd,
-        config,
-        options: efference::inference::SessionOptions {
-            model,
-            spotter_model,
-            triage,
-            temperature,
-            effort,
-            ..Default::default()
-        },
-        upstream,
-        autonomous,
-        reauth,
-        refuse_authorization: false,
-        keep_scratch,
-        worktree,
-        // A human root has no creator to end with (docs/tools.md).
-        detached: false,
-        env: Some(env),
-    };
-    Ok(ControlClient::new(host_socket)
-        .create_session(&request)
-        .await?)
+/// The `[tui]` table of the user configuration (docs/tui.md): what every
+/// surface this process draws a TUI on reads, read once at launch. Without a
+/// home directory there is no file, and the defaults stand.
+pub(crate) fn display() -> Result<TuiConfig, CliError> {
+    match std::env::var_os("HOME") {
+        Some(home) => Ok(TuiConfig::load(Path::new(&home))?),
+        None => Ok(TuiConfig::default()),
+    }
 }
 
 /// Attach the TUI to a session this process just created in its own directory.
 pub(crate) async fn attach_created(
     host_socket: &Path,
     id: &str,
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
-    frame_cost: bool,
+    display: TuiConfig,
     owns_host: bool,
 ) -> CliResult {
     efference::tui::run(
         ControlClient::at(host_socket.to_path_buf(), &format!("/sessions/{id}")),
-        theme,
-        images,
-        frame_cost,
+        display.theme,
+        display.images,
+        display.frame_cost,
         efference::tui::Attached {
             owns_host,
             ..Default::default()
@@ -101,18 +40,13 @@ pub(crate) async fn attach_created(
 
 /// Launch the interactive TUI against the daemon control socket. All rendering
 /// lives in `efference::tui`; here we just hand it a control client and the
-/// optional theme override.
-pub(crate) async fn tui(
-    target: ClientTarget,
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
-    frame_cost: bool,
-) -> CliResult {
+/// display settings.
+pub(crate) async fn tui(target: ClientTarget, display: TuiConfig) -> CliResult {
     efference::tui::run(
         target.client(),
-        theme,
-        images,
-        frame_cost,
+        display.theme,
+        display.images,
+        display.frame_cost,
         efference::tui::Attached::default(),
     )
     .await?;

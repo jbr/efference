@@ -17,7 +17,7 @@ reads and none can shadow another:
 | `inference:<connection>` | the provider API key | `efference setup` | `InferenceRegistry` at host launch, for `auth = { kind = "keychain" }` ([transport.md](transport.md)) |
 | `oauth:<connection>` | the ChatGPT `Grant` record as JSON | `efference setup`, and each refresh | `InferenceRegistry` at host launch, for `auth = { kind = "oauth" }` ([transport.md](transport.md)) |
 | `mcp:<server>` | the `StoredAuth` record as JSON | the authorization flow, and each refresh | session boot, before mounting ([mcp-auth.md](mcp-auth.md)) |
-| `root` | 32 random bytes, base64url | the first `host --bind` on the machine; `efference auth rotate` deletes it | every bind, to derive the web credentials ([web-bind.md](web-bind.md)) |
+| `root` | 32 random bytes, base64url | the first `--host --bind` on the machine; `efference auth rotate` deletes it | every bind, to derive the web credentials ([web-bind.md](web-bind.md)) |
 
 `inference:` and `oauth:` are deliberately separate prefixes for the same
 connection: the first is a bare secret the operator placed, the second a record

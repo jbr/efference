@@ -357,8 +357,10 @@ pub(crate) enum Exit {
 /// `ui_loop`, before the crossterm reader thread takes stdin — and tmux makes
 /// detection lie in both directions (its DA1 masks a kitty-capable outer
 /// terminal; passthrough can make OSC 1337 work with nothing detectable saying
-/// so), so the override ships in the same change as detection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// so), so the override ships in the same change as detection. Set by `images`
+/// under `[tui]` in the user configuration, spelled in lowercase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ImageMode {
     /// Query the terminal; fall back to halfblocks when nothing answers.
     #[default]

@@ -2038,7 +2038,7 @@ reach the router rather than stop at a `401`.
 
 ## Development
 
-- `cargo run --features dev-proxy -- host --bind …` — the daemon spawns Vite and
+- `cargo run --features dev-proxy -- --host --bind …` — the daemon spawns Vite and
   proxies to it; HMR works through the gate, because that build widens the
   anonymous surface to Vite's module URLs (`DEV_PROXY_PREFIXES`,
   `src/daemon/tcp.rs`) — the shell has to load before anything can authenticate.

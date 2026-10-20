@@ -20,11 +20,11 @@
 ## Transport & addressing
 
 The host speaks **HTTP/1.1 over a Unix domain socket**. Each session owns a
-directory `.efference/<id>/` (the id is `tui --name <id>`, or a generated word pair)
+directory `.efference/<id>/` (the id is `control create --name <id>`, or a generated word pair)
 holding `log.jsonl` and `config.toml`; the session itself is served at
 `/sessions/<id>/` on its host's socket.
 
-With `host --bind`, the same routes are also served on a TCP listener behind a
+With `--host --bind`, the same routes are also served on a TCP listener behind a
 hardening + auth gate — cookie or bearer, plus `401 unauthorized` /
 `403 forbidden` / `429 rate_limited` in the standard error envelope, and the
 `/auth/*` routes beside `/v1`. That listener also carries `/files` — the
@@ -35,7 +35,7 @@ unchanged on it.
 
 A client finds the host by `--host-socket <path>`, else the first live of
 `.efference/host.sock` here and `~/.efference/host.sock`, and the session on it by id
-(`tui --name <id>`, `control --agent <id>`), or as the single session the host lists in
+(`efference --name <id>`, `control --agent <id>`), or as the single session the host lists in
 this directory ([control-channel.md](control-channel.md)).
 
 Requests dial the fixed socket path; the request URL's host is a placeholder
@@ -52,7 +52,7 @@ the two SSE streams (`text/event-stream`).
 
 ### A host: the same routes under `/sessions/<id>/`
 
-`efference host` ([control-channel.md](control-channel.md)) serves several
+`efference --host` ([control-channel.md](control-channel.md)) serves several
 sessions from one process. Its own routes are the listener's, not a session's:
 
 - `GET /sessions` — the listing:

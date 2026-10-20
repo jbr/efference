@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- `efference --host` replaces the `host` verb (`--socket`, `--public-url`, `--tls-cert`, `--tls-key`, `--open` ride on it), bare `efference --name <id>` replaces `tui --name`, the `tui` verb and `tui --new` are removed (scripts create with `efference control create`), and the TUI's theme, image mode and frame-cost readout are `theme`, `images`, `frame-cost` under `[tui]` in `~/.efference/config.toml` rather than flags or `EFFERENCE_THEME`/`EFFERENCE_IMAGES`.
 - A gate offers at most one grant, chosen from why the call held: a path grant for the directory a structured call reached (read-only for a read), a tool grant, or a `[commands]` prefix the probe ledger has not refuted; it rides `/state`'s `gate` topic as `grant: {change, label}` and is committed as the `config_edit` decision (docs/permissions.md, docs/control-api.md).
 - The TUI composer composes text only: at a gate an empty submit approves and any text redirects, so `.abort`/`.allow` redirect with their literal text; the `allow…` strip stager is removed and the gate strip reads `approve ⏎ · abort` (docs/tui.md).
 - The `openai` platform menu is the Codex catalog's suggested entries that `GET /v1/models` also names, with the catalog's descriptions and windows; with the catalog unreadable it is the listing minus models past their `shutdown_date` (docs/model-catalog.md).

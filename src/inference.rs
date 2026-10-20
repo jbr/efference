@@ -74,9 +74,13 @@ pub struct InferenceConfig {
     #[serde(default)]
     connections: BTreeMap<String, ConnectionConfig>,
     /// `[host]`: the web bind (`inference/host.rs`). Parsed here so the one
-    /// file keeps its unknown-key refusal whole; read by `efference host`.
+    /// file keeps its unknown-key refusal whole; read by `efference --host`.
     #[serde(default)]
     host: HostConfig,
+    /// `[tui]`: how a terminal client draws (`inference/tui.rs`), read by
+    /// whichever process draws a TUI, not by the host.
+    #[serde(default)]
+    tui: TuiConfig,
     /// `env_hook`: the argv a session's launch environment is established from
     /// (docs/env.md). A program and its arguments, invoked directly — shell
     /// syntax needs an explicit shell in the array, and the harness neither
@@ -89,6 +93,27 @@ pub struct InferenceConfig {
 }
 
 impl InferenceConfig {
+    /// The user configuration under `home`, or `None` when there is no file.
+    /// An unreadable or unparsable file is an error naming its path.
+    pub(crate) fn read_user(home: &Path) -> Result<Option<Self>, Error> {
+        let path = home.join(CONFIG_RELATIVE_PATH);
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(format!("could not read {}: {error}", path.display()).into());
+            }
+        };
+        Self::from_toml(&text)
+            .map(Some)
+            .map_err(|error| format!("{}: {error}", path.display()).into())
+    }
+
+    /// The `[tui]` table as written, before `~/` expansion.
+    pub fn tui(&self) -> &TuiConfig {
+        &self.tui
+    }
+
     /// Parse the host config text. Unknown keys are errors: the file has one
     /// job, and a misspelled `[connections.x]` field is a silent unavailable
     /// connection otherwise.
@@ -510,6 +535,8 @@ fn validate_connection_name(name: &str) -> Result<(), Error> {
 pub mod chatgpt;
 mod host;
 pub use host::HostConfig;
+mod tui;
+pub use tui::TuiConfig;
 pub mod options;
 pub use options::{
     Effective, EffectiveOptions, EffectiveTriage, Issue, IssueCode, ResolvedOptions,

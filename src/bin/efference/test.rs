@@ -30,48 +30,81 @@ async fn a_name_resolves_against_the_given_host() {
     );
 }
 
-/// `--name` is where it names a session to attach, create or read, and nowhere else;
-/// `--socket` is the host's bind path. Neither reaches the verbs that drive a session
-/// through a host (`control`, `mcp`), and neither is accepted before the verb.
+/// Bare `efference` is the TUI and `--host` the host (docs/operating.md): `--name`
+/// attaches without asking, the web-bind flags ride on `--host` alone, and neither
+/// `--host` nor `--name` is accepted beside a subcommand. The `tui` and `host`
+/// verbs are gone, and so is creating from the command line's session flags.
 #[test]
-fn name_and_socket_are_flags_of_their_own_verbs() {
+fn bare_efference_is_the_tui_and_host_is_a_flag() {
     use clap::Parser;
-    let parse = |argv: &[&str]| Cli::try_parse_from(argv);
+    let parse = |argv: &[&str]| Cli::try_parse_from(argv).and_then(Cli::checked);
 
-    let Command::Tui { name, new, .. } = parse(&["efference", "tui", "--name", "amber-heron"])
-        .unwrap()
-        .command
-        .unwrap()
-    else {
-        panic!("tui")
-    };
-    assert_eq!((name.as_deref(), new), (Some("amber-heron"), false));
-    let Command::Tui { name, new, .. } = parse(&["efference", "tui", "--new", "--name", "mine"])
-        .unwrap()
-        .command
-        .unwrap()
-    else {
-        panic!("tui")
-    };
-    assert_eq!((name.as_deref(), new), (Some("mine"), true));
-    let Command::Host { socket, .. } = parse(&["efference", "host", "--socket", "./tmp/h.sock"])
-        .unwrap()
-        .command
-        .unwrap()
-    else {
-        panic!("host")
-    };
-    assert_eq!(socket, Some(PathBuf::from("./tmp/h.sock")));
+    let bare = parse(&["efference"]).unwrap();
+    assert!(bare.command.is_none() && bare.name.is_none());
+    assert_eq!(bare.host, HostFlags::default());
+    let named = parse(&["efference", "--name", "amber-heron"]).unwrap();
+    assert_eq!(named.name.as_deref(), Some("amber-heron"));
+    assert!(!named.host.run && named.command.is_none());
+
+    let host = parse(&[
+        "efference",
+        "--host",
+        "--socket",
+        "./tmp/h.sock",
+        "--bind",
+        "127.0.0.1:0",
+        "--public-url",
+        "https://box.example.ts.net",
+        "--tls-cert",
+        "c.pem",
+        "--tls-key",
+        "k.pem",
+        "--open",
+    ])
+    .unwrap();
+    assert_eq!(
+        host.host,
+        HostFlags {
+            run: true,
+            socket: Some(PathBuf::from("./tmp/h.sock")),
+            public_url: Some("https://box.example.ts.net".into()),
+            tls_cert: Some(PathBuf::from("c.pem")),
+            tls_key: Some(PathBuf::from("k.pem")),
+            open: true,
+            island: false,
+        }
+    );
+    assert_eq!(host.bind.as_deref(), Some("127.0.0.1:0"));
+    assert!(
+        parse(&[
+            "efference",
+            "--host",
+            "--island",
+            "--socket",
+            "./tmp/h.sock"
+        ])
+        .is_ok()
+    );
+    // `--bind` is global: it still reaches `setup` from either side of the verb.
+    assert!(parse(&["efference", "--bind", "8080", "setup"]).is_ok());
+    assert!(parse(&["efference", "setup", "--bind", "8080"]).is_ok());
     assert!(parse(&["efference", "mcp", "--host-socket", "./tmp/h.sock"]).is_ok());
 
     for refused in [
-        &["efference", "--name", "x", "tui"][..],
-        &["efference", "--socket", "./tmp/h.sock", "tui"],
-        &["efference", "--socket", "./tmp/h.sock", "host"],
+        &["efference", "tui"][..],
+        &["efference", "host"],
+        &["efference", "--socket", "./tmp/h.sock"],
+        &["efference", "--public-url", "https://box.example.ts.net"],
+        &["efference", "--open"],
+        &["efference", "--island"],
+        &["efference", "--host", "--name", "x"],
+        &["efference", "--host", "setup"],
+        &["efference", "--name", "x", "setup"],
+        &["efference", "--model", "x"],
+        &["efference", "--new"],
         &["efference", "mcp", "--name", "x"],
         &["efference", "mcp", "--socket", "./tmp/h.sock"],
         &["efference", "setup", "--name", "x"],
-        &["efference", "tui", "--socket", "./tmp/h.sock"],
     ] {
         assert!(parse(refused).is_err(), "{refused:?}");
     }
@@ -112,73 +145,6 @@ fn host_candidates_are_project_then_user() {
     if let Some(home) = std::env::var_os("HOME") {
         assert_eq!(candidates[1], Path::new(&home).join(".efference/host.sock"));
     }
-}
-
-/// The session flags are refused without `--new`, since a plain `tui` attaches and
-/// would otherwise silently drop them. `--model` has no configured default:
-/// omitted, past picks apply, else creation refuses and the form names one.
-#[test]
-fn tui_session_flags_need_new() {
-    use clap::Parser;
-    let parse = |argv: &[&str]| Cli::try_parse_from(argv);
-    let Command::Tui { new, session, .. } = parse(&["efference", "tui"]).unwrap().command.unwrap()
-    else {
-        panic!("tui")
-    };
-    assert!(!new && !session.any_given());
-    let Command::Tui { new, session, .. } = parse(&["efference", "tui", "--model", "x"])
-        .unwrap()
-        .command
-        .unwrap()
-    else {
-        panic!("tui")
-    };
-    assert!(!new && session.any_given());
-    let Command::Tui {
-        new,
-        session,
-        host_socket,
-        ..
-    } = parse(&["efference", "tui", "--new", "--effort", "high"])
-        .unwrap()
-        .command
-        .unwrap()
-    else {
-        panic!("tui")
-    };
-    assert!(new && host_socket.is_none());
-    assert!(session.model.is_none());
-    assert_eq!(session.effort.as_deref(), Some("high"));
-    assert!(session.triage().is_none());
-    assert!(
-        parse(&["efference", "tui", "--host-socket", "/tmp/h.sock"]).is_err(),
-        "--host-socket requires --new"
-    );
-    let Command::Tui { session, .. } = parse(&[
-        "efference",
-        "tui",
-        "--new",
-        "--triage-model",
-        "t",
-        "--triage-thinking",
-    ])
-    .unwrap()
-    .command
-    .unwrap() else {
-        panic!("tui")
-    };
-    assert_eq!(
-        session.triage(),
-        Some(TriageChoice::separate("t".into(), true, false, None))
-    );
-    let Command::Tui { session, .. } = parse(&["efference", "tui", "--new", "--triage-shared"])
-        .unwrap()
-        .command
-        .unwrap()
-    else {
-        panic!("tui")
-    };
-    assert_eq!(session.triage(), Some(TriageChoice::Shared));
 }
 
 #[test]
@@ -511,28 +477,4 @@ fn a_public_url_is_an_https_origin_when_the_host_terminates_tls() {
     assert!(serve::checked_public_url("http://box.example.ts.net:7878", true).is_err());
     assert!(serve::checked_public_url("https://box.example.ts.net/app", false).is_err());
     assert!(serve::checked_public_url("box.example.ts.net", false).is_err());
-}
-
-/// `--worktree` is a session flag: it sets the flag, and counts as a given flag so
-/// a plain `tui` refuses it rather than dropping it.
-#[test]
-fn worktree_is_a_session_flag() {
-    use clap::Parser;
-    let parse = |argv: &[&str]| Cli::try_parse_from(argv);
-    let Command::Tui { new, session, .. } = parse(&["efference", "tui", "--new", "--worktree"])
-        .unwrap()
-        .command
-        .unwrap()
-    else {
-        panic!("tui")
-    };
-    assert!(new && session.worktree && session.any_given());
-    let Command::Tui { session, .. } = parse(&["efference", "tui", "--new"])
-        .unwrap()
-        .command
-        .unwrap()
-    else {
-        panic!("tui")
-    };
-    assert!(!session.worktree);
 }

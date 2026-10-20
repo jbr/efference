@@ -98,8 +98,8 @@ interview asks what it asks.
   matter are kept — "kept 6 of 12 lines" in the transcript. The full output stays in the
   session's log. By default the agent's own model does this reading. With an expensive
   main model a smaller one can take it over — for every session with `triage` under
-  `[defaults]` in `~/.efference/config.toml`, or for one session started with
-  `efference tui --new --triage-model <model>`. It is not an `efference.toml` setting,
+  `[defaults]` in `~/.efference/config.toml`, or for one session by its triage model in the
+  new-session form. It is not an `efference.toml` setting,
   so the interview asks nothing about it; a sentence is enough for the transcript to make
   sense.
 - **The preamble** is what a session knows when it starts, before anyone says anything: the

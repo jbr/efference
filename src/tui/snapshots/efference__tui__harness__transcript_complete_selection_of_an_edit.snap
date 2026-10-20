@@ -20,7 +20,7 @@ expression: self.render()
 12 │   @@ -12,3 +12,4 @@                                                            │
 13 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
 14 │   +- `read` tool line-range support in `fs-mcp`.                               │
-15 │    - Interactive TUI (`efference tui`).                                        │
+15 │    - Interactive TUI (`efference`).                                            │
 16 │                                                                                │
 17 │                                                                                │
 18 │                                                                                │

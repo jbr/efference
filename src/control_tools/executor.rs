@@ -173,7 +173,7 @@ impl ClientExecutor {
         };
         match hosted.len() {
             0 => Err(anyhow!(
-                "no live efference session found here — create one with `tui --new`, or pass --agent"
+                "no live efference session found here — create one with `efference control create`, or pass --agent"
             )),
             1 => Ok(Client::at(
                 &self.host,
@@ -199,7 +199,7 @@ impl ClientExecutor {
         }
         if !Self::is_live(&self.host) {
             return Err(anyhow!(
-                "no host at {}; start one with `efference host`",
+                "no host at {}; start one with `efference --host`",
                 self.host.display()
             ));
         }

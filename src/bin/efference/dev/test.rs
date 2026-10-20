@@ -652,3 +652,22 @@ fn ladder_gaps_parse_comma_separated_seconds() {
     );
     assert!(crate::primer_ladder::parse_gaps("60, banana").is_err());
 }
+
+/// A display flag on `view` or `gallery` overrides its `[tui]` key alone; an
+/// absent one leaves the configured value standing (docs/tui.md).
+#[test]
+fn a_display_flag_overrides_its_tui_key_alone() {
+    use efference::inference::InferenceConfig;
+    use efference::tui::ImageMode;
+    let config = InferenceConfig::from_toml("[tui]\ntheme = \"Nord\"\nimages = \"off\"\n")
+        .unwrap()
+        .tui()
+        .clone();
+    let kept = display::over(config.clone(), None, None, false);
+    assert_eq!(kept, config);
+    let over = display::over(config, Some("gruvbox-dark".into()), None, true);
+    assert_eq!(
+        (over.theme.as_deref(), over.images, over.frame_cost),
+        (Some("gruvbox-dark"), ImageMode::Off, true)
+    );
+}

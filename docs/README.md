@@ -22,7 +22,7 @@ the identifiers behind it, [glossary.md](glossary.md) pairs them; planned work l
 
 ## What this is
 
-efference is a long-lived host process (`efference host`) that holds every session and
+efference is a long-lived host process (`efference --host`) that holds every session and
 runs their agent turn loops, against two wire dialects: Anthropic Messages and OpenAI
 Responses ([transport.md](transport.md)). It is driven entirely through an HTTP control
 channel — over a Unix socket, ordinarily the user-wide `~/.efference/host.sock`, and
@@ -187,8 +187,8 @@ holds the subsystem's vocabulary and public surface and the directory holds one 
 concern; each module's tests live in its own `test.rs`.
 
 The turn engine that ties it together is `src/agent.rs`; the CLI binary is
-`src/bin/efference/`, whose `host` verb boots the daemon. Its command tree is grouped by
-who each command is for ([operating.md](operating.md)): the human verbs at the top level, `efference
+`src/bin/efference/`, whose `--host` flag boots the daemon. Its command tree is grouped by
+who each command is for ([operating.md](operating.md)): bare `efference` (the TUI) and the human verbs at the top level, `efference
 control <verb>` for the calls that drive a running session — its agent verbs the
 ones `efference mcp` serves over MCP and a hosted session mounts as `agents__<verb>`, each
 written once in `src/control_tools.rs` and `src/control_tools/` — and

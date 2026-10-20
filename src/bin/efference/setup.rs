@@ -1,7 +1,7 @@
 //! `efference setup` — the interactive first-run path (docs/operating.md), and
 //! what a bare `efference` does: setup when there is no configuration; the offer
 //! to set this directory up when there is but the directory has no project
-//! config and no sessions; otherwise `efference tui`.
+//! config and no sessions; otherwise the picker.
 
 use super::*;
 use efference::setup::{Existing, LiveProbe, Prompter as _, Tone, terminal::Terminal};
@@ -14,8 +14,8 @@ fn default_config_path() -> Result<PathBuf, CliError> {
 
 /// Bare `efference`: setup on a machine with no configuration. Configured, a
 /// directory with neither a project config nor sessions is offered setup; any
-/// other is `efference tui` with nothing named — pick a session here, or with
-/// no host running, start one for this terminal.
+/// other opens the picker — pick a session here, or with no host running,
+/// start one for this terminal.
 ///
 /// `bind` is `--bind`, carried to whichever island this ends up starting so the
 /// flag survives the questions in between and reaches the browser rather than
@@ -26,26 +26,15 @@ pub(crate) async fn default_verb(bind: Option<&str>) -> CliResult {
         return run(Some(path), bind).await;
     }
     let here = std::env::current_dir()?;
-    let (theme, images) = display_env()?;
+    let display = display()?;
     let configured = here.join(efference::config::DEFAULT_PATH).exists();
     if !configured {
         let listings = picker::live_listings().await?;
         if picker::menu(&listings, &here).rows.is_empty() {
-            return offer_here(&mut Terminal::open()?, None, bind, theme, images).await;
+            return offer_here(&mut Terminal::open()?, None, bind, display).await;
         }
     }
-    picker::run(theme, images, false, bind).await
-}
-
-/// What `tui`'s display flags read from the environment, for the bare verb,
-/// which has no flags of its own.
-fn display_env() -> Result<(Option<String>, efference::tui::ImageMode), CliError> {
-    let images = match std::env::var("EFFERENCE_IMAGES") {
-        Ok(value) => <ImagesArg as clap::ValueEnum>::from_str(&value, true)
-            .map_err(|error| format!("EFFERENCE_IMAGES: {error}"))?,
-        Err(_) => ImagesArg::default(),
-    };
-    Ok((std::env::var("EFFERENCE_THEME").ok(), images.into()))
+    picker::run(display, bind).await
 }
 
 /// Ask whether to set this directory up now, and on yes create a session here —
@@ -60,8 +49,7 @@ async fn offer_here(
     terminal: &mut Terminal,
     kept: Option<String>,
     bind: Option<&str>,
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
+    display: efference::inference::TuiConfig,
 ) -> CliResult {
     let here = std::env::current_dir()?;
     // The history default is named in the question because it is what the
@@ -89,19 +77,21 @@ async fn offer_here(
         // Always an island: a running host has its own web bind, or none, and
         // this choice never changes one (docs/operating.md). The address is
         // `--bind` when given, and a port the kernel picks otherwise.
-        let creation = island::Creation::Form { theme };
+        let creation = island::Creation::Form {
+            theme: display.theme,
+        };
         return island::run_browser(bind.unwrap_or(island::BIND), creation).await;
     }
     // The session's settings are chosen in the new-session form, as any other
     // session's are (docs/tui.md); in a directory with no project config the
     // session it creates is the setup profile.
     match cli::live_host() {
-        Some(host) => picker::create_through_form(host, theme, images, false).await,
+        Some(host) => picker::create_through_form(host, display).await,
         None => {
             let creation = island::Creation::Form {
-                theme: theme.clone(),
+                theme: display.theme.clone(),
             };
-            island::run(bind, creation, theme, images, false).await
+            island::run(bind, creation, display).await
         }
     }
 }
@@ -185,7 +175,6 @@ pub(crate) async fn run(config: Option<PathBuf>, bind: Option<&str>) -> CliResul
         // ordinary launch, not the setup profile.
         return Ok(());
     }
-    let (theme, images) = display_env()?;
     let kept = format!("Wrote {}.", path.display());
-    offer_here(&mut terminal, Some(kept), bind, theme, images).await
+    offer_here(&mut terminal, Some(kept), bind, display()?).await
 }

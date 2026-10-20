@@ -512,7 +512,7 @@ async fn run_offline(
 /// the SSE bridge runs as a tokio task (docs/README.md — the TUI is one client of the
 /// socket).
 /// The default theme — nicer than `THEME_NAMES[0]` ("1337", which only wins by
-/// sort order). Overridable with `--theme` / `EFFERENCE_THEME`.
+/// sort order). Overridable with `[tui] theme` in the user configuration.
 pub(super) const DEFAULT_THEME: &str = "Catppuccin Frappe";
 
 /// Resolve the theme to apply. An explicit name must exist in the built-in set

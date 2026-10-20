@@ -43,13 +43,13 @@ auth = { kind = "env", key = "EFFERENCE_ISLAND_TEST_KEY" }
         self.dir().join(ISLAND_SOCKET)
     }
 
-    /// Start `efference host --island` the way the launcher does, returning the
+    /// Start `efference --host --island` the way the launcher does, returning the
     /// child and the owner's end of its stdin.
     fn launch(&self) -> (Child, ChildStdin) {
         let log = std::fs::File::create(self.dir().join(ISLAND_LOG)).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_efference"));
         command
-            .args(["host", "--island", "--socket"])
+            .args(["--host", "--island", "--socket"])
             .arg(self.socket())
             .current_dir(&self.root)
             .env("HOME", &self.root)

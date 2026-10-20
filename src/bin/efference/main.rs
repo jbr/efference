@@ -1,16 +1,17 @@
 //! The binary — the control-channel daemon entry point.
 //!
-//! The CLI is grouped by who each command is for (docs/operating.md): the human verbs at the top level,
+//! The CLI is grouped by who each command is for (docs/operating.md): bare
+//! `efference` (the TUI, or with `--host` the host) and the human verbs at the top level,
 //! `efference control <tool>` / `efference mcp` for the calls that drive a
 //! running session, and `efference dev <verb>` for the instruments that develop the
 //! harness itself.
 //!
-//! `efference host` binds a control socket and creates sessions over it; each runs
+//! `efference --host` binds a control socket and creates sessions over it; each runs
 //! the agent loop with the HTTP-fed [`RemoteFrontend`] (docs/README.md, docs/control-channel.md):
 //! the socket is the singular authoritative input source — the first user turn
-//! arrives via `POST /turns`, not argv. `--model` selects from the host's
-//! configured connections; omitted, past picks apply, else creation refuses
-//! and the new-session form names one.
+//! arrives via `POST /turns`, not argv. A creation's model selects from the
+//! host's configured connections; omitted, past picks apply, else creation
+//! refuses and the new-session form names one.
 //!
 //! [`RemoteFrontend`]: efference::daemon::RemoteFrontend
 
@@ -21,7 +22,6 @@ use clap::{Parser, Subcommand};
 use efference::api::Client;
 use efference::client::Client as ControlClient;
 use efference::daemon;
-use efference::inference::TriageChoice;
 #[cfg(feature = "dev")]
 use efference::spotter::MountedSpotter;
 #[cfg(feature = "dev")]
@@ -32,34 +32,28 @@ type CliError = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let cli = Cli::parse();
-    let command = match cli.command {
-        Some(command) => command,
-        None => return setup::default_verb(cli.bind.as_deref()).await,
+    let cli = Cli::parse().checked().unwrap_or_else(|error| error.exit());
+    let Some(command) = cli.command else {
+        if cli.host.run {
+            return serve::host(
+                cli.host.bind_flags(cli.bind),
+                cli.host.socket,
+                cli.host.island,
+            )
+            .await;
+        }
+        // An explicit name is an answer already; the picker is for the
+        // invocation that named nothing (docs/operating.md).
+        return match cli.name {
+            Some(name) => {
+                let target = resolve_client_target(Some(&name)).await?;
+                tui(target, display()?).await
+            }
+            None => setup::default_verb(cli.bind.as_deref()).await,
+        };
     };
     match command {
         Command::Setup { config } => setup::run(config, cli.bind.as_deref()).await,
-        Command::Host {
-            socket,
-            public_url,
-            tls_cert,
-            tls_key,
-            open,
-            island,
-        } => {
-            serve::host(
-                serve::BindFlags {
-                    bind: cli.bind.clone(),
-                    public_url,
-                    tls_cert,
-                    tls_key,
-                    open,
-                },
-                socket,
-                island,
-            )
-            .await
-        }
         Command::Control { host_socket, tools } => {
             control::run_cli(tools, host_socket.unwrap_or_else(cli::mount_host)).await
         }
@@ -75,61 +69,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let secrets = efference::secrets::Secrets::detect()?;
             efference::auth::Root::rotate(&secrets)?;
             eprintln!(
-                "Rotated: the root is gone from {}, and the next `efference host --bind` \
+                "Rotated: the root is gone from {}, and the next `efference --host --bind` \
                  mints another. This {}.",
                 secrets.describe(),
                 efference::auth::ROTATION_CONSEQUENCES
             );
             Ok(())
-        }
-        Command::Tui {
-            name,
-            new: true,
-            host_socket,
-            session,
-            theme,
-            images,
-            frame_cost,
-        } => {
-            let Some(host_socket) = host_socket.or_else(cli::live_host) else {
-                let creation = island::Creation::Direct {
-                    name,
-                    flags: session,
-                };
-                return island::run(
-                    cli.bind.as_deref(),
-                    creation,
-                    theme,
-                    images.into(),
-                    frame_cost,
-                )
-                .await;
-            };
-            tui_new(host_socket, name, session, theme, images.into(), frame_cost).await
-        }
-        Command::Tui {
-            name,
-            new: false,
-            session,
-            theme,
-            images,
-            frame_cost,
-            ..
-        } => {
-            if session.any_given() {
-                return Err("session flags (--model, --config, …) need --new: \
-                     without it `tui` attaches to a running session"
-                    .into());
-            }
-            // An explicit name is an answer already; the picker is for the
-            // invocation that named nothing (docs/operating.md).
-            match name {
-                None => picker::run(theme, images.into(), frame_cost, cli.bind.as_deref()).await,
-                Some(name) => {
-                    let target = resolve_client_target(Some(&name)).await?;
-                    tui(target, theme, images.into(), frame_cost).await
-                }
-            }
         }
     }
 }

@@ -1,6 +1,15 @@
 # The TUI client
 
-`efference tui` is the human-facing client. It is just-another-socket-client: it subscribes to the daemon's SSE streams over the same [control channel](control-channel.md) the `control` tools use, and it drives turns and approvals through the same HTTP verbs. The renderer is vendored-and-adapted from ferritin's interactive renderer into `src/tui/`. Ferritin already had the hard parts — a general-purpose document IR, a markdown→IR parser, syntect theming, a custom scrollbar, and line wrapping — and its render pipeline was domain-free (it renders an IR, not rustdoc), so the lift was strip-the-shell, not rewrite. Improvements flow back cleanly because the IR stays byte-identical to ferritin.
+The TUI — what a bare `efference` draws ([operating.md](operating.md)) — is the human-facing client. It is just-another-socket-client: it subscribes to the daemon's SSE streams over the same [control channel](control-channel.md) the `control` tools use, and it drives turns and approvals through the same HTTP verbs. The renderer is vendored-and-adapted from ferritin's interactive renderer into `src/tui/`. Ferritin already had the hard parts — a general-purpose document IR, a markdown→IR parser, syntect theming, a custom scrollbar, and line wrapping — and its render pipeline was domain-free (it renders an IR, not rustdoc), so the lift was strip-the-shell, not rewrite. Improvements flow back cleanly because the IR stays byte-identical to ferritin.
+
+**Display settings** are the `[tui]` table of the user configuration
+(`~/.efference/config.toml`, `src/inference/tui.rs`), not flags: `theme` (a built-in
+name or a `.tmTheme` path, `~/` expanded; "Catppuccin Frappe" when omitted), `images`
+(below), and `frame-cost` (below). A TUI is drawn by more than one surface — the picker's
+attach, `--name`, a terminal island, setup's offer — and each reads the same table once at
+launch; a switch or a hand-off to another session keeps what was read. The host never
+reads it. `dev view` and `dev gallery` take
+`--theme` and `--images` (and `gallery` `--frame-cost`), each overriding its key for one run.
 
 `efference dev gallery` (`tui/gallery.rs`) launches the real TUI on a fixed "one of each element" transcript with no daemon — a live design page that surfaces rendering gaps (literal `~~strike~~`, ordered-lists-as-bullets) the moment you look.
 
@@ -132,7 +141,7 @@ A tool result's images render in the transcript through the terminal's graphics 
 
 **The paint rule** (`render_image_node`): fully visible → the native protocol's escape (the widget's cell-skip keeps ratatui from overwriting it); partially visible, top *or* bottom → a row-slice of the halfblocks scratch, blitted cell-by-cell — the pixel protocols paint only from the image's top edge, and iTerm2 clips not at all, so cells are the one representation any sub-range of rows has. While the viewport is *moving* (`layout.scroll_in_motion`, set by `render_frame` comparing the settled offset against the last painted one), a protocol with no stored-image concept (iTerm2's OSC 1337, sixel — every reposition retransmits and re-decodes the payload, which flashes) holds the halfblocks slice; a follow-up settled repaint, scheduled by leaving `dirty` set, restores the crisp render. Kitty stores and re-places, so it stays native through motion.
 
-**Detection is a startup act.** `Picker::from_query_stdio()` runs in `ui_loop` after raw mode and before the crossterm reader thread takes stdin. `--images auto|kitty|iterm2|off` (and `EFFERENCE_IMAGES`) overrides it in both directions, because tmux makes detection lie both ways. On auto, a terminal whose environment identifies iTerm2 (`TERM_PROGRAM`/`LC_TERMINAL`) always gets OSC 1337: iTerm2 answers the capability queries above its own weight class — DA1 advertises sixel, 3.5+ answers the kitty query partially — and renders the query-ranked winners as garbage (backlog/inbox/tui-image-sixel.md). With images off (or no capability), an image renders as its one-line reference, no reservation. The resolved protocol and font size print on the status line at launch.
+**Detection is a startup act.** `Picker::from_query_stdio()` runs in `ui_loop` after raw mode and before the crossterm reader thread takes stdin. `images = "auto"|"kitty"|"iterm2"|"off"` under `[tui]` overrides it in both directions, because tmux makes detection lie both ways. On auto, a terminal whose environment identifies iTerm2 (`TERM_PROGRAM`/`LC_TERMINAL`) always gets OSC 1337: iTerm2 answers the capability queries above its own weight class — DA1 advertises sixel, 3.5+ answers the kitty query partially — and renders the query-ranked winners as garbage (backlog/inbox/tui-image-sixel.md). With images off (or no capability), an image renders as its one-line reference, no reservation. The resolved protocol and font size print on the status line at launch.
 
 **Snapshots pin halfblocks** (`Picker::halfblocks()`, the deterministic constructor — `Screenplay::halfblock_images`): the mosaic is ordinary cells, so the fiddliest part — the partial-scroll arithmetic — is grid-snapshot-testable, while the protocol modes stuff escape blobs into cell symbols and stay out of snapshots. The gallery carries a generated test card (hue sweep for color depth, a circle that turns elliptical under a wrong font-size answer) with its bytes inline, exercising decode → encode → paint under whatever protocol the real terminal answers.
 
@@ -262,7 +271,7 @@ Everything that can change about an already-committed entry arrives keyed by `ca
 
 `document.laid_out` — how many nodes the last walk actually laid out — and `document.highlighted` — how many source lines it actually ran syntect over — are what the cost tests in `harness/test/render_cost.rs` assert on: an 8× longer log must not lay out more nodes for one streamed token, a repaint or a scroll must highlight *nothing*, and a streaming write must colour only the lines that arrived. Those are the regression guards, in place of timing tests.
 
-**Wall-clock, when a count isn't enough.** Those counts are stable and testable, which is why the tests assert on them, but they say nothing about whether a frame fits the 30 ms paint tick on a real terminal. `--frame-cost` (on `tui` and `gallery`, `frame_cost.rs`) times each paint and each re-projection separately — they are different fixes when one dominates: the projection rebuilds the live nodes, the paint lays out what they became. The status bar carries p50/p95/max over a rolling window beside the `laid`/`hl` counts, and the session's distribution prints on exit, including how many frames ran over the tick. Off by default, and unreachable from the snapshot harness, since a frame time cannot match twice.
+**Wall-clock, when a count isn't enough.** Those counts are stable and testable, which is why the tests assert on them, but they say nothing about whether a frame fits the 30 ms paint tick on a real terminal. `frame-cost = true` under `[tui]` (or `--frame-cost` on `dev gallery`, `frame_cost.rs`) times each paint and each re-projection separately — they are different fixes when one dominates: the projection rebuilds the live nodes, the paint lays out what they became. The status bar carries p50/p95/max over a rolling window beside the `laid`/`hl` counts, and the session's distribution prints on exit, including how many frames ran over the tick. Off by default, and unreachable from the snapshot harness, since a frame time cannot match twice.
 
 **Driving the animation-rate behaviours.** `efference dev gallery --stream` plays a scripted turn — thinking, then a long file write whose JSON arrives fragment by fragment, then a command whose output streams — over the offline gallery, through the real `ui_loop` with no daemon behind it (`gallery/stream.rs`). `--chunk`/`--interval` set the pace, so both a real-model cadence and fragments arriving faster than the paint tick can be provoked. Snapshots pin layout; this is for what only exists in motion.
 
@@ -469,8 +478,8 @@ One form creates sessions from two places (docs/control-api.md):
 - **Before a session exists** — the bare-`efference` picker's "create a new session", the
   picker with nothing to pick, a terminal island, and the setup offer (docs/operating.md)
   all open it in an inline viewport, and the client attaches to what it creates. An
-  island runs it against its own freshly started host. `efference tui --new` is unchanged
-  and stays the non-interactive path.
+  island runs it against its own freshly started host. `efference control create` is
+  the non-interactive path.
 - **From inside an attached session** — `n` in the Sessions overlay opens it as a modal.
 
 The embedded one does not open on the keypress: `n` sends `HostCmd::NewSession`, and the
