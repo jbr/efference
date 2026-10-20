@@ -15,10 +15,6 @@ fn wire(turns: &[WireTurn]) -> Vec<ApiMessage> {
     )
 }
 
-fn lines(s: &str) -> Vec<&str> {
-    s.lines().collect()
-}
-
 /// The id of the result a single-result triage is triaging. Arbitrary — what matters is
 /// that exactly one id is offered, which is the condition under which `parse_retain`
 /// adopts the id-free shapes — the flat `keep`/`note`, or a lone mis-keyed entry.
@@ -66,9 +62,9 @@ fn entry(seq: u64, payload: Payload) -> LogEntry {
 
 mod ask;
 mod fork;
-mod line_view;
 mod lineage;
 mod parse;
+mod result_view;
 mod riders;
 mod shared_bytes;
 mod validation;

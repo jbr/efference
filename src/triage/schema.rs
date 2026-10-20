@@ -80,24 +80,6 @@ pub(super) fn surfaced_schema_field() -> Value {
 /// Neither is `required`: the schema can't know the triage size, so the triage's tail
 /// instruction ([`retain_instruction`](super::retain_instruction)) names the shape.
 pub fn retain_tool() -> Value {
-    rewrite_strings(retain_tool_numbered(), &|s| LineView::from_env().rewrite(s))
-}
-
-/// Apply `f` to every string in `v`.
-fn rewrite_strings(v: Value, f: &dyn Fn(&str) -> String) -> Value {
-    match v {
-        Value::String(s) => Value::String(f(&s)),
-        Value::Array(a) => Value::Array(a.into_iter().map(|v| rewrite_strings(v, f)).collect()),
-        Value::Object(o) => Value::Object(
-            o.into_iter()
-                .map(|(k, v)| (k, rewrite_strings(v, f)))
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
-fn retain_tool_numbered() -> Value {
     json!({
         "name": RETAIN,
         "description": "Choose what of the tool output to keep on the record going forward. The output is line-numbered. Whatever you drop is gone from the working context, so keep anything that might matter — but stay lean. Do not call this tool unless asked to do so by the harness.",

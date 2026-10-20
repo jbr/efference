@@ -1,16 +1,6 @@
 //! Tests for the ask's own text and shape.
 use super::*;
 
-#[test]
-fn triage_view_numbers_every_line() {
-    // The throwaway fork's view — per-line numbers are the `retain` coordinate
-    // system. (Only here; never on the canonical wire.)
-    let ls = lines("alpha\nbeta\ngamma");
-    let view = LineView::Numbers.render(&ls);
-    assert!(view.contains("     1\talpha"), "{view}");
-    assert!(view.contains("     3\tgamma"), "{view}");
-}
-
 /// The triage tools' schemas are static (docs/triage.md): they ride every turn's
 /// `tools[]`, so any variation would re-key the request envelope and split the cache
 /// lineage. Byte-identical across calls, every rider field unconditional, and the

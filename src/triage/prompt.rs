@@ -155,8 +155,7 @@ entries, one per label listed here and no others: {labels}.",
     let fields: Vec<&str> = std::iter::once(keep_fields.as_str())
         .chain(riders.iter().copied())
         .collect();
-    let lines = LineView::from_env();
-    lines.rewrite(&v.assemble(&lines.rewrite(&shape), &fields, framing))
+    v.assemble(&shape, &fields, framing)
 }
 
 /// Render the inbox + background sections of a triage view (docs/inbox.md, docs/process-monitor.md) — shared by the
@@ -259,6 +258,26 @@ pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
     }
 }
 
+/// The sentence a result's header carries about its numbering (docs/triage.md, "Line
+/// numbers are the coordinate system"). Much output has line numbers of its own (`read`,
+/// `grep -n`, `cat -n`), so the view's are set apart by a margin glyph no common tool
+/// emits, and the header says which numbers `keep` uses.
+const HEADER_MARGIN: &str = "Each line starts with its line number and a │ margin (`12 │ text`); \
+numbers after the margin are part of the text, and `keep` uses the margin's numbers.";
+
+/// Where a truncation marker's `…` sits: under the margin's `│`.
+const MARGIN_INDENT: &str = "     ";
+
+/// The lines as the triage view shows them: `{:>4} │ text`, numbered from 1.
+fn margin_lines(lines: &[&str]) -> String {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| format!("{:>4} │ {line}", i + 1))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// One result's block in a triage view (docs/triage.md): a header naming the
 /// result's label ([`labels`](super::labels)) and tool, then the capped, line-numbered
 /// output.
@@ -294,15 +313,12 @@ pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> Stri
             "images: {n} {noun} — not shown here; reaches the agent as it is\n"
         ));
     }
-    let numbering = LineView::from_env();
-    if let Some(sentence) = numbering.header_sentence() {
-        view.push_str(&format!("{sentence}\n"));
-    }
-    view.push_str(&numbering.render(lines));
+    view.push_str(HEADER_MARGIN);
+    view.push('\n');
+    view.push_str(&margin_lines(lines));
     if dropped > 0 {
         view.push_str(&format!(
-            "\n{}… [{dropped} more lines truncated] …",
-            numbering.truncation_indent()
+            "\n{MARGIN_INDENT}… [{dropped} more lines truncated] …"
         ));
     }
     view

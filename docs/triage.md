@@ -550,6 +550,14 @@ the selection preserves original numbers across elisions so any kept line maps
 back to the raw. The raw in the log stays pristine; numbering is a render transform
 applied only inside the throwaway branch.
 
+Each line is rendered `{:>4} │ text`, and the result's header says that lines start with
+their number and a `│` margin, that numbers after the margin are part of the text, and that
+`keep` uses the margin's numbers. Much output carries line numbers of its own (`read`,
+`grep -n`, `cat -n`, compiler spans), and a `│` is a glyph none of those emit, so the view's
+numbers are recognizable as the view's. A `keep` range lying wholly past the shown lines is
+refused and retried in the fork (`require_in_bounds`); the corpus check for how often that
+happens is in [process/corpus-checks.md](../process/corpus-checks.md).
+
 ## Images pass through triage
 
 A result's images reach the agent whatever the verdict: `keep` selects text lines only,
@@ -567,8 +575,8 @@ Line-per-line numbering inflates the canonical wire — a keep-all verdict on a
 small result would be larger than the raw it replaces. The two renderings are
 therefore split:
 
-- **`LineView::Numbers`** (`cat -n` per line) — shown only in the throwaway triage;
-  the coordinate system `retain(lines=…)` addresses. Implemented in `src/triage/line_view.rs`, with the dev-only arms `EFFERENCE_TRIAGE_LINES=header|margin|tags` (backlog experiment on keep-by-embedded-number retries).
+- **The margin view** (`12 │ text` per line, `result_view` in `src/triage/prompt.rs`) —
+  shown only in the throwaway triage; the coordinate system `keep` addresses.
 
 - **`render_hunks`** (the canonical wire form) — a `@@ lines a-b @@` header per
   contiguous kept span, then those lines verbatim. One header per range (not per

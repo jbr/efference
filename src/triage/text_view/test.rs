@@ -123,7 +123,7 @@ fn the_text_view_is_a_history_turn_then_the_current_step() {
     for expected in [
         "The last step.",
         "• bash {\"command\":\"step 3\",\"intent\":\"run step 3\"}",
-        "     1\tfinal output",
+        "   1 │ final output",
         "the one call the agent just made",
         "the agent's task continues on its NEXT turn",
     ] {

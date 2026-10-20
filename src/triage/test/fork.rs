@@ -89,9 +89,9 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
             .any(|v| v.contains("search_2") || v.contains("bash_3")),
         "{views:?}"
     );
-    assert!(views[0].contains("     1\talpha") && views[0].contains("     2\tbeta"));
+    assert!(views[0].contains("   1 │ alpha") && views[0].contains("   2 │ beta"));
     assert!(
-        views[1].contains("     1\tgamma"),
+        views[1].contains("   1 │ gamma"),
         "the second result numbers from 1, not 3: {}",
         views[1]
     );
@@ -220,7 +220,7 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
     );
     assert!(!blocks[0].1.contains("r1"), "{}", blocks[0].1);
     assert!(blocks[1].1.starts_with("═══ result r1 · read ═══"));
-    assert!(blocks[1].1.contains("     1\talpha"));
+    assert!(blocks[1].1.contains("   1 │ alpha"));
 
     let instruction = match tail.content.last() {
         Some(ApiBlock::Text { text, .. }) => text.as_str(),
