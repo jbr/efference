@@ -55,7 +55,7 @@ pub struct Create {
     #[serde(default)]
     #[arg(long)]
     pub autonomous: bool,
-    /// Upstream session logs to seed from (`tui --new --upstream`). Repeatable.
+    /// Pin an OpenRouter session to these endpoints, in order (`google-ai-studio`, `google-vertex/global`); the request fails rather than falling back past them. Repeatable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[arg(long)]
     pub upstream: Vec<String>,
