@@ -158,13 +158,7 @@ function WorktreeLine({ event }: { event: WorktreeEvent }) {
   }
 }
 
-/** Why a call waiting at the gate was held: the spotter's reason, as its own
- * line inside the call — a different rung's judgment *about* the call
- * (docs/tui.md). It stands alone, without a label: the gated entry and its
- * controls already say what is being asked. Only a waiting call draws it; once
- * decided, the outcome is the call's result and the verdict is the
- * inspector's. Exported for the floating gate panel (Gate.tsx), which
- * restates it while the call is off-screen. */
+/** The ordinary gate's spotter explanation (docs/web-client.md). */
 export function SpotLine({ spot }: { spot: Spot }) {
   return <p className="spot">{sentence(spot.reason)}</p>;
 }
@@ -420,9 +414,6 @@ const Call = memo(function Call({
   return (
     <div className="call clickable" onClick={open}>
       {call !== null && <CallBlock call={call} onOpenFile={onOpenFile} />}
-      {gateSlot !== undefined && node.spot !== null && (
-        <SpotLine spot={node.spot} />
-      )}
       {gateSlot !== undefined && <div className="gate-slot" ref={gateSlot} />}
       {node.result === null && liveOutput !== undefined && (
         <LiveResult text={liveOutput} />

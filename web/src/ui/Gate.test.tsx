@@ -2,7 +2,8 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
-import { GateControls } from "./Gate.tsx";
+import type { Gate, Spot } from "../api/types.ts";
+import { GateControls, GateReason, GateSurface } from "./Gate.tsx";
 
 vi.hoisted(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -93,4 +94,146 @@ test("busy decisions disable buttons and preserve the cold readout", () => {
     "Approving reads the context uncached",
   );
   f.close();
+});
+
+const spot: Spot = {
+  call_id: "held",
+  stance: "gate",
+  reason: "publishing changes the remote",
+  origin: "Model",
+};
+
+function reasonFixture(
+  gate: Pick<Gate, "escalations" | "reason">,
+  verdict: Spot | null = spot,
+) {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  act(() => root.render(<GateReason gate={gate} spot={verdict} />));
+  const text = host.textContent;
+  act(() => root.unmount());
+  return text;
+}
+
+test("ordinary gates keep the unlabeled spotter explanation", () => {
+  expect(reasonFixture({})).toBe("Publishing changes the remote");
+  expect(reasonFixture({ escalations: [] })).toBe(
+    "Publishing changes the remote",
+  );
+  expect(reasonFixture({ reason: "Fallback reason" }, null)).toBe(
+    "Fallback reason",
+  );
+  expect(reasonFixture({}, null)).toBe("");
+});
+
+test.each([
+  ["session[calm-finch]", "calm-finch"],
+  ["mcp[claude-code]", "claude-code"],
+  [null, "you"],
+])(
+  "escalation by %s replaces spotter prose with the latest note",
+  (source, name) => {
+    expect(
+      reasonFixture({
+        escalations: [
+          {
+            source: "session[earlier]",
+            to: "calm-finch",
+            note: "Earlier note",
+          },
+          {
+            source,
+            to: null,
+            note: "Please confirm.\nThis changes the shared remote.",
+          },
+        ],
+      }),
+    ).toBe(
+      `escalated by ${name}Please confirm.\nThis changes the shared remote.`,
+    );
+  },
+);
+
+test.each([undefined, "", "   "])(
+  "escalation without a note (%s) attributes the spotter fallback",
+  (note) => {
+    expect(
+      reasonFixture({
+        escalations: [{ source: "session[calm-finch]", to: null, note }],
+      }),
+    ).toBe("escalated by calm-finchspotter: publishing changes the remote");
+  },
+);
+
+test("noteless escalation can use the gate reason or stand alone", () => {
+  const escalations = [{ source: null, to: null }];
+  expect(reasonFixture({ escalations, reason: "Fallback reason" }, null)).toBe(
+    "escalated by youspotter: Fallback reason",
+  );
+  expect(reasonFixture({ escalations }, null)).toBe("escalated by you");
+});
+
+test("a held call updates its explanation in both its slot and floating panel", () => {
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const host = document.createElement("div");
+  const slot = document.createElement("div");
+  const root = createRoot(host);
+  const gate: Gate = {
+    call_id: "held",
+    name: "bash",
+    input: { command: "git push" },
+  };
+  const render = () =>
+    act(() =>
+      root.render(
+        <GateSurface
+          gate={gate}
+          spot={spot}
+          covered={true}
+          slot={slot}
+          cold={null}
+          resolve={async () => "applied"}
+        />,
+      ),
+    );
+  try {
+    render();
+    expect(slot.textContent).toContain("Publishing changes the remote");
+    gate.escalations = [
+      { source: "session[calm-finch]", to: null, note: "Confirm publication." },
+    ];
+    render();
+    for (const surface of [slot, host.querySelector(".gate-float")!]) {
+      expect(surface.textContent).toContain("escalated by calm-finch");
+      expect(surface.textContent).toContain("Confirm publication.");
+      expect(surface.textContent).not.toContain(
+        "Publishing changes the remote",
+      );
+    }
+    gate.escalations = [{ source: "session[calm-finch]", to: null }];
+    render();
+    for (const surface of [slot, host.querySelector(".gate-float")!]) {
+      expect(surface.textContent).toContain(
+        "spotter: publishing changes the remote",
+      );
+      expect(surface.textContent).not.toContain("Confirm publication.");
+    }
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
 });

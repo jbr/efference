@@ -570,6 +570,7 @@ export interface Gate {
   name: string;
   input: unknown;
   reason?: string;
+  escalations?: { source: string | null; to: string | null; note?: string }[];
 }
 
 // The bash prefix policy's value vocabulary (docs/permissions.md `[commands]`):

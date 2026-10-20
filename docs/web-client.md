@@ -1873,12 +1873,16 @@ topic, in the transcript flow rather than a modal, and **inside the gated call's
 entry**. A gated call has no result entry, so the call is the transcript's last item;
 `Transcript` marks it (`gated`: rendered whole whatever its recency level, with the
 shared lit boundary and halo, with no tinted fill) and mounts an empty slot under the
-spotter's reason, into which the surface portals its controls. Reading order is call →
-reason → decision, all in one box: the decision is visibly *about* the call rather than a
-panel following it. The reason is the `Spot` verdict's text alone, with no stance label —
-the box and its controls already say what is being asked — and only the waiting call
-draws one: on a decided call the outcome is its result, and the verdict is the
-inspector's. The controls are **Allow** and **Decline…**, which opens the redirect
+call, into which the surface portals its explanation and controls. Reading order is
+call → explanation → decision, all in one box: the decision is visibly *about* the call
+rather than a panel following it. `GateReason` supplies the same explanation in flow
+and in the floating panel. For an ordinary gate, it shows the `Spot` verdict's text
+without a stance label. For an escalated gate, it shows “escalated by <id>” from the
+last hop's `source` (or “you” for the operator's command line), followed by that hop's
+note. A nonblank escalation note replaces the visible spotter reason; without one,
+the spotter reason remains, labeled “spotter:”. Earlier hops do not render here. The
+spotter verdict remains available in the inspector, including after a decision.
+The controls are **Allow** and **Decline…**, which opens the redirect
 (a growing field: decline and say what to do instead) and a quieter "stop this turn
 entirely" (abort). The surface once rendered the call itself, through `JSON.stringify` —
 which put a `write`'s file body on screen as one escaped line on the one surface where a
@@ -1896,11 +1900,11 @@ it out of the observer's geometric view (the `covered` prop from `App`; the
 float renders above the viewer, its jump-to-call link dropped because the
 tail it would land on is behind the viewer) — a **floating gate panel** pins
 above the dock — and it is the one place
-the call renders a second time (via the same `CallBlock`/`SpotLine` the
-transcript uses, under the transcript's own classes: intent, full command,
-verdict), because the entries the in-flow surface leans on are exactly what is
-off-screen. It is drawn as the gated entry lifted: the entry's fill and
-border, at the entry's measured left edge and width, plus a shadow. The panel shares
+the call renders a second time (via `CallBlock` and `GateReason`, under the
+transcript's own classes: intent, full command, explanation), because the entries
+the in-flow surface leans on are exactly what is off-screen. It is drawn as the
+gated entry lifted: the entry's fill and border, at the entry's measured left edge
+and width, plus a shadow. The panel shares
 the in-flow surface's form state — one set of drafts, rendered in both places —
 so a decision composed in one survives into the other. It collapses, without
 resolving the gate, to a compact cue naming the call (it may be covering text

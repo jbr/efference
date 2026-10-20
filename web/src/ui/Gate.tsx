@@ -1,6 +1,6 @@
 // The pending approval gate (docs/web-client.md). In the flow, the decision
 // renders inside the gated call's own entry (Transcript.tsx's gate slot),
-// under the spotter's reason — the call it decides is the thing on screen,
+// under its explanation — the call it decides is the thing on screen,
 // not a panel after it. The floating panel is that entry lifted: it shows
 // exactly while the entry is scrolled out of view, so it carries the call
 // (intent, full command) and the reason alongside the controls. The
@@ -10,7 +10,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Cold, Decision, Gate, Spot } from "../api/types.ts";
+import {
+  senderName,
+  type Cold,
+  type Decision,
+  type Gate,
+  type Spot,
+} from "../api/types.ts";
 import { coldLine as coldLineFor } from "./coldLine.ts";
 import { callView } from "./signature.ts";
 import { flatSignature } from "./signatureLayout.ts";
@@ -47,6 +53,35 @@ function SteerField({
         }
       }}
     />
+  );
+}
+
+/** The latest handoff replaces the spotter's explanation when it supplies one
+ * (docs/web-client.md). Without a note, retain and attribute the spotter reason. */
+export function GateReason({
+  gate,
+  spot,
+}: {
+  gate: Pick<Gate, "escalations" | "reason">;
+  spot: Spot | null;
+}) {
+  const escalation = gate.escalations?.at(-1);
+  const reason = spot?.reason ?? gate.reason;
+  if (!escalation)
+    return spot !== null ? (
+      <SpotLine spot={spot} />
+    ) : reason ? (
+      <p className="spot">{reason}</p>
+    ) : null;
+  return (
+    <div className="gate-escalation">
+      <div className="dim">escalated by {senderName(escalation.source)}</div>
+      {escalation.note?.trim() ? (
+        <p>{escalation.note}</p>
+      ) : reason ? (
+        <p>spotter: {reason}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -267,15 +302,7 @@ export function GateSurface({
       />
     </>
   );
-  // The spotter's reason, as the gated call shows it — or, for a gate held
-  // with no `Spot` entry behind it (a window the stream's coherence rule
-  // closes, docs/control-api.md), the gate's own.
-  const reason =
-    spot !== null ? (
-      <SpotLine spot={spot} />
-    ) : (
-      gate.reason !== undefined && <p className="spot">{gate.reason}</p>
-    );
+  const reason = <GateReason gate={gate} spot={spot} />;
 
   const signature = flatSignature(callView(gate.name, gate.input));
   return (
@@ -323,7 +350,7 @@ export function GateSurface({
       {slot !== null ? (
         createPortal(
           <div ref={setSurface}>
-            {spot === null && reason}
+            {reason}
             {controls()}
           </div>,
           slot,

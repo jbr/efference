@@ -4,7 +4,7 @@ import type { Ask, CallId, LogEntry } from "../api/types.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { emptyStreaming, type Streaming } from "../session/store.ts";
 import { buildTree } from "../session/tree.ts";
-import { GateControls } from "../ui/Gate.tsx";
+import { GateControls, GateReason } from "../ui/Gate.tsx";
 import { ComposerToolbar } from "../ui/ComposerToolbar.tsx";
 import { useNarrow } from "../ui/useNarrow.ts";
 import { TranscriptContent } from "../ui/Transcript.tsx";
@@ -121,6 +121,8 @@ const modes = [
   "Working",
   "Answer needed",
   "Approval needed",
+  "Escalated approval",
+  "Escalated without note",
 ] as const;
 type Mode = (typeof modes)[number];
 
@@ -220,7 +222,7 @@ export function GalleryScenes() {
                   ]
                 : []),
             ]
-          : mode === "Approval needed"
+          : mode === "Approval needed" || mode.startsWith("Escalated")
             ? [
                 ...common,
                 result,
@@ -262,7 +264,8 @@ export function GalleryScenes() {
             },
           }
         : emptyStreaming;
-  const gate = mode === "Approval needed" ? push.id : null;
+  const gate =
+    mode === "Approval needed" || mode.startsWith("Escalated") ? push.id : null;
   return (
     <>
       <p className="g-intro">
@@ -326,6 +329,30 @@ export function GalleryScenes() {
           gateSlot &&
           createPortal(
             <div>
+              <GateReason
+                gate={{
+                  escalations: mode.startsWith("Escalated")
+                    ? [
+                        {
+                          source: "session[calm-finch]",
+                          to: null,
+                          ...(mode === "Escalated approval"
+                            ? {
+                                note: "The checks passed, but publishing this branch changes the shared remote. Please confirm you want it pushed.",
+                              }
+                            : {}),
+                        },
+                      ]
+                    : undefined,
+                }}
+                spot={{
+                  call_id: push.id,
+                  stance: "gate",
+                  reason:
+                    "Publishing this branch changes the remote repository. This command needs your approval.",
+                  origin: "Model",
+                }}
+              />
               <GateControls
                 busy={false}
                 coldLine={null}
