@@ -15,6 +15,23 @@ fn rfc3339_reads_utc_and_offsets() {
 }
 
 #[test]
+fn utc_date_is_the_inverse_of_the_civil_day_count() {
+    assert_eq!(utc_date(0), "1970-01-01");
+    assert_eq!(utc_date(1_770_163_200), "2026-02-04");
+    assert_eq!(utc_date(1_770_163_200 + 86_399), "2026-02-04");
+    // A leap day, and the instant before the year turns.
+    assert_eq!(
+        utc_date(unix_from_rfc3339("2028-02-29T12:00:00Z").unwrap()),
+        "2028-02-29"
+    );
+    assert_eq!(
+        utc_date(unix_from_rfc3339("2026-12-31T23:59:59Z").unwrap()),
+        "2026-12-31"
+    );
+    assert_eq!(utc_date(-1), "1969-12-31");
+}
+
+#[test]
 fn prices_are_per_million_and_negative_means_unknown() {
     let price = Price::from_per_token("0.000003", "0.000015").unwrap();
     assert_eq!((price.input, price.output), (3.0, 15.0));

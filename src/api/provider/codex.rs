@@ -235,15 +235,26 @@ impl Listing {
     /// hide. The catalog dates nothing, so the order is the backend's own.
     /// Additive — an id absent here is still sent to a turn unchanged.
     pub(super) fn rows(&self) -> Vec<ListedModel> {
+        self.rows_where(|_| true)
+    }
+
+    /// [`Self::rows`] limited to the entries `served` names: the platform menu,
+    /// which offers a catalog entry only when the key's own listing carries its
+    /// id (docs/model-catalog.md).
+    pub(super) fn rows_served(&self, served: &[String]) -> Vec<ListedModel> {
+        self.rows_where(|entry| served.contains(&entry.slug))
+    }
+
+    fn rows_where(&self, keep: impl Fn(&Entry) -> bool) -> Vec<ListedModel> {
         self.models
             .iter()
-            .filter(|entry| entry.is_suggested())
+            .filter(|entry| entry.is_suggested() && keep(entry))
             .map(Entry::row)
             .collect()
     }
 }
 
-fn parse(body: &str) -> Result<Listing, Error> {
+pub(super) fn parse(body: &str) -> Result<Listing, Error> {
     serde_json::from_str(body)
         .map_err(|e| -> Error { format!("model catalog is not a model catalog: {e}").into() })
 }

@@ -1429,7 +1429,10 @@ the provider serves it.
   warning and boots on the baseline rather than refusing the session. The
   catalog's windows are the subscription backend's, which may be smaller than the
   platform's; the smaller figure costs an early compaction, where a larger one
-  would cost a 400.
+  would cost a 400. The same cached catalog is the platform arm's model menu: its
+  suggested entries that the platform listing also names (docs/model-catalog.md,
+  "Filtering"). A catalog that cannot be read is logged there too, and the menu falls
+  back to the platform listing without models past their `shutdown_date`.
 
 The catalog reports no output cap, no temperature acceptance, and no cache
 policy, and those are read as the arm's baseline asserts: a model that rejects

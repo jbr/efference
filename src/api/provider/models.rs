@@ -38,11 +38,17 @@ impl Endpoint {
             // (`provider/codex.rs`).
             Provider::OpenAICodex => Ok(codex::catalog(self).await?.rows()),
             // The platform listing names every model the key can reach —
-            // embeddings, speech, image, and dated snapshots among them —
-            // unfiltered: a long menu beats an empty one, and the typed id stays.
+            // embeddings, speech, image, and dated snapshots among them — and
+            // says nothing of which are agent models, so the menu is the Codex
+            // catalog's suggested entries that the listing also names. The
+            // catalog is a borrowed source here: unreadable, the menu is the
+            // listing less what has passed its shutdown date.
             Provider::OpenAI => {
                 let body = self.authed_get("https://api.openai.com/v1/models").await?;
-                listing::rows(&body)
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |elapsed| elapsed.as_secs() as i64);
+                platform_rows(&body, codex::catalog(self).await, &row::utc_date(now))
             }
             Provider::Anthropic => {
                 let body = self
@@ -117,6 +123,31 @@ impl Endpoint {
             .collect())
     }
 }
+
+/// The `openai` platform menu (docs/model-catalog.md): the catalog's suggested
+/// entries whose id the platform listing also names, in the catalog's order and
+/// with its fields. With no catalog, the listing's own rows without those whose
+/// `shutdown_date` is before `today` (`YYYY-MM-DD`, UTC), and the catalog's
+/// failure logged as the capability path logs it (`provider/codex.rs`).
+fn platform_rows(
+    body: &str,
+    catalog: Result<codex::Listing, Error>,
+    today: &str,
+) -> Result<Vec<ListedModel>, Error> {
+    match catalog {
+        Ok(catalog) => Ok(catalog.rows_served(&listing::ids(body)?)),
+        Err(error) => {
+            log::warn!(
+                "the openai model catalog could not be read ({error}); the menu is the \
+                 platform listing without models past their shutdown date"
+            );
+            listing::rows_not_shut_down(body, today)
+        }
+    }
+}
+
+#[cfg(test)]
+mod test;
 
 impl Provider {
     /// The group a model id files under in a listing: OpenRouter's author. Other

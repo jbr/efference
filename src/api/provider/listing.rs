@@ -68,6 +68,11 @@ struct Entry {
     display_name: Option<String>,
     #[serde(default)]
     created: Option<i64>,
+    /// The date the provider retires the model (OpenAI's platform listing:
+    /// `YYYY-MM-DD`). Held as raw JSON so a spelling this parse does not read
+    /// cannot fail the listing; only a string is compared (`is_past_shutdown`).
+    #[serde(default)]
+    shutdown_date: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +102,17 @@ fn price(value: &Option<String>) -> Option<f64> {
 }
 
 impl Entry {
+    /// Whether the entry names a shutdown date earlier than `today`
+    /// (`YYYY-MM-DD`, UTC). An entry with no date, or one in a spelling that is
+    /// not a date, is not past it: nothing was said.
+    fn is_past_shutdown(&self, today: &str) -> bool {
+        self.shutdown_date
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .and_then(|date| date.get(..10))
+            .is_some_and(|date| date < today)
+    }
+
     fn capabilities(&self) -> ModelCapabilities {
         let images = self
             .input_modalities
@@ -164,14 +180,7 @@ impl Entry {
 /// which capabilities went unanswered, and the first turn is the real test
 /// (docs/transport.md).
 pub(super) fn capabilities_for(body: &str, model: &str) -> Result<ModelCapabilities, Error> {
-    #[derive(Deserialize)]
-    struct Listing {
-        #[serde(default)]
-        data: Vec<Entry>,
-    }
-    let listing: Listing = serde_json::from_str(body)
-        .map_err(|e| -> Error { format!("model listing is not a model listing: {e}").into() })?;
-    Ok(listing
+    Ok(parse(body)?
         .data
         .iter()
         .find(|entry| entry.id == model)
@@ -185,17 +194,42 @@ pub(super) fn capabilities_for(body: &str, model: &str) -> Result<ModelCapabilit
 /// inferred from one that is not. The row set is a suggestion list, never a
 /// domain of legal models: an id absent here is still sent to creation normally.
 pub(super) fn rows(body: &str) -> Result<Vec<ListedModel>, Error> {
-    #[derive(Deserialize)]
-    struct Listing {
-        #[serde(default)]
-        data: Vec<Entry>,
-    }
-    let listing: Listing = serde_json::from_str(body)
-        .map_err(|e| -> Error { format!("model listing is not a model listing: {e}").into() })?;
+    rows_where(body, |_| true)
+}
+
+/// [`rows`] without the entries whose `shutdown_date` is before `today`
+/// (`YYYY-MM-DD`, UTC): the platform menu when the Codex catalog cannot be read
+/// (docs/model-catalog.md). An undated entry stays.
+pub(super) fn rows_not_shut_down(body: &str, today: &str) -> Result<Vec<ListedModel>, Error> {
+    rows_where(body, |entry| !entry.is_past_shutdown(today))
+}
+
+/// The ids a listing names.
+pub(super) fn ids(body: &str) -> Result<Vec<String>, Error> {
+    Ok(parse(body)?
+        .data
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect())
+}
+
+#[derive(Deserialize)]
+struct Listing {
+    #[serde(default)]
+    data: Vec<Entry>,
+}
+
+fn parse(body: &str) -> Result<Listing, Error> {
+    serde_json::from_str(body)
+        .map_err(|e| -> Error { format!("model listing is not a model listing: {e}").into() })
+}
+
+fn rows_where(body: &str, keep: impl Fn(&Entry) -> bool) -> Result<Vec<ListedModel>, Error> {
     Ok(arrange(
-        listing
+        parse(body)?
             .data
             .into_iter()
+            .filter(|entry| keep(entry))
             .map(|entry| {
                 let images = entry
                     .input_modalities

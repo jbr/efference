@@ -43,14 +43,24 @@ absent. `recent` is added at read time, not stored.
   omitted.
 - **Descriptions** retain the source text verbatim; missing, null, empty, or
   whitespace-only descriptions are omitted. OpenRouter, Codex, TypeSafe, and described
-  endpoints supply them where declared. The Anthropic and OpenAI platform listings
-  currently supply none; the platform inventory does not borrow Codex descriptions.
+  endpoints supply them where declared. The Anthropic listing currently supplies none.
+  The `openai` platform listing supplies none either, but its menu rows are the Codex
+  catalog's, so they carry the catalog's descriptions (see Filtering).
 - **Order:** dated rows newest first, then undated rows, each in the source's order among
   equals. Codex dates nothing, so its order is the backend's.
 - **Filtering:** an OpenRouter entry whose `supported_parameters` does not name `tools` is
   dropped, as is an id ending `:batch`; `:free` stays. The Codex catalog drops the
   entries it hides from menus (`visibility: hide`, `supported_in_api: false`). The
-  `openai` platform listing is unfiltered. Dropped models stay reachable as a typed id.
+  `openai` platform listing (`GET /v1/models`) carries only `id`, `object`, `created`,
+  `owned_by` and an optional `shutdown_date`, with no modality or capability field, so
+  its menu is the Codex catalog's suggested entries (the same set `openai-codex` offers)
+  whose id the listing also names, in the catalog's order and with the catalog's fields.
+  The catalog is read through the cache the capability path shares
+  (docs/transport.md, "OpenAI capabilities"). When it cannot be read, the menu is the
+  listing without entries whose `shutdown_date` is before today (UTC), arranged as any
+  listing is, and the failure is logged as the capability path logs it. No id-prefix
+  rule applies in either case. Dropped models stay reachable as a typed id, and a recent
+  pick keeps its place.
 - **Price:** OpenRouter's per-token decimal strings times 10^6; a negative value (`-1`,
   the source's "unknown") leaves the price absent.
 
