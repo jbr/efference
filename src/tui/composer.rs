@@ -213,9 +213,8 @@ impl Composer {
         self.reset_history();
     }
 
-    /// Replace the buffer with `text`, cursor at the end — used by the control
-    /// strip's stager class to park/restore a draft and pre-fill an argument
-    /// (docs/tui.md).
+    /// Replace the buffer with `text`, cursor at the end — restores a
+    /// reattached draft and splices recalled turns (docs/tui.md).
     pub(super) fn set_text(&mut self, text: &str) {
         self.text.clear();
         self.text.push_str(text);

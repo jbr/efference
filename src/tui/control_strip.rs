@@ -33,9 +33,6 @@ pub(crate) enum StripVerb {
     Background,
     /// Approve the pending gate.
     ApproveGate,
-    /// Stage a `.allow` grant spec into the composer for editing (the stager
-    /// class, docs/tui.md).
-    AllowStage,
     /// Abort the pending gate.
     AbortGate,
     /// Open the theme picker.
@@ -121,18 +118,13 @@ impl InteractiveState<'_> {
     pub(super) fn strip_live_items(&self) -> Vec<StripItem> {
         if self.read_only() {
             // No daemon behind the transcript: every loop verb would be an
-            // affordance that does nothing, and the two sub-states below are
-            // unreachable (neither a gate nor a pace dial exists here).
+            // affordance that does nothing, and the pace stepper below is
+            // unreachable (no pace dial exists here).
             return VIEW_TAIL.to_vec();
         }
         if self.pace_widget.is_some() {
             // The active pace stepper (docs/tui.md): ↑/↓ adjust, ⏎ sets, ⎋ reverts.
             return vec![item("pace", "", StripVerb::PaceWidget)];
-        }
-        if self.staging.is_some() {
-            // Mid-staging the composer owns the interaction (⏎ commits, ⎋ cancels);
-            // the row carries the staging note instead of items.
-            return Vec::new();
         }
         let mut items = self.strip_context_verbs();
         items.extend(TAIL);
@@ -192,11 +184,11 @@ impl InteractiveState<'_> {
     /// mouse — key, click, Esc, sidebar, a daemon-side state change — is covered
     /// by one rule rather than by a set-and-clear at each site.
     ///
-    /// The two sub-states that own the row outright (the pace stepper, staging)
-    /// never freeze: their row is a single widget, not a ranked list, and holding a
-    /// pre-widget list under it would render items the sub-state has taken away.
+    /// The pace stepper, which owns the row outright, never freezes: its row is a
+    /// single widget, not a ranked list, and holding a pre-widget list under it
+    /// would render items the stepper has taken away.
     fn sync_strip_engagement(&mut self) {
-        if self.pace_widget.is_some() || self.staging.is_some() || !self.strip_engaged() {
+        if self.pace_widget.is_some() || !self.strip_engaged() {
             self.strip_pinned = None;
         } else if self.strip_pinned.is_none() {
             self.strip_pinned = Some(self.strip_live_items());
@@ -219,7 +211,6 @@ impl InteractiveState<'_> {
         if self.pending_gate.is_some() {
             return vec![
                 item("approve", "⏎", StripVerb::ApproveGate),
-                item("allow…", "", StripVerb::AllowStage),
                 item("abort", "", StripVerb::AbortGate),
             ];
         }
@@ -289,7 +280,6 @@ impl InteractiveState<'_> {
             StripVerb::Interrupt => self.esc_interrupt(),
             StripVerb::Background => self.background_detach(),
             StripVerb::ApproveGate => self.approve_gate(),
-            StripVerb::AllowStage => self.stage_allow(),
             StripVerb::AbortGate => self.abort_gate(),
             StripVerb::Sessions => self.open_sessions(),
             StripVerb::Theme => self.open_theme_picker(),
@@ -298,70 +288,6 @@ impl InteractiveState<'_> {
             StripVerb::Retry => self.retry_start(),
         }
         self.dirty = true;
-    }
-
-    /// The stager class, `allow…` (docs/tui.md): park the operator's draft, move
-    /// focus into the composer with the derived grant spec pre-filled for editing
-    /// — the bash program for a `bash` gate, empty otherwise (a bare `.allow`
-    /// derives a tool grant at commit). The prompt gains the verb's chip; `⏎`
-    /// commits, Esc cancels; either way the parked draft comes back.
-    pub(super) fn stage_allow(&mut self) {
-        let Some(gate) = &self.pending_gate else {
-            return;
-        };
-        let prefill = if gate.name == "bash" {
-            gate.input
-                .get("command")
-                .and_then(|c| c.as_str())
-                .and_then(|cmd| cmd.split_whitespace().next())
-                .unwrap_or("")
-                .to_string()
-        } else {
-            String::new()
-        };
-        self.staging = Some(super::state::Staging {
-            verb: super::state::StagedVerb::Allow,
-            parked: self.composer.text(),
-        });
-        self.composer.set_text(&prefill);
-        self.strip_focus = None;
-        self.strip_pinned = None;
-        self.composing = true;
-        self.ui.debug_message = "allow — edit the grant · ⏎ commit · ⎋ cancel".into();
-        self.dirty = true;
-    }
-
-    /// Commit the staged verb with the composer's current text as its argument,
-    /// then restore the parked draft. `Allow` routes through the same `.allow`
-    /// submit path the typed form uses (docs/tui.md), so the grant semantics are
-    /// one mechanism.
-    pub(super) fn commit_staging(&mut self) {
-        let Some(staging) = self.staging.take() else {
-            return;
-        };
-        let spec = self.composer.text();
-        let submit = match staging.verb {
-            super::state::StagedVerb::Allow => {
-                let spec = spec.trim();
-                if spec.is_empty() {
-                    ".allow".to_string()
-                } else {
-                    format!(".allow {spec}")
-                }
-            }
-        };
-        self.submit_composer(submit);
-        self.composer.set_text(&staging.parked);
-    }
-
-    /// Cancel the staged verb and restore the parked draft — Esc's gentlest rung,
-    /// and the path taken when the gate resolves out from under the stager.
-    pub(super) fn cancel_staging(&mut self) {
-        if let Some(staging) = self.staging.take() {
-            self.composer.set_text(&staging.parked);
-            self.ui.debug_message = "canceled — draft restored".into();
-            self.dirty = true;
-        }
     }
 
     /// The widget class, the pace stepper (docs/tui.md): `⏎` on the `pace` item
@@ -438,7 +364,7 @@ impl InteractiveState<'_> {
     /// first item that doesn't fit — so the omnipresent tail, being rightmost, is
     /// what a narrow terminal loses. The focused item is marked with `▸` in its
     /// reserved marker cell. A dim contextual note (redirect hint at a gate,
-    /// commit/cancel hint while staging) is right-aligned and reserved *out of* the
+    /// the pace stepper's keys) is right-aligned and reserved *out of* the
     /// item budget, so an instruction is never the thing that gets cut. Rebuilds
     /// [`strip_hits`](InteractiveState::strip_hits), the column-range → item map
     /// mouse clicks resolve against.
@@ -448,8 +374,7 @@ impl InteractiveState<'_> {
         // dispatches on are the same list.
         self.sync_strip_engagement();
         let items = self.strip_items();
-        // A focused verb the sub-states took away (the pace stepper, staging) has no
-        // slot to grey in; it drops rather than pointing at nothing.
+        // A focused verb the pace stepper took away has no slot to grey in; it drops rather than pointing at nothing.
         if let Some(verb) = self.strip_focus
             && !items.iter().any(|item| item.verb == verb)
         {
@@ -490,8 +415,6 @@ impl InteractiveState<'_> {
     fn strip_note(&self) -> Option<&'static str> {
         if self.pace_widget.is_some() {
             Some("↑/↓ adjust · ⏎ set · ⎋ revert")
-        } else if self.staging.is_some() {
-            Some("draft saved · ⏎ commit · ⎋ cancel")
         } else if self.strip_list_is_stale() {
             // Leads the gate's own note deliberately: a pinned row that has diverged
             // from the state is the one thing the operator must not act on

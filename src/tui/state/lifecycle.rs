@@ -113,7 +113,6 @@ impl<'a> InteractiveState<'a> {
             composing: true,
             strip_focus: None,
             strip_pinned: None,
-            staging: None,
             pace_widget: None,
             strip_hits: Vec::new(),
             block_menu_focus: 0,

@@ -1027,7 +1027,7 @@ without eliminating:
   straight to the human gate. The catch the design turns on: the spotter has *two* jobs — clearing
   residual calls **and** growing the allowlist (`clear_always` → prefix promotion) — so skipping it
   can't just be "gate everything," or learning stops. The human inherits both jobs via the gate's
-  **`approve-always-at-prefix`** grant (the `.allow` affordance / a `config_edit` approval decision): a self-authorizing `ConfigChange` committed **directly** (no `Proposed` round-trip — the human *is* the reviewer). That grant works at any human gate, so it improves plain `SpotterHuman` too; `HumanOnly` just relocates the learning to the human rather than losing it.
+  **`approve-always-at-prefix`** grant (a `config_edit` approval decision): a self-authorizing `ConfigChange` committed **directly** (no `Proposed` round-trip — the human *is* the reviewer). That grant works at any human gate, so it improves plain `SpotterHuman` too; `HumanOnly` just relocates the learning to the human rather than losing it.
 
 ## Prefix-promotion: the harness learns its allowlist (`src/policy.rs`, `src/agent.rs`, `src/spotter.rs`)
 

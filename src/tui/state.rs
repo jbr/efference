@@ -331,32 +331,6 @@ pub(super) struct RenderCache<'a> {
     pub items: Vec<(u16, u16)>,
 }
 
-/// A stager activation in progress (docs/tui.md): the control-strip verb whose
-/// argument the composer is currently editing, plus the operator's parked draft.
-#[derive(Debug)]
-pub(super) struct Staging {
-    pub verb: StagedVerb,
-    /// The composer text at activation, restored on commit or cancel.
-    pub parked: String,
-}
-
-/// The strip verbs that stage an argument into the composer. One so far; the
-/// chip label and commit dispatch match on this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StagedVerb {
-    /// `.allow` — edit the grant spec (a bash command prefix) before committing.
-    Allow,
-}
-
-impl StagedVerb {
-    /// The chip label shown at the prompt while staging.
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            StagedVerb::Allow => "allow",
-        }
-    }
-}
-
 /// An active inline widget (docs/tui.md): the *widget* item class's sub-state, a
 /// strip verb whose value is being adjusted in place with `↑`/`↓`. One so far —
 /// the pace stepper — so this holds just what a revert needs; a second widget
@@ -508,13 +482,8 @@ pub(super) struct InteractiveState<'a> {
     /// from the live list per frame, and a slot whose verb stops applying greys in
     /// place rather than being removed.
     pub strip_pinned: Option<Vec<StripItem>>,
-    /// An in-progress stager activation (docs/tui.md): the composer is editing a
-    /// strip verb's argument, with the operator's draft parked for restoration on
-    /// commit or cancel. `Some` implies `composing`.
-    pub staging: Option<Staging>,
     /// An active inline pace widget (docs/tui.md): `Some` while the strip's pace
-    /// stepper captures `↑`/`↓`. Implies strip focus; mutually exclusive with
-    /// `staging` (that is composer-focused). Esc reverts it, `⏎` commits.
+    /// stepper captures `↑`/`↓`. Implies strip focus. Esc reverts it, `⏎` commits.
     pub pace_widget: Option<PaceWidget>,
     /// The strip items' rendered column ranges (`x_start..x_end`, the item's verb),
     /// rebuilt each frame — what mouse clicks on the strip row resolve against. The

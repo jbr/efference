@@ -80,22 +80,12 @@ impl<'a> InteractiveState<'a> {
             full.width
         };
 
-        // A staged verb's chip (docs/tui.md) sits left of the composer; the
-        // composer wraps within the remaining columns, so height must agree.
-        let chip_w: u16 = self
-            .staging
-            .as_ref()
-            .map(|s| s.verb.label().chars().count() as u16 + 1)
-            .unwrap_or(0);
         // A read-only view renders no composer at all (docs/tui.md): the row would
         // be an input that cannot send. The transcript takes the rows instead.
         let input_height = if self.read_only() {
             0
         } else {
-            (self
-                .composer
-                .line_count(content_width.saturating_sub(chip_w)) as u16)
-                .clamp(1, 6)
+            (self.composer.line_count(content_width) as u16).clamp(1, 6)
         };
         let proc_height: u16 = (self.processes.len() as u16).min(PROC_PANEL_MAX);
         self.viewport.input_height = input_height;
@@ -250,7 +240,7 @@ impl<'a> InteractiveState<'a> {
         // above (`input_height` is 0 there): an input that cannot send is not chrome
         // worth drawing.
         if !self.read_only() {
-            self.render_composer(frame, input_area, chip_w);
+            self.render_composer(frame, input_area);
         }
 
         self.render_status_bar(frame.buffer_mut(), status_area);
@@ -282,11 +272,8 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Draw the composer into its reserved rows and place the terminal cursor in it
-    /// while composing, so the user sees where they are typing. While staging, the
-    /// verb's chip renders left of the prompt (`allow › rm█`) — the visible "your
-    /// next ⏎ commits an argument, not a message" signal (docs/tui.md); the composer
-    /// itself is untouched chrome, drawn in the columns the chip leaves.
-    fn render_composer(&mut self, frame: &mut Frame, input_area: Rect, chip_w: u16) {
+    /// while composing, so the user sees where they are typing.
+    fn render_composer(&mut self, frame: &mut Frame, input_area: Rect) {
         for y in 0..input_area.height {
             for x in 0..input_area.width {
                 if let Some(cell) = frame
@@ -303,28 +290,10 @@ impl<'a> InteractiveState<'a> {
         } else {
             self.theme.muted_style
         };
-        let composer_area = if let Some(staging) = &self.staging {
-            put_cols(
-                frame.buffer_mut(),
-                input_area,
-                input_area.y,
-                0,
-                staging.verb.label(),
-                self.theme.strip_item_focused_style,
-            );
-            Rect {
-                x: input_area.x + chip_w,
-                y: input_area.y,
-                width: input_area.width.saturating_sub(chip_w),
-                height: input_area.height,
-            }
-        } else {
-            input_area
-        };
-        self.viewport.composer_area = Some(composer_area);
+        self.viewport.composer_area = Some(input_area);
         let cursor = self.composer.render(
             frame.buffer_mut(),
-            composer_area,
+            input_area,
             self.theme.document_bg_style,
             prompt_style,
             self.theme.composer_selection_style,

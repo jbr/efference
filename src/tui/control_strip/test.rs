@@ -309,8 +309,7 @@ fn strip_detach_quits() {
 }
 
 /// A pending gate populates the strip with its full verb set — `approve` on
-/// the landing slot (`↑ ⏎` approves), `allow…`, `abort` — plus the dim
-/// redirect note.
+/// the landing slot (`↑ ⏎` approves), `abort` — plus the dim redirect note.
 #[test]
 fn strip_gate_set_leads_with_approve() {
     use serde_json::json;
@@ -320,7 +319,7 @@ fn strip_gate_set_leads_with_approve() {
     assert_eq!(
         labels(&play),
         vec![
-            "approve", "allow…", "abort", "pace", "sessions", "theme", "help", "detach"
+            "approve", "abort", "pace", "sessions", "theme", "help", "detach"
         ],
         "the gate verbs in rank order, then the tail"
     );
@@ -344,8 +343,7 @@ fn strip_gate_set_leads_with_approve() {
     );
 }
 
-/// `abort` sends the same decision the typed `.abort` sentinel produces, and
-/// leaves any drafted text in place.
+/// `abort` sends an Abort decision and leaves any drafted text in place.
 #[test]
 fn strip_abort_sends_abort_and_keeps_the_draft() {
     use serde_json::json;
@@ -355,7 +353,6 @@ fn strip_abort_sends_abort_and_keeps_the_draft() {
     play.pending_gate("toolu_g", "bash", json!({ "command": "rm -rf ./build" }));
     play.route_key(KeyCode::Up, NONE); // to the 0,0 detent of the draft
     play.route_key(KeyCode::Up, NONE); // spill → strip: approve
-    play.route_key(KeyCode::Right, NONE); // allow…
     play.route_key(KeyCode::Right, NONE); // abort
     play.route_key(KeyCode::Enter, NONE);
     assert!(
@@ -370,132 +367,6 @@ fn strip_abort_sends_abort_and_keeps_the_draft() {
         "actually wait",
         "the draft survives an abort from the strip"
     );
-}
-
-/// The stager class end to end (docs/tui.md): activating `allow…` parks the
-/// draft, pre-fills the derived grant spec (the bash program) in the composer
-/// under an `allow` chip, `⏎` commits a ConfigEdit through the `.allow` path,
-/// and the parked draft comes back.
-#[test]
-fn allow_stager_prefills_commits_and_restores_the_draft() {
-    use crate::frontend::Approval;
-    use crate::log::ConfigChange;
-    use serde_json::json;
-
-    let mut play = Screenplay::new(80, 14);
-    play.user("show the log");
-    play.type_str("a half-typed thought");
-    play.pending_gate("toolu_g", "bash", json!({ "command": "git log --oneline" }));
-
-    play.route_key(KeyCode::Up, NONE); // to the 0,0 detent of the draft
-    play.route_key(KeyCode::Up, NONE); // spill → strip: approve
-    play.route_key(KeyCode::Right, NONE); // allow…
-    play.route_key(KeyCode::Enter, NONE); // stage
-    assert!(play.state.staging.is_some(), "allow… enters staging");
-    assert!(play.state.composing, "staging edits in the composer");
-    assert_eq!(
-        play.state.composer.text(),
-        "git",
-        "the derived spec (the bash program) is pre-filled for editing"
-    );
-    assert!(
-        play.find("draft saved · ⏎ commit · ⎋ cancel").is_some(),
-        "the strip note explains the staging state"
-    );
-
-    play.type_str(" log"); // widen the prefix: `git` → `git log`
-    play.route_key(KeyCode::Enter, NONE); // commit
-    match play.took_approval() {
-        Some((id, Approval::ConfigEdit { change, .. })) => {
-            assert_eq!(id, "toolu_g");
-            assert_eq!(
-                change,
-                ConfigChange::Command {
-                    command: "git log".into()
-                },
-                "the edited spec became the command grant"
-            );
-        }
-        other => panic!("expected a ConfigEdit decision, got {other:?}"),
-    }
-    assert!(play.state.staging.is_none(), "staging ends on commit");
-    assert!(play.state.pending_gate.is_none(), "the gate resolved");
-    assert_eq!(
-        play.state.composer.text(),
-        "a half-typed thought",
-        "the parked draft is restored after commit"
-    );
-}
-
-/// Esc during staging cancels: the parked draft returns, the gate is still
-/// pending, and no decision was sent.
-#[test]
-fn allow_stager_esc_cancels_and_restores() {
-    use serde_json::json;
-    let mut play = Screenplay::new(80, 14);
-    play.user("show the log");
-    play.type_str("draft in progress");
-    play.pending_gate("toolu_g", "bash", json!({ "command": "git log" }));
-    play.route_key(KeyCode::Up, NONE); // detent
-    play.route_key(KeyCode::Up, NONE); // spill → strip
-    play.route_key(KeyCode::Right, NONE);
-    play.route_key(KeyCode::Enter, NONE); // stage
-    assert_eq!(play.state.composer.text(), "git");
-
-    play.route_key(KeyCode::Esc, NONE); // cancel — the gentlest Esc rung
-    assert!(play.state.staging.is_none(), "esc ends staging");
-    assert_eq!(
-        play.state.composer.text(),
-        "draft in progress",
-        "the parked draft is restored on cancel"
-    );
-    assert!(
-        play.state.pending_gate.is_some(),
-        "the gate is still pending"
-    );
-    assert!(play.took_approval().is_none(), "no decision was sent");
-}
-
-/// A gate that resolves out from under the stager (another client, a
-/// daemon-side abort) cancels the staging rather than letting its commit fall
-/// through to a normal turn submit.
-#[test]
-fn gate_resolving_elsewhere_cancels_staging() {
-    use serde_json::json;
-    let mut play = Screenplay::new(80, 14);
-    play.user("show the log");
-    play.type_str("my draft");
-    play.pending_gate("toolu_g", "bash", json!({ "command": "git log" }));
-    play.route_key(KeyCode::Up, NONE); // detent
-    play.route_key(KeyCode::Up, NONE); // spill → strip
-    play.route_key(KeyCode::Right, NONE);
-    play.route_key(KeyCode::Enter, NONE); // stage
-    assert!(play.state.staging.is_some());
-
-    play.event(TuiEvent::Gate(None)); // resolved elsewhere
-    assert!(
-        play.state.staging.is_none(),
-        "staging cancels when the gate goes away"
-    );
-    assert_eq!(
-        play.state.composer.text(),
-        "my draft",
-        "the parked draft is restored"
-    );
-}
-
-/// The staging composer renders the verb's chip at the prompt — the visible
-/// "your next ⏎ commits an argument, not a message" signal.
-#[test]
-fn staging_renders_the_chip_and_prefill() {
-    use serde_json::json;
-    let mut play = Screenplay::new(80, 14);
-    play.user("clean up");
-    play.pending_gate("toolu_g", "bash", json!({ "command": "rm -rf ./build" }));
-    play.route_key(KeyCode::Up, NONE);
-    play.route_key(KeyCode::Right, NONE);
-    play.route_key(KeyCode::Enter, NONE); // stage
-    play.snapshot("gate_allow_staging");
 }
 
 /// **Focus is a verb, and the state moving under it does not re-aim it.**

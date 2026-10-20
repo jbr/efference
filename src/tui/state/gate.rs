@@ -1,4 +1,4 @@
-//! Approval-gate handling and the `.allow` staging flow (docs/permissions.md).
+//! Approval-gate handling: the composer's submit at a gate and the strip's gate verbs (docs/tui.md).
 
 use super::*;
 
@@ -23,39 +23,17 @@ impl<'a> InteractiveState<'a> {
         Some(format!("cache expired — {subject} reads {cost}"))
     }
 
+    /// Handle a composer submission. When a gate is pending, the text resolves it:
+    /// empty approves, anything else redirects the model with that text (docs/tui.md —
+    /// the composer composes text only; abort is the strip's verb). Otherwise it's a
+    /// normal user turn (`POST /turns`).
     pub(in crate::tui) fn submit_composer(&mut self, text: String) {
         if let Some(gate) = self.pending_gate.take() {
             let trimmed = text.trim();
-            let decision = if trimmed.is_empty() {
-                Approval::Approve
-            } else if trimmed == ".abort" {
-                Approval::Abort
-            } else if trimmed == ".allow" || trimmed.starts_with(".allow ") {
-                // Add a rule, then run the call iff it now clears (docs/permissions.md).
-                // An explicit prefix (`.allow git log`) grants that bash command prefix;
-                // bare `.allow` derives the grant from the gated call (the bash program,
-                // or a structured tool's name). The mechanism re-checks — nothing rides
-                // along unchecked. Written to the session's config file like any commit.
-                let spec = trimmed.strip_prefix(".allow").unwrap_or("").trim();
-                match Self::allow_change_impl(&gate, spec) {
-                    Some(change) => Approval::ConfigEdit {
-                        change,
-                        note: "allowed at the gate".into(),
-                    },
-                    // Couldn't form a grant (e.g. bare `.allow` on a path-only tool) —
-                    // fall back to steering the model rather than guessing a rule.
-                    None => Approval::Redirect(trimmed.to_string()),
-                }
+            let (decision, label) = if trimmed.is_empty() {
+                (Approval::Approve, "approved")
             } else {
-                Approval::Redirect(trimmed.to_string())
-            };
-            let label = match &decision {
-                Approval::Approve => "approved".to_string(),
-                Approval::Abort => "aborted".to_string(),
-                Approval::Redirect(_) => "redirected".to_string(),
-                // The composer doesn't author grants (that needs a richer surface); kept
-                // exhaustive so a future grant-capable client labels cleanly.
-                Approval::ConfigEdit { .. } => "granted".to_string(),
+                (Approval::Redirect(trimmed.to_string()), "redirected")
             };
             let _ = self.approve_tx.send((gate.call_id, decision));
             self.composer.clear();
@@ -238,35 +216,6 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Handle a composer submission. When a gate is pending, the text resolves it
-    /// with three-valued semantics — empty approves,
-    /// `.abort` aborts, anything else redirects the model. Otherwise it's a normal
-    /// user turn (`POST /turns`).
-    /// The `ConfigChange` a `.allow` at the gate proposes (docs/permissions.md). An
-    /// explicit `spec` is taken as a bash command-prefix to allow; bare `.allow`
-    /// derives it from the gated call — the program for a `bash` call, else the tool's
-    /// own name. `None` when nothing sensible can be formed (the caller falls back to a
-    /// redirect). Path/scope grants need the richer surface; this is the common case.
-    fn allow_change_impl(gate: &PendingGate, spec: &str) -> Option<crate::log::ConfigChange> {
-        use crate::log::ConfigChange;
-        if !spec.is_empty() {
-            return Some(ConfigChange::Command {
-                command: spec.to_string(),
-            });
-        }
-        if gate.name == "bash" {
-            let cmd = gate.input.get("command").and_then(|c| c.as_str())?;
-            let program = cmd.split_whitespace().next()?;
-            Some(ConfigChange::Command {
-                command: program.to_string(),
-            })
-        } else {
-            Some(ConfigChange::Tool {
-                name: gate.name.clone(),
-            })
-        }
-    }
-
     /// Approve the pending gate without touching the composer — the control
     /// strip's `approve` verb (docs/tui.md). Unlike an empty-composer `⏎` submit,
     /// this leaves any drafted text in place (the draft may be a redirect the
@@ -279,8 +228,8 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Abort the pending gate — the strip's `abort` verb, same decision the typed
-    /// `.abort` sentinel produces, draft likewise left in place.
+    /// Abort the pending gate — the strip's `abort` verb. Like
+    /// `approve_gate`, it leaves any drafted text in place.
     pub(in crate::tui) fn abort_gate(&mut self) {
         if let Some(gate) = self.pending_gate.take() {
             let _ = self.approve_tx.send((gate.call_id, Approval::Abort));

@@ -4,7 +4,7 @@
 use super::*;
 
 /// A spotter-routed gate renders the spotter's reason (docs/permissions.md) beside the
-/// exchange it judged, and offers `allow…` on the strip to add a rule.
+/// exchange it judged; the strip offers `approve` and `abort` and no grant verb.
 #[test]
 fn gate_shows_spotter_reason_inline() {
     let mut play = Screenplay::new(80, 14);
@@ -31,12 +31,12 @@ fn gate_shows_spotter_reason_inline() {
          the `Spot` entry's stance:\n{screen}"
     );
     assert!(
-        screen.contains("allow…"),
-        "the control strip offers the allow… affordance:\n{screen}"
+        screen.contains("approve") && screen.contains("abort"),
+        "the control strip offers approve and abort:\n{screen}"
     );
     assert!(
-        !screen.contains(".allow"),
-        "the typed .allow form is not advertised (the strip is the legend):\n{screen}"
+        !screen.contains("allow"),
+        "no grant verb or typed form is offered at a gate:\n{screen}"
     );
 }
 

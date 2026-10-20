@@ -640,8 +640,8 @@ decisions resolve it:
 
 `efference control decide <seq> allow` sends the first; `deny` sends abort, and
 `deny --message <msg>` sends redirect. `<seq>` is the held call's transcript handle, which
-the status names. In the TUI, an empty composer approves, `.abort` aborts, and any other
-text redirects.
+the status names. In the TUI, an empty composer approves and any text redirects; the
+strip's `abort` aborts.
 
 **What approving scopes: this call, and nothing else.** There is no "allow this kind of
 thing" in an approval. A call that comes back needing a correction — a `write` refused
@@ -680,10 +680,9 @@ The vocabulary is four shapes:
 `command` and `tool` reach it only through the classifier — the next call simply does not
 gate.
 
-In the TUI, `.allow` at a gate commits a grant directly: bare, it derives one from the
-gated call (the bash program, or the tool's name); `.allow git log` grants that prefix
-instead. Over the API it is
-`PUT /approvals/:call_id {"decision": "config_edit", "change": {...}}`.
+A client commits a grant directly with
+`PUT /approvals/:call_id {"decision": "config_edit", "change": {...}}`. The TUI does not
+offer one at a gate today: its composer composes text only.
 
 **When a grant beats an approval.** Ask whether the *next* call of this shape should also
 stop you. If the answer is no — you are about to approve `cargo test` for the fourth time,

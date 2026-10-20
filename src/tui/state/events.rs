@@ -97,13 +97,6 @@ impl<'a> InteractiveState<'a> {
                     // Gate resolved — drop the stale "approval needed" hint.
                     None => IDLE_STATUS.into(),
                 };
-                // A stager edits an argument *for* the pending gate; if the gate
-                // resolves out from under it (another client, a daemon-side abort),
-                // committing would fall through to a normal turn submit — cancel
-                // instead and restore the parked draft.
-                if gate.is_none() && self.staging.is_some() {
-                    self.cancel_staging();
-                }
                 self.pending_gate = gate;
                 self.mark_reproject();
             }

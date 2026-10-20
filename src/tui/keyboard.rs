@@ -188,16 +188,6 @@ impl<'a> InteractiveState<'a> {
                 return true;
             }
 
-            // A staged verb's ⏎ commits the argument (even empty — bare `.allow`
-            // derives its grant), ahead of the gate's own Enter handling.
-            if self.staging.is_some()
-                && key.code == KeyCode::Enter
-                && !key.modifiers.contains(KeyModifiers::ALT)
-            {
-                self.commit_staging();
-                return false;
-            }
-
             // While a gate is pending, Enter always resolves it — even on an empty
             // buffer (= approve), which the composer would otherwise swallow.
             if self.pending_gate.is_some()

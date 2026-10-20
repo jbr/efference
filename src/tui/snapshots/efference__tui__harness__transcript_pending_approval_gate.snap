@@ -16,7 +16,7 @@ expression: self.render()
  8 │                                                                                │
  9 │                                                                                │
 10 │                                                                                │
-11 │   approve ⏎     allow…     abort     pace fast   type below to redirect        │
+11 │   approve ⏎     abort     pace fast     sessions s   type below to redirect    │
 12 │›                                                                               │
    │  ^                                                                             │
 13 │   approval needed: bash — ⏎ approve · type to redirect                         │

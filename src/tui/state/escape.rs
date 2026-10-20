@@ -7,16 +7,10 @@ impl<'a> InteractiveState<'a> {
     /// function of the current state, so there is no counter, timer, or reset. The rungs below run
     /// gentlest first, and the doc names what each one is for.
     pub(in crate::tui) fn handle_escape(&mut self) {
-        // An active inline widget (the pace stepper) and a stager are the gentlest
-        // things Esc can undo — a sub-state revert, before any return/pause/interrupt
-        // rung. The two are mutually exclusive (widget is strip-focused, stager
-        // composer-focused).
+        // An active inline widget (the pace stepper) is the gentlest thing Esc can
+        // undo — a sub-state revert, before any return/pause/interrupt rung.
         if self.pace_widget.is_some() {
             self.revert_pace_widget();
-            return;
-        }
-        if self.staging.is_some() {
-            self.cancel_staging();
             return;
         }
         // An open session drawer is not at rest, however the composer flag stands:

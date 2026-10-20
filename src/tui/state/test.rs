@@ -34,14 +34,6 @@ fn empty_submit_approves_the_gate() {
 }
 
 #[test]
-fn abort_sentinel_aborts_the_gate() {
-    let (mut s, mut arx) = state_with_gate();
-    s.submit_composer(".abort".into());
-    let (_id, dec) = arx.try_recv().unwrap();
-    assert!(matches!(dec, Approval::Abort));
-}
-
-#[test]
 fn other_text_redirects_the_gate() {
     let (mut s, mut arx) = state_with_gate();
     s.submit_composer("use rg instead".into());
@@ -51,36 +43,18 @@ fn other_text_redirects_the_gate() {
     }
 }
 
-/// `.allow <prefix>` at the gate proposes a Command grant for that prefix; the
-/// mechanism (not shown here) re-classifies the call against it (docs/permissions.md).
+/// The composer composes text only: the old `.abort` / `.allow` sentinels redirect
+/// with their literal text, as any other text does (docs/tui.md).
 #[test]
-fn allow_with_a_prefix_proposes_a_command_grant() {
-    let (mut s, mut arx) = state_with_gate();
-    s.submit_composer(".allow git log".into());
-    match arx.try_recv().unwrap().1 {
-        Approval::ConfigEdit { change, .. } => assert_eq!(
-            change,
-            crate::log::ConfigChange::Command {
-                command: "git log".into()
-            }
-        ),
-        other => panic!("expected a config edit, got {other:?}"),
-    }
-}
-
-/// Bare `.allow` on a `bash` gate derives the grant from the command's program.
-#[test]
-fn bare_allow_grants_the_bash_program() {
-    let (mut s, mut arx) = state_with_gate(); // gate is `ls`
-    s.submit_composer(".allow".into());
-    match arx.try_recv().unwrap().1 {
-        Approval::ConfigEdit { change, .. } => assert_eq!(
-            change,
-            crate::log::ConfigChange::Command {
-                command: "ls".into()
-            }
-        ),
-        other => panic!("expected a config edit, got {other:?}"),
+fn former_sentinels_redirect_with_their_literal_text() {
+    for text in [".abort", ".allow", ".allow git log"] {
+        let (mut s, mut arx) = state_with_gate();
+        s.submit_composer(text.into());
+        match arx.try_recv().unwrap().1 {
+            Approval::Redirect(m) => assert_eq!(m, text),
+            other => panic!("expected redirect for {text:?}, got {other:?}"),
+        }
+        assert!(s.pending_gate.is_none(), "gate cleared after resolving");
     }
 }
 

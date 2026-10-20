@@ -18,7 +18,7 @@ expression: self.render()
 10 │                                                                                │
 11 │                                                                                │
 12 │                                                                                │
-13 │   approve ⏎     allow…     abort     pace fast   type below to redirect        │
+13 │   approve ⏎     abort     pace fast     sessions s   type below to redirect    │
 14 │›                                                                               │
    │  ^                                                                             │
 15 │   approval needed: agents__decide — ⏎ approve · type to redirect               │
