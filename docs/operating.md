@@ -180,7 +180,11 @@ client that must wait. The guide a supervising session reads is
 `efference://guide/supervising`.
 A child ends with its creator unless created `detached`. A session created in a
 directory with no project config (`efference.toml`) is the setup profile, whoever
-creates it: it opens with the new-user experience, which is not optional. To create a
+creates it: it opens with the new-user experience, which is not optional. The project
+config is the session's safety perimeter, and no session works without one: the setup
+profile is told to write `efference.toml` before any other work and hand off to a
+session that inherits it, so the first working session already runs inside the
+perimeter. There is no config-less working session to fall back to. To create a
 working session in such a directory, write an `efference.toml` there first.
 
 ## Where a session lives

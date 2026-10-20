@@ -19,7 +19,7 @@ use trillium_cookies::{
     cookie::{Cookie, SameSite},
 };
 
-/// What `efference serve --bind` resolved to — built by the CLI from flags, consumed
+/// What `--bind` resolved to — built by the CLI from flags, consumed
 /// by [`arm`]. Deliberately not part of the session config: the config file is
 /// model-proposable and fs-watched live, and network exposure must not be requestable
 /// from inside the session (docs/web-bind.md).
@@ -335,7 +335,7 @@ enum CodeRejection {
 /// and the binding probe reaching a session bind's router.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Surface {
-    /// `efference serve --bind`: `/v1` takes either credential, `/files` the cookie
+    /// A session bind: `/v1` takes either credential, `/files` the cookie
     /// only (docs/web-bind.md).
     Session,
     /// A multi-session host: everything under `/sessions` takes either credential —

@@ -12,8 +12,8 @@
 //!
 //! Mounting reuses stored credentials (`auth::stored_header` against the same
 //! `KeychainStore` boot uses) and never runs the authorization dance: a server
-//! that answers `401` is reported as requiring authorization — run
-//! `efference serve` — and counts as not mounted. A required server that does
+//! that answers `401` is reported as requiring authorization (a session
+//! started there runs the dance) and counts as not mounted. A required server that does
 //! not mount fails the check, same as boot; an `optional = true` one is
 //! reported and tolerated. Nothing is minted or bound: this is the terminus
 //! for a "set this project up" task, not a session.
@@ -81,7 +81,7 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
                     .downcast_ref::<efference::mcp::auth::AuthorizationRequired>()
                     .is_some()
                 {
-                    "requires authorization — run `efference serve`".to_string()
+                    "requires authorization — starting a session here opens its sign-in".to_string()
                 } else {
                     format!("{e:#}")
                 };

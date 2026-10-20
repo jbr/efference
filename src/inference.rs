@@ -415,7 +415,8 @@ fn resolve_declaration(
         (None, None) => {
             return Err(format!(
                 "connection {name:?}: name a `provider`, or give a `dialect` \
-                 (`messages`, `responses`, or `systemone`) and a `base-url` to describe \
+                 (`messages`, `responses`, `completions`, or `systemone`) and a `base-url` \
+                 to describe \
                  an endpoint this build knows no name for (docs/transport.md)"
             ));
         }
