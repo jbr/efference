@@ -160,8 +160,8 @@ impl OpenError {
         let class = match status {
             None => FailureClass::Transient,
             Some(408 | 429) | Some(500..=599) => match classify_body(detail) {
-                // An expired credential on a retryable status is still one the
-                // transport already re-read; nothing more to try here.
+                // An expired credential on a retryable status: the transport re-reads
+                // only on 401 and 403, and a resend with the same value cannot succeed.
                 FailureClass::CredentialExpired => FailureClass::Terminal,
                 class => class,
             },
