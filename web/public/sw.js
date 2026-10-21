@@ -189,7 +189,14 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const path = event.notification.data?.path ?? "/";
-  const target = new URL(path, self.location.origin);
+  let target = new URL(path, self.location.origin);
+  // The path is the push sender's choice, not ours: an absolute URL —
+  // `https://…`, `//…`, `javascript:…` — overrides the base origin in that
+  // constructor. Anything that resolves off-origin is replaced with the app
+  // root; `openWindow` and the focus match below then stay on this origin.
+  if (target.origin !== self.location.origin) {
+    target = new URL("/", self.location.origin);
+  }
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })

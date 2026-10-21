@@ -7,6 +7,10 @@ behind a change, see [`journal/`](journal/).
 
 ## [Unreleased]
 
+### Security
+
+- The service worker clamps notification targets to its own origin, so a forged push cannot open an arbitrary URL (docs/web-push.md).
+
 ### Added
 
 - Web live summary previews at their covered spans, temporary triage thinking above the composer, and detached consolidation text/thinking output frames.
