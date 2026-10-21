@@ -157,11 +157,11 @@ derive from one secret the host keeps in your OS keychain, created the first tim
 listens on TCP.
 <!-- src: src/daemon/tcp.rs::mint_link, authenticate_code, TcpAuth::credential; src/auth.rs::COOKIE_TTL (deliberately not stated), ROOT_ITEM, Root::load, Root::bearer -->
 
-`efference auth rotate` replaces that secret, which ends every browser's sign-in — once the
-host restarts. A running host keeps accepting the old sign-ins until then, so after a lost
-device: rotate, then restart the host.
-<!-- src: src/auth.rs::Root::rotate (deletes the item only); src/daemon/tcp.rs::arm_with_ledger (keys derived once at start) -->
-<!-- TODO: blocked on backlog/inbox/rotate-revokes-a-running-host.md; restate if rotation becomes live. -->
+`efference auth rotate` replaces that secret, which ends every browser's sign-in when the
+host next starts. `rotate` refuses while a local daemon is listening — it would keep
+serving the root the store no longer has — so after a lost device: stop the host, rotate,
+start it again.
+<!-- src: src/auth.rs::Root::rotate (deletes the item only); src/bin/efference/main.rs::local_daemon_is_listening (the refusal); src/daemon/tcp.rs::arm_with_ledger (keys derived once at start) -->
 
 A browser signed in through a plain-HTTP listener — on this machine, or behind
 `tailscale serve` — holds a cookie that is not marked secure. On this machine that cookie

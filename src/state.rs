@@ -1,10 +1,11 @@
 //! The user state database, `~/.efference/state.db` (docs/state-store.md).
 //!
-//! One file under the home directory holding the host's persistent state that is
-//! not a secret: model picks, each connection's model listing, push
-//! subscriptions, and the TOTP burn ledger. The values that *are* secrets — the
-//! machine root, API keys, OAuth grants — live in the OS credential store
-//! instead (docs/secrets.md).
+//! One file under the home directory holding the host's persistent state: model
+//! picks, each connection's model listing, push subscriptions, and the TOTP burn
+//! ledger. A subscription carries the material that delivers to that browser, so
+//! boot tightens the file owner-only (docs/state-store.md); the machine root,
+//! API keys, and OAuth grants live in the OS credential store instead
+//! (docs/secrets.md).
 //!
 //! Each table's own module owns its schema and opens its own connection per
 //! operation, passing its `CREATE TABLE IF NOT EXISTS` statements to [`open`].

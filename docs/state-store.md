@@ -1,9 +1,10 @@
 # The user state database
 
-One sqlite file, `~/.efference/state.db`, holds the host's persistent state that is not a
-secret: which models sessions have picked, each connection's model listing, the browsers
-subscribed to push, and the TOTP timesteps already spent. The values that *are* secrets —
-the machine root, API keys, OAuth grants — are in the OS credential store instead
+One sqlite file, `~/.efference/state.db`, holds the host's persistent state: which models
+sessions have picked, each connection's model listing, the browsers subscribed to push, and
+the TOTP timesteps already spent. A push subscription carries the material that delivers
+to that browser, so the file and its directory are owner-only — see **Modes** below. The
+machine root, API keys, and OAuth grants stay in the OS credential store
 ([secrets.md](secrets.md)). The configuration is still a text file
 (`config.toml`, [config-format.md](../assets/guide/config-format.md)); whether it should move here is an
 open question ([backlog/inbox/user-state-store.md](../backlog/inbox/user-state-store.md)).
