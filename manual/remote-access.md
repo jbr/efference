@@ -168,8 +168,8 @@ A browser signed in through a plain-HTTP listener — on this machine, or behind
 is also sent to any other server you run on `localhost`, whatever its port. A host that
 serves HTTPS itself sets the stricter `__Host-` cookie.
 <!-- src: src/daemon/tcp.rs::TcpAuth::cookie_name, mint_session; src/auth.rs::COOKIE_NAME, LOOPBACK_COOKIE_NAME -->
-<!-- TODO: blocked on backlog/inbox/plaintext-listener-cookie-scope.md. -->
-<!-- TODO: the sign-in model (enrollment, per-device revocation, step-up) is being reworked in its own session; this section stays at this level until it lands. -->
+<!-- TODO: blocked on backlog/inbox/web-token-in-localstorage.md, which removes the cookie entirely rather than scoping it. -->
+<!-- TODO: the sign-in model (enrollment, per-device revocation, step-up) is being reworked in backlog/inbox/browser-sign-in-by-approval.md; this section stays at this level until it lands. -->
 
 Other accounts on this machine can connect to a loopback port too. They still need to sign
 in, but do not give a host a web address on a machine you share with people you do not
