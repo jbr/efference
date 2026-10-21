@@ -6,11 +6,37 @@ use super::*;
 use std::hash::{BuildHasher, Hasher, RandomState};
 use std::os::unix::fs::PermissionsExt;
 
-fn scratch() -> std::path::PathBuf {
+/// A scratch directory that removes itself when the test ends, however it
+/// ends — a panic mid-test must not leave the dir behind.
+struct ScratchDir(std::path::PathBuf);
+
+impl std::ops::Deref for ScratchDir {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// For the `AsRef<Path>` call sites (`set_permissions` and friends), where
+/// deref coercion does not reach a generic.
+impl AsRef<std::path::Path> for ScratchDir {
+    fn as_ref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn scratch() -> ScratchDir {
     let n = RandomState::new().build_hasher().finish();
     let dir = std::env::temp_dir().join(format!("efference-permissions-{n:016x}"));
     std::fs::create_dir_all(&dir).expect("scratch dir");
-    dir
+    ScratchDir(dir)
 }
 
 fn mode(path: &std::path::Path) -> u32 {
