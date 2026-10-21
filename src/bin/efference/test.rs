@@ -479,3 +479,39 @@ fn a_public_url_is_an_https_origin_when_the_host_terminates_tls() {
     assert!(serve::checked_public_url("https://box.example.ts.net/app", false).is_err());
     assert!(serve::checked_public_url("box.example.ts.net", false).is_err());
 }
+
+/// The rotate guard's probe: a live listener answers, an absent path and a
+/// stale non-socket file do not — the same liveness the client verbs resolve a
+/// host by (docs/control-channel.md), so a dead process's socket file cannot
+/// refuse a rotation.
+#[test]
+fn a_listening_socket_answers_and_a_stale_or_absent_one_does_not() {
+    // Short absolute paths: Darwin refuses to bind or address a socket past
+    // its 104-byte `SUN_LEN`, and a session temp dir alone can spend most of
+    // that budget.
+    let n = {
+        use std::hash::{BuildHasher, Hasher, RandomState};
+        RandomState::new().build_hasher().finish()
+    };
+    let socket = std::path::PathBuf::from(format!("/tmp/eprb-{n:08x}.sock"));
+    let stale = std::path::PathBuf::from(format!("/tmp/eprb-{n:08x}.stale"));
+
+    assert!(
+        !local_daemon_is_listening(&socket),
+        "an absent path answers nothing"
+    );
+
+    let _listener = std::os::unix::net::UnixListener::bind(&socket).expect("bind");
+    assert!(
+        local_daemon_is_listening(&socket),
+        "a live listener answers"
+    );
+    let _ = std::fs::remove_file(&socket);
+
+    std::fs::write(&stale, b"not a socket").expect("write");
+    assert!(
+        !local_daemon_is_listening(&stale),
+        "a regular file answers nothing"
+    );
+    let _ = std::fs::remove_file(&stale);
+}

@@ -31,6 +31,11 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
 
     let listing = server.get("/sessions/one/files/").await;
     listing.assert_status(200);
+    assert_eq!(
+        listing.response_headers().get_str("cache-control"),
+        Some("private, no-cache"),
+        "file answers revalidate, never reuse from a store"
+    );
     let names: Vec<String> = json(listing.body())["entries"]
         .as_array()
         .unwrap()

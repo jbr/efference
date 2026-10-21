@@ -12,6 +12,7 @@
 use super::errors::{ErrorCode, fail};
 use super::files::Files;
 use super::http::control_routes;
+use super::permissions;
 use super::runtime::SessionRuntime;
 use super::*;
 use crate::inference::SessionOptions;
@@ -665,6 +666,16 @@ pub async fn serve_host(
     socket: PathBuf,
     bind: Option<tcp::TcpBind>,
 ) -> Result<(), Error> {
+    // The state beside this socket and the socket itself are the host's whole
+    // on-disk footprint; tighten them before anything is served from here
+    // (docs/state-store.md). The directory is created when missing so the
+    // first boot is tightened too, not only later ones.
+    if let Some(dir) = socket.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            log::warn!("could not prepare {}: {e}", dir.display());
+        }
+        permissions::tighten_state_dir(dir);
+    }
     let web = bind.map(tcp::arm);
     let web_auth = web.as_ref().map(|(auth, _)| Arc::clone(auth));
     let server = trillium_tokio::config()
@@ -679,6 +690,10 @@ pub async fn serve_host(
             },
             App::Host,
         ));
+    // The bind minted the socket under the process umask; owner-only is the
+    // contract (docs/control-channel.md) — a connect needs write permission,
+    // so this is exactly the accounts that may reach the channel.
+    permissions::tighten_socket(&socket);
     log::info!("host socket: {}", socket.display());
     let mut _tcp_server = None;
     if let Some((auth, listener)) = web {

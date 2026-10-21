@@ -616,6 +616,46 @@ async fn every_response_carries_the_security_headers() {
             Some("DENY"),
             "{path} did not deny framing"
         );
+        assert_eq!(
+            conn.response_headers()
+                .get_str(KnownHeaderName::CrossOriginOpenerPolicy),
+            Some("same-origin"),
+            "{path} did not isolate its browsing context"
+        );
+        // Control answers are never reused from a store; the frontend and 404
+        // answers set none (docs/web-bind.md).
+        assert_eq!(
+            conn.response_headers()
+                .get_str(KnownHeaderName::CacheControl),
+            if path.starts_with("/v1") {
+                Some("no-store")
+            } else {
+                None
+            },
+            "{path} cache-control"
+        );
+        assert!(
+            conn.response_headers()
+                .get_str(KnownHeaderName::StrictTransportSecurity)
+                .is_none(),
+            "the plaintext loopback bind sends no HSTS"
+        );
+    }
+}
+
+/// HSTS rides only on a TLS listener (docs/web-bind.md): the layer's `tls`
+/// flag comes from the arm, fixed at bind time rather than read off the conn.
+#[tokio::test]
+async fn hsts_rides_only_when_the_layer_is_tls() {
+    for (tls, expected) in [(true, Some("max-age=31536000")), (false, None)] {
+        let server = TestServer::new(SecurityHeaders::new(tls)).await;
+        let conn = server.get("/").await;
+        assert_eq!(
+            conn.response_headers()
+                .get_str(KnownHeaderName::StrictTransportSecurity),
+            expected,
+            "tls={tls}"
+        );
     }
 }
 

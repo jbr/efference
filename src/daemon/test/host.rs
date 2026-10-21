@@ -169,6 +169,42 @@ async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Han
     (server, bearer)
 }
 
+/// A hosted session's control answers under its prefix, over the web transport:
+/// `no-store` names the inner route a session-prefixed path counts as, the
+/// browsing-context isolation rides every answer, and the plaintext web
+/// transport sends no HSTS (docs/web-bind.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_hosted_sessions_control_answers_are_never_stored() {
+    let roots = Roots::new();
+    let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
+    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
+    host.adopt("one".into(), runtime)
+        .expect("the id is free in this test");
+    let (server, bearer) = network_host_server(&host).await;
+
+    let conn = server
+        .get("/sessions/one/v1/state")
+        .with_request_header("authorization", bearer)
+        .await;
+    conn.assert_ok();
+    assert_eq!(
+        conn.response_headers().get_str("cache-control"),
+        Some("no-store"),
+        "a session-prefixed control answer is its inner route's"
+    );
+    assert_eq!(
+        conn.response_headers()
+            .get_str("cross-origin-opener-policy"),
+        Some("same-origin")
+    );
+    assert!(
+        conn.response_headers()
+            .get_str("strict-transport-security")
+            .is_none(),
+        "the plaintext web transport sends no HSTS"
+    );
+}
+
 /// The host's socket stack as a streaming client under one session's prefix — the
 /// `test_client` pattern, because `TestServer` reads bodies eagerly and never
 /// returns on `/events`.

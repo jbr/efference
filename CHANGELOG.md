@@ -10,6 +10,10 @@ behind a change, see [`journal/`](journal/).
 ### Security
 
 - The service worker clamps notification targets to its own origin, so a forged push cannot open an arbitrary URL (docs/web-push.md).
+- Host boot tightens its state directory, state files, and the host socket to owner-only modes — one-way, skipping absent files (docs/state-store.md, docs/control-channel.md).
+- `efference auth rotate` refuses while a local daemon is listening on the control socket.
+- Web responses carry `Cache-Control` (`no-store` on `/v1`, `private, no-cache` on `/files`), `Cross-Origin-Opener-Policy: same-origin`, and HSTS on TLS binds (docs/web-bind.md).
+- Control-API docs pin the 10 MiB default request-body cap: oversize bodies answer `400` as parse errors, not `413` (docs/control-api.md).
 
 ### Added
 

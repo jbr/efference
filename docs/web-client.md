@@ -1992,10 +1992,13 @@ or a `/language-(\w+)/` capture. Links come from `react-markdown`'s
 `href`.
 
 **A `Content-Security-Policy` on every response any listener produces**
-(`SecurityHeaders` in `src/daemon/tcp.rs`), alongside `x-content-type-options:
+(`SecurityHeaders` in `src/daemon/tcp.rs`), alongside `cross-origin-opener-policy:
+same-origin`, `x-content-type-options:
 nosniff`, `referrer-policy: no-referrer`, and `x-frame-options: DENY` (redundant
 with `frame-ancestors` for anything current, and one header for browsers that
-predate CSP3). It sits outermost in the handler
+predate CSP3). The transport-side headers the layer also sets — `cache-control` on
+`/v1` and `/files`, HSTS on a TLS bind — are described with the bind
+([web-bind.md](web-bind.md)). It sits outermost in the handler
 stack so its `before_send` runs last, and the headers land on the SPA index, a
 hashed asset, a `/v1` rejection and a 404 alike — a handler that answered without
 them would be the hole. The layer is on the Unix socket's stack too, so `nosniff`

@@ -187,6 +187,13 @@ impl TcpAuth {
             .clone()
     }
 
+    /// Whether the listener this authenticator fronts terminates TLS — false
+    /// for the plaintext loopback dev bind (`arm`'s `tls: None`). HSTS rides
+    /// only on a TLS listener (docs/web-bind.md).
+    pub(crate) fn is_tls(&self) -> bool {
+        !self.plaintext
+    }
+
     /// Record the port the listener actually bound, for a bind that asked for
     /// port 0: minted links then name a port a browser can reach. A base that
     /// names a port of its own is left alone — it is the configured public URL.
@@ -564,17 +571,48 @@ const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe
                    style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; \
                    base-uri 'none'; frame-ancestors 'none'; object-src 'none'";
 
-/// Response headers that bound what a string escaping the client's escaping could
-/// do. Defence in depth behind the invariant that nothing turns untrusted content
-/// into markup (docs/web-client.md): every body on this page is model-
-/// or tool-authored, and the page holds a credential for a channel that runs
-/// commands. `frame-ancestors 'none'` also keeps the session out of an iframe,
-/// which no surface here wants.
-pub(crate) struct SecurityHeaders;
+/// The transport-side cache and TLS headers, alongside the page-hardening ones:
+/// `no-store` on every `/v1` route and HSTS on a TLS listener, described with
+/// the bind (docs/web-bind.md).
+pub(crate) struct SecurityHeaders {
+    /// Whether the listener this stack serves terminates TLS, fixed at bind
+    /// time like the rest of the stack rather than read off the conn.
+    tls: bool,
+}
+
+impl SecurityHeaders {
+    pub(crate) fn new(tls: bool) -> Self {
+        Self { tls }
+    }
+}
 
 impl trillium::Handler for SecurityHeaders {
     async fn before_send(&self, conn: trillium::Conn) -> trillium::Conn {
-        conn.with_response_header(KnownHeaderName::ContentSecurityPolicy, CSP)
+        // Control answers are never reused from a store: on a host the same
+        // address names a different session's route, and the served shape
+        // changes with the build (docs/control-api.md). A session-prefixed
+        // path counts as its inner route, so a host's `/sessions/<id>/v1/…`
+        // is covered too. `/files` sets its own `private, no-cache` in its
+        // read stage, which is what keeps the header off its change streams.
+        let route = session_scoped(conn.path()).unwrap_or(conn.path());
+        let conn = if under(route, "/v1") {
+            conn.with_response_header(KnownHeaderName::CacheControl, "no-store")
+        } else {
+            conn
+        };
+        // RFC 6797 defines the field for secure transports only, so a
+        // plaintext loopback bind does not send it. No subdomain scope and no
+        // preload: the bind is one host.
+        let conn = if self.tls {
+            conn.with_response_header(KnownHeaderName::StrictTransportSecurity, "max-age=31536000")
+        } else {
+            conn
+        };
+        // A cross-origin document ends up neither this page's opener nor its
+        // openee: the page holds a session credential, and a cross-origin
+        // window must not hold a reference into its browsing-context group.
+        conn.with_response_header(KnownHeaderName::CrossOriginOpenerPolicy, "same-origin")
+            .with_response_header(KnownHeaderName::ContentSecurityPolicy, CSP)
             .with_response_header("x-content-type-options", "nosniff")
             // Redundant with `frame-ancestors` for anything current, and one
             // header for the browsers that predate CSP3.

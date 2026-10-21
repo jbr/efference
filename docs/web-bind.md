@@ -76,6 +76,18 @@ The UDS exemption is therefore structural — which listener a conn arrived on �
 than inferred per-conn (a `peer_ip().is_none()` style guess would fail open if a
 transport stopped setting it).
 
+**Response headers.** The outermost layer, `SecurityHeaders` (`src/daemon/tcp.rs`),
+stamps every response each listener produces — route bodies, router errors, and the
+web client alike — so a handler that answered without them would be the hole. It
+carries the page-hardening headers ([web-client.md](web-client.md)) plus three
+transport-side ones: `Cache-Control: no-store` on every `/v1` route, a
+session-prefixed path counting as its inner route; `Cross-Origin-Opener-Policy:
+same-origin`; and `Strict-Transport-Security: max-age=31536000` only when the
+listener terminates TLS — the flag is the arm's, fixed at bind time, and there is no
+subdomain scope or preload because the bind is one host. `/files` sets its own
+`Cache-Control: private, no-cache` in its read stage, which keeps the header off the
+route's change streams.
+
 TLS terminates in-daemon: `--tls-cert`/`--tls-key` take PEM paths (the
 `tailscale cert` output) into a `RustlsAcceptor`. A TLS bind also serves **HTTP/3**: a
 QUIC listener on the same port (UDP, `trillium-quinn`), which the listener builder
@@ -271,6 +283,11 @@ argument.
 same-origin script execution on a page that holds a session credential for a channel
 that runs commands; `nosniff` rides every response already, so both halves are
 covered.
+
+**Revalidation, not caching.** The file answers set `Cache-Control: private,
+no-cache` beside the `ETag`: a stored copy revalidates every use, which is what
+keeps the `304` the viewer polls on correct across edits. The change streams
+under the route set none.
 
 **The root is the process working directory** — session-stable, the same root the
 built-in tools resolve relative paths against — with no coupling to the session's

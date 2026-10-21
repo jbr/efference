@@ -66,6 +66,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Auth {
             command: AuthCommand::Rotate,
         } => {
+            // Rotation removes the root from the store; a daemon already
+            // running holds it in memory and would keep serving after the
+            // store no longer has it. A false positive — something answering
+            // the socket that is not a host — only skips a rotation, so the
+            // probe may over-refuse.
+            let socket = cli::mount_host();
+            if local_daemon_is_listening(&socket) {
+                return Err(format!(
+                    "refusing to rotate: a local daemon is listening on {}; stop it first. \
+                     Rotating under a live daemon leaves it serving a root the store no \
+                     longer has.",
+                    socket.display()
+                )
+                .into());
+            }
             let secrets = efference::secrets::Secrets::detect()?;
             efference::auth::Root::rotate(&secrets)?;
             eprintln!(
@@ -77,6 +92,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Ok(())
         }
     }
+}
+
+/// Whether something is answering `socket` right now. A successful connect is
+/// the daemon's own evidence of listening — the same liveness rule the client
+/// verbs resolve a host by (docs/control-channel.md) — so a stale socket file
+/// left by a dead process does not refuse a rotation.
+fn local_daemon_is_listening(socket: &Path) -> bool {
+    std::os::unix::net::UnixStream::connect(socket).is_ok()
 }
 
 type CliResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;

@@ -50,6 +50,14 @@ ledger is the exception, and deliberately: it reports the error and the caller r
 the code rather than accept one it cannot prove single-use. Its `is_burned` read, which
 only chooses which code to hand a user, stays optimistic.
 
+**Modes.** The host boot tightens what it finds beside the control socket to owner-only
+— the directory, `state.db`, `config.toml`, and the names earlier releases wrote
+(`src/daemon/permissions.rs`; the socket itself in [control-channel.md](control-channel.md)).
+The creating process's umask need not be as private as this content warrants — model
+picks, subscriptions, the burn ledger — so the tightening is part of boot rather than
+of each file's creation. It is one-way (a file already stricter stays so), skips absent
+files, and warns without failing boot when a mode cannot be changed.
+
 ## Concurrency
 
 Every daemon under the user shares this file, and writes to it at the same time — a

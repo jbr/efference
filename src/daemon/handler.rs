@@ -81,8 +81,9 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         // transport, not only the browser-facing one: `nosniff` is half of what
         // makes serving a repository's `.html` as `text/plain` safe, and setting
         // it everywhere is cheaper than reasoning about whether some consumer of
-        // the Unix socket renders what it reads.
-        SecurityHeaders,
+        // the Unix socket renders what it reads. HSTS is the one
+        // listener-conditional: only a TLS web bind sends it.
+        SecurityHeaders::new(web_auth.as_ref().is_some_and(|auth| auth.is_tls())),
         // HEAD support: rewrites to GET on the way in, strips the body (keeping
         // content-length) on the way out. Before the gate, so it only ever sees GET.
         trillium_head::head(),
@@ -92,9 +93,10 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         web_auth.clone().map(|auth| gate(auth, surface)),
         // A content-hash `etag` on every successful GET with a static body, and a
         // matching `if-none-match` answered `304` — the whole caching story for the
-        // single-entry reads (docs/control-api.md). Nothing sets a `cache-control`
-        // lifetime: the served shape is the build's, not the log's, and at a socket
-        // root the same address names a different entry in every session.
+        // single-entry reads (docs/control-api.md). `cache-control` is `SecurityHeaders`'
+        // (`no-store` on `/v1`): the served shape is the build's, not the log's, and
+        // at a socket root the same address names a different entry in every session,
+        // so the validator's revalidation is the only reuse path.
         Etag::new(),
         socket_auth.map(enrollment_routes),
         web_auth.map(mint_routes),

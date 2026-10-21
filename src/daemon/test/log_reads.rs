@@ -150,18 +150,19 @@ async fn contradictory_bounds_are_a_typed_error() {
 
 /// `GET /log/:seq` is the general form of reference resolution for a windowed client.
 /// It validates rather than promising freshness: a content `etag`, a `304` on a match,
-/// and no `cache-control` — the address is shared across sessions at a socket-root
-/// binding, and the served shape changes with the build, so a stored copy must be
-/// checked against this daemon every time.
+/// and `no-store` — the address is shared across sessions at a socket-root binding,
+/// and the served shape changes with the build, so a stored copy must be checked
+/// against this daemon every time.
 #[tokio::test]
 async fn one_entry_by_seq_validates_with_an_etag() {
     let app = test_server(&log_of(3)).await;
 
     let conn = app.get("/v1/log/1").await;
     conn.assert_ok();
-    assert!(
-        conn.response_headers().get_str("cache-control").is_none(),
-        "no freshness lifetime on a cross-session address"
+    assert_eq!(
+        conn.response_headers().get_str("cache-control"),
+        Some("no-store"),
+        "never reused from a store on a cross-session address"
     );
     let etag = conn
         .response_headers()

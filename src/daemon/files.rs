@@ -541,6 +541,7 @@ impl Files {
                         return conn
                             .with_status(200)
                             .with_response_header(KnownHeaderName::ContentType, "application/json")
+                            .with_response_header(KnownHeaderName::CacheControl, CACHE_CONTROL)
                             .with_body(serde_json::to_string(&listing).unwrap_or_default())
                             .halt();
                     }
@@ -550,6 +551,11 @@ impl Files {
         )
     }
 }
+
+/// `cache-control` on the file answers (docs/web-bind.md): `private` because
+/// the route is cookie-gated, `no-cache` because reuse must revalidate — the
+/// `etag` only pays off when a stored copy asks before it is used.
+const CACHE_CONTROL: &str = "private, no-cache";
 
 async fn read(conn: Conn, path: &Path, meta: &std::fs::Metadata) -> Conn {
     if meta.len() > MAX_BYTES {
@@ -573,6 +579,7 @@ async fn read(conn: Conn, path: &Path, meta: &std::fs::Metadata) -> Conn {
         return conn
             .with_status(304)
             .with_response_header(KnownHeaderName::Etag, validator)
+            .with_response_header(KnownHeaderName::CacheControl, CACHE_CONTROL)
             .halt();
     }
     let Ok(bytes) = tokio::fs::read(path).await else {
@@ -602,6 +609,7 @@ async fn read(conn: Conn, path: &Path, meta: &std::fs::Metadata) -> Conn {
         // Never the file's own type — see the module docs.
         .with_response_header(KnownHeaderName::ContentType, "text/plain; charset=utf-8")
         .with_response_header(KnownHeaderName::Etag, validator)
+        .with_response_header(KnownHeaderName::CacheControl, CACHE_CONTROL)
         .with_body(text)
         .halt()
 }

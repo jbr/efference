@@ -33,6 +33,13 @@ version prefix because it is a human surface rather than a control one. Both are
 [web-bind.md](web-bind.md); the UDS stays auth-exempt and everything below is
 unchanged on it.
 
+**Body size.** The transport caps a request body at 10 MiB (trillium-http's default
+`received_body_max_len`); a larger body reaches the route as an empty string, whose
+decoder answers `400` with a parse error rather than `413`. No `/v1` route
+legitimately reads a body that size — the one exception, `POST /attachments`, raises
+its own read cap to 64 MiB — so an over-cap body failing as malformed input is the
+intended shape, and a route that wants more raises the cap at its own read.
+
 A client finds the host by `--host-socket <path>`, else the first live of
 `.efference/host.sock` here and `~/.efference/host.sock`, and the session on it by id
 (`efference --name <id>`, `control --agent <id>`), or as the single session the host lists in
@@ -1484,8 +1491,10 @@ inside one.
 
 **Validated, not immutable.** The router answers every successful GET with a
 content-hash `ETag`, and a matching `If-None-Match` with `304 Not Modified`, so a
-returning client's second look is one empty round-trip. No route sets a
-`Cache-Control` lifetime. The `LogEntry` itself is written once and never
+returning client's second look is one empty round-trip. `Cache-Control` is
+`no-store` on every `/v1` route ([web-bind.md](web-bind.md)): the reuse path is
+the `ETag` revalidation, never a stored copy. The `LogEntry` itself is written
+once and never
 mutated — triage chooses `wire` at append time from the verdict rather than
 flipping it afterward — but what this route serves is the build's entry *view*,
 which changes shape with the daemon, and at a session daemon's socket root the
