@@ -590,7 +590,7 @@ export function SyntaxSpecimens() {
 
 // The fixtures are files under `public/gallery/`, referenced by path rather
 // than imported: an import of a small SVG is inlined as a `data:` URI, which
-// the client's CSP blocks (`default-src 'self'`, no `img-src`; src/daemon/tcp.rs).
+// the client's CSP does not admit (`img-src 'self' blob:`; src/daemon/tcp.rs).
 // Each drawing is its own aspect ratio, so a glance at the thumbnail says what
 // the lightbox has to fit.
 const FIXTURE_IMAGES = [

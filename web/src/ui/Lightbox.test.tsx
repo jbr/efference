@@ -5,7 +5,7 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { LightboxHost } from "./Lightbox.tsx";
 import { closeLightbox, openLightbox } from "./lightbox.ts";
 
@@ -16,9 +16,29 @@ vi.hoisted(() => {
   Element.prototype.releasePointerCapture = () => {};
 });
 
+// The viewer fetches the picture it is handed (useApiImage.ts). By default the
+// request stays unanswered, so a test about gestures sees no late state update.
+const createObjectURL = vi.fn<(bytes: Blob) => string>(() => "blob:lightbox");
+const revokeObjectURL = vi.fn();
+const fetchMock = vi.fn<typeof fetch>();
+beforeEach(() => {
+  createObjectURL.mockClear();
+  revokeObjectURL.mockClear();
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(() => new Promise<Response>(() => {}));
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    },
+  );
+  vi.stubGlobal("fetch", fetchMock);
+});
 afterEach(() => {
   act(() => closeLightbox());
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 function mount() {
@@ -32,13 +52,23 @@ function mount() {
   };
 }
 
-test("opening an image renders it, and Escape fades it out", () => {
+test("opening an image shows its fetched bytes, and Escape fades it out", async () => {
   vi.useFakeTimers();
+  fetchMock.mockImplementation(() =>
+    Promise.resolve(new Response(new Uint8Array([1, 2, 3]))),
+  );
   const f = mount();
   expect(f.host.querySelector(".lightbox-image")).toBeNull();
   act(() => openLightbox({ src: "/v1/img", alt: "a picture" }));
   const image = f.host.querySelector<HTMLImageElement>(".lightbox-image");
-  expect(image?.getAttribute("src")).toBe("/v1/img");
+  // The picture is on the page before its bytes are, with nothing to draw —
+  // and no alt text standing in for it.
+  expect(image?.hasAttribute("src")).toBe(false);
+  expect(image?.getAttribute("alt")).toBe("");
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/v1/img"]);
+  expect(image?.getAttribute("src")).toBe("blob:lightbox");
+  expect(image?.getAttribute("alt")).toBe("a picture");
   expect(f.host.querySelector(".lightbox")?.getAttribute("aria-label")).toBe(
     "a picture",
   );
@@ -46,8 +76,31 @@ test("opening an image renders it, and Escape fades it out", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   });
   expect(f.host.querySelector(".lightbox")?.className).toContain("closing");
-  act(() => vi.advanceTimersByTime(250));
+  // The bytes stay up through the fade and go with the viewer.
+  expect(revokeObjectURL).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTimeAsync(250));
   expect(f.host.querySelector(".lightbox")).toBeNull();
+  expect(revokeObjectURL.mock.calls).toEqual([["blob:lightbox"]]);
+  f.close();
+});
+
+test("an image that cannot be fetched leaves the viewer open on an empty picture", async () => {
+  vi.useFakeTimers();
+  fetchMock.mockImplementation(() => Promise.reject(new TypeError("offline")));
+  const f = mount();
+  act(() => openLightbox({ src: "/v1/gone", alt: "missing" }));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  const image = f.host.querySelector<HTMLImageElement>(".lightbox-image");
+  expect(image?.hasAttribute("src")).toBe(false);
+  expect(image?.getAttribute("alt")).toBe("");
+  // The name is still on the dialog and in the head bar.
+  expect(f.host.querySelector(".lightbox")?.getAttribute("aria-label")).toBe(
+    "missing",
+  );
+  expect(f.host.querySelector(".lightbox-caption")?.textContent).toBe(
+    "missing",
+  );
+  expect(f.host.querySelector(".lightbox")?.className).not.toContain("closing");
   f.close();
 });
 

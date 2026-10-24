@@ -4,6 +4,29 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import prettier from "eslint-config-prettier";
 
+// `fetch` and `EventSource` are not called directly in `web/src`
+// (docs/web-client.md), as globals or as properties of the global objects.
+// Every request goes through `apiFetch` (src/api/http.ts), and a stream is a
+// fetch read with `sseData` (src/api/stream.ts), so how a request is made is
+// decided in one function.
+const bareFetch = {
+  name: "fetch",
+  message:
+    "Requests go through apiFetch (src/api/http.ts) — see docs/web-client.md.",
+};
+const eventSource = {
+  name: "EventSource",
+  message:
+    "Streams are fetch plus sseData (src/api/stream.ts), never EventSource — see docs/web-client.md.",
+};
+// The same names reached through `window`, `globalThis`, or `self`.
+const onGlobalObjects = ({ name, message }) =>
+  ["window", "globalThis", "self"].map((object) => ({
+    object,
+    property: name,
+    message,
+  }));
+
 // typescript-eslint refuses to load against TypeScript 7, which ships no
 // compiler API. The package.json aliases install both side by side:
 // `typescript` -> @typescript/typescript6 (the 6.0 API these plugins import)
@@ -33,6 +56,26 @@ export default tseslint.config(
         URL: "readonly",
         Promise: "readonly",
       },
+    },
+  },
+  // `fetch` is called in one place: the entry point itself. `public/sw.js` is
+  // outside `src` and calls the worker's own `fetch` (block above).
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-globals": ["error", bareFetch, eventSource],
+      "no-restricted-properties": [
+        "error",
+        ...onGlobalObjects(bareFetch),
+        ...onGlobalObjects(eventSource),
+      ],
+    },
+  },
+  {
+    files: ["src/api/http.ts"],
+    rules: {
+      "no-restricted-globals": ["error", eventSource],
+      "no-restricted-properties": ["error", ...onGlobalObjects(eventSource)],
     },
   },
   {

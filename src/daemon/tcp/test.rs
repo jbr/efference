@@ -705,6 +705,28 @@ async fn the_shipped_policy_admits_no_unsafe_escape() {
     );
 }
 
+/// The client draws API bytes and local file previews from object URLs, which
+/// `default-src 'self'` does not admit, so `img-src` names `blob:` — and only
+/// that beyond `'self'`: an inline `data:` image stays blocked. Both the shipped
+/// and the `dev-proxy` policy carry the directive (docs/web-client.md).
+#[tokio::test]
+async fn the_policy_admits_object_url_images_and_no_data_images() {
+    let auth = armed("root");
+    let (server, _turns) = tcp_server(&auth).await;
+    let conn = server.get("/").await;
+    let csp = conn
+        .response_headers()
+        .get_str(KnownHeaderName::ContentSecurityPolicy)
+        .unwrap_or_default()
+        .to_string();
+    let img_src = csp
+        .split(';')
+        .map(str::trim)
+        .find(|directive| directive.starts_with("img-src"));
+    assert_eq!(img_src, Some("img-src 'self' blob:"), "{csp:?}");
+    assert!(!csp.contains("data:"), "no data: source in {csp:?}");
+}
+
 /// Ids are validated before they are joined onto a path: only a plain segment names
 /// a session, and the session-prefixed client routes are offered for exactly those.
 #[test]

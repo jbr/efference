@@ -17,7 +17,12 @@
 // airtight against a change landing during setup.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dirStream, listDir, type DirEntry } from "../api/files.ts";
+import {
+  dirStream,
+  listDir,
+  type ChangeStream,
+  type DirEntry,
+} from "../api/files.ts";
 
 export interface DirState {
   entries: DirEntry[];
@@ -96,28 +101,26 @@ export function useFileTree(): FileTree {
 
   // One effect reconciling the whole stream set, rather than a hook per
   // directory — the expanded set is data, and the number of hooks cannot be.
-  const streams = useRef(new Map<string, EventSource>());
+  const streams = useRef(new Map<string, ChangeStream>());
   useEffect(() => {
     const open = streams.current;
-    for (const [path, source] of open) {
+    for (const [path, stream] of open) {
       if (!expanded.has(path)) {
-        source.close();
+        stream.close();
         open.delete(path);
       }
     }
     for (const path of expanded) {
       if (open.has(path)) continue;
-      const source = dirStream(path);
-      source.addEventListener("change", () => void load(path));
-      source.onopen = () => void load(path);
-      open.set(path, source);
+      const answer = () => void load(path);
+      open.set(path, dirStream(path, { onOpen: answer, onChange: answer }));
     }
   }, [expanded, load]);
 
   useEffect(() => {
     const open = streams.current;
     return () => {
-      for (const source of open.values()) source.close();
+      for (const stream of open.values()) stream.close();
       open.clear();
     };
   }, []);

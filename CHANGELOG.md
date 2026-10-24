@@ -153,6 +153,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Fixed
 - **`wait()` ends when a turn is queued** (docs/process-monitor.md): it slept through the turn until an unrelated notification or an interrupt released it.
+- **Staged image previews show in the embedded web client** (docs/web-client.md): the page policy named no `img-src`, so the composer's `blob:` previews were blocked; it now admits `blob:` (never `data:`), which every API image the client fetches is drawn through.
 - **z.ai's no-balance 429 stops the turn with z.ai's words** (docs/transport.md): its `1113` code arrives with `type: rate_limit_error`, so it was retried as a rate limit; the code is now a terminal failure name.
 - **A `search` call's `paths` are judged by `[paths]`** (docs/permissions.md): the permission check read a `path` key `search` does not have, so every search cleared wherever `.` was readable.
 - **The web client labels a separate triage model's cache keepalive** "warming the cache", as the terminal does.

@@ -360,10 +360,11 @@ until it does.
 The same URLs content-negotiate: a `GET /files/<path>` whose `Accept` header
 **explicitly names** `text/event-stream` gets a stream of change pokes instead of
 the body. Explicit-only — `*/*`, a fetch's default, gets the file — so only a
-client that asked to stream ever streams; `EventSource` sends exactly the right
-header. Cookie-only like the rest of the surface, and the subscription's lifetime
-*is* the connection: tab closes, socket closes, watch drops. No registry, no
-control-channel frame class — the control channel stays broadcast-topic shaped.
+client that asked to stream ever streams; the web client's reader is a `fetch`
+that sets the header explicitly (`web/src/api/files.ts`). Cookie-only like the rest
+of the surface, and the subscription's lifetime *is* the connection: tab closes,
+socket closes, watch drops. No registry, no control-channel frame class — the
+control channel stays broadcast-topic shaped.
 
 Behind the route sits the core watcher, `src/fswatch.rs`: one notify debouncer,
 consumers on a tokio broadcast channel, watches registered per directory and

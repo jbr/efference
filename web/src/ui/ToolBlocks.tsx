@@ -8,7 +8,7 @@ import { ResultRanges } from "./ResultRanges.tsx";
 // lines — with the raw content one tap away whenever the body isn't
 // verbatim raw. `data-lang` on code bodies is the future highlighter's hook.
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { join } from "../api/base.ts";
 import type {
   CallId,
@@ -35,7 +35,9 @@ import { bodyOf, callView, type CallBody, type CallView } from "./signature.ts";
 import { layoutSignature, type SigLayout } from "./signatureLayout.ts";
 import { InlineMarkdown, Markdown } from "./Markdown.tsx";
 import { truncateBody, truncateText } from "./truncate.ts";
+import { imageAttrs, useApiImage } from "./useApiImage.ts";
 import { useNarrow } from "./useNarrow.ts";
+import { useNearViewport } from "./useNearViewport.ts";
 import { useWholeResult } from "./wholeResult.ts";
 
 /** A call's signature laid out at the width of the head it renders in, and
@@ -253,7 +255,11 @@ export function ResultBody({ body }: { body: ResultView }) {
 /** One image with a tap target: the picture is a chrome-free button whose tap
  * opens the lightbox (lightbox.ts). The button is also what the call's own
  * click handler skips over, so tapping an image does not open the inspector
- * (Transcript.tsx). width/height reserve the aspect box before the bytes land. */
+ * (Transcript.tsx). width/height reserve the aspect box before the bytes land.
+ * `src` is the image's API URL: the picture is shown from `useApiImage`, and
+ * the lightbox is handed the URL to resolve through its own hold. The request
+ * waits until the box comes near the viewport: that gate stands in for
+ * `loading="lazy"`, which defers nothing once the bytes come through fetch. */
 export function ZoomableImage({
   src,
   width,
@@ -266,8 +272,12 @@ export function ZoomableImage({
   /** The accessible name and the lightbox caption, e.g. "image/png 1179×2556". */
   label: string;
 }) {
+  const box = useRef<HTMLButtonElement>(null);
+  const near = useNearViewport(box);
+  const shown = useApiImage(near ? src : null);
   return (
     <button
+      ref={box}
       type="button"
       className="result-image-button"
       aria-label={`open image ${width}×${height} full screen`}
@@ -275,19 +285,17 @@ export function ZoomableImage({
     >
       <img
         className="result-image"
-        src={src}
         width={width}
         height={height}
-        alt={label}
-        loading="lazy"
+        {...imageAttrs(shown, label)}
       />
     </button>
   );
 }
 
 /** The images a result carries (docs/control-api.md): each from its reference,
- * the bytes fetched by the browser through the cookie-authed, ETag-validated
- * image route. `seq` is the result entry they resolve against. */
+ * the bytes fetched from the image route (`useApiImage`). `seq` is the result
+ * entry they resolve against. */
 export function ResultImages({
   seq,
   images,

@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiBase } from "../api/base.ts";
 import { useDrawerWidth } from "./inspector/useDrawerWidth.ts";
 import "./FileSidebar.css";
-import { fetchFile, fileStream } from "../api/files.ts";
+import { fetchFile, fileStream, type ChangeStream } from "../api/files.ts";
 import {
   locateAnchor,
   type AnchorMatch,
@@ -232,33 +232,31 @@ export function FileView({
 
   // The change stream (docs/web-bind.md): pokes for the open path, held only
   // while the tab is visible — the poll's `document.hidden` check, become
-  // closing the stream. `onopen` re-fetches conditionally, which covers what
-  // a hidden interval or a dropped connection missed (EventSource reconnects
-  // on its own); a poke's answer is the same conditional GET. Keep the selected anchor: external changes may move or remove it.
+  // closing the stream. Its open re-fetches conditionally, which covers what a
+  // hidden interval or a dropped connection missed (the reader reconnects on
+  // its own, and each reconnect is another open); a poke's answer is the same
+  // conditional GET. Keep the selected anchor: external changes may move or
+  // remove it.
   useEffect(() => {
     if (current === null) return;
-    let source: EventSource | null = null;
+    let stream: ChangeStream | null = null;
+    const answer = () =>
+      void load(current, true, target?.anchor ?? null, false);
     const open = () => {
-      source = fileStream(current);
-      source.addEventListener(
-        "change",
-        () => void load(current, true, target?.anchor ?? null, false),
-      );
-      source.onopen = () =>
-        void load(current, true, target?.anchor ?? null, false);
+      stream = fileStream(current, { onOpen: answer, onChange: answer });
     };
     const visibility = () => {
       if (document.hidden) {
-        source?.close();
-        source = null;
-      } else if (source === null) {
+        stream?.close();
+        stream = null;
+      } else if (stream === null) {
         open();
       }
     };
     if (!document.hidden) open();
     document.addEventListener("visibilitychange", visibility);
     return () => {
-      source?.close();
+      stream?.close();
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [current, target?.anchor, load]);

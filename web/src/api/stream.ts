@@ -12,7 +12,7 @@
 // and `:` heartbeat comments fall out of the grammar for free.
 
 import { apiBase } from "./base.ts";
-import { throwIfFailed } from "./http.ts";
+import { apiFetch, throwIfFailed } from "./http.ts";
 import type { Frame, Seq } from "./types.ts";
 
 export interface StreamHandle {
@@ -51,7 +51,7 @@ export function openStream(
       controller = new AbortController();
       try {
         callbacks.onAttempt?.(cursor);
-        const response = await fetch(`${base}/v1/events?since=${cursor}`, {
+        const response = await apiFetch(`${base}/v1/events?since=${cursor}`, {
           headers: { accept: "text/event-stream" },
           signal: controller.signal,
         });

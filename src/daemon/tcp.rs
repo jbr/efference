@@ -557,19 +557,26 @@ pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handl
 /// which is CSSOM, and CSP governs inline `<style>` elements and `style=""`
 /// attributes parsed from markup rather than CSSOM mutations
 /// (docs/web-client.md).
+///
+/// `img-src` adds `blob:` to `'self'`. The client draws the bytes it fetches from
+/// the API, and the local preview of a file being attached, through object URLs,
+/// which `'self'` does not match. `data:` is not named, so an inline image stays
+/// blocked.
 #[cfg(not(feature = "dev-proxy"))]
-const CSP: &str = "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; \
-                   form-action 'none'; object-src 'none'";
+const CSP: &str = "default-src 'self'; img-src 'self' blob:; base-uri 'none'; \
+                   frame-ancestors 'none'; form-action 'none'; object-src 'none'";
 
 /// Under `dev-proxy` the page is Vite's, not the build's: it injects an inline
 /// module preamble and talks to its HMR server over a WebSocket. Relaxing for that
 /// means the strict policy above is not the one exercised in development — the
 /// reason this is gated on the same `cfg` as the proxy rather than on a runtime
-/// flag, so a release build cannot serve it.
+/// flag, so a release build cannot serve it. `img-src` is the shipped policy's,
+/// so images drawn from object URLs load in development as they do in the build.
 #[cfg(feature = "dev-proxy")]
 const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
                    style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; \
-                   base-uri 'none'; frame-ancestors 'none'; object-src 'none'";
+                   img-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'; \
+                   object-src 'none'";
 
 /// The transport-side cache and TLS headers, alongside the page-hardening ones:
 /// `no-store` on every `/v1` route and HSTS on a TLS listener, described with

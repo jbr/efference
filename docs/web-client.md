@@ -64,7 +64,7 @@ the wire:
 
 | layer | job | React? |
 | --- | --- | --- |
-| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
+| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
 | `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), session verbs whose error recovery folds into the store (`actions.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
 | `web/src/ui/` | display — transcript, login, composer; the churn zone | yes |
 
@@ -121,6 +121,17 @@ the daemon sets `event:` to the frame's kind, and `EventSource` dispatches named
 events — a client would register one listener per known kind and silently drop
 frames from a newer daemon. Reconnection resumes by `?since=` (the daemon does not
 read `Last-Event-ID`), replaying the durable subset exactly.
+
+Every request the client makes — reads, verbs, streams, and the bytes of images —
+goes through one function, `apiFetch` in `api/http.ts`, which calls the global
+`fetch` with the arguments it is given. `web/eslint.config.js` bans the `fetch` and
+`EventSource` globals in `web/src` (`no-restricted-globals`), and the same names as
+properties of `window`, `globalThis`, and `self` (`no-restricted-properties`), with
+`fetch` allowed in `http.ts` alone, so a bare call fails lint. The rules apply to
+tests as well; they stub the global by name (`vi.stubGlobal("fetch", …)`), which
+they do not flag, and `apiFetch` reads `fetch` at call time, so the stub is what
+runs. The service worker (`public/sw.js`) sits outside `src` and calls its own
+`fetch`.
 
 The catch-up read and stream opener retain structured HTTP failures. A `401`
 parks the connector for login; a `404` marks the session `missing` and stops
@@ -608,14 +619,42 @@ result decides it; a verdict naming a result that was not Pending is ignored. Th
 fold runs over the entry list, so the initial window and live frames take the
 same path; results logged directly with their final wire render as before.
 
-A result's images render below its body as buttons over `<img>` elements pointed
-at `GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
+A result's images render below its body as buttons over `<img>` elements for
+`GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
 view carries only `{media_type, width, height}` — the attributes that hold the
-aspect box before the bytes land — and the browser supplies the fetch (ambient
-session cookie), the `ETag` revalidation, and lazy loading. Capped at 420px
-display width; tapping one opens it full screen in the lightbox. The inspector's
-result tab carries the same images, so a picture-returning call is not a drawer
-of everything but the picture.
+aspect box before the bytes land — and the bytes arrive through `useApiImage`
+(below). Capped at 420px display width; tapping one opens it full screen in the
+lightbox. The inspector's result tab carries the same images, so a
+picture-returning call is not a drawer of everything but the picture.
+
+**API images are fetched, not linked.** An `<img src>` makes a request no client
+code touches, so an image that addresses the API — a result's picture, an
+attachment's thumbnail, what the lightbox is handed — is fetched through `apiFetch`,
+turned into a blob, and shown from its object URL by `useApiImage`
+(`ui/useApiImage.ts`). The component that renders the `<img>` calls the hook with
+the API URL; a component that only passes the URL on (to `openLightbox`, into a
+draft's `preview`) holds nothing. The cache is module-level and keyed by URL: the
+first holder starts the request, holders that arrive while it is in flight share it,
+and the last one to unmount aborts what is still in flight, revokes the object URL,
+and deletes the entry. That departure takes effect once the effects of its commit
+have run, so a holder that leaves and one that arrives in the same commit — a
+pending turn's echo replaced by the committed turn — share one entry, and a holder
+that arrives once the bytes have landed draws them on its first render. The URLs
+address bytes that do not change — a log entry's image, an uploaded attachment — so
+an entry is never refreshed; a failed request leaves the cache at once, so the next
+holder asks again. The hook returns `null` while the request is in flight and after
+a failure; the `<img>` is rendered without a `src` then, so its `width`/`height`
+attributes still hold the aspect box, and with an empty `alt` (`imageAttrs`),
+because a non-empty one would draw the text under a broken-image icon and lay the
+element out at the `width` attribute, past the column. The lightbox calls the hook
+on the URL it was opened with, so it holds its own reference: the thumbnail that
+opened it can unmount without revoking what the viewer shows. A `blob:` URL is
+already local bytes — a staged file's own preview — and passes through unchanged. A
+result's picture asks only once its box has come within 1500px above or below the
+viewport (`useNearViewport`, an `IntersectionObserver` that stands in for
+`loading="lazy"`, which defers nothing once the bytes come through `fetch`), and
+keeps what it fetched after that; attachment thumbnails and the lightbox ask when
+they mount.
 
 **The lightbox** (`ui/Lightbox.tsx`, store in `ui/lightbox.ts`) is the client's
 one full-screen image viewer, mounted once — `LightboxHost` — by the session view
@@ -1524,8 +1563,9 @@ the draft instead. Each staged file uploads at once as raw bytes
 `application/octet-stream` being the one other type the TCP bind's CSRF gate
 admits — so its chip shows what the daemon made of it (`PNG · 1280×800 ·
 240 KB`, `40 lines · 2 KB`) while it can still be removed. Chips sit above the
-input; an image's chip uses a local object URL while uploading and the stored
-image URL once ready.
+input; an image's chip shows a local object URL while uploading and the stored
+bytes, resolved through `useApiImage`, once ready — the local picture stays up until
+those bytes arrive.
 Removing one deletes the upload; one removed mid-upload is deleted when the
 upload lands. Send waits for uploads to finish, carries every ready chip's
 name, and removes the submitted ready chips only once the turn is accepted,
@@ -1533,8 +1573,9 @@ so a refused send keeps them. A draft of attachments alone is a turn, not the co
 paste and description rules are `ui/staging.ts`; draft and upload ownership are
 `ui/drafts.ts`; the chips, staged and sent, are
 `ui/Attachments.tsx`. A sent turn — and its pending echo — shows its
-attachments under its prose, an image as a thumbnail served by
-`GET /attachments/:name` that opens full size in a new tab.
+attachments under its prose, an image as a thumbnail of the bytes at
+`GET /attachments/:name`, resolved through `useApiImage`, that opens in the
+lightbox.
 
 **Sending an empty composer is the continue gesture.** With no draft, send
 (and Enter, where Enter sends) issues `POST /v1/loop/continue`
@@ -1779,16 +1820,18 @@ available if the scope ever widens.
 **Highlight sources do not mix.** With a selected edit anchor, an exact location highlights its surviving added lines; approximate/unlocated matches show a qualification and no confidently located-line tint. Refreshes keep resolving that selected anchor. Without an anchor, `session/lineDiff.ts` compares fetched content with the last content shown for the same session/path, marking observed changes and deletion points. This is changes since viewing, not the selected operation's historical diff. Source mode tints numbered lines; rendered Markdown uses block-level highlights.
 
 **Freshness is two sources through one mechanism.** A committed, non-errored
-edit in the log (the `lastEdit` derivation) supplies a new target while following; the daemon's change stream covers edits from outside — an
-`EventSource` on the same `/files` URL (the content negotiation and the
-watcher behind it are [web-bind.md](web-bind.md) "Watching for changes"),
-held while the tab is visible and closed while hidden. Every poke, and
-every (re)open of the stream — which is what covers changes missed while
-hidden or disconnected, since `EventSource` reconnects on its own —
-answers with the same conditional GET, so the stream carries no content and
-replaced only the old 2 s poll's timer when it landed. A refusal drops the
-held validator, because a file restored with its old mtime would otherwise
-revalidate 304 against the refusal screen.
+edit in the log (the `lastEdit` derivation) supplies a new target while following; the daemon's change stream covers edits from outside — a
+`fetch` of the same `/files` URL with `Accept: text/event-stream` (`fileStream`,
+`api/files.ts`; the content negotiation and the watcher behind it are
+[web-bind.md](web-bind.md) "Watching for changes"), held while the tab is
+visible and closed while hidden. The reader parses the frames with `sseData`,
+reports each connect and each poke, and reconnects with the capped backoff
+`openStream` uses after a refusal, a failed request, or a stream that ends.
+Every poke, and every (re)open of the stream — which is what covers changes
+missed while hidden or disconnected — answers with the same conditional GET, so
+the stream carries no content and replaced only the old 2 s poll's timer when it
+landed. A refusal drops the held validator, because a file restored with its old
+mtime would otherwise revalidate 304 against the refusal screen.
 
 **The edit itself is the second source of "where to look."** The
 since-you-last-looked diff is empty on a file's *first* open — which is every
@@ -1845,10 +1888,11 @@ machine.
 
 The **tree** (`session/useFileTree.ts` + `ui/FileTree.tsx`) is lazy: one flat
 listing per expanded directory, no recursive walk, and each expanded directory
-holds a directory-scope change stream ([web-bind.md](web-bind.md)) so what is
-on screen stays current. As with the viewer, the answer to stream *open* is the
-same re-list as the answer to a poke, which is what covers a change landing
-during stream setup. The root is expanded at mount.
+holds a directory-scope change stream (`dirStream`, the same reader;
+[web-bind.md](web-bind.md)) so what is on screen stays current. As with the
+viewer, the answer to stream *open* is the same re-list as the answer to a poke,
+which is what covers a change landing during stream setup. The root is expanded
+at mount.
 
 The **filter** above the tree (`session/pathMatch.ts`) matches paths from one
 recursive listing, fetched the first time anything is typed; while it holds
@@ -2051,10 +2095,15 @@ both same-origin and hashed, with the grammar chunks imported dynamically from t
 same origin — so `default-src 'self'` needs no hash, nonce, or `unsafe-` escape.
 Highlighting needs no `style-src` accommodation: token colours are set through
 React's `style` prop, which is CSSOM, and CSP governs inline `<style>` elements and
-`style=""` attributes parsed from markup rather than CSSOM mutations. Under
-`--features dev-proxy` the page is Vite's — an inline module preamble and an HMR
-socket — so the policy relaxes, gated on the same `cfg` as the proxy so a release
-build cannot serve it. A test asserts the shipped policy contains no `unsafe-`.
+`style=""` attributes parsed from markup rather than CSSOM mutations. Images add
+one source to `'self'`: the client draws the bytes it fetches from the API
+(`useApiImage`) and the local preview of a file being attached through object
+URLs, which `'self'` does not match, so `img-src` names `blob:` beside it. `data:`
+is not named, so an inline image stays blocked. Under `--features dev-proxy` the
+page is Vite's — an inline module preamble and an HMR socket — so the policy
+relaxes, gated on the same `cfg` as the proxy so a release build cannot serve it;
+it carries the same `img-src`. A test asserts the shipped policy contains no
+`unsafe-`, and another pins `img-src 'self' blob:` and the absence of `data:`.
 
 CSRF is a different threat and is already answered: the session cookie is `Secure`,
 `HttpOnly`, `SameSite=Strict`, `Path=/` ([web-bind.md](web-bind.md)). A CSRF token
@@ -2194,8 +2243,8 @@ its resting and selected controls. Fixture lists live in `fixtures.ts`.
 ratios — wide, square, and tall — so the lightbox's fit and gestures can be worked
 on without driving a session to an image result. The fixtures are files under
 `public/gallery/`, referenced by path rather than imported: an import of an SVG
-that small is inlined as a `data:` URI, and the client's CSP (`default-src
-'self'`, no `img-src`; `src/daemon/tcp.rs`) blocks those. The gallery mounts
+that small is inlined as a `data:` URI, and the client's CSP (`img-src 'self'
+blob:`; `src/daemon/tcp.rs`) does not admit `data:` images. The gallery mounts
 `LightboxHost` so the specimens actually open the viewer.
 
 Controls also appear pinned in hover and focus states: `pseudoStates.ts` copies

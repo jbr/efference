@@ -35,6 +35,15 @@ export class ApiError extends Error {
   }
 }
 
+/** The one entry point for every request the client makes (docs/web-client.md):
+ * the global `fetch`, called with the arguments it is given. `fetch` is read at
+ * call time, so a test that stubs the global is the one that runs, and an eslint
+ * rule keeps bare `fetch` out of the rest of `web/src`. Streams and image bytes
+ * come through here too. */
+export function apiFetch(...args: Parameters<typeof fetch>): Promise<Response> {
+  return fetch(...args);
+}
+
 /** A request to a URL as given — the listener's own surfaces, which sit at its
  * root under either binding. Exported because those surfaces are not all the
  * session's own: `/projects` and `POST /sessions` are the host's, and a module
@@ -44,7 +53,7 @@ export async function requestAt<T>(
   url: string,
   body?: unknown,
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method,
     // The gate requires application/json on body-bearing methods; harmless on
     // the rest.
@@ -158,7 +167,7 @@ export async function uploadAttachment(
   body: Blob,
   base = apiBase(),
 ): Promise<Attachment> {
-  const response = await fetch(
+  const response = await apiFetch(
     join(`/v1/attachments?name=${encodeURIComponent(name)}`, base),
     {
       method: "POST",
@@ -176,12 +185,13 @@ export async function removeAttachment(
   base = apiBase(),
 ): Promise<void> {
   await throwIfFailed(
-    await fetch(join(`/v1/attachments/${encodeURIComponent(name)}`, base), {
+    await apiFetch(join(`/v1/attachments/${encodeURIComponent(name)}`, base), {
       method: "DELETE",
     }),
   );
 }
-/** Where a stored attachment's bytes are — an `<img src>` for an image. */
+/** Where a stored attachment's bytes are — the address `useApiImage` resolves
+ * for an image (ui/useApiImage.ts). */
 export const attachmentUrl = (name: string, base = apiBase()) =>
   join(`/v1/attachments/${encodeURIComponent(name)}`, base);
 // The id is a precondition: a 409 gate_moved answer means that call is no
@@ -283,7 +293,7 @@ export async function sendAttention(report: {
   session: string | null;
   active: boolean;
 }): Promise<void> {
-  const response = await fetch("/attention", {
+  const response = await apiFetch("/attention", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(report),

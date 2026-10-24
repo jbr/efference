@@ -8,7 +8,8 @@
 import { useSyncExternalStore } from "react";
 
 export interface LightboxImage {
-  /** The image's bytes: an image-route URL, or any `src`. */
+  /** The image's address: an API URL, which the viewer resolves through
+   * `useApiImage`, or a `blob:` URL, which it shows as given. */
   src: string;
   /** The accessible name, and the fallback caption. */
   alt: string;

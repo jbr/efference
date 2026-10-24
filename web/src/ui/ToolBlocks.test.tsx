@@ -44,8 +44,13 @@ test("a result image renders as a button that opens the lightbox", () => {
     />,
   );
   expect(markup).toContain('class="result-image-button"');
-  expect(markup).toContain("/v1/log/7/images/0");
-  expect(markup).toContain("1179×2556");
+  expect(markup).toContain('aria-label="open image 1179×2556 full screen"');
+  // The aspect box is reserved before the bytes are asked for; the request for
+  // `/v1/log/7/images/0` is made by the mounted component (imageSites.test.tsx).
+  // Until a picture is drawn there is no `src` and no `alt` to draw in its place.
+  expect(markup).toContain('width="1179" height="2556"');
+  expect(markup).toContain('alt=""');
+  expect(markup).not.toContain("src=");
 });
 
 test("an unfinished scalar input uses the wrapping content body", () => {

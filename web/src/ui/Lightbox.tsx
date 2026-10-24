@@ -19,6 +19,7 @@ import {
   type LightboxImage,
 } from "./lightbox.ts";
 import { dismisses } from "./swipe.ts";
+import { imageAttrs, useApiImage } from "./useApiImage.ts";
 import {
   IDENTITY,
   MIN_SCALE,
@@ -60,6 +61,9 @@ export function Lightbox({
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const picture = useRef<HTMLImageElement>(null);
+  // The viewer's own hold on the bytes, taken while it is open: the thumbnail
+  // that opened it can leave the page without taking the image from under it.
+  const src = useApiImage(image.src);
   const [transform, setTransform] = useState<Transform>(IDENTITY);
   // The transform the handlers read: state alone would be a render behind a
   // fast gesture. `apply` writes both, so a pinch in progress never reads a
@@ -303,8 +307,7 @@ export function Lightbox({
         <img
           ref={picture}
           className="lightbox-image"
-          src={image.src}
-          alt={image.alt}
+          {...imageAttrs(src, image.alt)}
           draggable={false}
           style={{
             transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,

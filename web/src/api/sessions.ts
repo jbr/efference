@@ -13,7 +13,7 @@
 // plain backoff rather than a resume handshake.
 
 import { sseData } from "./stream.ts";
-import type { SessionEntry } from "./http.ts";
+import { apiFetch, type SessionEntry } from "./http.ts";
 import type { Frame, LogEntry, Seq, StateSnapshot } from "./types.ts";
 
 export interface SessionsHandle {
@@ -66,7 +66,7 @@ function followSessions(): () => void {
     while (!closed) {
       controller = new AbortController();
       try {
-        const response = await fetch("/sessions", {
+        const response = await apiFetch("/sessions", {
           headers: { accept: "text/event-stream" },
           signal: controller.signal,
         });
@@ -148,7 +148,7 @@ export function openSessionCard(
       const state: StateSnapshot = { last_seq: null };
       try {
         if (cursor === null) {
-          const response = await fetch(`${base}/log?tail=${CARD_TAIL}`, {
+          const response = await apiFetch(`${base}/log?tail=${CARD_TAIL}`, {
             signal: controller.signal,
           });
           if (!response.ok) throw new Error(`log: http ${response.status}`);
@@ -156,7 +156,7 @@ export function openSessionCard(
           cursor = (entries.at(-1)?.seq ?? -1) + 1;
           onFeed({ state: { ...state }, entries });
         }
-        const response = await fetch(
+        const response = await apiFetch(
           `${base}/events?include=${include}&since=${cursor}`,
           {
             headers: { accept: "text/event-stream" },

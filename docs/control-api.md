@@ -1567,10 +1567,10 @@ incrementally rather than whole.
 The decoded bytes of one logged result image — the dereference target for the
 image references entry views carry. `:seq` addresses the `ToolResult` entry,
 `:idx` the image's position in its `images` array. The response is the stored
-bytes under the stored media type (`Content-Type: image/webp` etc.), so the URL
-works directly as an `<img src>` in the web client (the session cookie rides
-along ambiently) and as a byte source for a TUI emitting a graphics-protocol
-escape. Validated by `ETag` like `/log/:seq`. `404
+bytes under the stored media type (`Content-Type: image/webp` etc.), so the web
+client shows them from an object URL over the fetched bytes
+([web-client.md](web-client.md)) and a TUI emitting a graphics-protocol escape
+reads them as a byte source. Validated by `ETag` like `/log/:seq`. `404
 not_found` when the seq names no entry, the entry is not a tool result, or the
 index is past its images.
 

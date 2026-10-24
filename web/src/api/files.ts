@@ -9,9 +9,12 @@
 // stream of change pokes instead of the body. The Accept here is explicit so
 // a read is always a read — the server only streams for an explicit ask, but
 // the request states which side it wants rather than leaning on the
-// negotiation's default.
+// negotiation's default. The stream side is a fetch like any other, read with
+// the SSE parser stream.ts exports (`changeStream` below).
 
 import { join as joinBase } from "./base.ts";
+import { apiFetch, throwIfFailed } from "./http.ts";
+import { sseData } from "./stream.ts";
 import type { ErrorEnvelope } from "./types.ts";
 
 // Joined onto the client's base like every other control path (api/base.ts).
@@ -21,17 +24,103 @@ import type { ErrorEnvelope } from "./types.ts";
 const fileUrl = (path: string): string =>
   joinBase("/files/" + path.split("/").map(encodeURIComponent).join("/"));
 
-/** The change-poke stream for one file — EventSource sends
- * `Accept: text/event-stream`, which is the negotiation. Same-origin, so the
- * session cookie rides along. */
-export const fileStream = (path: string): EventSource =>
-  new EventSource(fileUrl(path));
+/** A change-poke stream, held until `close()`. */
+export interface ChangeStream {
+  close(): void;
+}
+
+/** What a change-poke stream reports. Neither carries content: the consumer's
+ * answer to both is the conditional GET (or re-list) it would otherwise poll
+ * with (docs/web-bind.md). */
+export interface ChangeStreamCallbacks {
+  /** The stream connected — on the first attempt and again on every
+   * reconnect. A change can land between a consumer's read and the server's
+   * watch being registered, and while a dropped connection was being
+   * re-established, so an open is answered like a poke. */
+  onOpen(): void;
+  /** One poke. `path` is the root-relative path the server names, with CR and
+   * LF percent-encoded. A poke is a hint: the server also sends one when it
+   * lost track of what changed. */
+  onChange(path: string): void;
+}
+
+/** The wait before reconnect attempt `attempt`: the doubling backoff
+ * `openStream` uses (api/stream.ts), from 1 s to a 15 s cap. */
+const retryDelay = (attempt: number): number =>
+  Math.min(500 * 2 ** attempt, 15_000);
+
+/**
+ * `GET` the URL as an event stream and report its pokes, reconnecting with a
+ * capped backoff after a refusal, a failed request, or a stream that ends. The
+ * server frames every poke as `event: change` with the path as `data:`, and
+ * idles with `:` comments; `sseData` drops the `event:` field and the
+ * comments, so each event it yields is a poke. The URL is fixed when the
+ * stream opens, so a reconnect after the page has moved to another session
+ * still reaches this one.
+ */
+function changeStream(
+  url: string,
+  callbacks: ChangeStreamCallbacks,
+): ChangeStream {
+  let closed = false;
+  let controller = new AbortController();
+  let attempt = 0;
+
+  async function run() {
+    while (!closed) {
+      controller = new AbortController();
+      try {
+        const response = await apiFetch(url, {
+          headers: { accept: "text/event-stream" },
+          signal: controller.signal,
+        });
+        await throwIfFailed(response);
+        if (!response.body) {
+          throw new Error("files: missing response body");
+        }
+        if (closed) return;
+        attempt = 0;
+        callbacks.onOpen();
+        for await (const data of sseData(response.body)) {
+          if (closed) return;
+          callbacks.onChange(data);
+        }
+        throw new Error("files: stream ended");
+      } catch {
+        if (closed) return;
+        // A callback that threw leaves this response open; end it before the
+        // next attempt starts another.
+        controller.abort();
+        attempt += 1;
+        await new Promise((resolve) =>
+          setTimeout(resolve, retryDelay(attempt)),
+        );
+      }
+    }
+  }
+
+  void run();
+  return {
+    close() {
+      closed = true;
+      controller.abort();
+    },
+  };
+}
+
+/** The change-poke stream for one file. */
+export const fileStream = (
+  path: string,
+  callbacks: ChangeStreamCallbacks,
+): ChangeStream => changeStream(fileUrl(path), callbacks);
 
 /** The change-poke stream for one directory's own entries — what an expanded
  * tree node holds so its listing stays current (docs/web-bind.md). A directory
  * is spelled like any other path; `""` is the root. */
-export const dirStream = (path: string): EventSource =>
-  new EventSource(fileUrl(path));
+export const dirStream = (
+  path: string,
+  callbacks: ChangeStreamCallbacks,
+): ChangeStream => changeStream(fileUrl(path), callbacks);
 
 /** One entry of a listing. In a recursive listing `name` is the path relative
  * to the directory listed; in a flat one it is a bare name. */
@@ -61,7 +150,7 @@ export type ListFetch =
  * result size, reporting `truncated` rather than erroring. */
 export async function listDir(path: string, depth = 1): Promise<ListFetch> {
   const query = depth > 1 ? `?recursive=1&depth=${depth}` : "";
-  const response = await fetch(fileUrl(path) + query, {
+  const response = await apiFetch(fileUrl(path) + query, {
     headers: { accept: "application/json" },
   });
   if (response.ok) {
@@ -92,7 +181,7 @@ export async function fetchFile(
   path: string,
   etag?: string | null,
 ): Promise<FileFetch> {
-  const response = await fetch(fileUrl(path), {
+  const response = await apiFetch(fileUrl(path), {
     headers: {
       accept: "text/plain",
       ...(etag == null ? {} : { "if-none-match": etag }),
