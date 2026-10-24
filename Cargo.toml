@@ -14,7 +14,7 @@ semantic-edit-mcp = { path = "/Users/jbr/code/semantic-edit-mcp" }
 # `cli` adds the `tools!` macro's clap derive and the stdio serve loop, which is
 # what lets `efference control <tool>` and `efference mcp` be one definition
 # (docs/operating.md).
-mcplease = { version = "0.4.2", features = [
+mcplease = { version = "0.5.0", features = [
   "client",
   "cli",
 ], default-features = false }
@@ -268,6 +268,3 @@ syntect = { version = "5.3", default-features = false, features = [
   "regex-onig",
 ] }
 
-# Proving out the async mcplease before it is released.
-[patch.crates-io]
-mcplease = { path = "/Users/jbr/code/mcplease" }
