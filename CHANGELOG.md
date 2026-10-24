@@ -17,6 +17,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A failed web upload states its reason on the composer chip, and the daemon logs the failing stage (docs/web-client.md).
 - Web live summary previews at their covered spans, temporary triage thinking above the composer, and detached consolidation text/thinking output frames.
 
 - Web interrupted-generation markers name the recorded client and stop control, when available.

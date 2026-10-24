@@ -15,21 +15,32 @@ const UPLOAD_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// Store the request body as an attachment. `?name=` suggests the file name — a dragged file's
 /// own, or one the client makes for a paste — and the store makes it unique rather than
 /// overwriting. 201 with the arrival: `{name, path, kind}`.
+///
+/// A failure logs at `warn` naming its stage (the store, the body read, the write), with the
+/// declared length beside it: a client sees only the answer, and an upload that never reached
+/// the handler leaves no line at all — which is itself the stage. A stored upload logs at
+/// `debug`, under the host's output discipline (`serve.rs`).
 pub(super) async fn upload(mut conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
+    let name = trillium_client::url::form_urlencoded::parse(conn.querystring().as_bytes())
+        .find(|(key, _)| key == "name")
+        .map(|(_, value)| value.into_owned())
+        .unwrap_or_else(|| "attachment".to_string());
+    let declared = conn
+        .request_headers()
+        .get_str(trillium::KnownHeaderName::ContentLength)
+        .unwrap_or("none")
+        .to_string();
     let Some(store) = shared.composer_store() else {
+        log::warn!("upload {name:?} (content-length {declared}): refused, no attachment store");
         return fail(
             conn,
             ErrorCode::NotFound,
             "this session has no attachment store",
         );
     };
-    let name = trillium_client::url::form_urlencoded::parse(conn.querystring().as_bytes())
-        .find(|(key, _)| key == "name")
-        .map(|(_, value)| value.into_owned())
-        .unwrap_or_else(|| "attachment".to_string());
     let bytes = match conn
         .request_body()
         .with_max_len(UPLOAD_MAX_BYTES)
@@ -38,6 +49,10 @@ pub(super) async fn upload(mut conn: Conn) -> Conn {
     {
         Ok(bytes) => bytes,
         Err(e) => {
+            log::warn!(
+                "upload {name:?} (content-length {declared}) to {}: reading the body failed: {e}",
+                store.dir().display()
+            );
             return fail(
                 conn,
                 ErrorCode::BadRequest,
@@ -46,15 +61,24 @@ pub(super) async fn upload(mut conn: Conn) -> Conn {
         }
     };
     match store.put(&name, &bytes) {
-        Ok(arrival) => conn
-            .with_status(201)
-            .with_body(serde_json::to_string(&arrival).unwrap_or_default())
-            .halt(),
-        Err(e) => fail(
-            conn,
-            ErrorCode::Internal,
-            format!("storing the upload: {e}"),
-        ),
+        Ok(arrival) => {
+            log::debug!("upload stored {} ({} bytes)", arrival.path, bytes.len());
+            conn.with_status(201)
+                .with_body(serde_json::to_string(&arrival).unwrap_or_default())
+                .halt()
+        }
+        Err(e) => {
+            log::warn!(
+                "upload {name:?} ({} bytes) to {}: storing failed: {e}",
+                bytes.len(),
+                store.dir().display()
+            );
+            fail(
+                conn,
+                ErrorCode::Internal,
+                format!("storing the upload: {e}"),
+            )
+        }
     }
 }
 

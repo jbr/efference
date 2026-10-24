@@ -24,6 +24,13 @@ interface Dependencies {
 const storageKey = (base: string) => `efference.composer.v1:${base}`;
 const interrupted = "Upload interrupted by a reload; attach this file again.";
 
+/** A failed upload's text: the daemon's reason when it answered (an
+ * `ApiError`'s message is its envelope's), the browser's when the request
+ * itself failed (Safari's is `Load failed`). Shown on the chip, not only in its
+ * title, because a touch screen has no hover to read a title with. */
+const failure = (error: unknown) =>
+  `Upload failed (${error instanceof Error ? error.message : String(error)}); attach this file again.`;
+
 function browserStorage(): DraftStorage | null {
   try {
     return localStorage;
@@ -217,7 +224,9 @@ export class DraftStore {
         this.update({
           ...this.value,
           staged: this.value.staged.map((s) =>
-            s.key === key ? { ...s, status: "failed", error: `${error}` } : s,
+            s.key === key
+              ? { ...s, status: "failed", error: failure(error) }
+              : s,
           ),
         });
       },

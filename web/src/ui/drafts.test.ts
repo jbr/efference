@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { ApiError } from "../api/http.ts";
 import type { Attachment } from "../api/types.ts";
 import { DraftStore } from "./drafts.ts";
 
@@ -126,12 +127,29 @@ test("failed uploads remain removable and survive reload", async () => {
   await pending.promise.catch(() => {});
   expect(store.snapshot().staged[0]).toMatchObject({
     status: "failed",
-    error: "Error: offline",
+    error: "Upload failed (offline); attach this file again.",
   });
   const restored = setup().store;
-  expect(restored.snapshot().staged[0]?.error).toBe("Error: offline");
+  expect(restored.snapshot().staged[0]?.error).toBe(
+    "Upload failed (offline); attach this file again.",
+  );
   restored.remove(restored.snapshot().staged[0].key);
   expect(localStorage.length).toBe(0);
+});
+
+test("a failed upload names the daemon's reason", async () => {
+  const { store, pending } = setup();
+  store.stage(new File(["bytes"], "note.txt"));
+  pending.reject(
+    new ApiError(500, {
+      code: "internal",
+      message: "storing the upload: disk full",
+    }),
+  );
+  await pending.promise.catch(() => {});
+  expect(store.snapshot().staged[0]?.error).toBe(
+    "Upload failed (storing the upload: disk full); attach this file again.",
+  );
 });
 
 test("successful send clears the sent draft but does not delete its uploaded files", () => {

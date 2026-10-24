@@ -34,7 +34,7 @@ export function StagedAttachments({
               {s.status === "uploading"
                 ? "uploading…"
                 : s.status === "failed"
-                  ? "upload failed"
+                  ? (s.error ?? "upload failed")
                   : s.attachment && describeKind(s.attachment.kind)}
             </span>
           </span>

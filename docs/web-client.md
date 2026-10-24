@@ -1416,7 +1416,12 @@ origin-scoped localStorage under the session base. Completed attachments restore
 from their stored server references; pasted text remains available for the
 chip's inline action. File bytes and blob preview URLs are not persisted. A
 reload restores an upload that was in progress as a failed chip with an
-interruption reason, not a resumable upload. Malformed saved data is ignored;
+interruption reason, not a resumable upload. A failed chip states its reason in
+its detail line, not only in its title, which a touch screen cannot hover to
+read: the daemon's error message when it answered, or the browser's when the
+request itself failed (Safari's `Load failed`). The daemon logs an upload's
+failure at `warn` with its stage (no store, reading the body, storing), so a
+failure that leaves no daemon line never reached the handler. Malformed saved data is ignored;
 denied or full storage leaves the live draft usable without reload persistence.
 Image blob previews are revoked on upload completion or chip removal, not on
 view unmount.
