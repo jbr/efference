@@ -497,7 +497,9 @@ exhaustion (`insufficient_quota`, `usage_limit_reached`, `billing_error`),
 rejected requests (`invalid_request_error`, `context_length_exceeded`),
 credentials and permissions, and policy refusals are **terminal**; overload, rate
 limits, server errors, and every name the table has not met are **transient**.
-The class rides the `Completion` beside `upstream_failure`. A terminal failure
+A terminal name in either field wins over a transient one in the other: z.ai's
+no-balance 429 carries `type: rate_limit_error` beside `code: "1113"`, and is
+terminal by its code. The class rides the `Completion` beside `upstream_failure`. A terminal failure
 takes the record-only append like any abort and then stalls at once with
 `StallReason::UpstreamRefused`, carrying the provider's words — the platform quota
 error that once ran all twelve attempts is answered once. The same table gates

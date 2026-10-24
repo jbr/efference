@@ -142,6 +142,7 @@ behind a change, see [`journal/`](journal/).
 - **A worktree toggle in the new-session forms** (docs/tui.md, docs/web-session-creation.md): the web and TUI forms offer *start in its own worktree* (its own checkout and branch at `.efference/worktrees/<id>`), sent as `worktree: true` on creation; outside a git work tree the host refuses it like any other creation.
 
 ### Fixed
+- **z.ai's no-balance 429 stops the turn with z.ai's words** (docs/transport.md): its `1113` code arrives with `type: rate_limit_error`, so it was retried as a rate limit; the code is now a terminal failure name.
 - **A `search` call's `paths` are judged by `[paths]`** (docs/permissions.md): the permission check read a `path` key `search` does not have, so every search cleared wherever `.` was readable.
 - **The web client labels a separate triage model's cache keepalive** "warming the cache", as the terminal does.
 - **A continue at a finished turn is declined in every dialect** (docs/control-api.md): the precondition read the Messages encoding, which drops Responses and Completions assistant turns, so Codex, OpenAI and Completions sessions re-prompted a finished turn and typically got an empty or repeated answer.

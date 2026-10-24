@@ -64,6 +64,9 @@ const TERMINAL: &[&str] = &[
     "context_length_exceeded",
     "cyber_policy",
     "misalignment_policy_violation",
+    // z.ai, whose codes are numeric strings: no balance and no Coding Plan
+    // package, answered as a 429 whose `type` says `rate_limit_error`.
+    "1113",
 ];
 
 /// The [`TERMINAL`] names that say the credential itself was refused, as distinct
@@ -268,6 +271,16 @@ mod test {
     fn the_codex_usage_limit_body_is_terminal() {
         let body = r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_at":1788744444,"eligible_promo":null,"resets_in_seconds":15805}}"#;
         assert_eq!(classify_body(body), FailureClass::Terminal);
+    }
+
+    /// z.ai's no-balance 429 on its Messages endpoint, as answered 2026-10-24.
+    /// The `type` names a rate limit, so the `code` is what makes it terminal.
+    #[test]
+    fn the_zai_insufficient_balance_body_is_terminal() {
+        let body = r#"{"type":"error","error":{"type":"rate_limit_error","code":"1113","message":"[1113][Insufficient balance or no resource package. Please recharge.][202610250330231ec1a6df3236462f]"},"request_id":"202610250330231ec1a6df3236462f"}"#;
+        assert_eq!(classify_body(body), FailureClass::Terminal);
+        let e: crate::api::Error = OpenError::new(Some(429), "429".into(), body).into();
+        assert_eq!(error_class(&e), FailureClass::Terminal);
     }
 
     #[test]
