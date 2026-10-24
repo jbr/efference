@@ -5,8 +5,10 @@ serve the same `/v1` routes ([control-api.md](control-api.md)); the TCP listener
 them in a hardening + auth gate, while the UDS stays auth-exempt (filesystem permissions
 are its trust model) and remains the CLI verbs' channel. Implemented in
 `src/daemon/handler.rs` (the one stack every listener mounts), `src/daemon/tcp.rs`
-(the listener, the gate, the mint and enrollment routes, the web client handler) and
-`src/auth.rs` (the credential arithmetic); the flag resolution is
+(the listener and the credential state) with its submodules in `src/daemon/tcp/` —
+`gate.rs` (the gate and the anonymous surface it prices), `headers.rs` (the response
+headers), and `routes.rs` (the mint and enrollment routes, the web client
+handler) — and `src/auth.rs` (the credential arithmetic); the flag resolution is
 `src/bin/efference/serve.rs`.
 
 This is the **one**-session bind. A multi-session host reuses everything in this
@@ -76,7 +78,7 @@ The UDS exemption is therefore structural — which listener a conn arrived on �
 than inferred per-conn (a `peer_ip().is_none()` style guess would fail open if a
 transport stopped setting it).
 
-**Response headers.** The outermost layer, `SecurityHeaders` (`src/daemon/tcp.rs`),
+**Response headers.** The outermost layer, `SecurityHeaders` (`src/daemon/tcp/headers.rs`),
 stamps every response each listener produces — route bodies, router errors, and the
 web client alike — so a handler that answered without them would be the hole. It
 carries the page-hardening headers ([web-client.md](web-client.md)) plus three

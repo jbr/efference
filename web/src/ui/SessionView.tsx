@@ -53,7 +53,7 @@ interface OpenRequest {
 }
 
 /** The client's routing, such as it is: the paths the server's SPA index
- * answers (`SPA_ROUTES`, src/daemon/tcp.rs), read with the base removed so
+ * answers (`SPA_ROUTES`, src/daemon/tcp/gate.rs), read with the base removed so
  * `/tree` and `/sessions/<id>/tree` are one route. `/tree` opens the viewer on
  * the working directory with no file chosen — the entry point for reaching a
  * file no call has named, and the one worth a link of its own. Read once at

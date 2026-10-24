@@ -72,13 +72,13 @@ Connections over the socket are not authenticated. Any program that can open the
 has full control of every session in the host, including starting one, and — when the
 host has a web listener — can obtain a sign-in for it. Treat access to the socket like
 access to your shell.
-<!-- src: src/daemon/handler.rs::Transport::Socket; src/daemon/tcp.rs::enrollment_routes -->
+<!-- src: src/daemon/handler.rs::Transport::Socket; src/daemon/tcp/routes.rs::enrollment_routes -->
 <!-- TODO: blocked on backlog/inbox/local-file-modes.md. Today nothing sets the mode of the socket or ~/.efference, and there is no peer-uid check. Once owner-only modes ship, say so here; until then do not claim owner-only. -->
 
 A host can also listen on TCP, for browsers. That listener requires a sign-in for
 everything except the web client's own files and the sign-in request itself
 ([Remote access](remote-access.md)).
-<!-- src: src/daemon/tcp.rs::Surface::anonymous, gate -->
+<!-- src: src/daemon/tcp/gate.rs::Surface::anonymous, gate -->
 
 ### Where a session's record lives
 

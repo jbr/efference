@@ -20,7 +20,7 @@ on this machine, or from a phone or another computer. It is off until you turn i
 Anyone who reaches the address and signs in can do anything you can do in a session,
 including approving the agent's commands. So the question for any arrangement is who can
 reach the sign-in page, and the answer should be: only your own devices.
-<!-- src: src/daemon/tcp.rs::gate, Surface::anonymous -->
+<!-- src: src/daemon/tcp/gate.rs::gate, Surface::anonymous -->
 
 ### On this machine
 
@@ -83,7 +83,7 @@ efference --host
 
 `public-url` is the address your other devices use. `tailscale serve status` shows what
 Tailscale is serving.
-<!-- src: src/bin/efference/serve.rs::checked_public_url; src/daemon/tcp.rs::gate (Host check against public-url); tailscale serve --help (1.104.1) -->
+<!-- src: src/bin/efference/serve.rs::checked_public_url; src/daemon/tcp/gate.rs::gate (Host check against public-url); tailscale serve --help (1.104.1) -->
 <!-- TODO: how the serve setting persists across reboots, and the command that removes it (`tailscale serve --https=443 off` in assets/guide/host.md is unverified against 1.104; `reset` exists). Needs a live check. -->
 
 **The host serves HTTPS itself** — needed for HTTP/3; you renew the certificate.
@@ -109,7 +109,7 @@ Tailscale's certificates expire; renew with `tailscale cert` again and restart t
 Either way, `efference --host` prints an `https://…ts.net` sign-in link; open it on the other
 device within a minute. If the page answers 403, `public-url` does not match the name in
 the address bar.
-<!-- src: src/daemon/host.rs::serve_host; src/daemon/tcp.rs::gate -->
+<!-- src: src/daemon/host.rs::serve_host; src/daemon/tcp/gate.rs::gate -->
 
 ## How this works, precisely
 
@@ -146,7 +146,7 @@ the host under another name; they are not a password, since anyone can send the 
 A state-changing request from a page on another site is refused, and `POST`, `PUT`, and
 `PATCH` must declare a JSON or binary body. Every response tells the browser to load
 nothing from other origins and not to be framed.
-<!-- src: src/daemon/tcp.rs::gate, TcpAuth::host_allowed, host_only, origin_host, CSP, SecurityHeaders -->
+<!-- src: src/daemon/tcp/gate.rs::gate; src/daemon/tcp.rs::TcpAuth::host_allowed, host_only, origin_host; src/daemon/tcp/headers.rs::CSP, SecurityHeaders -->
 
 ### Sign-in
 
@@ -154,7 +154,7 @@ The printed link works once, within about a minute, and signs one browser in, wi
 expiry of its own. Other programs use the same token a signed-in browser holds, available
 from the host's Unix socket. The link and the token both derive from one secret the host
 keeps in your OS keychain, created the first time a host listens on TCP.
-<!-- src: src/daemon/tcp.rs::mint_link, authenticate_code, mint_session, TcpAuth::authenticated; src/auth.rs::ROOT_ITEM, Root::load, Root::bearer -->
+<!-- src: src/daemon/tcp.rs::mint_link, authenticate_code, TcpAuth::authenticated; src/daemon/tcp/routes.rs::mint_session; src/auth.rs::ROOT_ITEM, Root::load, Root::bearer -->
 
 `efference auth rotate` replaces that secret, which ends every browser's sign-in when the
 host next starts. `rotate` refuses while a local daemon is listening — it would keep

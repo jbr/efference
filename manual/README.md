@@ -36,7 +36,7 @@ agent-facing guide overlay.
 
 Every factual sentence is checkable against the code. Each paragraph, list item, or table
 row carries the modules its claims were checked against in an HTML comment after it:
-`<!-- src: src/daemon/tcp.rs::gate -->`.
+`<!-- src: src/daemon/tcp/gate.rs::gate -->`.
 These comments are for reviewers and are stripped from the built site. Claims are
 checked against the code, not against `../docs/`, which can lag it.
 
