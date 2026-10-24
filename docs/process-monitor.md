@@ -17,6 +17,12 @@ fires a notification (see [watches](#watches), below).
 `wait()` instead waits for the next inbox notification of any origin, then returns the
 pending notifications as its tool result. It can therefore return for an exit, a watch
 hit, an operator nudge, or an inter-agent message rather than one selected process.
+A queued turn ends it too (`Session::turn_wake`): the result is a fixed line saying a
+message arrived, and the juncture right after it delivers the turn
+([control-channel.md](control-channel.md)), so the model reads the message behind the
+result. A turn already queued when the call starts returns it at once. An agent's turn
+held back behind the operator's hold is not delivered at that juncture, so it does not
+end the wait until the release sends it. An interrupt ends the wait as an error.
 It refuses when nothing can wake the session — no pending notification, no running
 background process, and no session it is subscribed to ([tools.md](tools.md)) — so it
 does not leave a turn open indefinitely.
@@ -395,8 +401,8 @@ instead of awaiting it and returns the `p#<id>` handle immediately.
 The process monitor verbs: `list_processes`, `read_process(handle, cursor)`,
 `kill_process(handle)`, `watch_process(handle, pattern)` ([watches](#watches)),
 `check_inbox` (surface pending inbox notifications on demand), and `wait()` (block
-until the next notification and return the pending notifications; refuse without a
-known wake source), and `ask(question)` ([below](#ask--a-question-that-blocks)).
+until the next notification or queued turn and return the pending notifications, or the
+line naming the turn; refuse without a known wake source), and `ask(question)` ([below](#ask--a-question-that-blocks)).
 Tool definitions are constant `json!` values with sorted keys so
 the `tools[]` array stays byte-stable across turns (see [transport](transport.md) for
 why this matters for prefix caching).

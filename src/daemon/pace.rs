@@ -338,6 +338,27 @@ impl Session {
         })
     }
 
+    /// Whether a queued turn is about to run: [`turn_wake`](Self::turn_wake)'s condition.
+    pub(crate) fn turn_to_run(&self) -> bool {
+        !self.no_turn_queued_to_run()
+    }
+
+    /// Resolve when a queued turn is about to run — `wait`'s wake source beside notifications
+    /// and the interrupt (docs/process-monitor.md). The juncture after the wait's result drains
+    /// it, so the turn reaches the model right behind that result. An agent's turn held back
+    /// behind the operator's hold does not count until the release sends it: the drain would
+    /// not deliver it. Every path that sends a turn to the loop fires `pace_interrupt`; the
+    /// waiter is armed before the check, so a send between the two still wakes it.
+    pub(crate) async fn turn_wake(&self) {
+        loop {
+            let waiter = self.pace_interrupt.notified();
+            if self.turn_to_run() {
+                return;
+            }
+            waiter.await;
+        }
+    }
+
     /// Block until [`is_settled`]. Uses `Notified::enable` to register the waiter **before** the
     /// condition check: `settle_changed` is a `notify_waiters` (no stored permit), so a
     /// `going_idle`/`register_pending` that fires between the check and the await would otherwise be

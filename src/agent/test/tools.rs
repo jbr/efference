@@ -109,6 +109,90 @@ async fn wait_wakes_for_a_notification_and_returns_its_body() {
     assert!(shared.kill_bg(&handle), "clean up the test process");
 }
 
+/// A turn queued while the agent waits ends the wait (docs/process-monitor.md): the
+/// juncture after the result delivers it, so a wait can no longer sleep through it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wait_wakes_when_a_turn_is_queued() {
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
+    let handle = shared
+        .spawn_background("sleep 5".into(), None)
+        .expect("background process makes wait safe");
+    let sender = Arc::clone(&shared);
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        sender
+            .submit_named_turn(SubmittedTurn::new("are you there?", "sub-1"), None)
+            .expect("no question pending");
+    });
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        process_monitor_tool_result(&shared, &call(process_monitor::WAIT)),
+    )
+    .await
+    .expect("a queued turn wakes wait")
+    .expect("wait is a process monitor tool");
+    assert!(!result.is_error, "{result:?}");
+    assert_eq!(result.content, TURN_ARRIVED);
+    assert!(shared.kill_bg(&handle), "clean up the test process");
+}
+
+/// A turn that arrived while the step was generating returns the wait at once — ahead
+/// of the refusal, which here would otherwise answer (no other wake source).
+#[tokio::test]
+async fn wait_returns_at_once_for_a_turn_already_queued() {
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
+    shared.submit_turn(SubmittedTurn::new("are you there?", "sub-1"));
+    let result = process_monitor_tool_result(&shared, &call(process_monitor::WAIT))
+        .await
+        .expect("wait is a process monitor tool");
+    assert!(!result.is_error, "{result:?}");
+    assert_eq!(result.content, TURN_ARRIVED);
+}
+
+/// An agent's turn held back behind the operator's hold is not delivered at the
+/// juncture, so it does not end a wait; the release that sends it does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_held_back_turn_wakes_wait_only_when_released() {
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
+    let handle = shared
+        .spawn_background("sleep 5".into(), None)
+        .expect("background process makes wait safe");
+    shared.set_pace(None, Some(true));
+    shared.submit_turn(
+        SubmittedTurn::new("from a peer", "sub-1").sourced(Some("session[peer]".into())),
+    );
+
+    let waiter = Arc::clone(&shared);
+    let wait = tokio::spawn(async move {
+        process_monitor_tool_result(&waiter, &call(process_monitor::WAIT)).await
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        !wait.is_finished(),
+        "a held-back turn leaves the wait asleep"
+    );
+
+    shared.set_pace(None, Some(false));
+    let result = tokio::time::timeout(std::time::Duration::from_secs(2), wait)
+        .await
+        .expect("the release wakes wait")
+        .unwrap()
+        .expect("wait is a process monitor tool");
+    assert!(!result.is_error, "{result:?}");
+    assert_eq!(result.content, TURN_ARRIVED);
+    assert!(shared.kill_bg(&handle), "clean up the test process");
+}
+
 #[test]
 pub(super) fn cap_passes_through_results_under_the_limit() {
     let (shared, _rx) = Session::new(

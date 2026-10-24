@@ -46,7 +46,11 @@ pub(super) async fn process_monitor_tool_result(
         process_monitor::LIST => Some(RawResult::text(shared.bg_list_text())),
         process_monitor::CHECK_INBOX => Some(RawResult::text(shared.inbox_listing())),
         process_monitor::WAIT => Some(
-            if !shared.has_pending_notifications()
+            // A turn queued while this step was generating is already a reason to stop:
+            // checked ahead of the refusal, which counts only sources that could arrive.
+            if shared.turn_to_run() {
+                RawResult::text(TURN_ARRIVED)
+            } else if !shared.has_pending_notifications()
                 && !shared.has_running_background()
                 && !shared.has_subscriptions()
             {
@@ -66,6 +70,7 @@ pub(super) async fn process_monitor_tool_result(
                 } else {
                     tokio::select! {
                         _ = shared.inbox_wake() => RawResult::text(shared.inbox_listing()),
+                        _ = shared.turn_wake() => RawResult::text(TURN_ARRIVED),
                         _ = &mut interrupted => RawResult::error("wait interrupted by user"),
                     }
                 }
@@ -110,6 +115,10 @@ pub(super) async fn process_monitor_tool_result(
         _ => None,
     }
 }
+
+/// `wait`'s result when a queued turn ends it (docs/process-monitor.md). Fixed text: it
+/// projects to the wire, and the turn itself follows it at the next juncture.
+pub(super) const TURN_ARRIVED: &str = "wait ended: a message arrived, and follows this result.";
 
 /// The `command` of a background-bash call, if present.
 pub(super) fn background_command(call: &ToolCall) -> Option<String> {
