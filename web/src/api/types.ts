@@ -965,18 +965,26 @@ export type OutputKind =
   | "tool_call_start"
   | "tool_call_input"
   | "tool_output"
-  | "process_output";
+  | "process_output"
+  | "consolidation_delta"
+  | "consolidation_thinking_delta"
+  | "compaction_delta"
+  | "compaction_thinking_delta"
+  | "triage_delta"
+  | "triage_thinking_delta";
 
-// Every model-stream delta names the content block it appends to (`index`), and
-// a call additionally the `call_id` its result keys on — a fragment is partial
-// delivery of a specific item (docs/control-api.md). `tool_output` and
-// `process_output` were always keyed this way.
+// Main response deltas name their content block (`index`), and a call also
+// carries its `call_id`. Side request text is independent: triage names its
+// result batch (`call_ids`), while compaction has one tail (docs/control-api.md).
+// Tool and process output are keyed by their call and process ids.
 export type OutputData =
   | { index: number; text: string }
   | { index: number; call_id: CallId; name: string }
   | { index: number; fragment: string }
   | { call_id: CallId; chunk: string }
-  | { id: number; chunk: string };
+  | { id: number; chunk: string }
+  | { text: string }
+  | { call_ids: CallId[]; text: string };
 
 // ---- the error envelope ----
 

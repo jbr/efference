@@ -1,3 +1,4 @@
+import { summaryPreviews } from "../session/summaryPreviews.ts";
 import { useSidebarOverlay } from "./inspector/useSidebarOverlay.ts";
 import { anchorFromResult, type DiffAnchor } from "../session/editAnchor.ts";
 import { useHistoricalCall } from "./inspector/useHistoricalCall.ts";
@@ -78,7 +79,18 @@ export function SessionView() {
   // the selected call out of it. The selection is a call id, not a node —
   // the node is re-found each render so a landing result or verdict shows
   // up in an open inspector.
-  const nodes = useMemo(() => buildTree(session.entries), [session.entries]);
+  const nodes = useMemo(
+    () =>
+      buildTree(
+        session.entries,
+        summaryPreviews(
+          session.entries,
+          session.streaming,
+          session.topics.current_operations ?? null,
+        ),
+      ),
+    [session.entries, session.streaming, session.topics.current_operations],
+  );
   // A session that handed off (docs/tools.md) is followed to its successor.
   // `replace`, so Back does not return to the archived predecessor.
   const follow = successorHref(session.topics.session_identity, sessionHref);
@@ -399,6 +411,7 @@ export function SessionView() {
             ask={session.topics.ask ?? null}
             cold={session.topics.cold ?? null}
             compactionFailure={session.topics.compaction_failure ?? null}
+            triage={session.streaming.triage}
             operations={session.topics.current_operations ?? null}
             model={session.topics.session_identity?.model ?? "the model"}
           />

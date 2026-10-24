@@ -1,6 +1,7 @@
 //! Opportunistic consolidation at complete conversational junctures (docs/consolidate.md).
 use super::*;
-use crate::api::FinishReason;
+use crate::api::{FinishReason, Streamed};
+use crate::daemon::StreamDelta;
 use crate::log::Telemetry;
 
 /// The owned request surface a detached consolidation check carries, like the
@@ -107,7 +108,20 @@ impl ConsolidationCheck {
         let completion = self
             .client
             .with_origin(RequestOrigin::Consolidation)
-            .complete(&prefix, &self.tools, ToolChoice::auto(), |_| {})
+            .complete(
+                &prefix,
+                &self.tools,
+                ToolChoice::auto(),
+                |streamed| match streamed {
+                    Streamed::Text { text, .. } => {
+                        shared.publish_delta(StreamDelta::ConsolidationText { text })
+                    }
+                    Streamed::Thinking { text, .. } => {
+                        shared.publish_delta(StreamDelta::ConsolidationThinking { text })
+                    }
+                    Streamed::ToolStart { .. } | Streamed::ToolInput { .. } => {}
+                },
+            )
             .await
             .map_err(|error| format!("request error: {error}"))?;
         shared.record_request(RequestOrigin::Consolidation, completion.request_usage());

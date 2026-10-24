@@ -622,3 +622,53 @@ describe("interrupt origin association", () => {
     ).toEqual([undefined]);
   });
 });
+
+describe("live summary placement", () => {
+  const preview = {
+    kind: "summary-preview" as const,
+    key: "live-consolidation",
+    source: "consolidation" as const,
+    from: 1,
+    upto: 3,
+    text: "Account so far",
+    thinking: "Checking the span",
+  };
+
+  it("stays at the covered span when newer turns arrive", () => {
+    const nodes = buildTree(
+      [
+        assistant(1, { text: true }),
+        assistant(3, { text: true }),
+        entry(4, { User: [{ Text: "Later work" }] }),
+        assistant(5, { text: true }),
+      ],
+      [preview],
+    );
+    expect(nodes.map((node) => node.key)).toEqual([
+      "1:text",
+      "3:text",
+      preview.key,
+      "4",
+      "5:text",
+    ]);
+  });
+
+  it("anchors a covered tool result at the call that draws it", () => {
+    const nodes = buildTree(
+      [
+        assistant(1, { calls: [{ id: "a", name: "read" }] }),
+        entry(2, { User: [{ Text: "Later work" }] }),
+        entry(3, { ToolResult: { call_id: "a", raw, wire: "Raw" } }),
+        assistant(4, { text: true }),
+      ],
+      [preview],
+    );
+    expect(nodes.map((node) => node.kind)).toEqual([
+      "batch",
+      "summary-preview",
+      "leaf",
+      "leaf",
+    ]);
+    expect(nodes[1]).toEqual(preview);
+  });
+});

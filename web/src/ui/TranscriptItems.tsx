@@ -1,3 +1,5 @@
+import { PinnedBox } from "./Thinking.tsx";
+import { SummaryPreview } from "./SideStreams.tsx";
 // The transcript's items at their levels (docs/web-client.md, "Detail by
 // recency"; the rules are ui/transcriptLevels.ts): a call whole, capped under
 // a fade, or as a one-line row; thinking whole, previewed, or as a pill; and
@@ -31,44 +33,6 @@ const joinText = (blocks: ContentBlock[]) =>
           : "[redacted thinking]",
     )
     .join("\n\n");
-
-/** A box of fixed height pinned to its newest line: a long body scrolls
- * inside itself instead of pushing the page. The top fades only while lines
- * are scrolled out above it; a body that never outgrows the box has nothing
- * hidden and no fade. `pinned` is false once the body stops growing — the box
- * then holds where the reader left it. The live thinking tail, a committed
- * long think in the recent tier, and a running command's output are all this
- * box, so an item that finishes streaming does not change shape. */
-export function PinnedBox({
-  children,
-  grows,
-  className,
-}: {
-  children: ReactNode;
-  /** Changes whenever the body grows; the box re-pins to the bottom. */
-  grows: unknown;
-  className?: string;
-}) {
-  const box = useRef<HTMLDivElement>(null);
-  const [clipped, setClipped] = useState(false);
-  useEffect(() => {
-    const element = box.current;
-    if (!element) return;
-    element.scrollTop = element.scrollHeight;
-    setClipped(element.scrollTop > 0);
-  }, [grows]);
-  return (
-    <div
-      ref={box}
-      className={["t-pinned", clipped && "clipped", className]
-        .filter(Boolean)
-        .join(" ")}
-      onScroll={(event) => setClipped(event.currentTarget.scrollTop > 0)}
-    >
-      {children}
-    </div>
-  );
-}
 
 /** A thinking block at a level. Short blocks ignore the level. A long one in
  * the recent tier stays in the box it streamed in, stopped at its last line,
@@ -116,18 +80,6 @@ function Thinking({ text, level }: { text: string; level: Level }) {
   return (
     <div className="t-thinking">
       <Markdown>{text}</Markdown>
-    </div>
-  );
-}
-
-/** The live thinking tail, in the box it will stay in once committed. */
-export function LiveThinking({ text }: { text: string }) {
-  return (
-    <div className="t-entry">
-      <div className="t-box-head">Thinking…</div>
-      <PinnedBox grows={text} className="t-thinking">
-        <Markdown>{text}</Markdown>
-      </PinnedBox>
     </div>
   );
 }
@@ -354,6 +306,9 @@ export function TranscriptItems({
               renderFull={renderFullCall}
             />
           );
+        }
+        if (item.kind === "summary-preview") {
+          return <SummaryPreview key={item.node.key} node={item.node} />;
         }
         const payload = item.node.entry.payload;
         if (isThinking(item.node) && "Assistant" in payload) {

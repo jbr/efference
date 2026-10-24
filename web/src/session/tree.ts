@@ -138,7 +138,17 @@ export type Node = LeafNode | BatchNode | CallNode;
  * thinking, its prose, and the batch of calls it issued. They are separate
  * nodes because they are separate things to read, not because the wire splits
  * them. */
-export type TranscriptNode = LeafNode | BatchNode;
+export interface SummaryPreviewNode {
+  kind: "summary-preview";
+  key: string;
+  source: "compaction" | "consolidation";
+  from: Seq;
+  upto: Seq;
+  text: string;
+  thinking: string;
+}
+
+export type TranscriptNode = LeafNode | BatchNode | SummaryPreviewNode;
 
 /**
  * Project the committed log into the tree. Pure, and a function of the entries
@@ -152,7 +162,10 @@ export type TranscriptNode = LeafNode | BatchNode;
  * on. Window reads resolve these relationships in `history.ts`; an unresolved
  * reference remains omitted until its owner is loaded (docs/web-client.md).
  */
-export function buildTree(entries: LogEntry[]): TranscriptNode[] {
+export function buildTree(
+  entries: LogEntry[],
+  previews: SummaryPreviewNode[] = [],
+): TranscriptNode[] {
   const nodes: TranscriptNode[] = [];
   const byCall = new Map<CallId, CallNode>();
   // Calls drawn as questions: their results are replies, not tool results.
@@ -172,7 +185,7 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const drawnBy = new Map<Seq, Seq>();
   const endOf = new Map<Seq, number>();
   const turns: Seq[] = [];
-  const marks: { at: number; node: LeafNode }[] = [];
+  const marks: { at: number; node: TranscriptNode }[] = [];
   let previous: Seq | null = null;
   let interrupt: InterruptOrigin | undefined;
 
@@ -385,6 +398,14 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     }
 
     nodes.push({ kind: "leaf", key: `${entry.seq}`, entry });
+  }
+
+  if (previous !== null) endOf.set(previous, nodes.length);
+  for (const preview of previews) {
+    const last = seqs.findLast((seq) => seq <= preview.upto);
+    const host = last === undefined ? undefined : drawnBy.get(last);
+    const at = host === undefined ? undefined : endOf.get(host);
+    marks.push({ at: at ?? nodes.length, node: preview });
   }
 
   // Highest position first, so each splice leaves the earlier positions valid;

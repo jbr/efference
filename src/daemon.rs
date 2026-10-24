@@ -100,6 +100,12 @@ pub enum StreamDelta {
     /// A fragment of the compaction's extended thinking, the counterpart of
     /// [`CompactionText`](Self::CompactionText).
     CompactionThinking { text: String },
+    /// A fragment of a detached consolidation account (docs/consolidate.md).
+    /// Its frozen range and settlement are recorded by consolidation telemetry;
+    /// it is not a main-response block and is never logged.
+    ConsolidationText { text: String },
+    /// Extended thinking from the same detached consolidation request.
+    ConsolidationThinking { text: String },
     /// A fragment of the text a triage request is writing (docs/triage.md), whichever
     /// shape runs it. Not the main loop's response, so it carries no block `index` and a
     /// committed `Assistant` entry does not retire it. `call_ids` are the `tool_use` ids

@@ -8,7 +8,12 @@
 // and older items as one-line summaries. Nothing is dropped — every level
 // opens to the whole on a tap.
 
-import type { CallNode, LeafNode, TranscriptNode } from "../session/tree.ts";
+import type {
+  CallNode,
+  LeafNode,
+  SummaryPreviewNode,
+  TranscriptNode,
+} from "../session/tree.ts";
 
 export type Level = "full" | "trimmed" | "brief";
 
@@ -23,13 +28,17 @@ export const ANCIENT = 20;
 export const THINKING_FLOOR = 120;
 
 export type Item =
-  { kind: "leaf"; node: LeafNode } | { kind: "call"; node: CallNode };
+  | { kind: "leaf"; node: LeafNode }
+  | { kind: "call"; node: CallNode }
+  | { kind: "summary-preview"; node: SummaryPreviewNode };
 
 export function flatten(nodes: TranscriptNode[]): Item[] {
   const items: Item[] = [];
   for (const node of nodes) {
     if (node.kind === "batch") {
       for (const call of node.calls) items.push({ kind: "call", node: call });
+    } else if (node.kind === "summary-preview") {
+      items.push({ kind: "summary-preview", node });
     } else {
       items.push({ kind: "leaf", node });
     }

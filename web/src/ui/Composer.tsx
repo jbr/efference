@@ -1,3 +1,5 @@
+import { TriagePreview } from "./SideStreams.tsx";
+import type { Streaming } from "../session/store.ts";
 // The composer area (docs/web-client.md): where loop state is controlled.
 // Gates arrive here, so the dials that decide how the loop moves — pace,
 // hold, review level, interrupt — sit on the status row above the input
@@ -82,6 +84,7 @@ export function Composer({
   operations,
   model,
   status = null,
+  triage = [],
 }: {
   submit: (text: string, attachments: Attachment[]) => Promise<void>;
   /** A turn a recall pulled back out of the daemon's queue, to prepend to the
@@ -116,6 +119,7 @@ export function Composer({
   model: string;
   /** Session startup, connection, or inspection condition occupying the readout. */
   status?: ComposerStatusMessage | null;
+  triage?: Streaming["triage"];
 }) {
   const store = useMemo(() => acquireDraft(apiBase()), []);
   const snapshot = useSyncExternalStore(store.subscribe, store.snapshot);
@@ -343,6 +347,7 @@ export function Composer({
               <span className="composer-grabber" aria-hidden />
             </div>
           )}
+          <TriagePreview tails={triage} />
           {noticeShown && (
             <CompactNotice
               cold={cold}

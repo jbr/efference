@@ -163,7 +163,7 @@ impl Session {
     }
 
     /// A fresh subscription to the delta fan-out for one control-stream connection.
-    pub(super) fn subscribe_stream(&self) -> broadcast::Receiver<StreamDelta> {
+    pub(crate) fn subscribe_stream(&self) -> broadcast::Receiver<StreamDelta> {
         self.stream_tx.subscribe()
     }
 

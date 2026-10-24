@@ -89,6 +89,18 @@ the next log entry ends it; an assistant response never directly follows another
 so the drain cannot swallow a real one. Tool and process output are unaffected —
 they are keyed by call and process, not scoped to a turn.
 
+Side-model output uses separate capped buffers (`session/side-stream.ts`): compaction
+and detached consolidation each retain account text and thinking, and triage retains
+thinking and verdict text per normalized set of call ids (an empty set is idle triage).
+These do not enter the main assistant blocks or their drain. Request stages and
+`current_operations` fence late output; a successful end retains text already displayed
+until its durable Summary or verdict arrives, while failure, retry, resume, or a new
+request resets it. The consolidation checking entry supplies its frozen `from`/`upto`
+span before the request starts. Summary, terminal consolidation telemetry, Triage, and
+ResultVerdict entries settle the corresponding buffers. Because log/state delivery can
+overtake queued output and these deltas carry no request id, a fully overtaken stream
+is omitted in favor of its durable record rather than reconstructed.
+
 The split carries a second load beyond rate of change. This layout targets the
 desktop browser, and the phone is expected to need drill-down views rather than a
 reflow of it — but it is one app meeting both, over the same screens. So fetching,
@@ -1514,6 +1526,18 @@ operations, so `turnState` says `paused: cache expired · send to continue (read
 tokens uncached)` in the warn colour; the composer shows the cold notice with the same
 *summarize instead* button. After a compaction the park stays and `cold` is null; the
 readout says `paused: summarized · send to continue`, with no notice.
+
+**Side-model previews** (`ui/SideStreams.tsx`, `session/summaryPreviews.ts`) are
+transient, not additional transcript entries. A live compaction or detached
+consolidation account uses the same coverage-to-drawn-node placement as the eventual
+Summary, so newer work remains below a background check's frozen span. Account text
+renders as Markdown between summary boundaries; thinking uses the shared bounded,
+bottom-pinned thinking box (`ui/Thinking.tsx`) and the thinking visibility setting.
+Compaction's cut comes from its operation or recorded request after the operation ends.
+The composer retains the compaction operation notice while the preview occupies the
+transcript. Triage thinking appears in a bounded panel above the composer; arriving
+verdict text has its own collapsed disclosure rather than being mixed into thinking.
+Durable curation removes the temporary panel, leaving the result's kept-line readout.
 
 **Summarizing is compaction** (`POST /loop/compact`, [control-api.md](control-api.md);
 `ui/compact.ts`, `ui/CompactNotice.tsx`, `ui/CompactControl.tsx`). Two entry points share

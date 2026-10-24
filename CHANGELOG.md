@@ -9,6 +9,8 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- Web live summary previews at their covered spans, temporary triage thinking above the composer, and detached consolidation text/thinking output frames.
+
 - Web interrupted-generation markers name the recorded client and stop control, when available.
 
 - Web approval gates show the latest escalator and note; a noted escalation replaces the spotter explanation, with an attributed spotter fallback when no note was supplied.

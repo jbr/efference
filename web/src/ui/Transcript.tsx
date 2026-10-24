@@ -1,3 +1,4 @@
+import { LiveThinking } from "./Thinking.tsx";
 import { isHandoff } from "./inspector/handoff.ts";
 import { Disclosure } from "./Disclosure.tsx";
 // The transcript: the log projected into its hierarchy (`session/tree.ts`),
@@ -33,11 +34,7 @@ import { SentAttachments } from "./Attachments.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 import { useViewSettings } from "./viewSettings.ts";
-import {
-  LiveResult,
-  LiveThinking,
-  TranscriptItems,
-} from "./TranscriptItems.tsx";
+import { LiveResult, TranscriptItems } from "./TranscriptItems.tsx";
 
 // Blank-line joined: these bodies render as markdown, and distinct wire
 // blocks are separate paragraphs — a single newline would soft-wrap the last

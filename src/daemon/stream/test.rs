@@ -467,6 +467,12 @@ async fn narrator_deltas_survive_a_committed_assistant_entry() {
     shared.publish_delta(StreamDelta::CompactionText {
         text: "the account".into(),
     });
+    shared.publish_delta(StreamDelta::ConsolidationText {
+        text: "the consolidation".into(),
+    });
+    shared.publish_delta(StreamDelta::ConsolidationThinking {
+        text: "reviewing the span".into(),
+    });
     shared.append(1, assistant("the whole answer")).unwrap();
 
     let seen = collect(&mut stream).await;
@@ -479,6 +485,14 @@ async fn narrator_deltas_survive_a_committed_assistant_entry() {
             .find(|f| f.kind == kind)
             .map(|f| f.data["text"].clone())
     };
+    assert_eq!(
+        text("consolidation_delta"),
+        Some(Value::from("the consolidation"))
+    );
+    assert_eq!(
+        text("consolidation_thinking_delta"),
+        Some(Value::from("reviewing the span"))
+    );
     assert_eq!(text("compaction_delta"), Some(Value::from("the account")));
     assert_eq!(
         text("compaction_thinking_delta"),

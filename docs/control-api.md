@@ -1764,6 +1764,14 @@ the oldest. The committed entry on the `log` class is the authoritative copy.
 - `compaction_thinking_delta` — `{ "text": "<fragment>" }` — the compaction's extended thinking,
   with the same scope. Both end with the compaction: the summary's `log` frame, or the
   `compaction_failure` topic being set, supersedes them.
+- `consolidation_delta` — `{ "text": "<fragment>" }` — the detached consolidation
+  check's account. It carries no block index and survives main `Assistant` entry
+  preemption. The latest `Telemetry.Consolidation` entry with `outcome: "checking"`
+  identifies its frozen `from`/`upto` range and `context`; one check runs at a time.
+- `consolidation_thinking_delta` — same shape — the check's extended thinking.
+  An adopted consolidation `Summary` or terminal `Telemetry.Consolidation`
+  outcome supersedes both streams. Fragments are lossy and never logged;
+  transport retries can stream fragments from successive attempts.
 - `triage_delta` — `{ "call_ids": ["<tool_use id>", …], "text": "<fragment>" }` — the text a
   triage request is writing, from the shared triage and the separate-model triage alike.
   `call_ids` are the results being triaged; the idle triage, which has none, sends `[]`.

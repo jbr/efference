@@ -20,7 +20,7 @@ import type {
 } from "../api/types.ts";
 import { openLightbox } from "./lightbox.ts";
 import { Code, NumberedCode, StreamingCode } from "./Code.tsx";
-import { PinnedBox } from "./TranscriptItems.tsx";
+import { PinnedBox } from "./Thinking.tsx";
 import {
   hasStructure,
   partialInput,

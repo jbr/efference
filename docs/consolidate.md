@@ -66,6 +66,15 @@ it. One check is in flight per session: a juncture reached while one runs is not
 checked. The task's client does not answer to the operator's interrupt, which
 stops the trajectory, not a request outside it.
 
+While the detached request runs, its text and extended thinking are published as
+`consolidation_delta` and `consolidation_thinking_delta` output frames, each with
+`{text}` data (docs/control-api.md). They are independent of main-response blocks;
+a committed assistant entry does not retire them. The checking telemetry records
+the frozen span before the request starts, so clients can place the provisional
+account at that span's end. An adopted summary or terminal consolidation outcome
+settles the provisional output. The fragments themselves are not logged, and a
+subscriber joining late sees only subsequent fragments.
+
 A summary is adopted when it lands, by appending its summary entry; the next main
 request projects it, and a request already in flight is unaffected. Entries
 appended after the snapshot stay after the range, including calls still

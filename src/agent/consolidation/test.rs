@@ -107,7 +107,7 @@ fn mock(text: &str, fail: bool) -> Mock {
     let requests = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));
     let body = format!(
-        "event: message_start\ndata: {{\"type\":\"message_start\",\"message\":{{\"id\":\"m\",\"model\":\"m\",\"usage\":{{\"input_tokens\":1,\"output_tokens\":0}}}}}}\n\nevent: content_block_start\ndata: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{{\"type\":\"text\",\"text\":{}}}}}\n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":0}}\n\nevent: message_delta\ndata: {{\"type\":\"message_delta\",\"delta\":{{\"stop_reason\":\"end_turn\"}},\"usage\":{{\"output_tokens\":100}}}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n",
+        "event: message_start\ndata: {{\"type\":\"message_start\",\"message\":{{\"id\":\"m\",\"model\":\"m\",\"usage\":{{\"input_tokens\":1,\"output_tokens\":0}}}}}}\n\nevent: content_block_start\ndata: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{{\"type\":\"thinking\",\"thinking\":\"\"}}}}\n\nevent: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{{\"type\":\"thinking_delta\",\"thinking\":\"reviewing\"}}}}\n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":0}}\n\nevent: content_block_start\ndata: {{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{{\"type\":\"text\",\"text\":\"\"}}}}\n\nevent: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{{\"type\":\"text_delta\",\"text\":{}}}}}\n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":1}}\n\nevent: message_delta\ndata: {{\"type\":\"message_delta\",\"delta\":{{\"stop_reason\":\"end_turn\"}},\"usage\":{{\"output_tokens\":100}}}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n",
         serde_json::to_string(text).unwrap()
     );
     let reply = if fail {
@@ -222,10 +222,22 @@ async fn adopts_account_then_waits_for_new_tool_work() {
     let shared = session();
     let server = mock(&"supported outcome ".repeat(60), false);
     let check = ConsolidationCheck::new(&server.client, &[]);
+    let mut output = shared.subscribe_stream();
     let before = shared.project_turns();
     if let Some(task) = check.check(&shared) {
         task.await.unwrap();
     }
+    let mut streamed = String::new();
+    let mut thinking = String::new();
+    while let Ok(delta) = output.try_recv() {
+        match delta {
+            StreamDelta::ConsolidationText { text } => streamed.push_str(&text),
+            StreamDelta::ConsolidationThinking { text } => thinking.push_str(&text),
+            _ => panic!("unexpected stream kind"),
+        }
+    }
+    assert_eq!(streamed, "supported outcome ".repeat(60));
+    assert_eq!(thinking, "reviewing");
     let after = shared.project_turns();
     assert_eq!(after.last(), before.last());
     assert!(after.len() < before.len());

@@ -330,6 +330,13 @@ impl Frame {
                 "compaction_thinking_delta",
                 serde_json::json!({ "text": text }),
             ),
+            StreamDelta::ConsolidationText { text } => {
+                ("consolidation_delta", serde_json::json!({ "text": text }))
+            }
+            StreamDelta::ConsolidationThinking { text } => (
+                "consolidation_thinking_delta",
+                serde_json::json!({ "text": text }),
+            ),
             StreamDelta::TriageText { call_ids, text } => (
                 "triage_delta",
                 serde_json::json!({ "call_ids": call_ids, "text": text }),

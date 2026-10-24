@@ -17,6 +17,14 @@ import type {
   Spot,
   StateTopics,
 } from "../api/types.ts";
+import {
+  closeSide,
+  emptySideStreaming,
+  sideLog,
+  sideOperations,
+  sideOutput,
+  type SideStreaming,
+} from "./side-stream.ts";
 
 /** One content block of the in-flight response, identified by its wire `index`
  * (docs/control-api.md). A block is the unit a delta appends to, so holding a
@@ -36,7 +44,7 @@ export interface LiveBlock {
 }
 
 /** Pre-commit output: what the model is emitting ahead of the next log entry. */
-export interface Streaming {
+export interface Streaming extends SideStreaming {
   /** The in-flight response's blocks, in wire order. */
   blocks: LiveBlock[];
   /** Live tool output by call id, cleared when the result commits. */
@@ -121,6 +129,7 @@ export interface AskRecall {
 }
 
 export const emptyStreaming: Streaming = {
+  ...emptySideStreaming,
   blocks: [],
   toolOutput: {},
   processOutput: {},
@@ -257,6 +266,10 @@ export function seed(session: Session, entries: LogEntry[]): Session {
     ...session,
     entries,
     lastSeq: last ? last.seq : session.lastSeq,
+    streaming: entries.reduce(
+      (streaming, entry) => sideLog(streaming, entry, entries),
+      session.streaming,
+    ),
     pendingTurns: entries.reduce(settlePendingTurns, session.pendingTurns),
     minted: entries.reduce(settleMinted, session.minted),
   };
@@ -289,6 +302,15 @@ export function applyFrame(session: Session, frame: Frame): Session {
         {
           ...session,
           topics: { ...session.topics, [frame.kind]: frame.data },
+          streaming:
+            frame.kind === "current_operations"
+              ? sideOperations(
+                  session.streaming,
+                  (frame.data as StateTopics["current_operations"]) ?? null,
+                )
+              : frame.kind === "compaction_failure" && frame.data !== null
+                ? closeSide(session.streaming, "compaction")
+                : session.streaming,
           processCalls:
             frame.kind === "processes"
               ? learnProcessCalls(session.processCalls, frame.data)
@@ -299,7 +321,11 @@ export function applyFrame(session: Session, frame: Frame): Session {
     case "output":
       return {
         ...session,
-        streaming: applyOutput(session.streaming, frame.kind, frame.data),
+        streaming: applyOutput(
+          sideOutput(session.streaming, frame.kind, frame.data),
+          frame.kind,
+          frame.data,
+        ),
       };
     default:
       // A durability class from a newer daemon: nothing safe to fold.
@@ -316,7 +342,10 @@ function applyLog(session: Session, entry: LogEntry): Session {
     ...session,
     entries: [...session.entries, entry],
     lastSeq: entry.seq,
-    streaming: settle(session.streaming, entry),
+    streaming: settle(
+      sideLog(session.streaming, entry, session.entries),
+      entry,
+    ),
     pendingTurns: settlePendingTurns(session.pendingTurns, entry),
     minted: settleMinted(session.minted, entry),
   };

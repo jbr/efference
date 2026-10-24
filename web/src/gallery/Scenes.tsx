@@ -1,3 +1,5 @@
+import { summaryPreviews } from "../session/summaryPreviews.ts";
+import { TriagePreview } from "../ui/SideStreams.tsx";
 import { useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Ask, CallId, LogEntry } from "../api/types.ts";
@@ -118,6 +120,11 @@ const push = {
 const modes = [
   "Finished",
   "Interrupted",
+  "Compaction thinking",
+  "Compaction account",
+  "Consolidating earlier work",
+  "Triage thinking",
+  "Triage verdict",
   "Input arriving",
   "Working",
   "Answer needed",
@@ -132,11 +139,13 @@ function ComposerFixture({
   running = false,
   focused = false,
   initial = "",
+  triage = [],
 }: {
   turn: TurnState;
   running?: boolean;
   focused?: boolean;
   initial?: string;
+  triage?: Streaming["triage"];
 }) {
   const narrow = useNarrow();
   const [held, setHeld] = useState(false);
@@ -151,6 +160,7 @@ function ComposerFixture({
       }}
     >
       <div className="composer-inner">
+        <TriagePreview tails={triage} />
         <div className={`composer-input${focused ? " is-focus-within" : ""}`}>
           <div className="composer-text-row">
             <textarea
@@ -266,7 +276,7 @@ export function GalleryScenes() {
               : common,
     [mode, answerSecond],
   );
-  const streaming: Streaming =
+  let streaming: Streaming =
     mode === "Input arriving"
       ? {
           ...emptyStreaming,
@@ -289,6 +299,74 @@ export function GalleryScenes() {
             },
           }
         : emptyStreaming;
+  const account =
+    "The web client now exposes a worktree option in the new-session form. Worktree events appear in the transcript, and long branch names wrap on narrow screens.\n\nThe client checks passed. The remaining step is to review the final diff and commit the change.";
+  const summaryThinking =
+    "I need to preserve the decision and the verified result, rather than every intermediate command. The worktree setting follows the existing form pattern; the transcript notice names the branch without allowing it to widen the phone layout. The checks passed, but that does not mean the changes have been committed.";
+  if (mode === "Compaction thinking" || mode === "Compaction account")
+    streaming = {
+      ...emptyStreaming,
+      compaction: {
+        thinking: summaryThinking,
+        text: mode === "Compaction account" ? account : "",
+      },
+    };
+  if (mode === "Consolidating earlier work")
+    streaming = {
+      ...emptyStreaming,
+      consolidation: {
+        from: 1,
+        upto: 4,
+        thinking: summaryThinking,
+        text: account,
+      },
+    };
+  if (mode === "Triage thinking" || mode === "Triage verdict")
+    streaming = {
+      ...emptyStreaming,
+      triage: [
+        {
+          callIds: [command.id],
+          thinking:
+            "The command exited successfully. The output contains the typecheck, lint, formatting and test results; keeping the final pass counts is enough to establish what ran. The repeated tool headings do not add evidence.",
+          text:
+            mode === "Triage verdict"
+              ? '{"keep":"4-6","note":"Web checks passed: typecheck, lint, formatting and all tests."}'
+              : "",
+        },
+      ],
+    };
+  const sceneEntries = mode.startsWith("Compaction")
+    ? [
+        ...entries,
+        entry(20, {
+          Telemetry: { CompactionRequested: { warm: false, cut: 3 } },
+        }),
+      ]
+    : mode === "Consolidating earlier work"
+      ? [
+          ...common,
+          result,
+          entry(5, {
+            User: [
+              {
+                Text: "Next, check that the session picker still works on mobile.",
+              },
+            ],
+          }),
+          entry(6, {
+            Assistant: messagesAssistant(
+              [],
+              [
+                {
+                  Text: "I’ll check the picker while the earlier work is being consolidated.",
+                },
+              ],
+              [],
+            ),
+          }),
+        ]
+      : entries;
   const gate =
     mode === "Approval needed" || mode.startsWith("Escalated") ? push.id : null;
   return (
@@ -338,7 +416,10 @@ export function GalleryScenes() {
       <div className="g-scene">
         <GalleryTranscriptHeader />
         <TranscriptContent
-          nodes={buildTree(entries)}
+          nodes={buildTree(
+            sceneEntries,
+            summaryPreviews(sceneEntries, streaming, null),
+          )}
           streaming={streaming}
           pending={[]}
           ask={
@@ -417,6 +498,7 @@ export function GalleryScenes() {
         )}
         <ComposerFixture
           key={mode}
+          triage={streaming.triage}
           running={running}
           turn={turnState(
             mode === "Answer needed"
