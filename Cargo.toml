@@ -78,10 +78,6 @@ trillium-websockets = "0.9.2"
 # the dist assets in the binary; the `dev-proxy` feature below proxies to a
 # spawned Vite dev server instead (HMR). Build mode needs pnpm on PATH.
 trillium-frontend = "0.4.3"
-# The TCP gate's cookie jar (docs/web-bind.md). Parsing must cover every cookie
-# field line — h2/h3 clients split one line per cookie — which the raw-header
-# read it replaced did not.
-trillium-cookies = "0.5.1"
 
 # TUI (DESIGN §10 — the interactive client). Vendored-and-adapted from ferritin's
 # interactive renderer into src/tui/: a ratatui document renderer with syntect
@@ -149,8 +145,8 @@ base64 = "0.23.1"
 sha2 = "0.11.0"
 rand = "0.10.2"
 # Root-derived credentials for the TCP bind (docs/web-bind.md): HKDF with per-purpose
-# context strings turns the one injected root into the cookie-HMAC key, the TOTP
-# secret, and the bearer — same root in, same secrets out, nothing secret on disk.
+# context strings turns the one injected root into the TOTP secret and the bearer —
+# same root in, same secrets out, nothing secret on disk.
 # SHA-1 is TOTP only (RFC 6238's stock-authenticator default), never a signature.
 # data-encoding brings the base32 an `otpauth://` secret is spelled in.
 hkdf = "0.13"

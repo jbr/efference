@@ -5,14 +5,16 @@
 // @vitest-environment jsdom
 
 import { afterEach, expect, test, vi } from "vitest";
+import { bearer } from "../api/bearer.ts";
 import { resolveEntry } from "./entry.ts";
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status });
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllGlobals();
   history.pushState({}, "", "/");
+  await bearer.clear();
 });
 
 test("a session prefix is the session's view, with nothing asked", async () => {
@@ -49,17 +51,35 @@ test("a root that serves no listing is a session daemon's", async () => {
   expect(await resolveEntry()).toEqual({ kind: "session" });
 });
 
-test("a guarded listing is the host, unauthenticated", async () => {
+test("a guarded listing is the host, unauthenticated, and the refused bearer is dropped", async () => {
+  await bearer.store("refused");
   vi.stubGlobal(
     "fetch",
     vi.fn(() =>
       Promise.resolve(
-        json(401, { code: "unauthorized", message: "no valid session cookie" }),
+        json(401, { code: "unauthorized", message: "no valid bearer" }),
       ),
     ),
   );
 
   expect(await resolveEntry()).toEqual({ kind: "unauthenticated" });
+  // The sign-in view starts from no bearer rather than the one refused.
+  expect(bearer.held()).toBeNull();
+});
+
+test("a root that serves no listing keeps the held bearer", async () => {
+  await bearer.store("kept");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve(
+        json(404, { code: "not_found", message: "no route matched" }),
+      ),
+    ),
+  );
+
+  expect(await resolveEntry()).toEqual({ kind: "session" });
+  expect(bearer.held()).toBe("kept");
 });
 
 test("a probe that does not arrive leaves the root a session", async () => {

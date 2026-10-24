@@ -71,9 +71,9 @@ pub(crate) fn resolve_bind(
     if tls.is_none() && !loopback {
         return Err(format!(
             "--bind {addr} is not loopback, and a cleartext bind is only accepted on \
-             loopback: anyone who can reach this interface can replay a session cookie \
-             and drive the agent's tools. Serve it with --tls-cert/--tls-key, or bind \
-             loopback (a bare port, or 127.0.0.1/::1) (docs/web-bind.md)"
+             loopback: anyone who can reach this interface can replay a browser's bearer \
+             token and drive the agent's tools. Serve it with --tls-cert/--tls-key, or \
+             bind loopback (a bare port, or 127.0.0.1/::1) (docs/web-bind.md)"
         )
         .into());
     }

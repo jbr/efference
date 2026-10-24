@@ -329,7 +329,7 @@ no verb to learn for it. The owner is the
 foreground launcher, never the tab — reloads and stream reconnects cannot end it — and
 the terminal holds one prompt line: `o` opens the session again, `c` copies a link, `p`
 prints one, `q`, Esc, or Ctrl-C quits. Every link is minted when asked for, because a
-code works once and only for about a minute; the cookie it trades for is what keeps a
+code works once and only for about a minute; the bearer it trades for is what keeps a
 tab signed in. Quitting erases the prompt and ends the island as the terminal island
 does. Each island lives in
 `~/.efference/islands/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a

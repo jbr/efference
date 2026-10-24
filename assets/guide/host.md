@@ -73,8 +73,9 @@ as secure for `localhost`.
 ## From a phone or another computer: Tailscale
 
 Reaching the host from another device needs two things: a network path to it, and HTTPS
-with a certificate the device trusts — the web client's sign-in cookie, offline support,
-and notifications all require a secure origin. Tailscale provides both: a private network
+with a certificate the device trusts — the web client's sign-in token rides every request
+and must not cross the network in clear text, and offline support and notifications
+require a secure origin. Tailscale provides both: a private network
 between the operator's devices, and `tailscale cert`, which issues a trusted certificate
 for this machine's name on that network. It is the one arrangement this guide describes.
 Anything else — another VPN, a public tunnel, a home-made certificate authority — is the

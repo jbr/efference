@@ -78,7 +78,7 @@ access to your shell.
 A host can also listen on TCP, for browsers. That listener requires a sign-in for
 everything except the web client's own files and the sign-in request itself
 ([Remote access](remote-access.md)).
-<!-- src: src/daemon/tcp.rs::Surface::zone, anonymous, gate -->
+<!-- src: src/daemon/tcp.rs::Surface::anonymous, gate -->
 
 ### Where a session's record lives
 

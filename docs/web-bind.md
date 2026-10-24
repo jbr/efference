@@ -15,9 +15,9 @@ than shipping a second one. The gate's only listener-dependent decision is carri
 a `Surface`, and it is not a set of guarded prefixes: the anonymous surface is
 enumerated, so every path outside it takes a credential whatever its name. What a
 surface settles is where the paths that name a bind's shape rather than its content
-sit — `/files` is the narrower cookie-only surface, at a session bind's root and under
-`/sessions/<id>` on a host, and `GET /sessions` is the
-probe that has to reach a session bind's router so its `404` says "not a host".
+sit — the web client's own routes, at a session bind's root and also under
+`/sessions/<id>` on a host — and that `GET /sessions` on a session bind is the probe
+that has to reach its router so its `404` says "not a host".
 `Surface::Host` is the interface the in-process host mounts its session routes behind, so
 the gate's decision is the same shape on both.
 
@@ -54,8 +54,8 @@ present is an `Option`, which trillium runs as a pass-through when `None`, and t
 
 - **Socket:** the security headers, HEAD rewriting, the `ETag` validator, the
   enrollment routes (below), the `/v1` routes. No gate, no web client.
-- **Web:** the security headers, HEAD rewriting, the cookie jar, the gate, the `ETag`
-  validator, the credential mint, the `/v1` routes, `/files`, then the web client —
+- **Web:** the security headers, HEAD rewriting, the gate, the `ETag` validator, the
+  credential mint, the `/v1` routes, `/files`, then the web client —
   every conn passes the gate first; the trailing frontend handler serves the
   embedded web client ([web-client.md](web-client.md)) for the GETs no route
   claims. The SPA
@@ -114,13 +114,12 @@ with per-purpose context strings:
 
 | derived | context | purpose |
 | --- | --- | --- |
-| cookie-HMAC key | `cookie-hmac v1` | signs the browser session cookie |
 | TOTP secret | `totp v1` | the bootstrap credential (RFC 6238, SHA-1/6-digit/30 s) |
-| bearer | `bearer v1` | `Authorization: Bearer` for programs |
+| bearer | `bearer v1` | the one TCP credential, `Authorization: Bearer` — the web client's and programs' |
 | VAPID keypair | `vapid v1 attempt-<n>` | the web-push sender identity ([web-push.md](web-push.md)); the counter increments until the bytes are a valid P-256 scalar |
 
-Same root in, same credentials out, every boot: enrollments and cookies survive
-restarts, and revocation is root rotation — `efference auth rotate` deletes the item
+Same root in, same credentials out, every boot: enrollments and signed-in browsers
+survive restarts, and revocation is root rotation — `efference auth rotate` deletes the item
 and the next bind mints another, which signs out every browser, invalidates the
 authenticator enrollment, and drops every push subscription (a mass logout — the
 right granularity for a single-operator daemon). A store that answers a read with
@@ -128,29 +127,39 @@ an error is not treated as absent: minting over it would be an unasked rotation,
 the bind fails with the store's complaint and names the rotate verb. Received
 secrets that cannot be re-derived (OAuth tokens) are out of scope here and stay with
 [mcp-auth.md](mcp-auth.md). 32 bytes is the size the derivations can use: HKDF's
-extract is 256-bit, the HMAC keys and bearer are 256-bit, TOTP is bounded by its
-six-digit codes and P-256 by its 128-bit level.
+extract is 256-bit, the bearer and the key it is compared under are 256-bit, TOTP is
+bounded by its six-digit codes and P-256 by its 128-bit level.
 
-Two credential kinds because `EventSource` cannot set an `Authorization` header — the
-browser's ambient cookie is forced, not stylistic. The cookie
-(`__Host-efference`) is HMAC-signed over its issued-at, `Secure; HttpOnly;
-SameSite=Strict`, 30-day fixed expiry, and carries validity and nothing else — no user
-id, no scopes, no server-side session store. Cookies ignore ports, so one daemon's
-cookie authenticates to every daemon on the host: correct under the machine-scoped
-key, which makes "authed" a property of the machine, not the port.
+**One credential, held by the page.** Every request that costs a credential presents
+the bearer as `Authorization: Bearer <token>`, the web client's included. The login
+view trades a current code for it at `POST /auth/session` (below), and the client
+keeps it in IndexedDB with an in-memory copy, read once at boot, that `apiFetch`
+attaches to every request (`web/src/api/bearer.ts`, [web-client.md](web-client.md)).
+IndexedDB is scoped by origin, and an origin includes its port, so no other service on
+`localhost` reads it. The service worker can read it, and its push-subscription repair
+authenticates with it ([web-push.md](web-push.md)). A `401` to the client's binding
+probe or its session connection clears the stored copy, so the sign-in view starts
+from none. The bearer carries no expiry: a browser stays signed in until the root
+rotates or the browser drops the site's storage. Safari deletes script-writable
+storage for a site not visited in seven days of browsing (apps added to the home
+screen are exempt); whether that applies to a `localhost` or a `ts.net` origin is
+unmeasured, and where it does, the browser signs in again.
 
-A plaintext loopback bind sets `efference-session` instead — the same value,
-`HttpOnly; SameSite=Strict`, without `Secure` and so without the `__Host-` prefix that
-requires it. Measured 2026-09-27: Safari (26.6.1, and Technology Preview 26.0) refuses
-any `Secure` cookie over `http://localhost` or `http://127.0.0.1`, where Chrome and
-Firefox accept it, so the prefixed cookie never stuck in Safari. On loopback `Secure`
-protects nothing — the traffic never leaves the machine — and because cookies ignore
-ports, either cookie reaches every service on `localhost` in any browser: a local
-service on another port receives it and could replay it. That exposure predates the
-split and is narrow (a same-user process already holds the socket, which is more);
-keeping the token out of cookies entirely on loopback would close it. A distinct
-`efference.localhost` hostname would scope the cookie away from other `localhost`
-services, but Safari does not resolve `*.localhost`.
+The gate reads a credential from the `Authorization` header and nowhere else — no
+cookie, no query parameter — and no answer sets a cookie. A request another site
+makes the browser send — a navigation, a form post, an image — carries no header the
+page did not set, so it carries nothing that authenticates. No answer grants another
+origin CORS either: a page elsewhere, another port on `localhost` included, can
+neither read an answer nor send the header, since the preflight a cross-origin
+request with it needs is refused like any request without a credential.
+
+The bearer is reachable from the page's script, which an `HttpOnly` cookie would not
+be. The boundary for that is the page's Content-Security-Policy together with the rule
+that nothing turns untrusted content into markup ([web-client.md](web-client.md)): a
+first-party client with no third-party content, under a policy that names no other
+origin. Script running in the page can make the page's requests and read their answers
+whatever form the credential takes; what the bearer in reach adds is that such script
+can carry it away.
 
 A bind to port 0 learns its port once listening, and minted links name that port. A
 link carries a code no one has used: the current step's, or when that was just redeemed
@@ -172,9 +181,10 @@ path when at the host, and the answer to lost scrollback. It is a `dev` verb rat
 `efference mcp` exposes to whatever mounts it; the re-mint is expected to move into the TUI. The code rides the URL
 *fragment*: it never reaches server or proxy logs, and burned codes make
 browser-history residue inert. The web client's login view
-([web-client.md](web-client.md), `web/src/ui/Login.tsx`) reads the hash,
-`POST /auth/session`, gets the cookie, scrubs the URL with `history.replaceState`; a
-bare visit renders a six-digit field posting to the same endpoint. `GET /auth/otpauth` on the Unix socket returns the `otpauth://` enrollment URI for a stock
+([web-client.md](web-client.md), `web/src/ui/Login.tsx`) reads the hash, trades the
+code at `POST /auth/session` for the bearer, keeps it (above), and scrubs the URL with
+`history.replaceState`; a bare visit renders a six-digit field posting to the same
+endpoint. `GET /auth/otpauth` on the Unix socket returns the `otpauth://` enrollment URI for a stock
 authenticator app; nothing renders it as a QR any more (the CLI flag was removed pending a
 TUI or web onboarding flow).
 
@@ -211,8 +221,9 @@ Runs before every TCP route, in order:
    upload (`400`) — forms can't spell either, and a cross-site `fetch` carrying either is
    preflighted, which closes the no-preflight CSRF shapes. A localhost or LAN bind is not a trust boundary while a
    browser is present; these ship with the bind, not after it.
-3. **Credential check** — valid cookie or bearer, else `401 unauthorized`. The
-   rule is the **anonymous list, not the guarded one**: everything costs a
+3. **Credential check** — the bearer in the `Authorization` header, else
+   `401 unauthorized`. The rule is the **anonymous list, not the guarded one**:
+   everything costs a
    credential except what is named as free, so a route added later is guarded
    unless it is named there too. The free surface is the web client's shell, its
    hashed assets, and the launch images under `/splash`, at its base
@@ -220,17 +231,13 @@ Runs before every TCP route, in order:
    nothing session-specific; `POST /auth/session`, the mint, which the login
    flow cannot present a credential for; and on a session bind `GET /sessions`,
    which is no route of its — the web client's probe to tell the two bindings
-      apart reads the `404` a session daemon gives it as "not a host"
+   apart reads the `404` a session daemon gives it as "not a host"
    ([web-client.md](web-client.md)).
-   Everything else takes cookie-or-bearer, whatever its prefix: `/v1`, a host's
-   `/sessions` tree except its `/files`, and the host's own routes at its root. The
-   `dev-proxy` build widens the free surface to the dev server's module URLs
-   ([web-client.md](web-client.md)), because a shell that cannot load is a page
-   with no login view on it.
-   `/files` is guarded more narrowly still: on a session bind, and on a host as
-   `/sessions/<id>/files`, it takes the **cookie only**, and a valid bearer gets
-   `403 forbidden` there rather than `401`, because the credential
-   is fine and presenting it again would not help.
+   Everything else takes the bearer, whatever its prefix: `/v1`, `/files`, the rest
+   of a host's `/sessions` tree (`/sessions/<id>/files` included), and the host's
+   own routes at its root. The `dev-proxy` build widens the free surface to the dev
+   server's module URLs ([web-client.md](web-client.md)), because a shell that
+   cannot load is a page with no login view on it.
 
 The `401`/`403`/`429` codes are `ErrorCode` variants in the standard error envelope
 ([control-api.md](control-api.md)).
@@ -270,13 +277,17 @@ the machine. It is the server half of the file viewer
   directories are listed but never descended: the walk would not terminate.
 - Anything else, including any non-GET, is refused — this surface never mutates.
 
-**Not under `/v1`, and not the bearer's.** `/v1` is the control API, where every
-client is equal and a bearer holder is one of them. Working-directory reads from a
-bearer would bypass `[paths]` entirely, including the injected deny that keeps a
-session out of every other session's log ([permissions.md](permissions.md)). Nothing
-reaches that today — the root is stripped from tool children, so a session cannot
-derive the bearer — but requiring the cookie closes it structurally rather than by
-argument.
+**Not under `/v1`, behind the same bearer.** `/v1` is the control API, where every
+client is equal; `/files` is a human surface beside it, and the gate prices the two
+alike. Working-directory reads from a bearer go past `[paths]` entirely, including the
+injected deny that keeps a session out of every other session's log
+([permissions.md](permissions.md)), so that fence holds while no session holds the
+bearer. A session cannot derive it — the root is stripped from tool children — and
+the web client keeps its copy in the browser's origin storage rather than anywhere a
+session's environment carries. What remains is script injected into the web client,
+which is the CSP's boundary (above) and which can make the page's requests and read
+their answers whatever form the credential takes, and an operator pasting the bearer
+into a turn, which no fence stops.
 
 **Content-type is never the file's own.** Every body is
 `text/plain; charset=utf-8`. Serving a repository's `.html` as `text/html` would be
@@ -302,10 +313,11 @@ being sensitive, and the listing's omissions above are volume rather than
 concealment — `.git` and `target` stay readable by name. Concealing a path from the
 listing while still serving it by name is the shape deliberately not built: it would
 imply a protection that is not there. What binding therefore exposes, to
-whoever holds the session cookie, is every text file under the working directory —
-`.env` among them. Two things bound that. The cookie is machine-scoped and lives 30
-days, so the exposure window is the cookie's rather than the session's; and the same
-cookie already reaches `/v1`, where approving a gate or injecting a turn can have the
+whoever holds the bearer, is every text file under the working directory —
+`.env` among them. Two things frame that. The bearer is machine-scoped and lasts
+until the root rotates, so the exposure window is the bearer's rather than the
+session's; and the same bearer already reaches `/v1`, where approving a gate or
+injecting a turn can have the
 *agent* read any file into the transcript, so a stolen credential does not become
 materially worse for this route existing. The widening that is real is narrower: an
 operator who deliberately fenced the session into a subdirectory with `[paths]` will
@@ -361,8 +373,8 @@ The same URLs content-negotiate: a `GET /files/<path>` whose `Accept` header
 **explicitly names** `text/event-stream` gets a stream of change pokes instead of
 the body. Explicit-only — `*/*`, a fetch's default, gets the file — so only a
 client that asked to stream ever streams; the web client's reader is a `fetch`
-that sets the header explicitly (`web/src/api/files.ts`). Cookie-only like the rest
-of the surface, and the subscription's lifetime *is* the connection: tab closes,
+that sets the header explicitly (`web/src/api/files.ts`). Behind the bearer like the
+rest of the surface, and the subscription's lifetime *is* the connection: tab closes,
 socket closes, watch drops. No registry, no control-channel frame class — the
 control channel stays broadcast-topic shaped.
 
@@ -417,14 +429,15 @@ The first surface with no per-session home, previewing a host's routing split:
 a host listener mounts the same mint.
 
 On the TCP listener (anonymous): `POST /auth/session` — `{"code":"123456"}` →
-`Set-Cookie` on success.
+`200` with `{"token":"<the bearer>"}` in the body, under `Cache-Control: no-store`
+(a credential in a response is never kept for reuse); it sets no cookie.
 
 On the UDS only (host possession is the enrollment authority): `GET /auth/link`
 (a fresh fragment-token URL), `GET /auth/otpauth` (the enrollment URI), `GET
-/auth/bearer` (the program token). The otpauth URI carries the TOTP secret itself — a
-strictly stronger credential than a cookie — which is why it must never ride the TCP
-listener, even authenticated: a stolen cookie could otherwise upgrade itself to
-permanent access.
+/auth/bearer` (the same bearer, for a program on the machine). The otpauth URI
+carries the TOTP secret itself, which mints codes — and through the mint, the bearer —
+at will; it is an enrollment, so it rides the socket only, never the TCP listener,
+authenticated or not.
 
 ## Remote TUI
 

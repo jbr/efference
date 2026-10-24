@@ -15,7 +15,6 @@ use super::tcp::{
 };
 use std::sync::Arc;
 use trillium_caching_headers::Etag;
-use trillium_cookies::CookiesHandler;
 use trillium_logger::{Logger, Target};
 
 /// Which listener a stack is mounted on, and therefore what it trusts.
@@ -87,9 +86,6 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         // HEAD support: rewrites to GET on the way in, strips the body (keeping
         // content-length) on the way out. Before the gate, so it only ever sees GET.
         trillium_head::head(),
-        // Parses the request cookie jar and serializes the response's. Ahead of the
-        // gate, which reads the jar.
-        web.then(CookiesHandler::new),
         web_auth.clone().map(|auth| gate(auth, surface)),
         // A content-hash `etag` on every successful GET with a static body, and a
         // matching `if-none-match` answered `304` — the whole caching story for the

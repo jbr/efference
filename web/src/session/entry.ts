@@ -5,9 +5,11 @@
 // session's view, and no request is needed to know it. At a root the base is
 // empty and the binding is genuinely ambiguous, so the client asks: the host
 // answers `GET /sessions` with the listing, a session daemon serves no such
-// route and answers `404`, and a host with no credential yet answers `401`.
-// Nothing else distinguishes them — the shell is byte-identical — and the probe
-// is one small same-origin request against the endpoint the page loaded from.
+// route and answers `404`, and a host with no credential yet answers `401` —
+// which also clears the held bearer (api/bearer.ts), so the sign-in view starts
+// from none. Nothing else distinguishes them — the shell is byte-identical —
+// and the probe is one small same-origin request against the endpoint the page
+// loaded from.
 //
 // Anything else (offline, a dropped connection) reads as a session, which is
 // what a root has always been: the session view then reports the network state
@@ -15,6 +17,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiBase } from "../api/base.ts";
+import { bearer } from "../api/bearer.ts";
 import { lastListing } from "./listing.ts";
 import { ApiError, fetchSessions, type SessionEntry } from "../api/http.ts";
 
@@ -33,6 +36,7 @@ export async function resolveEntry(): Promise<Entry> {
     return { kind: "list", sessions: await fetchSessions() };
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
+      void bearer.clear();
       return { kind: "unauthenticated" };
     }
     return { kind: "session" };

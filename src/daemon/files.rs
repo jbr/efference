@@ -7,13 +7,14 @@
 //!
 //! Three things about it are load-bearing rather than incidental:
 //!
-//! - **Outside `/v1`, and cookie-only.** `/v1` is the control API, where every
-//!   client is equal and a bearer holder is one of them. A bearer holder reading
-//!   arbitrary working-directory files would bypass `[paths]` — including the
-//!   injected deny over the session directory, which is what stops a session
-//!   reaching another session's log (docs/permissions.md). The gate enforces the
-//!   cookie requirement; this module is mounted only on the TCP spawn, so the UDS
-//!   never serves it either.
+//! - **Outside `/v1`, behind the same bearer.** `/v1` is the control API, and this
+//!   is a human surface beside it, priced the same by the gate. A bearer holder
+//!   reads working-directory files past `[paths]` — including the injected deny
+//!   over the session directory, which is what stops a session reaching another
+//!   session's log (docs/permissions.md) — so that fence holds while no session
+//!   holds the bearer: a session cannot derive it, and the web client keeps its
+//!   copy in the browser's origin storage (docs/web-bind.md). This module is
+//!   mounted only on the TCP spawn, so the UDS never serves it.
 //! - **Never the file's own content-type.** Every body here is
 //!   `text/plain; charset=utf-8`. Serving a repository's `.html` as `text/html`
 //!   would be same-origin script execution on a page holding a session credential
@@ -41,10 +42,10 @@
 //! escape worth closing is a symlink inside the root pointing out of it, not `..`.
 //!
 //! Within the root nothing is withheld for being sensitive — dotfiles included, so a
-//! cookie holder can read `.env`. That posture, and why a dotfile deny was weighed
+//! bearer holder can read `.env`. That posture, and why a dotfile deny was weighed
 //! and not built, is in docs/web-bind.md; the short of it is that concealing a path
 //! from the listing while still serving it by name would imply a protection that is
-//! not there, and the same cookie already reaches `/v1`, where the agent can be made
+//! not there, and the same bearer already reaches `/v1`, where the agent can be made
 //! to read any file into the transcript.
 
 use super::*;
@@ -553,7 +554,7 @@ impl Files {
 }
 
 /// `cache-control` on the file answers (docs/web-bind.md): `private` because
-/// the route is cookie-gated, `no-cache` because reuse must revalidate — the
+/// the route is credential-gated, `no-cache` because reuse must revalidate — the
 /// `etag` only pays off when a stored copy asks before it is used.
 const CACHE_CONTROL: &str = "private, no-cache";
 

@@ -1,12 +1,14 @@
 // The auth view, successor to the daemon's inline bootstrap page
-// (docs/web-bind.md): trade the boot fragment's token — read and scrubbed at
-// bundle load (bootToken.ts) — for the session cookie; render the six-digit
-// field when there is no token or the trade fails (with the daemon's error
-// message, e.g. "code already used", left visible). A hashchange re-runs the
-// trade, so `efference open` landing in an already-open tab works.
-// `onAuthenticated` re-runs the session connect.
+// (docs/web-bind.md): trade the code the boot fragment carries — read and
+// scrubbed at bundle load (bootToken.ts) — for the bearer, and keep it
+// (api/bearer.ts); render the six-digit field when there is no code or the
+// trade fails (with the daemon's error message, e.g. "code already used",
+// left visible). A hashchange re-runs the trade, so `efference open` landing
+// in an already-open tab works. `onAuthenticated` re-runs the session connect
+// once the bearer is held.
 
 import { useEffect, useRef, useState } from "react";
+import { bearer } from "../api/bearer.ts";
 import { ApiError, mintSession } from "../api/http.ts";
 import { takeBootToken, takeFragmentToken } from "./bootToken.ts";
 
@@ -21,7 +23,8 @@ export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
 
   async function attempt(code: string) {
     try {
-      await mintSession(code.trim());
+      const { token } = await mintSession(code.trim());
+      await bearer.store(token);
       onAuthenticated();
       return true;
     } catch (error) {

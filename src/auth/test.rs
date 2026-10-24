@@ -57,7 +57,6 @@ fn an_unreadable_root_points_at_rotation() {
 fn same_root_derives_same_credentials_across_constructions() {
     let a = Root::new("correct horse battery staple");
     let b = Root::new("correct horse battery staple");
-    assert_eq!(a.cookie_key(), b.cookie_key());
     assert_eq!(a.totp_secret(), b.totp_secret());
     assert_eq!(a.bearer(), b.bearer());
 }
@@ -72,8 +71,9 @@ fn different_roots_and_different_contexts_diverge() {
     let a = Root::new("root a");
     let b = Root::new("root b");
     assert_ne!(a.bearer(), b.bearer());
-    // Cross-purpose: the cookie key and the TOTP secret share no prefix.
-    assert_ne!(a.cookie_key()[..20], a.totp_secret()[..]);
+    // Cross-purpose: the bearer's bytes and the TOTP secret share no prefix.
+    let bearer = URL_SAFE_NO_PAD.decode(a.bearer()).unwrap();
+    assert_ne!(bearer[..20], a.totp_secret()[..]);
 }
 
 #[test]
@@ -113,53 +113,6 @@ fn a_known_root_derives_a_fixed_public_key() {
         URL_SAFE_NO_PAD.encode(key.public_key().to_uncompressed_point()),
         "BNZc0T9OXhsNgF0IrSEkFk817b_bd8xg-oEsUGiyC00dAkhVEDijHxfwQo88W2cOiftt-kWMGcWD3XU3bBZalkI"
     );
-}
-
-// ---- cookie ----
-
-#[test]
-fn cookie_roundtrips_within_ttl() {
-    let key = Root::new("root").cookie_key();
-    let issued = at(1_700_000_000);
-    let cookie = mint_cookie(&key, issued);
-    assert!(cookie_is_valid(&key, &cookie, issued));
-    assert!(cookie_is_valid(&key, &cookie, issued + COOKIE_TTL));
-}
-
-#[test]
-fn cookie_expires_after_ttl_and_rejects_future_issued_at() {
-    let key = Root::new("root").cookie_key();
-    let issued = at(1_700_000_000);
-    let cookie = mint_cookie(&key, issued);
-    assert!(!cookie_is_valid(
-        &key,
-        &cookie,
-        issued + COOKIE_TTL + Duration::from_secs(1)
-    ));
-    // A cookie "issued" after now never verifies — there is no legitimate path to one.
-    assert!(!cookie_is_valid(
-        &key,
-        &cookie,
-        issued - Duration::from_secs(1)
-    ));
-}
-
-#[test]
-fn tampered_and_malformed_cookies_are_rejected() {
-    let key = Root::new("root").cookie_key();
-    let cookie = mint_cookie(&key, at(1_700_000_000));
-    let mut bytes = URL_SAFE_NO_PAD.decode(&cookie).unwrap();
-    bytes[0] ^= 1; // move the signed issued-at
-    assert!(!cookie_is_valid(
-        &key,
-        &URL_SAFE_NO_PAD.encode(&bytes),
-        at(1_700_000_001)
-    ));
-    assert!(!cookie_is_valid(&key, "", at(1_700_000_001)));
-    assert!(!cookie_is_valid(&key, "not base64url!!", at(1_700_000_001)));
-    // Authentic under a different key ≠ authentic under this one.
-    let other = Root::new("other root").cookie_key();
-    assert!(!cookie_is_valid(&other, &cookie, at(1_700_000_001)));
 }
 
 // ---- TOTP ----

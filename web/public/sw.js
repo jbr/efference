@@ -239,12 +239,59 @@ async function controlBase() {
   return "";
 }
 
+/** Where the page keeps its bearer: the database, store, and key that
+ * `BEARER_DB`, `BEARER_STORE`, and `BEARER_KEY` name in src/api/bearer.ts;
+ * src/pwa.test.ts pins that the two spellings agree. */
+const BEARER_DB = "efference-auth";
+const BEARER_STORE = "credentials";
+const BEARER_KEY = "bearer";
+
+/** The page's bearer, or `null` when none is stored or storage cannot be read.
+ * Opened without a version, so whatever schema the page wrote is the one read;
+ * a database the page has not created yet is created with the page's store, so
+ * the page's own open finds what it expects. */
+function storedBearer() {
+  return new Promise((resolve) => {
+    try {
+      const request = self.indexedDB.open(BEARER_DB);
+      request.onupgradeneeded = () =>
+        request.result.createObjectStore(BEARER_STORE);
+      request.onerror = () => resolve(null);
+      request.onsuccess = () => {
+        const db = request.result;
+        try {
+          const read = db
+            .transaction(BEARER_STORE)
+            .objectStore(BEARER_STORE)
+            .get(BEARER_KEY);
+          read.onsuccess = () =>
+            resolve(typeof read.result === "string" ? read.result : null);
+          read.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        } finally {
+          // Closes once the read's transaction completes.
+          db.close();
+        }
+      };
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 async function resubscribe(old) {
   try {
     const base = await controlBase();
+    // The routes below are under the `/v1` gate (docs/web-push.md). With no
+    // bearer stored they answer `401`, and the page's resubscribe-on-open
+    // repairs the row instead.
+    const token = await storedBearer();
+    const credential =
+      token === null ? {} : { authorization: `Bearer ${token}` };
     let key = old?.options?.applicationServerKey ?? null;
     if (!key) {
-      const response = await fetch(`${base}/v1/push`);
+      const response = await fetch(`${base}/v1/push`, { headers: credential });
       if (!response.ok) return;
       const { key: b64 } = await response.json();
       const padded = b64
@@ -257,16 +304,15 @@ async function resubscribe(old) {
       userVisibleOnly: true,
       applicationServerKey: key,
     });
-    // Same-origin, so the session cookie rides along (credentials default).
     await fetch(`${base}/v1/push/subscriptions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...credential, "content-type": "application/json" },
       body: JSON.stringify(subscription.toJSON()),
     });
     if (old && old.endpoint !== subscription.endpoint) {
       await fetch(`${base}/v1/push/subscriptions`, {
         method: "DELETE",
-        headers: { "content-type": "application/json" },
+        headers: { ...credential, "content-type": "application/json" },
         body: JSON.stringify({ endpoint: old.endpoint }),
       });
     }

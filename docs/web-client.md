@@ -64,7 +64,7 @@ the wire:
 
 | layer | job | React? |
 | --- | --- | --- |
-| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
+| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the page's bearer (`bearer.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
 | `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), session verbs whose error recovery folds into the store (`actions.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
 | `web/src/ui/` | display — transcript, login, composer; the churn zone | yes |
 
@@ -124,7 +124,13 @@ read `Last-Event-ID`), replaying the durable subset exactly.
 
 Every request the client makes — reads, verbs, streams, and the bytes of images —
 goes through one function, `apiFetch` in `api/http.ts`, which calls the global
-`fetch` with the arguments it is given. `web/eslint.config.js` bans the `fetch` and
+`fetch` with the held bearer attached as `Authorization: Bearer`
+([web-bind.md](web-bind.md)): merged into whatever headers the caller passed, never
+replacing an `Authorization` the caller set, and only for the page's own origin. The
+bearer is kept in IndexedDB with one in-memory copy (`api/bearer.ts`); `main.tsx`
+reads storage before anything that makes a request starts, so attaching the header
+needs no wait, and storage that is missing or throws leaves the in-memory copy
+working until the page reloads. `web/eslint.config.js` bans the `fetch` and
 `EventSource` globals in `web/src` (`no-restricted-globals`), and the same names as
 properties of `window`, `globalThis`, and `self` (`no-restricted-properties`), with
 `fetch` allowed in `http.ts` alone, so a bare call fails lint. The rules apply to
@@ -134,7 +140,8 @@ runs. The service worker (`public/sw.js`) sits outside `src` and calls its own
 `fetch`.
 
 The catch-up read and stream opener retain structured HTTP failures. A `401`
-parks the connector for login; a `404` marks the session `missing` and stops
+clears the held bearer and parks the connector for login; a `404` marks the
+session `missing` and stops
 retries. `SessionView` replaces a missing host session's page with the root,
 without a toast, so Back does not return to the absent session. A known handoff
 successor takes precedence over going home. Network failures and other HTTP
@@ -240,7 +247,7 @@ the root instead.
 binding is genuinely ambiguous — the shell is byte-identical — so `session/entry.ts`
 asks: the host answers `GET /sessions` with the listing, a session daemon serves no
 such route and answers `404`, and a host with no credential yet answers `401`
-(which is the login view, after which the probe re-runs). Anything else — offline, a
+(which clears the held bearer and is the login view, after which the probe re-runs). Anything else — offline, a
 daemon that went away — reads as a session, which is what a root has always been;
 the session view's composer status reports the network state, where a second
 failure screen would only restate it.
@@ -2103,12 +2110,17 @@ is not named, so an inline image stays blocked. Under `--features dev-proxy` the
 page is Vite's — an inline module preamble and an HMR socket — so the policy
 relaxes, gated on the same `cfg` as the proxy so a release build cannot serve it;
 it carries the same `img-src`. A test asserts the shipped policy contains no
-`unsafe-`, and another pins `img-src 'self' blob:` and the absence of `data:`.
+`unsafe-`, another pins `img-src 'self' blob:` and the absence of `data:`, and a
+third that it names no source but `'self'`, `'none'`, and `blob:`.
 
-CSRF is a different threat and is already answered: the session cookie is `Secure`,
-`HttpOnly`, `SameSite=Strict`, `Path=/` ([web-bind.md](web-bind.md)). A CSRF token
-would not help against injection — script running in this origin can read one out
-of the DOM.
+CSRF is a different threat, and the credential's form answers it: the bearer rides
+an `Authorization` header that only this page's script sets, so a request another
+site makes the browser send carries nothing that authenticates
+([web-bind.md](web-bind.md)). Script running in this origin can read the bearer, as
+it could read a CSRF token out of the DOM, so the bearer's boundary is this policy
+and the no-markup rule above: no script but the build's runs here. The policy also
+names no other origin for script to connect to or load from; a navigation is outside
+what it governs.
 
 ## A session that is starting
 
@@ -2146,10 +2158,11 @@ note ("handed off from `<id>` — its brief:") rather than as the operator's tur
 The gate enumerates its anonymous surface rather than deriving it from guarded
 prefixes ([web-bind.md](web-bind.md)): the app shell, the hashed assets, and the launch images under `/splash` serve without a
 credential — the same posture as the inline bootstrap page the app replaced — as does
-`POST /auth/session`, and everything else, `/v1` included, takes cookie-or-bearer. The
-login view (`web/src/ui/Login.tsx`) carries the bootstrap dance: read `#token=` from
-the URL fragment, trade it at `POST /auth/session`, scrub the fragment; render the
-six-digit field on a bare visit or a failed trade. The SPA index answers the client's
+`POST /auth/session`, and everything else, `/v1` and `/files` included, takes the
+bearer. The login view (`web/src/ui/Login.tsx`) carries the bootstrap dance: read
+`#token=` from the URL fragment, trade the code at `POST /auth/session` for the
+bearer, keep it (`api/bearer.ts`), scrub the fragment; render the six-digit field on
+a bare visit or a failed trade. The SPA index answers the client's
 named routes and nothing else (`SPA_ROUTES`, `src/daemon/tcp.rs`) — a broader index
 fallback would answer scanner probes `200`. On a host those routes are also answered
 under a session prefix, which is the one place the anonymous shell sits among guarded

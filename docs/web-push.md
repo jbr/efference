@@ -20,7 +20,7 @@ valid P-256 scalar (a uniform string exceeds the group order with probability ~2
 the loop is deterministic per root). Every daemon under one root derives the identical
 key with no coordination. Rotating the root rotates the key, which
 strands existing subscriptions until the page resubscribes on its next
-open — the same blast radius the cookie/bearer/TOTP family already has.
+open — the same blast radius the bearer/TOTP family already has.
 
 ## The subscription store
 
@@ -186,7 +186,11 @@ unchanged and a missing one is restored. Failures are logged and not shown.
 The worker also handles `pushsubscriptionchange`: it subscribes again with the
 old subscription's `applicationServerKey` (or the key route when the browser did
 not keep the old one), POSTs the new subscription, and DELETEs the old
-endpoint. The request is same-origin, so the session cookie authenticates it.
+endpoint. Those requests are under the `/v1` gate, and the worker authenticates
+them with the page's bearer, read from the same IndexedDB database, store, and key
+the page keeps it under (`web/src/api/bearer.ts`, [web-bind.md](web-bind.md)).
+With none stored they fail as unauthenticated, and the next app open repairs the
+row.
 A worker has no page to read its control base from; it takes `/sessions/<id>`
 from an open window's URL and otherwise posts at the root, which a host does not
 serve — the next app open then repairs it.

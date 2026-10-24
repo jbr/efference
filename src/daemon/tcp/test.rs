@@ -120,13 +120,12 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
 
 /// The gate's price list as a table (docs/web-bind.md). The rule is the
 /// anonymous list inverted, so this is where a route's cost is settled: a path
-/// `Surface::anonymous` does not name costs a credential, which is what keeps a
+/// `Surface::anonymous` does not name costs the bearer, which is what keeps a
 /// route added later from being readable to anyone who can reach the bind.
 #[test]
 fn the_anonymous_surface_is_named() {
-    let anonymous = Zone::Anonymous;
-    let credential = Zone::Credential;
-    let cookie_only = Zone::CookieOnly;
+    let anonymous = true;
+    let credential = false;
     let cases = [
         // A session bind: the shell at its own base, the build's files, the
         // mint, and the probe the client reads a `404` from.
@@ -158,12 +157,7 @@ fn the_anonymous_surface_is_named() {
         (Surface::Session, Method::Get, "/sessions", anonymous),
         // A session bind's own surfaces, and everything else.
         (Surface::Session, Method::Get, "/v1/state", credential),
-        (
-            Surface::Session,
-            Method::Get,
-            "/files/notes.md",
-            cookie_only,
-        ),
+        (Surface::Session, Method::Get, "/files/notes.md", credential),
         (Surface::Session, Method::Get, "/inference", credential),
         (Surface::Session, Method::Get, "/nonesuch", credential),
         (Surface::Session, Method::Post, "/sessions", credential),
@@ -186,19 +180,19 @@ fn the_anonymous_surface_is_named() {
             "/sessions/work/v1/state",
             credential,
         ),
-        // A host mounts `/files` under each session's prefix; it is as cookie-only
-        // there as at a session bind's root. A top-level `/files` is no host route.
+        // A host mounts `/files` under each session's prefix, priced like the
+        // control paths beside it. A top-level `/files` is no host route.
         (
             Surface::Host,
             Method::Get,
             "/sessions/work/files",
-            cookie_only,
+            credential,
         ),
         (
             Surface::Host,
             Method::Get,
             "/sessions/work/files/notes.md",
-            cookie_only,
+            credential,
         ),
         (
             Surface::Host,
@@ -220,10 +214,10 @@ fn the_anonymous_surface_is_named() {
             credential,
         ),
     ];
-    for (surface, method, path, zone) in cases {
+    for (surface, method, path, free) in cases {
         assert_eq!(
-            surface.zone(method, path),
-            zone,
+            surface.anonymous(method, path),
+            free,
             "{} {method:?} {path:?}",
             match surface {
                 Surface::Session => "session",
@@ -233,9 +227,12 @@ fn the_anonymous_surface_is_named() {
     }
 }
 
+/// The mint answers a current code with the bearer in its body — never a cookie,
+/// and never stored for reuse — and the token it answers is the credential the
+/// gate takes (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_current_code_mints_a_cookie_and_burns() {
-    let auth = armed("code-mints-cookie");
+async fn a_current_code_mints_the_bearer_and_burns() {
+    let auth = armed("code-mints-bearer");
     let (server, _guard) = tcp_server(&auth).await;
     let code = current_code(&auth);
 
@@ -244,28 +241,27 @@ async fn a_current_code_mints_a_cookie_and_burns() {
         .with_json_body(&serde_json::json!({ "code": code }))
         .await;
     session.assert_status(200);
-    let set_cookie = session
-        .header(KnownHeaderName::SetCookie)
-        .expect("a session cookie was set")
-        .to_string();
-    // A plaintext loopback bind: no `Secure`, which Safari refuses over http, and
-    // so no `__Host-` prefix, which requires it.
-    assert!(set_cookie.starts_with(auth::LOOPBACK_COOKIE_NAME));
-    for attribute in ["HttpOnly", "SameSite=Strict", "Path=/"] {
-        assert!(
-            set_cookie.contains(attribute),
-            "{attribute} in {set_cookie}"
-        );
-    }
-    assert!(!set_cookie.contains("Secure"), "{set_cookie}");
+    assert!(
+        session.header(KnownHeaderName::SetCookie).is_none(),
+        "the mint sets no cookie"
+    );
+    assert_eq!(
+        session
+            .response_headers()
+            .get_str(KnownHeaderName::CacheControl),
+        Some("no-store")
+    );
+    let body: serde_json::Value = serde_json::from_str(session.body()).unwrap();
+    let token = body["token"].as_str().expect("a token in the body");
+    assert_eq!(token, auth.bearer());
 
-    // The minted cookie authenticates the API.
-    let cookie = set_cookie.split(';').next().unwrap().to_string();
+    // The minted token authenticates the API, and its absence does not.
     server
         .get("/v1/state")
-        .with_request_header(KnownHeaderName::Cookie, cookie)
+        .with_request_header(KnownHeaderName::Authorization, format!("Bearer {token}"))
         .await
         .assert_status(200);
+    server.get("/v1/state").await.assert_status(401);
 
     // The accepted code burned: the same six digits cannot mint twice.
     server
@@ -276,109 +272,43 @@ async fn a_current_code_mints_a_cookie_and_burns() {
         .assert_body_contains("already used");
 }
 
-/// Browsers split the cookie header into one field line per cookie over h2/h3
-/// (RFC 9113 §8.2.3), and cookies ignore ports — so any other service's cookie
-/// on the daemon's host forces the split. The gate must find its cookie among
-/// several field lines and among several crumbs on one line; the regressed
-/// shape was a raw `get_str`, which reads none of a multi-valued header, so
-/// browsers carrying any unrelated host cookie could never authenticate.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_cookie_authenticates_among_other_cookies_and_split_field_lines() {
-    let auth = armed("cookie-field-lines");
-    let (server, _guard) = tcp_server(&auth).await;
-    let code = current_code(&auth);
-
-    let session = server
-        .post("/auth/session")
-        .with_json_body(&serde_json::json!({ "code": code }))
-        .await;
-    session.assert_status(200);
-    let set_cookie = session
-        .header(KnownHeaderName::SetCookie)
-        .expect("a session cookie was set")
-        .to_string();
-    let cookie = set_cookie.split(';').next().unwrap().to_string();
-
-    // Two field lines, ours second.
-    server
-        .get("/v1/state")
-        .with_request_header(
-            KnownHeaderName::Cookie,
-            trillium::HeaderValues::from(vec!["unrelated=1".to_string(), cookie.clone()]),
-        )
-        .await
-        .assert_status(200);
-
-    // One line, several crumbs, ours last.
-    server
-        .get("/v1/state")
-        .with_request_header(
-            KnownHeaderName::Cookie,
-            format!("unrelated=1; other=two; {cookie}"),
-        )
-        .await
-        .assert_status(200);
-}
-
 /// `/files` is the operator's read surface over the working directory
-/// (docs/web-bind.md), and the one route the bearer does not open. A bearer holder
-/// reading it would bypass `[paths]` — including the deny that keeps a session out
-/// of every other session's log — so the gate requires the browser's cookie there
-/// and says why, with a 403 rather than a 401: the credential is valid, and
-/// presenting it again would not help.
+/// (docs/web-bind.md), behind the same bearer as `/v1`: anonymous is refused
+/// there unlike every other GET outside `/v1`, and the bearer opens it. Its
+/// answers revalidate rather than being reused from a store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn files_takes_the_cookie_and_refuses_the_bearer() {
-    let auth = armed("files-cookie-only");
+async fn files_takes_the_bearer() {
+    let auth = armed("files-bearer");
     let (server, _guard) = tcp_server(&auth).await;
 
-    // Anonymous is not enough, unlike every other GET outside `/v1`.
     server
         .get("/files/")
         .await
         .assert_status(401)
         .assert_body_contains(r#""code":"unauthorized""#);
 
-    // The bearer opens `/v1` and not this.
-    let bearer = format!("Bearer {}", auth.bearer());
-    server
-        .get("/v1/state")
-        .with_request_header(KnownHeaderName::Authorization, bearer.clone())
-        .await
-        .assert_status(200);
-    server
+    let listing = server
         .get("/files/")
-        .with_request_header(KnownHeaderName::Authorization, bearer)
-        .await
-        .assert_status(403)
-        .assert_body_contains(r#""code":"forbidden""#);
-
-    // The cookie does open it — the surface exists, it is only credential-scoped.
-    let session = server
-        .post("/auth/session")
-        .with_json_body(&serde_json::json!({ "code": current_code(&auth) }))
+        .with_request_header(
+            KnownHeaderName::Authorization,
+            format!("Bearer {}", auth.bearer()),
+        )
         .await;
-    session.assert_status(200);
-    let cookie = session
-        .header(KnownHeaderName::SetCookie)
-        .expect("a session cookie was set")
-        .split(';')
-        .next()
-        .unwrap()
-        .to_string();
-    server
-        .get("/files/")
-        .with_request_header(KnownHeaderName::Cookie, cookie)
-        .await
-        .assert_status(200);
+    listing.assert_status(200);
+    assert_eq!(
+        listing
+            .response_headers()
+            .get_str(KnownHeaderName::CacheControl),
+        Some("private, no-cache")
+    );
 }
 
-/// The cookie-only rule holds on both surfaces through the gate itself: a valid
-/// bearer gets `403` at a session bind's `/files` and at a host's
-/// `/sessions/<id>/files`, while `/v1` and the session-prefixed control paths still
-/// take it. The routes behind the gate are a stub; only the gate's answer is
-/// under test.
+/// The bearer opens `/files` on both surfaces through the gate itself: a session
+/// bind's `/files` and a host's `/sessions/<id>/files` take it as `/v1` and the
+/// session-prefixed control paths do, and refuse a conn without it. The routes
+/// behind the gate are a stub; only the gate's answer is under test.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn files_refuses_the_bearer_on_both_surfaces() {
+async fn files_takes_the_bearer_on_both_surfaces() {
     let auth = armed("files-both-surfaces");
     let bearer = format!("Bearer {}", auth.bearer());
     for (surface, files, open) in [
@@ -391,42 +321,39 @@ async fn files_refuses_the_bearer_on_both_surfaces() {
         (Surface::Host, "/sessions/work/files", "/sessions"),
     ] {
         let server = TestServer::new((
-            trillium_cookies::CookiesHandler::new(),
             gate(Arc::clone(&auth), surface),
             |conn: trillium::Conn| async move { conn.ok("reached") },
         ))
         .await
         .with_host("localhost");
-        server
-            .get(open)
-            .with_request_header(KnownHeaderName::Authorization, bearer.clone())
-            .await
-            .assert_status(200);
-        server
-            .get(files)
-            .with_request_header(KnownHeaderName::Authorization, bearer.clone())
-            .await
-            .assert_status(403)
-            .assert_body_contains(r#""code":"forbidden""#);
-        server
-            .get(files)
-            .await
-            .assert_status(401)
-            .assert_body_contains(r#""code":"unauthorized""#);
+        for path in [open, files] {
+            server
+                .get(path)
+                .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+                .await
+                .assert_status(200);
+            server
+                .get(path)
+                .await
+                .assert_status(401)
+                .assert_body_contains(r#""code":"unauthorized""#);
+        }
     }
 }
 
+/// The bearer authenticates in the `Authorization` header and nowhere else. A
+/// cookie and a query parameter are what a request another site forces could
+/// carry — a navigation, a form, an image — so the same value there is refused
+/// (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_bearer_authenticates_programs() {
+async fn only_the_authorization_header_carries_the_bearer() {
     let auth = armed("bearer-authenticates");
     let (server, _guard) = tcp_server(&auth).await;
+    let token = auth.bearer();
 
     server
         .get("/v1/state")
-        .with_request_header(
-            KnownHeaderName::Authorization,
-            format!("Bearer {}", auth.bearer()),
-        )
+        .with_request_header(KnownHeaderName::Authorization, format!("Bearer {token}"))
         .await
         .assert_status(200);
 
@@ -435,6 +362,117 @@ async fn the_bearer_authenticates_programs() {
         .with_request_header(KnownHeaderName::Authorization, "Bearer not-the-bearer")
         .await
         .assert_status(401);
+    server
+        .get("/v1/state")
+        .with_request_header(KnownHeaderName::Authorization, token.clone())
+        .await
+        .assert_status(401);
+    for name in ["efference-session", "__Host-efference", "token"] {
+        server
+            .get("/v1/state")
+            .with_request_header(KnownHeaderName::Cookie, format!("{name}={token}"))
+            .await
+            .assert_status(401);
+    }
+    for query in ["token", "access_token", "bearer"] {
+        server
+            .get(&format!("/v1/state?{query}={token}"))
+            .await
+            .assert_status(401);
+    }
+}
+
+/// No answer the bind gives sets a cookie: the credential leaves the mint in a
+/// body, and nothing else on the stack writes one (docs/web-bind.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_answer_sets_a_cookie() {
+    let auth = armed("no-set-cookie");
+    let (server, _guard) = tcp_server(&auth).await;
+    let bearer = format!("Bearer {}", auth.bearer());
+    let answers = [
+        server
+            .post("/auth/session")
+            .with_json_body(&serde_json::json!({ "code": current_code(&auth) }))
+            .await,
+        server
+            .post("/auth/session")
+            .with_json_body(&serde_json::json!({ "code": "not a code" }))
+            .await,
+        server
+            .get("/v1/state")
+            .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+            .await,
+        server.get("/v1/state").await,
+        server
+            .get("/files/")
+            .with_request_header(KnownHeaderName::Authorization, bearer)
+            .await,
+        server.get("/").await,
+    ];
+    for (n, answer) in answers.iter().enumerate() {
+        assert!(
+            answer.header(KnownHeaderName::SetCookie).is_none(),
+            "answer {n} ({:?}) set a cookie",
+            answer.status()
+        );
+    }
+}
+
+/// The bind grants no other origin anything: a cross-origin read and a CORS
+/// preflight both answer without an `Access-Control-Allow-*` header, so a page
+/// on another origin — another port on `localhost` included — can neither read
+/// an answer nor send the header the bearer rides (docs/web-bind.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_answer_grants_another_origin() {
+    let auth = armed("no-cors");
+    let (server, _guard) = tcp_server(&auth).await;
+    let bearer = format!("Bearer {}", auth.bearer());
+    let answers = [
+        server
+            .get("/v1/state")
+            .with_request_header(KnownHeaderName::Origin, "http://localhost:3000")
+            .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+            .await,
+        server
+            .get("/v1/state")
+            .with_request_header(KnownHeaderName::Origin, "https://evil.example")
+            .await,
+        // The preflight a cross-origin `fetch` carrying the header would send
+        // first; browsers attach no credential to it.
+        server
+            .build(Method::Options, "/v1/state")
+            .with_request_header(KnownHeaderName::Origin, "http://localhost:3000")
+            .with_request_header(KnownHeaderName::AccessControlRequestMethod, "GET")
+            .with_request_header(
+                KnownHeaderName::AccessControlRequestHeaders,
+                "authorization",
+            )
+            .await,
+        server
+            .build(Method::Options, "/auth/session")
+            .with_request_header(KnownHeaderName::Origin, "https://evil.example")
+            .with_request_header(KnownHeaderName::AccessControlRequestMethod, "POST")
+            .with_request_header(KnownHeaderName::AccessControlRequestHeaders, "content-type")
+            .await,
+        server
+            .build(Method::Options, "/v1/state")
+            .with_request_header(KnownHeaderName::Origin, "http://localhost:3000")
+            .with_request_header(KnownHeaderName::Authorization, bearer)
+            .await,
+    ];
+    for (n, answer) in answers.iter().enumerate() {
+        let granted: Vec<String> = answer
+            .response_headers()
+            .iter()
+            .map(|(name, _)| name.as_ref().to_ascii_lowercase())
+            .filter(|name| name.starts_with("access-control-"))
+            .collect();
+        assert!(
+            granted.is_empty(),
+            "answer {n} ({:?}) granted {granted:?}",
+            answer.status()
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -477,8 +515,8 @@ async fn unsafe_methods_enforce_origin_and_content_type() {
         .assert_status(403)
         .assert_body_contains(r#""code":"forbidden""#);
 
-    // A same-origin browser request passes (any port: cookies aren't port-scoped
-    // and neither is the allowlist).
+    // A same-origin browser request passes (any port: the allowlist names hosts,
+    // so a proxy in front on its own port passes too).
     server
         .post("/v1/turns")
         .with_request_header(KnownHeaderName::Authorization, bearer.clone())
@@ -673,12 +711,11 @@ fn the_dev_servers_module_graph_is_anonymous() {
         "/node_modules/.vite/deps/react.js",
     ] {
         for surface in [Surface::Session, Surface::Host] {
-            assert_eq!(surface.zone(Method::Get, path), Zone::Anonymous, "{path}");
+            assert!(surface.anonymous(Method::Get, path), "{path}");
         }
     }
-    assert_eq!(
-        Surface::Host.zone(Method::Get, "/srcery"),
-        Zone::Credential,
+    assert!(
+        !Surface::Host.anonymous(Method::Get, "/srcery"),
         "a directory prefix is not a string prefix"
     );
 }
@@ -703,6 +740,33 @@ async fn the_shipped_policy_admits_no_unsafe_escape() {
         !csp.contains("unsafe-"),
         "shipped policy must stay strict: {csp:?}"
     );
+}
+
+/// The policy is the boundary for script that could reach the bearer
+/// (docs/web-bind.md): every source it names is the page's own origin, `blob:`
+/// for drawn images, or nothing — no other origin, scheme, or wildcard to
+/// connect to, load from, or submit a form to.
+#[cfg(not(feature = "dev-proxy"))]
+#[tokio::test]
+async fn the_shipped_policy_names_no_other_origin() {
+    let auth = armed("root");
+    let (server, _turns) = tcp_server(&auth).await;
+    let conn = server.get("/").await;
+    let csp = conn
+        .response_headers()
+        .get_str(KnownHeaderName::ContentSecurityPolicy)
+        .unwrap_or_default()
+        .to_string();
+    for directive in csp.split(';').map(str::trim).filter(|d| !d.is_empty()) {
+        let mut parts = directive.split_whitespace();
+        let name = parts.next().unwrap_or_default();
+        for source in parts {
+            assert!(
+                matches!(source, "'self'" | "'none'" | "blob:"),
+                "{name} names {source} in {csp:?}"
+            );
+        }
+    }
 }
 
 /// The client draws API bytes and local file previews from object URLs, which
@@ -742,10 +806,10 @@ fn only_plain_ids_name_a_session() {
     assert_eq!(session_scoped("/v1/state"), None);
 }
 
-/// A TLS bind keeps the `__Host-` cookie, which requires `Secure`; only plaintext
-/// loopback drops it (docs/web-bind.md).
+/// The arm records whether its listener terminates TLS, which is what HSTS
+/// reads (docs/web-bind.md); a plaintext loopback bind is not TLS.
 #[test]
-fn only_a_plaintext_bind_drops_the_secure_cookie() {
+fn only_a_tls_arm_is_tls() {
     let (tls, _listener) = arm_with_ledger(
         TcpBind {
             addr: "0.0.0.0:0".into(),
@@ -754,16 +818,13 @@ fn only_a_plaintext_bind_drops_the_secure_cookie() {
                 key: Vec::new(),
             }),
             public_url: "https://host.example:8443".into(),
-            root: Root::new("tls-cookie"),
+            root: Root::new("tls-arm"),
             open: false,
         },
         scratch_ledger(),
     );
-    assert_eq!(tls.cookie_name(), auth::COOKIE_NAME);
-    assert_eq!(
-        armed("plain-cookie").cookie_name(),
-        auth::LOOPBACK_COOKIE_NAME
-    );
+    assert!(tls.is_tls());
+    assert!(!armed("plain-arm").is_tls());
 }
 
 /// A bind to port 0 mints links naming the port it actually bound; a configured

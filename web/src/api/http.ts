@@ -1,11 +1,12 @@
 // The one fetch wrapper (docs/control-api.md). The control endpoint is an
 // opaque base the client joins paths onto (api/base.ts): `""` at a session
 // daemon's root, `/sessions/<id>` when the host serves this page under a session
-// prefix. Same-origin either way, so the session cookie rides automatically.
-// Every non-2xx carries the standard error envelope; it surfaces as a thrown
-// ApiError so callers branch on `code`, not status prose.
+// prefix. Same-origin either way, and every request carries the page's bearer
+// (api/bearer.ts). Every non-2xx carries the standard error envelope; it
+// surfaces as a thrown ApiError so callers branch on `code`, not status prose.
 
 import { apiBase, join } from "./base.ts";
+import { bearer } from "./bearer.ts";
 import type {
   Attachment,
   CallId,
@@ -36,12 +37,44 @@ export class ApiError extends Error {
 }
 
 /** The one entry point for every request the client makes (docs/web-client.md):
- * the global `fetch`, called with the arguments it is given. `fetch` is read at
- * call time, so a test that stubs the global is the one that runs, and an eslint
- * rule keeps bare `fetch` out of the rest of `web/src`. Streams and image bytes
- * come through here too. */
-export function apiFetch(...args: Parameters<typeof fetch>): Promise<Response> {
-  return fetch(...args);
+ * the global `fetch`, with the held bearer attached as `Authorization: Bearer`
+ * (api/bearer.ts, docs/web-bind.md). `fetch` is read at call time, so a test
+ * that stubs the global is the one that runs, and an eslint rule keeps bare
+ * `fetch` out of the rest of `web/src`. Streams and image bytes come through
+ * here too.
+ *
+ * The header joins whatever headers the caller passed, in any form `fetch`
+ * takes, and an `Authorization` the caller set is left as it is. It goes only
+ * to this page's own origin. With no bearer held, or another origin addressed,
+ * the arguments pass through as given. */
+export function apiFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const token = bearer.held();
+  if (token === null || !ownOrigin(input)) {
+    return init === undefined ? fetch(input) : fetch(input, init);
+  }
+  const headers = new Headers(
+    init?.headers ?? (input instanceof Request ? input.headers : undefined),
+  );
+  if (!headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
+  return fetch(input, { ...init, headers });
+}
+
+/** Whether a request addresses the page's own origin, the only one its bearer
+ * is for; a URL that does not resolve against the page does not. */
+function ownOrigin(input: RequestInfo | URL): boolean {
+  const page = globalThis.location;
+  if (page === undefined) return false;
+  const url = input instanceof Request ? input.url : String(input);
+  try {
+    return new URL(url, page.href).origin === page.origin;
+  } catch {
+    return false;
+  }
 }
 
 /** A request to a URL as given — the listener's own surfaces, which sit at its
@@ -313,11 +346,12 @@ export const subscribePush = (subscription: PushSubscriptionJSON) =>
 export const unsubscribePush = (endpoint: string) =>
   del<{ status: string }>("/v1/push/subscriptions", { endpoint });
 
-// Trade a TOTP code for the session cookie (docs/web-bind.md). Outside /v1 and
-// outside the base: auth is the *listener's* surface, so it is at the root under
-// either binding, and one credential covers every session behind a host.
+// Trade a TOTP code for the bearer, which the caller keeps (api/bearer.ts,
+// docs/web-bind.md). Outside /v1 and outside the base: auth is the *listener's*
+// surface, so it is at the root under either binding, and one credential covers
+// every session behind a host.
 export const mintSession = (code: string) =>
-  requestAt<{ status: string }>("POST", "/auth/session", { code });
+  requestAt<{ token: string }>("POST", "/auth/session", { code });
 
 /** One entry of the host's session listing (docs/web-client.md). The id is the
  * path segment a client joins its control base onto; the rest is what a list

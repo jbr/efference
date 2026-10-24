@@ -20,7 +20,7 @@ on this machine, or from a phone or another computer. It is off until you turn i
 Anyone who reaches the address and signs in can do anything you can do in a session,
 including approving the agent's commands. So the question for any arrangement is who can
 reach the sign-in page, and the answer should be: only your own devices.
-<!-- src: src/daemon/tcp.rs::gate, Surface::zone, anonymous -->
+<!-- src: src/daemon/tcp.rs::gate, Surface::anonymous -->
 
 ### On this machine
 
@@ -86,8 +86,7 @@ Tailscale is serving.
 <!-- src: src/bin/efference/serve.rs::checked_public_url; src/daemon/tcp.rs::gate (Host check against public-url); tailscale serve --help (1.104.1) -->
 <!-- TODO: how the serve setting persists across reboots, and the command that removes it (`tailscale serve --https=443 off` in assets/guide/host.md is unverified against 1.104; `reset` exists). Needs a live check. -->
 
-**The host serves HTTPS itself** — needed for HTTP/3, and the host's sign-in cookie is then
-marked secure (see below); you renew the certificate.
+**The host serves HTTPS itself** — needed for HTTP/3; you renew the certificate.
 
 ```sh
 mkdir -p ~/.tls && chmod 700 ~/.tls
@@ -151,11 +150,11 @@ nothing from other origins and not to be framed.
 
 ### Sign-in
 
-The printed link works once, within about a minute, and signs one browser in for a fixed
-period. Other programs use a bearer token, available from the host's Unix socket. Both
-derive from one secret the host keeps in your OS keychain, created the first time a host
-listens on TCP.
-<!-- src: src/daemon/tcp.rs::mint_link, authenticate_code, TcpAuth::credential; src/auth.rs::COOKIE_TTL (deliberately not stated), ROOT_ITEM, Root::load, Root::bearer -->
+The printed link works once, within about a minute, and signs one browser in, with no
+expiry of its own. Other programs use the same token a signed-in browser holds, available
+from the host's Unix socket. The link and the token both derive from one secret the host
+keeps in your OS keychain, created the first time a host listens on TCP.
+<!-- src: src/daemon/tcp.rs::mint_link, authenticate_code, mint_session, TcpAuth::authenticated; src/auth.rs::ROOT_ITEM, Root::load, Root::bearer -->
 
 `efference auth rotate` replaces that secret, which ends every browser's sign-in when the
 host next starts. `rotate` refuses while a local daemon is listening — it would keep
@@ -163,12 +162,10 @@ serving the root the store no longer has — so after a lost device: stop the ho
 start it again.
 <!-- src: src/auth.rs::Root::rotate (deletes the item only); src/bin/efference/main.rs::local_daemon_is_listening (the refusal); src/daemon/tcp.rs::arm_with_ledger (keys derived once at start) -->
 
-A browser signed in through a plain-HTTP listener — on this machine, or behind
-`tailscale serve` — holds a cookie that is not marked secure. On this machine that cookie
-is also sent to any other server you run on `localhost`, whatever its port. A host that
-serves HTTPS itself sets the stricter `__Host-` cookie.
-<!-- src: src/daemon/tcp.rs::TcpAuth::cookie_name, mint_session; src/auth.rs::COOKIE_NAME, LOOPBACK_COOKIE_NAME -->
-<!-- TODO: blocked on backlog/inbox/web-token-as-header.md, which removes the cookie entirely rather than scoping it. -->
+The browser keeps its sign-in where only pages at the host's own address can read it:
+other sites cannot, and neither can other servers you run on this machine at other
+ports.
+<!-- src: web/src/api/bearer.ts::BEARER_DB, bearer; web/src/api/http.ts::apiFetch; src/daemon/tcp.rs::TcpAuth::authenticated -->
 <!-- TODO: the sign-in model (enrollment, per-device revocation, step-up) is being reworked in backlog/inbox/browser-sign-in-by-approval.md; this section stays at this level until it lands. -->
 
 Other accounts on this machine can connect to a loopback port too. They still need to sign

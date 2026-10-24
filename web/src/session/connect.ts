@@ -1,14 +1,15 @@
 // The connection lifecycle (docs/control-api.md, "Connection lifecycle"):
 // a bounded catch-up read, then the one long-lived stream from the cursor —
 // `GET /log?tail=N`, then `GET /events?since=last_seq+1`. Reconnect inside the
-// stream reader replays by cursor; a 401 anywhere parks the session as
-// unauthenticated until Login mints a cookie and calls retry(). A 404 marks the
-// session missing and stops retries, and so does a stream that ended on a failed
-// start. The stream stays
+// stream reader replays by cursor; a 401 anywhere clears the held bearer
+// (api/bearer.ts) and parks the session as unauthenticated until Login trades a
+// code for one and calls retry(). A 404 marks the session missing and stops
+// retries, and so does a stream that ended on a failed start. The stream stays
 // open while the tab is hidden: whether a person is attending is reported
 // separately (attention.ts), not inferred from the connection.
 
 import { apiBase } from "../api/base.ts";
+import { bearer } from "../api/bearer.ts";
 import type { Frame } from "../api/types.ts";
 import { ApiError, fetchLogTail } from "../api/http.ts";
 import {
@@ -76,6 +77,7 @@ export function connect(
         error instanceof ApiError &&
         (error.status === 401 || error.status === 404)
       ) {
+        if (error.status === 401) void bearer.clear();
         store.update((s) => ({
           ...s,
           connection: error.status === 404 ? "missing" : "unauthenticated",
@@ -108,6 +110,7 @@ export function connect(
             (error.status === 401 || error.status === 404)
           ) {
             stream?.close();
+            if (error.status === 401) void bearer.clear();
             store.update((s) => ({
               ...s,
               connection: error.status === 404 ? "missing" : "unauthenticated",

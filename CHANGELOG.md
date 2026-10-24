@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Security
 
+- The web client authenticates with the bearer as an `Authorization` header, kept in origin-scoped IndexedDB that other `localhost` services cannot read; `POST /auth/session` answers `{"token"}` in its body, no answer sets a cookie, the session cookie and its verification are removed, and `/files` takes the bearer like `/v1` (docs/web-bind.md).
 - The service worker clamps notification targets to its own origin, so a forged push cannot open an arbitrary URL (docs/web-push.md).
 - Host boot tightens its state directory, state files, and the host socket to owner-only modes — one-way, skipping absent files (docs/state-store.md, docs/control-channel.md).
 - `efference auth rotate` refuses while a local daemon is listening on the control socket.

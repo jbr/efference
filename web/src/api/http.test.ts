@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
+import { bearer } from "./bearer.ts";
 import {
   ApiError,
   apiFetch,
@@ -11,7 +12,25 @@ import {
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => {
+  vi.unstubAllGlobals();
+  // The page's own store: outside a browser it has no IndexedDB and holds the
+  // bearer in memory alone.
+  await bearer.clear();
+});
+
+/** A page at `origin` holding `token`, with a fetch stub that records what it
+ * was handed. */
+async function signedIn(token: string, origin = "http://localhost:7777") {
+  vi.stubGlobal("location", new URL(`${origin}/`));
+  await bearer.store(token);
+  const fetchMock = vi.fn().mockResolvedValue(json(200, {}));
+  vi.stubGlobal("fetch", fetchMock);
+  /** The headers the stub was handed on its `n`th call. */
+  const sent = (n = 0) =>
+    new Headers((fetchMock.mock.calls[n][1] as RequestInit).headers);
+  return { fetchMock, sent };
+}
 
 test("continue posts the loop verb with no payload of its own", async () => {
   const fetchMock = vi
@@ -66,7 +85,7 @@ test("history reads bind ranges and encoded references to their source session",
   for (const [, init] of fetchMock.mock.calls) expect(init.method).toBe("GET");
 });
 
-test("apiFetch passes its arguments to the global fetch as it finds it at the call", async () => {
+test("with no bearer held, apiFetch passes its arguments to the global fetch as it finds it at the call", async () => {
   const response = json(200, {});
   const first = vi.fn().mockResolvedValue(response);
   vi.stubGlobal("fetch", first);
@@ -85,4 +104,70 @@ test("apiFetch passes its arguments to the global fetch as it finds it at the ca
   await apiFetch("/z");
   expect(second).toHaveBeenCalledTimes(1);
   expect(first).toHaveBeenCalledTimes(2);
+});
+
+test("apiFetch attaches the held bearer, merged into headers in each form fetch takes", async () => {
+  const { sent } = await signedIn("tok");
+  await apiFetch("/v1/state");
+  await apiFetch("/v1/turns", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  });
+  await apiFetch("/v1/log", { headers: [["accept", "application/json"]] });
+  await apiFetch("/v1/events", {
+    headers: new Headers({ accept: "text/event-stream" }),
+  });
+
+  for (let n = 0; n < 4; n++) {
+    expect(sent(n).get("authorization")).toBe("Bearer tok");
+  }
+  expect(sent(1).get("content-type")).toBe("application/json");
+  expect(sent(2).get("accept")).toBe("application/json");
+  expect(sent(3).get("accept")).toBe("text/event-stream");
+});
+
+test("apiFetch keeps the caller's other init and leaves its Authorization alone", async () => {
+  const { fetchMock, sent } = await signedIn("tok");
+  const signal = new AbortController().signal;
+  await apiFetch("/v1/state", { signal, keepalive: true });
+  await apiFetch("/v1/state", { headers: { Authorization: "Bearer theirs" } });
+  await apiFetch("/v1/state", {
+    headers: new Headers({ authorization: "Basic other" }),
+  });
+
+  const init = fetchMock.mock.calls[0][1] as RequestInit;
+  expect(init.signal).toBe(signal);
+  expect(init.keepalive).toBe(true);
+  expect(sent(1).get("authorization")).toBe("Bearer theirs");
+  expect(sent(2).get("authorization")).toBe("Basic other");
+});
+
+test("apiFetch carries a Request's own headers alongside the bearer", async () => {
+  const { fetchMock } = await signedIn("tok");
+  await apiFetch(
+    new Request("http://localhost:7777/v1/state", {
+      headers: { accept: "application/json" },
+    }),
+  );
+  const headers = new Headers(
+    (fetchMock.mock.calls[0][1] as RequestInit).headers,
+  );
+  expect(headers.get("authorization")).toBe("Bearer tok");
+  expect(headers.get("accept")).toBe("application/json");
+});
+
+test("apiFetch sends the bearer to its own origin only", async () => {
+  const { fetchMock } = await signedIn("tok", "http://localhost:7777");
+  const init = { headers: { accept: "image/*" } };
+  for (const url of [
+    "https://elsewhere.example/x.png",
+    "http://localhost:3000/v1/state",
+    new URL("https://elsewhere.example/y"),
+  ]) {
+    await apiFetch(url, init);
+    expect(fetchMock).toHaveBeenLastCalledWith(url, init);
+  }
+  await apiFetch("http://localhost:7777/v1/state");
+  const sent = fetchMock.mock.calls.at(-1)?.[1] as RequestInit;
+  expect(new Headers(sent.headers).get("authorization")).toBe("Bearer tok");
 });

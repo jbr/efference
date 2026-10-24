@@ -3,12 +3,12 @@
 //! One machine-scoped root secret lives in the secret store (docs/secrets.md) as the
 //! `root` item: minted from the OS random source the first time a bind needs it, read
 //! every boot after, and held only in memory. HKDF with per-purpose context strings
-//! derives everything else — the cookie-HMAC key, the TOTP secret, the program bearer,
-//! the VAPID push-signing keypair (docs/web-push.md). Same root in, same credentials
-//! out, every boot: enrollments and cookies survive restarts, and revocation is
-//! rotation — deleting the item, so the next bind mints another. Nobody supplies or
-//! sees the root; the only state derived from it that is stored is the burn ledger of
-//! accepted TOTP timesteps, which are counters, not secrets (docs/state-store.md).
+//! derives everything else — the TOTP secret, the bearer, the VAPID push-signing
+//! keypair (docs/web-push.md). Same root in, same credentials out, every boot:
+//! enrollments and signed-in browsers survive restarts, and revocation is rotation —
+//! deleting the item, so the next bind mints another. Nobody supplies or sees the
+//! root; the only state derived from it that is stored is the burn ledger of accepted
+//! TOTP timesteps, which are counters, not secrets (docs/state-store.md).
 //!
 //! Everything here is pure credential arithmetic; which conns it gates — and which
 //! listener is exempt — is the daemon's wiring (docs/web-bind.md).
@@ -119,20 +119,15 @@ impl Root {
         okm
     }
 
-    /// The key the session cookie is HMAC-signed with.
-    pub fn cookie_key(&self) -> [u8; 32] {
-        self.derive(b"cookie-hmac v1")
-    }
-
     /// The TOTP secret — 20 bytes, the RFC 6238 SHA-1 native size, so the base32 in the
     /// `otpauth://` URI round-trips through stock authenticator apps without padding.
     pub fn totp_secret(&self) -> [u8; 20] {
         self.derive(b"totp v1")
     }
 
-    /// The bearer token programs present in `Authorization: Bearer …` — the
-    /// non-browser credential (browsers get the cookie because `EventSource` cannot
-    /// set a header). Never stored; re-derived on demand.
+    /// The bearer: the one credential the TCP bind accepts, presented as
+    /// `Authorization: Bearer …` by the web client and by programs alike
+    /// (docs/web-bind.md). Never stored here; re-derived on demand.
     pub fn bearer(&self) -> String {
         URL_SAFE_NO_PAD.encode(self.derive::<32>(b"bearer v1"))
     }
@@ -141,7 +136,7 @@ impl Root {
     /// across every message this machine sends. Derived, never stored: each daemon on
     /// the machine re-derives the identical key, so there is no file and no
     /// coordination, and rotating the root strands existing subscriptions the same way
-    /// it invalidates cookies and the bearer.
+    /// it invalidates the bearer.
     ///
     /// P-256 needs a scalar below the group order, and HKDF hands back a uniform 32-byte
     /// string, which exceeds that order with probability ~2⁻³². So the context string
@@ -173,62 +168,6 @@ impl Root {
         };
         tag(presented) == tag(&self.bearer())
     }
-}
-
-/// The session cookie's name. `__Host-` pins it: `Secure`, no `Domain`, `Path=/` — the
-/// browser refuses the cookie from any origin that can't satisfy those, so a plaintext
-/// non-loopback origin can't plant one.
-pub const COOKIE_NAME: &str = "__Host-efference";
-
-/// The session cookie's name on a plaintext loopback bind, where it carries neither
-/// `Secure` nor the `__Host-` prefix that requires it. Safari refuses a `Secure`
-/// cookie over plain http even from `localhost` (Chrome and Firefox accept it), so
-/// the prefixed cookie never sticks there. On loopback the attribute protects
-/// nothing: the traffic never leaves the machine, and no browser scopes cookies by
-/// port, so either cookie reaches every service on `localhost` (docs/web-bind.md).
-pub const LOOPBACK_COOKIE_NAME: &str = "efference-session";
-
-/// How long a minted cookie verifies. Fixed from the signed issued-at — no server-side
-/// session store; earlier revocation is root rotation (a mass logout).
-pub const COOKIE_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
-
-/// Mint a cookie value: `base64url(issued_at_be₈ ‖ HMAC-SHA256(key, issued_at_be₈))`.
-/// The cookie carries validity and nothing else — no user id, no scopes; a
-/// single-operator "authed or not" bit (docs/web-bind.md).
-pub fn mint_cookie(key: &[u8; 32], issued_at: SystemTime) -> String {
-    let payload = unix_secs(issued_at).to_be_bytes();
-    let tag = Hmac::<Sha256>::new_from_slice(key)
-        .expect("hmac accepts any key length")
-        .chain_update(payload)
-        .finalize()
-        .into_bytes();
-    let mut raw = Vec::with_capacity(payload.len() + tag.len());
-    raw.extend_from_slice(&payload);
-    raw.extend_from_slice(&tag);
-    URL_SAFE_NO_PAD.encode(raw)
-}
-
-/// Whether a presented cookie value verifies: well-formed, authentic (constant-time tag
-/// check), issued in the past, and within [`COOKIE_TTL`].
-pub fn cookie_is_valid(key: &[u8; 32], value: &str, now: SystemTime) -> bool {
-    let Ok(raw) = URL_SAFE_NO_PAD.decode(value) else {
-        return false;
-    };
-    if raw.len() != 8 + 32 {
-        return false;
-    }
-    let (payload, tag) = raw.split_at(8);
-    let authentic = Hmac::<Sha256>::new_from_slice(key)
-        .expect("hmac accepts any key length")
-        .chain_update(payload)
-        .verify_slice(tag)
-        .is_ok();
-    if !authentic {
-        return false;
-    }
-    let issued = u64::from_be_bytes(payload.try_into().expect("split_at(8) yields 8"));
-    let now = unix_secs(now);
-    now >= issued && now - issued <= COOKIE_TTL.as_secs()
 }
 
 /// RFC 6238 parameters: 30 s step, six digits, HMAC-SHA1 — the tuple stock

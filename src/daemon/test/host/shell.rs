@@ -22,10 +22,13 @@ async fn missing_session_pages_reach_the_shell_but_content_stays_missing() {
         .await
         .assert_status(200)
         .assert_body("");
+    // `/files` is priced like the control paths beside it: the bearer reaches the
+    // missing-session lookup, and no credential stops at the gate.
     for path in [
         "/sessions/gone/v1/log?tail=200",
         "/sessions/gone/v1/events",
         "/sessions/gone/unknown",
+        "/sessions/gone/files/",
     ] {
         server
             .get(path)
@@ -35,13 +38,7 @@ async fn missing_session_pages_reach_the_shell_but_content_stays_missing() {
             .assert_body_contains(r#""code":"not_found""#);
     }
     server.get("/sessions/gone/v1/log").await.assert_status(401);
-    // `/files` is the cookie's alone, so a bearer is refused before the missing
-    // session is looked up; the auth-exempt socket reaches the lookup.
-    server
-        .get("/sessions/gone/files/")
-        .with_request_header("authorization", bearer)
-        .await
-        .assert_status(403);
+    server.get("/sessions/gone/files/").await.assert_status(401);
     let socket = host_server(&host).await;
     socket.get("/sessions/gone/").await.assert_status(404);
     socket

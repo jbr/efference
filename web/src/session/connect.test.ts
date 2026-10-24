@@ -1,12 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { bearer } from "../api/bearer.ts";
 import { connect } from "./connect.ts";
 import { Store } from "./store.ts";
 
 const base = "/sessions/test";
 const connectors: ReturnType<typeof connect>[] = [];
-afterEach(() => {
+afterEach(async () => {
   connectors.splice(0).forEach((connector) => connector.close());
   vi.unstubAllGlobals();
+  await bearer.clear();
 });
 
 function start(...responses: Response[]) {
@@ -27,9 +29,12 @@ const failed = (status: number) =>
     { status },
   );
 
+// A 401 also drops the held bearer, so the sign-in view starts from none; a
+// 404 is about the session, not the credential, and keeps it.
 it.each([404, 401])(
   "parks catch-up on HTTP %s without opening a stream",
   async (status) => {
+    await bearer.store("held");
     const { store, fetch } = start(failed(status));
     await vi.waitFor(() =>
       expect(store.snapshot().connection).toBe(
@@ -41,12 +46,14 @@ it.each([404, 401])(
       `${base}/v1/log?tail=80`,
       expect.anything(),
     );
+    expect(bearer.held()).toBe(status === 401 ? null : "held");
   },
 );
 
 it.each([404, 401])(
   "parks when the events request returns HTTP %s",
   async (status) => {
+    await bearer.store("held");
     const { store, fetch } = start(Response.json([]), failed(status));
     await vi.waitFor(() =>
       expect(store.snapshot().connection).toBe(
@@ -54,6 +61,7 @@ it.each([404, 401])(
       ),
     );
     expect(fetch).toHaveBeenCalledTimes(2);
+    expect(bearer.held()).toBe(status === 401 ? null : "held");
   },
 );
 

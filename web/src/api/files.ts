@@ -1,9 +1,9 @@
-// The /files read surface (docs/web-bind.md): cookie-only GETs of working-
-// directory text files, outside /v1. Refusals are values rather than thrown
-// errors because the viewer renders them as content — "not a text file",
-// "too large to view" — instead of branching away from them. The conditional
-// GET answers a change poke: 304 while unchanged, the new body in the same
-// round trip when not.
+// The /files read surface (docs/web-bind.md): GETs of working-directory text
+// files, outside /v1 and behind the same bearer. Refusals are values rather
+// than thrown errors because the viewer renders them as content — "not a text
+// file", "too large to view" — instead of branching away from them. The
+// conditional GET answers a change poke: 304 while unchanged, the new body in
+// the same round trip when not.
 //
 // The same URLs content-negotiate: an Accept naming text/event-stream gets a
 // stream of change pokes instead of the body. The Accept here is explicit so

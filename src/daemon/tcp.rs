@@ -14,10 +14,6 @@ use super::*;
 use crate::auth::{self, BurnLedger, Lockout, Root};
 use std::time::SystemTime;
 use trillium::{KnownHeaderName, Method};
-use trillium_cookies::{
-    CookiesConnExt,
-    cookie::{Cookie, SameSite},
-};
 
 /// What `--bind` resolved to — built by the CLI from flags, consumed
 /// by [`arm`]. Deliberately not part of the session config: the config file is
@@ -40,14 +36,6 @@ pub struct TcpBind {
     pub open: bool,
 }
 
-/// Which credential a conn presented. The bind accepts two, and one route
-/// ([`files`](super::files)) accepts only the browser's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Credential {
-    Cookie,
-    Bearer,
-}
-
 /// A PEM cert chain and private key, read by the CLI so a bad path fails at flag
 /// resolution rather than mid-boot.
 pub struct TlsPem {
@@ -59,7 +47,6 @@ pub struct TlsPem {
 /// built at boot from the injected root; holds no secret that can't be re-derived.
 pub struct TcpAuth {
     root: Root,
-    cookie_key: [u8; 32],
     totp_secret: [u8; 20],
     /// Host values (no port, lowercase) a request may address the daemon by — the
     /// DNS-rebinding check. The configured public name, plus the loopback spellings
@@ -68,9 +55,8 @@ pub struct TcpAuth {
     /// `scheme://host:port` for minted links. Behind a lock because a bind to
     /// port 0 learns its port only once listening ([`TcpAuth::bound_port`]).
     public_base: Mutex<String>,
-    /// Plaintext loopback: the session cookie is [`auth::LOOPBACK_COOKIE_NAME`]
-    /// without `Secure`, which Safari refuses over http.
-    plaintext: bool,
+    /// Whether the listener terminates TLS ([`TcpAuth::is_tls`]).
+    tls: bool,
     /// The TOTP rate limit (docs/web-bind.md): per-daemon, in-memory.
     lockout: Mutex<Lockout>,
     /// The shared record of accepted TOTP steps — user-scoped because every daemon
@@ -116,12 +102,11 @@ pub(crate) fn arm_with_ledger(bind: TcpBind, ledger: BurnLedger) -> (Arc<TcpAuth
         }
     }
     let auth = Arc::new(TcpAuth {
-        cookie_key: root.cookie_key(),
         totp_secret: root.totp_secret(),
         root,
         hosts,
         public_base: Mutex::new(public_base),
-        plaintext: tls.is_none(),
+        tls: tls.is_some(),
         lockout: Mutex::new(Lockout::default()),
         ledger,
     });
@@ -191,7 +176,7 @@ impl TcpAuth {
     /// for the plaintext loopback dev bind (`arm`'s `tls: None`). HSTS rides
     /// only on a TLS listener (docs/web-bind.md).
     pub(crate) fn is_tls(&self) -> bool {
-        !self.plaintext
+        self.tls
     }
 
     /// Record the port the listener actually bound, for a bind that asked for
@@ -204,15 +189,6 @@ impl TcpAuth {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(unbound) = base.strip_suffix(":0") {
             *base = format!("{unbound}:{port}");
-        }
-    }
-
-    /// The session cookie's name for this bind.
-    pub(crate) fn cookie_name(&self) -> &'static str {
-        if self.plaintext {
-            auth::LOOPBACK_COOKIE_NAME
-        } else {
-            auth::COOKIE_NAME
         }
     }
 
@@ -244,7 +220,8 @@ impl TcpAuth {
         auth::otpauth_uri(&self.totp_secret, host)
     }
 
-    /// The program credential. Host-only surface.
+    /// The one TCP credential: what the mint hands a browser for a current code,
+    /// and what the socket's `/auth/bearer` hands a program (docs/web-bind.md).
     pub(crate) fn bearer(&self) -> String {
         self.root.bearer()
     }
@@ -254,34 +231,15 @@ impl TcpAuth {
         self.hosts.contains(&host)
     }
 
-    /// Which credential the conn presents, if any: the session cookie, or the
-    /// bearer for programs (which can set headers where `EventSource` cannot).
-    ///
-    /// *Which* one matters, not just whether there is one — `/files` accepts only
-    /// the cookie (docs/web-bind.md), so the kind has to survive this check rather
-    /// than collapsing to a bool here.
-    fn credential(&self, conn: &Conn) -> Option<Credential> {
-        // Read through the jar `CookiesHandler` parsed, never `get_str` on the
-        // raw header: the cookie header arrives as several field lines when an
-        // h2/h3 client splits one line per cookie (RFC 9113 §8.2.3), and
-        // because cookies ignore ports, any other service's cookie on this
-        // host rides along and forces the split — `get_str` reads none of a
-        // multi-valued header, so a browser sharing the host with any other
-        // service fails auth that curl (one cookie, one line) passes.
-        if let Some(value) = conn.cookies().get(self.cookie_name()).map(Cookie::value)
-            && auth::cookie_is_valid(&self.cookie_key, value, SystemTime::now())
-        {
-            return Some(Credential::Cookie);
-        }
-        if let Some(authorization) = conn
-            .request_headers()
+    /// Whether the conn presents the bearer in its `Authorization` header — the
+    /// only place a credential is read from. Nothing a browser attaches on its
+    /// own (a cookie, a URL) is consulted, so a request another site forces
+    /// carries none (docs/web-bind.md).
+    fn authenticated(&self, conn: &Conn) -> bool {
+        conn.request_headers()
             .get_str(KnownHeaderName::Authorization)
-            && let Some(token) = authorization.strip_prefix("Bearer ")
-            && self.root.bearer_matches(token.trim())
-        {
-            return Some(Credential::Bearer);
-        }
-        None
+            .and_then(|authorization| authorization.strip_prefix("Bearer "))
+            .is_some_and(|token| self.root.bearer_matches(token.trim()))
     }
 
     /// Verify a six-digit code under the lockout, burning the accepted step. The
@@ -336,32 +294,19 @@ enum CodeRejection {
 /// about the gate is identical, so the difference lives here rather than in a
 /// second gate.
 ///
-/// A surface names two paths that differ by bind rather than a set of guarded
-/// prefixes: [`Surface::zone`] prices everything against the anonymous list, so
-/// what a surface settles is where `/files` sits (at the root on a session bind,
-/// under `/sessions/<id>` on a host), and the binding probe reaching a session
+/// A surface is not a set of guarded prefixes: [`Surface::anonymous`] names what
+/// costs nothing and everything else costs the bearer, so what a surface settles
+/// is where the client's own routes sit (at the root on a session bind, under
+/// `/sessions/<id>` as well on a host) and the binding probe reaching a session
 /// bind's router.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Surface {
-    /// A session bind: `/v1` takes either credential, `/files` the cookie
-    /// only (docs/web-bind.md).
+    /// A session bind: `/v1` and `/files` take the bearer (docs/web-bind.md).
     Session,
-    /// A multi-session host: everything under `/sessions` takes either credential —
-    /// the session listing and every session-prefixed control path alike — except
-    /// `/sessions/<id>/files`, which takes the cookie only (docs/web-bind.md).
+    /// A multi-session host: everything under `/sessions` takes the bearer — the
+    /// session listing and every session-prefixed path alike, `/files` among them
+    /// (docs/web-bind.md).
     Host,
-}
-
-/// What a path costs on this surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Zone {
-    /// No credential: what [`Surface::anonymous`] names — the web client's own
-    /// shell, the mint, and the binding probe.
-    Anonymous,
-    /// A cookie or a bearer.
-    Credential,
-    /// The cookie only; a valid bearer is refused with `403` rather than `401`.
-    CookieOnly,
 }
 
 impl Surface {
@@ -380,35 +325,13 @@ impl Surface {
                 && session_scoped(path).is_some_and(|route| SPA_ROUTES.contains(&route)))
     }
 
-    /// What a path costs on this surface.
+    /// Whether `path` costs nothing here; everything else costs the bearer.
     ///
-    /// The rule is the anonymous list inverted: everything costs a credential
-    /// except what [`Self::anonymous`] names, so a route added later is guarded
-    /// unless it is named there too. Stating it the other way — a list of
-    /// guarded prefixes — fails the other way, leaving every new top-level route
-    /// readable to anyone who can reach the bind.
-    fn zone(self, method: Method, path: &str) -> Zone {
-        // `/files` is guarded on the same footing as `/v1`, and more narrowly: it
-        // is the operator's read surface over the working directory, so it takes
-        // the cookie only (docs/web-bind.md). A bearer holder reading it would
-        // bypass `[paths]`, including the deny that keeps a session out of other
-        // sessions' logs. A host mounts the same surface under each session's
-        // prefix, so `/sessions/<id>/files` costs the same.
-        let files = match self {
-            Surface::Session => under(path, "/files"),
-            Surface::Host => session_scoped(path).is_some_and(|route| under(route, "/files")),
-        };
-        if files {
-            return Zone::CookieOnly;
-        }
-        if self.anonymous(method, path) {
-            return Zone::Anonymous;
-        }
-        Zone::Credential
-    }
-
-    /// Whether `path` costs nothing here. [`trillium_head::head`] runs ahead of
-    /// the gate, so a HEAD arrives here already rewritten to GET.
+    /// The rule is the anonymous list inverted: a route added later is guarded
+    /// unless it is named here too. Stating it the other way — a list of guarded
+    /// prefixes — fails the other way, leaving every new top-level route readable
+    /// to anyone who can reach the bind. [`trillium_head::head`] runs ahead of the
+    /// gate, so a HEAD arrives here already rewritten to GET.
     fn anonymous(self, method: Method, path: &str) -> bool {
         let get = method == Method::Get;
         // The web client's own shell, wherever it is served: its routes at its
@@ -446,8 +369,7 @@ impl Surface {
         // daemon serves no such route. It reads that `404` as "not a host", so
         // the probe has to reach the router — a credential check ahead of it
         // would answer `401`, which is how a host with no credential yet reads,
-        // and a session daemon's root would show a login form for a cookie the
-        // mint would accept and nothing else would.
+        // and a session daemon's root would read as a host awaiting sign-in.
         matches!(self, Surface::Session) && get && path == "/sessions"
     }
 }
@@ -488,7 +410,7 @@ pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handl
             let safe = matches!(method, Method::Get | Method::Head | Method::Options);
             if !safe {
                 // A browser attaches `Origin` to unsafe requests; a cross-site one
-                // names a host we don't answer for. Programs (bearer) send none.
+                // names a host we don't answer for. Programs send none.
                 let origin = conn
                     .request_headers()
                     .get_str(KnownHeaderName::Origin)
@@ -526,25 +448,15 @@ pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handl
                     }
                 }
             }
-            let zone = surface.zone(method, conn.path());
-            if matches!(zone, Zone::Anonymous) {
+            if surface.anonymous(method, conn.path()) || auth.authenticated(&conn) {
                 return conn;
             }
-            match (auth.credential(&conn), zone) {
-                (None, _) => fail(
-                    conn,
-                    ErrorCode::Unauthorized,
-                    "no valid session cookie or bearer; POST /auth/session with a current code",
-                ),
-                // Not `Unauthorized`: the credential is valid, and re-authenticating
-                // as the same program would not help. This surface is the browser's.
-                (Some(Credential::Bearer), Zone::CookieOnly) => fail(
-                    conn,
-                    ErrorCode::Forbidden,
-                    "/files takes the session cookie, not the bearer",
-                ),
-                (Some(_), _) => conn,
-            }
+            fail(
+                conn,
+                ErrorCode::Unauthorized,
+                "no valid `Authorization: Bearer` token; POST /auth/session trades a \
+                 current code for one",
+            )
         }
     }
 }
@@ -773,10 +685,11 @@ pub(crate) fn mint_routes(auth: Arc<TcpAuth>) -> Router {
     Router::new().post("/auth/session", with_auth(Some(auth), mint_session))
 }
 
-/// Trade a current TOTP code for the session cookie. The one credential mint;
-/// rate-limited, and every accepted code burns. The login view that reads
-/// `#token=` from the fragment and POSTs here is the web client's
-/// (web/src/ui/Login.tsx).
+/// Trade a current TOTP code for the bearer, answered in the body as
+/// `{"token": …}` and never as a cookie. The one credential mint; rate-limited,
+/// and every accepted code burns. The login view that reads `#token=` from the
+/// fragment, POSTs here, and keeps what comes back is the web client's
+/// (web/src/ui/Login.tsx, docs/web-bind.md).
 async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
     #[derive(Deserialize)]
     struct SessionBody {
@@ -794,20 +707,15 @@ async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
         }
     };
     match auth.authenticate_code(code.trim()) {
-        Ok(()) => {
-            let value = auth::mint_cookie(&auth.cookie_key, SystemTime::now());
-            let cookie = Cookie::build((auth.cookie_name(), value))
-                .path("/")
-                .secure(!auth.plaintext)
-                .http_only(true)
-                .same_site(SameSite::Strict)
-                .max_age(auth::COOKIE_TTL.try_into().expect("30 days fits"))
-                .build();
-            conn.with_cookie(cookie)
-                .with_status(200)
-                .with_body(r#"{"status":"authed"}"#)
-                .halt()
-        }
+        // A credential in a body is never stored for reuse — the token-endpoint
+        // rule (RFC 6749 §5.1), and `/auth` sits outside the `/v1` prefix that
+        // `SecurityHeaders` covers.
+        Ok(()) => conn
+            .with_status(200)
+            .with_response_header(KnownHeaderName::ContentType, "application/json")
+            .with_response_header(KnownHeaderName::CacheControl, "no-store")
+            .with_body(serde_json::json!({ "token": auth.bearer() }).to_string())
+            .halt(),
         Err(CodeRejection::Locked(remaining)) => {
             let secs = remaining.as_secs().max(1);
             respond(
@@ -832,10 +740,10 @@ async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
 
 /// The enrollment surface, mounted only on a session's socket — possession of the host
 /// machine is the enrollment authority (docs/web-bind.md). The `otpauth` URI in
-/// particular carries the TOTP secret itself: a strictly stronger credential than a
-/// cookie, so it must never ride a TCP listener even authenticated. With no bind
-/// armed the routes exist but answer 404, so the CLI verb gets a sentence instead of
-/// a route mismatch. Mounted only by [`handler`](super::handler::handler).
+/// particular carries the TOTP secret itself, which mints codes at will, so it never
+/// rides a TCP listener, authenticated or not. With no bind armed the routes exist but
+/// answer 404, so the CLI verb gets a sentence instead of a route mismatch. Mounted
+/// only by [`handler`](super::handler::handler).
 pub(crate) fn enrollment_routes(auth: Option<Arc<TcpAuth>>) -> Router {
     Router::new()
         .get("/auth/link", with_auth(auth.clone(), auth_link))
@@ -865,7 +773,8 @@ async fn auth_otpauth(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
         .halt()
 }
 
-/// The bearer token a program presents instead of a cookie.
+/// The bearer, for a program on this machine — the same value the mint hands a
+/// browser.
 async fn auth_bearer(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
     conn.with_status(200)
         .with_body(serde_json::json!({ "bearer": auth.bearer() }).to_string())

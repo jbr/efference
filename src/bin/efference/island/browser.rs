@@ -5,7 +5,7 @@
 //! and stream reconnects must not end the island, so the ownership pipe stays
 //! here and the terminal holds a one-line prompt until the person quits. Every
 //! link is minted when asked for, because a bootstrap link's code is single-use
-//! and short-lived (docs/web-bind.md); the cookie it trades for is what keeps a
+//! and short-lived (docs/web-bind.md); the bearer it trades for is what keeps a
 //! tab signed in afterwards.
 
 use super::*;

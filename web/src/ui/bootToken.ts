@@ -1,8 +1,8 @@
 // The `#token=` fragment is read and scrubbed once, at bundle load — not in
-// the login view. When the browser already holds a valid cookie the login view
-// never mounts, and a scrub that lives there would leave the burned token
-// sitting in the URL bar and browser history (docs/web-bind.md wants that
-// residue gone regardless of how auth resolves).
+// the login view. When the page already holds a valid bearer (api/bearer.ts)
+// the login view never mounts, and a scrub that lives there would leave the
+// burned code sitting in the URL bar and browser history (docs/web-bind.md
+// wants that residue gone regardless of how auth resolves).
 
 function take(): string | null {
   const token = new URLSearchParams(location.hash.slice(1)).get("token");
