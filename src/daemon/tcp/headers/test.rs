@@ -64,7 +64,7 @@ async fn every_response_carries_the_security_headers() {
 
 #[tokio::test]
 async fn artifact_routes_keep_the_artifact_policy_and_allow_same_origin_framing() {
-    let token = "A".repeat(43);
+    let document = format!("/artifacts/brisk-otter/12/0/3/{}", "A".repeat(43));
     let server = TestServer::new((
         SecurityHeaders::new(false),
         |conn: trillium::Conn| async move { conn.ok("artifact") },
@@ -72,9 +72,9 @@ async fn artifact_routes_keep_the_artifact_policy_and_allow_same_origin_framing(
     .await;
 
     for path in [
-        format!("/artifacts/{token}/"),
-        format!("/artifacts/{token}/_efference/runtime.js"),
-        format!("/artifacts/{token}/_efference/theme.css"),
+        document.clone(),
+        "/artifacts/_efference/runtime.js".to_string(),
+        "/artifacts/_efference/theme.css".to_string(),
     ] {
         let response = server.get(&path).await;
         let headers = response.response_headers();
@@ -92,7 +92,7 @@ async fn artifact_routes_keep_the_artifact_policy_and_allow_same_origin_framing(
     }
 
     let prefixed = server
-        .get(&format!("/sessions/work/artifacts/{token}/"))
+        .get(&format!("/sessions/brisk-otter{document}"))
         .await;
     assert_ne!(
         prefixed

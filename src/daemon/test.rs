@@ -210,6 +210,7 @@ mod push_routing;
 mod redirect;
 mod resumed_batch;
 mod review;
+mod statics;
 mod status;
 mod subscriptions;
 mod supervise;

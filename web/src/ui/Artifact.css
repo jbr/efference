@@ -13,17 +13,6 @@
   background: transparent;
 }
 
-.artifact-state {
-  margin: 0;
-  color: var(--fg-dim);
-  font-family: var(--font-ui);
-  font-size: 0.85rem;
-}
-
-.artifact-state[role="alert"] {
-  color: var(--warn);
-}
-
 .artifact-source {
   min-width: 0;
   border: 1px solid var(--border-subtle);

@@ -255,7 +255,6 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .post("/v1/push/subscriptions", web_push::subscribe)
         .delete("/v1/push/subscriptions", web_push::unsubscribe)
         .get("/v1/events", events::events(heartbeat))
-        .get("/v1/artifacts/:seq/:text_block/:fence", artifacts::resolve)
 }
 
 /// [`control_routes_with_heartbeat`] at the real [`EVENTS_HEARTBEAT`] interval.

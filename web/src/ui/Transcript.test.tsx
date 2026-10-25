@@ -3,7 +3,7 @@
 // assistant's prose with a mark, the reply as the operator's message, and the echo
 // of a reply that is not queued. Rendered into jsdom.
 
-import { afterEach, expect, test, vi } from "vitest";
+import { expect, test, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Ask, LogEntry } from "../api/types.ts";
@@ -12,6 +12,7 @@ import { emptyStreaming } from "../session/store.ts";
 import type { Streaming } from "../session/store.ts";
 import { buildTree } from "../session/tree.ts";
 import { Transcript } from "./Transcript.tsx";
+import fenceCases from "./artifact-fences.json";
 
 // `useNarrow` reads a media query at module load; the static render has no window.
 vi.hoisted(() => {
@@ -99,24 +100,48 @@ const element = (
 const render = (entries: LogEntry[], over?: Parameters<typeof element>[1]) =>
   markup(element(entries, over));
 
-const renderWithArtifacts = (
+/** The session transcript after its effects, with each rendered artifact's
+ * frame URL and the source shown beside it, in order. */
+async function renderWithArtifacts(
   entries: LogEntry[],
   over: Parameters<typeof element>[1] = {},
-) => markupAfterEffects(element(entries, { ...over, artifactEnabled: true }));
-
-afterEach(() => vi.unstubAllGlobals());
-
-function stubArtifactResolution(status = 200) {
-  const body =
-    status === 200
-      ? { url: "/artifacts/test-token/" }
-      : { code: "not_found", message: "artifact unavailable" };
-  const fetchMock = vi.fn<typeof fetch>(() =>
-    Promise.resolve(new Response(JSON.stringify(body), { status })),
-  );
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
+): Promise<{ html: string; artifacts: { url: string; source: string }[] }> {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  await act(async () => {
+    root.render(element(entries, { ...over, artifactEnabled: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const artifacts = [...host.querySelectorAll(".artifact")].map((artifact) => ({
+    url: artifact.querySelector("iframe")?.getAttribute("src") ?? "",
+    source: artifact.querySelector(".artifact-source code")?.textContent ?? "",
+  }));
+  const html = host.innerHTML;
+  act(() => root.unmount());
+  return { html, artifacts };
 }
+
+/** A committed assistant entry as the entry view serves it: text blocks, and a
+ * link for each `[textBlock, fence]` given (docs/artifacts.md). */
+const withArtifacts = (
+  seq: number,
+  blocks: string[],
+  linked: [number, number][],
+): LogEntry =>
+  entry(seq, {
+    Assistant: {
+      ...messagesAssistant(
+        [],
+        blocks.map((Text) => ({ Text })),
+        [],
+      ),
+      artifacts: linked.map(([text_block, fence]) => ({
+        text_block,
+        fence,
+        url: `/artifacts/brisk-otter/${seq}/${text_block}/${fence}/tag`,
+      })),
+    },
+  });
 
 const topic = (call_id: string, n: number, of: number): Ask => ({
   call_id,
@@ -134,45 +159,37 @@ const asking = entry(1, {
   ),
 });
 
-test("a closed html-artifact fence resolves to a sandboxed preview with source access", async () => {
-  const fetchMock = stubArtifactResolution();
-  const html = await renderWithArtifacts([
-    entry(20, {
-      Assistant: messagesAssistant(
-        [],
-        [{ Text: "```html-artifact\n<div>preview content</div>\n```\n" }],
-        [],
-      ),
-    }),
+test("a fence the entry view links renders as a sandboxed frame with its source", async () => {
+  const { html, artifacts } = await renderWithArtifacts([
+    withArtifacts(
+      20,
+      ["```html-artifact\n<div>preview content</div>\n```\n"],
+      [[0, 0]],
+    ),
   ]);
 
-  expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
-    "/v1/artifacts/20/0/0",
+  expect(artifacts).toEqual([
+    {
+      url: "/artifacts/brisk-otter/20/0/0/tag",
+      source: "<div>preview content</div>",
+    },
   ]);
-  expect(html).toContain('src="/artifacts/test-token/"');
   expect(html).toContain('sandbox="allow-scripts"');
   expect(html).not.toContain("allow-same-origin");
-  expect(html).toContain("Source");
   expect(html).toContain("Copy source");
-  expect(html).toContain("preview content");
 });
 
 // SessionView rebuilds the transcript tree on every streamed token. A committed
-// entry's frame that remounted then would reload and resolve on each one.
+// entry's frame that remounted then would reload on each one.
 test("a streaming delta leaves committed artifact frames and code blocks mounted", async () => {
-  const fetchMock = stubArtifactResolution();
   const entries = [
-    entry(25, {
-      Assistant: messagesAssistant(
-        [],
-        [
-          {
-            Text: "```html-artifact\n<div>chart</div>\n```\n\n```rust\nfn main() {}\n```\n",
-          },
-        ],
-        [],
-      ),
-    }),
+    withArtifacts(
+      25,
+      [
+        "```html-artifact\n<div>chart</div>\n```\n\n```rust\nfn main() {}\n```\n",
+      ],
+      [[0, 0]],
+    ),
   ];
   const host = document.createElement("div");
   const root = createRoot(host);
@@ -199,7 +216,6 @@ test("a streaming delta leaves committed artifact frames and code blocks mounted
 
   expect(host.querySelector("iframe")).toBe(frame);
   expect(host.querySelector('pre[data-lang="rust"]')).toBe(code);
-  expect(fetchMock).toHaveBeenCalledTimes(1);
   act(() => root.unmount());
 });
 
@@ -209,147 +225,94 @@ test.each([
   ["an unlabelled fence", "```\nplain code\n```", "plain code"],
   [
     "an indented fence-like block",
-    "    ```html-artifact\nnot a fence\n    ```",
+    "    ```html-artifact\n    not a fence\n    ```",
     "not a fence",
   ],
   [
-    "html-artifact with extra info",
+    "html-artifact with more info",
     "```html-artifact preview\n<div>source only</div>\n```",
     "source only",
   ],
 ])(
-  "%s remains source rather than an artifact",
+  "%s stays source beside a linked artifact",
   async (_label, source, expected) => {
-    const fetchMock = stubArtifactResolution();
-    const html = await renderWithArtifacts([
-      entry(21, {
-        Assistant: messagesAssistant([], [{ Text: source }], []),
-      }),
+    const { html, artifacts } = await renderWithArtifacts([
+      withArtifacts(
+        21,
+        [`${source}\n\n\`\`\`html-artifact\n<div>linked</div>\n\`\`\`\n`],
+        [[0, 0]],
+      ),
     ]);
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(html).not.toContain("<iframe");
+    expect(artifacts).toEqual([
+      { url: "/artifacts/brisk-otter/21/0/0/tag", source: "<div>linked</div>" },
+    ]);
     expect(html).toContain(expected);
   },
 );
 
-test("an unclosed html-artifact fence stays source", async () => {
-  const fetchMock = stubArtifactResolution();
-  const html = await renderWithArtifacts([
-    entry(22, {
-      Assistant: messagesAssistant(
-        [],
-        [{ Text: "```html-artifact\n<div>unfinished artifact</div>\n" }],
-        [],
-      ),
-    }),
+test("fences are numbered per text block, counting artifact fences only", async () => {
+  const { artifacts } = await renderWithArtifacts([
+    withArtifacts(
+      23,
+      [
+        "```javascript\nconst before = true;\n```\n\n```html-artifact\n<div>first</div>\n```\n",
+        "```html-artifact\n<div>second</div>\n```\n",
+      ],
+      [
+        [0, 0],
+        [1, 0],
+      ],
+    ),
   ]);
 
-  expect(fetchMock).not.toHaveBeenCalled();
-  expect(html).not.toContain("<iframe");
-  expect(html).toContain("unfinished artifact");
+  expect(artifacts).toEqual([
+    { url: "/artifacts/brisk-otter/23/0/0/tag", source: "<div>first</div>" },
+    { url: "/artifacts/brisk-otter/23/1/0/tag", source: "<div>second</div>" },
+  ]);
 });
 
-test.each([
-  ["blockquote", "> ```"],
-  ["list marker", "- ```"],
-  ["list-derived indentation", "- source item\n    ```"],
-])(
-  "a %s-looking code line cannot close a top-level artifact",
-  async (_container, line) => {
-    const fetchMock = stubArtifactResolution();
-    const html = await renderWithArtifacts([
-      entry(22, {
-        Assistant: messagesAssistant(
-          [],
-          [
-            {
-              Text: `\`\`\`html-artifact\n<div>unfinished container content</div>\n${line}`,
-            },
-          ],
-          [],
-        ),
-      }),
+// The server's extractor is tested on the same cases (src/artifact/test.rs), so
+// the two CommonMark parsers agree on which fences a link names.
+test.each(fenceCases.map((c) => [c.case, c] as const))(
+  "fence numbering matches the server's: %s",
+  async (_label, { markdown, fences }) => {
+    const { artifacts } = await renderWithArtifacts([
+      withArtifacts(
+        40,
+        [markdown],
+        fences.map((_, fence): [number, number] => [0, fence]),
+      ),
     ]);
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(html).not.toContain("<iframe");
-    expect(html).toContain("unfinished container content");
+    expect(artifacts).toEqual(
+      fences.map((source, fence) => ({
+        url: `/artifacts/brisk-otter/40/0/${fence}/tag`,
+        source,
+      })),
+    );
   },
 );
 
-test("fence ordinals include other fences and restart for each assistant Text block", async () => {
-  const fetchMock = stubArtifactResolution();
-  const html = await renderWithArtifacts([
-    entry(23, {
-      Assistant: messagesAssistant(
-        [],
-        [
-          {
-            Text: "```javascript\nconst before = true;\n```\n```html-artifact\n<div>first</div>\n```\n",
-          },
-          { Text: "```html-artifact\n<div>second</div>\n```\n" },
-        ],
-        [],
-      ),
-    }),
+test("an artifact fence with no link stays code", async () => {
+  const { html, artifacts } = await renderWithArtifacts([
+    withArtifacts(
+      33,
+      [
+        "```html-artifact\n<div>linked</div>\n```\n\n```html-artifact\n<div>unlinked</div>\n```\n",
+      ],
+      [[0, 0]],
+    ),
   ]);
 
-  expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
-    "/v1/artifacts/23/0/1",
-    "/v1/artifacts/23/1/0",
+  expect(artifacts).toEqual([
+    { url: "/artifacts/brisk-otter/33/0/0/tag", source: "<div>linked</div>" },
   ]);
-  expect((html.match(/<iframe/g) ?? []).length).toBe(2);
+  expect(html).toContain('data-lang="html"');
+  expect(html).toContain("unlinked");
 });
 
-test("fence ordinals include nested blockquote and list fences", async () => {
-  const fetchMock = stubArtifactResolution();
-  await renderWithArtifacts([
-    entry(24, {
-      Assistant: messagesAssistant(
-        [],
-        [
-          {
-            Text: [
-              "> ```javascript",
-              "> const before = true;",
-              "> ```",
-              ">",
-              "> ```html-artifact",
-              "> <div>nested preview</div>",
-              "> ```",
-              "",
-              "- list item",
-              "  ```html-artifact",
-              "  <div>list preview</div>",
-              "  ```",
-              "",
-              "  - nested item",
-              "    ```html-artifact",
-              "    <div>nested list preview</div>",
-              "    ```",
-              "",
-              "- ```html-artifact",
-              "  <div>inline list preview</div>",
-              "  ```",
-            ].join("\n"),
-          },
-        ],
-        [],
-      ),
-    }),
-  ]);
-
-  expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
-    "/v1/artifacts/24/0/1",
-    "/v1/artifacts/24/0/2",
-    "/v1/artifacts/24/0/3",
-    "/v1/artifacts/24/0/4",
-  ]);
-});
-
-test("user, tool-result, and live text fences never resolve as artifacts", async () => {
-  const fetchMock = stubArtifactResolution();
+test("user, tool-result, and live text fences never render as artifacts", async () => {
   const fence = (label: string) =>
     `\`\`\`html-artifact\n<div>${label}</div>\n\`\`\``;
   const html = await markupAfterEffects(
@@ -386,33 +349,10 @@ test("user, tool-result, and live text fences never resolve as artifacts", async
     />,
   );
 
-  expect(fetchMock).not.toHaveBeenCalled();
   expect(html).not.toContain("<iframe");
   expect(html).toContain("user prose");
   expect(html).toContain("tool output");
   expect(html).toContain("live text");
-});
-
-test("a resolver failure leaves source and copy access available", async () => {
-  const fetchMock = stubArtifactResolution(404);
-  const html = await renderWithArtifacts([
-    entry(33, {
-      Assistant: messagesAssistant(
-        [],
-        [{ Text: "```html-artifact\n<div>retained source</div>\n```" }],
-        [],
-      ),
-    }),
-  ]);
-
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(html).toContain(
-    "Preview unavailable; source is still available below.",
-  );
-  expect(html).toContain("Source");
-  expect(html).toContain("Copy source");
-  expect(html).toContain("retained source");
-  expect(html).not.toContain("<iframe");
 });
 
 test("a question is prose with an asked mark, not a call", () => {

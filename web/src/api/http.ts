@@ -8,7 +8,6 @@
 import { apiBase, join } from "./base.ts";
 import { bearer } from "./bearer.ts";
 import type {
-  ArtifactDescriptor,
   Attachment,
   CallId,
   Decision,
@@ -168,13 +167,6 @@ export const fetchCallSeq = (id: CallId, base: string = apiBase()) =>
 // elide (a truncated result's `content`, docs/control-api.md). ETag-validated, so
 // a second look is a 304.
 export const fetchLogEntry = (seq: Seq) => get<LogEntry>(`/v1/log/${seq}`);
-
-// Resolve a committed assistant HTML artifact by its position in the log's
-// assistant Text blocks. The returned URL is a same-origin artifact route;
-// the browser loads it directly in a sandboxed iframe rather than fetching its
-// document through apiFetch.
-export const resolveArtifact = (seq: Seq, textBlock: number, fence: number) =>
-  get<ArtifactDescriptor>(`/v1/artifacts/${seq}/${textBlock}/${fence}`);
 // `answers` names the question the turn answers, when one was showing: a turn
 // naming none is refused while one is pending, so text written before the
 // question appeared is never taken as its answer (docs/control-api.md).

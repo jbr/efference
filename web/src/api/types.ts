@@ -10,9 +10,15 @@
 export type Seq = number;
 export type CallId = string;
 
-/** A process-scoped artifact URL resolved from committed assistant prose (docs/control-api.md). */
-export interface ArtifactDescriptor {
+/** One `html-artifact` fence's signed address, which the entry view of a
+ * committed assistant entry carries (docs/artifacts.md). `fence` counts the text
+ * block's artifact fences only. */
+export interface ArtifactLink {
+  text_block: number;
+  fence: number;
+  /** Root-relative: loaded from the origin this client already uses. */
   url: string;
+  /** The same document on the host's loopback listener. */
   external_url?: string;
 }
 
@@ -71,6 +77,9 @@ export type Payload =
          * the model's context (src/log.rs, docs/transport.md). Absent on a
          * finalized turn. */
         excluded?: Exclusion;
+        /** View-only: derived on every read, never in the log. Present when the
+         * entry's text has `html-artifact` fences. */
+        artifacts?: ArtifactLink[];
       };
     }
   | {

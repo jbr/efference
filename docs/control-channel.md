@@ -138,6 +138,20 @@ the server-global session second. A session bind still registers its session as
 server-global state; a host registers the `Arc<Host>` there instead. Nothing is
 forwarded and there is no per-session process.
 
+## Where state lives
+
+A session's state is a field of its `Session`, or derived from its log on read; a
+task the session runs is spawned under its `SessionRuntime`'s `Swansong`, so ending
+the session ends the task. State every session shares is a field of `Host`, and a
+host-wide task or listener runs under the host's `Swansong`. Each piece of state has
+one owner whose drop or shutdown is its teardown, so none needs a cleanup path of its
+own. A `static` with interior mutability under `src/daemon/` would be state outside
+both owners, and `the_daemon_keeps_no_state_in_statics` (`src/daemon/test/statics.rs`)
+fails on one; a value computed once and never changed can be a `const`, or live
+outside the daemon. Artifacts follow the pattern: their links are derived from the
+log and signed with a key on `Session`, and their loopback listener runs under the
+host's `Swansong` ([artifacts.md](artifacts.md)).
+
 The `*` rewrites the conn's *path*, so the control routes match `/v1/…` exactly as
 they do at a session bind's root; it does not clear the *params*. Both live in one
 per-conn namespace, so a session-bind route's own `:name` must differ from the

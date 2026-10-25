@@ -7,9 +7,9 @@
   margin: 3rem 0;
 }
 
-/* Each assistant wire Text block is rendered separately in the session view
-   so an unfinished code fence cannot consume the next block. Keep the same
-   paragraph rhythm as the blank-line join used by the other transcripts. */
+/* An entry with artifacts renders each wire Text block separately, as the
+   server numbers their fences (docs/artifacts.md). Keep the paragraph rhythm
+   of the blank-line join every other entry renders with. */
 .assistant-text-block + .assistant-text-block {
   margin-top: 0.5rem;
 }

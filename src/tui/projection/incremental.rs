@@ -16,7 +16,7 @@
 //! an owner dirty. When in doubt [`invalidate_all`](Transcript::invalidate_all) is
 //! always correct, just slower.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::{CallIndex, Gate, LiveTail, ViewState, entry_nodes, tail_nodes};
 use crate::log::LogEntry;
@@ -39,7 +39,7 @@ pub(crate) struct Transcript {
     /// keep running offsets straight as splices change later entries' positions.
     dirty: BTreeSet<usize>,
     /// Resolved artifact-only URLs keyed by their assistant entry and fence coordinates.
-    artifact_urls: HashMap<Coordinate, String>,
+    artifact_urls: BTreeMap<Coordinate, String>,
     /// The gate this document was last built with — a change dirties both the call
     /// it left and the call it moved to. The bound action is part of the value: a
     /// bound `agents__decide` moving onto the same call still changes the render.

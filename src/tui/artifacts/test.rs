@@ -1,79 +1,51 @@
 use super::*;
-use crate::log::{AssistantOutput, ContentBlock, Payload, Timestamp};
 
 #[test]
-fn candidate_coordinates_follow_visible_text_blocks_and_all_fences() {
-    let output = AssistantOutput::from_legacy_messages(
-        vec![],
-        vec![
-            ContentBlock::Text("plain response".into()),
-            ContentBlock::Text(
-                concat!(
-                    "```rust\nlet value = 1;\n```\n\n",
-                    "~~~html-artifact\n<svg/>\n~~~\n\n",
-                    "```html-artifact preview\n<svg/>\n```\n\n",
-                    "```html-artifact\nunclosed\n",
-                )
-                .into(),
-            ),
-        ],
-        vec![],
-    );
-    let entry = LogEntry {
-        seq: 19,
-        turn: 1,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload: Payload::Assistant {
-            output,
-            excluded: None,
-        },
-    };
+fn loopback_links_are_read_from_the_entry_view() {
+    let view = serde_json::json!({
+        "seq": 19,
+        "payload": {"Assistant": {
+            "output": {"Messages": []},
+            "artifacts": [
+                {"text_block": 0, "fence": 0, "url": "/artifacts/a/19/0/0/t",
+                 "external_url": "http://127.0.0.1:4321/artifacts/a/19/0/0/t"},
+                {"text_block": 1, "fence": 2, "url": "/artifacts/a/19/1/2/u",
+                 "external_url": "http://127.0.0.1:4321/artifacts/a/19/1/2/u"},
+                // Outside a host there is no listener, so nothing to open.
+                {"text_block": 2, "fence": 0, "url": "/artifacts/a/19/2/0/v"},
+            ],
+        }},
+    });
 
     assert_eq!(
-        candidates(&entry),
-        [Coordinate {
-            seq: 19,
-            text_block: 1,
-            fence: 1,
-        }]
+        external_links(&view),
+        [
+            (
+                Coordinate {
+                    seq: 19,
+                    text_block: 0,
+                    fence: 0
+                },
+                "http://127.0.0.1:4321/artifacts/a/19/0/0/t".to_owned()
+            ),
+            (
+                Coordinate {
+                    seq: 19,
+                    text_block: 1,
+                    fence: 2
+                },
+                "http://127.0.0.1:4321/artifacts/a/19/1/2/u".to_owned()
+            ),
+        ]
     );
 }
 
 #[test]
-fn user_text_never_produces_artifact_coordinates() {
-    let entry = LogEntry {
-        seq: 20,
-        turn: 1,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload: Payload::User(vec![ContentBlock::Text(
-            "```html-artifact\n<svg/>\n```".into(),
-        )]),
-    };
-
-    assert!(candidates(&entry).is_empty());
-}
-
-#[test]
-fn excluded_assistant_text_never_produces_artifact_coordinates() {
-    let entry = LogEntry {
-        seq: 21,
-        turn: 1,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload: Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![ContentBlock::Text("```html-artifact\n<svg/>\n```".into())],
-                vec![],
-            ),
-            excluded: Some(crate::log::Exclusion::Empty),
-        },
-    };
-
-    assert!(candidates(&entry).is_empty());
+fn entries_without_artifacts_have_no_links() {
+    for view in [
+        serde_json::json!({"seq": 3, "payload": {"User": [{"Text": "```html-artifact\n<p/>\n```"}]}}),
+        serde_json::json!({"seq": 4, "payload": {"Assistant": {"output": {"Messages": []}}}}),
+    ] {
+        assert!(external_links(&view).is_empty(), "{view}");
+    }
 }

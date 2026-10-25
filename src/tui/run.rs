@@ -4,19 +4,6 @@ use super::attention::Attender;
 use super::senders::Submission;
 use super::*;
 
-/// Bound each lookup so one unanswered response does not hold the serial artifact queue.
-const ARTIFACT_RESOLUTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
-async fn artifact_resolution<F>(lookup: F) -> Option<crate::client::ArtifactResolution>
-where
-    F: std::future::Future<Output = Result<crate::client::ArtifactResolution>>,
-{
-    tokio::time::timeout(ARTIFACT_RESOLUTION_TIMEOUT, lookup)
-        .await
-        .ok()?
-        .ok()
-}
-
 /// Attach to a session and stay there until the operator leaves it.
 ///
 /// A switch leaves by returning [`Exit::Switch`], and this is the loop that
@@ -108,45 +95,13 @@ async fn attach(
         attention: mut attention_rx,
     } = receivers;
 
-    let (artifact_requests, mut artifact_rx) =
-        tokio::sync::mpsc::unbounded_channel::<super::artifacts::Coordinate>();
-    let artifact_client = client.clone();
-    let artifact_events = tx.clone();
-    let artifact_fetcher = tokio::spawn(async move {
-        while let Some(coordinate) = artifact_rx.recv().await {
-            let Some(resolution) = artifact_resolution(artifact_client.resolve_artifact(
-                coordinate.seq,
-                coordinate.text_block,
-                coordinate.fence,
-            ))
-            .await
-            else {
-                continue;
-            };
-            let Some(url) = resolution.external_url else {
-                continue;
-            };
-            if artifact_events
-                .send(TuiEvent::ArtifactUrl { coordinate, url })
-                .is_err()
-            {
-                break; // UI thread gone.
-            }
-        }
-    });
-
     // The bridge feeds the UI thread everything — log entries, live deltas, and the
     // state topics (gate/processes/usage/policy/pace/running) as level-triggered
     // frames on the same connection (docs/control-api.md). It ends when the stream
     // closes or the UI thread drops the receiver. No poll: the daemon pushes a
     // whole-topic replacement when a topic changes, and the connect snapshot seeds
     // every topic up front.
-    let bridge = tokio::spawn(bridge(
-        client.clone(),
-        events,
-        tx.clone(),
-        artifact_requests,
-    ));
+    let bridge = tokio::spawn(bridge(client.clone(), events, tx.clone()));
 
     // Turn sender: each composer submission is POSTed as a user turn. A failure comes
     // home, since the pending echo alone would read as "still queued" forever: a
@@ -441,7 +396,6 @@ async fn attach(
     sidebar_dispatcher.abort();
     host_dispatcher.abort();
     fetcher.abort();
-    artifact_fetcher.abort();
     result.context("the TUI event loop failed")
 }
 
@@ -600,6 +554,3 @@ pub async fn run_session_form_prototype() -> Result<()> {
     )
     .await
 }
-
-#[cfg(test)]
-mod test;

@@ -113,6 +113,10 @@ pub struct Host {
     /// (`attention.rs`, docs/web-push.md). Shared with each adopted session, so
     /// a push for any of them reads one table.
     pub(super) attention: Arc<super::attention::Attention>,
+    /// The artifact-only loopback listener's origin (docs/artifacts.md): started by
+    /// the first adopt, under this host's `Swansong`; `None` once its bind failed, so
+    /// the bind is tried once.
+    artifact_origin: std::sync::OnceLock<Option<String>>,
 }
 
 /// What the host keeps per session: the state handlers read, the child
@@ -209,7 +213,26 @@ impl Host {
             host_env,
             listing_changed: Notify::new(),
             attention: Arc::default(),
+            artifact_origin: std::sync::OnceLock::new(),
         })
+    }
+
+    /// The artifact-only loopback listener's origin, starting the listener on first
+    /// use (docs/artifacts.md). It serves only artifact routes, so it is started for
+    /// any host, with or without a TCP bind.
+    pub(crate) fn artifact_origin(self: &Arc<Self>) -> Option<&str> {
+        self.artifact_origin
+            .get_or_init(|| match super::artifacts::spawn_listener(self) {
+                Ok(origin) => {
+                    log::info!("artifacts: {origin}");
+                    Some(origin)
+                }
+                Err(e) => {
+                    log::warn!("artifacts: could not bind the loopback listener: {e}");
+                    None
+                }
+            })
+            .as_deref()
     }
 
     /// Discard the empty session logs under the remembered roots, then register
@@ -286,6 +309,9 @@ impl Host {
         // mount, and a push notification opens that path (docs/web-push.md).
         session.set_web_path(format!("/sessions/{id}/"));
         session.set_attention(Arc::clone(&self.attention));
+        if let Some(origin) = self.artifact_origin() {
+            session.set_artifact_origin(origin.to_owned());
+        }
         let hosted = Hosted {
             files: Files::rooted_at(session.cwd()),
             session: Arc::clone(&session),

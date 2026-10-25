@@ -14,7 +14,7 @@ use crate::log::{
     AssistantOutput, ContentBlock, Exclusion, LogEntry, MessagesOutputBlock, Payload, RawResult,
     Summary, ToolCall, Triaged, WireState,
 };
-use crate::tui::artifacts::{self, Coordinate};
+use crate::tui::artifacts::Coordinate;
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, Span, SpanStyle,
 };
@@ -44,7 +44,7 @@ pub(crate) fn project(
     }
 
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
-    let artifact_urls = HashMap::new();
+    let artifact_urls = BTreeMap::new();
     for idx in 0..log.len() {
         nodes.extend(entry_nodes(log, idx, &index, view, gate, &artifact_urls));
     }
@@ -205,7 +205,7 @@ pub(crate) fn entry_nodes(
     index: &CallIndex,
     view: &ViewState,
     gate: Gate<'_>,
-    artifact_urls: &HashMap<Coordinate, String>,
+    artifact_urls: &BTreeMap<Coordinate, String>,
 ) -> Vec<DocumentNode<'static>> {
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
     let Some(entry) = log.get(idx) else {
@@ -319,12 +319,20 @@ pub(crate) fn entry_nodes(
                 let prose = output.text().join("\n");
                 if !prose.trim().is_empty() {
                     let mut body = markdown(&prose);
-                    for coordinate in artifacts::candidates(entry) {
-                        if let Some(url) = artifact_urls.get(&coordinate) {
-                            body.push(DocumentNode::Paragraph {
-                                spans: vec![Span::plain(format!("↗ artifact · {url}"))],
-                            });
-                        }
+                    // The entry's artifacts, in order, as the links the bridge received.
+                    let entry_artifacts = Coordinate {
+                        seq: entry.seq,
+                        text_block: 0,
+                        fence: 0,
+                    }..=Coordinate {
+                        seq: entry.seq,
+                        text_block: usize::MAX,
+                        fence: usize::MAX,
+                    };
+                    for url in artifact_urls.range(entry_artifacts).map(|(_, url)| url) {
+                        body.push(DocumentNode::Paragraph {
+                            spans: vec![Span::plain(format!("↗ artifact · {url}"))],
+                        });
                     }
                     nodes.push(DocumentNode::entry(EntryKind::AssistantMessage, body));
                 }

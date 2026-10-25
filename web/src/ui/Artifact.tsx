@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { ArtifactDescriptor, Seq } from "../api/types.ts";
-import { resolveArtifact } from "../api/http.ts";
 import type { ThemeName } from "./theme.ts";
 import "./Artifact.css";
 
@@ -29,67 +27,15 @@ function isResizeMessage(
   );
 }
 
-function artifactPath(value: unknown): string | null {
-  if (
-    typeof value !== "string" ||
-    !value.startsWith("/artifacts/") ||
-    value.startsWith("//")
-  ) {
-    return null;
-  }
-  return value;
-}
-
-/** A single opt-in fence in committed assistant prose. Resolution carries only
- * log coordinates; the returned same-origin page is loaded directly by the
- * sandboxed frame and never through the session's authenticated fetch path. */
-export function Artifact({
-  source,
-  seq,
-  textBlock,
-  fence,
-}: {
-  source: string;
-  seq: Seq;
-  textBlock: number;
-  fence: number;
-}) {
-  const requestKey = `${seq}/${textBlock}/${fence}`;
-  const [resolution, setResolution] = useState<{
-    key: string;
-    status: "loading" | "ready" | "failed";
-    url: string | null;
-  }>({ key: requestKey, status: "loading", url: null });
-  const currentResolution =
-    resolution.key === requestKey
-      ? resolution
-      : { key: requestKey, status: "loading" as const, url: null };
-  const { status, url } = currentResolution;
+/** One `html-artifact` fence in committed assistant prose, at the signed URL
+ * its entry view carries (docs/artifacts.md). The sandboxed frame loads that
+ * page directly; nothing here fetches on its behalf. */
+export function Artifact({ source, url }: { source: string; url: string }) {
   const [height, setHeight] = useState(INITIAL_HEIGHT);
   const [theme, setTheme] = useState<ThemeName>(pageTheme);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
-
-  useEffect(() => {
-    let current = true;
-    void resolveArtifact(seq, textBlock, fence)
-      .then((descriptor: ArtifactDescriptor) => {
-        const path = artifactPath(descriptor.url);
-        if (path === null) throw new Error("Invalid artifact URL");
-        if (current) {
-          setResolution({ key: requestKey, url: path, status: "ready" });
-        }
-      })
-      .catch(() => {
-        if (current) {
-          setResolution({ key: requestKey, url: null, status: "failed" });
-        }
-      });
-    return () => {
-      current = false;
-    };
-  }, [fence, requestKey, seq, textBlock]);
 
   // Theme choice is an attribute on the document root. Observe it rather than
   // reading the OS preference: an explicit app choice can differ from it.
@@ -126,7 +72,7 @@ export function Artifact({
   // load-time send covers a message sent before the runtime script was ready.
   useEffect(() => {
     const element = frame.current;
-    if (url === null || element === null) return;
+    if (element === null) return;
     const sendTheme = () => {
       element.contentWindow?.postMessage(
         { type: THEME_MESSAGE, theme, colorScheme: colorScheme(theme) },
@@ -153,26 +99,14 @@ export function Artifact({
 
   return (
     <div className="artifact">
-      {status === "loading" && (
-        <p className="artifact-state" role="status">
-          Loading preview…
-        </p>
-      )}
-      {status === "failed" && (
-        <p className="artifact-state" role="alert">
-          Preview unavailable; source is still available below.
-        </p>
-      )}
-      {url !== null && (
-        <iframe
-          ref={frame}
-          className="artifact-frame"
-          title="HTML artifact preview"
-          src={url}
-          sandbox="allow-scripts"
-          style={{ height: `${height}px` }}
-        />
-      )}
+      <iframe
+        ref={frame}
+        className="artifact-frame"
+        title="HTML artifact preview"
+        src={url}
+        sandbox="allow-scripts"
+        style={{ height: `${height}px` }}
+      />
       <details className="artifact-source">
         <summary>Source</summary>
         <div className="artifact-source-tools">

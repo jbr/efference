@@ -1506,8 +1506,8 @@ query grows with the session, which the tag reflects.
 
 Every read that serves an entry — the window, this route, and a `log` frame's
 `data` — serializes the same **entry view** (`daemon/entry_view.rs`): the entry
-verbatim, except for two elisions, both resolved by fetching an address, and one
-addition a client cannot compute from an elided prefix.
+verbatim, except for two elisions, both resolved by fetching an address, and two
+additions derived on every read.
 
 **A result image's base64 `data` is omitted, on every route.** A result image
 appears as `{media_type, width, height}` — enough to lay out before fetching —
@@ -1550,6 +1550,26 @@ is the record, and the view is where a count belongs. The per-line structure of
 the selection — which rows survived, numbered — is not served yet; the web
 client still resolves that from the content it holds
 ([web-client.md](web-client.md) "The cordon").
+
+**A committed assistant entry's view carries its artifacts' links.** On every
+route, an `Assistant` entry whose text holds `html-artifact` fences gains
+`artifacts` beside `output`:
+
+```jsonc
+"artifacts": [
+  { "text_block": 1, "fence": 0,
+    "url": "/artifacts/brisk-otter/12/1/0/<tag>",
+    "external_url": "http://127.0.0.1:52144/artifacts/brisk-otter/12/1/0/<tag>" }
+]
+```
+
+`text_block` counts the entry's text blocks and `fence` that block's
+`html-artifact` fences. `url` is root-relative; `external_url` is the same document
+on the host's artifact-only loopback listener, absent outside a host. The tag in
+both is an HMAC under the session's own key, so the links stop resolving when the
+session leaves the host. Absent on an entry with no such fence, whose view stays
+the derived bytes. The routes they name and what they serve are in
+[artifacts.md](artifacts.md).
 
 Both elisions keep a bulky payload from riding every window, replay, and SSE
 frame, where it would queue every later frame behind it on an expensively-framed

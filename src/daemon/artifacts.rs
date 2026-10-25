@@ -1,13 +1,17 @@
-//! In-memory HTML artifacts resolved from committed assistant output.
+//! Fenced HTML artifacts, served by signed pointer (docs/artifacts.md).
 //!
-//! The authenticated resolver takes log coordinates; the token routes expose only the
-//! selected HTML and the web-owned runtime resources. A separate loopback listener serves
-//! the same token routes for clients that cannot load a same-origin URL (docs/control-api.md).
+//! Nothing is stored. An artifact's URL names its session, entry, text block and fence,
+//! with an HMAC over them under the session's own key ([`Session::artifact_key`]), and
+//! the client entry view carries it ([`links`]). Serving checks the tag, finds the
+//! session among the host's, and extracts the fence from the log entry again. A session
+//! that leaves the host takes its key with it, so its URLs stop resolving with nothing
+//! to clean up.
+//!
+//! The same routes are served at the web origin's root and on the artifact-only
+//! loopback listener ([`spawn_listener`]), which the host starts under its `Swansong`.
 
-use std::collections::HashMap;
 use std::io;
-use std::net::TcpListener as StdTcpListener;
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -16,18 +20,21 @@ use hmac::{Hmac, Mac};
 use rand::Rng;
 use sha2::Sha256;
 use trillium::{Conn, KnownHeaderName};
-use trillium_router::Router;
-use trillium_router::RouterConnExt;
-use trillium_tokio::Swansong;
+use trillium_router::{Router, RouterConnExt};
 
-use crate::artifact::closed_html_artifact_fences;
-use crate::log::Payload;
+use super::{Host, Session};
+use crate::artifact::html_artifact_fences;
+use crate::log::{LogEntry, Payload};
 
-const TOKEN_BYTES: usize = 32;
+/// The length of a session's signing key.
+pub(crate) const KEY_BYTES: usize = 32;
+/// An HMAC-SHA256 tag in unpadded base64url.
+const TAG_LENGTH: usize = 43;
+
 const RUNTIME_JS: &str = include_str!("../../web/public/artifacts/runtime.js");
 const THEME_CSS: &str = include_str!("../../web/public/artifacts/theme.css");
+const RUNTIME_TAG: &str = "<script src=\"/artifacts/_efference/runtime.js\"></script>";
 
-const RUNTIME_TAG: &str = "<script src=\"./_efference/runtime.js\"></script>";
 pub(super) const ARTIFACT_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; \
     style-src 'self' 'unsafe-inline'; img-src data: blob:; font-src data:; \
     connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; \
@@ -35,212 +42,95 @@ pub(super) const ARTIFACT_CSP: &str = "default-src 'none'; script-src 'self' 'un
 
 type HmacSha256 = Hmac<Sha256>;
 
-static REGISTRY: OnceLock<Registry> = OnceLock::new();
-static LOOPBACK: tokio::sync::OnceCell<LoopbackServer> = tokio::sync::OnceCell::const_new();
-
-/// The descriptor returned by the authenticated coordinate resolver.
-#[derive(serde::Serialize)]
-struct Resolution {
-    url: String,
-    external_url: String,
+/// A fresh signing key, one per [`Session`].
+pub(crate) fn new_key() -> [u8; KEY_BYTES] {
+    let mut key = [0; KEY_BYTES];
+    rand::rng().fill_bytes(&mut key);
+    key
 }
 
-struct SessionIdentity {
-    shared: Weak<dyn std::any::Any + Send + Sync>,
-    nonce: [u8; TOKEN_BYTES],
+/// One artifact's address, as the client entry view carries it (docs/control-api.md).
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct Link {
+    pub(crate) text_block: usize,
+    pub(crate) fence: usize,
+    /// Root-relative: a web client loads it from the origin it already uses.
+    pub(crate) url: String,
+    /// The same document on the artifact-only loopback listener, for a local browser;
+    /// absent for a session outside a host.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) external_url: Option<String>,
 }
 
-struct Registry {
-    secret: [u8; TOKEN_BYTES],
-    sessions: Mutex<HashMap<usize, SessionIdentity>>,
-    artifacts: Mutex<HashMap<String, String>>,
-}
-
-impl Registry {
-    fn new() -> Self {
-        let mut secret = [0; TOKEN_BYTES];
-        rand::rng().fill_bytes(&mut secret);
-        Self {
-            secret,
-            sessions: Mutex::default(),
-            artifacts: Mutex::default(),
-        }
-    }
-
-    fn session_nonce<T: std::any::Any + Send + Sync>(&self, shared: &Arc<T>) -> [u8; TOKEN_BYTES] {
-        let erased: Arc<dyn std::any::Any + Send + Sync> = shared.clone();
-        let key = Arc::as_ptr(&erased) as *const () as usize;
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(identity) = sessions.get(&key)
-            && identity
-                .shared
-                .upgrade()
-                .is_some_and(|known| Arc::ptr_eq(&known, &erased))
-        {
-            return identity.nonce;
-        }
-        let mut nonce = [0; TOKEN_BYTES];
-        rand::rng().fill_bytes(&mut nonce);
-        sessions.retain(|_, identity| identity.shared.strong_count() > 0);
-        sessions.insert(
-            key,
-            SessionIdentity {
-                shared: Arc::downgrade(&erased),
-                nonce,
-            },
-        );
-        nonce
-    }
-
-    fn insert(
-        &self,
-        session_nonce: &[u8; TOKEN_BYTES],
-        seq: u64,
-        text_block: usize,
-        fence: usize,
-        html: String,
-    ) -> String {
-        let mut mac = <HmacSha256 as KeyInit>::new_from_slice(&self.secret)
-            .expect("HMAC accepts a key of any length");
-        mac.update(b"efference-html-artifact-v1\0");
-        mac.update(session_nonce);
-        mac.update(&seq.to_be_bytes());
-        mac.update(&text_block.to_be_bytes());
-        mac.update(&fence.to_be_bytes());
-        let token = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
-        self.artifacts
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(token.clone(), html);
-        token
-    }
-
-    fn get(&self, token: &str) -> Option<String> {
-        self.artifacts
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(token)
-            .cloned()
-    }
-}
-
-fn registry() -> &'static Registry {
-    REGISTRY.get_or_init(Registry::new)
-}
-
-/// Resolve one committed assistant text block and fenced artifact (`GET /v1/artifacts/:seq/:text_block/:fence`).
-pub(crate) async fn resolve(conn: Conn) -> Conn {
-    let Some(seq) = conn
-        .param("seq")
-        .and_then(|value| value.parse::<u64>().ok())
-    else {
-        return fail(conn, 400, "seq must be an unsigned integer");
-    };
-    let Some(text_block) = conn
-        .param("text_block")
-        .and_then(|value| value.parse::<usize>().ok())
-    else {
-        return fail(conn, 400, "text_block must be an unsigned integer");
-    };
-    let Some(fence_ordinal) = conn
-        .param("fence")
-        .and_then(|value| value.parse::<usize>().ok())
-    else {
-        return fail(conn, 400, "fence must be an unsigned integer");
-    };
-    let Some(session) = super::http::shared_of(&conn) else {
-        return fail(conn, 500, "session state is unavailable");
-    };
-    let Some(entry) = session
-        .snapshot()
-        .into_iter()
-        .find(|entry| entry.seq == seq)
-    else {
-        return fail(
-            conn,
-            404,
-            "no committed assistant artifact at those coordinates",
-        );
-    };
+/// The links of a committed assistant entry's artifacts, in order. Empty for every
+/// other entry, for a record-only one, and for a session with no id to address it by.
+pub(crate) fn links(session: &Session, entry: &LogEntry) -> Vec<Link> {
     let Payload::Assistant {
         output,
         excluded: None,
-    } = entry.payload
+    } = &entry.payload
     else {
-        return fail(
-            conn,
-            404,
-            "no committed assistant artifact at those coordinates",
-        );
+        return Vec::new();
     };
-    let Some(text) = output.text().into_iter().nth(text_block) else {
-        return fail(
-            conn,
-            404,
-            "no committed assistant artifact at those coordinates",
-        );
+    let Some(id) = session.id() else {
+        return Vec::new();
     };
-    let Some(fence) = closed_html_artifact_fences(text)
-        .into_iter()
-        .find(|fence| fence.ordinal == fence_ordinal)
-    else {
-        return fail(
-            conn,
-            404,
-            "no committed assistant artifact at those coordinates",
-        );
-    };
-
-    let registry = registry();
-    let session_nonce = registry.session_nonce(&session);
-    let token = registry.insert(&session_nonce, seq, text_block, fence_ordinal, fence.html);
-    let server = match LOOPBACK
-        .get_or_try_init(|| async { LoopbackServer::bind() })
-        .await
-    {
-        Ok(server) => server,
-        Err(error) => {
-            log::error!("could not start the artifact listener: {error}");
-            return fail(conn, 500, "the artifact listener could not start");
+    let mut links = Vec::new();
+    for (text_block, text) in output.text().into_iter().enumerate() {
+        for fence in 0..html_artifact_fences(text).len() {
+            let tag = tag(session.artifact_key(), id, entry.seq, text_block, fence);
+            let url = format!("/artifacts/{id}/{}/{text_block}/{fence}/{tag}", entry.seq);
+            let external_url = session
+                .artifact_origin()
+                .map(|origin| format!("{origin}{url}"));
+            links.push(Link {
+                text_block,
+                fence,
+                url,
+                external_url,
+            });
         }
-    };
-    let resolution = Resolution {
-        url: format!("/artifacts/{token}/"),
-        external_url: format!("http://127.0.0.1:{}/artifacts/{token}/", server.port),
-    };
-    conn.with_response_header(KnownHeaderName::ContentType, "application/json")
-        .with_response_header(KnownHeaderName::CacheControl, "no-store")
-        .with_status(200)
-        .with_body(serde_json::to_string(&resolution).unwrap_or_default())
-        .halt()
+    }
+    links
 }
 
-/// Token-only capability routes are mounted at the web origin root. They have no
-/// session state; the coordinate resolver remains in the session control router.
+fn mac(
+    key: &[u8; KEY_BYTES],
+    session: &str,
+    seq: u64,
+    text_block: usize,
+    fence: usize,
+) -> HmacSha256 {
+    let mut mac =
+        <HmacSha256 as KeyInit>::new_from_slice(key).expect("HMAC accepts a key of any length");
+    mac.update(b"efference-html-artifact-v2\0");
+    mac.update(session.as_bytes());
+    mac.update(b"\0");
+    for coordinate in [seq, text_block as u64, fence as u64] {
+        mac.update(&coordinate.to_be_bytes());
+    }
+    mac
+}
+
+fn tag(key: &[u8; KEY_BYTES], session: &str, seq: u64, text_block: usize, fence: usize) -> String {
+    URL_SAFE_NO_PAD.encode(
+        mac(key, session, seq, text_block, fence)
+            .finalize()
+            .into_bytes(),
+    )
+}
+
+/// The routes, mounted at the web origin's root and on the loopback listener. They sit
+/// outside the device-token gate (docs/web-bind.md): a document's tag is its authority,
+/// and the shared assets are as public as the web client's own.
 pub(crate) fn routes() -> Router {
     Router::new()
-        .get("/artifacts/:token/", document)
-        .get("/artifacts/:token", redirect_document)
-        .get("/artifacts/:token/_efference/:asset", asset)
+        .get("/artifacts/_efference/:asset", asset)
+        .get("/artifacts/:session/:seq/:text_block/:fence/:tag", document)
 }
 
-pub(crate) async fn redirect_document(conn: Conn) -> Conn {
-    let Some(token) = conn.param("token").map(str::to_owned) else {
-        return not_found(conn);
-    };
-    if registry().get(&token).is_none() {
-        return not_found(conn);
-    }
-    conn.with_response_header("location", format!("/artifacts/{token}/"))
-        .with_status(308)
-        .halt()
-}
-
-pub(crate) async fn document(conn: Conn) -> Conn {
-    let Some(token) = conn.param("token") else {
-        return not_found(conn);
-    };
-    let Some(html) = registry().get(token) else {
+async fn document(conn: Conn) -> Conn {
+    let Some(html) = artifact_html(&conn) else {
         return not_found(conn);
     };
     conn.with_response_header(KnownHeaderName::ContentType, "text/html; charset=utf-8")
@@ -254,19 +144,43 @@ pub(crate) async fn document(conn: Conn) -> Conn {
         .halt()
 }
 
-pub(crate) async fn asset(conn: Conn) -> Conn {
-    let Some(token) = conn.param("token") else {
-        return not_found(conn);
+/// The fence a document path names, when its tag verifies under the named session's
+/// key and that session's log holds the fence.
+fn artifact_html(conn: &Conn) -> Option<String> {
+    let id = conn.param("session")?;
+    let seq = conn.param("seq")?.parse().ok()?;
+    let text_block = conn.param("text_block")?.parse().ok()?;
+    let fence = conn.param("fence")?.parse().ok()?;
+    let tag = URL_SAFE_NO_PAD.decode(conn.param("tag")?).ok()?;
+    let session = session_named(conn, id)?;
+    mac(session.artifact_key(), id, seq, text_block, fence)
+        .verify_slice(&tag)
+        .ok()?;
+    let entry = session.entry_at(seq)?;
+    let Payload::Assistant {
+        output,
+        excluded: None,
+    } = entry.payload
+    else {
+        return None;
     };
-    if registry().get(token).is_none() {
-        return not_found(conn);
+    let text = output.text().into_iter().nth(text_block)?;
+    html_artifact_fences(text).into_iter().nth(fence)
+}
+
+/// The session a document path names: one of the host's, or the one a session bind
+/// serves.
+fn session_named(conn: &Conn, id: &str) -> Option<Arc<Session>> {
+    match conn.shared_state::<Arc<Host>>() {
+        Some(host) => host.session(id),
+        None => super::http::shared_of(conn).filter(|session| session.id() == Some(id)),
     }
-    let Some(asset) = conn.param("asset") else {
-        return not_found(conn);
-    };
-    let (content_type, body) = match asset {
-        "runtime.js" => ("text/javascript; charset=utf-8", RUNTIME_JS),
-        "theme.css" => ("text/css; charset=utf-8", THEME_CSS),
+}
+
+async fn asset(conn: Conn) -> Conn {
+    let (content_type, body) = match conn.param("asset") {
+        Some("runtime.js") => ("text/javascript; charset=utf-8", RUNTIME_JS),
+        Some("theme.css") => ("text/css; charset=utf-8", THEME_CSS),
         _ => return not_found(conn),
     };
     conn.with_response_header(KnownHeaderName::ContentType, content_type)
@@ -309,69 +223,56 @@ fn doctype_end(html: &str) -> Option<usize> {
     Some(html.len() - rest.len() + rest.find('>')? + 1)
 }
 
-fn fail(conn: Conn, status: u16, message: &str) -> Conn {
-    conn.with_response_header(KnownHeaderName::ContentType, "application/json")
-        .with_response_header(KnownHeaderName::CacheControl, "no-store")
-        .with_status(status)
-        .with_body(serde_json::json!({ "error": message }).to_string())
-        .halt()
-}
-
 fn not_found(conn: Conn) -> Conn {
     conn.with_status(404)
         .with_response_header(KnownHeaderName::CacheControl, "no-store")
         .halt()
 }
 
-struct LoopbackServer {
-    port: u16,
-    swansong: Swansong,
+/// Bind the artifact-only loopback listener and serve [`routes`] on it under `host`'s
+/// `Swansong`, with the host as its state, so host shutdown ends it with everything
+/// else. Answers the listener's origin.
+pub(crate) fn spawn_listener(host: &Arc<Host>) -> io::Result<String> {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    let port = listener.local_addr()?.port();
+    listener.set_nonblocking(true)?;
+    let listener = tokio::net::TcpListener::from_std(listener)?;
+    trillium_tokio::config()
+        .without_signals()
+        .with_swansong(host.swansong().clone())
+        .with_shared_state(Arc::clone(host))
+        .listeners()
+        .bind_server(listener)
+        .spawn(routes());
+    Ok(format!("http://127.0.0.1:{port}"))
 }
 
-impl LoopbackServer {
-    fn bind() -> io::Result<Self> {
-        let listener = StdTcpListener::bind(("127.0.0.1", 0))?;
-        let port = listener.local_addr()?.port();
-        listener.set_nonblocking(true)?;
-        let listener = tokio::net::TcpListener::from_std(listener)?;
-        let swansong = Swansong::new();
-        trillium_tokio::config()
-            .without_signals()
-            .with_swansong(swansong.clone())
-            .listeners()
-            .bind_server(listener)
-            .spawn(routes());
-        Ok(Self { port, swansong })
-    }
-}
-
-impl Drop for LoopbackServer {
-    fn drop(&mut self) {
-        drop(self.swansong.shut_down());
-    }
-}
-
-/// The route-path predicate shared with the TCP gate and security header middleware.
+/// Whether `path` is an artifact route — the gate's anonymous exception and the
+/// security headers' policy switch. Exact shapes only, so nothing else under
+/// `/artifacts/` slips past the gate.
 pub(super) fn is_artifact_route(path: &str) -> bool {
-    let Some(mut parts) = path.strip_prefix("/artifacts/").map(|rest| rest.split('/')) else {
+    let Some(rest) = path.strip_prefix("/artifacts/") else {
         return false;
     };
-    let Some(token) = parts.next() else {
-        return false;
-    };
-    if token.len() != 43
-        || !token
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-    {
-        return false;
+    let segments: Vec<&str> = rest.split('/').collect();
+    let number = |segment: &str| !segment.is_empty() && segment.bytes().all(|b| b.is_ascii_digit());
+    match segments.as_slice() {
+        ["_efference", "runtime.js" | "theme.css"] => true,
+        [session, seq, text_block, fence, tag] => {
+            !matches!(*session, "" | "." | ".." | "_efference")
+                && session
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+                && number(seq)
+                && number(text_block)
+                && number(fence)
+                && tag.len() == TAG_LENGTH
+                && tag
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+        }
+        _ => false,
     }
-    matches!(
-        (parts.next(), parts.next(), parts.next()),
-        (None, None, None)
-            | (Some(""), None, None)
-            | (Some("_efference"), Some("runtime.js" | "theme.css"), None)
-    )
 }
 
 #[cfg(test)]

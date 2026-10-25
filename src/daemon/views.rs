@@ -380,7 +380,11 @@ impl Session {
         let entries = log.entries();
         let views: Vec<_> = window(entries, select)
             .iter()
-            .map(|entry| EntryView::new(entry).with_result_raw(result_raw(entry, entries)))
+            .map(|entry| {
+                EntryView::new(entry)
+                    .with_result_raw(result_raw(entry, entries))
+                    .with_artifacts(Some(self))
+            })
             .collect();
         serde_json::to_string(&views).unwrap_or_else(|_| "[]".into())
     }
@@ -461,7 +465,9 @@ impl Session {
         let log = self.log.lock().unwrap();
         let entries = log.entries();
         let entry = entries.iter().find(|e| e.seq == seq)?;
-        let view = EntryView::full(entry).with_result_raw(result_raw(entry, entries));
+        let view = EntryView::full(entry)
+            .with_result_raw(result_raw(entry, entries))
+            .with_artifacts(Some(self));
         serde_json::to_string(&view).ok()
     }
 

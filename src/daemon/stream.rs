@@ -246,7 +246,7 @@ impl Tail {
                 // of it; the frame is built here, so resolving them through the
                 // session's single-entry read is enough.
                 let result_raw = result_raw(&entry, &self.shared);
-                return Some(Frame::log(&entry, result_raw.as_ref()));
+                return Some(Frame::log(&entry, result_raw.as_ref(), Some(&self.shared)));
             }
 
             if let Some(update) = self.releasable() {

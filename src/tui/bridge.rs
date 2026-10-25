@@ -12,7 +12,6 @@ pub(super) async fn bridge(
     client: Client,
     mut events: trillium_client::sse::EventStream,
     tx: Sender<TuiEvent>,
-    artifact_requests: tokio::sync::mpsc::UnboundedSender<super::artifacts::Coordinate>,
 ) -> Result<()> {
     // The three policy-shaped topics are merged into one PolicyView for the sidebar's
     // convenience (docs/permissions.md), so the bridge holds the latest value of each
@@ -29,7 +28,7 @@ pub(super) async fn bridge(
         match events.next().await {
             Some(Ok(event)) => {
                 let fresh = unseeded_panel_rows(&event, &mut seeded);
-                if decode_frame(&event, &mut policy, &tx, &artifact_requests).is_break() {
+                if decode_frame(&event, &mut policy, &tx).is_break() {
                     break; // UI thread gone.
                 }
                 // After the topic frame (so the row exists to append onto), fetch each
@@ -118,7 +117,6 @@ fn decode_frame(
     event: &trillium_client::sse::Event,
     policy: &mut PolicyTopics,
     tx: &Sender<TuiEvent>,
-    artifact_requests: &tokio::sync::mpsc::UnboundedSender<super::artifacts::Coordinate>,
 ) -> std::ops::ControlFlow<()> {
     use std::ops::ControlFlow::{Break, Continue};
 
@@ -136,12 +134,16 @@ fn decode_frame(
             let Ok(entry) = serde_json::from_value::<LogEntry>(data.clone()) else {
                 return Continue(());
             };
-            let artifacts = super::artifacts::candidates(&entry);
+            // The view's artifact links ride beside the entry, not in it: they are
+            // derived on every read, never logged (docs/artifacts.md).
+            let links = super::artifacts::external_links(data);
             if tx.send(TuiEvent::Entry(entry)).is_err() {
                 return Break(());
             }
-            for coordinate in artifacts {
-                let _ = artifact_requests.send(coordinate);
+            for (coordinate, url) in links {
+                if tx.send(TuiEvent::ArtifactUrl { coordinate, url }).is_err() {
+                    return Break(());
+                }
             }
             return Continue(());
         }

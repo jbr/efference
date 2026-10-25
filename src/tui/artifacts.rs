@@ -1,43 +1,34 @@
-//! Coordinates and candidate discovery for assistant-authored HTML artifacts.
-//!
-//! Artifact coordinates follow the visible assistant text blocks and fenced code
-//! blocks in provider order. Candidate discovery uses the same closed-fence parser
-//! as the resolver so the two sides agree on fence ordinals.
+//! Artifact links as the TUI receives them (docs/artifacts.md): the entry view of a
+//! committed assistant entry carries each `html-artifact` fence's signed links, and
+//! the TUI shows the loopback one, which a local browser can open.
 
-use crate::artifact::closed_html_artifact_fences;
-use crate::log::{LogEntry, Payload};
-
-/// One zero-based artifact location within a committed assistant entry.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// One artifact's position within a committed assistant entry, zero-based. Ordered
+/// by entry, then text block, then fence: the order the entry's links are drawn in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Coordinate {
     pub seq: u64,
     pub text_block: usize,
     pub fence: usize,
 }
 
-/// The closed `html-artifact` fences in a committed assistant entry, in provider order.
-pub(crate) fn candidates(entry: &LogEntry) -> Vec<Coordinate> {
-    let Payload::Assistant {
-        output,
-        excluded: None,
-    } = &entry.payload
-    else {
+/// The loopback links in a `log` frame's entry view, by coordinate. A link without
+/// one — a session outside a host — has nothing a local browser can open.
+pub(crate) fn external_links(entry_view: &serde_json::Value) -> Vec<(Coordinate, String)> {
+    let Some(seq) = entry_view["seq"].as_u64() else {
         return Vec::new();
     };
-
-    output
-        .text()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(text_block, text)| {
-            closed_html_artifact_fences(text)
-                .into_iter()
-                .map(|fence| Coordinate {
-                    seq: entry.seq,
-                    text_block,
-                    fence: fence.ordinal,
-                })
-                .collect::<Vec<_>>()
+    let Some(links) = entry_view["payload"]["Assistant"]["artifacts"].as_array() else {
+        return Vec::new();
+    };
+    links
+        .iter()
+        .filter_map(|link| {
+            let coordinate = Coordinate {
+                seq,
+                text_block: usize::try_from(link["text_block"].as_u64()?).ok()?,
+                fence: usize::try_from(link["fence"].as_u64()?).ok()?,
+            };
+            Some((coordinate, link["external_url"].as_str()?.to_owned()))
         })
         .collect()
 }

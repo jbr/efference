@@ -43,7 +43,7 @@ fn a_verdict_frame_carries_the_counts_of_the_result_it_names() {
 
     // What the tail resolves for this entry, and what the `/log` window serves for it.
     let resolved = crate::daemon::stream::result_raw(&entries[1], &shared);
-    let frame = Frame::log(&entries[1], resolved.as_ref());
+    let frame = Frame::log(&entries[1], resolved.as_ref(), None);
     let window: Vec<Value> =
         serde_json::from_str(&shared.log_json(&LogSelect::default())).expect("a JSON array");
 
@@ -77,7 +77,7 @@ fn a_verdict_frame_carries_the_counts_of_the_result_it_names() {
 #[test]
 fn log_frames_carry_seq_and_data_matching_the_log_bytes() {
     let entry = one_entry(user("hello"));
-    let frame = Frame::log(&entry, None);
+    let frame = Frame::log(&entry, None, None);
 
     assert_eq!(frame.class, Class::Log);
     assert_eq!(frame.kind, "user");
@@ -97,10 +97,10 @@ fn log_frames_carry_seq_and_data_matching_the_log_bytes() {
 fn render_rides_beside_data_and_is_absent_when_unset() {
     let entry = one_entry(user("hello"));
 
-    let bare = Frame::log(&entry, None).to_json();
+    let bare = Frame::log(&entry, None, None).to_json();
     assert!(!bare.contains("render"), "no render key when unset: {bare}");
 
-    let rendered = Frame::log(&entry, None).with_render(&serde_json::json!({"blocks": []}));
+    let rendered = Frame::log(&entry, None, None).with_render(&serde_json::json!({"blocks": []}));
     assert!(
         !rendered.data.get().contains("render"),
         "render must not leak into data: {}",
@@ -262,7 +262,7 @@ fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized()
         RawResult::text("small"),
         WireState::Raw,
     ));
-    let frame = Frame::log(&small, None);
+    let frame = Frame::log(&small, None, None);
     assert_eq!(
         frame.data.get(),
         serde_json::to_string(&crate::daemon::entry_view::EntryView::new(&small)).unwrap(),
@@ -280,7 +280,7 @@ fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized()
         RawResult::text("z".repeat(MAX_INLINE_RESULT_BYTES * 2)),
         WireState::Raw,
     ));
-    let frame = Frame::log(&big, None);
+    let frame = Frame::log(&big, None, None);
     assert_eq!(
         frame.data.get(),
         serde_json::to_string(&crate::daemon::entry_view::EntryView::new(&big)).unwrap(),

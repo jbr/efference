@@ -273,13 +273,20 @@ impl Frame {
     /// entry's [`EntryView::new`] (image `data` omitted, oversized result text
     /// truncated and tagged; entry_view.rs). `result_raw` is the bytes of the result
     /// a [`Payload::ResultVerdict`] names, which that entry does not carry itself
-    /// (docs/triage.md); both call sites resolve it from the log.
-    pub(crate) fn log(entry: &LogEntry, result_raw: Option<&RawResult>) -> Self {
+    /// (docs/triage.md); both call sites resolve it from the log. `session` signs the
+    /// entry's artifact links (docs/artifacts.md).
+    pub(crate) fn log(
+        entry: &LogEntry,
+        result_raw: Option<&RawResult>,
+        session: Option<&Session>,
+    ) -> Self {
         Self {
             class: Class::Log,
             kind: payload_kind(&entry.payload),
             seq: Some(entry.seq),
-            data: raw(&EntryView::new(entry).with_result_raw(result_raw)),
+            data: raw(&EntryView::new(entry)
+                .with_result_raw(result_raw)
+                .with_artifacts(session)),
             render: None,
         }
     }

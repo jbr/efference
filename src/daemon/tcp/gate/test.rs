@@ -187,64 +187,44 @@ fn the_anonymous_surface_is_named() {
 }
 
 #[test]
-fn artifact_capabilities_are_anonymous_only_on_the_exact_get_routes() {
-    let token = "A".repeat(43);
-    let document = format!("/artifacts/{token}/");
-    let redirect = format!("/artifacts/{token}");
-    let runtime = format!("/artifacts/{token}/_efference/runtime.js");
-    let theme = format!("/artifacts/{token}/_efference/theme.css");
-    let cases = [
-        (Surface::Session, Method::Get, document.clone(), true),
-        (Surface::Session, Method::Get, redirect.clone(), true),
-        (Surface::Session, Method::Get, runtime.clone(), true),
-        (Surface::Session, Method::Get, theme.clone(), true),
-        (Surface::Host, Method::Get, document.clone(), true),
-        (Surface::Host, Method::Get, redirect.clone(), true),
-        (Surface::Host, Method::Get, runtime.clone(), true),
-        (Surface::Host, Method::Get, theme, true),
+fn artifact_routes_are_anonymous_only_on_their_exact_get_shapes() {
+    let document = format!("/artifacts/brisk-otter/12/0/3/{}", "A".repeat(43));
+    let runtime = "/artifacts/_efference/runtime.js".to_string();
+    let theme = "/artifacts/_efference/theme.css".to_string();
+    let mut cases = Vec::new();
+    for surface in [Surface::Session, Surface::Host] {
+        for path in [&document, &runtime, &theme] {
+            cases.push((surface, Method::Get, path.clone(), true));
+        }
+    }
+    cases.extend([
+        (Surface::Session, Method::Post, document.clone(), false),
         (
             Surface::Session,
-            Method::Post,
-            format!("/artifacts/{token}/"),
+            Method::Get,
+            format!("/artifacts/brisk-otter/12/0/3/{}", "A".repeat(42)),
             false,
         ),
         (
             Surface::Session,
             Method::Get,
-            "/artifacts/short/".to_string(),
+            "/artifacts/_efference/private.js".to_string(),
             false,
         ),
+        (Surface::Session, Method::Get, format!("{runtime}/"), false),
         (
-            Surface::Session,
+            Surface::Host,
             Method::Get,
-            format!("/artifacts/{token}/_efference/private.js"),
-            false,
-        ),
-        (
-            Surface::Session,
-            Method::Get,
-            format!("/artifacts/{token}/_efference/runtime.js/"),
+            format!("/sessions/brisk-otter{document}"),
             false,
         ),
         (
             Surface::Host,
             Method::Get,
-            format!("/sessions/work/artifacts/{token}/"),
+            format!("/sessions/brisk-otter{runtime}"),
             false,
         ),
-        (
-            Surface::Host,
-            Method::Get,
-            format!("/sessions/work{runtime}"),
-            false,
-        ),
-        (
-            Surface::Host,
-            Method::Get,
-            format!("/sessions/work/artifacts/{token}/_efference/private.js"),
-            false,
-        ),
-    ];
+    ]);
     for (surface, method, path, free) in cases {
         assert_eq!(
             surface.anonymous(method, &path),

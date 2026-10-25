@@ -146,7 +146,11 @@ fn an_artifact_url_reprojects_only_its_committed_assistant_entry() {
     let before = transcript.counts[0];
     let target_end = before + transcript.counts[1];
 
-    let coordinate = crate::tui::artifacts::candidates(&log[1])[0];
+    let coordinate = crate::tui::artifacts::Coordinate {
+        seq: 7,
+        text_block: 0,
+        fence: 0,
+    };
     assert!(transcript.set_artifact_url(
         &log,
         coordinate,

@@ -149,6 +149,13 @@ pub struct Session {
     /// binds, never to a session (docs/web-client.md) — and read by the push
     /// sender: a notification opens this path (docs/web-push.md).
     web_path: std::sync::OnceLock<String>,
+    /// The key the session's artifact links are signed under (docs/artifacts.md):
+    /// random per session, so the links stop verifying when the session is gone and a
+    /// resumed session issues new ones.
+    artifact_key: [u8; artifacts::KEY_BYTES],
+    /// The artifact-only loopback listener's origin, set once by the host's adopt;
+    /// unset for a session outside a host.
+    artifact_origin: std::sync::OnceLock<String>,
     /// The provider's cache lifetime, set at boot only when the model has a prompt
     /// cache; the `cold` topic reads it (`daemon/cold.rs`).
     cache_ttl: std::sync::OnceLock<Duration>,
@@ -489,6 +496,28 @@ impl Session {
         let _ = self.web_path.set(path);
     }
 
+    /// The session's id, the storage directory's name; `None` in tests and offline
+    /// sessions.
+    pub(crate) fn id(&self) -> Option<&str> {
+        self.id.as_deref()
+    }
+
+    /// The key this session's artifact links are signed under (docs/artifacts.md).
+    pub(crate) fn artifact_key(&self) -> &[u8; artifacts::KEY_BYTES] {
+        &self.artifact_key
+    }
+
+    /// Name the artifact-only listener's origin. Called once, by the host's adopt.
+    pub(crate) fn set_artifact_origin(&self, origin: String) {
+        let _ = self.artifact_origin.set(origin);
+    }
+
+    /// The origin of the listener that serves this session's artifacts to a local
+    /// browser, when a host started one.
+    pub(crate) fn artifact_origin(&self) -> Option<&str> {
+        self.artifact_origin.get().map(String::as_str)
+    }
+
     /// The path a push notification opens for this session (docs/web-push.md):
     /// the web path the client addresses it by, `/` before a host has named it.
     pub fn web_path(&self) -> &str {
@@ -637,11 +666,12 @@ mod stall;
 pub(crate) mod errors;
 // The file viewer's read surface (docs/web-bind.md), mounted on the TCP spawn only.
 pub(crate) mod files;
+// Fenced HTML artifacts' signed links and routes (docs/artifacts.md).
+pub(crate) mod artifacts;
 // The control-stream frame envelope (docs/control-api.md). `dead_code` covers
 // `Frame::with_render` and `Frame::state`, which the emitter does not reach:
 // nothing annotates a frame with a render yet, and the state path builds from
 // pre-serialized topic JSON (`Frame::state_raw`).
-pub(crate) mod artifacts;
 #[allow(dead_code)]
 mod frames;
 mod handler;

@@ -7,6 +7,7 @@ use std::path::Path;
 use trillium::KnownHeaderName;
 
 mod archived;
+mod artifacts;
 mod attention;
 mod boot_resume;
 mod control;

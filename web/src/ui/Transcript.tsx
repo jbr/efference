@@ -305,7 +305,10 @@ function Leaf({
     // Thinking leaves are TranscriptItems' own (they fold by level); what
     // reaches here is the step's prose.
     const view = assistantView(p.Assistant);
-    if (artifactEnabled && p.Assistant.excluded === undefined) {
+    // An entry with artifacts renders block by block: the server numbers a
+    // block's fences on its own, and its links name the block (docs/artifacts.md).
+    const links = p.Assistant.artifacts;
+    if (artifactEnabled && links !== undefined && links.length > 0) {
       return (
         <Entry label={null}>
           {view.text.map((block, textBlock) => {
@@ -313,9 +316,7 @@ function Leaf({
             if (source === "") return null;
             return (
               <div className="assistant-text-block" key={textBlock}>
-                <Markdown artifact={{ seq: entry.seq, textBlock }}>
-                  {source}
-                </Markdown>
+                <Markdown artifacts={{ textBlock, links }}>{source}</Markdown>
               </div>
             );
           })}

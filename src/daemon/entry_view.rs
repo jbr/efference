@@ -17,7 +17,10 @@
 //!   `content_elided: {kept_bytes, total_bytes}`, so a client reads "content, cut at
 //!   N of M bytes" rather than inferring it from a length.
 //!
-//! And one addition: a result's view carries `selection: {total_lines, kept_lines}`
+//! And two additions. A committed assistant entry's view carries `artifacts`, the
+//! signed links of its `html-artifact` fences (`artifacts.rs`, docs/artifacts.md),
+//! when the caller names the session that signs them ([`EntryView::with_artifacts`]).
+//! A result's view carries `selection: {total_lines, kept_lines}`
 //! — the line arithmetic of the verdict against the whole `content`, computed here
 //! from the same [`selection`] the wire and the TUI render through, so a client
 //! holding only the truncated prefix still states the count the model's view had.
@@ -72,6 +75,9 @@ pub(crate) struct EntryView<'a> {
     /// The bytes of the result a [`Payload::ResultVerdict`] names, when the caller
     /// resolved them — the one thing the verdict entry does not carry itself.
     result_raw: Option<&'a RawResult>,
+    /// The session whose key signs the entry's artifact links, when the caller is
+    /// serving one; `None` leaves them out.
+    session: Option<&'a Session>,
 }
 
 impl<'a> EntryView<'a> {
@@ -82,6 +88,7 @@ impl<'a> EntryView<'a> {
             entry,
             elide_text: true,
             result_raw: None,
+            session: None,
         }
     }
 
@@ -93,6 +100,7 @@ impl<'a> EntryView<'a> {
             entry,
             elide_text: false,
             result_raw: None,
+            session: None,
         }
     }
 
@@ -102,6 +110,13 @@ impl<'a> EntryView<'a> {
     /// and `None` leaves the view as the log alone describes it.
     pub(crate) fn with_result_raw(mut self, raw: Option<&'a RawResult>) -> Self {
         self.result_raw = raw;
+        self
+    }
+
+    /// Carry the entry's artifact links, signed by `session` (docs/artifacts.md):
+    /// derived on every read, as `selection` is, so the log stays the only record.
+    pub(crate) fn with_artifacts(mut self, session: Option<&'a Session>) -> Self {
+        self.session = session;
         self
     }
 }
@@ -121,18 +136,28 @@ impl Serialize for EntryView<'_> {
         if let Some(source) = &entry.source {
             s.serialize_field("source", source)?;
         }
+        let links = self
+            .session
+            .map(|session| super::artifacts::links(session, entry))
+            .unwrap_or_default();
         s.serialize_field(
             "payload",
-            &PayloadView(&entry.payload, self.elide_text, self.result_raw),
+            &PayloadView(&entry.payload, self.elide_text, self.result_raw, &links),
         )?;
         s.end()
     }
 }
 
 /// Delegates every variant to the derived serialization except `ToolResult`, the one
-/// place a [`ResultImage`] and an oversized `content` live, and `ResultVerdict`, whose
-/// line counts come from the result it names.
-struct PayloadView<'a>(&'a Payload, bool, Option<&'a RawResult>);
+/// place a [`ResultImage`] and an oversized `content` live, `ResultVerdict`, whose
+/// line counts come from the result it names, and an `Assistant` entry with artifact
+/// links.
+struct PayloadView<'a>(
+    &'a Payload,
+    bool,
+    Option<&'a RawResult>,
+    &'a [super::artifacts::Link],
+);
 
 impl Serialize for PayloadView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -163,6 +188,18 @@ impl Serialize for PayloadView<'_> {
                 if let Some(lines) = lines {
                     s.serialize_field("selection", &lines)?;
                 }
+                s.end()
+            }
+            // `output` and `excluded` as the derived form writes them, then the links.
+            Payload::Assistant { output, excluded } if !self.3.is_empty() => {
+                let fields = 2 + usize::from(excluded.is_some());
+                let mut s =
+                    serializer.serialize_struct_variant("Payload", 1, "Assistant", fields)?;
+                s.serialize_field("output", output)?;
+                if let Some(excluded) = excluded {
+                    s.serialize_field("excluded", excluded)?;
+                }
+                s.serialize_field("artifacts", self.3)?;
                 s.end()
             }
             other => other.serialize(serializer),
