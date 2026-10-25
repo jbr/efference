@@ -20,6 +20,18 @@ export interface SessionsHandle {
   close(): void;
 }
 
+interface SessionsReader {
+  onSessions: (sessions: SessionEntry[]) => void;
+  onError?: (error: unknown) => void;
+}
+
+// One stream serves every reader: the switcher's tabs, the overview list, and a
+// session view's own row all read the same whole listing, and a reader per call
+// would carry the same frames twice. The host sends the listing on connect, so
+// a reader that joins mid-stream is served at once.
+const readers = new Set<SessionsReader>();
+let following: (() => void) | null = null;
+
 /**
  * Subscribe to the listing, calling `onSessions` with each whole value and
  * reconnecting with a capped backoff. `onError` hears a dropped connection; the
@@ -30,6 +42,22 @@ export function openSessions(
   onSessions: (sessions: SessionEntry[]) => void,
   onError?: (error: unknown) => void,
 ): SessionsHandle {
+  const reader: SessionsReader = { onSessions, onError };
+  readers.add(reader);
+  following ??= followSessions();
+  return {
+    close() {
+      readers.delete(reader);
+      if (readers.size > 0) return;
+      // The stream stops with the last reader; the next one starts it again.
+      following?.();
+      following = null;
+    },
+  };
+}
+
+/** The stream itself, from the first reader to the last. Answers its stop. */
+function followSessions(): () => void {
   let closed = false;
   let controller = new AbortController();
   let attempt = 0;
@@ -47,12 +75,13 @@ export function openSessions(
         }
         attempt = 0;
         for await (const data of sseData(response.body)) {
-          onSessions(JSON.parse(data) as SessionEntry[]);
+          const listing = JSON.parse(data) as SessionEntry[];
+          for (const reader of readers) reader.onSessions(listing);
         }
         throw new Error("sessions: stream ended");
       } catch (error) {
         if (closed) return;
-        onError?.(error);
+        for (const reader of readers) reader.onError?.(error);
         attempt += 1;
         await new Promise((resolve) =>
           setTimeout(resolve, Math.min(500 * 2 ** attempt, 15_000)),
@@ -62,11 +91,9 @@ export function openSessions(
   }
 
   void run();
-  return {
-    close() {
-      closed = true;
-      controller.abort();
-    },
+  return () => {
+    closed = true;
+    controller.abort();
   };
 }
 

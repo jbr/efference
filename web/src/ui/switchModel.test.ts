@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { InferenceIdentity, ModelSelection } from "../api/types.ts";
+import type {
+  InferenceIdentity,
+  ModelSelection,
+  SessionIdentity,
+} from "../api/types.ts";
 import {
   keeping,
+  liveTarget,
   recordedFromSelections,
   switchFields,
   triageSeparate,
@@ -201,5 +206,28 @@ describe("what the triage row shows", () => {
     };
     expect(triageValue(chosen, shared)).toBe("deepseek/deepseek-flash");
     expect(triageSeparate(chosen, shared)).toBe(true);
+  });
+});
+
+describe("the root a switch resumes at", () => {
+  const identity: SessionIdentity = {
+    id: "still-kestrel",
+    model: "opus",
+    cwd: "/project/.efference/worktrees/still-kestrel",
+  };
+
+  it("names the root the host serves the session under, not where it runs", () => {
+    // The identity's `cwd` is the working directory; a resume naming it answers
+    // `state_mismatch` from the host, which is how a switch silently failed.
+    const target = liveTarget("still-kestrel", "/project", identity, null, 10);
+    expect(target.cwd).toBe("/project");
+    expect(target.live).toBe(true);
+    expect(target.recorded).toBe(null);
+  });
+
+  it("has no root to name when its listing row is not read yet", () => {
+    expect(liveTarget("still-kestrel", null, identity, null, null).cwd).toBe(
+      null,
+    );
   });
 });

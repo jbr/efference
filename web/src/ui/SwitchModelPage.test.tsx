@@ -28,11 +28,15 @@ vi.mock("../api/http.ts", () => ({
   resumeSession: vi.fn(),
 }));
 
+// The root the host serves this session under, which a resume names: not the
+// identity's `cwd`, which is where the session runs.
+const project = "/Users/jbr/code/efference";
+
 const identity: SessionIdentity = {
   id: "still-kestrel",
   title: "Smoke-testing worktrees",
   model: "opus",
-  cwd: "/Users/jbr/code/efference",
+  cwd: "/Users/jbr/code/efference/.efference/worktrees/still-kestrel",
   inference: {
     main: { connection: "anthropic", provider: "anthropic", model: "opus" },
     spotter: { connection: "anthropic", provider: "anthropic", model: "haiku" },
@@ -49,7 +53,7 @@ const identity: SessionIdentity = {
 // about the roles, and the single-row read says all of it.
 const listing: ArchivedSession = {
   id: identity.id,
-  cwd: identity.cwd,
+  cwd: project,
   title: identity.title,
   state: "archived",
 };
@@ -67,7 +71,7 @@ const dormant: DormantSession = {
 };
 
 const live = (over: Partial<SwitchTarget> = {}): SwitchTarget => ({
-  ...liveTarget(identity.id, identity, null, 76_200),
+  ...liveTarget(identity.id, project, identity, null, 76_200),
   ...over,
 });
 
@@ -100,6 +104,7 @@ async function render(
     target: live(),
     onClose: vi.fn(),
     onSwitched: vi.fn(),
+    onRestarting: vi.fn(),
     ...over,
   };
   await act(async () => {
@@ -129,10 +134,14 @@ test("a chosen model switches by archiving and then resuming", async () => {
   await act(async () => switchButton().click());
 
   expect(archiveSession).toHaveBeenCalledWith(identity.id);
-  expect(resumeSession).toHaveBeenCalledWith(identity.id, identity.cwd, {
+  expect(resumeSession).toHaveBeenCalledWith(identity.id, project, {
     connection: "openrouter",
     model: "gemini",
   });
+  expect(props.onRestarting).toHaveBeenCalledWith(true);
+  expect(
+    vi.mocked(props.onRestarting!).mock.invocationCallOrder[0],
+  ).toBeLessThan(vi.mocked(archiveSession).mock.invocationCallOrder[0]);
   const order = vi.mocked(archiveSession).mock.invocationCallOrder[0];
   expect(vi.mocked(resumeSession).mock.invocationCallOrder[0]).toBeGreaterThan(
     order,
@@ -155,6 +164,7 @@ test("a failed archive stays on the page and resumes nothing", async () => {
   expect(host.querySelector('[role="alert"]')?.textContent).toContain(
     "Switching still-kestrel",
   );
+  expect(props.onRestarting).toHaveBeenLastCalledWith(false);
 });
 
 test("a cold session says the cache is already gone", async () => {
@@ -191,7 +201,7 @@ test("a dormant session resumes on the chosen models without an archive", async 
   await act(async () => switchButton().click());
 
   expect(archiveSession).not.toHaveBeenCalled();
-  expect(resumeSession).toHaveBeenCalledWith(identity.id, identity.cwd, {
+  expect(resumeSession).toHaveBeenCalledWith(identity.id, project, {
     connection: "openrouter",
     model: "gemini",
   });
@@ -212,7 +222,7 @@ test("a session whose log records no roles still offers every row", async () => 
   });
   expect(host.textContent).toContain("Choose a model");
   await act(async () => switchButton().click());
-  expect(resumeSession).toHaveBeenCalledWith(identity.id, identity.cwd, {
+  expect(resumeSession).toHaveBeenCalledWith(identity.id, project, {
     connection: "openrouter",
     model: "gemini",
   });

@@ -40,6 +40,7 @@ import { TopBar } from "./TopBar.tsx";
 import { Transcript } from "./Transcript.tsx";
 import { SwitchModelPage } from "./SwitchModelPage.tsx";
 import { liveTarget } from "./switchModel.ts";
+import { useLiveSessions } from "./liveSessions.ts";
 import { TaskStrip } from "./TaskStrip.tsx";
 
 /** One request to show a file: what to show, which call asked (the anchor's
@@ -66,6 +67,23 @@ export function SessionView() {
   // Read up here with the other hooks: the view returns early for login and for a
   // session still starting, and the switch page is a query stage on this URL.
   const search = useSearch();
+  // The model switch (ui/SwitchModelPage.tsx) rides the session's own URL as a
+  // query stage, so it is a client-side move: the view behind it stays mounted.
+  const switchingModel = new URLSearchParams(search).get("switch") === "model";
+  const ownId = session.topics.session_identity?.id ?? sessionId();
+  // A switch restarts the session — the archive closes its log and the resume
+  // claims the id again — so the view's read 404s until the resume is in. That
+  // is the gap, not the end: this holds the view on the session across it and
+  // clears once the session reads again, as starting until the host has it.
+  const [restarting, setRestarting] = useState(false);
+  // A resume names the root the host serves the session under, which the
+  // identity topic does not carry: its `cwd` is the working directory.
+  const live = useLiveSessions();
+  const project = live?.find((row) => row.id === ownId)?.cwd ?? null;
+  // Adjusted during render, as a start failure is below: the resumed session's
+  // own `starting` topic — the host inserts it before it answers the resume — is
+  // what says the restart is under way and the view is readable again.
+  if (restarting && session.topics.starting != null) setRestarting(false);
   useDocumentTitle(
     sessionDocumentTitle(
       sessionName(session.topics.session_identity, sessionId()),
@@ -101,10 +119,16 @@ export function SessionView() {
   const follow = successorHref(session.topics.session_identity, sessionHref);
   useEffect(() => {
     if (follow !== null) navigate(follow, "replace");
-    else if (session.connection === "missing" && apiBase() !== "") {
+    else if (
+      session.connection === "missing" &&
+      !switchingModel &&
+      !restarting &&
+      apiBase() !== ""
+    ) {
       navigate("/", "replace");
     }
-  }, [follow, session.connection]);
+  }, [follow, switchingModel, restarting, session.connection]);
+
   // The gated call's slot in the transcript, where the gate's decision
   // renders (ui/Gate.tsx); null until that call is on screen.
   const [gateSlot, setGateSlot] = useState<HTMLDivElement | null>(null);
@@ -333,10 +357,6 @@ export function SessionView() {
 
   const gate = session.topics.gate;
   const processes = session.topics.processes ?? [];
-  // The model switch (ui/SwitchModelPage.tsx) rides the session's own URL as a
-  // query stage, so it is a client-side move: the view behind it stays mounted.
-  const switchingModel = new URLSearchParams(search).get("switch") === "model";
-  const ownId = session.topics.session_identity?.id ?? sessionId();
   return (
     <div
       className={
@@ -477,12 +497,22 @@ export function SessionView() {
           <SwitchModelPage
             target={liveTarget(
               ownId,
+              project,
               session.topics.session_identity ?? null,
               session.topics.cold ?? null,
               session.topics.usage?.context?.used ?? null,
             )}
-            onClose={() => navigate(sessionHref(ownId), "replace")}
-            onSwitched={() => navigate(sessionHref(ownId), "replace")}
+            onRestarting={setRestarting}
+            onClose={() => {
+              setRestarting(false);
+              navigate(sessionHref(ownId), "replace");
+            }}
+            onSwitched={() => {
+              navigate(sessionHref(ownId), "replace");
+              // The archive dropped the connection; the resumed session's log
+              // is what reports the restart's progress from here.
+              connector.retry();
+            }}
           />
         </div>
       )}

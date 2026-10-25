@@ -23,9 +23,8 @@ import {
 import { HOVER_OPEN_DELAY_MS, HOVER_CLOSE_DELAY_MS } from "./HoverPopup.tsx";
 import { apiBase, sessionHref, sessionId } from "../api/base.ts";
 import { prefetchStore } from "../session/registry.ts";
-import { lastListing, rememberListing } from "../session/listing.ts";
-import { archiveSession, type SessionEntry } from "../api/http.ts";
-import { openSessionCard, openSessions } from "../api/sessions.ts";
+import { archiveSession } from "../api/http.ts";
+import { openSessionCard } from "../api/sessions.ts";
 import type { StateSnapshot } from "../api/types.ts";
 import {
   type CardModel,
@@ -42,26 +41,10 @@ import {
 } from "./switcherOrder.ts";
 import { navigate } from "./route.ts";
 import { HoverCard } from "./SessionHoverCard.tsx";
+import { useLiveSessions } from "./liveSessions.ts";
 import { useKeepOnScreen } from "./useKeepOnScreen.ts";
 import { useSwitcherFit } from "./useSwitcherFit.ts";
 import "./SessionSwitcher.css";
-
-/** The host's live sessions, followed; `null` until the first listing, and
- * always `null` where the page has no host behind it. */
-function useLiveSessions(): SessionEntry[] | null {
-  const [sessions, setSessions] = useState<SessionEntry[] | null>(
-    lastListing(),
-  );
-  useEffect(() => {
-    if (apiBase() === "") return;
-    const handle = openSessions((listing) => {
-      rememberListing(listing);
-      setSessions(listing);
-    });
-    return () => handle.close();
-  }, []);
-  return sessions;
-}
 
 interface Feed {
   state: StateSnapshot;

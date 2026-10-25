@@ -38,12 +38,17 @@ export function SwitchModelPage({
   target,
   onClose,
   onSwitched,
+  onRestarting,
   initialDraft = keeping,
 }: {
   target: SwitchTarget;
   onClose: () => void;
   /** The restart was asked for: the client takes over from here. */
   onSwitched: () => void;
+  /** A restart is under way, and again when one fails: the view it opened over
+   * is unreadable until the resume claims the session, and must say so rather
+   * than treat the gap as a session that ended. */
+  onRestarting?: (restarting: boolean) => void;
   /** The page opens with nothing changed; the gallery and the tests render it
    * with a choice already made. */
   initialDraft?: SwitchDraft;
@@ -97,6 +102,7 @@ export function SwitchModelPage({
     pending.current = true;
     setBusy(true);
     setError(null);
+    onRestarting?.(true);
     try {
       // Archive first: a resume is what reads a switch, and a running session is
       // not resumed. The host answers the archive once teardown has run, so the
@@ -106,6 +112,7 @@ export function SwitchModelPage({
       onSwitched();
     } catch (failure) {
       setError(`Switching ${id}: ${String(failure)}`);
+      onRestarting?.(false);
     } finally {
       pending.current = false;
       setBusy(false);

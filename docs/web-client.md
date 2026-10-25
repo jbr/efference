@@ -387,6 +387,30 @@ flow. Modified clicks keep native link behavior. A page without a list can pass
 a null home URL to render a non-link wordmark. Caller refs attach to the actual
 header so overview docking still measures its rendered height.
 
+## Switching a session's models
+
+The switch page (`ui/SwitchModelPage.tsx`) is a resume patch in the client's words: a
+live session is archived and then resumed on the models chosen, a dormant one only resumed
+([resumption.md](resumption.md)). It opens as a query stage on the session's own URL
+(`?switch=model`), so the view behind it stays mounted, and from an archived row as
+`?switch=model&id=<id>`, which only resumes.
+
+Two details are the client's, not the form's:
+
+- **Which root the patch names.** The resume names the root the host serves the session
+  under, which is the listing row's `cwd` (`session/listing.ts`), not the identity topic's
+  — that one is the working directory the session runs in, its own worktree included. A
+  patch naming the working directory answers `409 state_mismatch` and leaves the session
+  archived, so the view of it goes 404 and the client reads that as a session that ended.
+  `ui/liveSessions.ts` is the listing subscription both the switcher's tabs and a session
+  view read for their own row; `api/sessions.ts` serves every reader from one stream.
+- **Standing still across the restart.** Archiving closes the log, and the resume claims
+  the id again only after that, so the view behind the page reads a 404 in between. It is
+  the gap, not the end: while the page is up, and until the resumed log's `starting` topic
+  arrives (`session/store.ts`), `SessionView` does not take a 404 as its cue to go home. The
+  starting session's own status line then carries the restart's progress, and the
+  post-start reattach brings the view back from its cursor.
+
 ## The new-session form
 
 The overview's **New session** and workspace **+** open full-page location,

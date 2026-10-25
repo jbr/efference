@@ -9,11 +9,15 @@ import { Specimen } from "./Specimens.tsx";
 // choosing a model in the running app adds those. The model picker is left out
 // here because it reads the catalog, which a gallery has no host for.
 
+// The root the host serves the session under; its `cwd` is the worktree it runs
+// in, as a session started in one has.
+const project = "/Users/jbr/code/efference";
+
 const identity: SessionIdentity = {
   id: "still-kestrel",
   title: "Smoke-testing worktrees",
   model: "deepseek-flash",
-  cwd: "/Users/jbr/code/efference",
+  cwd: "/Users/jbr/code/efference/.efference/worktrees/still-kestrel",
   inference: {
     main: {
       connection: "deepseek",
@@ -65,7 +69,7 @@ export function SwitchModelSpecimens() {
       <Specimen name="switch model — as it opens, nothing changed">
         <div className="g-switch">
           <SwitchModelPage
-            target={liveTarget(identity.id, identity, cold, 76_200)}
+            target={liveTarget(identity.id, project, identity, cold, 76_200)}
             onClose={() => {}}
             onSwitched={() => {}}
           />
@@ -74,7 +78,7 @@ export function SwitchModelSpecimens() {
       <Specimen name="switch model — a model chosen">
         <div className="g-switch">
           <SwitchModelPage
-            target={liveTarget(identity.id, identity, cold, 76_200)}
+            target={liveTarget(identity.id, project, identity, cold, 76_200)}
             initialDraft={{
               ...keeping,
               main: { connection: "openrouter", model: "gemini-3-pro" },
@@ -87,7 +91,7 @@ export function SwitchModelSpecimens() {
       <Specimen name="switch model — state not read yet">
         <div className="g-switch">
           <SwitchModelPage
-            target={liveTarget(identity.id, null, null, null)}
+            target={liveTarget(identity.id, project, null, null, null)}
             onClose={() => {}}
             onSwitched={() => {}}
           />

@@ -54,16 +54,21 @@ export interface SwitchTarget {
   contextTokens: number | null;
 }
 
-/** A running session, as its own view knows it. */
+/** A running session, as its own view knows it. `project` is the root a resume
+ * names, read from the session's listing row; it is not the identity's `cwd`,
+ * which is the working directory a session runs in (its own worktree, say) and
+ * which no resume accepts — the host refuses a session it hosts under another
+ * root with `state_mismatch`. */
 export function liveTarget(
   id: string,
+  project: string | null,
   identity: SessionIdentity | null,
   cold: Cold | null,
   contextTokens: number | null,
 ): SwitchTarget {
   return {
     id,
-    cwd: identity?.cwd ?? null,
+    cwd: project,
     live: true,
     recorded: identity?.inference ?? null,
     cold,
