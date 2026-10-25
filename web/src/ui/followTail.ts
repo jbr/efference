@@ -5,6 +5,8 @@ const listeners = new Set<() => void>();
 let active = false;
 let navigationPending = false;
 let pressing = false;
+/** The installed transcript's pin scheduler, while one is installed. */
+let schedule: (() => void) | null = null;
 
 export const tailFollowing = () => following;
 export function subscribeTail(listener: () => void): () => void {
@@ -39,6 +41,16 @@ export function resumeTail() {
     top: document.documentElement.scrollHeight,
     behavior: "instant",
   });
+}
+
+/** An artifact frame's report that the operator scrolled up past its top
+ * (docs/artifacts.md). The wheel or touch went to the frame's own document, so
+ * the window sees only the scroll the browser chains to it, which alone reads as
+ * layout and would be pinned back; this is the departure that input carried. */
+export function departFromFrame() {
+  if (schedule === null || window.scrollY <= 0) return;
+  navigationPending = true;
+  schedule();
 }
 
 /** Nested scroll containers consume navigation before it reaches the window. */
@@ -89,6 +101,7 @@ export function installFollowTail(): () => void {
       previousY = window.scrollY;
     });
   };
+  schedule = schedulePin;
   const depart = (event: Event) => {
     if (
       !event.defaultPrevented &&
@@ -175,6 +188,7 @@ export function installFollowTail(): () => void {
     active = false;
     pressing = false;
     navigationPending = false;
+    schedule = null;
     observer.disconnect();
     if (scheduled !== null) cancelAnimationFrame(scheduled);
     window.removeEventListener("scroll", scroll);

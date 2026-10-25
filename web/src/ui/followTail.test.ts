@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
+  departFromFrame,
   installFollowTail,
   pinTail,
   resumeTail,
@@ -279,4 +280,21 @@ test("mouse presses also defer layout-driven pinning until release", () => {
   window.dispatchEvent(new Event("pointerup"));
   flush();
   expect(y).toBe(1800);
+});
+
+// A wheel or touch over an artifact goes to the frame's document; the window
+// sees only the scroll the browser chains to it once the frame can scroll no
+// further. Alone that reads as layout and is pinned back, so the frame reports
+// the departure itself.
+test("a scroll chained from a frame is pinned back unless the frame reports leaving", () => {
+  scroll(1100);
+  flush();
+  expect(y).toBe(1200);
+  expect(tailFollowing()).toBe(true);
+
+  departFromFrame();
+  scroll(1100);
+  flush();
+  expect(tailFollowing()).toBe(false);
+  expect(y).toBe(1100);
 });

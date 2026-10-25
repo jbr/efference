@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { departFromFrame } from "./followTail.ts";
 import type { ThemeName } from "./theme.ts";
 import "./Artifact.css";
 
@@ -6,6 +7,7 @@ const THEME_MESSAGE = "efference:artifact:theme";
 const colorScheme = (theme: ThemeName): "dark" | "light" =>
   theme === "lilac" ? "light" : "dark";
 const RESIZE_MESSAGE = "efference:artifact:resize";
+const SCROLLED_UP_MESSAGE = "efference:artifact:scrolled-up";
 const INITIAL_HEIGHT = 360;
 
 function pageTheme(): ThemeName {
@@ -50,16 +52,21 @@ export function Artifact({ source, url }: { source: string; url: string }) {
   }, []);
 
   // A sandboxed document has an opaque origin. Validate the sending window,
-  // not event.origin, then clamp the content measurement to the viewport.
+  // not event.origin. A size is clamped to the viewport; a scrolled-up report
+  // is the operator leaving the transcript's tail over the frame.
   useEffect(() => {
     const onMessage = (event: MessageEvent<unknown>) => {
       const target = frame.current?.contentWindow;
+      if (target === null || event.source !== target) return;
       if (
-        target === null ||
-        event.source !== target ||
-        !isResizeMessage(event.data)
-      )
+        typeof event.data === "object" &&
+        event.data !== null &&
+        (event.data as { type?: unknown }).type === SCROLLED_UP_MESSAGE
+      ) {
+        departFromFrame();
         return;
+      }
+      if (!isResizeMessage(event.data)) return;
       setHeight(
         Math.ceil(Math.min(event.data.height, window.innerHeight * 0.7)),
       );

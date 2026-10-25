@@ -5,6 +5,9 @@ as a live page in a sandboxed frame. Use one when a picture says it better than 
 a table: a chart of numbers you computed, a diagram of how parts connect, a small view the
 operator can interact with.
 
+**The info string is the whole switch.** Anything after `html-artifact` on the fence line —
+`html-artifact chart`, `html-artifact preview` — makes it an ordinary code block.
+
 ````html-artifact
 <h3>Build time by crate</h3>
 <svg id="chart" viewBox="0 0 480 112" style="max-width: 480px" role="img"
@@ -29,33 +32,60 @@ Write a fragment, as above, or a whole document; the server adds what a page nee
 
 ## What the operator sees
 
-- **Web client:** the page, with a Source toggle beside it. An `html` fence, and
-  `html-artifact` followed by anything else, stays source.
+- **Web client:** the page, with a Source toggle beside it.
 - **TUI:** your source as a code block, and a link that opens the page in a local browser.
-  Keep the source readable.
-- **Your context:** the source stays in the conversation for the rest of the session.
-  Keep an artifact small: draw with a few lines of script over an inline data array rather
-  than writing every element out.
+  Keep the source readable: semantic elements, a title on what you draw, a comment where
+  the script is not obvious.
+
+## What it costs you
+
+The source stays in the conversation and is sent again with every request for the rest of
+the session, so a richer artifact is context you pay for on every later turn. Aggregate
+before you draw — 30 bins rather than 300 points, unless the detail is the point — and
+draw with a few lines of script over an inline data array rather than writing every
+element out.
+
+## Checking your work
+
+You cannot see the page, and nothing comes back to you: no preview, no console, no word
+that a script threw or a resource was refused. A script that fails leaves part of the page
+empty. Write what you can predict — plain SVG and DOM calls over data you computed, labels
+that fit by construction — and when it matters that the operator sees what you meant, ask
+them what they see.
 
 ## The sandbox
 
-An artifact runs on an opaque origin with scripts allowed and little else:
+The page runs on an opaque origin with scripts allowed.
 
-- Inline `<style>` and `<script>` work. `eval`, `new Function` and string timers do not.
-- No network. `fetch`, and scripts, styles, images or fonts from anywhere else, are
-  refused, so a library from a CDN will not load: write the few lines you need. An image
-  works as a `data:` or `blob:` URL.
-- No storage: `localStorage`, `sessionStorage`, IndexedDB and cookies throw.
-- No form submission and no popups.
+You can use:
+
+- inline `<style>` and `<script>`, including `<script type="module">`;
+- the DOM: `createElement`, `innerHTML`, `insertAdjacentHTML`, template literals, event
+  listeners, `requestAnimationFrame`, `setTimeout` with a function;
+- SVG and `<canvas>`;
+- images as `data:` or `blob:` URLs.
+
+You cannot use:
+
+- the network: `fetch`, `import()` of a URL, and scripts, styles, images or fonts from
+  anywhere else. A library from a CDN does not load, and nothing tells you so: write the
+  few lines you need;
+- `eval`, `new Function`, or a timer given a string;
+- storage: `localStorage`, `sessionStorage`, IndexedDB and cookies throw;
+- form submission or popups.
 
 ## Size
 
-The frame is as wide as the transcript column, which runs from a phone's width to a
-desktop's: give an SVG a `viewBox` so it scales down, and a `max-width` at its drawn size
-so its text never scales up past reading size. It is as tall as your page, up to 70%
-of the window, past which the page scrolls inside the frame. Do not size `html` or `body`
-to `100%` or `100vh`: the frame takes its height from the page, so a page that takes its
-height from the frame cannot shrink to its content.
+- **Width** is the transcript column's, which runs from a phone's width to a desktop's.
+  Give an SVG a `viewBox` so it scales down, and a `max-width` at its drawn size so its
+  text never scales up past reading size. Anything outside the `viewBox` is clipped, so
+  leave room inside it for labels at the edges: above the tallest bar, past the longest.
+- **Height** follows your page. The frame opens at a default height, then takes the height
+  of the page's content as the page reports it, measured on the root element, so it grows
+  and shrinks with whatever is in normal flow. Past 70% of the window the page scrolls
+  inside the frame. Leave heights to the content: a fixed-height wrapper fixes the frame's
+  height with it, and `100%` or `100vh` on `html` or `body` takes the height from the
+  frame, so the page can never shrink to its content.
 
 ## The stylesheet every artifact gets
 
@@ -65,8 +95,8 @@ Before your content, the page receives the transcript's own stylesheet:
   transcript's prose styling. Write semantic elements and they fit in.
 - The page is transparent and edge to edge; the transcript shows through.
 - `button`, `input` and `select` use the interface font.
-- An `<svg>` that names no `fill` paints in the text colour; a shape that names its own
-  fill keeps it.
+- An `<svg>` that names no `fill` paints in the text colour, and every shape or group inside
+  it without a fill of its own inherits that; one that names a fill keeps it.
 - The operator's theme reaches the page live: After Dark is dark, Lilac is light, and the
   operator can switch while your page is open. Take every colour from the variables below,
   and never hardcode black or white text.
@@ -84,7 +114,8 @@ it, or the operator asks for something else.
   and dividers · `--border-strong` axes and table rules.
 - **Meaning:** `--accent` the one thing that needs attention · `--warn` a problem ·
   `--diff-add` positive, added · `--diff-del` negative, removed.
-- **Data:** `--series-1` to `--series-6`, a categorical palette at one lightness, so no
-  series looks louder than another; `--series-1` is the accent.
+- **Data:** `--series-1` to `--series-6`, six hues spaced around the colour wheel at one
+  lightness, so no series looks louder than another. In order: the accent (pink in After
+  Dark, heather in Lilac), violet, blue, teal, green, amber.
 - **Type:** `--font-prose` (Newsreader) for reading text · `--font-ui` (IBM Plex Sans) for
   labels and controls · `--font-mono` (IBM Plex Mono) for values, numbers and identifiers.

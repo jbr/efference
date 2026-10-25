@@ -1,4 +1,4 @@
-/* global window, document, matchMedia, requestAnimationFrame, ResizeObserver */
+/* global window, document, matchMedia, requestAnimationFrame, ResizeObserver, setTimeout, Element */
 
 (() => {
   const themeMessage = "efference:artifact:theme";
@@ -37,6 +37,56 @@
     root.dataset.theme = message.theme;
     root.style.colorScheme = message.colorScheme;
   });
+
+  // The parent's window never sees a wheel or touch over this frame — only the
+  // scroll the browser chains to it once this page can scroll no further, which
+  // alone reads there as layout, and the transcript would pin itself back to
+  // its tail (docs/artifacts.md). So report that moment: upward input that
+  // nothing here handled or scrolled. Checked after dispatch, so an artifact's
+  // own handlers have had their turn.
+  const scrolledUpMessage = "efference:artifact:scrolled-up";
+  const scrolledHere = (target) => {
+    for (
+      let element = target instanceof Element ? target : null;
+      element !== null && element !== root;
+      element = element.parentElement
+    ) {
+      if (element.scrollTop > 0) return true;
+    }
+    return (document.scrollingElement?.scrollTop ?? 0) > 0;
+  };
+  const reportUpward = (event) =>
+    setTimeout(() => {
+      if (!event.defaultPrevented && !scrolledHere(event.target)) {
+        window.parent.postMessage({ type: scrolledUpMessage }, "*");
+      }
+    });
+  window.addEventListener(
+    "wheel",
+    (event) => {
+      if (event.deltaY < 0 && !event.ctrlKey) reportUpward(event);
+    },
+    { passive: true },
+  );
+  let touchY = null;
+  window.addEventListener(
+    "touchstart",
+    (event) => {
+      touchY = event.touches[0]?.clientY ?? null;
+    },
+    { passive: true },
+  );
+  window.addEventListener(
+    "touchmove",
+    (event) => {
+      const next = event.touches[0]?.clientY ?? null;
+      if (next !== null && touchY !== null && next > touchY) {
+        reportUpward(event);
+      }
+      touchY = next;
+    },
+    { passive: true },
+  );
 
   let queued = false;
   const sendSize = () => {

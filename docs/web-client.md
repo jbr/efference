@@ -1244,7 +1244,10 @@ asynchronous layout growth. Pinning skips redundant scroll commands when the
 viewport already contacts the bottom and defers layout-driven scrolling during
 an active touch/pointer press, resuming on an animation frame after release so
 the target is not moved before click dispatch. Nested scroll containers and
-editing controls retain their own input behavior. `JumpToLatest` subscribes to
+editing controls retain their own input behavior. A wheel or touch over an artifact
+frame reaches the frame's document rather than the window, so the frame's runtime
+reports scrolling up past its top and that departs the tail as window input does
+([artifacts.md](artifacts.md)). `JumpToLatest` subscribes to
 the same intent rather
 than measuring bottom contact separately. **The preamble is not
 rendered**: the system prompt is audit data rather than conversation, and a new
