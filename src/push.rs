@@ -97,8 +97,8 @@ impl Message {
 
 /// The subscriptions this machine will send to.
 ///
-/// Machine-scoped for the same reason the TOTP burn ledger is user-scoped
-/// (`auth.rs`): the VAPID key is derived from the machine root, so every daemon
+/// Machine-scoped for the same reason the enrolled devices are user-scoped
+/// (`devices.rs`): the VAPID key is derived from the machine root, so every daemon
 /// under it can send to every subscription, and a per-repo store would hide a
 /// subscription from the session that ought to reach it. Writes are rare —
 /// subscribe, unsubscribe, and a prune when a push service reports the endpoint

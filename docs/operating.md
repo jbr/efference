@@ -22,8 +22,9 @@ or the island alike. Neither `--host` nor `--name` is accepted beside a subcomma
 TUI draws is not a flag: `theme`, `images` and `frame-cost` under `[tui]` in
 `~/.efference/config.toml`, read by whichever surface draws it ([tui.md](tui.md)).
 `efference --help` lists the subcommands a person types, `setup`, `auth`, `devices` (the
-browsers and scripts enrolled at the web bind: list, `add`, `revoke`;
-[web-bind.md](web-bind.md)) and `check`, beside the groups below.
+browsers and scripts enrolled at the web bind: list them and the browsers waiting to sign
+in, `approve` a waiting browser's code, `add`, `revoke`; [web-bind.md](web-bind.md)) and
+`check`, beside the groups below.
 
 - **`efference control <verb>`** — the calls that drive a *running* session. The agent
   verbs: `create` (a session in a working directory, this process's environment as its
@@ -54,7 +55,7 @@ browsers and scripts enrolled at the web bind: list, `add`, `revoke`;
   cannot drift apart ([tools.md](tools.md)).
 - **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
   `gallery`, `triage`, `spotter`, `spotter-log`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
-  web-bind bootstrap-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
+  web-bind sign-in-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
   cargo feature, which is in `default`; a release build passes `--no-default-features`.
 
 `--name` belongs to what names a session to attach or read: bare `efference` (attach),
@@ -330,8 +331,8 @@ no verb to learn for it. The owner is the
 foreground launcher, never the tab — reloads and stream reconnects cannot end it — and
 the terminal holds one prompt line: `o` opens the session again, `c` copies a link, `p`
 prints one, `q`, Esc, or Ctrl-C quits. Every link is minted when asked for, because a
-code works once and only for about a minute; the device token it trades for is what
-keeps a tab signed in, and each such sign-in is an enrolled device. Quitting erases the
+link's claim works once and only for a minute and a half; the device token it collects is
+what keeps a tab signed in, and each such sign-in is an enrolled device. Quitting erases the
 prompt and ends the island as the terminal island does. Each island lives in
 `~/.efference/islands/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a
 clean exit and leaves in place when it fails. The strip's leaving verb reads `quit` rather

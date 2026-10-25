@@ -57,7 +57,7 @@ impl Surface {
         // The web client's own shell, wherever it is served: its routes at its
         // base, the build's hashed assets, the launch images under `/splash`, and
         // the few public files whose names the build does not hash. None of it is
-        // session content, and the login view lives inside it (docs/web-client.md).
+        // session content, and the sign-in view lives inside it (docs/web-client.md).
         // The shell lists mirror the service worker's precache (`web/public/sw.js`),
         // which has to agree: a file in one and not the other is a shell that cannot
         // load itself. `/splash` is the exception: iOS reads the launch images only
@@ -69,14 +69,16 @@ impl Surface {
         {
             return true;
         }
-        // The credential mint. The login flow cannot present the credential it
-        // is there to obtain.
-        if method == Method::Post && path == "/auth/session" {
+        // A browser asking to sign in, and collecting its token once the host
+        // approves: the sign-in cannot present the credential it is there to obtain.
+        // Neither authorizes anything a peer can guess — the claim is 128 random bits,
+        // and approval is the socket's (docs/web-bind.md).
+        if method == Method::Post && matches!(path, "/pair" | "/pair/claim") {
             return true;
         }
         // The dev server's module graph, in the build that proxies one. The
         // shell is loaded before anything can authenticate, so these are the
-        // requests a credential would lock the login view out behind.
+        // requests a credential would lock the sign-in view out behind.
         #[cfg(feature = "dev-proxy")]
         if get
             && (path.starts_with(VITE_PREFIX)
@@ -183,9 +185,9 @@ pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handl
                 Credential::Refused => fail(
                     conn,
                     ErrorCode::Unauthorized,
-                    "no valid `Authorization: Bearer` device token; POST /auth/session \
-                     trades a current code for one, and `efference devices add` at the \
-                     host mints one for a script",
+                    "no valid `Authorization: Bearer` device token; a browser gets one by \
+                     signing in with a code `efference devices approve` takes at the host, \
+                     and `efference devices add` there mints one for a script",
                 ),
             }
         }
@@ -241,7 +243,7 @@ const SHELL_ASSETS: [&str; 8] = [
 
 /// Vite's own URLs, served only by the `dev-proxy` build, which proxies the
 /// whole module graph through the gate. Prefixes rather than files because the
-/// graph is generated. A page that cannot load these cannot render the login
+/// graph is generated. A page that cannot load these cannot render the sign-in
 /// view, so there would be nothing left to ask for a credential with.
 ///
 /// Vite's virtual modules — `/@vite/client`, `/@react-refresh`, `/@fs/…` — share

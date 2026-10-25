@@ -3,13 +3,12 @@
 //! One machine-scoped root secret lives in the secret store (docs/secrets.md) as the
 //! `root` item: minted from the OS random source the first time a bind needs it, read
 //! every boot after, and held only in memory. HKDF with per-purpose context strings
-//! derives everything else — the TOTP secret, the key device tokens are tagged under,
-//! the VAPID push-signing keypair (docs/web-push.md). Same root in, same credentials
-//! out, every boot: enrollments and signed-in devices survive restarts, and rotation —
-//! deleting the item, so the next bind mints another — revokes everything derived at
-//! once. Nobody supplies or sees the root. What is stored beside it is public: the
-//! enrolled devices' ids (`crate::devices`) and the burn ledger of accepted TOTP
-//! timesteps, which are counters, not secrets (docs/state-store.md).
+//! derives everything else — the key device tokens are tagged under, the VAPID
+//! push-signing keypair (docs/web-push.md). Same root in, same credentials out, every
+//! boot: signed-in devices survive restarts, and rotation — deleting the item, so the
+//! next bind mints another — revokes everything derived at once. Nobody supplies or
+//! sees the root. What is stored beside it is public: the enrolled devices' ids
+//! (`crate::devices`, docs/state-store.md).
 //!
 //! Everything here is pure credential arithmetic; which conns it gates — and which
 //! listener is exempt — is the daemon's wiring (docs/web-bind.md).
@@ -18,11 +17,8 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use hmac::digest::KeyInit;
 use hmac::{Hmac, Mac};
-use sha1::Sha1;
 use sha2::Sha256;
-use std::path::PathBuf;
 use std::sync::RwLock;
-use std::time::{Duration, Instant, SystemTime};
 
 use crate::devices::DeviceId;
 use crate::secrets::{SecretError, Secrets};
@@ -35,8 +31,7 @@ pub const ROOT_ITEM: &str = "root";
 
 /// What replacing the root does, in the words every message about it uses.
 pub const ROTATION_CONSEQUENCES: &str = "signs out every enrolled device, browsers and \
-    scripts alike, invalidates the authenticator enrollment, and drops every push \
-    subscription";
+    scripts alike, and drops every push subscription";
 
 /// The root could not be read. Absence is not this — an absent item is minted — so
 /// this is a store that answered with an error, where minting would silently be a
@@ -122,12 +117,6 @@ impl Root {
             .expand(context, &mut okm)
             .expect("okm length is far below the HKDF-SHA256 ceiling");
         okm
-    }
-
-    /// The TOTP secret — 20 bytes, the RFC 6238 SHA-1 native size, so the base32 in the
-    /// `otpauth://` URI round-trips through stock authenticator apps without padding.
-    pub fn totp_secret(&self) -> [u8; 20] {
-        self.derive(b"totp v1")
     }
 
     /// The key every device token is minted and verified under (docs/web-bind.md).
@@ -217,193 +206,4 @@ impl DeviceTokens {
             .expect("hmac accepts any key length")
             .chain_update(id)
     }
-}
-
-/// RFC 6238 parameters: 30 s step, six digits, HMAC-SHA1 — the tuple stock
-/// authenticator apps default to, which is what makes the `otpauth://` QR enrollment
-/// work with no custom client.
-pub const TOTP_STEP_SECS: u64 = 30;
-
-/// Accepted clock skew, in steps, on either side of now.
-pub const TOTP_SKEW: u64 = 1;
-
-/// The timestep a moment falls in.
-pub fn timestep(now: SystemTime) -> u64 {
-    unix_secs(now) / TOTP_STEP_SECS
-}
-
-/// The six-digit code for one timestep (RFC 4226 dynamic truncation over HMAC-SHA1).
-pub fn totp(secret: &[u8], timestep: u64) -> u32 {
-    let digest = Hmac::<Sha1>::new_from_slice(secret)
-        .expect("hmac accepts any key length")
-        .chain_update(timestep.to_be_bytes())
-        .finalize()
-        .into_bytes();
-    let offset = (digest[19] & 0xf) as usize;
-    let bin = u32::from_be_bytes([
-        digest[offset] & 0x7f,
-        digest[offset + 1],
-        digest[offset + 2],
-        digest[offset + 3],
-    ]);
-    bin % 1_000_000
-}
-
-/// A code as the six ASCII digits a person types or a link carries — leading zeros kept.
-pub fn format_code(code: u32) -> String {
-    format!("{code:06}")
-}
-
-/// Which timestep within ±[`TOTP_SKEW`] the presented code matches, if any. Returns the
-/// step rather than a bool because acceptance must burn it ([`BurnLedger`]) — the two
-/// halves of verification live apart so the ledger I/O never runs on a code that
-/// doesn't even match.
-pub fn matching_timestep(secret: &[u8], code: &str, now: SystemTime) -> Option<u64> {
-    if code.len() != 6 || !code.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let code: u32 = code.parse().ok()?;
-    let t = timestep(now);
-    (t.saturating_sub(TOTP_SKEW)..=t + TOTP_SKEW).find(|&step| totp(secret, step) == code)
-}
-
-/// The `otpauth://` URI a stock authenticator app enrolls from. Carries the secret
-/// itself, so it is a host-only surface: rendered as a terminal QR or fetched over the
-/// UDS, never served on the TCP listener (docs/web-bind.md).
-pub fn otpauth_uri(secret: &[u8], host: &str) -> String {
-    format!(
-        "otpauth://totp/efference:{host}?secret={}&issuer=efference&algorithm=SHA1&digits=6&period={TOTP_STEP_SECS}",
-        data_encoding::BASE32_NOPAD.encode(secret)
-    )
-}
-
-/// Burned steps older than this many steps behind a new burn are pruned: a code outside
-/// the skew window fails [`matching_timestep`] regardless of burn state, so old entries
-/// are dead weight, not protection.
-const RETAIN_STEPS: u64 = 16;
-
-/// The persisted record of accepted TOTP timesteps — what makes scrollback links and
-/// observed codes single-use. User-scoped, not per-session: every daemon under this
-/// user shares the derived TOTP secret, so they must share the burns too, or a code
-/// accepted by one daemon would replay against another. The steps are counters, not
-/// secrets; losing them re-opens at most the current skew window.
-pub struct BurnLedger {
-    path: PathBuf,
-}
-
-/// The ledger's half of the user state database ([`crate::state`],
-/// docs/state-store.md). The step is the primary key, so an insert that does
-/// nothing is how a replay is recognized.
-const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS totp_burns (
-    step INTEGER PRIMARY KEY
-);";
-
-impl BurnLedger {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
-
-    /// The real location: the user state database's `totp_burns` table. It is
-    /// user-scoped rather than beside a project's session base because a per-project
-    /// ledger would leave a cross-repo replay window, the TOTP secret being
-    /// machine-scoped.
-    pub fn user_scoped() -> Self {
-        Self::new(crate::state::user_scoped())
-    }
-
-    fn connect(&self) -> Result<rusqlite::Connection, crate::state::Error> {
-        crate::state::open(&self.path, SCHEMA)
-    }
-
-    /// Whether `step` has been accepted already. Best-effort, so an unreadable store
-    /// reads as nothing burned: a mint that races a burn can hand out a code that then
-    /// fails as a replay, which is the outcome [`Self::burn`] exists to allow anyway.
-    pub fn is_burned(&self, step: u64) -> bool {
-        self.connect().is_ok_and(|db| {
-            db.query_row(
-                "SELECT 1 FROM totp_burns WHERE step = ?1",
-                [step as i64],
-                |_| Ok(()),
-            )
-            .is_ok()
-        })
-    }
-
-    /// Check-and-burn one accepted step: `Ok(false)` if it was already burned (a
-    /// replay), `Ok(true)` if this call burned it. The insert *is* the check: a
-    /// primary-key conflict is the other daemon's burn, and nothing else can lose
-    /// that race, so concurrent daemons serialize inside the insert, with no lock
-    /// spanning a check and a write.
-    ///
-    /// An error is a step this daemon cannot record, and the caller rejects the code
-    /// rather than accept it twice — the fail-closed half of the same reasoning that
-    /// lets [`Self::is_burned`] read optimistically.
-    pub fn burn(&self, step: u64) -> Result<bool, crate::state::Error> {
-        let db = self.connect()?;
-        let burned = db.execute(
-            "INSERT OR IGNORE INTO totp_burns (step) VALUES (?1)",
-            [step as i64],
-        )? > 0;
-        if burned {
-            // Pruned against the step just accepted, and skipped on a replay so a
-            // burst of them cannot delete what the window still needs.
-            db.execute(
-                "DELETE FROM totp_burns WHERE step < ?1 - ?2",
-                rusqlite::params![step as i64, RETAIN_STEPS as i64],
-            )?;
-        }
-        Ok(burned)
-    }
-}
-
-/// First lockout after the free budget is spent; each further failure doubles it.
-const LOCKOUT_BASE: Duration = Duration::from_secs(30);
-
-/// Lockout ceiling.
-const LOCKOUT_MAX: Duration = Duration::from_secs(15 * 60);
-
-/// Consecutive failures tolerated before the first lockout.
-const LOCKOUT_FREE_FAILURES: u32 = 5;
-
-/// The hard rate limit on TOTP verification — six digits is ~20 bits, and this is what
-/// makes that arithmetic acceptable. Per-daemon and in-memory: N daemons give an
-/// attacker N× the budget, accepted at tailnet posture (docs/web-bind.md).
-#[derive(Default)]
-pub struct Lockout {
-    consecutive_failures: u32,
-    locked_until: Option<Instant>,
-}
-
-impl Lockout {
-    /// Time remaining in an active lockout, or `None` if attempts may proceed.
-    pub fn locked_for(&self, now: Instant) -> Option<Duration> {
-        self.locked_until
-            .and_then(|until| until.checked_duration_since(now))
-            .filter(|d| !d.is_zero())
-    }
-
-    /// Record a failed attempt. Failures past [`LOCKOUT_FREE_FAILURES`] lock out
-    /// verification for a doubling interval, capped at [`LOCKOUT_MAX`].
-    pub fn failure(&mut self, now: Instant) {
-        self.consecutive_failures += 1;
-        if self.consecutive_failures >= LOCKOUT_FREE_FAILURES {
-            let doublings = (self.consecutive_failures - LOCKOUT_FREE_FAILURES).min(16);
-            let lock = LOCKOUT_BASE
-                .saturating_mul(1u32 << doublings)
-                .min(LOCKOUT_MAX);
-            self.locked_until = Some(now + lock);
-        }
-    }
-
-    /// A successful verification clears the count and any active lockout.
-    pub fn success(&mut self) {
-        *self = Self::default();
-    }
-}
-
-/// Seconds since the Unix epoch; a pre-1970 clock reads as 0 rather than panicking.
-fn unix_secs(t: SystemTime) -> u64 {
-    t.duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }

@@ -44,7 +44,7 @@ export async function resolveEntry(): Promise<Entry> {
 }
 
 /** The binding, once known; `null` while the probe is out. `resolve` re-runs it
- * — what the login view calls once a credential exists, and what a list reload
+ * — what the sign-in view calls once a credential exists, and what a list reload
  * is.
  *
  * `base` is the page's current base, which navigation changes without a load

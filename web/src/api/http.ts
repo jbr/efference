@@ -346,12 +346,31 @@ export const subscribePush = (subscription: PushSubscriptionJSON) =>
 export const unsubscribePush = (endpoint: string) =>
   del<{ status: string }>("/v1/push/subscriptions", { endpoint });
 
-// Trade a TOTP code for a device token, which the caller keeps (api/bearer.ts,
-// docs/web-bind.md); `label` is what the host lists the device as. Outside /v1
-// and outside the base: auth is the *listener's* surface, so it is at the root
+/** What `POST /pair` answers the page that asked (docs/web-bind.md): the claim
+ * secret this page alone polls with, the short code it shows for the operator to
+ * approve at the host, and the seconds both live. */
+export interface SignInRequest {
+  claim: string;
+  code: string;
+  expires_in: number;
+}
+
+/** A claim's answer: the device token once the host approved, or word that it
+ * has not yet. A claim that names nothing — used, expired, displaced — is a
+ * `404` ApiError. */
+export type SignInClaim = { token: string } | { status: "pending" };
+
+// Ask to sign this browser in; `label` is what the host lists it as. Outside /v1
+// and outside the base: sign-in is the *listener's* surface, so it is at the root
 // under either binding, and one credential covers every session behind a host.
-export const mintSession = (code: string, label?: string) =>
-  requestAt<{ token: string }>("POST", "/auth/session", { code, label });
+export const requestSignIn = (label: string) =>
+  requestAt<SignInRequest>("POST", "/pair", { label });
+
+// Collect the token a sign-in was approved for, which the caller keeps
+// (api/bearer.ts). The label names the device when the claim is a link's, which
+// the host minted before this page could say what it is.
+export const claimSignIn = (claim: string, label: string) =>
+  requestAt<SignInClaim>("POST", "/pair/claim", { claim, label });
 
 /** One entry of the host's session listing (docs/web-client.md). The id is the
  * path segment a client joins its control base onto; the rest is what a list

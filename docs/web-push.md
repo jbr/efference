@@ -20,12 +20,12 @@ valid P-256 scalar (a uniform string exceeds the group order with probability ~2
 the loop is deterministic per root). Every daemon under one root derives the identical
 key with no coordination. Rotating the root rotates the key, which
 strands existing subscriptions until the page resubscribes on its next
-open — the same blast radius the device-token and TOTP family already has.
+open — the same blast radius the device tokens already have.
 
 ## The subscription store
 
 The `push_subscriptions` table of the user state database ([state-store.md](state-store.md),
-`src/push.rs`), machine-scoped for the same reason the burn ledger is user-scoped: the
+`src/push.rs`), machine-scoped for the same reason the device table is user-scoped: the
 key is the machine's, so every daemon can send to every subscription, and a per-repo
 store would hide a subscription from the session that ought to reach it. One row per
 subscription, keyed by its endpoint — what `PushSubscription.toJSON()` produced

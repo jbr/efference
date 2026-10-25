@@ -140,18 +140,23 @@ impl Kind {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Joined {
-    /// A current TOTP code traded at `POST /auth/session`.
+    /// A browser showed a short code, the operator approved it at the host
+    /// (`efference devices approve`), and the browser claimed it (`crate::sign_ins`).
     Code,
+    /// A browser opened a sign-in link minted at the host — the one the host prints,
+    /// `efference dev open`'s, an island's — and claimed it (`crate::sign_ins`).
+    Link,
     /// `efference devices add`, over the host's socket.
     Add,
 }
 
 impl Joined {
-    pub const ALL: [Self; 2] = [Self::Code, Self::Add];
+    pub const ALL: [Self; 3] = [Self::Code, Self::Link, Self::Add];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Code => "code",
+            Self::Link => "link",
             Self::Add => "add",
         }
     }
@@ -258,9 +263,9 @@ fn reorders(c: char) -> bool {
     )
 }
 
-/// The enrolled devices. User-scoped, like the burn ledger beside it: every daemon
-/// under the user derives the same token key, so every one must read the same rows,
-/// or a device revoked through one would still sign in at another.
+/// The enrolled devices. User-scoped, like the pending sign-ins beside them: every
+/// daemon under the user derives the same token key, so every one must read the same
+/// rows, or a device revoked through one would still sign in at another.
 pub struct Store {
     path: PathBuf,
 }

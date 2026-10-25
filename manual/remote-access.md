@@ -33,9 +33,9 @@ bind = "127.0.0.1:7878"
 
 Then start the host with `efference --host --open`. It prints a sign-in link and opens it in
 your browser; without `--open`, open the printed link yourself. The link works once, and
-only for about a minute.
-<!-- src: src/inference/host.rs::HostConfig; src/bin/efference/serve.rs::resolve_bind (--open); src/daemon/host.rs::serve_host (logs the link); src/daemon/tcp.rs::mint_link; src/auth.rs::TOTP_STEP_SECS, TOTP_SKEW, BurnLedger -->
-<!-- TODO: say how to get a fresh link from a host that has been running a while, once there is a non-dev way (today: `efference dev open`, a dev-feature verb). -->
+only for about a minute and a half. A host that has been running a while needs no new
+link: open its address, and approve the code the page shows ([Sign-in](#sign-in)).
+<!-- src: src/inference/host.rs::HostConfig; src/bin/efference/serve.rs::resolve_bind (--open); src/daemon/host.rs::serve_host (logs the link); src/daemon/tcp.rs::TcpAuth::mint_link; src/sign_ins.rs::Store::approved_link, TTL_SECS; web/src/ui/Login.tsx -->
 
 The port is yours to choose; there is no default. `--bind` on the command line overrides the
 table for one launch.
@@ -107,9 +107,9 @@ Tailscale's certificates expire; renew with `tailscale cert` again and restart t
 <!-- src: src/inference/host.rs::HostConfig, expand_home; src/bin/efference/serve.rs::resolve_bind (read once; TLS accepts any address); src/daemon/tcp.rs::bind; tailscale cert --help (1.104.1) -->
 
 Either way, `efference --host` prints an `https://…ts.net` sign-in link; open it on the other
-device within a minute. If the page answers 403, `public-url` does not match the name in
-the address bar.
-<!-- src: src/daemon/host.rs::serve_host; src/daemon/tcp/gate.rs::gate -->
+device within a minute and a half, or open the address there and approve the code the page
+shows. If the page answers 403, `public-url` does not match the name in the address bar.
+<!-- src: src/daemon/host.rs::serve_host; src/sign_ins.rs::TTL_SECS; src/daemon/tcp/gate.rs::gate -->
 
 ## How this works, precisely
 
@@ -150,16 +150,38 @@ nothing from other origins and not to be framed.
 
 ### Sign-in
 
-The printed link works once, within about a minute, and signs one browser in, with no
-expiry of its own. Each browser that signs in becomes an enrolled device with a token of
-its own. `efference devices` lists them: an id, the kind, how each joined, when, when it
-was last seen (recorded at most hourly), and a label naming the browser, such as "Safari
-on macOS". It asks the running host, so the host has to be up with its web address on.
-<!-- src: src/daemon/tcp.rs::mint_link, authenticate_code, TcpAuth::enroll; src/daemon/tcp/routes.rs::mint_session, list_devices, with_auth (no bind armed); src/devices.rs::Store, SEEN_INTERVAL_SECS; web/src/ui/deviceLabel.ts::deviceLabel; src/bin/efference/devices.rs::run, listing -->
+A browser signs in with a link or with a code.
+
+The link `efference --host` prints works once, within about a minute and a half, and signs
+one browser in. A browser island opens one for you.
+<!-- src: src/daemon/tcp.rs::TcpAuth::mint_link; src/sign_ins.rs::Store::approved_link, Store::claim, TTL_SECS; src/daemon/host.rs::serve_host (logs the link); src/bin/efference/island/browser.rs::Links::mint; web/src/ui/bootClaim.ts -->
+
+A browser that opens the host's address without a link shows a short code, like `KQ7-M4X`,
+for a minute and a half. At the host, run `efference devices approve` and type the code, or
+pass it: `efference devices approve KQ7-M4X`. Case and the dash do not matter. The command
+prints the name the browser gave and how long ago it asked, and the browser signs in within
+a second. A code that expires, or that was used already, lets nothing in; the page offers a
+new one.
+<!-- src: web/src/ui/Login.tsx::Login, POLL_MS; src/daemon/tcp/routes.rs::request_sign_in, claim_sign_in, approve_sign_in; src/sign_ins.rs::ShortCode::parse, Store::approve, TTL_SECS; src/bin/efference/devices.rs::DevicesCommand::Approve, ask_for_code -->
+
+Away from the host, ask an agent session to run `efference devices approve` with the code
+your new browser shows: the permission prompt shows the command with the code in it, and
+approving the prompt is your check that it is the right code. Approve only a code you read
+off a browser you are signing in. `efference devices` never shows a waiting browser's code,
+only its name and how long ago it asked, so nobody can approve one by picking it from a
+list.
+<!-- src: src/bin/efference/devices.rs::listing; src/daemon/tcp/routes.rs::list_pending; src/sign_ins.rs::Pending, Store::waiting -->
+
+Each browser that signs in becomes an enrolled device with a token of its own, with no
+expiry. `efference devices` lists them: an id, the kind, how each joined (`link`, `code`, or
+`add` for a program), when, when it was last seen (recorded at most hourly), and a label
+naming the browser, such as "Safari on macOS". It asks the running host, so the host has to
+be up with its web address on.
+<!-- src: src/daemon/tcp.rs::TcpAuth::enroll; src/daemon/tcp/routes.rs::list_devices, with_auth (no bind armed); src/devices.rs::Store, Joined, SEEN_INTERVAL_SECS; web/src/ui/deviceLabel.ts::deviceLabel; src/bin/efference/devices.rs::run, listing -->
 
 `efference devices revoke <id>` signs one device out: its token is refused from its next
 request on. The id is the one `efference devices` lists, or its first few characters. A
-browser signed out this way signs in again from a fresh link, as a new device.
+browser signed out this way signs in again, with a fresh link or a code, as a new device.
 <!-- src: src/bin/efference/devices.rs::matching; src/daemon/tcp/routes.rs::remove_device; src/devices.rs::Store::remove, Store::seen; src/daemon/tcp.rs::TcpAuth::credential -->
 
 A program that reaches the host over the network gets a token of its own from
@@ -168,19 +190,19 @@ it as `Authorization: Bearer <token>`, and `efference devices revoke` ends it li
 other device.
 <!-- src: src/bin/efference/devices.rs::DevicesCommand::Add; src/daemon/tcp/routes.rs::add_device; src/daemon/tcp.rs::TcpAuth::credential -->
 
-Every link and token derives from one secret the host keeps in your OS keychain, created
-the first time a host listens on TCP; the list of devices holds no secret. `efference auth
-rotate` replaces that secret and deletes every enrolled device, which signs out every
-browser and every program at once. `rotate` refuses while a local daemon is listening — it
-would keep serving the root the store no longer has — so stop the host, rotate, and start
-it again. One lost device needs only `efference devices revoke`.
-<!-- src: src/auth.rs::ROOT_ITEM, Root::load, Root::rotate, DeviceTokens; src/bin/efference/main.rs::rotate, local_daemon_is_listening (the refusal); src/daemon/tcp.rs::arm_with_state (keys derived once at start) -->
+Every token derives from one secret the host keeps in your OS keychain, created the first
+time a host listens on TCP; neither the list of devices nor the list of waiting sign-ins
+holds a secret. `efference auth rotate` replaces that secret and deletes every enrolled
+device and waiting sign-in, which signs out every browser and every program at once.
+`rotate` refuses while a local daemon is listening — it would keep serving the root the
+store no longer has — so stop the host, rotate, and start it again. One lost device needs
+only `efference devices revoke`.
+<!-- src: src/auth.rs::ROOT_ITEM, Root::load, Root::rotate, DeviceTokens; src/sign_ins.rs::SCHEMA (claim digests), Store::clear; src/bin/efference/main.rs::rotate, local_daemon_is_listening (the refusal); src/daemon/tcp.rs::arm_with_state (keys derived once at start) -->
 
 The browser keeps its sign-in where only pages at the host's own address can read it:
 other sites cannot, and neither can other servers you run on this machine at other
 ports.
 <!-- src: web/src/api/bearer.ts::BEARER_DB, bearer; web/src/api/http.ts::apiFetch; src/daemon/tcp.rs::TcpAuth::credential -->
-<!-- TODO: signing a browser in by approving it at the host, with no six-digit codes, is backlog/inbox/browser-sign-in-by-approval.md; this section describes the link sign-in until it lands. -->
 
 Other accounts on this machine can connect to a loopback port too. They still need to sign
 in, but do not give a host a web address on a machine you share with people you do not

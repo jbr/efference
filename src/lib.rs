@@ -45,6 +45,7 @@ pub mod remembered;
 pub mod secrets;
 pub mod session_ids;
 pub mod setup;
+pub mod sign_ins;
 pub mod spawn;
 pub mod spotter;
 pub mod state;

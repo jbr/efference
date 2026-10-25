@@ -20,7 +20,7 @@ pub(crate) enum DevCommand {
         #[arg(long)]
         embedded: bool,
     },
-    /// Mint a fresh bootstrap link against a running daemon's TCP bind and open it —
+    /// Mint a fresh sign-in link against a running daemon's TCP bind and open it —
     /// the re-auth path when at the host, and the answer to lost scrollback
     /// (docs/web-bind.md). The credential routes answer only on the Unix socket:
     /// possession of the host machine is the enrollment authority. Lives under `dev`

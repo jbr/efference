@@ -11,7 +11,7 @@ use super::files::Files;
 use super::host::host_routes;
 use super::http::control_routes;
 use super::tcp::{
-    SecurityHeaders, Surface, TcpAuth, enrollment_routes, frontend, gate, mint_routes,
+    SecurityHeaders, Surface, TcpAuth, enrollment_routes, frontend, gate, pair_routes,
 };
 use std::sync::Arc;
 use trillium_caching_headers::Etag;
@@ -21,12 +21,12 @@ use trillium_logger::{Logger, Target};
 pub enum Transport {
     /// The session's Unix socket: the operator's own process boundary. No gate, no
     /// browser hardening, no web client. The enrollment routes (`/auth/link`,
-    /// `/auth/otpauth`, `/auth/devices`) are mounted here and only here — possession
-    /// of the host machine is the enrollment authority (docs/web-bind.md); they answer
-    /// `404` with a sentence when no TCP bind is armed.
+    /// `/auth/pending`, `/auth/approve`, `/auth/devices`) are mounted here and only
+    /// here — possession of the host machine is the enrollment authority
+    /// (docs/web-bind.md); they answer `404` with a sentence when no TCP bind is armed.
     Socket { auth: Option<Arc<TcpAuth>> },
-    /// A TCP listener: the hardening + auth gate ahead of every route, the credential
-    /// mint, and the web client behind the routes (docs/web-bind.md).
+    /// A TCP listener: the hardening + auth gate ahead of every route, the sign-in
+    /// routes, and the web client behind the routes (docs/web-bind.md).
     Web { auth: Arc<TcpAuth> },
 }
 
@@ -95,7 +95,7 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         // so the validator's revalidation is the only reuse path.
         Etag::new(),
         socket_auth.map(enrollment_routes),
-        web_auth.map(mint_routes),
+        web_auth.map(pair_routes),
         files.is_some().then(control_routes),
         is_host.then(|| host_routes(web)),
         // The operator's read surface over the working directory (docs/web-bind.md),

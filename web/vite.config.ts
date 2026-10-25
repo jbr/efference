@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: {
       "/v1": "http://localhost:7878",
       "/auth": "http://localhost:7878",
+      "/pair": "http://localhost:7878",
     },
   },
 });

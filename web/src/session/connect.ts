@@ -2,8 +2,8 @@
 // a bounded catch-up read, then the one long-lived stream from the cursor —
 // `GET /log?tail=N`, then `GET /events?since=last_seq+1`. Reconnect inside the
 // stream reader replays by cursor; a 401 anywhere clears the held bearer
-// (api/bearer.ts) and parks the session as unauthenticated until Login trades a
-// code for one and calls retry(). A 404 marks the session missing and stops
+// (api/bearer.ts) and parks the session as unauthenticated until the sign-in
+// view (ui/Login.tsx) collects one and calls retry(). A 404 marks the session missing and stops
 // retries, and so does a stream that ended on a failed start. The stream stays
 // open while the tab is hidden: whether a person is attending is reported
 // separately (attention.ts), not inferred from the connection.
@@ -24,7 +24,7 @@ import { coherentWindow, HISTORY_PAGE } from "./history.ts";
 export const CATCH_UP_TAIL = HISTORY_PAGE;
 
 export interface Connector {
-  /** Re-run catch-up + stream, e.g. after the login view mints a session. */
+  /** Re-run catch-up + stream, e.g. after the sign-in view collects a token. */
   retry(): void;
   close(): void;
 }

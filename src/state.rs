@@ -1,18 +1,19 @@
 //! The user state database, `~/.efference/state.db` (docs/state-store.md).
 //!
 //! One file under the home directory holding the host's persistent state: model
-//! picks, each connection's model listing, push subscriptions, and the TOTP burn
-//! ledger. A subscription carries the material that delivers to that browser, so
-//! boot tightens the file owner-only (docs/state-store.md); the machine root,
-//! API keys, and OAuth grants live in the OS credential store instead
-//! (docs/secrets.md).
+//! picks, each connection's model listing, push subscriptions, the devices enrolled
+//! at the web bind, and the sign-ins pending there. A subscription carries the
+//! material that delivers to that browser, so boot tightens the file owner-only
+//! (docs/state-store.md); the machine root, API keys, and OAuth grants live in the
+//! OS credential store instead (docs/secrets.md).
 //!
 //! Each table's own module owns its schema and opens its own connection per
 //! operation, passing its `CREATE TABLE IF NOT EXISTS` statements to [`open`].
 //! That way a table that cannot be opened is that table's problem alone: the
-//! best-effort callers fold the error away and read as empty, while the one
-//! caller that cannot — the burn ledger, where a code it cannot record is a code
-//! it cannot prove single-use — reports it and fails the code.
+//! best-effort callers fold the error away and read as empty, while the web bind's
+//! tables — the enrolled devices and the pending sign-ins — report it and the
+//! request is refused, since an answer from a table that could not be read would
+//! be a guess about a credential.
 //!
 //! Applying the schema on every open is the migration story. A later table lands
 //! beside the existing ones in its own module; a later column lands as an
@@ -27,9 +28,9 @@ use std::time::Duration;
 pub const RELATIVE_PATH: &str = ".efference/state.db";
 
 /// How long a writer waits on another writer's lock before reporting the
-/// database locked. Every daemon under the user shares this file, and one of the
-/// tables fails closed on a write it cannot make — so a busy database has to cost
-/// a wait rather than a rejected request.
+/// database locked. Every daemon under the user shares this file, and the web
+/// bind's tables fail closed on a write they cannot make — so a busy database has
+/// to cost a wait rather than a rejected request.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The database beside `dir` — where a config that named its own directory keeps

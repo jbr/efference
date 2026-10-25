@@ -7,10 +7,11 @@ are its trust model) and remains the CLI verbs' channel. Implemented in
 `src/daemon/handler.rs` (the one stack every listener mounts), `src/daemon/tcp.rs`
 (the listener and the credential state) with its submodules in `src/daemon/tcp/` —
 `gate.rs` (the gate and the anonymous surface it prices), `headers.rs` (the response
-headers), and `routes.rs` (the mint and enrollment routes, the web client
-handler) — `src/auth.rs` (the credential arithmetic), and `src/devices.rs` (the
-enrolled devices); the flag resolution is `src/bin/efference/serve.rs`, and the
-operator's verb over the devices is `src/bin/efference/devices.rs`.
+headers), and `routes.rs` (the sign-in and enrollment routes, the web client
+handler) — `src/auth.rs` (the credential arithmetic), `src/devices.rs` (the
+enrolled devices), and `src/sign_ins.rs` (the pending sign-ins); the flag resolution
+is `src/bin/efference/serve.rs`, and the operator's verb over the devices and the
+sign-ins is `src/bin/efference/devices.rs`.
 
 This is the **one**-session bind. A multi-session host reuses everything in this
 document — the flags, the listener shape, the credential layer, and the gate — rather
@@ -58,7 +59,7 @@ present is an `Option`, which trillium runs as a pass-through when `None`, and t
 - **Socket:** the security headers, HEAD rewriting, the `ETag` validator, the
   enrollment routes (below), the `/v1` routes. No gate, no web client.
 - **Web:** the security headers, HEAD rewriting, the gate, the `ETag` validator, the
-  credential mint, the `/v1` routes, `/files`, then the web client —
+  sign-in routes, the `/v1` routes, `/files`, then the web client —
   every conn passes the gate first; the trailing frontend handler serves the
   embedded web client ([web-client.md](web-client.md)) for the GETs no route
   claims. The SPA
@@ -117,28 +118,28 @@ with per-purpose context strings:
 
 | derived | context | purpose |
 | --- | --- | --- |
-| TOTP secret | `totp v1` | the bootstrap credential (RFC 6238, SHA-1/6-digit/30 s) |
 | device-token key | `device-token v1` | the HMAC key every TCP credential is tagged under: one token per enrolled device (below) |
 | VAPID keypair | `vapid v1 attempt-<n>` | the web-push sender identity ([web-push.md](web-push.md)); the counter increments until the bytes are a valid P-256 scalar |
 
-Same root in, same credentials out, every boot: enrollments and signed-in devices
-survive restarts. One device is revoked by deleting its row (below), and everything at
-once by root rotation — `efference auth rotate` deletes the item and every device row,
-and the next bind mints another root, which signs out every enrolled device,
-invalidates the authenticator enrollment, and drops every push subscription. A store
-that answers a read with an error is not treated as absent: minting over it would be an
-unasked rotation, so the bind fails with the store's complaint and names the rotate
-verb. Received secrets that cannot be re-derived (OAuth tokens) are out of scope here
-and stay with [mcp-auth.md](mcp-auth.md). 32 bytes is the size the derivations can use:
-HKDF's extract is 256-bit, the device-token key and its tags are 256-bit, TOTP is
-bounded by its six-digit codes and P-256 by its 128-bit level.
+Same root in, same credentials out, every boot: signed-in devices survive restarts.
+One device is revoked by deleting its row (below), and everything at once by root
+rotation — `efference auth rotate` deletes the item, every device row, and every
+pending sign-in, and the next bind mints another root, which signs out every enrolled
+device and drops every push subscription. A store that answers a read with an error is
+not treated as absent: minting over it would be an unasked rotation, so the bind fails
+with the store's complaint and names the rotate verb. Received secrets that cannot be
+re-derived (OAuth tokens) are out of scope here and stay with
+[mcp-auth.md](mcp-auth.md). 32 bytes is the size the derivations can use: HKDF's
+extract is 256-bit, the device-token key and its tags are 256-bit, and P-256 is bounded
+by its 128-bit level.
 
 **Enrolled devices: one row per credential.** Every TCP credential is an *enrolled
 device*: a row in the `devices` table of the user state database
 ([state-store.md](state-store.md), `src/devices.rs`) holding a 128-bit id from the OS
 random source, drawn fresh for every enrollment; a kind, `browser` or `script`; a label;
-how it joined — `code`, a TOTP sign-in at the mint, or `add`, `efference devices add` at
-the host; when it was created; and when it was last seen. Socket clients — the TUI, the
+how it joined — `code`, a short code approved at the host, `link`, a sign-in link
+minted there (both below), or `add`, `efference devices add` at the host; when it was
+created; and when it was last seen. Socket clients — the TUI, the
 CLI verbs, MCP mounts, islands — are not devices: the socket is the root of trust and
 holds no row.
 
@@ -172,7 +173,7 @@ name.
 
 **A browser keeps its token in the page.** Every request that costs a credential
 presents a device token as `Authorization: Bearer <token>`, the web client's included.
-The login view trades a current code for one at `POST /auth/session` (below), and the
+The sign-in view collects one at `POST /pair/claim` (below), and the
 client keeps it in IndexedDB with an in-memory copy, read once at boot, that `apiFetch`
 attaches to every request (`web/src/api/bearer.ts`, [web-client.md](web-client.md)).
 IndexedDB is scoped by origin, and an origin includes its port, so no other service on
@@ -202,10 +203,7 @@ origin. Script running in the page can make the page's requests and read their a
 whatever form the credential takes; what the token in reach adds is that such script
 can carry it away.
 
-A bind to port 0 learns its port once listening, and minted links name that port. A
-link carries a code no one has used: the current step's, or when that was just redeemed
-the next step's, which the one-step skew accepts; with both used, no link is minted
-(`/auth/link` answers 429) rather than a dead one.
+A bind to port 0 learns its port once listening, and minted links name that port.
 
 **The root is not in any environment.** It is read from the store into the binding
 process and nowhere else, so no spawn site has to strip it. A tool child that wants
@@ -213,38 +211,86 @@ it must read the store itself, which on every backend is a visibly gated command
 (`security`, or a keychain prompt against the signed binary); the gate is the
 enforcement ([secrets.md](secrets.md)).
 
-## The bootstrap dance
+## Signing a browser in
 
-`--host --bind` prints `https://<host>:<port>/#token=<current code>`; `--open` also
-launches the browser. `efference dev open` re-mints against a running daemon — the re-auth
-path when at the host, and the answer to lost scrollback. It is a `dev` verb rather than a
-`control` tool because it mints credentials for the HTTP surface, and `control` is the set
-`efference mcp` exposes to whatever mounts it; the re-mint is expected to move into the TUI. The code rides the URL
-*fragment*: it never reaches server or proxy logs, and burned codes make
-browser-history residue inert. The web client's login view
-([web-client.md](web-client.md), `web/src/ui/Login.tsx`) reads the hash, trades the
-code and the page's label at `POST /auth/session` for a browser device's token, keeps
-it (above), and scrubs the URL with `history.replaceState`; a bare visit renders a
-six-digit field posting to the same endpoint. `GET /auth/otpauth` on the Unix socket returns the `otpauth://` enrollment URI for a stock
-authenticator app; nothing renders it as a QR any more (the CLI flag was removed pending a
-TUI or web onboarding flow).
+A browser with no token signs in one of two ways, and both end at the same claim.
 
-TOTP acceptance has two hard properties:
+**By a code the operator approves.** The sign-in view ([web-client.md](web-client.md),
+`web/src/ui/Login.tsx`) sends `POST /pair` with a label naming the browser. The host
+records a *pending sign-in* (`src/sign_ins.rs`) and answers that page alone with a
+*claim secret* — 128 bits from the OS random source — a *short code*, and the seconds
+both live. The page shows the code and the command that approves it, and polls
+`POST /pair/claim` with the claim secret every second; the secret rides the body, never
+a path, since the request logger records paths (RFC 8628 polls the same way). At the
+host the operator runs `efference devices approve` and types the code at its prompt, or
+passes it — `efference devices approve KQ7-M4X` is the form an agent session runs when
+the operator asks for it remotely, where the permission gate shows the code inside the
+command and approving the gate is the comparison. The verb prints the label and age of
+what it approved. The page's next claim returns the device token of a new `browser`
+device (`joined: code`) and deletes the pending sign-in. This is RFC 8628's
+device-authorization grant arranged for one machine: the new device displays the code,
+and it is typed on the trusted side, the host's terminal. As with SSH's
+`authorized_keys`, only someone already on the host adds a credential.
 
-- **Accepted timesteps burn.** The `totp_burns` table of the user state database
-  ([state-store.md](state-store.md)) is user-scoped — every daemon under the user derives
-  the same TOTP secret, so they must share burns or a code accepted by one would replay
-  against another. A step is the primary key, so the insert is the check: a conflicting
-  one is a replay, decided inside sqlite rather than behind a lock. Rows are a *set* of
-  recent steps (±1-step skew means codes arrive out of order, so a high-water counter
-  would reject legitimate ones) and prune once they fall outside the window where a code
-  could verify at all. The steps are counters, not secrets; losing them re-opens at most
-  the current ~90 s window.
-- **Verification is rate-limited with lockout.** Six digits is ~20 bits; the limiter
-  is what makes that arithmetic acceptable. Five consecutive failures free, then a
-  doubling lockout (30 s → 15 min cap), answered `429` with `Retry-After`. Per-daemon
-  and in-memory: N daemons give an attacker N× the budget, accepted at tailnet
-  posture.
+**By a link approved in advance.** `--host --bind` prints
+`https://<host>:<port>/#claim=<claim secret>`; `--open` also launches the browser.
+`efference dev open` mints another against a running daemon — the re-auth path when at
+the host, and the answer to lost scrollback. It is a `dev` verb rather than a `control`
+tool because it mints credentials for the HTTP surface, and `control` is the set
+`efference mcp` exposes to whatever mounts it; the re-mint is expected to move into the
+TUI. A link is a pending sign-in approved before anything asked for it: `GET /auth/link`
+records one and puts its claim secret in the URL *fragment*, which never reaches server
+or proxy logs, and the page claims it at the same endpoint, enrolling a device with
+`joined: link`. Its label is the one the page sends with the claim, since a link is
+minted before any page can name itself. The web client reads the fragment at bundle
+load and scrubs it with `history.replaceState`; a page that already holds a valid token
+keeps it and leaves the link's sign-in to expire unclaimed.
+
+**The approving side never shows a pending code.** Approval is typing what the new
+browser displays, never choosing from a list, which would let a hurried operator pick
+another requester's row. `efference devices` lists the sign-ins waiting for approval
+by label and age only, and no answer the socket gives carries a code. The label is
+requester-supplied text bound for the operator's terminal, cleaned as a device's is
+(above) before it is stored.
+
+**Every value a person sees or types is inert after use.** The short code authorizes
+nothing: it names a pending sign-in, which only the socket can approve, and once that
+sign-in is claimed or expired the code names nothing, so an `approve` line in shell
+history carries no authority. A code is six characters from an alphabet without the
+look-alikes `0 O 1 I L` and without `U` (`23456789ABCDEFGHJKMNPQRSTVWXYZ`), shown as
+`KQ7-M4X`, read in either case with whitespace and dashes ignored, and unique among
+the live pending sign-ins: a draw that collides is drawn again. The claim secret
+collects one token, so a link's copy in scrollback and browser history collects
+nothing once it is used, and nothing after 90 s regardless. The device token is the
+only long-lived secret, and a browser never displays it.
+
+**Pending sign-ins** are the `pending_sign_ins` table of the user state database
+([state-store.md](state-store.md)), kept there rather than in the serving process so
+that whichever daemon's socket the operator reaches approves what any daemon's listener
+took — an island's bind included. A row holds the claim secret's SHA-256, never the
+secret; the code; the label; how the device will join, `code` or `link`; whether it is
+approved; and when it was made and expires. Each lives 90 s, checked at approval and
+at claim, and every write prunes the expired rows. Approval extends a row to at least
+15 s past the approval (`CLAIM_GRACE_SECS`), so a code typed in its last second can
+still be collected by the page's next one-second poll. At most 8 wait for approval at once:
+a request past that evicts the oldest waiting one, so a stale tab never blocks a new
+attempt. Approved rows — links, and requests the operator already approved — neither
+count nor are evicted, so a peer churning `/pair` can displace honest requests, as it
+could jam any rule for a full table, but not a link minted at the terminal or a request
+already approved. A claim after approval is one `DELETE … RETURNING` of the row: two
+daemons answering one claim at once enroll one device between them.
+
+**The threat model it answers** (jbr, 2026-10-24): an adversary who can reach the
+exposed ports and has read the code, the binary, and the clients. Theft, device
+compromise, and agent activity are not the target — a compromised device's remedy is
+to stop the host and revoke it. The goals are that the transport envelope stays
+ergonomic to keep secure and that no new device joins without the operator's consent;
+the stretch goal is that a host exposed to the internet against advice would still
+hold. What carries it is that nothing low-entropy is checked over the network: every
+value a remote request can present — a claim secret, a device token — is 128- or
+256-bit random, so there is nothing to guess, and no attempt counter or lockout, which
+a peer could trip to lock the operator out. The short code is the one low-entropy
+value, and only the socket checks it.
 
 ## The gate
 
@@ -271,8 +317,9 @@ Runs before every TCP route, in order:
    unless it is named there too. The free surface is the web client's shell, its
    hashed assets, and the launch images under `/splash`, at its base
    ([web-client.md](web-client.md)), which reveal
-   nothing session-specific; `POST /auth/session`, the mint, which the login
-   flow cannot present a credential for; and on a session bind `GET /sessions`,
+   nothing session-specific; `POST /pair` and `POST /pair/claim`, the sign-in
+   exchange, which a browser cannot present a credential for before it has one; and
+   on a session bind `GET /sessions`,
    which is no route of its — the web client's probe to tell the two bindings
    apart reads the `404` a session daemon gives it as "not a host"
    ([web-client.md](web-client.md)).
@@ -280,9 +327,9 @@ Runs before every TCP route, in order:
    of a host's `/sessions` tree (`/sessions/<id>/files` included), and the host's
    own routes at its root. The `dev-proxy` build widens the free surface to the dev
    server's module URLs ([web-client.md](web-client.md)), because a shell that
-   cannot load is a page with no login view on it.
+   cannot load is a page with no sign-in view on it.
 
-The `401`/`403`/`429` codes are `ErrorCode` variants in the standard error envelope
+The `401`/`403` codes are `ErrorCode` variants in the standard error envelope
 ([control-api.md](control-api.md)).
 
 ## `/files` — the operator's read surface over the working directory
@@ -469,26 +516,41 @@ either spelling of a directory — the root included — streams that directory.
 ## Auth routes live beside `/v1`, not under it
 
 The first surface with no per-session home, previewing a host's routing split:
-a host listener mounts the same mint.
+a host listener mounts the same sign-in routes.
 
-On the TCP listener (anonymous): `POST /auth/session` —
-`{"code":"123456","label":"Safari on macOS"}` → `200` with `{"token":"efference_…"}`
-in the body, under `Cache-Control: no-store` (a credential in a response is never kept
-for reuse); it sets no cookie. An accepted code enrolls a `browser` device
-(`joined: code`) under the label, which is optional and defaults to `browser`; a
-device that cannot be recorded is a `500`, and the code is spent either way.
+On the TCP listener, anonymous:
 
-On the UDS only (host possession is the enrollment authority): `GET /auth/link`
-(a fresh fragment-token URL), `GET /auth/otpauth` (the enrollment URI), and the device
-routes `efference devices` drives — `GET /auth/devices` (`{"devices":[…]}`, oldest
-first, no tokens), `POST /auth/devices` (`{"label":"ci"}` → `201` with
-`{"device":…,"token":…}` under `no-store`: a `script` device, `joined: add`, and the
-one answer that carries its token), and `DELETE /auth/devices/:id` (the whole hex id;
-`404` when no row has it). With no bind armed, each answers `404` with a sentence. The
-otpauth URI carries the TOTP secret itself, which mints codes — and through the mint,
-device tokens — at will, and the add route mints a token outright; both are
-enrollments, so they ride the socket only, never the TCP listener, authenticated or
-not.
+- `POST /pair` — `{"label":"Safari on macOS"}`, the label optional and cleaned,
+  `browser` when absent → `200` with `{"claim":"…","code":"KQ7-M4X","expires_in":90}`.
+- `POST /pair/claim` — `{"claim":"…"}`, and optionally the page's `label`, which names
+  the device when the sign-in is a link's → `202` with `{"status":"pending"}` before
+  approval; `200` with `{"token":"efference_…"}` on the first claim after, which
+  enrolls the `browser` device; `404` for a claim that names nothing — claimed,
+  expired, evicted, never made, or not a claim secret at all, the same answer for each.
+
+Both answer under `Cache-Control: no-store` (a credential in a response is never kept
+for reuse) and set no cookie, and both pass the gate's Host, Origin, and Content-Type
+checks like any other unsafe request. A device that cannot be recorded is a `500`, and
+the claim is spent either way: its row went before the insert.
+
+On the UDS only, since host possession is the enrollment authority:
+
+- `GET /auth/link` → `{"url":"…/#claim=…"}` under `no-store`: a fresh sign-in link,
+  its pending sign-in approved in advance.
+- `GET /auth/pending` → `{"pending":[{"label":"…","created_at":…}]}`: the sign-ins
+  waiting for approval, oldest first, and never a code.
+- `POST /auth/approve` — `{"code":"kq7 m4x"}` → `200` with the approved sign-in's
+  `{"label","created_at"}`; `404` when no live sign-in waits under the code (never
+  made, expired, claimed, or approved already); `400` for what is not a code.
+- The device routes: `GET /auth/devices` (`{"devices":[…]}`, oldest first, no tokens),
+  `POST /auth/devices` (`{"label":"ci"}` → `201` with `{"device":…,"token":…}` under
+  `no-store`: a `script` device, `joined: add`, and the one answer that carries its
+  token), and `DELETE /auth/devices/:id` (the whole hex id; `404` when no row has it).
+
+`efference devices` drives them all. With no bind armed, each answers `404` with a
+sentence. A link and an approval each let a browser collect a token, and the add route
+mints one outright: all are enrollments, so they ride the socket only, never the TCP
+listener, authenticated or not.
 
 ## Remote TUI
 

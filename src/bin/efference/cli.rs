@@ -86,7 +86,7 @@ pub(crate) struct HostFlags {
     /// PEM private key matching the certificate. Overrides `[host] tls-key`.
     #[arg(long, value_name = "PEM", requires = "host")]
     pub(crate) tls_key: Option<PathBuf>,
-    /// Open the operator's browser at the bootstrap link once bound.
+    /// Open the operator's browser at the sign-in link once bound.
     #[arg(long, requires = "host")]
     pub(crate) open: bool,
     /// Run as a terminal-owned island: stdin is the launcher's ownership
@@ -392,7 +392,7 @@ pub(crate) enum Command {
     ///
     /// The wire view, the element gallery, the spotter and triage testers, the
     /// cache-rate report, the read-only session viewer, and the web-bind
-    /// bootstrap-link mint. Compiled only under the `dev` cargo feature.
+    /// sign-in-link mint. Compiled only under the `dev` cargo feature.
     #[cfg(feature = "dev")]
     #[command(subcommand)]
     Dev(dev::DevCommand),
@@ -416,8 +416,9 @@ pub(crate) enum Command {
     /// script given a token, holds one credential that is revoked alone.
     ///
     /// With no verb, lists them: the id (its first 8 hex digits), the kind, how it
-    /// joined, when, when it was last seen (recorded at most hourly), and its label.
-    /// Asks the running host, over its socket, and needs its web bind.
+    /// joined, when, when it was last seen (recorded at most hourly), and its label;
+    /// then the browsers waiting to sign in, by label and age. Asks the running host,
+    /// over its socket, and needs its web bind.
     Devices {
         #[command(subcommand)]
         command: Option<devices::DevicesCommand>,
@@ -442,11 +443,10 @@ pub(crate) enum Command {
 pub(crate) enum AuthCommand {
     /// Replace the machine root every bind credential derives from.
     ///
-    /// Deletes the stored root and every enrolled device; the next
-    /// `efference --host --bind` mints a new root. This signs out every device,
-    /// browsers and scripts alike, invalidates the authenticator enrollment, and
-    /// drops every push subscription. Run it when the root may have leaked, or
-    /// when the secret store reports it unreadable; one lost device is
-    /// `efference devices revoke`.
+    /// Deletes the stored root, every enrolled device, and every pending sign-in;
+    /// the next `efference --host --bind` mints a new root. This signs out every
+    /// device, browsers and scripts alike, and drops every push subscription. Run
+    /// it when the root may have leaked, or when the secret store reports it
+    /// unreadable; one lost device is `efference devices revoke`.
     Rotate,
 }

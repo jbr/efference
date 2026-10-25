@@ -145,13 +145,11 @@ base64 = "0.23.1"
 sha2 = "0.11.0"
 rand = "0.10.2"
 # Root-derived credentials for the TCP bind (docs/web-bind.md): HKDF with per-purpose
-# context strings turns the one injected root into the TOTP secret and the key device
-# tokens are tagged under — same root in, same secrets out, nothing secret on disk.
-# SHA-1 is TOTP only (RFC 6238's stock-authenticator default), never a signature.
-# data-encoding brings the base32 an `otpauth://` secret is spelled in.
+# context strings turns the one injected root into the key device tokens are tagged
+# under — same root in, same secrets out, nothing secret on disk. data-encoding
+# spells a device's id in the hex the table, the routes, and the command line share.
 hkdf = "0.13"
 hmac = "0.13"
-sha1 = "0.11"
 data-encoding = "2"
 # Opens the operator's browser for the MCP authorization step (docs/mcp-auth.md).
 # Only reached from `efference serve` with a tty; a headless boot prints the URL

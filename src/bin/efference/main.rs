@@ -70,8 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-/// `efference auth rotate`: delete the root, then every enrolled device
-/// (docs/web-bind.md).
+/// `efference auth rotate`: delete the root, then every enrolled device and pending
+/// sign-in (docs/web-bind.md).
 fn rotate() -> CliResult {
     // Rotation removes the root from the store; a daemon already running holds
     // it in memory and would keep serving after the store no longer has it. A
@@ -99,6 +99,19 @@ fn rotate() -> CliResult {
                  more, but the enrolled devices could not be deleted ({e}), and \
                  `efference devices` lists them until they are revoked",
                 secrets.describe()
+            )
+        })?;
+    // A sign-in approved under the old root would otherwise enroll under the next
+    // one, if claimed within its lifetime.
+    efference::sign_ins::Store::user_scoped()
+        .clear()
+        .map_err(|e| {
+            format!(
+                "rotated, and {removed} enrolled device{} deleted, but the pending \
+                 sign-ins could not be ({e}); one approved in the last {} s can still \
+                 enroll a browser under the next root",
+                if removed == 1 { " is" } else { "s are" },
+                efference::sign_ins::TTL_SECS
             )
         })?;
     eprintln!(

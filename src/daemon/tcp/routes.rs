@@ -1,11 +1,13 @@
-//! The routes mounted beside the control API (docs/web-bind.md): the credential mint a
-//! web transport carries, the enrollment routes only the socket carries — the
-//! bootstrap link, the authenticator URI, and the enrolled devices — and the web
-//! client handler a web transport mounts last (docs/web-client.md).
+//! The routes mounted beside the control API (docs/web-bind.md): the sign-in routes a
+//! web transport carries — a browser asking to sign in, and collecting its token — the
+//! enrollment routes only the socket carries — the sign-in link, approval, and the
+//! enrolled devices — and the web client handler a web transport mounts last
+//! (docs/web-client.md).
 
 use super::gate::Surface;
 use super::*;
 use crate::devices::DeviceId;
+use crate::sign_ins::{Claim, ClaimSecret, ShortCode, TTL_SECS};
 use trillium::KnownHeaderName;
 
 /// A route that needs the bind's credential state: `auth` is cloned into each conn's
@@ -31,78 +33,118 @@ where
     }
 }
 
-/// The browser-facing anonymous surface of a web transport: the credential mint.
-/// Mounted only by [`handler`](super::super::handler::handler).
-pub(crate) fn mint_routes(auth: Arc<TcpAuth>) -> Router {
-    Router::new().post("/auth/session", with_auth(Some(auth), mint_session))
+/// The browser-facing anonymous surface of a web transport: a browser asking to sign
+/// in, and collecting the token once the host approves. A page with no credential
+/// cannot present one, so the gate names both as free (docs/web-bind.md). Mounted only
+/// by [`handler`](super::super::handler::handler).
+pub(crate) fn pair_routes(auth: Arc<TcpAuth>) -> Router {
+    Router::new()
+        .post("/pair", with_auth(Some(Arc::clone(&auth)), request_sign_in))
+        .post("/pair/claim", with_auth(Some(auth), claim_sign_in))
 }
 
-/// Trade a current TOTP code for a browser device's token, answered in the body as
-/// `{"token": …}` and never as a cookie. Rate-limited, and every accepted code burns;
-/// an accepted code enrolls a `browser` device labelled from the body's optional
-/// `label` (cleaned, `browser` when absent). The login view that reads `#token=` from
-/// the fragment, POSTs here, and keeps what comes back is the web client's
-/// (web/src/ui/Login.tsx, docs/web-bind.md).
-async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
+/// Record a browser asking to sign in, from `{"label": …}` (cleaned; `browser` when
+/// absent), and answer the page alone with `{"claim", "code", "expires_in"}`: the claim
+/// secret it polls `POST /pair/claim` with, the short code it displays for the operator
+/// to type into `efference devices approve`, and the seconds both live.
+async fn request_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
     #[derive(Deserialize)]
-    struct SessionBody {
-        code: String,
+    struct RequestBody {
         /// What the page calls the browser, such as "Safari on macOS". Display text.
         #[serde(default)]
         label: Option<String>,
     }
     let body = conn.request_body_string().await.unwrap_or_default();
-    let body = match serde_json::from_str::<SessionBody>(&body) {
+    let body = match serde_json::from_str::<RequestBody>(&body) {
+        Ok(body) => body,
+        Err(e) => return fail(conn, ErrorCode::BadRequest, format!("bad /pair body: {e}")),
+    };
+    let label = body.label.as_deref().unwrap_or_default();
+    match auth.sign_ins.request(label, SystemTime::now()) {
+        Ok(requested) => credential_answer(
+            conn,
+            200,
+            serde_json::json!({
+                "claim": requested.claim.encoded(),
+                "code": requested.code.to_string(),
+                "expires_in": TTL_SECS,
+            }),
+        ),
+        Err(e) => {
+            log::error!("could not record a sign-in request: {e}");
+            fail(conn, ErrorCode::Internal, "could not record the sign-in")
+        }
+    }
+}
+
+/// Collect a sign-in with `{"claim": …}`: `202 {"status":"pending"}` while it waits for
+/// approval; `200 {"token": …}` on the first claim after, which enrolls a `browser`
+/// device and spends the claim; `404` once nothing answers to it. The page may send its
+/// `label` too, which names the device when the sign-in is a link's: a link is minted
+/// before any page asks, while an approved request keeps the label the operator saw
+/// when approving it.
+async fn claim_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
+    #[derive(Deserialize)]
+    struct ClaimBody {
+        claim: String,
+        #[serde(default)]
+        label: Option<String>,
+    }
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let body = match serde_json::from_str::<ClaimBody>(&body) {
         Ok(body) => body,
         Err(e) => {
             return fail(
                 conn,
                 ErrorCode::BadRequest,
-                format!("bad /auth/session body: {e}"),
+                format!("bad /pair/claim body: {e}"),
             );
         }
     };
-    match auth.authenticate_code(body.code.trim()) {
-        Ok(()) => match auth.enroll(
-            Kind::Browser,
-            body.label.as_deref().unwrap_or_default(),
-            Joined::Code,
-        ) {
-            Ok(enrolled) => {
-                credential_answer(conn, 200, serde_json::json!({ "token": enrolled.token }))
-            }
-            // The code is spent either way: it burned before the insert, and a code
-            // that could mint twice would be the replay the burn exists to stop.
-            Err(e) => {
-                log::error!("could not record a signed-in browser: {e}");
-                fail(conn, ErrorCode::Internal, "could not record the device")
-            }
-        },
-        Err(CodeRejection::Locked(remaining)) => {
-            let secs = remaining.as_secs().max(1);
-            respond(
-                conn.with_response_header(KnownHeaderName::RetryAfter, secs.to_string()),
-                ErrorBody::new(
-                    ErrorCode::RateLimited,
-                    format!("verification locked; retry in {secs}s"),
-                ),
-            )
+    let Some(claim) = ClaimSecret::parse(body.claim.trim()) else {
+        return fail(conn, ErrorCode::NotFound, UNKNOWN_CLAIM);
+    };
+    match auth.sign_ins.claim(&claim, SystemTime::now()) {
+        Ok(Claim::Waiting) => {
+            credential_answer(conn, 202, serde_json::json!({ "status": "pending" }))
         }
-        Err(CodeRejection::Wrong) => fail(conn, ErrorCode::Unauthorized, "code did not verify"),
-        Err(CodeRejection::Replayed) => fail(
-            conn,
-            ErrorCode::Unauthorized,
-            "code already used — mint a fresh link with `efference dev open`",
-        ),
-        Err(CodeRejection::Ledger) => {
-            fail(conn, ErrorCode::Internal, "could not record the code burn")
+        Ok(Claim::Approved { label, joined }) => {
+            let label = match joined {
+                Joined::Link => body.label.as_deref().unwrap_or(&label),
+                Joined::Code | Joined::Add => &label,
+            };
+            match auth.enroll(Kind::Browser, label, joined) {
+                Ok(enrolled) => {
+                    credential_answer(conn, 200, serde_json::json!({ "token": enrolled.token }))
+                }
+                // The claim is spent either way: its row went before the insert, and a
+                // claim that could enroll twice is the replay the delete exists to stop.
+                Err(e) => {
+                    log::error!("could not record a signed-in browser: {e}");
+                    fail(conn, ErrorCode::Internal, "could not record the device")
+                }
+            }
+        }
+        Ok(Claim::Unknown) => fail(conn, ErrorCode::NotFound, UNKNOWN_CLAIM),
+        Err(e) => {
+            log::error!("could not read the pending sign-ins: {e}");
+            fail(
+                conn,
+                ErrorCode::Internal,
+                "could not read the pending sign-ins",
+            )
         }
     }
 }
 
+/// What a claim that names nothing is told. One sentence for every case, so a claim's
+/// answer does not say which one it was.
+const UNKNOWN_CLAIM: &str = "no pending sign-in answers to that claim: it was claimed \
+    already, it expired, or newer requests displaced it; ask for a new code";
+
 /// An answer carrying a credential, which is never stored for reuse — the
-/// token-endpoint rule (RFC 6749 §5.1). `/auth` sits outside the `/v1` prefix that
-/// `SecurityHeaders` covers, so each such answer says so itself.
+/// token-endpoint rule (RFC 6749 §5.1). `/auth` and `/pair` sit outside the `/v1`
+/// prefix that `SecurityHeaders` covers, so each such answer says so itself.
 fn credential_answer(conn: Conn, status: u16, body: serde_json::Value) -> Conn {
     conn.with_status(status)
         .with_response_header(KnownHeaderName::ContentType, "application/json")
@@ -111,42 +153,99 @@ fn credential_answer(conn: Conn, status: u16, body: serde_json::Value) -> Conn {
         .halt()
 }
 
-/// The enrollment surface, mounted only on a session's socket — possession of the host
-/// machine is the enrollment authority (docs/web-bind.md). The `otpauth` URI in
-/// particular carries the TOTP secret itself, which mints codes at will, and adding a
-/// device mints a token outright, so neither rides a TCP listener, authenticated or
-/// not. With no bind armed the routes exist but answer 404, so the CLI verb gets a
-/// sentence instead of a route mismatch. Mounted only by
+/// The enrollment surface, mounted only on a socket — possession of the host machine
+/// is the enrollment authority (docs/web-bind.md). A link and an approval each let a
+/// browser collect a token, and adding a device mints one outright, so none rides a TCP
+/// listener, authenticated or not. With no bind armed the routes exist but answer 404,
+/// so the CLI verb gets a sentence instead of a route mismatch. Mounted only by
 /// [`handler`](super::super::handler::handler).
 pub(crate) fn enrollment_routes(auth: Option<Arc<TcpAuth>>) -> Router {
     Router::new()
         .get("/auth/link", with_auth(auth.clone(), auth_link))
-        .get("/auth/otpauth", with_auth(auth.clone(), auth_otpauth))
+        .get("/auth/pending", with_auth(auth.clone(), list_pending))
+        .post("/auth/approve", with_auth(auth.clone(), approve_sign_in))
         .get("/auth/devices", with_auth(auth.clone(), list_devices))
         .post("/auth/devices", with_auth(auth.clone(), add_device))
         .delete("/auth/devices/:id", with_auth(auth, remove_device))
 }
 
-/// The bootstrap link: the public base with a current code in the fragment.
+/// The sign-in link, `{"url": …}`: a pending sign-in approved before it was asked for,
+/// its claim secret in the fragment, so the answer is `no-store` like any that carries
+/// a credential.
 async fn auth_link(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
     match auth.mint_link() {
-        Some(url) => conn
-            .with_status(200)
-            .with_body(serde_json::json!({ "url": url }).to_string())
-            .halt(),
-        None => fail(
+        Ok(url) => credential_answer(conn, 200, serde_json::json!({ "url": url })),
+        Err(e) => fail(
             conn,
-            ErrorCode::RateLimited,
-            "every current code has been used; ask again in half a minute",
+            ErrorCode::Internal,
+            format!("could not record the sign-in: {e}"),
         ),
     }
 }
 
-/// The `otpauth://` URI an authenticator app enrolls from.
-async fn auth_otpauth(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
-    conn.with_status(200)
-        .with_body(serde_json::json!({ "uri": auth.otpauth_uri() }).to_string())
-        .halt()
+/// The sign-ins waiting for approval, oldest first, as `{"pending": [{"label",
+/// "created_at"}]}`. Never a code: approval is typing what the browser shows, never
+/// choosing from a list, which would let a hurried operator pick another browser's row.
+async fn list_pending(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
+    match auth.sign_ins.waiting(SystemTime::now()) {
+        Ok(pending) => conn
+            .with_status(200)
+            .with_body(serde_json::json!({ "pending": pending }).to_string())
+            .halt(),
+        Err(e) => fail(
+            conn,
+            ErrorCode::Internal,
+            format!("could not read the pending sign-ins: {e}"),
+        ),
+    }
+}
+
+/// Approve the waiting sign-in a short code names, from `{"code": …}` as the operator
+/// typed it — either case, the dash optional. Answers what was approved, `{"label",
+/// "created_at"}`, so the operator sees what they let in; `404` when no live sign-in
+/// waits under the code.
+async fn approve_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
+    #[derive(Deserialize)]
+    struct ApproveBody {
+        code: String,
+    }
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let typed = match serde_json::from_str::<ApproveBody>(&body) {
+        Ok(body) => body.code,
+        Err(e) => {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                format!("bad /auth/approve body: {e}"),
+            );
+        }
+    };
+    let Some(code) = ShortCode::parse(&typed) else {
+        return fail(
+            conn,
+            ErrorCode::BadRequest,
+            "a short code is six letters and digits, as the browser shows it, like KQ7-M4X",
+        );
+    };
+    match auth.sign_ins.approve(&code, SystemTime::now()) {
+        Ok(Some(pending)) => conn
+            .with_status(200)
+            .with_body(serde_json::json!(pending).to_string())
+            .halt(),
+        Ok(None) => fail(
+            conn,
+            ErrorCode::NotFound,
+            format!(
+                "no sign-in is waiting under that code: a code is approved once, within \
+                 {TTL_SECS} s of the browser showing it"
+            ),
+        ),
+        Err(e) => fail(
+            conn,
+            ErrorCode::Internal,
+            format!("could not read the pending sign-ins: {e}"),
+        ),
+    }
 }
 
 /// The enrolled devices, oldest first, as `{"devices": […]}`.

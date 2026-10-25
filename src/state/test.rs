@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// shared open exists for: they take turns creating the same file, and neither
 /// one's schema disturbs the other's rows.
 const PICKS: &str = "CREATE TABLE IF NOT EXISTS picks (connection TEXT PRIMARY KEY);";
-const BURNS: &str = "CREATE TABLE IF NOT EXISTS burns (step INTEGER PRIMARY KEY);";
+const COUNTS: &str = "CREATE TABLE IF NOT EXISTS counts (n INTEGER PRIMARY KEY);";
 
 fn dir() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -31,21 +31,21 @@ fn each_tables_schema_lands_in_the_one_file() {
         .unwrap()
         .execute("INSERT INTO picks (connection) VALUES ('anthropic')", [])
         .unwrap();
-    open(&path, BURNS)
+    open(&path, COUNTS)
         .unwrap()
         .execute_batch(
-            "INSERT INTO burns (step) VALUES (1000);
-             INSERT INTO burns (step) VALUES (1001);",
+            "INSERT INTO counts (n) VALUES (1000);
+             INSERT INTO counts (n) VALUES (1001);",
         )
         .unwrap();
 
     // Re-opening with either schema again must not disturb what the other wrote.
     open(&path, PICKS).unwrap();
-    let burns: i64 = open(&path, BURNS)
+    let counts: i64 = open(&path, COUNTS)
         .unwrap()
-        .query_row("SELECT count(*) FROM burns", [], |row| row.get(0))
+        .query_row("SELECT count(*) FROM counts", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(burns, 2);
+    assert_eq!(counts, 2);
     let picks: String = open(&path, PICKS)
         .unwrap()
         .query_row("SELECT connection FROM picks", [], |row| row.get(0))
@@ -60,15 +60,15 @@ fn the_parent_directory_is_created() {
     assert!(path.exists());
 }
 
-/// The production topology: the push store, the burn ledger, and the enrolled
-/// devices name the same file, and none must be able to damage another's rows.
+/// The production topology: the push store, the enrolled devices, and the pending
+/// sign-ins name the same file, and none must be able to damage another's rows.
 /// This is the case `open` exists for, so it is asserted on the real stores rather
 /// than on stand-in tables.
 #[test]
 fn the_real_stores_coexist_in_one_user_scoped_file() {
     let path = dir().join("state.db");
     let store = crate::push::Store::new(path.clone());
-    let ledger = crate::auth::BurnLedger::new(path.clone());
+    let sign_ins = crate::sign_ins::Store::new(path.clone());
     let devices = crate::devices::Store::new(path.clone());
     let device = devices
         .insert(
@@ -86,20 +86,26 @@ fn the_real_stores_coexist_in_one_user_scoped_file() {
             auth: "a".into(),
         })
         .unwrap();
-    assert!(ledger.burn(4000).unwrap());
+    let requested = sign_ins.request("tablet", SystemTime::now()).unwrap();
 
     // Each store opening the file applies only its own schema.
     assert_eq!(store.load().len(), 1);
-    assert!(ledger.is_burned(4000));
+    assert_eq!(sign_ins.waiting(SystemTime::now()).unwrap().len(), 1);
     assert_eq!(store.load()[0].endpoint, "https://push.example.net/a");
     assert_eq!(devices.list().unwrap(), [device]);
+    assert!(
+        sign_ins
+            .approve(&requested.code, SystemTime::now())
+            .unwrap()
+            .is_some()
+    );
 }
 
 #[test]
 fn a_file_that_is_not_a_database_is_an_error() {
-    // A best-effort caller folds this away and reads as empty; the burn ledger
-    // reports it and fails the code. Either way it must be an error rather than a
-    // connection that silently reports no tables.
+    // A best-effort caller folds this away and reads as empty; the web bind's
+    // tables report it and refuse the request. Either way it must be an error
+    // rather than a connection that silently reports no tables.
     let path = dir().join("state.db");
     std::fs::write(&path, "{ not a database").unwrap();
     assert!(matches!(open(&path, PICKS), Err(Error::Sqlite(_))));

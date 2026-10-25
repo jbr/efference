@@ -9,7 +9,12 @@
 
 import { afterEach, expect, test, vi } from "vitest";
 import { deriveBase, deriveRoute } from "./base.ts";
-import { continueLoop, fetchSessions, mintSession } from "./http.ts";
+import {
+  claimSignIn,
+  continueLoop,
+  fetchSessions,
+  requestSignIn,
+} from "./http.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -65,20 +70,22 @@ test("control paths join onto the base; the listener's own do not", async () => 
 
   history.pushState({}, "", "/sessions/work/");
   await continueLoop();
-  await mintSession("123456");
+  await requestSignIn("Safari on macOS");
+  await claimSignIn("claim", "Safari on macOS");
   await fetchSessions();
 
   expect(urls).toEqual([
     // The session's own API, behind the prefix a host routes.
     "/sessions/work/v1/loop/continue",
-    // Auth is the listener's surface, and one credential covers every session
-    // behind a host (docs/web-client.md).
-    "/auth/session",
+    // Sign-in is the listener's surface, and one credential covers every
+    // session behind a host (docs/web-client.md).
+    "/pair",
+    "/pair/claim",
     // So is discovery.
     "/sessions",
   ]);
 
   history.pushState({}, "", "/");
   await continueLoop();
-  expect(urls[3]).toBe("/v1/loop/continue");
+  expect(urls[4]).toBe("/v1/loop/continue");
 });

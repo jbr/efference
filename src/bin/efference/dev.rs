@@ -4,7 +4,7 @@
 //! None of these drive a session. They read a recorded log, render the wire a turn
 //! would send, replay recorded gates, exercise the spotter rung directly, fold
 //! `usage.jsonl` into a cache read rate, open a recorded log read-only in the TUI, or
-//! mint a bootstrap link for the web bind —
+//! mint a sign-in link for the web bind —
 //! the views and testers that make the harness's own behaviour inspectable. The feature
 //! is in `default` because a gated feature nobody builds rots; a release build
 //! passes `--no-default-features`.

@@ -1,4 +1,4 @@
-//! The `dev` verbs that open something: the element gallery, a bootstrap link, and a
+//! The `dev` verbs that open something: the element gallery, a sign-in link, and a
 //! recorded log in the TUI.
 
 use super::*;
@@ -19,7 +19,7 @@ pub(crate) async fn gallery(
     Ok(())
 }
 
-/// Mint and open a fresh bootstrap link against a running daemon's TCP bind
+/// Mint and open a fresh sign-in link against a running daemon's TCP bind
 /// (docs/web-bind.md), over the Unix socket only. A script's token is
 /// `efference devices add`.
 pub(super) async fn open(print: bool) -> CliResult {

@@ -26,8 +26,8 @@ holding `log.jsonl` and `config.toml`; the session itself is served at
 
 With `--host --bind`, the same routes are also served on a TCP listener behind a
 hardening + auth gate — an enrolled device's token in an `Authorization: Bearer`
-header, plus `401 unauthorized` / `403 forbidden` / `429 rate_limited` in the standard
-error envelope, and the `/auth/*` routes beside `/v1`. That listener also carries
+header, plus `401 unauthorized` / `403 forbidden` in the standard error envelope, and
+the `/pair` sign-in routes beside `/v1`. That listener also carries
 `/files` — the operator's read-only view of the working directory, behind the same
 token and outside the version prefix because it is a human surface rather than a
 control one. Both are

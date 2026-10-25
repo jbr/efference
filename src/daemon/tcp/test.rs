@@ -17,7 +17,7 @@ pub(super) fn scratch_state() -> PathBuf {
 }
 
 /// An armed plaintext-loopback bind under a per-test root, over `state` (a distinct
-/// root per test keeps one test's burns invisible to another's codes).
+/// root per test keeps one test's tokens from verifying at another's bind).
 pub(super) fn armed_over(root: &str, state: PathBuf) -> Arc<TcpAuth> {
     let (auth, _listener) = arm_with_state(
         TcpBind {
@@ -78,12 +78,14 @@ pub(super) async fn tcp_server(
 /// `POST /turns` has a live channel to land on.
 pub(super) struct TurnsGuard(#[allow(dead_code)] mpsc::UnboundedReceiver<SubmittedTurn>);
 
-/// The six digits currently valid for this auth's derived TOTP secret.
-pub(super) fn current_code(auth: &TcpAuth) -> String {
-    auth::format_code(auth::totp(
-        &auth.totp_secret,
-        auth::timestep(std::time::SystemTime::now()),
-    ))
+/// A claim secret from a fresh sign-in link at `auth`, the way the page reads it off the
+/// fragment.
+pub(super) fn link_claim(auth: &TcpAuth) -> String {
+    let link = auth.mint_link().expect("a scratch database takes a row");
+    link.rsplit_once("#claim=")
+        .expect("the claim rides the fragment")
+        .1
+        .to_string()
 }
 
 /// A device token authenticates in the `Authorization` header and nowhere else. A
@@ -128,8 +130,8 @@ async fn only_the_authorization_header_carries_a_token() {
     }
 }
 
-/// No answer the bind gives sets a cookie: the credential leaves the mint in a
-/// body, and nothing else on the stack writes one (docs/web-bind.md).
+/// No answer the bind gives sets a cookie: the credential leaves a claim in a body,
+/// and nothing else on the stack writes one (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn no_answer_sets_a_cookie() {
     let auth = armed("no-set-cookie");
@@ -137,12 +139,16 @@ async fn no_answer_sets_a_cookie() {
     let bearer = enrolled(&auth);
     let answers = [
         server
-            .post("/auth/session")
-            .with_json_body(&serde_json::json!({ "code": current_code(&auth) }))
+            .post("/pair")
+            .with_json_body(&serde_json::json!({ "label": "phone" }))
             .await,
         server
-            .post("/auth/session")
-            .with_json_body(&serde_json::json!({ "code": "not a code" }))
+            .post("/pair/claim")
+            .with_json_body(&serde_json::json!({ "claim": link_claim(&auth) }))
+            .await,
+        server
+            .post("/pair/claim")
+            .with_json_body(&serde_json::json!({ "claim": "not a claim" }))
             .await,
         server
             .get("/v1/state")
@@ -195,7 +201,7 @@ async fn no_answer_grants_another_origin() {
             )
             .await,
         server
-            .build(Method::Options, "/auth/session")
+            .build(Method::Options, "/pair/claim")
             .with_request_header(KnownHeaderName::Origin, "https://evil.example")
             .with_request_header(KnownHeaderName::AccessControlRequestMethod, "POST")
             .with_request_header(KnownHeaderName::AccessControlRequestHeaders, "content-type")
@@ -272,31 +278,31 @@ fn a_port_zero_bind_mints_links_on_its_bound_port() {
     assert!(
         auth.mint_link()
             .unwrap()
-            .starts_with("http://localhost:51234/#token=")
+            .starts_with("http://localhost:51234/#claim=")
     );
     let configured = armed("configured-port");
     configured.bound_port(51234);
     assert_eq!(configured.public_base(), "http://localhost:7777");
 }
 
-/// A second link minted in the same 30 seconds as a redeemed one carries the next
-/// step's code, not the burned one; once every accepted step is used, none is
-/// minted rather than a dead one.
+/// Every link is a sign-in of its own: two minted back to back carry different claims,
+/// and each collects one token.
 #[test]
-fn a_minted_link_never_carries_a_used_code() {
-    let auth = armed("mint-unburned");
-    let code_of = |link: String| link.rsplit_once("token=").unwrap().1.to_string();
-    let first = code_of(auth.mint_link().expect("nothing burned yet"));
-    let now = auth::timestep(SystemTime::now());
-    auth.ledger.burn(now).unwrap();
-    let second = code_of(auth.mint_link().expect("the next step is unused"));
+fn every_link_carries_a_fresh_claim() {
+    let auth = armed("link-per-mint");
+    let first = link_claim(&auth);
+    let second = link_claim(&auth);
     assert_ne!(first, second);
-    assert_eq!(
-        second,
-        auth::format_code(auth::totp(&auth.totp_secret, now + 1))
-    );
-    auth.ledger.burn(now + 1).unwrap();
-    assert_eq!(auth.mint_link(), None);
+    for claim in [first, second] {
+        let claim = sign_ins::ClaimSecret::parse(&claim).expect("a claim secret");
+        assert!(matches!(
+            auth.sign_ins.claim(&claim, SystemTime::now()).unwrap(),
+            sign_ins::Claim::Approved {
+                joined: Joined::Link,
+                ..
+            }
+        ));
+    }
 }
 
 /// The tag is checked before the row, and the row is the answer: a token this root

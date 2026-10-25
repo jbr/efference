@@ -10,8 +10,8 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
     let auth = armed("page-vs-api");
     let (server, _guard) = tcp_server(&auth).await;
 
-    // The SPA shell (docs/web-client.md): served without a credential, like the
-    // inline bootstrap page it replaced — the login view is inside the app.
+    // The SPA shell (docs/web-client.md): served without a credential, since the
+    // sign-in view is inside the app.
     server
         .get("/")
         .await
@@ -65,7 +65,7 @@ fn the_anonymous_surface_is_named() {
     let credential = false;
     let cases = [
         // A session bind: the shell at its own base, the build's files, the
-        // mint, and the probe the client reads a `404` from.
+        // sign-in exchange, and the probe the client reads a `404` from.
         (Surface::Session, Method::Get, "/", anonymous),
         (Surface::Session, Method::Get, "/tree", anonymous),
         (
@@ -90,9 +90,23 @@ fn the_anonymous_surface_is_named() {
         ),
         // The worker script, which the browser fetches to register the worker.
         (Surface::Session, Method::Get, "/sw.js", anonymous),
-        (Surface::Session, Method::Post, "/auth/session", anonymous),
+        (Surface::Session, Method::Post, "/pair", anonymous),
+        (Surface::Session, Method::Post, "/pair/claim", anonymous),
         (Surface::Session, Method::Get, "/sessions", anonymous),
-        // A session bind's own surfaces, and everything else.
+        // A session bind's own surfaces, and everything else — the exchange's
+        // paths under another method or beside it, and the deleted TOTP mint.
+        (Surface::Session, Method::Get, "/pair", credential),
+        (Surface::Session, Method::Put, "/pair/claim", credential),
+        (Surface::Session, Method::Post, "/pair/approve", credential),
+        (
+            Surface::Session,
+            Method::Post,
+            "/pair/claim/more",
+            credential,
+        ),
+        (Surface::Session, Method::Post, "/auth/session", credential),
+        (Surface::Session, Method::Post, "/auth/approve", credential),
+        (Surface::Session, Method::Get, "/auth/link", credential),
         (Surface::Session, Method::Get, "/v1/state", credential),
         (Surface::Session, Method::Get, "/files/notes.md", credential),
         (Surface::Session, Method::Get, "/inference", credential),
@@ -109,7 +123,15 @@ fn the_anonymous_surface_is_named() {
             "/assets/index-a1b2c3.js",
             anonymous,
         ),
-        (Surface::Host, Method::Post, "/auth/session", anonymous),
+        (Surface::Host, Method::Post, "/pair", anonymous),
+        (Surface::Host, Method::Post, "/pair/claim", anonymous),
+        (
+            Surface::Host,
+            Method::Post,
+            "/sessions/work/pair",
+            credential,
+        ),
+        (Surface::Host, Method::Post, "/auth/session", credential),
         (Surface::Host, Method::Get, "/sessions", credential),
         (
             Surface::Host,

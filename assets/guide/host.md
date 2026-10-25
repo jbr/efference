@@ -66,8 +66,8 @@ On this machine only, over loopback:
 bind = "127.0.0.1:7878"
 ```
 
-`efference --host` then prints a link carrying a one-time code; opening it signs the browser
-in (`efference --host --open` opens it). A loopback bind is plain HTTP, which browsers treat
+`efference --host` then prints a sign-in link that works once; opening it signs the
+browser in (`efference --host --open` opens it). A loopback bind is plain HTTP, which browsers treat
 as secure for `localhost`.
 
 ## From a phone or another computer: Tailscale
@@ -179,15 +179,23 @@ sessions on it rather than starting islands.
 
 ## Signing in to the web interface
 
-Being reworked. Today there is one authenticator secret per machine: the link the host
-prints signs a browser in, and a six-digit code from an authenticator app does the same
-when no link is at hand. While the host has a web bind,
-`curl --unix-socket ~/.efference/host.sock http://localhost/auth/otpauth` prints the
-enrollment URI to add to an authenticator app.
+A browser signs in one of two ways, and either makes it an enrolled device with a token
+of its own:
 
-Each browser that signs in is an enrolled device with a token of its own, and so is each
-script given one. `efference devices` lists them, `efference devices revoke <id>` signs
-one out from its next request, and `efference devices add <label>` prints a new token
-for a script, once; all three ask the running host. `efference auth rotate` signs out
-every device at once. A way to sign a browser in by approving it at the host, with no
-six-digit codes, is coming; until then, describe only what is here.
+- **A sign-in link.** The host prints one when it starts with a web address, and a
+  browser island opens one itself. A link works once, within a minute and a half.
+- **A code approved at the host.** A browser that opens the web address without a link
+  shows a short code, like `KQ7-M4X`, for a minute and a half. `efference devices
+  approve` asks for the code on the terminal and lets that browser in;
+  `efference devices approve KQ7-M4X` takes it as an argument. That form is how an
+  operator away from the host signs a new browser in: they ask a session to run it with
+  the code they read off the new browser, and the permission gate shows the code inside
+  the command, so approving the gate is their comparison. The code is the operator's to
+  give, read off the browser being let in; one from anywhere else lets in a browser the
+  operator has not seen.
+
+`efference devices` lists the enrolled devices and then the browsers waiting to sign
+in, by name and age — never by code. `efference devices revoke <id>` signs one device
+out from its next request, and `efference devices add <label>` prints a new token for a
+script, once; all of them ask the running host. `efference auth rotate` signs out every
+device at once.

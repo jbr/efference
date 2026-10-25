@@ -95,10 +95,15 @@ a:hover {
   color: var(--fg);
 }
 
-.login input {
-  font: inherit;
-  width: 8ch;
-  letter-spacing: 0.3ch;
+/* The short code a person reads off this screen and types at the host: large,
+   spaced, and selected whole by one tap. */
+.login-code {
+  font-size: 2.5rem;
+  font-weight: 600;
+  letter-spacing: 0.2ch;
+  color: var(--fg-bright);
+  margin: 1.5rem 0;
+  user-select: all;
 }
 
 /* The control language, from the mock: flat bordered mono. A class-styled

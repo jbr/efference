@@ -1,5 +1,5 @@
 //! The listener-route verbs: the host's own routes at the socket root —
-//! sessions, the inference catalog, attention, and the `/auth/*` credentials and
+//! sessions, the inference catalog, attention, and the `/auth/*` sign-ins and
 //! enrolled devices (docs/control-api.md) — whatever prefix the client carries.
 
 use super::*;
@@ -248,19 +248,52 @@ impl Client {
         Ok(true)
     }
 
-    /// A fresh bootstrap link from the daemon's TCP bind (`GET /auth/link`,
-    /// docs/web-bind.md) — current TOTP code in the fragment. The `/auth/*`
-    /// credential routes answer only over the Unix socket (host possession is the
-    /// enrollment authority) and live beside `/v1`.
+    /// A fresh sign-in link from the daemon's TCP bind (`GET /auth/link`,
+    /// docs/web-bind.md): a pending sign-in approved in advance, its claim secret in
+    /// the fragment. The `/auth/*` enrollment routes answer only over the Unix socket
+    /// (host possession is the enrollment authority) and live beside `/v1`.
     pub async fn auth_link(&self) -> Result<String> {
         self.auth_field("/auth/link", "url").await
     }
 
-    /// The authenticator-app enrollment URI (`GET /auth/otpauth`, docs/web-bind.md).
-    /// Carries the TOTP secret itself — the caller renders it as a QR at the host
-    /// terminal and nowhere else.
-    pub async fn auth_otpauth(&self) -> Result<String> {
-        self.auth_field("/auth/otpauth", "uri").await
+    /// The sign-ins waiting for approval at the TCP bind, oldest first
+    /// (`GET /auth/pending`, docs/web-bind.md): what each browser calls itself and
+    /// when it asked, never its code.
+    pub async fn pending_sign_ins(&self) -> Result<Vec<crate::sign_ins::Pending>> {
+        #[derive(serde::Deserialize)]
+        struct Listing {
+            pending: Vec<crate::sign_ins::Pending>,
+        }
+        let listing: Listing = self.get_root("/auth/pending").await?;
+        Ok(listing.pending)
+    }
+
+    /// Approve the waiting sign-in `code` names (`POST /auth/approve`,
+    /// docs/web-bind.md): what was approved, or — as `Ok(Err(message))` — the host's
+    /// reason when the code names no waiting sign-in (a `404`) or is no code at all
+    /// (a `400`). Either is an answer for the person who typed it rather than a fault.
+    pub async fn approve_sign_in(
+        &self,
+        code: &str,
+    ) -> Result<std::result::Result<crate::sign_ins::Pending, String>> {
+        let path = "/auth/approve";
+        let body = serde_json::json!({ "code": code }).to_string();
+        let mut conn = self.exchange(Method::Post, path, Some(body)).await?;
+        if conn
+            .status()
+            .is_some_and(|s| matches!(s.code(), "400" | "404"))
+        {
+            let body = conn
+                .response_body()
+                .read_string()
+                .await
+                .with_context(|| format!("reading the response to POST {path}"))?;
+            return Ok(Err(json_field(&body, "message").unwrap_or(body)));
+        }
+        let body = read_2xx(conn, Method::Post, path).await?;
+        serde_json::from_str(&body)
+            .map(Ok)
+            .with_context(|| format!("decoding POST {path}"))
     }
 
     /// The devices enrolled at the TCP bind, oldest first (`GET /auth/devices`,

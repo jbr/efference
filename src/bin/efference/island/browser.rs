@@ -4,8 +4,8 @@
 //! The owner is this foreground process, never the browser tab: a tab's reloads
 //! and stream reconnects must not end the island, so the ownership pipe stays
 //! here and the terminal holds a one-line prompt until the person quits. Every
-//! link is minted when asked for, because a bootstrap link's code is single-use
-//! and short-lived (docs/web-bind.md); the device token it trades for is what
+//! link is minted when asked for, because a sign-in link's claim is single-use
+//! and short-lived (docs/web-bind.md); the device token it collects is what
 //! keeps a tab signed in afterwards.
 
 use super::*;
@@ -56,8 +56,8 @@ impl Links {
     }
 }
 
-/// `http://localhost:1234/#token=…` → `http://localhost:1234/sessions/<id>/#token=…`:
-/// the web client reads the token on any path, so the link lands on the session
+/// `http://localhost:1234/#claim=…` → `http://localhost:1234/sessions/<id>/#claim=…`:
+/// the web client reads the claim on any path, so the link lands on the session
 /// rather than on the list.
 fn session_link(link: &str, session: &str) -> String {
     match link.split_once("/#") {

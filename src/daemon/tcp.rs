@@ -4,18 +4,20 @@
 //! auth gate layered in front. This module holds the listener and the credential state;
 //! its submodules hold the rest: `gate.rs` (the hardening + auth gate and the anonymous
 //! surface it prices), `headers.rs` (the response headers every listener stamps), and
-//! `routes.rs` (the credential mint, the enrollment routes, and the web client handler).
+//! `routes.rs` (the sign-in routes, the enrollment routes, and the web client handler).
 //! `handler.rs` is the one place the pieces are assembled into a stack, keyed on the
 //! transport, so the UDS never consults the gate and a per-conn "which listener am I
 //! on?" guess (which would fail open) never exists. Every TCP credential is an enrolled
 //! device (`crate::devices`) whose token is derived from the machine root
-//! (`crate::auth`); the enrollment surfaces (`/auth/link`, `/auth/otpauth`, the
+//! (`crate::auth`), and a browser becomes one by claiming a pending sign-in
+//! (`crate::sign_ins`); the enrollment surfaces (`/auth/link`, approval, the
 //! `/auth/devices` routes) are mounted only on the socket, because possession of the
 //! host machine is the enrollment authority.
 
 use super::*;
-use crate::auth::{self, BurnLedger, DeviceTokens, Lockout, Root};
+use crate::auth::{DeviceTokens, Root};
 use crate::devices::{self, Enrolled, Joined, Kind};
+use crate::sign_ins;
 use std::time::SystemTime;
 use trillium::KnownHeaderName;
 
@@ -25,7 +27,7 @@ mod routes;
 
 pub(crate) use gate::{Surface, gate, plain_id};
 pub(crate) use headers::SecurityHeaders;
-pub(crate) use routes::{enrollment_routes, frontend, mint_routes};
+pub(crate) use routes::{enrollment_routes, frontend, pair_routes};
 
 /// What `--bind` resolved to — built by the CLI from flags, consumed
 /// by [`arm`]. Deliberately not part of the session config: the config file is
@@ -38,13 +40,13 @@ pub struct TcpBind {
     /// PEM cert chain + key (the `tailscale cert` output). `None` = plaintext loopback.
     pub tls: Option<TlsPem>,
     /// The address browsers open, `scheme://name[:port]` with no path: the base of
-    /// the printed bootstrap link, and — by its host — the Host allowlist entry. It
+    /// the printed sign-in link, and — by its host — the Host allowlist entry. It
     /// differs from the listener when something in front terminates TLS (a
     /// `tailscale serve`), which is why it is given rather than derived.
     pub public_url: String,
     /// The machine root every credential derives from.
     pub root: Root,
-    /// Launch the operator's browser at the bootstrap link once bound.
+    /// Launch the operator's browser at the sign-in link once bound.
     pub open: bool,
 }
 
@@ -58,7 +60,6 @@ pub struct TlsPem {
 /// The derived credential state the gate and the auth routes share. One per daemon,
 /// built at boot from the injected root; holds no secret that can't be re-derived.
 pub struct TcpAuth {
-    totp_secret: [u8; 20],
     /// The key device tokens are minted and verified under.
     tokens: DeviceTokens,
     /// Host values (no port, lowercase) a request may address the daemon by — the
@@ -70,14 +71,12 @@ pub struct TcpAuth {
     public_base: Mutex<String>,
     /// Whether the listener terminates TLS ([`TcpAuth::is_tls`]).
     tls: bool,
-    /// The TOTP rate limit (docs/web-bind.md): per-daemon, in-memory.
-    lockout: Mutex<Lockout>,
-    /// The shared record of accepted TOTP steps — user-scoped because every daemon
-    /// under this user derives the same TOTP secret.
-    ledger: BurnLedger,
     /// The enrolled devices, one row per TCP credential — user-scoped, so a device
     /// revoked anywhere is refused here on its next request.
     devices: devices::Store,
+    /// The sign-ins pending here — user-scoped, so the socket of any daemon under the
+    /// user approves what this listener took.
+    sign_ins: sign_ins::Store,
 }
 
 /// The listener half of a [`TcpBind`], separated from the credential half by [`arm`]
@@ -94,8 +93,8 @@ pub(crate) fn arm(bind: TcpBind) -> (Arc<TcpAuth>, Listener) {
 }
 
 /// [`arm`] with the user state database injected — the interface a test uses to keep
-/// burns and enrolled devices out of the real user-scoped file. Both tables the bind
-/// keeps are in that one file (docs/state-store.md).
+/// enrolled devices and pending sign-ins out of the real user-scoped file. Both tables
+/// the bind keeps are in that one file (docs/state-store.md).
 pub(crate) fn arm_with_state(bind: TcpBind, state: PathBuf) -> (Arc<TcpAuth>, Listener) {
     let TcpBind {
         addr,
@@ -118,14 +117,12 @@ pub(crate) fn arm_with_state(bind: TcpBind, state: PathBuf) -> (Arc<TcpAuth>, Li
         }
     }
     let auth = Arc::new(TcpAuth {
-        totp_secret: root.totp_secret(),
         tokens: root.device_tokens(),
         hosts,
         public_base: Mutex::new(public_base),
         tls: tls.is_some(),
-        lockout: Mutex::new(Lockout::default()),
-        ledger: BurnLedger::new(state.clone()),
-        devices: devices::Store::new(state),
+        devices: devices::Store::new(state.clone()),
+        sign_ins: sign_ins::Store::new(state),
     });
     (auth, Listener { addr, tls, open })
 }
@@ -209,37 +206,18 @@ impl TcpAuth {
         }
     }
 
-    /// The bootstrap link: the current TOTP code in the URL *fragment*, which never
-    /// reaches server or proxy logs; burning on acceptance makes scrollback and
-    /// browser-history residue inert (docs/web-bind.md).
-    /// A link carrying a code no one has used yet: the current step's, or when
-    /// that one was just redeemed, a later step's inside the accepted skew — a
-    /// second link minted in the same 30 seconds would otherwise carry a code
-    /// already burned, and fail as a replay. `None` when every candidate is used.
-    pub(crate) fn mint_link(&self) -> Option<String> {
-        let now = auth::timestep(SystemTime::now());
-        let step = (now..=now + auth::TOTP_SKEW).find(|step| !self.ledger.is_burned(*step))?;
-        let code = auth::totp(&self.totp_secret, step);
-        Some(format!(
-            "{}/#token={}",
-            self.public_base(),
-            auth::format_code(code)
-        ))
+    /// The sign-in link: a pending sign-in approved before it was asked for, its claim
+    /// secret in the URL *fragment*, which never reaches server or proxy logs. The
+    /// secret collects one token within the sign-in's lifetime, so the copy left in
+    /// scrollback and browser history collects nothing after (docs/web-bind.md).
+    pub(crate) fn mint_link(&self) -> Result<String, crate::state::Error> {
+        let claim = self.sign_ins.approved_link(SystemTime::now())?;
+        Ok(format!("{}/#claim={}", self.public_base(), claim.encoded()))
     }
 
-    /// The enrollment URI for a stock authenticator app. Host-only surface.
-    pub(crate) fn otpauth_uri(&self) -> String {
-        let host = self
-            .hosts
-            .first()
-            .map(String::as_str)
-            .unwrap_or("efference");
-        auth::otpauth_uri(&self.totp_secret, host)
-    }
-
-    /// Enroll a device and answer it with its token — what the mint hands a browser
-    /// for a current code, and what the socket's `POST /auth/devices` hands a script
-    /// (docs/web-bind.md). The one moment a token is spelled outside a request.
+    /// Enroll a device and answer it with its token — what a claim hands a browser
+    /// whose sign-in was approved, and what the socket's `POST /auth/devices` hands a
+    /// script (docs/web-bind.md). The one moment a token is spelled outside a request.
     pub(crate) fn enroll(
         &self,
         kind: Kind,
@@ -281,37 +259,6 @@ impl TcpAuth {
             }
         }
     }
-
-    /// Verify a six-digit code under the lockout, burning the accepted step. The
-    /// lockout lock is held across the (tiny) ledger file I/O so concurrent attempts
-    /// serialize rather than sharing one failure count update.
-    fn authenticate_code(&self, code: &str) -> Result<(), CodeRejection> {
-        let mut lockout = self.lockout.lock().unwrap();
-        let now = Instant::now();
-        if let Some(remaining) = lockout.locked_for(now) {
-            return Err(CodeRejection::Locked(remaining));
-        }
-        let Some(step) = auth::matching_timestep(&self.totp_secret, code, SystemTime::now()) else {
-            lockout.failure(now);
-            return Err(CodeRejection::Wrong);
-        };
-        match self.ledger.burn(step) {
-            Ok(true) => {
-                lockout.success();
-                Ok(())
-            }
-            Ok(false) => {
-                lockout.failure(now);
-                Err(CodeRejection::Replayed)
-            }
-            // Fail closed: a code the ledger can't record is a code that can't be
-            // proven single-use.
-            Err(e) => {
-                log::error!("burn ledger write failed: {e}");
-                Err(CodeRejection::Ledger)
-            }
-        }
-    }
 }
 
 /// What the credential check found on a conn ([`TcpAuth::credential`]).
@@ -324,19 +271,6 @@ enum Credential {
     /// refused without a `401`, which a client takes as a bad token and discards
     /// (docs/web-bind.md).
     Unchecked,
-}
-
-/// Why a code was rejected — each maps to one response shape in the session route.
-enum CodeRejection {
-    /// Rate-limited; carries the remaining lockout.
-    Locked(Duration),
-    /// No timestep in the skew window produced this code.
-    Wrong,
-    /// The code verified but its step was already burned — a replay (or a stale
-    /// scrollback link; the remedy is `efference dev open`).
-    Replayed,
-    /// The ledger could not record the burn; verification fails closed.
-    Ledger,
 }
 
 /// The host part of an authority-shaped value: strip a port and a trailing FQDN dot,

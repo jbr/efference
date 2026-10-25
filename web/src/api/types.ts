@@ -1027,7 +1027,6 @@ export interface ErrorEnvelope {
     | "cold"
     | "unauthorized"
     | "forbidden"
-    | "rate_limited"
     | "unsupported_content"
     | "too_large"
     | "internal";

@@ -716,17 +716,14 @@ pub async fn serve_host(
             auth.bound_port(bound.port());
         }
         log::info!("web: {} (bound {addr})", auth.public_base());
-        let link = auth.mint_link();
-        match &link {
-            Some(link) => log::info!("  {link}"),
-            None => {
-                log::info!("  (every current code is used; a link minted in half a minute works)")
+        match auth.mint_link() {
+            Ok(link) => {
+                log::info!("  {link}");
+                if open && webbrowser::open(&link).is_err() {
+                    log::warn!("could not open a browser for {link}");
+                }
             }
-        }
-        if let Some(link) = link.filter(|_| open)
-            && webbrowser::open(&link).is_err()
-        {
-            log::warn!("could not open a browser for {link}");
+            Err(e) => log::warn!("could not mint a sign-in link: {e}"),
         }
         _tcp_server = Some(handle);
     }

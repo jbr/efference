@@ -248,7 +248,7 @@ the root instead.
 binding is genuinely ambiguous — the shell is byte-identical — so `session/entry.ts`
 asks: the host answers `GET /sessions` with the listing, a session daemon serves no
 such route and answers `404`, and a host with no credential yet answers `401`
-(which clears the held bearer and is the login view, after which the probe re-runs). Anything else — offline, a
+(which clears the held bearer and is the sign-in view, after which the probe re-runs). Anything else — offline, a
 daemon that went away — reads as a session, which is what a root has always been;
 the session view's composer status reports the network state, where a second
 failure screen would only restate it.
@@ -2157,14 +2157,19 @@ note ("handed off from `<id>` — its brief:") rather than as the operator's tur
 ## Serving and auth
 
 The gate enumerates its anonymous surface rather than deriving it from guarded
-prefixes ([web-bind.md](web-bind.md)): the app shell, the hashed assets, and the launch images under `/splash` serve without a
-credential — the same posture as the inline bootstrap page the app replaced — as does
-`POST /auth/session`, and everything else, `/v1` and `/files` included, takes a
-device token. The login view (`web/src/ui/Login.tsx`) carries the bootstrap dance: read
-`#token=` from the URL fragment, trade the code at `POST /auth/session`, with a label
-naming the browser (`ui/deviceLabel.ts`), for this browser's device token, keep it
-(`api/bearer.ts`), scrub the fragment; render the six-digit field on a bare visit or a
-failed trade. The SPA index answers the client's
+prefixes ([web-bind.md](web-bind.md)): the app shell, the hashed assets, and the launch
+images under `/splash` serve without a credential, as do `POST /pair` and
+`POST /pair/claim`, and everything else, `/v1` and `/files` included, takes a device
+token. The sign-in view (`web/src/ui/Login.tsx`) carries the sign-in
+([web-bind.md](web-bind.md)). A sign-in link's `#claim=` fragment is read and scrubbed
+at bundle load (`ui/bootClaim.ts`), and on a later hashchange, so `efference dev open`
+landing in an open tab works; the view claims it at `POST /pair/claim` with a label
+naming the browser (`ui/deviceLabel.ts`). On a bare visit, or a link that names
+nothing, it asks `POST /pair` under that label and shows the short code with
+`efference devices approve`, the command that approves it, and a countdown, then
+claims every second until the host answers with this browser's device token, which it
+keeps (`api/bearer.ts`) before the session connects. A code that expires says so and
+offers a new one. The SPA index answers the client's
 named routes and nothing else (`SPA_ROUTES`, `src/daemon/tcp/gate.rs`) — a broader index
 fallback would answer scanner probes `200`. On a host those routes are also answered
 under a session prefix, which is the one place the anonymous shell sits among guarded
@@ -2187,8 +2192,8 @@ reach the router rather than stop at a `401`.
   compile time, so building the crate needs `pnpm` on PATH and `web/node_modules`
   installed (`pnpm install` once).
 - `pnpm check` in `web/` — typecheck, lint, format check, vitest.
-- `pnpm dev` standalone also works: `web/vite.config.ts` proxies `/v1` and `/auth`
-  to a daemon on `:7878`.
+- `pnpm dev` standalone also works: `web/vite.config.ts` proxies `/v1`, `/auth`, and
+  `/pair` to a daemon on `:7878`.
 
 ### Finding what widens a phone layout — `web/src/overflowReport.ts`
 
