@@ -98,6 +98,10 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         web_auth.map(pair_routes),
         files.is_some().then(control_routes),
         is_host.then(|| host_routes(web)),
+        // A token capability has no session state and its URL is rooted at the web
+        // origin, so mount only its token-scoped document and asset routes here —
+        // not the coordinate resolver, which remains in the session control router.
+        Some(crate::daemon::artifacts::routes()),
         // The operator's read surface over the working directory (docs/web-bind.md),
         // mounted only behind a gate so the socket never serves it. A router over
         // `/files/**`, so every other path passes through to the routes below.

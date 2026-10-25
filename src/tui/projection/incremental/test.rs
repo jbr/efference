@@ -105,6 +105,71 @@ fn incremental_matches_a_from_scratch_projection() {
     assert_eq!(shape(&doc.document.nodes), shape(&expected.nodes));
 }
 
+#[test]
+fn an_artifact_url_reprojects_only_its_committed_assistant_entry() {
+    let log = vec![
+        user(6, "before"),
+        entry(
+            7,
+            Payload::Assistant {
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![ContentBlock::Text(
+                        "Chart:\n\n```html-artifact\n<svg>chart</svg>\n```".into(),
+                    )],
+                    vec![],
+                ),
+                excluded: None,
+            },
+        ),
+        user(8, "after"),
+    ];
+    let mut view = ViewState::default();
+    let mut doc = empty_doc();
+    let mut transcript = Transcript::default();
+    let tail = LiveTail::default();
+    transcript.update(&mut doc, &log, &tail, &mut view, Gate::default(), &[]);
+    let source_only = shape(&doc.document.nodes);
+    assert!(source_only.contains("<svg>chart</svg>"));
+    assert!(!source_only.contains("127.0.0.1"));
+
+    // Stand in for a completed layout pass; only the target entry should lose its layout.
+    doc.layouts = (0..doc.document.nodes.len())
+        .map(|_| {
+            Some(crate::tui::state::NodeLayout {
+                height: 3,
+                actions: Vec::new(),
+                level: Default::default(),
+            })
+        })
+        .collect();
+    let before = transcript.counts[0];
+    let target_end = before + transcript.counts[1];
+
+    let coordinate = crate::tui::artifacts::candidates(&log[1])[0];
+    assert!(transcript.set_artifact_url(
+        &log,
+        coordinate,
+        "http://127.0.0.1:4321/artifacts/token/".into(),
+    ));
+    transcript.update(&mut doc, &log, &tail, &mut view, Gate::default(), &[]);
+
+    let with_link = shape(&doc.document.nodes);
+    assert!(
+        with_link.contains("<svg>chart</svg>"),
+        "source remains visible"
+    );
+    assert!(with_link.contains("↗ artifact · http://127.0.0.1:4321/artifacts/token/"));
+    assert!(doc.layouts[..before].iter().all(Option::is_some));
+    assert!(doc.layouts[before..target_end].iter().all(Option::is_none));
+    assert!(doc.layouts[target_end..].iter().all(Option::is_some));
+    assert!(!transcript.set_artifact_url(
+        &log,
+        coordinate,
+        "http://127.0.0.1:4321/artifacts/token/".into(),
+    ));
+}
+
 /// A result arrives for a call several entries back: it must re-render *that*
 /// entry's exchange, still matching a from-scratch projection.
 #[test]

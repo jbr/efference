@@ -54,6 +54,9 @@ impl Surface {
     /// gate, so a HEAD arrives here already rewritten to GET.
     fn anonymous(self, method: Method, path: &str) -> bool {
         let get = method == Method::Get;
+        if get && crate::daemon::artifacts::is_artifact_route(path) {
+            return true;
+        }
         // The web client's own shell, wherever it is served: its routes at its
         // base, the build's hashed assets, the launch images under `/splash`, and
         // the few public files whose names the build does not hash. None of it is

@@ -18,8 +18,10 @@
 // not exercise yet but that keeps the code shaped like upstream for backporting.
 #![allow(dead_code)]
 
+mod artifacts;
 pub(crate) mod attention;
 pub(crate) mod block_menu;
+
 pub(crate) mod clipboard;
 pub(crate) mod closed;
 pub(crate) mod color_scheme;
@@ -226,6 +228,11 @@ pub(crate) enum TuiEvent {
         seq: u64,
         idx: usize,
         image: Result<::image::DynamicImage, String>,
+    },
+    /// The artifact-only loopback URL resolved for one committed assistant fence.
+    ArtifactUrl {
+        coordinate: artifacts::Coordinate,
+        url: String,
     },
     /// A one-line note from a control-channel call the UI thread dispatched and
     /// could not await — today the continue gesture's decline (docs/tui.md).

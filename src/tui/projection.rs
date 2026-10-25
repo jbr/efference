@@ -14,6 +14,7 @@ use crate::log::{
     AssistantOutput, ContentBlock, Exclusion, LogEntry, MessagesOutputBlock, Payload, RawResult,
     Summary, ToolCall, Triaged, WireState,
 };
+use crate::tui::artifacts::{self, Coordinate};
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, Span, SpanStyle,
 };
@@ -43,10 +44,12 @@ pub(crate) fn project(
     }
 
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
+    let artifact_urls = HashMap::new();
     for idx in 0..log.len() {
-        nodes.extend(entry_nodes(log, idx, &index, view, gate));
+        nodes.extend(entry_nodes(log, idx, &index, view, gate, &artifact_urls));
     }
     nodes.extend(tail_nodes(live, view, pending_turns));
+
     Document::with_nodes(nodes)
 }
 
@@ -203,6 +206,7 @@ pub(crate) fn entry_nodes(
     index: &CallIndex,
     view: &ViewState,
     gate: Gate<'_>,
+    artifact_urls: &HashMap<Coordinate, String>,
 ) -> Vec<DocumentNode<'static>> {
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
     let Some(entry) = log.get(idx) else {
@@ -315,11 +319,17 @@ pub(crate) fn entry_nodes(
                 }
                 let prose = output.text().join("\n");
                 if !prose.trim().is_empty() {
-                    nodes.push(DocumentNode::entry(
-                        EntryKind::AssistantMessage,
-                        markdown(&prose),
-                    ));
+                    let mut body = markdown(&prose);
+                    for coordinate in artifacts::candidates(entry) {
+                        if let Some(url) = artifact_urls.get(&coordinate) {
+                            body.push(DocumentNode::Paragraph {
+                                spans: vec![Span::plain(format!("↗ artifact · {url}"))],
+                            });
+                        }
+                    }
+                    nodes.push(DocumentNode::entry(EntryKind::AssistantMessage, body));
                 }
+
                 let calls = output.tool_calls().unwrap_or_default();
                 for (i, call) in calls.iter().enumerate() {
                     // A question put to the operator is drawn as the assistant's prose

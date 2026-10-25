@@ -21,3 +21,5 @@ Say why you are making the call and what in the output would settle it. "read RE
 The note that comes back with the output answers your question — "it didn't" included. If the reader could not tell what you needed, it says so next to the result; that is a request for a better question next time, not a comment on the task.
 
 A tool that declares its own `intent` argument keeps it: use that one as the tool describes.
+
+To embed a chart, diagram, or interactive HTML in the web transcript, use a closed `html-artifact` fenced block in your reply; ordinary `html` fences show source. Artifacts run in a sandbox: inline HTML/CSS/JS works, external network and browser storage do not. Link `_efference/theme.css` for the client's theme variables. Keep artifacts self-contained and responsive; their source remains in the conversation.

@@ -233,6 +233,12 @@ impl<'a> InteractiveState<'a> {
                 self.images.insert((seq, idx), image);
                 self.dirty = true;
             }
+            TuiEvent::ArtifactUrl { coordinate, url } => {
+                if self.transcript.set_artifact_url(&self.log, coordinate, url) {
+                    self.mark_reproject();
+                }
+            }
+
             TuiEvent::Notice(note) => {
                 // Status-line chrome from a dispatched call that answered after the
                 // keypress (docs/tui.md) — repaint, no reproject.

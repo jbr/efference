@@ -224,11 +224,14 @@ function SummaryRule({
 function Leaf({
   node,
   liveAsk,
+  artifactEnabled,
 }: {
   node: LeafNode;
   /** The `ask` topic, for ask leaves only (others get `null` so a topic change
    * does not re-render them). */
   liveAsk: Ask | null;
+  /** Enabled only by the real session transcript, never embedded specimens. */
+  artifactEnabled: boolean;
 }) {
   const { entry } = node;
   const p = entry.payload;
@@ -302,6 +305,23 @@ function Leaf({
     // Thinking leaves are TranscriptItems' own (they fold by level); what
     // reaches here is the step's prose.
     const view = assistantView(p.Assistant);
+    if (artifactEnabled && p.Assistant.excluded === undefined) {
+      return (
+        <Entry label={null}>
+          {view.text.map((block, textBlock) => {
+            const source = text([block]);
+            if (source === "") return null;
+            return (
+              <div className="assistant-text-block" key={textBlock}>
+                <Markdown artifact={{ seq: entry.seq, textBlock }}>
+                  {source}
+                </Markdown>
+              </div>
+            );
+          })}
+        </Entry>
+      );
+    }
     return (
       <Entry label={null}>
         <Markdown>{text(view.text)}</Markdown>
@@ -580,6 +600,7 @@ export function TranscriptContent({
   pending,
   ask,
   gatedCall,
+  artifactEnabled = false,
   onGateSlot,
   onRecall,
   onInspect,
@@ -590,6 +611,8 @@ export function TranscriptContent({
   /** The call the approval gate holds, if any, and where its slot element
    * goes once mounted (ui/Gate.tsx). */
   gatedCall: CallId | null;
+  /** Only the committed session transcript resolves opted-in HTML fences. */
+  artifactEnabled?: boolean;
   onGateSlot: (element: HTMLDivElement | null) => void;
   streaming: Streaming;
   pending: PendingTurn[];
@@ -626,7 +649,11 @@ export function TranscriptContent({
         thinking={thinking}
         gatedCall={gatedCall}
         renderLeaf={(node) => (
-          <MemoLeaf node={node} liveAsk={node.ask === undefined ? null : ask} />
+          <MemoLeaf
+            node={node}
+            liveAsk={node.ask === undefined ? null : ask}
+            artifactEnabled={artifactEnabled}
+          />
         )}
         renderFullCall={(node) => (
           <Call

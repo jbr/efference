@@ -62,6 +62,50 @@ async fn every_response_carries_the_security_headers() {
     }
 }
 
+#[tokio::test]
+async fn artifact_routes_keep_the_artifact_policy_and_allow_same_origin_framing() {
+    let token = "A".repeat(43);
+    let server = TestServer::new((
+        SecurityHeaders::new(false),
+        |conn: trillium::Conn| async move { conn.ok("artifact") },
+    ))
+    .await;
+
+    for path in [
+        format!("/artifacts/{token}/"),
+        format!("/artifacts/{token}/_efference/runtime.js"),
+        format!("/artifacts/{token}/_efference/theme.css"),
+    ] {
+        let response = server.get(&path).await;
+        let headers = response.response_headers();
+        let csp = headers
+            .get_str(KnownHeaderName::ContentSecurityPolicy)
+            .unwrap_or_default();
+        assert_eq!(csp, crate::daemon::artifacts::ARTIFACT_CSP, "{path}");
+        assert!(!csp.contains("frame-ancestors 'none'"), "{csp}");
+        assert_eq!(headers.get_str("x-frame-options"), Some("SAMEORIGIN"));
+        assert_eq!(headers.get_str("x-content-type-options"), Some("nosniff"));
+        assert_eq!(
+            headers.get_str(KnownHeaderName::ReferrerPolicy),
+            Some("no-referrer")
+        );
+    }
+
+    let prefixed = server
+        .get(&format!("/sessions/work/artifacts/{token}/"))
+        .await;
+    assert_ne!(
+        prefixed
+            .response_headers()
+            .get_str(KnownHeaderName::ContentSecurityPolicy),
+        Some(crate::daemon::artifacts::ARTIFACT_CSP)
+    );
+    assert_eq!(
+        prefixed.response_headers().get_str("x-frame-options"),
+        Some("DENY")
+    );
+}
+
 /// HSTS rides only on a TLS listener (docs/web-bind.md): the layer's `tls`
 /// flag comes from the arm, fixed at bind time rather than read off the conn.
 #[tokio::test]

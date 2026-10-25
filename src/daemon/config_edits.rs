@@ -103,7 +103,7 @@ impl Session {
 
     /// Edit a committed [`ConfigChange`] into the config file, preserving its formatting
     /// (docs/permissions.md). Every committed grant goes through here, so the file
-    /// stays a complete record of the perimeter the session ran under — the artifact an operator
+    /// stays a complete record of the perimeter the session ran under — the file an operator
     /// reads, and copies grants up to the origin template from. A session with no config file (the
     /// built-in default role) is a no-op: there is no file to diverge from.
     pub fn apply_config_change(&self, change: &crate::log::ConfigChange) -> std::io::Result<()> {

@@ -302,7 +302,8 @@ impl SessionRuntime {
             // would resolve while the processes were still in the table.
             loop_session.reap_all_bg().await;
             // Scratch lifecycle (docs/tools.md): cleaned on session end unless
-            // retained as a post-mortem artifact.
+            // retained for post-mortem inspection.
+
             if let Some(scratch) = scratch {
                 if keep_scratch {
                     log::debug!("scratch kept: {}", scratch.display());

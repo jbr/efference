@@ -58,6 +58,7 @@ impl trillium::Handler for SecurityHeaders {
         // is covered too. `/files` sets its own `private, no-cache` in its
         // read stage, which is what keeps the header off its change streams.
         let route = session_scoped(conn.path()).unwrap_or(conn.path());
+        let artifact = crate::daemon::artifacts::is_artifact_route(conn.path());
         let conn = if under(route, "/v1") {
             conn.with_response_header(KnownHeaderName::CacheControl, "no-store")
         } else {
@@ -74,12 +75,17 @@ impl trillium::Handler for SecurityHeaders {
         // A cross-origin document ends up neither this page's opener nor its
         // openee: the page holds a session credential, and a cross-origin
         // window must not hold a reference into its browsing-context group.
+        let (csp, frame_options) = if artifact {
+            (crate::daemon::artifacts::ARTIFACT_CSP, "SAMEORIGIN")
+        } else {
+            (CSP, "DENY")
+        };
         conn.with_response_header(KnownHeaderName::CrossOriginOpenerPolicy, "same-origin")
-            .with_response_header(KnownHeaderName::ContentSecurityPolicy, CSP)
+            .with_response_header(KnownHeaderName::ContentSecurityPolicy, csp)
             .with_response_header("x-content-type-options", "nosniff")
             // Redundant with `frame-ancestors` for anything current, and one
             // header for the browsers that predate CSP3.
-            .with_response_header("x-frame-options", "DENY")
+            .with_response_header("x-frame-options", frame_options)
             .with_response_header(KnownHeaderName::ReferrerPolicy, "no-referrer")
     }
 }

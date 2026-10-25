@@ -641,6 +641,7 @@ pub(crate) mod files;
 // `Frame::with_render` and `Frame::state`, which the emitter does not reach:
 // nothing annotates a frame with a render yet, and the state path builds from
 // pre-serialized topic JSON (`Frame::state_raw`).
+pub(crate) mod artifacts;
 #[allow(dead_code)]
 mod frames;
 mod handler;

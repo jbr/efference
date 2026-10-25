@@ -37,7 +37,7 @@
 //!
 //! ## What the config holds
 //!
-//! One artifact configures every cascade rung (docs/permissions.md):
+//! One config file configures every cascade rung (docs/permissions.md):
 //!
 //! - [`Config::scope`] — the positive scope, **shared with the acting session** for
 //!   self-alignment. It projects into the cached preamble ([`Config::preamble_section`]).

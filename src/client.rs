@@ -526,6 +526,21 @@ impl Client {
     pub async fn log_entry(&self, seq: u64) -> Result<String> {
         self.get(&format!("/log/{seq}")).await
     }
+    /// Resolve a closed `html-artifact` fence from a committed assistant text block
+    /// (`GET /artifacts/:seq/:text_block/:fence`). Coordinates are zero-based. The
+    /// response's `external_url` is the anonymous artifact-only loopback address for
+    /// clients such as the TUI; `url` is the session-relative artifact address.
+    pub async fn resolve_artifact(
+        &self,
+        seq: u64,
+        text_block: usize,
+        fence: usize,
+    ) -> Result<ArtifactResolution> {
+        let path = format!("/artifacts/{seq}/{text_block}/{fence}");
+        let body = self.get(&path).await?;
+        serde_json::from_str(&body)
+            .with_context(|| format!("parsing the artifact resolution response: {body}"))
+    }
 
     /// Open the unified control stream (`GET /events`, docs/control-api.md). Every event's
     /// `data` is a frame envelope discriminated by `class`; only `log` frames carry an
@@ -577,6 +592,14 @@ pub struct WithdrawnTurn {
     pub text: String,
     #[serde(default)]
     pub attachments: Vec<Arrival>,
+}
+/// The artifact route's resolver response: a relative token URL and, when the
+/// artifact-only listener is available, its loopback URL for direct display/opening.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct ArtifactResolution {
+    pub url: String,
+    #[serde(default)]
+    pub external_url: Option<String>,
 }
 
 #[derive(serde::Deserialize)]

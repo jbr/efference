@@ -5,6 +5,7 @@
 
 pub mod agent;
 pub mod api;
+pub(crate) mod artifact;
 pub mod attachments;
 pub mod auth;
 pub mod bash;

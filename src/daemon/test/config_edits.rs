@@ -210,7 +210,7 @@ fn reload_emits_committed_edits_for_file_deltas() {
 /// A config edit that no longer parses keeps the last-good policy, **reverts the file**, and
 /// surfaces the parse error to the session — the two-outcome rule
 /// (docs/permissions.md). The revert is what makes the file an
-/// always-valid artifact: the operator reads it to see the perimeter the session ran under.
+/// always-valid record: the operator reads it to see the perimeter the session ran under.
 #[test]
 fn reload_failure_keeps_policy_reverts_file_and_notifies() {
     use crate::policy::{Verdict, classify};

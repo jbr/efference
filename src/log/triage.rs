@@ -6,7 +6,7 @@ use super::*;
 /// triage, recorded durably so every triage decision is reconstructable from the log
 /// (including ones only ever visible inside the fork). The rendered wire form lives
 /// on the paired [`ToolResult`]'s [`WireState`]; this carries the *provenance* the
-/// rendered artifact can't, with no overlap.
+/// rendered output can't, with no overlap.
 ///
 /// [`ToolResult`]: Payload::ToolResult
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -16,7 +16,7 @@ pub struct Triage {
     /// that rides no tool result). Backward-compatible: serde reads an old bare `seq` as `Some`.
     pub for_result: Option<Seq>,
     /// Whether the verdict came from the model or a harness fallback. For a
-    /// model-free stub triager this is the one signal the rendered artifact
+    /// model-free stub triager this is the one signal the rendered output
     /// erases (its head/tail verdict renders like a deliberate one); a failed triage
     /// additionally projects a withheld-output error (docs/triage.md).
     pub origin: Origin,

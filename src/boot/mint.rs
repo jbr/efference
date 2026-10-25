@@ -27,7 +27,7 @@ pub(super) struct Minted {
     pub(super) session_dir: Option<PathBuf>,
     pub(super) scratch: Option<PathBuf>,
     /// `--keep-scratch`, honored on a failed boot as it is at session end
-    /// (docs/tools.md): the post-mortem artifact survives the rollback.
+    /// (docs/tools.md): the scratch directory survives the rollback.
     pub(super) keep_scratch: bool,
     pub(super) worktree: Option<MintedWorktree>,
 }

@@ -376,6 +376,7 @@ export function SessionView() {
         />
         <EarlierHistory history={history} entries={session.entries} />
         <Transcript
+          artifactEnabled
           nodes={nodes}
           streaming={session.streaming}
           pending={session.pendingTurns}

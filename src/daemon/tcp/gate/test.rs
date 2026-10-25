@@ -186,6 +186,74 @@ fn the_anonymous_surface_is_named() {
     }
 }
 
+#[test]
+fn artifact_capabilities_are_anonymous_only_on_the_exact_get_routes() {
+    let token = "A".repeat(43);
+    let document = format!("/artifacts/{token}/");
+    let redirect = format!("/artifacts/{token}");
+    let runtime = format!("/artifacts/{token}/_efference/runtime.js");
+    let theme = format!("/artifacts/{token}/_efference/theme.css");
+    let cases = [
+        (Surface::Session, Method::Get, document.clone(), true),
+        (Surface::Session, Method::Get, redirect.clone(), true),
+        (Surface::Session, Method::Get, runtime.clone(), true),
+        (Surface::Session, Method::Get, theme.clone(), true),
+        (Surface::Host, Method::Get, document.clone(), true),
+        (Surface::Host, Method::Get, redirect.clone(), true),
+        (Surface::Host, Method::Get, runtime.clone(), true),
+        (Surface::Host, Method::Get, theme, true),
+        (
+            Surface::Session,
+            Method::Post,
+            format!("/artifacts/{token}/"),
+            false,
+        ),
+        (
+            Surface::Session,
+            Method::Get,
+            "/artifacts/short/".to_string(),
+            false,
+        ),
+        (
+            Surface::Session,
+            Method::Get,
+            format!("/artifacts/{token}/_efference/private.js"),
+            false,
+        ),
+        (
+            Surface::Session,
+            Method::Get,
+            format!("/artifacts/{token}/_efference/runtime.js/"),
+            false,
+        ),
+        (
+            Surface::Host,
+            Method::Get,
+            format!("/sessions/work/artifacts/{token}/"),
+            false,
+        ),
+        (
+            Surface::Host,
+            Method::Get,
+            format!("/sessions/work{runtime}"),
+            false,
+        ),
+        (
+            Surface::Host,
+            Method::Get,
+            format!("/sessions/work/artifacts/{token}/_efference/private.js"),
+            false,
+        ),
+    ];
+    for (surface, method, path, free) in cases {
+        assert_eq!(
+            surface.anonymous(method, &path),
+            free,
+            "{method:?} {path:?}"
+        );
+    }
+}
+
 /// `/files` is the operator's read surface over the working directory
 /// (docs/web-bind.md), behind a device token as `/v1` is: anonymous is refused
 /// there unlike every other GET outside `/v1`, and a token opens it. Its

@@ -7,6 +7,7 @@ import {
   fetchLogBefore,
   fetchLogRange,
   fetchCallSeq,
+  resolveArtifact,
 } from "./http.ts";
 
 const json = (status: number, body: unknown) =>
@@ -83,6 +84,22 @@ test("history reads bind ranges and encoded references to their source session",
     "/sessions/source/v1/tool_calls/call%2Fid%3F",
   ]);
   for (const [, init] of fetchMock.mock.calls) expect(init.method).toBe("GET");
+});
+
+test("artifact resolution uses the authenticated coordinate endpoint", async () => {
+  const { fetchMock, sent } = await signedIn("device");
+  const descriptor = {
+    url: "/artifacts/token/",
+    external_url: "https://example.test/artifact",
+  };
+  fetchMock.mockResolvedValue(json(200, descriptor));
+
+  await expect(resolveArtifact(17, 2, 4)).resolves.toEqual(descriptor);
+
+  const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+  expect(path).toBe("/v1/artifacts/17/2/4");
+  expect(init.method).toBe("GET");
+  expect(sent().get("authorization")).toBe("Bearer device");
 });
 
 test("with no bearer held, apiFetch passes its arguments to the global fetch as it finds it at the call", async () => {

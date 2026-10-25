@@ -5,7 +5,7 @@ use super::*;
 /// (docs/permissions.md). The session's `config.toml` is the
 /// perimeter's readable form — what an operator inspects, and copies grants up to the origin
 /// template from — so a grant that folded into effective policy but never appeared there would
-/// make that artifact an incomplete record. Formatting survives, since the operator reads this
+/// make that file an incomplete record. Formatting survives, since the operator reads this
 /// file by hand.
 #[test]
 pub(super) fn a_committed_grant_is_written_to_the_config_file() {

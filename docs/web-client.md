@@ -1013,6 +1013,11 @@ summary text as markdown (`react-markdown` + `remark-gfm`). Tool
 output does not come through it — the cordon gives it per-tool
 representations — and that exclusion is the point of the split.
 
+Committed assistant text can opt into a separate browser document with a closed
+`html-artifact` fence. Ordinary `html` and `svg` fences remain code; user messages,
+thinking and tool output cannot opt in. The frame, token route and runtime are
+described in [artifacts.md](artifacts.md).
+
 Thinking is markdown on the same footing as the rest. It carried a named
 reversal trigger when it landed — a model whose thinking was line-structured,
 bare adjacent lines markdown would merge into one paragraph, would have flipped
@@ -2086,16 +2091,18 @@ text, tool output, file contents, MCP server responses — on a page that holds 
 session credential for a control channel that runs commands. One invariant and
 one backstop.
 
-**Nothing turns untrusted content into markup.** JSX text nodes and React-escaped
-attributes are the only sinks; there is no `dangerouslySetInnerHTML` and no
-`innerHTML` assignment in `web/src/`, and an eslint rule
+**Nothing turns untrusted content into markup in the credential-bearing page.**
+Artifacts execute HTML in a separate opaque-origin sandbox ([artifacts.md](artifacts.md));
+the parent never inserts their HTML into its own document. JSX text nodes and
+React-escaped attributes are the parent's sinks; there is no `dangerouslySetInnerHTML`
+and no `innerHTML` assignment in `web/src/`, and an eslint rule
 (`no-restricted-syntax` in `web/eslint.config.js`) keeps it that way, so reaching
 for one has to be an argument rather than a habit. This is why the markdown
 renderer must produce elements and the highlighter must produce tokens: both were
 chosen against this constraint rather than for ergonomics.
 
-The one payload-derived attribute is `data-lang`, from `langForPath`'s closed set
-or a `/language-(\w+)/` capture. Links come from `react-markdown`'s
+Code's payload-derived `data-lang` attribute comes from `langForPath`'s closed set
+or the Markdown code-fence language capture. Links come from `react-markdown`'s
 `defaultUrlTransform`, which passes only `http`/`https`/`irc`/`ircs`/`mailto`/
 `xmpp` — so a `javascript:` or `data:` URL in model output never reaches an
 `href`.
@@ -2103,9 +2110,10 @@ or a `/language-(\w+)/` capture. Links come from `react-markdown`'s
 **A `Content-Security-Policy` on every response any listener produces**
 (`SecurityHeaders` in `src/daemon/tcp/headers.rs`), alongside `cross-origin-opener-policy:
 same-origin`, `x-content-type-options:
-nosniff`, `referrer-policy: no-referrer`, and `x-frame-options: DENY` (redundant
-with `frame-ancestors` for anything current, and one header for browsers that
-predate CSP3). The transport-side headers the layer also sets — `cache-control` on
+nosniff` and `referrer-policy: no-referrer`. The web shell and control routes also
+carry `x-frame-options: DENY` (redundant with `frame-ancestors` for anything current,
+and one header for browsers that predate CSP3). Artifact responses instead carry
+their opaque-origin sandbox policy and allow embedding ([artifacts.md](artifacts.md)). The transport-side headers the layer also sets — `cache-control` on
 `/v1` and `/files`, HSTS on a TLS bind — are described with the bind
 ([web-bind.md](web-bind.md)). It sits outermost in the handler
 stack so its `before_send` runs last, and the headers land on the SPA index, a

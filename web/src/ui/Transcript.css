@@ -7,6 +7,13 @@
   margin: 3rem 0;
 }
 
+/* Each assistant wire Text block is rendered separately in the session view
+   so an unfinished code fence cannot consume the next block. Keep the same
+   paragraph rhythm as the blank-line join used by the other transcripts. */
+.assistant-text-block + .assistant-text-block {
+  margin-top: 0.5rem;
+}
+
 /* An item without a gutter label sits in the prose column: where a labelled
    entry's content starts (.entry's 6rem gutter + 1.3rem gap). */
 .t-entry {

@@ -10,6 +10,12 @@
 export type Seq = number;
 export type CallId = string;
 
+/** A process-scoped artifact URL resolved from committed assistant prose (docs/control-api.md). */
+export interface ArtifactDescriptor {
+  url: string;
+  external_url?: string;
+}
+
 export interface LogEntry {
   seq: Seq;
   turn: number;
