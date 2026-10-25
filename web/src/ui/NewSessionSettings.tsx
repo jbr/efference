@@ -141,7 +141,7 @@ export function Settings({
   );
 }
 
-function Setting({
+export function Setting({
   label,
   children,
   error,
@@ -176,7 +176,7 @@ function Setting({
   );
 }
 
-function ModelControl({
+export function ModelControl({
   label,
   value,
   onClick,

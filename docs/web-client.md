@@ -254,7 +254,11 @@ activity (creation time when activity is unknown, then path to break ties). Thei
 age does not remove the workspace: archived sessions active within one hour appear
 as full cards (five per workspace, two on narrow screens), and those within one
 week appear as compact rows (up to five); the remaining sessions are available
-through the archive picker. Roots with only unreadable sessions are not included.
+through the archive picker. Each archived card and row carries the same `⋯` menu as a
+live card, with one action: **Switch model…** opens the switch page on that session and
+resumes it on the chosen models instead of the recorded ones
+([resumption.md](resumption.md)). The row itself stays one button that resumes it.
+Roots with only unreadable sessions are not included.
 The archive inventory is fetched on mount and when the live listing changes, so
 ending a workspace's last live session leaves its archived work available at home.
 
@@ -319,8 +323,11 @@ teardown has run — so the card leaves on the next frame of the listing stream,
 already out by the time the call returns. The confirm rule is `ui/sessionRow.ts`, the
 same rule the TUI's switcher applies ([tui.md](tui.md)): a session that is doing
 something, or that holds processes an end would reap, confirms in the menu naming
-which; an idle session with nothing running ends on the first click. The top bar's
-"New session" and each workspace's `+` open the new-session form below.
+which; an idle session with nothing running ends on the first click. The menu's other
+action is **Switch model…**, which opens the switch page on that session
+([resumption.md](resumption.md)): the model change stated as an action on a session
+rather than on a resume. The top bar's "New session" and each workspace's `+` open the
+new-session form below.
 
 **Entering a session is a client-side navigation, and each session keeps its own state.** A
 card's title is an `<a href>` to `/sessions/<id>/`, and the back affordance in the top bar is
@@ -363,7 +370,9 @@ view's pop handler stands down once the page is on another session's base, and a
 mounts onto an overlay entry an earlier view left consumes it with one `history.back()`, so
 Back from a session switched to with an overlay open lands on the previous page rather than a
 phantom overlay. The new-session and resume pages (`?new=`, `?resume=`) belong to the list and
-are unmounted with it.
+are unmounted with it, and so does the switch page when it opens from an archived row:
+`?switch=model&id=<id>`. On a session's own URL the same page is `?switch=model`, which
+keeps the session view mounted behind it.
 
 `ui/App.tsx` is only this choice — list, login, or session. The session view is
 `ui/SessionView.tsx`, which is the component the rest of this document means when it
@@ -1351,8 +1360,10 @@ focus can move into its actions; a click-opened card or an archive interaction k
 open across pointer departure. Escape restores tab focus and closes the card; an outside
 pointer press also dismisses it.
 
-The card's navigation content and archive footer are separate elements. The footer's
-“Archive session” action (`ui/ArchiveAction.tsx`) uses the overview's `archiveWarning`
+The card's navigation content and its actions are separate elements. The actions are
+one box beneath the card: **Switch model…** above a rule (it rides the session's URL as
+`?switch=model`, so the view behind the page stays mounted), and **Archive session**
+below it. The archive action (`ui/ArchiveAction.tsx`) uses the overview's `archiveWarning`
 rule: active work or background processes show a specific warning with “Archive anyway”
 and “Cancel”; an idle session with nothing running archives directly. The action disables
 while its request is pending, and the switcher reuses a pending request for that session
@@ -2107,11 +2118,15 @@ autosizing inflates an overflowing block), not only as a horizontal scroll, so
 With `?gallery` on the URL (dev builds), the page renders the client's widgets
 on fixture data instead of the app. A section index links to composed scenes,
 buttons, neon glyphs, session
-tabs and their hover card, composers, code/results, images, session cards, launch
-settings, the model picker, and resume lists. Specimen labels stack above their
+tabs and their hover card, composers, code/results, images, session cards, archived
+cards and rows, the switch page, launch settings, the model picker, and resume lists. Specimen labels stack above their
 controls on narrow screens; state comparisons wrap rather than widening the page.
 `SessionArchiveSpecimens.tsx` shows idle archiving, active-session confirmation, pending
 feedback and retryable failures through local callbacks, without sending session requests.
+`SwitchModelSpecimens.tsx` renders the switch page from a fixture identity and from a
+dormant row's recorded selections, and `ArchivedSpecimens.tsx` the archived card and the
+recent rows with their menus; the page's picker and its read of a dormant row are left
+out, since both need a host.
 `SessionChromeSpecimens.tsx` composes the production `TopBar`, fixture session tabs,
 and `SessionStatusFixture.tsx` with selectable environment, MCP mounting,
 authorization, startup failure, retry-refusal, reconnecting, and inspection-error

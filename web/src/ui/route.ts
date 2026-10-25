@@ -24,14 +24,21 @@ export function subscribe(listener: () => void): () => void {
   };
 }
 
+// Read through a guard: a page rendered with no `location` — a server render,
+// or a test of one screen on its own — has neither a pathname nor a query.
+const readPathname = () =>
+  typeof location === "undefined" ? "/" : location.pathname;
+const readSearch = () =>
+  typeof location === "undefined" ? "" : location.search;
+
 /** The page's pathname, re-read on every navigation and every pop. */
 export function usePathname(): string {
-  return useSyncExternalStore(subscribe, () => location.pathname);
+  return useSyncExternalStore(subscribe, readPathname, readPathname);
 }
 
 /** The query, including app settings, heard without remounting the page. */
 export function useSearch(): string {
-  return useSyncExternalStore(subscribe, () => location.search);
+  return useSyncExternalStore(subscribe, readSearch, readSearch);
 }
 
 /** Whether the client renders the page at `pathname` itself: the list, or a

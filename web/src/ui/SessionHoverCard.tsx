@@ -12,11 +12,14 @@ export function HoverCard({
   card,
   id,
   onArchive,
+  onSwitch,
   onInteract,
 }: {
   card: CardModel;
   id?: string;
   onArchive: () => Promise<unknown>;
+  /** Open the model switch for this session (ui/SwitchModelPage.tsx). */
+  onSwitch: () => void;
   onInteract?: () => void;
 }) {
   const phrase = statusPhrase(card);
@@ -85,6 +88,19 @@ export function HoverCard({
             </span>
           )}
         </a>
+        {/* A session action, not a destructive one: above the rule that
+            separates archiving from the details it would end. */}
+        <div className="switcher-card-actions">
+          <button
+            type="button"
+            onClick={() => {
+              onInteract?.();
+              onSwitch();
+            }}
+          >
+            Switch model…
+          </button>
+        </div>
         <ArchiveAction
           id={card.id}
           warning={archiveWarning({

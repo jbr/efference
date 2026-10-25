@@ -35,9 +35,11 @@ import { LightboxHost } from "./Lightbox.tsx";
 import { closeLightbox, useLightboxImage } from "./lightbox.ts";
 import { Login } from "./Login.tsx";
 import { useOverlayHistory } from "./overlayHistory.ts";
-import { navigate } from "./route.ts";
+import { navigate, useSearch } from "./route.ts";
 import { TopBar } from "./TopBar.tsx";
 import { Transcript } from "./Transcript.tsx";
+import { SwitchModelPage } from "./SwitchModelPage.tsx";
+import { liveTarget } from "./switchModel.ts";
 import { TaskStrip } from "./TaskStrip.tsx";
 
 /** One request to show a file: what to show, which call asked (the anchor's
@@ -61,6 +63,9 @@ function bootRoute(): "session" | "tree" {
 
 export function SessionView() {
   const { session, connector, actions, history } = useSession();
+  // Read up here with the other hooks: the view returns early for login and for a
+  // session still starting, and the switch page is a query stage on this URL.
+  const search = useSearch();
   useDocumentTitle(
     sessionDocumentTitle(
       sessionName(session.topics.session_identity, sessionId()),
@@ -328,6 +333,10 @@ export function SessionView() {
 
   const gate = session.topics.gate;
   const processes = session.topics.processes ?? [];
+  // The model switch (ui/SwitchModelPage.tsx) rides the session's own URL as a
+  // query stage, so it is a client-side move: the view behind it stays mounted.
+  const switchingModel = new URLSearchParams(search).get("switch") === "model";
+  const ownId = session.topics.session_identity?.id ?? sessionId();
   return (
     <div
       className={
@@ -462,6 +471,20 @@ export function SessionView() {
             ]
           }
         />
+      )}
+      {switchingModel && ownId !== null && (
+        <div className="switch-model-overlay">
+          <SwitchModelPage
+            target={liveTarget(
+              ownId,
+              session.topics.session_identity ?? null,
+              session.topics.cold ?? null,
+              session.topics.usage?.context?.used ?? null,
+            )}
+            onClose={() => navigate(sessionHref(ownId), "replace")}
+            onSwitched={() => navigate(sessionHref(ownId), "replace")}
+          />
+        </div>
       )}
     </div>
   );

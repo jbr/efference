@@ -230,6 +230,15 @@ hosted session and the size of the uncached read a main switch begins with. The 
 listing carries neither, so a scan over every root reads no log whole and no usage
 record.
 
+**Where a client offers it.** The switch is a page reached from a session's details —
+in the web client, the tab hover card and the overview card's menu — where it sits
+beside archiving. A running session is archived and resumed on the chosen models in one
+action. The same page opens from an archived row's menu, and there it only resumes,
+reading that session's `GET /sessions/:id` first for the roles and the context size. A
+resume spends nothing by itself, so neither verb is gated on a cost warning: the page
+states the first send's size once, and the composer's cold notice states it again in the
+session, where the send is made ([web-client.md](web-client.md)).
+
 When a switch changes what the session runs, the resume appends a `Preamble` that
 repeats the frozen one with the new `roles` ([log-and-projection.md](log-and-projection.md)),
 after the `Resumed` entry; a switch that names what is already recorded appends nothing.
@@ -315,7 +324,9 @@ and this listing's for a dormant one, so a dormant session is addressable by id.
   active cards, recently archived cards (< 1h, capped), compact listed rows (< 1w),
   and a full-screen filterable picker (`?resume=picker&cwd=...`). A top-bar `Resume…`
   action opens workspace selection (`?resume=location`) before landing on the picker
-  ([web-client.md](web-client.md)).
+  ([web-client.md](web-client.md)). Every card and row carries a `⋯` menu whose
+  **Switch model…** opens the switch page, so a session can resume on other models
+  without being resumed as it is first.
 - **Scripts** send the PATCH over HTTP. There is no `resume` control tool: the control
   tool set is also mounted into every session's `tools[]`, and reviving a session is not
   a step the main agent needs.

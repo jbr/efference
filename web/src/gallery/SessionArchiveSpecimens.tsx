@@ -12,10 +12,20 @@ function ArchivePreview({
   fail?: boolean;
 }) {
   const [archived, setArchived] = useState(false);
-  return archived ? (
+  const [switched, setSwitched] = useState(false);
+  return archived || switched ? (
     <div>
-      <p>{card.id} archived (gallery only).</p>
-      <button onClick={() => setArchived(false)}>Reset</button>
+      <p>
+        {card.id} {archived ? "archived" : "switching models"} (gallery only).
+      </p>
+      <button
+        onClick={() => {
+          setArchived(false);
+          setSwitched(false);
+        }}
+      >
+        Reset
+      </button>
     </div>
   ) : (
     <div className="switcher g-switcher g-pop-host">
@@ -26,6 +36,7 @@ function ArchivePreview({
           if (fail) throw new Error("The host is unavailable. Try again.");
           setArchived(true);
         }}
+        onSwitch={() => setSwitched(true)}
       />
     </div>
   );

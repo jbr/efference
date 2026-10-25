@@ -8,8 +8,9 @@
 // menu) sit above it. Archiving is behind the menu — it is the one destructive
 // verb here, and a card's prominent action is opening it.
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { sessionHref } from "../api/base.ts";
+import { ActionsMenu } from "./ActionsMenu.tsx";
 import type { CardModel } from "./overview.ts";
 import { statusPhrase, tokens } from "./overview.ts";
 import { costLabel } from "./cost.ts";
@@ -51,73 +52,69 @@ function CardMenu({
   card,
   warning,
   onArchive,
+  onSwitch,
 }: {
   card: CardModel;
   warning: string | null;
   onArchive: () => void;
+  onSwitch: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: PointerEvent | KeyboardEvent) => {
-      if (
-        event instanceof KeyboardEvent
-          ? event.key === "Escape"
-          : !ref.current?.contains(event.target as Node)
-      ) {
-        setOpen(false);
-        setConfirming(false);
-      }
-    };
-    document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", close);
-    return () => {
-      document.removeEventListener("pointerdown", close);
-      document.removeEventListener("keydown", close);
-    };
-  }, [open]);
 
   return (
-    <div className="card-menu" ref={ref}>
-      <button
-        className="card-menu-button"
-        aria-label={`actions for ${card.id}`}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        ⋯
-      </button>
-      {open && (
-        <div className="card-menu-list" role="menu">
-          {confirming ? (
-            <>
-              <p className="card-menu-warning">
-                {card.id} {warning}.
-              </p>
-              <button role="menuitem" className="danger" onClick={onArchive}>
-                Archive anyway
-              </button>
-              <button role="menuitem" onClick={() => setConfirming(false)}>
-                Cancel
-              </button>
-            </>
-          ) : (
+    <ActionsMenu
+      label={`actions for ${card.id}`}
+      onClose={() => setConfirming(false)}
+    >
+      {(close) =>
+        confirming ? (
+          <>
+            <p className="card-menu-warning">
+              {card.id} {warning}.
+            </p>
             <button
               role="menuitem"
               className="danger"
-              onClick={() =>
-                warning === null ? onArchive() : setConfirming(true)
-              }
+              onClick={() => {
+                close();
+                onArchive();
+              }}
+            >
+              Archive anyway
+            </button>
+            <button role="menuitem" onClick={close}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              role="menuitem"
+              onClick={() => {
+                close();
+                onSwitch();
+              }}
+            >
+              Switch model…
+            </button>
+            <button
+              role="menuitem"
+              className="danger"
+              onClick={() => {
+                if (warning === null) {
+                  close();
+                  onArchive();
+                } else {
+                  setConfirming(true);
+                }
+              }}
             >
               Archive session
             </button>
-          )}
-        </div>
-      )}
-    </div>
+          </>
+        )
+      }
+    </ActionsMenu>
   );
 }
 
@@ -126,11 +123,14 @@ export function SessionCard({
   warning,
   archiving,
   onArchive,
+  onSwitch,
 }: {
   card: CardModel;
   warning: string | null;
   archiving: boolean;
   onArchive: () => void;
+  /** Open the model switch (ui/SwitchModelPage.tsx) for this session. */
+  onSwitch: () => void;
 }) {
   const context = card.context;
   const used = context?.used ?? null;
@@ -145,7 +145,12 @@ export function SessionCard({
           {phrase !== null && <span className="card-status"> {phrase}</span>}
         </span>
         <span className="spacer" />
-        <CardMenu card={card} warning={warning} onArchive={onArchive} />
+        <CardMenu
+          card={card}
+          warning={warning}
+          onArchive={onArchive}
+          onSwitch={onSwitch}
+        />
       </header>
 
       <h3 className="card-title">

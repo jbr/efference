@@ -15,6 +15,7 @@ import type {
   LoopPhase,
   Process,
   ProcessRecord,
+  RecordedSelections,
   ReviewLevel,
   Seq,
   StateSnapshot,
@@ -345,6 +346,18 @@ export interface ArchivedSession {
   state: "archived";
 }
 
+/** One dormant session, as `GET /sessions/:id` answers it (docs/control-api.md):
+ * the listing's row and what reading its log and usage record learns. The listing
+ * itself carries neither, since a scan over every root reads no log whole. */
+export interface DormantSession extends ArchivedSession {
+  /** The roles the session last ran on, in the flat shape a resume patch takes.
+   * Absent when the host could not read the log, or the log records none. */
+  selections?: RecordedSelections | null;
+  /** The prompt the session's last turn sent: what a cold read would pay.
+   * Absent when the usage record holds no `turn` line. */
+  context_tokens?: number | null;
+}
+
 // A host's one endpoint of its own (docs/web-client.md), at its root rather than
 // under the base — a client asking "which sessions are there" is asking the
 // listener, not a session. A session daemon serves no such route, which is how
@@ -373,11 +386,24 @@ export const fetchArchivedSessions = (cwd?: string) => {
   return requestAt<ArchivedSession[]>("GET", `/sessions${query}`);
 };
 
+// One dormant session with what a client offering the model switches reads
+// (docs/resumption.md): the roles it last ran on and what its context holds.
+export const fetchDormantSession = (id: string) =>
+  requestAt<DormantSession>("GET", `/sessions/${encodeURIComponent(id)}`);
+
 // Resume an archived session by patching its state to active (docs/resumption.md).
-export const resumeSession = (id: string, cwd: string) =>
+// `switch` names the roles the resume changes (`src/inference/switch.rs`); its
+// fields ride at the top level of the patch, and a role it leaves out keeps the
+// selection the log records.
+export const resumeSession = (
+  id: string,
+  cwd: string,
+  resumeSwitch: Record<string, unknown> | null = null,
+) =>
   requestAt<{ state: string }>("PATCH", `/sessions/${encodeURIComponent(id)}`, {
     state: "active",
     cwd,
+    ...(resumeSwitch ?? {}),
   });
 
 // Replace the session's earlier history with a summary its own model writes

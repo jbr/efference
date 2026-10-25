@@ -409,6 +409,13 @@
   color: var(--fg-bright);
 }
 
+/* An upward menu keeps `.card-menu-list`'s everything but the side it opens
+   toward, hence the doubled class. */
+.card-menu-list.card-menu-list-up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
 .card-menu-list {
   position: absolute;
   right: 0;
@@ -604,8 +611,25 @@ button.card-link:hover:not(:disabled) {
   opacity: 0.6;
 }
 
-.archived-row + .archived-row,
-.archived-row + .archived-more-button {
+/* A row and the menu that acts on it: the resume is the whole button, and the
+   menu sits beside it rather than inside (a button cannot hold one). */
+.archived-row-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.archived-row-wrap .archived-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.archived-row-wrap .card-menu {
+  margin-right: 0.5rem;
+}
+
+.archived-row-wrap + .archived-row-wrap,
+.archived-row-wrap + .archived-more-button {
   border-top: 1px solid var(--border-subtle);
 }
 

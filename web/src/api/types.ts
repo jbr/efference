@@ -868,6 +868,32 @@ export interface InferenceIdentity {
   triage: ModelSelection & { shared: boolean };
 }
 
+// The roles a session last ran on, as the host files them on an archived
+// session (src/inference/switch.rs): the flat shape an `active` patch takes, so
+// one resume moves any of them. A role the log does not record is absent, and a
+// resume that leaves it out keeps it as it is.
+export interface RecordedSelections {
+  connection?: string;
+  model?: string;
+  spotter_connection?: string;
+  spotter_model?: string;
+  triage?: TriageSwitch;
+}
+
+// Triage as a patch names it (src/inference.rs): the main client, or a client of
+// its own. A `separate` switch leaves `connection` out when `model` is the
+// `connection/model` slug.
+export type TriageSwitch =
+  | { mode: "shared" }
+  | {
+      mode: "separate";
+      connection?: string;
+      model: string;
+      thinking: boolean;
+      auto_choice: boolean;
+      effort?: string;
+    };
+
 // One optional field per state topic, each named by its topic; `null` is a
 // cleared topic, absence an unsubscribed one.
 export interface StateTopics {

@@ -20,6 +20,8 @@ import { Settings } from "../ui/NewSessionSettings.tsx";
 import { SessionCard } from "../ui/SessionCard.tsx";
 import { MoreButton, Tab } from "../ui/SessionSwitcher.tsx";
 import { SessionArchiveSpecimens } from "./SessionArchiveSpecimens.tsx";
+import { SwitchModelSpecimens } from "./SwitchModelSpecimens.tsx";
+import { ArchivedSpecimens } from "./ArchivedSpecimens.tsx";
 import { emptyDraft, type Draft } from "../ui/sessionForm.ts";
 import { setThemeChoice, themeChoice } from "../ui/theme.ts";
 import { ContextMeter, CostMeter } from "../ui/TopBar.tsx";
@@ -172,6 +174,14 @@ export function Gallery() {
         <SessionArchiveSpecimens />
       </Section>
 
+      <Section title="Session model switch">
+        <p className="g-intro">
+          A live session restarts by archiving and resuming; the page names the
+          roles that move and states what a restart reads.
+        </p>
+        <SwitchModelSpecimens />
+      </Section>
+
       <Section title="Context window">
         <p className="g-intro">
           The fill warms after halfway and moves toward the warning hue near
@@ -260,6 +270,7 @@ export function Gallery() {
               warning={null}
               archiving={false}
               onArchive={() => {}}
+              onSwitch={() => {}}
             />
             <SessionCard
               card={card({
@@ -276,6 +287,7 @@ export function Gallery() {
               warning={null}
               archiving={false}
               onArchive={() => {}}
+              onSwitch={() => {}}
             />
             <SessionCard
               card={card({
@@ -292,9 +304,14 @@ export function Gallery() {
               warning={null}
               archiving={false}
               onArchive={() => {}}
+              onSwitch={() => {}}
             />
           </div>
         </div>
+      </Section>
+
+      <Section title="Archived sessions">
+        <ArchivedSpecimens />
       </Section>
 
       <Section title="Forms — session settings">

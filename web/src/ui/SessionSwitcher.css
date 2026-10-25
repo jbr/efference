@@ -195,6 +195,14 @@
   text-decoration: none;
 }
 
+.switcher-card-actions {
+  display: flex;
+  margin-top: 0.3rem;
+  font-family: var(--font-prose);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
 .switcher-card .archive-action {
   margin-top: 0.3rem;
   padding-top: 0.45rem;
@@ -210,7 +218,8 @@
   gap: 0.35rem;
 }
 
-.archive-buttons button {
+.archive-buttons button,
+.switcher-card-actions button {
   min-height: 2rem;
   padding: 0.3rem 0.45rem;
   border: none;
@@ -222,7 +231,9 @@
 }
 
 .archive-buttons button:hover:not(:disabled),
-.archive-buttons button:focus-visible {
+.archive-buttons button:focus-visible,
+.switcher-card-actions button:hover:not(:disabled),
+.switcher-card-actions button:focus-visible {
   background: var(--bg-chip);
   color: var(--fg-bright);
 }
@@ -232,7 +243,8 @@
   color: var(--diff-del);
 }
 
-.archive-buttons button:disabled {
+.archive-buttons button:disabled,
+.switcher-card-actions button:disabled {
   opacity: 0.5;
   cursor: default;
 }

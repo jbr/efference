@@ -17,6 +17,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- The web client switches a session's main, spotter and triage models from its details — a `⋯` menu on the session's hover card, the overview card and the archived card and rows — where a running session is archived and resumed on the chosen models and an archived one resumes on them directly (docs/resumption.md, docs/web-client.md).
 - A failed web upload states its reason on the composer chip, and the daemon logs the failing stage (docs/web-client.md).
 - Web live summary previews at their covered spans, temporary triage thinking above the composer, and detached consolidation text/thinking output frames.
 

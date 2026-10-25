@@ -281,6 +281,9 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
                 feed?.recent,
               )}
               onArchive={() => archive(card.id)}
+              // A client-side move to the session's own view with the switch
+              // page up: the session stays as it is until the page's patch.
+              onSwitch={() => navigate(`${sessionHref(card.id)}?switch=model`)}
               onInteract={() => pin(card.id)}
             />
           )}

@@ -31,7 +31,9 @@ import {
   type ArchivedSession,
 } from "../api/http.ts";
 import { sessionHref } from "../api/base.ts";
-import { navigate } from "./route.ts";
+import { navigate, useSearch } from "./route.ts";
+import { SwitchModelPage } from "./SwitchModelPage.tsx";
+import { archivedTarget } from "./switchModel.ts";
 import { reopenedLaunch } from "./launchRetry.ts";
 import "./SessionList.css";
 
@@ -142,12 +144,25 @@ export function SessionList({
     Map<string, ArchivedSession[]>
   >(new Map());
   const [resuming, setResuming] = useState<string | null>(null);
+  // The model switch (ui/SwitchModelPage.tsx) rides the overview's own URL as a
+  // query stage, naming the session it opens on: a listing row is not a running
+  // session, so the page resumes it rather than archiving it first.
+  const switchParams = new URLSearchParams(useSearch());
+  const switchId =
+    switchParams.get("switch") === "model" ? switchParams.get("id") : null;
+  const switching =
+    switchId === null
+      ? null
+      : ([...archivedByCwd.values()].flat().find((s) => s.id === switchId) ??
+        null);
   const feeds = useSessionFeeds(sessions);
   const {
     page,
     bar,
     height: barHeight,
-  } = useTopBarHeight(launch.page === null && resume.route === null);
+  } = useTopBarHeight(
+    launch.page === null && resume.route === null && switchId === null,
+  );
 
   useEffect(() => {
     const handle = openSessions(
@@ -196,6 +211,11 @@ export function SessionList({
     groups.map((group) => group.cwd).join("\n"),
   );
 
+  /** Open the switch page on an archived session, without resuming it first. */
+  function openSwitch(id: string) {
+    navigate(`/?switch=model&id=${encodeURIComponent(id)}`);
+  }
+
   async function end(id: string) {
     setArchiving(id);
     try {
@@ -239,6 +259,15 @@ export function SessionList({
         route={resume.route}
         onNavigate={resume.navigate}
         onClose={resume.close}
+      />
+    );
+
+  if (switching !== null)
+    return (
+      <SwitchModelPage
+        target={archivedTarget(switching)}
+        onClose={() => navigate("/", "replace")}
+        onSwitched={() => navigate(sessionHref(switching.id), "replace")}
       />
     );
 
@@ -306,6 +335,9 @@ export function SessionList({
                           )}
                           archiving={archiving === card.id}
                           onArchive={() => void end(card.id)}
+                          onSwitch={() =>
+                            navigate(`${sessionHref(card.id)}?switch=model`)
+                          }
                         />
                       ))}
                       {recentCards.map((item) => (
@@ -314,6 +346,7 @@ export function SessionList({
                           session={item}
                           resuming={resuming === item.id}
                           onResume={() => void revive(item.id, group.cwd)}
+                          onSwitch={() => openSwitch(item.id)}
                         />
                       ))}
                     </div>
@@ -322,6 +355,7 @@ export function SessionList({
                       remainderCount={remainderCount}
                       resuming={resuming}
                       onResume={(id) => void revive(id, group.cwd)}
+                      onSwitch={openSwitch}
                       onOpenPicker={() => {
                         resume.navigate({ stage: "picker", cwd: group.cwd });
                       }}

@@ -125,6 +125,29 @@
   gap: 1.5rem;
 }
 
+/* The switch page is a full page in the app; here it is a block, so its own
+   height and overlay behavior are dropped. */
+.g-switch .new-session-page {
+  min-height: 0;
+  background: none;
+}
+/* The archived surfaces size themselves against the overview's grid in the app;
+   here they get a column of their own. */
+.g-archived .card-grid {
+  grid-template-columns: minmax(0, 22rem);
+}
+
+.g-archived .archived-workspace-section {
+  max-width: 44rem;
+  margin-top: 1rem;
+}
+
+.g-switch .new-session {
+  margin: 0;
+  width: auto;
+  max-width: 44rem;
+}
+
 .g-composer {
   position: static;
   margin-bottom: 1rem;

@@ -1,0 +1,24 @@
+/* Switching a session's models (docs/resumption.md). The page is rendered in flow
+   so the gallery can show it; the session view puts it in an overlay of its own,
+   covering the transcript, which stays mounted and keeps its scroll. */
+.switch-model-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow-y: auto;
+}
+
+.switch-model-id {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+
+/* What a restart costs, above the button that performs it: two short lines rather
+   than the composer's warn colour, because this is the page's subject, not a
+   standing warning. */
+.switch-model-note {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
