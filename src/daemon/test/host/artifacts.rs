@@ -94,11 +94,9 @@ async fn an_adopted_sessions_artifact_links_resolve_until_it_ends() {
     document.assert_status(200);
     assert!(document.body().contains("<main>second</main>"));
     assert!(!document.body().contains("<main>first</main>"));
-    assert!(
-        document
-            .body()
-            .starts_with("<!doctype html><script src=\"/artifacts/_efference/runtime.js\">")
-    );
+    assert!(document.body().starts_with(
+        "<!doctype html><link rel=\"stylesheet\" href=\"/artifacts/_efference/theme.css\">"
+    ));
     assert_eq!(
         document
             .response_headers()
@@ -121,6 +119,23 @@ async fn an_adopted_sessions_artifact_links_resolve_until_it_ends() {
     assert!(external.contains("<main>second</main>"));
     let control = loopback_get(&format!("{origin}/sessions/one/v1/state")).await;
     assert!(control.starts_with("HTTP/1.1 404"), "{control}");
+    let font = loopback_get(&format!("{origin}/fonts/newsreader-var.woff2")).await;
+    assert!(
+        font.starts_with("HTTP/1.1 200"),
+        "{}",
+        &font[..font.len().min(300)]
+    );
+    assert!(
+        font.to_ascii_lowercase()
+            .contains("access-control-allow-origin: *"),
+        "an opaque-origin frame's font load is a CORS request"
+    );
+    let shell = loopback_get(&format!("{origin}/")).await;
+    assert!(
+        shell.starts_with("HTTP/1.1 404"),
+        "{}",
+        &shell[..shell.len().min(300)]
+    );
 
     // A tag is good for its own coordinates only.
     let first = links[0]["url"].as_str().unwrap();

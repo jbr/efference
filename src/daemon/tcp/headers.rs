@@ -72,14 +72,22 @@ impl trillium::Handler for SecurityHeaders {
         } else {
             conn
         };
-        // A cross-origin document ends up neither this page's opener nor its
-        // openee: the page holds a session credential, and a cross-origin
-        // window must not hold a reference into its browsing-context group.
+        // A sandboxed artifact's origin is opaque, so its loads of the web
+        // client's fonts are CORS requests and need this to land; the fonts are as
+        // public as the rest of the shell (docs/artifacts.md).
+        let conn = if under(conn.path(), "/fonts") {
+            conn.with_response_header(KnownHeaderName::AccessControlAllowOrigin, "*")
+        } else {
+            conn
+        };
         let (csp, frame_options) = if artifact {
             (crate::daemon::artifacts::ARTIFACT_CSP, "SAMEORIGIN")
         } else {
             (CSP, "DENY")
         };
+        // A cross-origin document ends up neither this page's opener nor its
+        // openee: the page holds a session credential, and a cross-origin
+        // window must not hold a reference into its browsing-context group.
         conn.with_response_header(KnownHeaderName::CrossOriginOpenerPolicy, "same-origin")
             .with_response_header(KnownHeaderName::ContentSecurityPolicy, csp)
             .with_response_header("x-content-type-options", "nosniff")

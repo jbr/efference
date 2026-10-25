@@ -363,3 +363,30 @@ fn a_builtin_slug_inlines_that_document() {
     .to_string();
     assert!(err.contains("guide/<slug>"), "{err}");
 }
+
+/// The variables the artifacts guide tells an agent to use are ones every artifact's
+/// stylesheet defines (docs/artifacts.md): a renamed token fails here rather than leaving
+/// an agent's colours unset.
+#[test]
+fn every_variable_the_artifacts_guide_names_is_defined() {
+    let tokens = include_str!("../../web/src/theme/tokens.css");
+    let guide = DOCUMENTS
+        .iter()
+        .find(|document| document.slug == "artifacts")
+        .expect("the artifacts guide is listed");
+    let mut named = Vec::new();
+    let mut rest = guide.body;
+    while let Some(start) = rest.find("`--") {
+        let name = &rest[start + 1..];
+        let end = name.find('`').expect("a closed code span");
+        named.push(&name[..end]);
+        rest = &name[end..];
+    }
+    assert!(named.len() > 10, "{named:?}");
+    for name in named {
+        assert!(
+            tokens.contains(&format!("{name}:")),
+            "the artifacts guide names {name}, which web/src/theme/tokens.css does not define"
+        );
+    }
+}

@@ -137,6 +137,14 @@ pub const DOCUMENTS: &[Document] = &[
             "read",
         ],
     },
+    Document {
+        slug: "artifacts",
+        description: "Read before your first html-artifact fence: showing a chart, diagram or \
+                      small page in the web transcript, its sandbox and sizing, and the \
+                      stylesheet and variables every artifact gets.",
+        body: include_str!("../assets/guide/artifacts.md"),
+        tools: &[],
+    },
 ];
 
 /// The virtual path a slug is addressed at.

@@ -170,21 +170,21 @@ fn the_runtime_follows_the_doctype_and_a_missing_doctype_is_added() {
     for (source, served) in [
         (
             "<svg viewBox=\"0 0 4 1\"></svg>",
-            format!("<!doctype html>{RUNTIME_TAG}<svg viewBox=\"0 0 4 1\"></svg>"),
+            format!("<!doctype html>{INJECTED}<svg viewBox=\"0 0 4 1\"></svg>"),
         ),
         (
             "<!DOCTYPE html>\n<html><head><title>t</title></head></html>",
-            format!("<!DOCTYPE html>{RUNTIME_TAG}\n<html><head><title>t</title></head></html>"),
+            format!("<!DOCTYPE html>{INJECTED}\n<html><head><title>t</title></head></html>"),
         ),
         // Whitespace and comments may precede a doctype; a byte-order mark is dropped.
         (
             "\u{feff}\n<!-- drawn by an agent -->\n<!doctype html><p>x</p>",
-            format!("\n<!-- drawn by an agent -->\n<!doctype html>{RUNTIME_TAG}<p>x</p>"),
+            format!("\n<!-- drawn by an agent -->\n<!doctype html>{INJECTED}<p>x</p>"),
         ),
         // A doctype after content is one the parser ignores, so it does not count.
         (
             "<p>first</p><!doctype html>",
-            format!("<!doctype html>{RUNTIME_TAG}<p>first</p><!doctype html>"),
+            format!("<!doctype html>{INJECTED}<p>first</p><!doctype html>"),
         ),
     ] {
         assert_eq!(inject_runtime(source), served, "{source:?}");

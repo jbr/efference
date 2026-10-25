@@ -1,0 +1,43 @@
+/* An artifact document's own baseline (docs/artifacts.md). The server serves it
+   inside `@layer efference`, after the tokens, the element defaults and the prose
+   rules, and the runtime puts `prose` on the root element, so plain HTML takes the
+   voice of the prose around the frame. Being layered, every rule here and in the
+   shared files gives way to any rule an artifact writes. */
+
+/* Transparent and edge to edge, so the frame reads as part of the transcript.
+   A frame composites over the parent only while its color-scheme matches the
+   parent's (journal/2026-10-24-artifact-browser-boundary-spike.md); the tokens'
+   color-scheme and the runtime keep them matched. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+html {
+  color: var(--fg);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* SVG paints black by default, which vanishes on After Dark. An <svg> that
+   names no fill of its own paints in the text colour instead; one that names a
+   fill, and every shape inside that names its own, keeps it. */
+svg:not([fill]) {
+  fill: currentColor;
+}
+
+/* Controls speak in the interface voice, as the app's do; the rest of their
+   look is the platform's, in the frame's color-scheme. */
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
+  font-size: 0.85em;
+}

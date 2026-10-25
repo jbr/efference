@@ -192,3 +192,32 @@ async fn the_policy_admits_object_url_images_and_no_data_images() {
     assert_eq!(img_src, Some("img-src 'self' blob:"), "{csp:?}");
     assert!(!csp.contains("data:"), "no data: source in {csp:?}");
 }
+
+/// A sandboxed artifact's origin is opaque, so its font loads are CORS requests
+/// (docs/artifacts.md): the web client's fonts carry an allow-any-origin header, and
+/// nothing else the shell serves does.
+#[tokio::test]
+async fn the_web_clients_fonts_allow_any_origin() {
+    let server = TestServer::new((
+        SecurityHeaders::new(false),
+        |conn: trillium::Conn| async move { conn.ok("bytes") },
+    ))
+    .await;
+    let allowed = |path: &'static str| {
+        let server = &server;
+        async move {
+            server
+                .get(path)
+                .await
+                .response_headers()
+                .get_str(KnownHeaderName::AccessControlAllowOrigin)
+                .map(str::to_owned)
+        }
+    };
+    assert_eq!(
+        allowed("/fonts/newsreader-var.woff2").await.as_deref(),
+        Some("*")
+    );
+    assert_eq!(allowed("/assets/index.css").await, None);
+    assert_eq!(allowed("/v1/state").await, None);
+}

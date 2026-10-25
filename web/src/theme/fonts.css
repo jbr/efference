@@ -1,0 +1,63 @@
+/* Fonts are self-hosted from public/fonts/ (see the README there): the CSP is
+   default-src 'self', so a fonts.googleapis.com link cannot load. Missing
+   files fall back down the stack rather than breaking anything. */
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/newsreader-var.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/newsreader-italic-var.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+/* Plex ships static weights; the faces below are the ones the design uses.
+   Plex Sans is the interface voice (--font-ui): labels and controls, the
+   words of the chrome that are neither prose nor identifiers. */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/plex-sans-regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/plex-sans-medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plex-mono-regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plex-mono-italic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/plex-mono-medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}

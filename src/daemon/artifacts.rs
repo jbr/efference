@@ -32,11 +32,25 @@ pub(crate) const KEY_BYTES: usize = 32;
 const TAG_LENGTH: usize = 43;
 
 const RUNTIME_JS: &str = include_str!("../../web/public/artifacts/runtime.js");
-const THEME_CSS: &str = include_str!("../../web/public/artifacts/theme.css");
-const RUNTIME_TAG: &str = "<script src=\"/artifacts/_efference/runtime.js\"></script>";
+/// The web client's own fonts, tokens, element defaults and prose rules, built in
+/// from the files the app imports, then the artifact baseline — all but the fonts in
+/// a cascade layer, so any rule an artifact writes takes precedence (docs/artifacts.md).
+const THEME_CSS: &str = concat!(
+    include_str!("../../web/src/theme/fonts.css"),
+    "\n@layer efference {\n",
+    include_str!("../../web/src/theme/tokens.css"),
+    include_str!("../../web/src/theme/elements.css"),
+    include_str!("../../web/src/theme/prose.css"),
+    include_str!("../../web/src/theme/artifact.css"),
+    "}\n",
+);
+/// What opens every artifact document: the stylesheet, then the runtime, which waits
+/// on it.
+const INJECTED: &str = "<link rel=\"stylesheet\" href=\"/artifacts/_efference/theme.css\">\
+    <script src=\"/artifacts/_efference/runtime.js\"></script>";
 
 pub(super) const ARTIFACT_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; \
-    style-src 'self' 'unsafe-inline'; img-src data: blob:; font-src data:; \
+    style-src 'self' 'unsafe-inline'; img-src data: blob:; font-src 'self' data:; \
     connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; \
     object-src 'none'; frame-ancestors 'self'; sandbox allow-scripts";
 
@@ -192,8 +206,8 @@ async fn asset(conn: Conn) -> Conn {
         .halt()
 }
 
-/// Put the runtime first in the document, right after its doctype, adding
-/// `<!doctype html>` when the source has none (docs/artifacts.md). A fragment with no
+/// Put the stylesheet and the runtime first in the document, right after its doctype,
+/// adding `<!doctype html>` when the source has none (docs/artifacts.md). A fragment with no
 /// doctype renders in quirks mode, which stretches the root element to the frame and
 /// leaves the runtime no content height to report. A script before `<html>` is valid
 /// in any document: the parser opens the head for it, and an authored `<html>` or
@@ -201,8 +215,8 @@ async fn asset(conn: Conn) -> Conn {
 fn inject_runtime(html: &str) -> String {
     let html = html.strip_prefix('\u{feff}').unwrap_or(html);
     match doctype_end(html) {
-        Some(end) => format!("{}{RUNTIME_TAG}{}", &html[..end], &html[end..]),
-        None => format!("<!doctype html>{RUNTIME_TAG}{html}"),
+        Some(end) => format!("{}{INJECTED}{}", &html[..end], &html[end..]),
+        None => format!("<!doctype html>{INJECTED}{html}"),
     }
 }
 
@@ -243,8 +257,37 @@ pub(crate) fn spawn_listener(host: &Arc<Host>) -> io::Result<String> {
         .with_shared_state(Arc::clone(host))
         .listeners()
         .bind_server(listener)
-        .spawn(routes());
+        .spawn((super::tcp::SecurityHeaders::new(false), routes(), fonts()));
     Ok(format!("http://127.0.0.1:{port}"))
+}
+
+/// The web client's fonts, which the stylesheet names at `/fonts/`, served from the
+/// build the web origin embeds; nothing else of the client's reaches this listener.
+/// Not under `dev-proxy`, where each frontend handler starts a dev server of its own:
+/// there the stylesheet's fonts fall back to the stacks' system faces.
+fn fonts() -> impl trillium::Handler {
+    #[cfg(not(feature = "dev-proxy"))]
+    let frontend = Some(super::tcp::frontend(super::tcp::Surface::Session));
+    #[cfg(feature = "dev-proxy")]
+    let frontend: Option<()> = None;
+    FontsOnly(frontend)
+}
+
+struct FontsOnly<H>(Option<H>);
+
+impl<H: trillium::Handler> trillium::Handler for FontsOnly<H> {
+    async fn run(&self, conn: Conn) -> Conn {
+        match &self.0 {
+            Some(frontend) if conn.path().starts_with("/fonts/") => frontend.run(conn).await,
+            _ => conn,
+        }
+    }
+
+    async fn init(&mut self, info: &mut trillium::Info) {
+        if let Some(frontend) = &mut self.0 {
+            frontend.init(info).await;
+        }
+    }
 }
 
 /// Whether `path` is an artifact route — the gate's anonymous exception and the

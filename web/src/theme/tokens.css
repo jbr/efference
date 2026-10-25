@@ -1,0 +1,167 @@
+/* The theme tokens (docs/web-client.md), one block per theme: imported by the
+   app's theme.css and built into every artifact's stylesheet
+   (docs/artifacts.md), so the two cannot drift apart. */
+
+:root {
+  color-scheme: dark;
+
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-ui: "IBM Plex Sans", system-ui, sans-serif;
+  --font-prose: "Newsreader", Georgia, serif;
+
+  /* After Dark. */
+  --bg-page: #16131d;
+  --bg-surface: #1a1723;
+  --bg-raised: #201c2a;
+  --bg-inset: #1b1825;
+  --bg-chip: #2a2636;
+
+  --border: #2a2636;
+  --border-subtle: #221e2c;
+  --border-strong: #2e2840;
+  --border-control: #342e42;
+
+  --fg: #cfc8db;
+  --fg-bright: #ece7f4;
+  --fg-muted: #a79fb6;
+  --fg-dim: #948ca6;
+  --fg-faint: #5e5872;
+  --fg-ghost: #4a4458;
+  --fg-deleted: #8c8499;
+
+  --accent: #e14b95;
+  /* Glow is a theme property, not a decoration Lilac forgot: the light
+     theme sets it transparent, and every box-shadow through it disappears. */
+  --accent-glow: rgb(225 75 149 / 0.45);
+  /* Glyph light has a near-white core and stacked accent halo. Controls
+     use the softer --control-halo below (docs/web-client.md). */
+  --neon-ink: color-mix(in srgb, var(--accent) 14%, white);
+  --neon-text:
+    0 0 2px var(--accent), 0 0 6px var(--accent),
+    0 0 14px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 30px color-mix(in srgb, var(--accent) 40%, transparent);
+  /* Border and edge-light core, tinted toward the accent. */
+  --neon-ink-dim: color-mix(in srgb, var(--accent) 40%, white);
+  /* Control states (index.css): unlit at rest, a soft halo on hover,
+     and a separate outline for keyboard focus. */
+  --btn-bg: var(--bg-raised);
+  --btn-bg-hover: var(--bg-raised);
+  --control-halo:
+    0 0 3px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 12px color-mix(in srgb, var(--accent) 16%, transparent);
+  --selection-border: color-mix(
+    in srgb,
+    var(--accent) 38%,
+    var(--border-control)
+  );
+  --badge-core: color-mix(in srgb, var(--accent) 10%, white);
+  --badge-ink: var(--bg-page);
+  --badge-halo:
+    0 0 3px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
+  --focus-ring: var(--neon-ink-dim);
+  --field-focus-bg: var(--bg-inset);
+  /* Composer focus shares the field halo; Enter sends from the textarea. */
+  --composer-focus-bg: var(--bg-inset);
+  --btn-primary-bg: color-mix(in srgb, var(--accent) 8%, var(--bg-raised));
+  --btn-primary-fg: var(--fg-bright);
+  --btn-primary-border: var(--selection-border);
+  --btn-primary-shadow: none;
+  --selection: rgb(225 75 149 / 0.28);
+  --meter: #9a6be6;
+  --warn: #dd9900;
+
+  --code-type: #c9bd9c;
+  --code-tool: #9db0cb;
+  --code-path: #aebad0;
+  --diff-add: #a6c49c;
+  --diff-del: #cc8e96;
+  --diff-add-bg: rgb(166 196 156 / 0.07);
+  --diff-del-bg: rgb(204 142 150 / 0.07);
+
+  /* Data series, for charts — an artifact's and anything the app plots. One
+     lightness and chroma, hues spaced around the wheel from the accent's, so
+     no series reads as louder than another. */
+  --series-1: var(--accent);
+  --series-2: oklch(0.68 0.14 295);
+  --series-3: oklch(0.7 0.11 235);
+  --series-4: oklch(0.73 0.1 190);
+  --series-5: oklch(0.74 0.12 140);
+  --series-6: oklch(0.78 0.13 80);
+}
+
+:root[data-theme="lilac"] {
+  color-scheme: light;
+
+  --bg-page: #faf7fb;
+  --bg-surface: #fefdfe;
+  --bg-raised: #ffffff;
+  --bg-inset: #f6f1f7;
+  --bg-chip: #e5dce8;
+
+  --border: #e5dce8;
+  --border-subtle: #ede6ef;
+  --border-strong: #d8cddb;
+  --border-control: #cfc3d2;
+
+  --fg: #2b2430;
+  --fg-bright: #1d1720;
+  --fg-muted: #4b4352;
+  --fg-dim: #6e6678;
+  --fg-faint: #978c9e;
+  --fg-ghost: #b3a6b8;
+  --fg-deleted: #7b7386;
+
+  /* Heather: a muted red-violet inside the lilac family, warm enough to mark
+     "needs you" apart from the cooler lilac of focus and controls. The plum
+     it replaced (#a23569) read as another palette's. 4.6:1 on the page. */
+  --accent: oklch(0.56 0.1 320);
+  --accent-glow: transparent;
+  --neon-ink: var(--accent);
+  --neon-text: none;
+  --neon-ink-dim: var(--accent);
+  /* Lilac controls brighten into white on hover, with a soft lilac halo.
+     Primaries have a white surface at rest but no resting shadow. */
+  --lilac: #b6a2d9;
+  --lilac-strong: #8b70c2;
+  --lift-color: rgb(76 52 120);
+  --btn-bg: var(--bg-inset);
+  --btn-bg-hover: #ffffff;
+  --control-halo:
+    0 0 3px rgb(from var(--lilac) r g b / 0.3),
+    0 2px 12px rgb(from var(--lift-color) r g b / 0.12);
+  --selection-border: var(--lilac);
+  --badge-core: #ffffff;
+  --badge-ink: var(--fg-bright);
+  --badge-halo:
+    0 0 3px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 0 9px color-mix(in srgb, var(--accent) 20%, transparent);
+  --focus-ring: var(--lilac-strong);
+  --field-focus-bg: #ffffff;
+  --composer-focus-bg: #ffffff;
+  --btn-primary-bg: #ffffff;
+  --btn-primary-fg: var(--fg-bright);
+  --btn-primary-border: var(--lilac);
+  --btn-primary-shadow: none;
+  --selection: color-mix(in srgb, var(--lilac) 40%, transparent);
+  --meter: #6e4fa8;
+  /* Apricot, not After Dark's amber: Lilac's palette is mid-chroma and cool,
+     and #dd9900 on its page was the loudest thing there and under 3:1 as text
+     (this is 3.9:1). An ochre read well as text but muddy as a dot. */
+  --warn: oklch(0.6 0.12 50);
+
+  --code-type: #7a6248;
+  --code-tool: #4e6486;
+  --code-path: #566781;
+  --diff-add: #4f7a47;
+  --diff-del: #a4515c;
+  --diff-add-bg: rgb(79 122 71 / 0.1);
+  --diff-del-bg: rgb(164 81 92 / 0.09);
+
+  --series-1: var(--accent);
+  --series-2: oklch(0.55 0.11 285);
+  --series-3: oklch(0.55 0.1 240);
+  --series-4: oklch(0.56 0.08 195);
+  --series-5: oklch(0.55 0.1 140);
+  --series-6: oklch(0.6 0.12 60);
+}

@@ -1131,8 +1131,11 @@ equals one whole-buffer pass, at every prefix — is pinned by
 
 ## Theming
 
-`web/src/theme.css` holds every color as a custom property; components reference
-tokens only. A theme is one override block: After Dark (dark, magenta accent) is
+`web/src/theme/tokens.css` holds every color as a custom property, and
+`web/src/theme.css` imports it with the self-hosted fonts (`theme/fonts.css`); components
+reference tokens only. Every artifact's stylesheet is built from the same files
+([artifacts.md](artifacts.md)), along with `theme/elements.css` (focus and links) and
+`theme/prose.css` (rendered Markdown), which `index.css` imports. A theme is one override block: After Dark (dark, magenta accent) is
 the default set on `:root`, and Lilac overrides under `:root[data-theme="lilac"]`.
 The frames before the script runs show only the page background, which `:root`
 paints onto the canvas; until `data-theme` is set, it follows `prefers-color-scheme`,
@@ -1976,7 +1979,7 @@ match the device exactly; without one the screen is white until the page paints,
 and iOS does not read the manifest's `background_color`. `scripts/startup-images.py`
 draws one plain, centred wordmark, Newsreader pinned to `wght` 400 and `opsz` 72, at
 every size in its device table in both orientations, in the After Dark and Lilac
-page colours read from `web/src/theme.css`. Its output is 76 PNGs under
+page colours read from `web/src/theme/tokens.css`. Its output is 76 PNGs under
 `web/public/splash/` and the link block between the startup-images markers in
 `web/index.html`; re-run it after changing the wordmark or the table. iOS takes the
 image when the app is added to the home screen, so a changed image shows only after

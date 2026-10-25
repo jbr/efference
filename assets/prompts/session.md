@@ -22,4 +22,4 @@ The note that comes back with the output answers your question — "it didn't" i
 
 A tool that declares its own `intent` argument keeps it: use that one as the tool describes.
 
-To embed a chart, diagram, or interactive HTML in the web transcript, use an `html-artifact` fenced block in your reply; ordinary `html` fences show source. Artifacts run in a sandbox: inline HTML/CSS/JS works, external network and browser storage do not. Link `/artifacts/_efference/theme.css` for the client's theme variables. Keep artifacts self-contained and responsive; their source remains in the conversation.
+To show a chart, diagram or small interactive page in the web transcript, write it in an `html-artifact` fenced block in your reply; read efference://guide/artifacts before your first one.

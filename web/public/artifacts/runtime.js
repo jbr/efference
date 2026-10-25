@@ -1,9 +1,26 @@
-/* global window, document, requestAnimationFrame, ResizeObserver */
+/* global window, document, matchMedia, requestAnimationFrame, ResizeObserver */
 
 (() => {
   const themeMessage = "efference:artifact:theme";
   const resizeMessage = "efference:artifact:resize";
   const themes = new Set(["after-dark", "lilac"]);
+  const root = document.documentElement;
+
+  // The stylesheet's prose rules apply under `.prose`, as they do in the
+  // transcript; here the whole document is the prose (docs/artifacts.md).
+  root.classList.add("prose");
+
+  // Opened in a tab of its own there is no parent to name a theme, so follow
+  // the system's, as the app does before it knows the operator's choice.
+  if (window.parent === window) {
+    const light = matchMedia("(prefers-color-scheme: light)");
+    const follow = () => {
+      root.dataset.theme = light.matches ? "lilac" : "after-dark";
+      root.style.colorScheme = light.matches ? "light" : "dark";
+    };
+    follow();
+    light.addEventListener("change", follow);
+  }
 
   window.addEventListener("message", (event) => {
     if (event.source !== window.parent) return;
@@ -17,7 +34,6 @@
     ) {
       return;
     }
-    const root = document.documentElement;
     root.dataset.theme = message.theme;
     root.style.colorScheme = message.colorScheme;
   });
