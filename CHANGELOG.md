@@ -155,6 +155,7 @@ behind a change, see [`journal/`](journal/).
 - **A worktree toggle in the new-session forms** (docs/tui.md, docs/web-session-creation.md): the web and TUI forms offer *start in its own worktree* (its own checkout and branch at `.efference/worktrees/<id>`), sent as `worktree: true` on creation; outside a git work tree the host refuses it like any other creation.
 
 ### Fixed
+- **A device label's terminal escape sequences are dropped whole** (docs/web-bind.md): only the `ESC` byte was stripped, so `ESC[31m` printed as `[31m` in `efference devices`.
 - **A device token the host refuses shows the web client's sign-in view wherever it is** (docs/web-client.md, docs/web-bind.md): a `401` to any request that carried the held token clears it, and the sign-in view replaces the list, session or page that asked and closes its streams — a revoked browser kept retrying the listing and its attention reports and showed the `401` as a view's error — and a late `401` for an older token leaves a new sign-in alone.
 - **`wait()` ends when a turn is queued** (docs/process-monitor.md): it slept through the turn until an unrelated notification or an interrupt released it.
 - **Staged image previews show in the embedded web client** (docs/web-client.md): the page policy named no `img-src`, so the composer's `blob:` previews were blocked; it now admits `blob:` (never `data:`), which every API image the client fetches is drawn through.

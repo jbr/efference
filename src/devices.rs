@@ -235,11 +235,13 @@ pub struct Enrolled {
 }
 
 /// A label fit to print. It is requester-supplied text that reaches the operator's
-/// terminal, so control characters and the [`reorders`] characters become spaces,
+/// terminal, so terminal escape sequences are dropped whole
+/// (`crate::process_monitor::strip_formatting`, the parser process output goes
+/// through) rather than leaving their text printed, remaining control characters and the [`reorders`] characters become spaces,
 /// whitespace runs collapse, and the result is cut to [`LABEL_MAX_CHARS`]; what is left
 /// empty is `fallback`. `crate::attachments::sanitize` does the same for a file name.
 pub fn clean_label(suggested: &str, fallback: &str) -> String {
-    let spaced: String = suggested
+    let spaced: String = crate::process_monitor::strip_formatting(suggested)
         .chars()
         .map(|c| match c.is_control() || reorders(c) {
             true => ' ',

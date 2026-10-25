@@ -164,8 +164,16 @@ fn labels_are_cleaned_on_the_way_in() {
     assert_eq!(clean_label("Safari on macOS", "browser"), "Safari on macOS");
     assert_eq!(
         clean_label("\u{1b}[2J\u{1b}]0;owned\u{7}phone\r\n", "browser"),
-        "[2J ]0;owned phone"
+        "phone"
     );
+    // Escape sequences go whole, so none of one is left printed as text.
+    assert_eq!(
+        clean_label("\u{1b}[1;31mred\u{1b}[0m tab", "browser"),
+        "red tab"
+    );
+    assert_eq!(clean_label("\u{9b}2Jx", "browser"), "x");
+    assert_eq!(clean_label("a\u{1b}]8;;http://e\u{1b}\\b", "browser"), "ab");
+    assert_eq!(clean_label("cut \u{1b}[31", "browser"), "cut");
     assert_eq!(
         clean_label("evil\u{202E}txt.exe\u{2066}x", "browser"),
         "evil txt.exe x"
@@ -189,8 +197,8 @@ fn labels_are_cleaned_on_the_way_in() {
     let device = store
         .insert(Kind::Browser, "\u{1b}[31mred", Joined::Code, at(1))
         .unwrap();
-    assert_eq!(device.label, "[31mred");
-    assert_eq!(store.list().unwrap()[0].label, "[31mred");
+    assert_eq!(device.label, "red");
+    assert_eq!(store.list().unwrap()[0].label, "red");
     let unnamed = store.insert(Kind::Script, " ", Joined::Add, at(2)).unwrap();
     assert_eq!(unnamed.label, "script", "an empty label is the kind's name");
 }

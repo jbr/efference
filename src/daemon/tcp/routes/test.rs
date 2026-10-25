@@ -52,7 +52,7 @@ async fn a_browser_signs_in_by_approval_at_the_host() {
     let waiting = socket.get("/auth/pending").await;
     waiting.assert_status(200);
     let listed = json(waiting.body());
-    assert_eq!(listed["pending"][0]["label"], "Firefox [2J on Linux");
+    assert_eq!(listed["pending"][0]["label"], "Firefox on Linux");
     assert!(!waiting.body().contains(&code), "{}", waiting.body());
     assert!(
         !waiting.body().contains(&code.replace('-', "")),
@@ -68,7 +68,7 @@ async fn a_browser_signs_in_by_approval_at_the_host() {
         .await;
     approved.assert_status(200);
     let approved = json(approved.body());
-    assert_eq!(approved["label"], "Firefox [2J on Linux");
+    assert_eq!(approved["label"], "Firefox on Linux");
     assert!(approved["created_at"].is_i64(), "{approved}");
     socket
         .get("/auth/pending")
@@ -95,7 +95,7 @@ async fn a_browser_signs_in_by_approval_at_the_host() {
     };
     assert_eq!(
         (device.kind, device.joined, device.label.as_str()),
-        (Kind::Browser, Joined::Code, "Firefox [2J on Linux"),
+        (Kind::Browser, Joined::Code, "Firefox on Linux"),
         "an approved request keeps the label the operator approved"
     );
     assert_eq!(auth.tokens.parse(&token), Some(device.id));

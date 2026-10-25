@@ -454,7 +454,7 @@ fn labels_are_cleaned_on_the_way_in() {
         .into_iter()
         .map(|pending| pending.label)
         .collect();
-    assert_eq!(labels, ["[2JSafari on macOS", "browser"]);
+    assert_eq!(labels, ["Safari on macOS", "browser"]);
 }
 
 /// Rotation's half: every pending sign-in goes, approved or not.
