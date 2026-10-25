@@ -3,12 +3,13 @@
 //! One machine-scoped root secret lives in the secret store (docs/secrets.md) as the
 //! `root` item: minted from the OS random source the first time a bind needs it, read
 //! every boot after, and held only in memory. HKDF with per-purpose context strings
-//! derives everything else — the TOTP secret, the bearer, the VAPID push-signing
-//! keypair (docs/web-push.md). Same root in, same credentials out, every boot:
-//! enrollments and signed-in browsers survive restarts, and revocation is rotation —
-//! deleting the item, so the next bind mints another. Nobody supplies or sees the
-//! root; the only state derived from it that is stored is the burn ledger of accepted
-//! TOTP timesteps, which are counters, not secrets (docs/state-store.md).
+//! derives everything else — the TOTP secret, the key device tokens are tagged under,
+//! the VAPID push-signing keypair (docs/web-push.md). Same root in, same credentials
+//! out, every boot: enrollments and signed-in devices survive restarts, and rotation —
+//! deleting the item, so the next bind mints another — revokes everything derived at
+//! once. Nobody supplies or sees the root. What is stored beside it is public: the
+//! enrolled devices' ids (`crate::devices`) and the burn ledger of accepted TOTP
+//! timesteps, which are counters, not secrets (docs/state-store.md).
 //!
 //! Everything here is pure credential arithmetic; which conns it gates — and which
 //! listener is exempt — is the daemon's wiring (docs/web-bind.md).
@@ -23,6 +24,7 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::{Duration, Instant, SystemTime};
 
+use crate::devices::DeviceId;
 use crate::secrets::{SecretError, Secrets};
 
 #[cfg(test)]
@@ -32,8 +34,9 @@ mod test;
 pub const ROOT_ITEM: &str = "root";
 
 /// What replacing the root does, in the words every message about it uses.
-pub const ROTATION_CONSEQUENCES: &str = "signs out every browser, invalidates the \
-    authenticator enrollment, and drops every push subscription";
+pub const ROTATION_CONSEQUENCES: &str = "signs out every enrolled device, browsers and \
+    scripts alike, invalidates the authenticator enrollment, and drops every push \
+    subscription";
 
 /// The root could not be read. Absence is not this — an absent item is minted — so
 /// this is a store that answered with an error, where minting would silently be a
@@ -94,7 +97,9 @@ impl Root {
     }
 
     /// Delete the stored root; the next bind mints a fresh one. This is the
-    /// revocation for everything derived — [`ROTATION_CONSEQUENCES`].
+    /// revocation for everything derived — [`ROTATION_CONSEQUENCES`]: no device token
+    /// verifies under the next root, and `efference auth rotate` deletes the device
+    /// rows beside it (docs/web-bind.md).
     pub fn rotate(secrets: &Secrets) -> Result<(), SecretError> {
         secrets.delete(ROOT_ITEM)
     }
@@ -125,18 +130,16 @@ impl Root {
         self.derive(b"totp v1")
     }
 
-    /// The bearer: the one credential the TCP bind accepts, presented as
-    /// `Authorization: Bearer …` by the web client and by programs alike
-    /// (docs/web-bind.md). Never stored here; re-derived on demand.
-    pub fn bearer(&self) -> String {
-        URL_SAFE_NO_PAD.encode(self.derive::<32>(b"bearer v1"))
+    /// The key every device token is minted and verified under (docs/web-bind.md).
+    pub fn device_tokens(&self) -> DeviceTokens {
+        DeviceTokens(self.derive(b"device-token v1"))
     }
 
     /// The VAPID signing keypair (docs/web-push.md) — the identity a push service sees
     /// across every message this machine sends. Derived, never stored: each daemon on
     /// the machine re-derives the identical key, so there is no file and no
     /// coordination, and rotating the root strands existing subscriptions the same way
-    /// it invalidates the bearer.
+    /// it invalidates every device token.
     ///
     /// P-256 needs a scalar below the group order, and HKDF hands back a uniform 32-byte
     /// string, which exceeds that order with probability ~2⁻³². So the context string
@@ -154,19 +157,65 @@ impl Root {
             attempt += 1;
         }
     }
+}
 
-    /// Constant-time check of a presented bearer: both sides are HMAC'd under a
-    /// comparison key and the tags compared as `CtOutput`s, which also erases the
-    /// length difference a direct byte comparison would leak.
-    pub fn bearer_matches(&self, presented: &str) -> bool {
-        let key = self.derive::<32>(b"bearer-compare v1");
-        let tag = |s: &str| {
-            Hmac::<Sha256>::new_from_slice(&key)
-                .expect("hmac accepts any key length")
-                .chain_update(s.as_bytes())
-                .finalize()
-        };
-        tag(presented) == tag(&self.bearer())
+/// What every device token starts with: fixed and recognizable, so secret scanners and
+/// log redaction can find a pasted token (GitHub's `ghp_` is the convention).
+pub const DEVICE_TOKEN_PREFIX: &str = "efference_";
+
+/// The bytes a device token carries: the id, then its HMAC-SHA256 tag.
+const DEVICE_TOKEN_BYTES: usize = DeviceId::LEN + 32;
+
+/// Their base64url spelling's length. Forty-eight bytes is a whole number of base64
+/// groups, so there is no padding to strip.
+const DEVICE_TOKEN_CHARS: usize = DEVICE_TOKEN_BYTES / 3 * 4;
+
+/// The key device tokens are tagged under ([`Root::device_tokens`], docs/web-bind.md).
+/// A device token is [`DEVICE_TOKEN_PREFIX`] followed by
+/// base64url(`id ‖ HMAC-SHA256(key, id)`), where `id` is the row in the `devices`
+/// table the token names (`crate::devices`).
+///
+/// No salt and no IV: an HMAC under a secret key over a fresh random id is unforgeable
+/// as it stands, and a salt guards a low-entropy input against precomputation, which a
+/// 128-bit random id is not. So the database holds only public ids, the credential
+/// store holds the only secret, and a token is re-derived when it is needed rather than
+/// kept anywhere.
+#[derive(Clone)]
+pub struct DeviceTokens([u8; 32]);
+
+impl DeviceTokens {
+    /// The token naming `id`.
+    pub fn token(&self, id: &DeviceId) -> String {
+        let mut bytes = [0u8; DEVICE_TOKEN_BYTES];
+        bytes[..DeviceId::LEN].copy_from_slice(id.as_bytes());
+        bytes[DeviceId::LEN..].copy_from_slice(&self.mac(id.as_bytes()).finalize().into_bytes());
+        format!("{DEVICE_TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes))
+    }
+
+    /// The id a presented token names, when its tag verifies under this key. The
+    /// prefix and length are public and checked plainly; the tag is compared in
+    /// constant time (`Mac::verify_slice`). Nothing here reads the device table: a
+    /// caller looks the id up only after this answers, so a malformed or forged token
+    /// never reaches sqlite.
+    pub fn parse(&self, token: &str) -> Option<DeviceId> {
+        let encoded = token.strip_prefix(DEVICE_TOKEN_PREFIX)?;
+        if encoded.len() != DEVICE_TOKEN_CHARS {
+            return None;
+        }
+        let mut bytes = [0u8; DEVICE_TOKEN_BYTES];
+        if URL_SAFE_NO_PAD.decode_slice(encoded, &mut bytes).ok()? != DEVICE_TOKEN_BYTES {
+            return None;
+        }
+        let (id, tag) = bytes.split_at(DeviceId::LEN);
+        self.mac(id).verify_slice(tag).ok()?;
+        Some(DeviceId::from_bytes(id.try_into().ok()?))
+    }
+
+    /// The HMAC over `id`, ready to finalize or verify.
+    fn mac(&self, id: &[u8]) -> Hmac<Sha256> {
+        Hmac::<Sha256>::new_from_slice(&self.0)
+            .expect("hmac accepts any key length")
+            .chain_update(id)
     }
 }
 

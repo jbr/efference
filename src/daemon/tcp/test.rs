@@ -9,17 +9,17 @@ use crate::persist::Log;
 use trillium::Method;
 use trillium_testing::TestServer;
 
-/// A throwaway burn-ledger path, so tests never write the real user-scoped file.
-fn scratch_ledger() -> BurnLedger {
+/// A throwaway state database path, so tests never write the real user-scoped file.
+pub(super) fn scratch_state() -> PathBuf {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let n = RandomState::new().build_hasher().finish();
-    BurnLedger::new(std::env::temp_dir().join(format!("efference-tcp-test-{n:016x}")))
+    std::env::temp_dir().join(format!("efference-tcp-test-{n:016x}/state.db"))
 }
 
-/// An armed plaintext-loopback bind under a per-test root (per-test ledger, and a
-/// distinct root per test keeps one test's burns invisible to another's codes).
-pub(super) fn armed(root: &str) -> Arc<TcpAuth> {
-    let (auth, _listener) = arm_with_ledger(
+/// An armed plaintext-loopback bind under a per-test root, over `state` (a distinct
+/// root per test keeps one test's burns invisible to another's codes).
+pub(super) fn armed_over(root: &str, state: PathBuf) -> Arc<TcpAuth> {
+    let (auth, _listener) = arm_with_state(
         TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,
@@ -27,9 +27,23 @@ pub(super) fn armed(root: &str) -> Arc<TcpAuth> {
             root: Root::new(root),
             open: false,
         },
-        scratch_ledger(),
+        state,
     );
     auth
+}
+
+/// [`armed_over`] a scratch state database of its own.
+pub(super) fn armed(root: &str) -> Arc<TcpAuth> {
+    armed_over(root, scratch_state())
+}
+
+/// An `Authorization` value for a script enrolled at `auth`, through the same
+/// enrollment the socket's `POST /auth/devices` runs.
+pub(super) fn enrolled(auth: &TcpAuth) -> String {
+    let enrolled = auth
+        .enroll(Kind::Script, "test", Joined::Add)
+        .expect("a scratch database takes a row");
+    format!("Bearer {}", enrolled.token)
 }
 
 fn init(shared: Arc<Session>) -> impl trillium::Handler {
@@ -72,25 +86,26 @@ pub(super) fn current_code(auth: &TcpAuth) -> String {
     ))
 }
 
-/// The bearer authenticates in the `Authorization` header and nowhere else. A
+/// A device token authenticates in the `Authorization` header and nowhere else. A
 /// cookie and a query parameter are what a request another site forces could
 /// carry — a navigation, a form, an image — so the same value there is refused
 /// (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn only_the_authorization_header_carries_the_bearer() {
-    let auth = armed("bearer-authenticates");
+async fn only_the_authorization_header_carries_a_token() {
+    let auth = armed("token-authenticates");
     let (server, _guard) = tcp_server(&auth).await;
-    let token = auth.bearer();
+    let bearer = enrolled(&auth);
+    let token = bearer.strip_prefix("Bearer ").unwrap().to_string();
 
     server
         .get("/v1/state")
-        .with_request_header(KnownHeaderName::Authorization, format!("Bearer {token}"))
+        .with_request_header(KnownHeaderName::Authorization, bearer)
         .await
         .assert_status(200);
 
     server
         .get("/v1/state")
-        .with_request_header(KnownHeaderName::Authorization, "Bearer not-the-bearer")
+        .with_request_header(KnownHeaderName::Authorization, "Bearer not-a-token")
         .await
         .assert_status(401);
     server
@@ -119,7 +134,7 @@ async fn only_the_authorization_header_carries_the_bearer() {
 async fn no_answer_sets_a_cookie() {
     let auth = armed("no-set-cookie");
     let (server, _guard) = tcp_server(&auth).await;
-    let bearer = format!("Bearer {}", auth.bearer());
+    let bearer = enrolled(&auth);
     let answers = [
         server
             .post("/auth/session")
@@ -152,12 +167,12 @@ async fn no_answer_sets_a_cookie() {
 /// The bind grants no other origin anything: a cross-origin read and a CORS
 /// preflight both answer without an `Access-Control-Allow-*` header, so a page
 /// on another origin — another port on `localhost` included — can neither read
-/// an answer nor send the header the bearer rides (docs/web-bind.md).
+/// an answer nor send the header a token rides (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn no_answer_grants_another_origin() {
     let auth = armed("no-cors");
     let (server, _guard) = tcp_server(&auth).await;
-    let bearer = format!("Bearer {}", auth.bearer());
+    let bearer = enrolled(&auth);
     let answers = [
         server
             .get("/v1/state")
@@ -221,7 +236,7 @@ fn host_and_origin_parsing() {
 /// reads (docs/web-bind.md); a plaintext loopback bind is not TLS.
 #[test]
 fn only_a_tls_arm_is_tls() {
-    let (tls, _listener) = arm_with_ledger(
+    let (tls, _listener) = arm_with_state(
         TcpBind {
             addr: "0.0.0.0:0".into(),
             tls: Some(TlsPem {
@@ -232,7 +247,7 @@ fn only_a_tls_arm_is_tls() {
             root: Root::new("tls-arm"),
             open: false,
         },
-        scratch_ledger(),
+        scratch_state(),
     );
     assert!(tls.is_tls());
     assert!(!armed("plain-arm").is_tls());
@@ -242,7 +257,7 @@ fn only_a_tls_arm_is_tls() {
 /// public URL with its own port is left as given.
 #[test]
 fn a_port_zero_bind_mints_links_on_its_bound_port() {
-    let (auth, _listener) = arm_with_ledger(
+    let (auth, _listener) = arm_with_state(
         TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,
@@ -250,7 +265,7 @@ fn a_port_zero_bind_mints_links_on_its_bound_port() {
             root: Root::new("port-zero"),
             open: false,
         },
-        scratch_ledger(),
+        scratch_state(),
     );
     auth.bound_port(51234);
     assert_eq!(auth.public_base(), "http://localhost:51234");
@@ -282,4 +297,72 @@ fn a_minted_link_never_carries_a_used_code() {
     );
     auth.ledger.burn(now + 1).unwrap();
     assert_eq!(auth.mint_link(), None);
+}
+
+/// The tag is checked before the row, and the row is the answer: a token this root
+/// minted for an id with no row is refused, and so is an enrolled device's token
+/// once its row is deleted, on the very next request (docs/web-bind.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_token_without_a_row_is_refused() {
+    let auth = armed("row-is-the-answer");
+    let (server, _guard) = tcp_server(&auth).await;
+
+    let rowless = auth.tokens.token(&devices::DeviceId::random());
+    assert!(auth.tokens.parse(&rowless).is_some(), "the tag verifies");
+    server
+        .get("/v1/state")
+        .with_request_header(KnownHeaderName::Authorization, format!("Bearer {rowless}"))
+        .await
+        .assert_status(401);
+
+    let device = auth.enroll(Kind::Browser, "phone", Joined::Code).unwrap();
+    let bearer = format!("Bearer {}", device.token);
+    server
+        .get("/v1/state")
+        .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+        .await
+        .assert_status(200);
+    assert!(auth.devices.remove(&device.device.id).unwrap());
+    server
+        .get("/v1/state")
+        .with_request_header(KnownHeaderName::Authorization, bearer)
+        .await
+        .assert_status(401)
+        .assert_body_contains(r#""code":"unauthorized""#);
+}
+
+/// A device table that cannot be read refuses a verified token with a `500` rather
+/// than a `401`, which a client reads as a bad token and discards. A malformed or
+/// forged token is still a `401`: it is refused before the table is consulted, which
+/// is what makes its answer the same whatever state the table is in.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unreadable_table_refuses_without_discarding_the_token() {
+    let state = scratch_state();
+    std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+    std::fs::write(&state, "{ not a database").unwrap();
+    let auth = armed_over("unreadable-table", state);
+    let (server, _guard) = tcp_server(&auth).await;
+
+    let verified = auth.tokens.token(&devices::DeviceId::random());
+    server
+        .get("/v1/state")
+        .with_request_header(KnownHeaderName::Authorization, format!("Bearer {verified}"))
+        .await
+        .assert_status(500)
+        .assert_body_contains(r#""code":"internal""#);
+
+    let mut forged = verified.clone();
+    forged.replace_range(forged.len() - 1.., "A");
+    if forged == verified {
+        forged.replace_range(forged.len() - 1.., "B");
+    }
+    for token in [forged.as_str(), "efference_short", "not-a-token"] {
+        server
+            .get("/v1/state")
+            .with_request_header(KnownHeaderName::Authorization, format!("Bearer {token}"))
+            .await
+            .assert_status(401);
+    }
+    // The shell stays free: an anonymous path never reaches the table.
+    server.get("/").await.assert_status(200);
 }

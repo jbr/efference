@@ -1,6 +1,6 @@
-// The page's credential (docs/web-bind.md): the bearer the mint trades a
-// current code for, kept in IndexedDB and sent by `apiFetch` (api/http.ts) as
-// `Authorization: Bearer` on every request. IndexedDB is origin-scoped, port
+// The page's credential (docs/web-bind.md): this browser's device token, which
+// the mint trades a current code for, kept in IndexedDB and sent by `apiFetch`
+// (api/http.ts) as `Authorization: Bearer` on every request. IndexedDB is origin-scoped, port
 // included, so no other service on the same host can read it. It is also
 // readable from the service worker, where `localStorage` is not: the worker's
 // push-subscription repair (`resubscribe` in public/sw.js) authenticates with

@@ -21,7 +21,7 @@ use trillium_logger::{Logger, Target};
 pub enum Transport {
     /// The session's Unix socket: the operator's own process boundary. No gate, no
     /// browser hardening, no web client. The enrollment routes (`/auth/link`,
-    /// `/auth/otpauth`, `/auth/bearer`) are mounted here and only here — possession
+    /// `/auth/otpauth`, `/auth/devices`) are mounted here and only here — possession
     /// of the host machine is the enrollment authority (docs/web-bind.md); they answer
     /// `404` with a sentence when no TCP bind is armed.
     Socket { auth: Option<Arc<TcpAuth>> },

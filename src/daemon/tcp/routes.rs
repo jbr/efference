@@ -1,9 +1,11 @@
 //! The routes mounted beside the control API (docs/web-bind.md): the credential mint a
-//! web transport carries, the enrollment routes only the socket carries, and the web
+//! web transport carries, the enrollment routes only the socket carries — the
+//! bootstrap link, the authenticator URI, and the enrolled devices — and the web
 //! client handler a web transport mounts last (docs/web-client.md).
 
 use super::gate::Surface;
 use super::*;
+use crate::devices::DeviceId;
 use trillium::KnownHeaderName;
 
 /// A route that needs the bind's credential state: `auth` is cloned into each conn's
@@ -22,7 +24,7 @@ where
                 None => fail(
                     conn,
                     ErrorCode::NotFound,
-                    "no TCP bind armed — start serve with --bind",
+                    "no TCP bind armed — start the host with --bind",
                 ),
             }
         }
@@ -35,19 +37,23 @@ pub(crate) fn mint_routes(auth: Arc<TcpAuth>) -> Router {
     Router::new().post("/auth/session", with_auth(Some(auth), mint_session))
 }
 
-/// Trade a current TOTP code for the bearer, answered in the body as
-/// `{"token": …}` and never as a cookie. The one credential mint; rate-limited,
-/// and every accepted code burns. The login view that reads `#token=` from the
-/// fragment, POSTs here, and keeps what comes back is the web client's
+/// Trade a current TOTP code for a browser device's token, answered in the body as
+/// `{"token": …}` and never as a cookie. Rate-limited, and every accepted code burns;
+/// an accepted code enrolls a `browser` device labelled from the body's optional
+/// `label` (cleaned, `browser` when absent). The login view that reads `#token=` from
+/// the fragment, POSTs here, and keeps what comes back is the web client's
 /// (web/src/ui/Login.tsx, docs/web-bind.md).
 async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
     #[derive(Deserialize)]
     struct SessionBody {
         code: String,
+        /// What the page calls the browser, such as "Safari on macOS". Display text.
+        #[serde(default)]
+        label: Option<String>,
     }
     let body = conn.request_body_string().await.unwrap_or_default();
-    let code = match serde_json::from_str::<SessionBody>(&body) {
-        Ok(body) => body.code,
+    let body = match serde_json::from_str::<SessionBody>(&body) {
+        Ok(body) => body,
         Err(e) => {
             return fail(
                 conn,
@@ -56,16 +62,22 @@ async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
             );
         }
     };
-    match auth.authenticate_code(code.trim()) {
-        // A credential in a body is never stored for reuse — the token-endpoint
-        // rule (RFC 6749 §5.1), and `/auth` sits outside the `/v1` prefix that
-        // `SecurityHeaders` covers.
-        Ok(()) => conn
-            .with_status(200)
-            .with_response_header(KnownHeaderName::ContentType, "application/json")
-            .with_response_header(KnownHeaderName::CacheControl, "no-store")
-            .with_body(serde_json::json!({ "token": auth.bearer() }).to_string())
-            .halt(),
+    match auth.authenticate_code(body.code.trim()) {
+        Ok(()) => match auth.enroll(
+            Kind::Browser,
+            body.label.as_deref().unwrap_or_default(),
+            Joined::Code,
+        ) {
+            Ok(enrolled) => {
+                credential_answer(conn, 200, serde_json::json!({ "token": enrolled.token }))
+            }
+            // The code is spent either way: it burned before the insert, and a code
+            // that could mint twice would be the replay the burn exists to stop.
+            Err(e) => {
+                log::error!("could not record a signed-in browser: {e}");
+                fail(conn, ErrorCode::Internal, "could not record the device")
+            }
+        },
         Err(CodeRejection::Locked(remaining)) => {
             let secs = remaining.as_secs().max(1);
             respond(
@@ -88,17 +100,31 @@ async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
     }
 }
 
+/// An answer carrying a credential, which is never stored for reuse — the
+/// token-endpoint rule (RFC 6749 §5.1). `/auth` sits outside the `/v1` prefix that
+/// `SecurityHeaders` covers, so each such answer says so itself.
+fn credential_answer(conn: Conn, status: u16, body: serde_json::Value) -> Conn {
+    conn.with_status(status)
+        .with_response_header(KnownHeaderName::ContentType, "application/json")
+        .with_response_header(KnownHeaderName::CacheControl, "no-store")
+        .with_body(body.to_string())
+        .halt()
+}
+
 /// The enrollment surface, mounted only on a session's socket — possession of the host
 /// machine is the enrollment authority (docs/web-bind.md). The `otpauth` URI in
-/// particular carries the TOTP secret itself, which mints codes at will, so it never
-/// rides a TCP listener, authenticated or not. With no bind armed the routes exist but
-/// answer 404, so the CLI verb gets a sentence instead of a route mismatch. Mounted
-/// only by [`handler`](super::super::handler::handler).
+/// particular carries the TOTP secret itself, which mints codes at will, and adding a
+/// device mints a token outright, so neither rides a TCP listener, authenticated or
+/// not. With no bind armed the routes exist but answer 404, so the CLI verb gets a
+/// sentence instead of a route mismatch. Mounted only by
+/// [`handler`](super::super::handler::handler).
 pub(crate) fn enrollment_routes(auth: Option<Arc<TcpAuth>>) -> Router {
     Router::new()
         .get("/auth/link", with_auth(auth.clone(), auth_link))
         .get("/auth/otpauth", with_auth(auth.clone(), auth_otpauth))
-        .get("/auth/bearer", with_auth(auth, auth_bearer))
+        .get("/auth/devices", with_auth(auth.clone(), list_devices))
+        .post("/auth/devices", with_auth(auth.clone(), add_device))
+        .delete("/auth/devices/:id", with_auth(auth, remove_device))
 }
 
 /// The bootstrap link: the public base with a current code in the fragment.
@@ -123,12 +149,79 @@ async fn auth_otpauth(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
         .halt()
 }
 
-/// The bearer, for a program on this machine — the same value the mint hands a
-/// browser.
-async fn auth_bearer(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
-    conn.with_status(200)
-        .with_body(serde_json::json!({ "bearer": auth.bearer() }).to_string())
-        .halt()
+/// The enrolled devices, oldest first, as `{"devices": […]}`.
+async fn list_devices(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
+    match auth.devices.list() {
+        Ok(devices) => conn
+            .with_status(200)
+            .with_body(serde_json::json!({ "devices": devices }).to_string())
+            .halt(),
+        Err(e) => fail(
+            conn,
+            ErrorCode::Internal,
+            format!("could not read the enrolled devices: {e}"),
+        ),
+    }
+}
+
+/// Enroll a script from `{"label": …}`, answering `{"device": …, "token": …}` — the
+/// one answer that carries the token; no listing does.
+async fn add_device(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
+    #[derive(Deserialize)]
+    struct AddBody {
+        label: String,
+    }
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let label = match serde_json::from_str::<AddBody>(&body) {
+        Ok(body) => body.label,
+        Err(e) => {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                format!("bad /auth/devices body: {e}"),
+            );
+        }
+    };
+    match auth.enroll(Kind::Script, &label, Joined::Add) {
+        Ok(enrolled) => credential_answer(
+            conn,
+            201,
+            serde_json::to_value(enrolled).unwrap_or_default(),
+        ),
+        Err(e) => fail(
+            conn,
+            ErrorCode::Internal,
+            format!("could not record the device: {e}"),
+        ),
+    }
+}
+
+/// Revoke one device by its whole id. Its token is refused from the next request on,
+/// by every daemon that reads the table.
+async fn remove_device(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
+    let Some(id) = conn.param("id").and_then(DeviceId::parse_hex) else {
+        return fail(
+            conn,
+            ErrorCode::BadRequest,
+            "a device is named by its whole id, 32 hex digits",
+        );
+    };
+    match auth.devices.remove(&id) {
+        Ok(true) => conn
+            .with_status(200)
+            .with_body(serde_json::json!({ "removed": id }).to_string())
+            .halt(),
+        Ok(false) => fail(
+            conn,
+            ErrorCode::NotFound,
+            format!("no enrolled device {id}"),
+        ),
+        Err(e) => fail(
+            conn,
+            ErrorCode::Internal,
+            format!("could not revoke the device: {e}"),
+        ),
+    }
 }
 
 /// [`Surface::spa_route`] as the fn pointer [`frontend`] takes, one per surface.

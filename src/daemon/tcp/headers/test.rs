@@ -100,7 +100,7 @@ async fn the_shipped_policy_admits_no_unsafe_escape() {
     );
 }
 
-/// The policy is the boundary for script that could reach the bearer
+/// The policy is the boundary for script that could reach the page's token
 /// (docs/web-bind.md): every source it names is the page's own origin, `blob:`
 /// for drawn images, or nothing — no other origin, scheme, or wildcard to
 /// connect to, load from, or submit a form to.

@@ -176,7 +176,7 @@ Read top-down; open the subsystem doc you need.
 | Model catalog — each connection's normalized model listing, stored in the state database | [model-catalog.md](model-catalog.md) | `src/catalog.rs`, `src/daemon/host/catalog.rs`, `src/api/provider/row.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |
 | The secret store — API keys and OAuth grants in the OS credential store | [secrets.md](secrets.md) | `src/secrets.rs`, `src/mcp/auth/store.rs`, `src/inference.rs` |
-| The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/handler.rs`, `src/daemon/tcp.rs` (+ `src/daemon/tcp/`) |
+| The TCP bind — the web client's front door (root-derived credentials, enrolled devices, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/devices.rs`, `src/daemon/handler.rs`, `src/daemon/tcp.rs` (+ `src/daemon/tcp/`), `src/bin/efference/devices.rs` |
 | The web client, component gallery, and stream tape/replay API | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp/gate.rs`, `src/daemon/tcp/headers.rs`, `src/daemon/tcp/routes.rs` |
 | Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/push.rs` (+ `src/push/`), `src/daemon/push.rs`, `src/daemon/attention.rs`, `src/daemon/delayed_push.rs` |
 | The TUI client | [tui.md](tui.md) | `src/tui/` |

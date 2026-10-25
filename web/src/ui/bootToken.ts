@@ -19,5 +19,5 @@ export function takeBootToken(): string | null {
   return token;
 }
 
-/** Re-read on a later hashchange (`efference open` into an open tab). */
+/** Re-read on a later hashchange (`efference dev open` into an open tab). */
 export const takeFragmentToken = take;

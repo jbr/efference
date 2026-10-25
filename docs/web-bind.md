@@ -8,8 +8,9 @@ are its trust model) and remains the CLI verbs' channel. Implemented in
 (the listener and the credential state) with its submodules in `src/daemon/tcp/` —
 `gate.rs` (the gate and the anonymous surface it prices), `headers.rs` (the response
 headers), and `routes.rs` (the mint and enrollment routes, the web client
-handler) — and `src/auth.rs` (the credential arithmetic); the flag resolution is
-`src/bin/efference/serve.rs`.
+handler) — `src/auth.rs` (the credential arithmetic), and `src/devices.rs` (the
+enrolled devices); the flag resolution is `src/bin/efference/serve.rs`, and the
+operator's verb over the devices is `src/bin/efference/devices.rs`.
 
 This is the **one**-session bind. A multi-session host reuses everything in this
 document — the flags, the listener shape, the credential layer, and the gate — rather
@@ -117,35 +118,73 @@ with per-purpose context strings:
 | derived | context | purpose |
 | --- | --- | --- |
 | TOTP secret | `totp v1` | the bootstrap credential (RFC 6238, SHA-1/6-digit/30 s) |
-| bearer | `bearer v1` | the one TCP credential, `Authorization: Bearer` — the web client's and programs' |
+| device-token key | `device-token v1` | the HMAC key every TCP credential is tagged under: one token per enrolled device (below) |
 | VAPID keypair | `vapid v1 attempt-<n>` | the web-push sender identity ([web-push.md](web-push.md)); the counter increments until the bytes are a valid P-256 scalar |
 
-Same root in, same credentials out, every boot: enrollments and signed-in browsers
-survive restarts, and revocation is root rotation — `efference auth rotate` deletes the item
-and the next bind mints another, which signs out every browser, invalidates the
-authenticator enrollment, and drops every push subscription (a mass logout — the
-right granularity for a single-operator daemon). A store that answers a read with
-an error is not treated as absent: minting over it would be an unasked rotation, so
-the bind fails with the store's complaint and names the rotate verb. Received
-secrets that cannot be re-derived (OAuth tokens) are out of scope here and stay with
-[mcp-auth.md](mcp-auth.md). 32 bytes is the size the derivations can use: HKDF's
-extract is 256-bit, the bearer and the key it is compared under are 256-bit, TOTP is
+Same root in, same credentials out, every boot: enrollments and signed-in devices
+survive restarts. One device is revoked by deleting its row (below), and everything at
+once by root rotation — `efference auth rotate` deletes the item and every device row,
+and the next bind mints another root, which signs out every enrolled device,
+invalidates the authenticator enrollment, and drops every push subscription. A store
+that answers a read with an error is not treated as absent: minting over it would be an
+unasked rotation, so the bind fails with the store's complaint and names the rotate
+verb. Received secrets that cannot be re-derived (OAuth tokens) are out of scope here
+and stay with [mcp-auth.md](mcp-auth.md). 32 bytes is the size the derivations can use:
+HKDF's extract is 256-bit, the device-token key and its tags are 256-bit, TOTP is
 bounded by its six-digit codes and P-256 by its 128-bit level.
 
-**One credential, held by the page.** Every request that costs a credential presents
-the bearer as `Authorization: Bearer <token>`, the web client's included. The login
-view trades a current code for it at `POST /auth/session` (below), and the client
-keeps it in IndexedDB with an in-memory copy, read once at boot, that `apiFetch`
+**Enrolled devices: one row per credential.** Every TCP credential is an *enrolled
+device*: a row in the `devices` table of the user state database
+([state-store.md](state-store.md), `src/devices.rs`) holding a 128-bit id from the OS
+random source, drawn fresh for every enrollment; a kind, `browser` or `script`; a label;
+how it joined — `code`, a TOTP sign-in at the mint, or `add`, `efference devices add` at
+the host; when it was created; and when it was last seen. Socket clients — the TUI, the
+CLI verbs, MCP mounts, islands — are not devices: the socket is the root of trust and
+holds no row.
+
+The token is derived, not stored: `efference_`, then
+base64url(`id ‖ HMAC-SHA256(K, id)`), with `K` the device-token key above
+(`auth::DeviceTokens`). The gate checks the prefix and the length, then the tag in
+constant time, and only then looks the id up, so a malformed or forged token never
+reaches sqlite; whether the row exists is the answer.
+The database holds public ids and display text, and the credential store holds the only
+secret. There is no salt or IV: an HMAC under a secret key over a fresh random id is
+unforgeable as it stands, and a salt guards a low-entropy input against precomputation,
+which a random id is not. The fixed prefix lets secret scanners and redaction recognize
+a pasted token. The add route answers a script's token once; no listing carries one.
+
+Revoking a device deletes its row (`efference devices revoke`), which takes effect on its
+next request at every daemon under the user: they share the table, and the gate reads the
+row per request, at the request's start — a stream the device already holds open, such as
+the web client's `/v1/events`, runs on until it ends. Rotation deletes every row along
+with the root. A token carries no
+expiry, since a phone that only receives pushes would time out while still working;
+`efference devices` shows when each device was last seen, for pruning by hand. That
+value is written when it is empty or more than an hour old, so a burst of requests is
+reads rather than a write each. An island bound to port 0 is a new origin each launch,
+so each such launch opened in a browser enrolls another browser device.
+
+A sign-in's label comes from the page (`web/src/ui/deviceLabel.ts`: "Safari on macOS")
+and a script's from the operator. Either reaches the operator's terminal, so the store
+turns control and bidirectional-formatting characters into spaces, collapses whitespace,
+and cuts the label to 64 characters before writing it; an empty label is the kind's
+name.
+
+**A browser keeps its token in the page.** Every request that costs a credential
+presents a device token as `Authorization: Bearer <token>`, the web client's included.
+The login view trades a current code for one at `POST /auth/session` (below), and the
+client keeps it in IndexedDB with an in-memory copy, read once at boot, that `apiFetch`
 attaches to every request (`web/src/api/bearer.ts`, [web-client.md](web-client.md)).
 IndexedDB is scoped by origin, and an origin includes its port, so no other service on
 `localhost` reads it. The service worker can read it, and its push-subscription repair
 authenticates with it ([web-push.md](web-push.md)). A `401` to the client's binding
 probe or its session connection clears the stored copy, so the sign-in view starts
-from none. The bearer carries no expiry: a browser stays signed in until the root
-rotates or the browser drops the site's storage. Safari deletes script-writable
-storage for a site not visited in seven days of browsing (apps added to the home
-screen are exempt); whether that applies to a `localhost` or a `ts.net` origin is
-unmeasured, and where it does, the browser signs in again.
+from none; the `500` the gate answers when it cannot read the device table does not.
+A browser stays signed in until its device is revoked, the root rotates, or the
+browser drops the site's storage. Safari deletes script-writable storage for a site not
+visited in seven days of browsing (apps added to the home screen are exempt); whether
+that applies to a `localhost` or a `ts.net` origin is unmeasured, and where it does, the
+browser signs in again as a new device.
 
 The gate reads a credential from the `Authorization` header and nowhere else — no
 cookie, no query parameter — and no answer sets a cookie. A request another site
@@ -155,12 +194,12 @@ origin CORS either: a page elsewhere, another port on `localhost` included, can
 neither read an answer nor send the header, since the preflight a cross-origin
 request with it needs is refused like any request without a credential.
 
-The bearer is reachable from the page's script, which an `HttpOnly` cookie would not
+The token is reachable from the page's script, which an `HttpOnly` cookie would not
 be. The boundary for that is the page's Content-Security-Policy together with the rule
 that nothing turns untrusted content into markup ([web-client.md](web-client.md)): a
 first-party client with no third-party content, under a policy that names no other
 origin. Script running in the page can make the page's requests and read their answers
-whatever form the credential takes; what the bearer in reach adds is that such script
+whatever form the credential takes; what the token in reach adds is that such script
 can carry it away.
 
 A bind to port 0 learns its port once listening, and minted links name that port. A
@@ -184,9 +223,9 @@ path when at the host, and the answer to lost scrollback. It is a `dev` verb rat
 *fragment*: it never reaches server or proxy logs, and burned codes make
 browser-history residue inert. The web client's login view
 ([web-client.md](web-client.md), `web/src/ui/Login.tsx`) reads the hash, trades the
-code at `POST /auth/session` for the bearer, keeps it (above), and scrubs the URL with
-`history.replaceState`; a bare visit renders a six-digit field posting to the same
-endpoint. `GET /auth/otpauth` on the Unix socket returns the `otpauth://` enrollment URI for a stock
+code and the page's label at `POST /auth/session` for a browser device's token, keeps
+it (above), and scrubs the URL with `history.replaceState`; a bare visit renders a
+six-digit field posting to the same endpoint. `GET /auth/otpauth` on the Unix socket returns the `otpauth://` enrollment URI for a stock
 authenticator app; nothing renders it as a QR any more (the CLI flag was removed pending a
 TUI or web onboarding flow).
 
@@ -223,8 +262,10 @@ Runs before every TCP route, in order:
    upload (`400`) — forms can't spell either, and a cross-site `fetch` carrying either is
    preflighted, which closes the no-preflight CSRF shapes. A localhost or LAN bind is not a trust boundary while a
    browser is present; these ship with the bind, not after it.
-3. **Credential check** — the bearer in the `Authorization` header, else
-   `401 unauthorized`. The rule is the **anonymous list, not the guarded one**:
+3. **Credential check** — a device token in the `Authorization` header whose tag
+   verifies and whose row exists, else `401 unauthorized`. A token that verifies
+   against a device table that cannot be read is `500 internal`, which a client does
+   not take as a bad token. The rule is the **anonymous list, not the guarded one**:
    everything costs a
    credential except what is named as free, so a route added later is guarded
    unless it is named there too. The free surface is the web client's shell, its
@@ -235,7 +276,7 @@ Runs before every TCP route, in order:
    which is no route of its — the web client's probe to tell the two bindings
    apart reads the `404` a session daemon gives it as "not a host"
    ([web-client.md](web-client.md)).
-   Everything else takes the bearer, whatever its prefix: `/v1`, `/files`, the rest
+   Everything else takes a device token, whatever its prefix: `/v1`, `/files`, the rest
    of a host's `/sessions` tree (`/sessions/<id>/files` included), and the host's
    own routes at its root. The `dev-proxy` build widens the free surface to the dev
    server's module URLs ([web-client.md](web-client.md)), because a shell that
@@ -279,17 +320,17 @@ the machine. It is the server half of the file viewer
   directories are listed but never descended: the walk would not terminate.
 - Anything else, including any non-GET, is refused — this surface never mutates.
 
-**Not under `/v1`, behind the same bearer.** `/v1` is the control API, where every
+**Not under `/v1`, behind the same token.** `/v1` is the control API, where every
 client is equal; `/files` is a human surface beside it, and the gate prices the two
-alike. Working-directory reads from a bearer go past `[paths]` entirely, including the
-injected deny that keeps a session out of every other session's log
-([permissions.md](permissions.md)), so that fence holds while no session holds the
-bearer. A session cannot derive it — the root is stripped from tool children — and
-the web client keeps its copy in the browser's origin storage rather than anywhere a
-session's environment carries. What remains is script injected into the web client,
-which is the CSP's boundary (above) and which can make the page's requests and read
-their answers whatever form the credential takes, and an operator pasting the bearer
-into a turn, which no fence stops.
+alike. Working-directory reads with a device token go past `[paths]` entirely,
+including the injected deny that keeps a session out of every other session's log
+([permissions.md](permissions.md)), so that fence holds while no session holds a token.
+A session cannot derive one — the root is in no environment (above) — and the web
+client keeps its token in the browser's origin storage rather than anywhere a session's
+environment carries. What remains is script injected into the web client, which is the
+CSP's boundary (above) and which can make the page's requests and read their answers
+whatever form the credential takes, and an operator pasting a token into a turn, which
+no fence stops.
 
 **Content-type is never the file's own.** Every body is
 `text/plain; charset=utf-8`. Serving a repository's `.html` as `text/html` would be
@@ -315,11 +356,11 @@ being sensitive, and the listing's omissions above are volume rather than
 concealment — `.git` and `target` stay readable by name. Concealing a path from the
 listing while still serving it by name is the shape deliberately not built: it would
 imply a protection that is not there. What binding therefore exposes, to
-whoever holds the bearer, is every text file under the working directory —
-`.env` among them. Two things frame that. The bearer is machine-scoped and lasts
-until the root rotates, so the exposure window is the bearer's rather than the
-session's; and the same bearer already reaches `/v1`, where approving a gate or
-injecting a turn can have the
+whoever holds a device token, is every text file under the working directory —
+`.env` among them. Two things frame that. A token reaches every session on the
+machine and lasts until its device is revoked or the root rotates, so the exposure
+window is the token's rather than the session's; and the same token already reaches
+`/v1`, where approving a gate or injecting a turn can have the
 *agent* read any file into the transcript, so a stolen credential does not become
 materially worse for this route existing. The widening that is real is narrower: an
 operator who deliberately fenced the session into a subdirectory with `[paths]` will
@@ -375,8 +416,8 @@ The same URLs content-negotiate: a `GET /files/<path>` whose `Accept` header
 **explicitly names** `text/event-stream` gets a stream of change pokes instead of
 the body. Explicit-only — `*/*`, a fetch's default, gets the file — so only a
 client that asked to stream ever streams; the web client's reader is a `fetch`
-that sets the header explicitly (`web/src/api/files.ts`). Behind the bearer like the
-rest of the surface, and the subscription's lifetime *is* the connection: tab closes,
+that sets the header explicitly (`web/src/api/files.ts`). Behind a device token like
+the rest of the surface, and the subscription's lifetime *is* the connection: tab closes,
 socket closes, watch drops. No registry, no control-channel frame class — the
 control channel stays broadcast-topic shaped.
 
@@ -430,16 +471,24 @@ either spelling of a directory — the root included — streams that directory.
 The first surface with no per-session home, previewing a host's routing split:
 a host listener mounts the same mint.
 
-On the TCP listener (anonymous): `POST /auth/session` — `{"code":"123456"}` →
-`200` with `{"token":"<the bearer>"}` in the body, under `Cache-Control: no-store`
-(a credential in a response is never kept for reuse); it sets no cookie.
+On the TCP listener (anonymous): `POST /auth/session` —
+`{"code":"123456","label":"Safari on macOS"}` → `200` with `{"token":"efference_…"}`
+in the body, under `Cache-Control: no-store` (a credential in a response is never kept
+for reuse); it sets no cookie. An accepted code enrolls a `browser` device
+(`joined: code`) under the label, which is optional and defaults to `browser`; a
+device that cannot be recorded is a `500`, and the code is spent either way.
 
 On the UDS only (host possession is the enrollment authority): `GET /auth/link`
-(a fresh fragment-token URL), `GET /auth/otpauth` (the enrollment URI), `GET
-/auth/bearer` (the same bearer, for a program on the machine). The otpauth URI
-carries the TOTP secret itself, which mints codes — and through the mint, the bearer —
-at will; it is an enrollment, so it rides the socket only, never the TCP listener,
-authenticated or not.
+(a fresh fragment-token URL), `GET /auth/otpauth` (the enrollment URI), and the device
+routes `efference devices` drives — `GET /auth/devices` (`{"devices":[…]}`, oldest
+first, no tokens), `POST /auth/devices` (`{"label":"ci"}` → `201` with
+`{"device":…,"token":…}` under `no-store`: a `script` device, `joined: add`, and the
+one answer that carries its token), and `DELETE /auth/devices/:id` (the whole hex id;
+`404` when no row has it). With no bind armed, each answers `404` with a sentence. The
+otpauth URI carries the TOTP secret itself, which mints codes — and through the mint,
+device tokens — at will, and the add route mints a token outright; both are
+enrollments, so they ride the socket only, never the TCP listener, authenticated or
+not.
 
 ## Remote TUI
 

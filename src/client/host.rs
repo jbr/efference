@@ -1,6 +1,6 @@
 //! The listener-route verbs: the host's own routes at the socket root —
-//! sessions, the inference catalog, attention, and the `/auth/*` credentials
-//! (docs/control-api.md) — whatever prefix the client carries.
+//! sessions, the inference catalog, attention, and the `/auth/*` credentials and
+//! enrolled devices (docs/control-api.md) — whatever prefix the client carries.
 
 use super::*;
 
@@ -263,9 +263,32 @@ impl Client {
         self.auth_field("/auth/otpauth", "uri").await
     }
 
-    /// The program bearer for the TCP bind (`GET /auth/bearer`, docs/web-bind.md).
-    pub async fn auth_bearer(&self) -> Result<String> {
-        self.auth_field("/auth/bearer", "bearer").await
+    /// The devices enrolled at the TCP bind, oldest first (`GET /auth/devices`,
+    /// docs/web-bind.md).
+    pub async fn devices(&self) -> Result<Vec<crate::devices::Device>> {
+        #[derive(serde::Deserialize)]
+        struct Listing {
+            devices: Vec<crate::devices::Device>,
+        }
+        let listing: Listing = self.get_root("/auth/devices").await?;
+        Ok(listing.devices)
+    }
+
+    /// Enroll a script device labelled `label` (`POST /auth/devices`,
+    /// docs/web-bind.md): the device and its token, which no later answer repeats.
+    pub async fn add_device(&self, label: &str) -> Result<crate::devices::Enrolled> {
+        let path = "/auth/devices";
+        let body = serde_json::json!({ "label": label }).to_string();
+        let response = self.send_at(Method::Post, path, Some(body)).await?;
+        serde_json::from_str(&response).with_context(|| format!("decoding POST {path}"))
+    }
+
+    /// Revoke one enrolled device (`DELETE /auth/devices/:id`, docs/web-bind.md):
+    /// its token is refused from the next request on.
+    pub async fn revoke_device(&self, id: &crate::devices::DeviceId) -> Result<()> {
+        self.send_at(Method::Delete, &format!("/auth/devices/{id}"), None)
+            .await?;
+        Ok(())
     }
 
     /// GET a listener route and decode its JSON body.

@@ -151,22 +151,36 @@ nothing from other origins and not to be framed.
 ### Sign-in
 
 The printed link works once, within about a minute, and signs one browser in, with no
-expiry of its own. Other programs use the same token a signed-in browser holds, available
-from the host's Unix socket. The link and the token both derive from one secret the host
-keeps in your OS keychain, created the first time a host listens on TCP.
-<!-- src: src/daemon/tcp.rs::mint_link, authenticate_code, TcpAuth::authenticated; src/daemon/tcp/routes.rs::mint_session; src/auth.rs::ROOT_ITEM, Root::load, Root::bearer -->
+expiry of its own. Each browser that signs in becomes an enrolled device with a token of
+its own. `efference devices` lists them: an id, the kind, how each joined, when, when it
+was last seen (recorded at most hourly), and a label naming the browser, such as "Safari
+on macOS". It asks the running host, so the host has to be up with its web address on.
+<!-- src: src/daemon/tcp.rs::mint_link, authenticate_code, TcpAuth::enroll; src/daemon/tcp/routes.rs::mint_session, list_devices, with_auth (no bind armed); src/devices.rs::Store, SEEN_INTERVAL_SECS; web/src/ui/deviceLabel.ts::deviceLabel; src/bin/efference/devices.rs::run, listing -->
 
-`efference auth rotate` replaces that secret, which ends every browser's sign-in when the
-host next starts. `rotate` refuses while a local daemon is listening — it would keep
-serving the root the store no longer has — so after a lost device: stop the host, rotate,
-start it again.
-<!-- src: src/auth.rs::Root::rotate (deletes the item only); src/bin/efference/main.rs::local_daemon_is_listening (the refusal); src/daemon/tcp.rs::arm_with_ledger (keys derived once at start) -->
+`efference devices revoke <id>` signs one device out: its token is refused from its next
+request on. The id is the one `efference devices` lists, or its first few characters. A
+browser signed out this way signs in again from a fresh link, as a new device.
+<!-- src: src/bin/efference/devices.rs::matching; src/daemon/tcp/routes.rs::remove_device; src/devices.rs::Store::remove, Store::seen; src/daemon/tcp.rs::TcpAuth::credential -->
+
+A program that reaches the host over the network gets a token of its own from
+`efference devices add <label>`, which prints it once and never again. The program sends
+it as `Authorization: Bearer <token>`, and `efference devices revoke` ends it like any
+other device.
+<!-- src: src/bin/efference/devices.rs::DevicesCommand::Add; src/daemon/tcp/routes.rs::add_device; src/daemon/tcp.rs::TcpAuth::credential -->
+
+Every link and token derives from one secret the host keeps in your OS keychain, created
+the first time a host listens on TCP; the list of devices holds no secret. `efference auth
+rotate` replaces that secret and deletes every enrolled device, which signs out every
+browser and every program at once. `rotate` refuses while a local daemon is listening — it
+would keep serving the root the store no longer has — so stop the host, rotate, and start
+it again. One lost device needs only `efference devices revoke`.
+<!-- src: src/auth.rs::ROOT_ITEM, Root::load, Root::rotate, DeviceTokens; src/bin/efference/main.rs::rotate, local_daemon_is_listening (the refusal); src/daemon/tcp.rs::arm_with_state (keys derived once at start) -->
 
 The browser keeps its sign-in where only pages at the host's own address can read it:
 other sites cannot, and neither can other servers you run on this machine at other
 ports.
-<!-- src: web/src/api/bearer.ts::BEARER_DB, bearer; web/src/api/http.ts::apiFetch; src/daemon/tcp.rs::TcpAuth::authenticated -->
-<!-- TODO: the sign-in model (enrollment, per-device revocation, step-up) is being reworked in backlog/inbox/browser-sign-in-by-approval.md; this section stays at this level until it lands. -->
+<!-- src: web/src/api/bearer.ts::BEARER_DB, bearer; web/src/api/http.ts::apiFetch; src/daemon/tcp.rs::TcpAuth::credential -->
+<!-- TODO: signing a browser in by approving it at the host, with no six-digit codes, is backlog/inbox/browser-sign-in-by-approval.md; this section describes the link sign-in until it lands. -->
 
 Other accounts on this machine can connect to a loopback port too. They still need to sign
 in, but do not give a host a web address on a machine you share with people you do not

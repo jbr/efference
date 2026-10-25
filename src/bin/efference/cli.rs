@@ -412,6 +412,16 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: AuthCommand,
     },
+    /// The devices signed in to the web bind: each browser that signed in, and each
+    /// script given a token, holds one credential that is revoked alone.
+    ///
+    /// With no verb, lists them: the id (its first 8 hex digits), the kind, how it
+    /// joined, when, when it was last seen (recorded at most hourly), and its label.
+    /// Asks the running host, over its socket, and needs its web bind.
+    Devices {
+        #[command(subcommand)]
+        command: Option<devices::DevicesCommand>,
+    },
     /// Validate an efference.toml without starting a session.
     ///
     /// Parses the file, applies the same checks a session boot applies, resolves
@@ -432,9 +442,11 @@ pub(crate) enum Command {
 pub(crate) enum AuthCommand {
     /// Replace the machine root every bind credential derives from.
     ///
-    /// Deletes the stored root; the next `efference --host --bind` mints a new one.
-    /// This signs out every browser, invalidates the authenticator enrollment,
-    /// and drops every push subscription. Run it when the root may have leaked,
-    /// or when the secret store reports it unreadable.
+    /// Deletes the stored root and every enrolled device; the next
+    /// `efference --host --bind` mints a new root. This signs out every device,
+    /// browsers and scripts alike, invalidates the authenticator enrollment, and
+    /// drops every push subscription. Run it when the root may have leaked, or
+    /// when the secret store reports it unreadable; one lost device is
+    /// `efference devices revoke`.
     Rotate,
 }

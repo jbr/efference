@@ -60,15 +60,24 @@ fn the_parent_directory_is_created() {
     assert!(path.exists());
 }
 
-/// The production topology: the push store and the burn ledger name the same
-/// file, and one must not be able to damage the other's rows. This is the case
-/// `open` exists for, so it is asserted on the real stores rather than on
-/// stand-in tables.
+/// The production topology: the push store, the burn ledger, and the enrolled
+/// devices name the same file, and none must be able to damage another's rows.
+/// This is the case `open` exists for, so it is asserted on the real stores rather
+/// than on stand-in tables.
 #[test]
 fn the_real_stores_coexist_in_one_user_scoped_file() {
     let path = dir().join("state.db");
     let store = crate::push::Store::new(path.clone());
     let ledger = crate::auth::BurnLedger::new(path.clone());
+    let devices = crate::devices::Store::new(path.clone());
+    let device = devices
+        .insert(
+            crate::devices::Kind::Browser,
+            "phone",
+            crate::devices::Joined::Code,
+            SystemTime::now(),
+        )
+        .unwrap();
 
     store
         .upsert(crate::push::Subscription {
@@ -83,6 +92,7 @@ fn the_real_stores_coexist_in_one_user_scoped_file() {
     assert_eq!(store.load().len(), 1);
     assert!(ledger.is_burned(4000));
     assert_eq!(store.load()[0].endpoint, "https://push.example.net/a");
+    assert_eq!(devices.list().unwrap(), [device]);
 }
 
 #[test]

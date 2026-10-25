@@ -184,6 +184,10 @@ prints signs a browser in, and a six-digit code from an authenticator app does t
 when no link is at hand. While the host has a web bind,
 `curl --unix-socket ~/.efference/host.sock http://localhost/auth/otpauth` prints the
 enrollment URI to add to an authenticator app.
-Revoking access means `efference auth rotate`, which signs out every browser. A way to
-sign in a second device by scanning a code, and to revoke one device, is coming; until
-then, describe only what is here.
+
+Each browser that signs in is an enrolled device with a token of its own, and so is each
+script given one. `efference devices` lists them, `efference devices revoke <id>` signs
+one out from its next request, and `efference devices add <label>` prints a new token
+for a script, once; all three ask the running host. `efference auth rotate` signs out
+every device at once. A way to sign a browser in by approving it at the host, with no
+six-digit codes, is coming; until then, describe only what is here.

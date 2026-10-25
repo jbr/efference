@@ -1,7 +1,7 @@
 //! Tests for the gate and the anonymous surface it prices (docs/web-bind.md). The helpers
 //! are in `tcp/test.rs`.
 
-use super::super::test::{armed, tcp_server};
+use super::super::test::{armed, enrolled, tcp_server};
 use super::*;
 use trillium_testing::TestServer;
 
@@ -57,7 +57,7 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
 
 /// The gate's price list as a table (docs/web-bind.md). The rule is the
 /// anonymous list inverted, so this is where a route's cost is settled: a path
-/// `Surface::anonymous` does not name costs the bearer, which is what keeps a
+/// `Surface::anonymous` does not name costs a device token, which is what keeps a
 /// route added later from being readable to anyone who can reach the bind.
 #[test]
 fn the_anonymous_surface_is_named() {
@@ -165,12 +165,12 @@ fn the_anonymous_surface_is_named() {
 }
 
 /// `/files` is the operator's read surface over the working directory
-/// (docs/web-bind.md), behind the same bearer as `/v1`: anonymous is refused
-/// there unlike every other GET outside `/v1`, and the bearer opens it. Its
+/// (docs/web-bind.md), behind a device token as `/v1` is: anonymous is refused
+/// there unlike every other GET outside `/v1`, and a token opens it. Its
 /// answers revalidate rather than being reused from a store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn files_takes_the_bearer() {
-    let auth = armed("files-bearer");
+async fn files_takes_a_token() {
+    let auth = armed("files-token");
     let (server, _guard) = tcp_server(&auth).await;
 
     server
@@ -181,10 +181,7 @@ async fn files_takes_the_bearer() {
 
     let listing = server
         .get("/files/")
-        .with_request_header(
-            KnownHeaderName::Authorization,
-            format!("Bearer {}", auth.bearer()),
-        )
+        .with_request_header(KnownHeaderName::Authorization, enrolled(&auth))
         .await;
     listing.assert_status(200);
     assert_eq!(
@@ -195,14 +192,14 @@ async fn files_takes_the_bearer() {
     );
 }
 
-/// The bearer opens `/files` on both surfaces through the gate itself: a session
-/// bind's `/files` and a host's `/sessions/<id>/files` take it as `/v1` and the
-/// session-prefixed control paths do, and refuse a conn without it. The routes
+/// A device token opens `/files` on both surfaces through the gate itself: a
+/// session bind's `/files` and a host's `/sessions/<id>/files` take it as `/v1` and
+/// the session-prefixed control paths do, and refuse a conn without it. The routes
 /// behind the gate are a stub; only the gate's answer is under test.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn files_takes_the_bearer_on_both_surfaces() {
+async fn files_takes_a_token_on_both_surfaces() {
     let auth = armed("files-both-surfaces");
-    let bearer = format!("Bearer {}", auth.bearer());
+    let bearer = enrolled(&auth);
     for (surface, files, open) in [
         (Surface::Session, "/files/notes.md", "/v1/state"),
         (
@@ -237,7 +234,7 @@ async fn files_takes_the_bearer_on_both_surfaces() {
 async fn unsafe_methods_enforce_origin_and_content_type() {
     let auth = armed("csrf-hardening");
     let (server, _guard) = tcp_server(&auth).await;
-    let bearer = format!("Bearer {}", auth.bearer());
+    let bearer = enrolled(&auth);
 
     // A cross-site Origin is rejected even with a valid credential. Bodiless for the
     // same reason as the gate's 401 above: the rejection answers unread.

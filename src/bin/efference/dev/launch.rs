@@ -20,16 +20,12 @@ pub(crate) async fn gallery(
 }
 
 /// Mint and open a fresh bootstrap link against a running daemon's TCP bind
-/// (docs/web-bind.md); `--bearer` prints the program token instead. Both come over
-/// the Unix socket only.
-pub(super) async fn open(print: bool, bearer: bool) -> CliResult {
+/// (docs/web-bind.md), over the Unix socket only. A script's token is
+/// `efference devices add`.
+pub(super) async fn open(print: bool) -> CliResult {
     // The credential routes live at the socket root: the first live host's.
     let host = live_host().ok_or("no host is running; start one with `efference --host`")?;
     let client = ControlClient::new(host);
-    if bearer {
-        println!("{}", client.auth_bearer().await?);
-        return Ok(());
-    }
     let url = client.auth_link().await?;
     println!("{url}");
     if !print && webbrowser::open(&url).is_err() {

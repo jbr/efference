@@ -13,7 +13,7 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             }
             Ok(())
         }
-        DevCommand::Open { print, bearer } => open(print, bearer).await,
+        DevCommand::Open { print } => open(print).await,
         DevCommand::Cache { session, read, all } => cache_report::cache(session, read.name, all),
         DevCommand::Stops { session, read, all } => {
             stop_report::stops_report(session, read.name, all)

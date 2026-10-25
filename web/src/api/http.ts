@@ -346,12 +346,12 @@ export const subscribePush = (subscription: PushSubscriptionJSON) =>
 export const unsubscribePush = (endpoint: string) =>
   del<{ status: string }>("/v1/push/subscriptions", { endpoint });
 
-// Trade a TOTP code for the bearer, which the caller keeps (api/bearer.ts,
-// docs/web-bind.md). Outside /v1 and outside the base: auth is the *listener's*
-// surface, so it is at the root under either binding, and one credential covers
-// every session behind a host.
-export const mintSession = (code: string) =>
-  requestAt<{ token: string }>("POST", "/auth/session", { code });
+// Trade a TOTP code for a device token, which the caller keeps (api/bearer.ts,
+// docs/web-bind.md); `label` is what the host lists the device as. Outside /v1
+// and outside the base: auth is the *listener's* surface, so it is at the root
+// under either binding, and one credential covers every session behind a host.
+export const mintSession = (code: string, label?: string) =>
+  requestAt<{ token: string }>("POST", "/auth/session", { code, label });
 
 /** One entry of the host's session listing (docs/web-client.md). The id is the
  * path segment a client joins its control base onto; the rest is what a list

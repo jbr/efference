@@ -1,6 +1,6 @@
 //! The hardening + auth gate and the anonymous surface it prices (docs/web-bind.md).
 //!
-//! [`Surface::anonymous`] names what costs nothing and everything else costs the bearer;
+//! [`Surface::anonymous`] names what costs nothing and everything else costs a device token;
 //! [`SPA_ROUTES`], [`ASSET_PREFIXES`], and [`SHELL_ASSETS`] name the web client's shell,
 //! which loads before anything can authenticate (docs/web-client.md).
 
@@ -15,15 +15,15 @@ use trillium::{KnownHeaderName, Method};
 /// second gate.
 ///
 /// A surface is not a set of guarded prefixes: [`Surface::anonymous`] names what
-/// costs nothing and everything else costs the bearer, so what a surface settles
+/// costs nothing and everything else costs a device token, so what a surface settles
 /// is where the client's own routes sit (at the root on a session bind, under
 /// `/sessions/<id>` as well on a host) and the binding probe reaching a session
 /// bind's router.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Surface {
-    /// A session bind: `/v1` and `/files` take the bearer (docs/web-bind.md).
+    /// A session bind: `/v1` and `/files` take a device token (docs/web-bind.md).
     Session,
-    /// A multi-session host: everything under `/sessions` takes the bearer — the
+    /// A multi-session host: everything under `/sessions` takes a device token — the
     /// session listing and every session-prefixed path alike, `/files` among them
     /// (docs/web-bind.md).
     Host,
@@ -45,7 +45,7 @@ impl Surface {
                 && session_scoped(path).is_some_and(|route| SPA_ROUTES.contains(&route)))
     }
 
-    /// Whether `path` costs nothing here; everything else costs the bearer.
+    /// Whether `path` costs nothing here; everything else costs a device token.
     ///
     /// The rule is the anonymous list inverted: a route added later is guarded
     /// unless it is named here too. Stating it the other way — a list of guarded
@@ -102,7 +102,8 @@ pub(super) fn under(path: &str, prefix: &str) -> bool {
 /// The hardening + auth gate, run before every route on a TCP listener
 /// (docs/web-bind.md): Host allowlist (DNS rebinding), Origin + Content-Type checks on
 /// unsafe methods (CSRF — a localhost or LAN bind is not a trust boundary while a
-/// browser is present), then the credential check against the listener's [`Surface`].
+/// browser is present), then the credential check against the listener's [`Surface`]:
+/// a path it does not name as free takes a device token whose device is enrolled.
 pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handler {
     move |conn: Conn| {
         let auth = Arc::clone(&auth);
@@ -168,15 +169,25 @@ pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handl
                     }
                 }
             }
-            if surface.anonymous(method, conn.path()) || auth.authenticated(&conn) {
+            // Checked first, so a free path never reaches the device table.
+            if surface.anonymous(method, conn.path()) {
                 return conn;
             }
-            fail(
-                conn,
-                ErrorCode::Unauthorized,
-                "no valid `Authorization: Bearer` token; POST /auth/session trades a \
-                 current code for one",
-            )
+            match auth.credential(&conn) {
+                Credential::Enrolled => conn,
+                Credential::Unchecked => fail(
+                    conn,
+                    ErrorCode::Internal,
+                    "could not read the enrolled devices, so the token was not checked",
+                ),
+                Credential::Refused => fail(
+                    conn,
+                    ErrorCode::Unauthorized,
+                    "no valid `Authorization: Bearer` device token; POST /auth/session \
+                     trades a current code for one, and `efference devices add` at the \
+                     host mints one for a script",
+                ),
+            }
         }
     }
 }

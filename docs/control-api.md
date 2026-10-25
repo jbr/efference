@@ -25,11 +25,11 @@ holding `log.jsonl` and `config.toml`; the session itself is served at
 `/sessions/<id>/` on its host's socket.
 
 With `--host --bind`, the same routes are also served on a TCP listener behind a
-hardening + auth gate — the bearer in an `Authorization` header, plus
-`401 unauthorized` / `403 forbidden` / `429 rate_limited` in the standard error
-envelope, and the `/auth/*` routes beside `/v1`. That listener also carries
+hardening + auth gate — an enrolled device's token in an `Authorization: Bearer`
+header, plus `401 unauthorized` / `403 forbidden` / `429 rate_limited` in the standard
+error envelope, and the `/auth/*` routes beside `/v1`. That listener also carries
 `/files` — the operator's read-only view of the working directory, behind the same
-bearer and outside the version prefix because it is a human surface rather than a
+token and outside the version prefix because it is a human surface rather than a
 control one. Both are
 [web-bind.md](web-bind.md); the UDS stays auth-exempt and everything below is
 unchanged on it.

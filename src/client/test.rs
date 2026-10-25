@@ -67,9 +67,10 @@ fn stub_router() -> Router {
             conn.with_status(200)
                 .with_body(r#"{"last_seq":9,"gate":null}"#)
         })
-        .get("/auth/bearer", |conn: Conn| async move {
-            conn.with_status(200)
-                .with_body(r#"{"bearer":"root-level"}"#)
+        .get("/auth/devices", |conn: Conn| async move {
+            conn.with_status(200).with_body(
+                r#"{"devices":[{"id":"00112233445566778899aabbccddeeff","kind":"script","label":"root-level","joined":"add","created_at":1,"last_seen_at":null}]}"#,
+            )
         })
 }
 
@@ -216,7 +217,11 @@ async fn a_prefixed_client_joins_v1_only() {
     let client = Client::at(&socket, "sessions/minted/");
     let state = client.state().await.unwrap();
     assert!(state.contains(r#""last_seq":9"#), "{state}");
-    assert_eq!(client.auth_bearer().await.unwrap(), "root-level");
+    let devices = client.devices().await.unwrap();
+    assert_eq!(
+        devices.iter().map(|d| d.label.as_str()).collect::<Vec<_>>(),
+        ["root-level"]
+    );
     // Root-based requests do not reach the prefixed session.
     let unprefixed = Client::new(&socket).state().await.unwrap();
     assert!(unprefixed.contains(r#""last_seq":3"#), "{unprefixed}");

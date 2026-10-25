@@ -453,7 +453,7 @@ fn a_bare_port_binds_loopback() {
 }
 
 /// A cleartext bind on a routable interface is refused, and the message says why
-/// in terms of what an attacker gets: a replayed bearer drives the agent's
+/// in terms of what an attacker gets: a replayed device token drives the agent's
 /// tools. It also names both ways out.
 #[test]
 fn a_routable_cleartext_bind_is_refused_with_the_reason() {
@@ -462,7 +462,7 @@ fn a_routable_cleartext_bind_is_refused_with_the_reason() {
     };
     let err = err.to_string();
     assert!(err.contains("not loopback"), "{err}");
-    assert!(err.contains("replay a browser's bearer"), "{err}");
+    assert!(err.contains("replay a browser's device token"), "{err}");
     assert!(err.contains("--tls-cert/--tls-key"), "{err}");
 }
 

@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-// The sign-in view keeps what the mint answers (docs/web-bind.md): the bearer
+// The sign-in view keeps what the mint answers (docs/web-bind.md): the token
 // is held before the connect re-runs, so the first request after sign-in
-// already carries it, and a refused code leaves nothing held.
+// already carries it, and a refused code leaves nothing held. The trade names
+// the browser, for the host's device listing.
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { bearer } from "../api/bearer.ts";
+import { deviceLabel } from "./deviceLabel.ts";
 import { Login } from "./Login.tsx";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -43,7 +45,7 @@ async function submit(code: string, onAuthenticated: () => void) {
   };
 }
 
-test("a code the mint accepts is traded for the bearer, held before the connect re-runs", async () => {
+test("a code the mint accepts is traded for a token, held before the connect re-runs", async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValue(Response.json({ token: "minted" }, { status: 200 }));
@@ -56,7 +58,10 @@ test("a code the mint accepts is traded for the bearer, held before the connect 
   try {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/auth/session");
-    expect(JSON.parse(init.body as string)).toEqual({ code: "123456" });
+    expect(JSON.parse(init.body as string)).toEqual({
+      code: "123456",
+      label: deviceLabel(navigator.userAgent),
+    });
     expect(heldAtConnect).toEqual(["minted"]);
   } finally {
     unmount();

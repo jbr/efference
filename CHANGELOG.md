@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Security
 
+- Every TCP credential is an enrolled device, a row in state.db's `devices` table, and its token (`efference_` + base64url of the row's random id and an HMAC tag) is derived from the machine root, checked tag-first and then against the row on every request; a TOTP sign-in enrolls a browser under a label the page sends, `efference devices` lists the devices and `efference devices revoke <id>` signs one out at its next request, `efference devices add <label>` prints a script's token once, `efference auth rotate` also deletes every row, and the root-derived bearer, `GET /auth/bearer` and `efference dev open --bearer` are gone (docs/web-bind.md, docs/state-store.md).
 - The web client authenticates with the bearer as an `Authorization` header, kept in origin-scoped IndexedDB that other `localhost` services cannot read; `POST /auth/session` answers `{"token"}` in its body, no answer sets a cookie, the session cookie and its verification are removed, and `/files` takes the bearer like `/v1` (docs/web-bind.md).
 - The service worker clamps notification targets to its own origin, so a forged push cannot open an arbitrary URL (docs/web-push.md).
 - Host boot tightens its state directory, state files, and the host socket to owner-only modes — one-way, skipping absent files (docs/state-store.md, docs/control-channel.md).

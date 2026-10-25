@@ -20,7 +20,7 @@ valid P-256 scalar (a uniform string exceeds the group order with probability ~2
 the loop is deterministic per root). Every daemon under one root derives the identical
 key with no coordination. Rotating the root rotates the key, which
 strands existing subscriptions until the page resubscribes on its next
-open — the same blast radius the bearer/TOTP family already has.
+open — the same blast radius the device-token and TOTP family already has.
 
 ## The subscription store
 

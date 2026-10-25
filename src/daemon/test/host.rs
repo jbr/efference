@@ -133,12 +133,13 @@ async fn host_server(host: &Arc<Host>) -> TestServer<impl trillium::Handler> {
 /// than which routes exist (docs/control-channel.md, docs/web-bind.md). No socket
 /// is bound — the transport is in memory, as in the TCP tests.
 async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Handler>, String) {
-    use crate::auth::{BurnLedger, Root};
+    use crate::auth::Root;
+    use crate::devices::{Joined, Kind};
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
     let root = std::env::temp_dir().join(format!("efference-net-host-{nonce:016x}"));
     std::fs::create_dir_all(&root).expect("scratch root");
-    let (auth, _listener) = crate::daemon::tcp::arm_with_ledger(
+    let (auth, _listener) = crate::daemon::tcp::arm_with_state(
         crate::daemon::tcp::TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,
@@ -146,7 +147,7 @@ async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Han
             root: Root::new(root.to_string_lossy().as_ref()),
             open: false,
         },
-        BurnLedger::new(root.join("burns")),
+        root.join("state.db"),
     );
     let host = Arc::clone(host);
     let server = TestServer::new((
@@ -165,8 +166,10 @@ async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Han
     // The gate answers only for a host this daemon's name covers; the in-memory
     // server presents one it does not otherwise (as in the TCP tests).
     .with_host("localhost");
-    let bearer = format!("Bearer {}", auth.bearer());
-    (server, bearer)
+    let enrolled = auth
+        .enroll(Kind::Script, "test", Joined::Add)
+        .expect("a scratch database takes a row");
+    (server, format!("Bearer {}", enrolled.token))
 }
 
 /// A hosted session's control answers under its prefix, over the web transport:

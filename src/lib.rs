@@ -17,6 +17,7 @@ pub mod consolidate;
 pub mod context;
 pub mod control_tools;
 pub mod daemon;
+pub mod devices;
 pub mod digest;
 pub mod discard;
 pub mod env;

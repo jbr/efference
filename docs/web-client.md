@@ -124,9 +124,10 @@ read `Last-Event-ID`), replaying the durable subset exactly.
 
 Every request the client makes — reads, verbs, streams, and the bytes of images —
 goes through one function, `apiFetch` in `api/http.ts`, which calls the global
-`fetch` with the held bearer attached as `Authorization: Bearer`
-([web-bind.md](web-bind.md)): merged into whatever headers the caller passed, never
-replacing an `Authorization` the caller set, and only for the page's own origin. The
+`fetch` with the held bearer — this browser's device token — attached as
+`Authorization: Bearer` ([web-bind.md](web-bind.md)): merged into whatever headers the
+caller passed, never replacing an `Authorization` the caller set, and only for the
+page's own origin. The
 bearer is kept in IndexedDB with one in-memory copy (`api/bearer.ts`); `main.tsx`
 reads storage before anything that makes a request starts, so attaching the header
 needs no wait, and storage that is missing or throws leaves the in-memory copy
@@ -2158,11 +2159,12 @@ note ("handed off from `<id>` — its brief:") rather than as the operator's tur
 The gate enumerates its anonymous surface rather than deriving it from guarded
 prefixes ([web-bind.md](web-bind.md)): the app shell, the hashed assets, and the launch images under `/splash` serve without a
 credential — the same posture as the inline bootstrap page the app replaced — as does
-`POST /auth/session`, and everything else, `/v1` and `/files` included, takes the
-bearer. The login view (`web/src/ui/Login.tsx`) carries the bootstrap dance: read
-`#token=` from the URL fragment, trade the code at `POST /auth/session` for the
-bearer, keep it (`api/bearer.ts`), scrub the fragment; render the six-digit field on
-a bare visit or a failed trade. The SPA index answers the client's
+`POST /auth/session`, and everything else, `/v1` and `/files` included, takes a
+device token. The login view (`web/src/ui/Login.tsx`) carries the bootstrap dance: read
+`#token=` from the URL fragment, trade the code at `POST /auth/session`, with a label
+naming the browser (`ui/deviceLabel.ts`), for this browser's device token, keep it
+(`api/bearer.ts`), scrub the fragment; render the six-digit field on a bare visit or a
+failed trade. The SPA index answers the client's
 named routes and nothing else (`SPA_ROUTES`, `src/daemon/tcp/gate.rs`) — a broader index
 fallback would answer scanner probes `200`. On a host those routes are also answered
 under a session prefix, which is the one place the anonymous shell sits among guarded

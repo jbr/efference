@@ -30,9 +30,6 @@ pub(crate) enum DevCommand {
         /// Print the link without launching a browser.
         #[arg(long)]
         print: bool,
-        /// Print the program bearer token instead of a link.
-        #[arg(long)]
-        bearer: bool,
     },
     /// Report a session's prompt-cache read rate from its `usage.jsonl`
     /// (docs/log-and-projection.md) — the empirical half of the prefix oracle the

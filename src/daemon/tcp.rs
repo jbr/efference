@@ -7,13 +7,15 @@
 //! `routes.rs` (the credential mint, the enrollment routes, and the web client handler).
 //! `handler.rs` is the one place the pieces are assembled into a stack, keyed on the
 //! transport, so the UDS never consults the gate and a per-conn "which listener am I
-//! on?" guess (which would fail open) never exists. Credentials are all derived from the
-//! machine root (`crate::auth`); the enrollment surfaces (`/auth/link`, `/auth/otpauth`,
-//! `/auth/bearer`) are mounted only on the socket, because possession of the host
-//! machine is the enrollment authority.
+//! on?" guess (which would fail open) never exists. Every TCP credential is an enrolled
+//! device (`crate::devices`) whose token is derived from the machine root
+//! (`crate::auth`); the enrollment surfaces (`/auth/link`, `/auth/otpauth`, the
+//! `/auth/devices` routes) are mounted only on the socket, because possession of the
+//! host machine is the enrollment authority.
 
 use super::*;
-use crate::auth::{self, BurnLedger, Lockout, Root};
+use crate::auth::{self, BurnLedger, DeviceTokens, Lockout, Root};
+use crate::devices::{self, Enrolled, Joined, Kind};
 use std::time::SystemTime;
 use trillium::KnownHeaderName;
 
@@ -56,8 +58,9 @@ pub struct TlsPem {
 /// The derived credential state the gate and the auth routes share. One per daemon,
 /// built at boot from the injected root; holds no secret that can't be re-derived.
 pub struct TcpAuth {
-    root: Root,
     totp_secret: [u8; 20],
+    /// The key device tokens are minted and verified under.
+    tokens: DeviceTokens,
     /// Host values (no port, lowercase) a request may address the daemon by — the
     /// DNS-rebinding check. The configured public name, plus the loopback spellings
     /// on a plaintext dev bind.
@@ -72,6 +75,9 @@ pub struct TcpAuth {
     /// The shared record of accepted TOTP steps — user-scoped because every daemon
     /// under this user derives the same TOTP secret.
     ledger: BurnLedger,
+    /// The enrolled devices, one row per TCP credential — user-scoped, so a device
+    /// revoked anywhere is refused here on its next request.
+    devices: devices::Store,
 }
 
 /// The listener half of a [`TcpBind`], separated from the credential half by [`arm`]
@@ -84,13 +90,13 @@ pub(crate) struct Listener {
 
 /// Split a bind into its credential state and its listener parameters.
 pub(crate) fn arm(bind: TcpBind) -> (Arc<TcpAuth>, Listener) {
-    let ledger = BurnLedger::user_scoped();
-    arm_with_ledger(bind, ledger)
+    arm_with_state(bind, crate::state::user_scoped())
 }
 
-/// [`arm`] with the burn ledger injected — the interface a test uses to keep burns out of
-/// the real user-scoped file.
-pub(crate) fn arm_with_ledger(bind: TcpBind, ledger: BurnLedger) -> (Arc<TcpAuth>, Listener) {
+/// [`arm`] with the user state database injected — the interface a test uses to keep
+/// burns and enrolled devices out of the real user-scoped file. Both tables the bind
+/// keeps are in that one file (docs/state-store.md).
+pub(crate) fn arm_with_state(bind: TcpBind, state: PathBuf) -> (Arc<TcpAuth>, Listener) {
     let TcpBind {
         addr,
         tls,
@@ -113,12 +119,13 @@ pub(crate) fn arm_with_ledger(bind: TcpBind, ledger: BurnLedger) -> (Arc<TcpAuth
     }
     let auth = Arc::new(TcpAuth {
         totp_secret: root.totp_secret(),
-        root,
+        tokens: root.device_tokens(),
         hosts,
         public_base: Mutex::new(public_base),
         tls: tls.is_some(),
         lockout: Mutex::new(Lockout::default()),
-        ledger,
+        ledger: BurnLedger::new(state.clone()),
+        devices: devices::Store::new(state),
     });
     (auth, Listener { addr, tls, open })
 }
@@ -230,10 +237,20 @@ impl TcpAuth {
         auth::otpauth_uri(&self.totp_secret, host)
     }
 
-    /// The one TCP credential: what the mint hands a browser for a current code,
-    /// and what the socket's `/auth/bearer` hands a program (docs/web-bind.md).
-    pub(crate) fn bearer(&self) -> String {
-        self.root.bearer()
+    /// Enroll a device and answer it with its token — what the mint hands a browser
+    /// for a current code, and what the socket's `POST /auth/devices` hands a script
+    /// (docs/web-bind.md). The one moment a token is spelled outside a request.
+    pub(crate) fn enroll(
+        &self,
+        kind: Kind,
+        label: &str,
+        joined: Joined,
+    ) -> Result<Enrolled, crate::state::Error> {
+        let device = self
+            .devices
+            .insert(kind, label, joined, SystemTime::now())?;
+        let token = self.tokens.token(&device.id);
+        Ok(Enrolled { device, token })
     }
 
     fn host_allowed(&self, host: &str) -> bool {
@@ -241,15 +258,28 @@ impl TcpAuth {
         self.hosts.contains(&host)
     }
 
-    /// Whether the conn presents the bearer in its `Authorization` header — the
-    /// only place a credential is read from. Nothing a browser attaches on its
-    /// own (a cookie, a URL) is consulted, so a request another site forces
-    /// carries none (docs/web-bind.md).
-    fn authenticated(&self, conn: &Conn) -> bool {
-        conn.request_headers()
+    /// The device token in the conn's `Authorization` header — the only place a
+    /// credential is read from. Nothing a browser attaches on its own (a cookie, a
+    /// URL) is consulted, so a request another site forces carries none. The tag is
+    /// verified before the row is looked up, so only a token this root minted
+    /// reaches the table (docs/web-bind.md).
+    fn credential(&self, conn: &Conn) -> Credential {
+        let Some(id) = conn
+            .request_headers()
             .get_str(KnownHeaderName::Authorization)
             .and_then(|authorization| authorization.strip_prefix("Bearer "))
-            .is_some_and(|token| self.root.bearer_matches(token.trim()))
+            .and_then(|token| self.tokens.parse(token.trim()))
+        else {
+            return Credential::Refused;
+        };
+        match self.devices.seen(&id, SystemTime::now()) {
+            Ok(true) => Credential::Enrolled,
+            Ok(false) => Credential::Refused,
+            Err(e) => {
+                log::error!("could not read the enrolled devices; refusing the request: {e}");
+                Credential::Unchecked
+            }
+        }
     }
 
     /// Verify a six-digit code under the lockout, burning the accepted step. The
@@ -282,6 +312,18 @@ impl TcpAuth {
             }
         }
     }
+}
+
+/// What the credential check found on a conn ([`TcpAuth::credential`]).
+enum Credential {
+    /// A device token whose tag verifies, naming a row that exists.
+    Enrolled,
+    /// No token, a malformed or forged one, or one whose device was revoked.
+    Refused,
+    /// The token verified, but the device table could not be read. The request is
+    /// refused without a `401`, which a client takes as a bad token and discards
+    /// (docs/web-bind.md).
+    Unchecked,
 }
 
 /// Why a code was rejected — each maps to one response shape in the session route.

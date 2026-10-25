@@ -63,35 +63,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         #[cfg(feature = "dev")]
         Command::Dev(command) => dev::run(command).await,
         Command::Check { path } => check(path).await,
+        Command::Devices { command } => devices::run(command).await,
         Command::Auth {
             command: AuthCommand::Rotate,
-        } => {
-            // Rotation removes the root from the store; a daemon already
-            // running holds it in memory and would keep serving after the
-            // store no longer has it. A false positive — something answering
-            // the socket that is not a host — only skips a rotation, so the
-            // probe may over-refuse.
-            let socket = cli::mount_host();
-            if local_daemon_is_listening(&socket) {
-                return Err(format!(
-                    "refusing to rotate: a local daemon is listening on {}; stop it first. \
-                     Rotating under a live daemon leaves it serving a root the store no \
-                     longer has.",
-                    socket.display()
-                )
-                .into());
-            }
-            let secrets = efference::secrets::Secrets::detect()?;
-            efference::auth::Root::rotate(&secrets)?;
-            eprintln!(
-                "Rotated: the root is gone from {}, and the next `efference --host --bind` \
-                 mints another. This {}.",
-                secrets.describe(),
-                efference::auth::ROTATION_CONSEQUENCES
-            );
-            Ok(())
-        }
+        } => rotate(),
     }
+}
+
+/// `efference auth rotate`: delete the root, then every enrolled device
+/// (docs/web-bind.md).
+fn rotate() -> CliResult {
+    // Rotation removes the root from the store; a daemon already running holds
+    // it in memory and would keep serving after the store no longer has it. A
+    // false positive — something answering the socket that is not a host — only
+    // skips a rotation, so the probe may over-refuse.
+    let socket = cli::mount_host();
+    if local_daemon_is_listening(&socket) {
+        return Err(format!(
+            "refusing to rotate: a local daemon is listening on {}; stop it first. \
+             Rotating under a live daemon leaves it serving a root the store no \
+             longer has.",
+            socket.display()
+        )
+        .into());
+    }
+    let secrets = efference::secrets::Secrets::detect()?;
+    efference::auth::Root::rotate(&secrets)?;
+    // The root goes first: no token verifies under the next one, so a table that
+    // cannot be cleared leaves rows that sign nothing in, never a token that does.
+    let removed = efference::devices::Store::user_scoped()
+        .clear()
+        .map_err(|e| {
+            format!(
+                "rotated: the root is gone from {}, so no device token verifies any \
+                 more, but the enrolled devices could not be deleted ({e}), and \
+                 `efference devices` lists them until they are revoked",
+                secrets.describe()
+            )
+        })?;
+    eprintln!(
+        "Rotated: the root is gone from {}, {removed} enrolled device{} deleted, and the \
+         next `efference --host --bind` mints another root. This {}.",
+        secrets.describe(),
+        if removed == 1 { " is" } else { "s are" },
+        efference::auth::ROTATION_CONSEQUENCES
+    );
+    Ok(())
 }
 
 /// Whether something is answering `socket` right now. A successful connect is
@@ -121,6 +138,7 @@ mod dev;
 mod dev_compact;
 #[cfg(feature = "dev")]
 mod dev_models;
+mod devices;
 #[cfg(feature = "dev")]
 mod inference;
 mod island;
