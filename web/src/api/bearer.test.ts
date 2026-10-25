@@ -1,8 +1,9 @@
 // The page's bearer store (api/bearer.ts) over stand-in backends: what it holds
 // in memory, what reaches storage and in which order, and that storage which
-// is missing, throws, or never answers costs persistence and nothing else.
+// is missing, throws, or never answers costs persistence and nothing else; and
+// that subscribers hear every change of what is held.
 
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { bearerStore, indexedDbBackend, type BearerBackend } from "./bearer.ts";
 
 /** A backend over one in-memory slot — what IndexedDB is to the page. */
@@ -110,6 +111,83 @@ test("a load that answers after a sign-in leaves the newer bearer held", async (
   answer("older");
   await loaded;
   expect(page.held()).toBe("fresh");
+});
+
+test("a subscriber hears each change once the held bearer has moved, until it stops", async () => {
+  const page = bearerStore(slot().backend);
+  const heard: (string | null)[] = [];
+  const stop = page.subscribe(() => heard.push(page.held()));
+
+  await page.store("first");
+  await page.store("second");
+  await page.clear();
+  expect(heard).toEqual(["first", "second", null]);
+
+  stop();
+  await page.store("unheard");
+  expect(heard).toEqual(["first", "second", null]);
+});
+
+test("a listener that stores in turn leaves storage agreeing with memory", async () => {
+  const { state, backend } = slot();
+  const page = bearerStore(backend);
+  let inner: Promise<void> = Promise.resolve();
+  page.subscribe(() => {
+    if (page.held() === "first") inner = page.store("second");
+  });
+
+  await page.store("first");
+  await inner;
+
+  expect(page.held()).toBe("second");
+  expect(state.value).toBe("second");
+});
+
+test("nothing is announced when the held bearer stays what it was", async () => {
+  const page = bearerStore(slot().backend);
+  const listener = vi.fn();
+  page.subscribe(listener);
+  await page.clear();
+  await page.store("same");
+  await page.store("same");
+  expect(listener).toHaveBeenCalledTimes(1);
+});
+
+test("one function subscribed twice is two subscriptions, each stopped on its own", async () => {
+  const page = bearerStore(slot().backend);
+  const listener = vi.fn();
+  const stopFirst = page.subscribe(listener);
+  page.subscribe(listener);
+  await page.store("a");
+  expect(listener).toHaveBeenCalledTimes(2);
+  stopFirst();
+  await page.store("b");
+  expect(listener).toHaveBeenCalledTimes(3);
+});
+
+test("a load announces the bearer it finds, and one a sign-in overtook announces nothing", async () => {
+  const listener = vi.fn();
+  const loaded = bearerStore(slot("from-before").backend);
+  loaded.subscribe(listener);
+  await loaded.load();
+  expect(listener).toHaveBeenCalledTimes(1);
+
+  let answer: (value: string | null) => void = () => {};
+  const overtaken = bearerStore({
+    ...slot().backend,
+    read: () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+  });
+  const heard = vi.fn();
+  const pending = overtaken.load();
+  overtaken.subscribe(heard);
+  await overtaken.store("fresh");
+  answer("older");
+  await pending;
+  expect(heard).toHaveBeenCalledTimes(1);
+  expect(overtaken.held()).toBe("fresh");
 });
 
 test("an IndexedDB that is missing or throws on access fails the call, and the store falls back to memory", async () => {

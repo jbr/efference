@@ -11,6 +11,11 @@
 // (main.tsx), so attaching the header stays synchronous. Storage that is
 // missing or throws (some private modes) leaves the memory copy working: the
 // page stays signed in until it reloads.
+//
+// The copy is observable (`subscribe`): the app shows the sign-in view whenever
+// none is held (ui/App.tsx), and the attention reporter sends nothing then
+// (attention.ts). `apiFetch` is what empties it, when the host refuses the
+// bearer a request carried.
 
 /** The database, object store, and key the bearer is kept under. The worker
  * spells the same three (public/sw.js). */
@@ -41,6 +46,10 @@ export interface BearerStore {
   store(value: string): Promise<void>;
   /** Forget the held bearer and erase the stored one. */
   clear(): Promise<void>;
+  /** Call `listener` whenever the held bearer changes — from `store`, `clear`,
+   * or a `load` that finds a different one — after `held()` reads the new
+   * value. Returns the function that stops listening. */
+  subscribe(listener: () => void): () => void;
 }
 
 /** A store over `backend`. Writes reach the backend in call order, so a clear
@@ -51,9 +60,16 @@ export function bearerStore(backend: BearerBackend): BearerStore {
   let held: string | null = null;
   let changed = false;
   let writes: Promise<void> = Promise.resolve();
+  const listeners = new Set<() => void>();
   const persist = (write: () => Promise<void>) => {
     writes = writes.then(write).catch(() => undefined);
     return writes;
+  };
+  /** Move the memory copy, and tell the listeners when it moved. */
+  const hold = (next: string | null) => {
+    if (held === next) return;
+    held = next;
+    for (const listener of [...listeners]) listener();
   };
   return {
     held: () => held,
@@ -66,17 +82,27 @@ export function bearerStore(backend: BearerBackend): BearerStore {
         }),
       ]);
       clearTimeout(timer);
-      if (!changed) held = value;
+      if (!changed) hold(value);
     },
+    // The write is queued before the listeners run, so a listener that stores or
+    // clears in turn lands after it in storage, as it does in memory.
     store(value) {
-      held = value;
       changed = true;
-      return persist(() => backend.write(value));
+      const stored = persist(() => backend.write(value));
+      hold(value);
+      return stored;
     },
     clear() {
-      held = null;
       changed = true;
-      return persist(() => backend.erase());
+      const erased = persist(() => backend.erase());
+      hold(null);
+      return erased;
+    },
+    subscribe(listener) {
+      // Wrapped, so one function subscribed twice is two subscriptions.
+      const registered = () => listener();
+      listeners.add(registered);
+      return () => void listeners.delete(registered);
     },
   };
 }

@@ -23,49 +23,42 @@ function start(...responses: Response[]) {
 const failed = (status: number) =>
   Response.json(
     {
-      code: status === 404 ? "not_found" : "internal",
+      code:
+        status === 404
+          ? "not_found"
+          : status === 401
+            ? "unauthorized"
+            : "internal",
       message: "test failure",
     },
     { status },
   );
 
-// A 401 also drops the held bearer, so the sign-in view starts from none; a
-// 404 is about the session, not the credential, and keeps it.
-it.each([404, 401])(
-  "parks catch-up on HTTP %s without opening a stream",
-  async (status) => {
-    await bearer.store("held");
-    const { store, fetch } = start(failed(status));
-    await vi.waitFor(() =>
-      expect(store.snapshot().connection).toBe(
-        status === 404 ? "missing" : "unauthenticated",
-      ),
-    );
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(fetch).toHaveBeenCalledWith(
-      `${base}/v1/log?tail=80`,
-      expect.anything(),
-    );
-    expect(bearer.held()).toBe(status === 401 ? null : "held");
-  },
-);
+// A 404 is about the session, not the credential: nothing is behind it to
+// reconnect to, and the held bearer stays.
+it("parks catch-up on HTTP 404 without opening a stream", async () => {
+  await bearer.store("held");
+  const { store, fetch } = start(failed(404));
+  await vi.waitFor(() => expect(store.snapshot().connection).toBe("missing"));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch).toHaveBeenCalledWith(
+    `${base}/v1/log?tail=80`,
+    expect.anything(),
+  );
+  expect(bearer.held()).toBe("held");
+});
 
-it.each([404, 401])(
-  "parks when the events request returns HTTP %s",
-  async (status) => {
-    await bearer.store("held");
-    const { store, fetch } = start(Response.json([]), failed(status));
-    await vi.waitFor(() =>
-      expect(store.snapshot().connection).toBe(
-        status === 404 ? "missing" : "unauthenticated",
-      ),
-    );
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(bearer.held()).toBe(status === 401 ? null : "held");
-  },
-);
+it("parks when the events request returns HTTP 404", async () => {
+  await bearer.store("held");
+  const { store, fetch } = start(Response.json([]), failed(404));
+  await vi.waitFor(() => expect(store.snapshot().connection).toBe("missing"));
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(bearer.held()).toBe("held");
+});
 
-it.each([403, 500])(
+// A 401 is dropped where it is refused (`apiFetch`) and the app closes the
+// connection (ui/App.tsx); until then it is retried like any other refusal.
+it.each([401, 403, 500])(
   "keeps HTTP %s recoverable rather than declaring absence",
   async (status) => {
     const { store } = start(failed(status), failed(status));
@@ -74,6 +67,36 @@ it.each([403, 500])(
     );
   },
 );
+
+it("retries after a 401 for a bearer since replaced, carrying the new one", async () => {
+  vi.stubGlobal("location", new URL("http://localhost:7777/"));
+  await bearer.store("old");
+  let refuse!: (response: Response) => void;
+  const fetch = vi
+    .fn()
+    .mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        refuse = resolve;
+      }),
+    )
+    .mockResolvedValueOnce(new Response(new ReadableStream()));
+  vi.stubGlobal("fetch", fetch);
+  const store = new Store((flush) => flush());
+  connectors.push(connect(store, undefined, base));
+
+  // A sign-in lands while the catch-up read is out; its refusal comes after.
+  await bearer.store("new");
+  refuse(failed(401));
+
+  await vi.waitFor(() => expect(store.snapshot().connection).toBe("live"));
+  expect(bearer.held()).toBe("new");
+  const sent = (call: number) =>
+    new Headers((fetch.mock.calls[call][1] as RequestInit).headers).get(
+      "authorization",
+    );
+  expect(sent(0)).toBe("Bearer old");
+  expect(sent(1)).toBe("Bearer new");
+});
 
 it("keeps network failure recoverable", async () => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));

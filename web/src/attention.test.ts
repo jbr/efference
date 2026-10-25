@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { bearer } from "./api/bearer.ts";
 import {
   Attender,
+  type AttentionReport,
   HEARTBEAT_MS,
   INPUT_THROTTLE_MS,
   INPUT_WINDOW_MS,
   isActive,
+  startAttention,
+  TICK_MS,
 } from "./attention.ts";
 
 const at = (over: Partial<Parameters<typeof isActive>[0]> = {}) =>
@@ -102,5 +107,78 @@ describe("Attender", () => {
     const a = new Attender("c1");
     a.session = "s1";
     expect(a.due(0)).toEqual({ client: "c1", session: "s1", active: false });
+  });
+});
+
+describe("startAttention", () => {
+  let stop: () => void;
+  const send = vi.fn<(report: AttentionReport) => Promise<void>>(() =>
+    Promise.resolve(),
+  );
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    send.mockClear();
+  });
+
+  afterEach(async () => {
+    stop();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    await bearer.clear();
+  });
+
+  /** A person touching the page. */
+  const touch = () => window.dispatchEvent(new Event("pointerdown"));
+
+  it("sends nothing while no bearer is held, however active the page is", () => {
+    stop = startAttention(send);
+    touch();
+    vi.advanceTimersByTime(HEARTBEAT_MS + 2 * TICK_MS);
+    touch();
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("reports as soon as a bearer is stored, and not before", async () => {
+    stop = startAttention(send);
+    touch();
+    expect(send).not.toHaveBeenCalled();
+
+    await bearer.store("tok");
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ session: null, active: true }),
+    );
+  });
+
+  it("falls silent when the bearer is cleared, heartbeats included, and picks up on the next one", async () => {
+    await bearer.store("tok");
+    stop = startAttention(send);
+    touch();
+    expect(send).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(HEARTBEAT_MS);
+    expect(send).toHaveBeenCalledTimes(2);
+
+    await bearer.clear();
+    touch();
+    vi.advanceTimersByTime(HEARTBEAT_MS + 2 * TICK_MS);
+    expect(send).toHaveBeenCalledTimes(2);
+
+    // The heartbeat that fell due while signed out is sent as the bearer lands.
+    await bearer.store("fresh");
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops listening for bearers once stopped", async () => {
+    stop = startAttention(send);
+    touch();
+    stop();
+    await bearer.store("tok");
+    expect(send).not.toHaveBeenCalled();
   });
 });

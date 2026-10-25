@@ -178,9 +178,10 @@ client keeps it in IndexedDB with an in-memory copy, read once at boot, that `ap
 attaches to every request (`web/src/api/bearer.ts`, [web-client.md](web-client.md)).
 IndexedDB is scoped by origin, and an origin includes its port, so no other service on
 `localhost` reads it. The service worker can read it, and its push-subscription repair
-authenticates with it ([web-push.md](web-push.md)). A `401` to the client's binding
-probe or its session connection clears the stored copy, so the sign-in view starts
-from none; the `500` the gate answers when it cannot read the device table does not.
+authenticates with it ([web-push.md](web-push.md)). A `401` to any request that carried
+the held token clears the stored copy (`apiFetch`) and brings up the sign-in view, which
+starts from none; the `500` the gate answers when it cannot read the device table does
+not clear it.
 A browser stays signed in until its device is revoked, the root rotates, or the
 browser drops the site's storage. Safari deletes script-writable storage for a site not
 visited in seven days of browsing (apps added to the home screen are exempt); whether

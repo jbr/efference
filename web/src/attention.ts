@@ -10,6 +10,7 @@
 
 import { sendAttention } from "./api/http.ts";
 import { sessionId } from "./api/base.ts";
+import { bearer } from "./api/bearer.ts";
 import { subscribe as subscribeRoute } from "./ui/route.ts";
 
 /** How recent an input event must be for the person to count as attending. */
@@ -138,7 +139,9 @@ const INPUT_EVENTS = [
 /**
  * Start reporting for this page load; returns the function that stops it. A
  * failed report is logged and not shown. A `404` means the endpoint is a lone
- * session daemon, which serves no host table, so reporting stops.
+ * session daemon, which serves no host table, so reporting stops. While the page
+ * holds no bearer (api/bearer.ts) nothing is sent, since the host would refuse
+ * it, and a bearer being stored is a moment to report.
  */
 export function startAttention(
   send: (report: AttentionReport) => Promise<void> = sendAttention,
@@ -147,7 +150,7 @@ export function startAttention(
   let stopped = false;
 
   const flush = () => {
-    if (stopped) return;
+    if (stopped || bearer.held() === null) return;
     attender.visible = document.visibilityState === "visible";
     attender.focused = document.hasFocus();
     attender.session = sessionId();
@@ -171,6 +174,7 @@ export function startAttention(
   window.addEventListener("pagehide", flush);
   document.addEventListener("visibilitychange", flush);
   const unroute = subscribeRoute(flush);
+  const unbearer = bearer.subscribe(flush);
   const timer = setInterval(flush, TICK_MS);
 
   function stop() {
@@ -183,6 +187,7 @@ export function startAttention(
     window.removeEventListener("pagehide", flush);
     document.removeEventListener("visibilitychange", flush);
     unroute();
+    unbearer();
     clearInterval(timer);
   }
   flush();

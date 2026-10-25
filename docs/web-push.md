@@ -253,7 +253,9 @@ between sessions included), sends an inactive report on hide or blur so the host
 not wait for the lapse, and heartbeats every 20 seconds while active. A change to
 active is throttled to one per 10 seconds. A check every 5 seconds notices the input
 window expiring, since idleness fires no event. Failures are logged and not shown; a
-`404` (a lone session bind) stops reporting. The stream is not tied to attention: a
+`404` (a lone session bind) stops reporting. While the page holds no device token
+([web-bind.md](web-bind.md)) it sends nothing, since the host would refuse the report,
+and it checks for a due report as soon as one is stored. The stream is not tied to attention: a
 hidden tab keeps its `/events` connection.
 
 **The TUI** (`src/tui/attention.rs`) reports as a client of its own, with a

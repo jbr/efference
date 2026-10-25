@@ -33,7 +33,6 @@ import { Inspector } from "./Inspector.tsx";
 import { JumpToLatest } from "./JumpToLatest.tsx";
 import { LightboxHost } from "./Lightbox.tsx";
 import { closeLightbox, useLightboxImage } from "./lightbox.ts";
-import { Login } from "./Login.tsx";
 import { useOverlayHistory } from "./overlayHistory.ts";
 import { navigate, useSearch } from "./route.ts";
 import { TopBar } from "./TopBar.tsx";
@@ -64,11 +63,9 @@ function bootRoute(): "session" | "tree" {
 
 export function SessionView() {
   const { session, connector, actions, history } = useSession();
-  // Read up here with the other hooks: the view returns early for login and for a
-  // session still starting, and the switch page is a query stage on this URL.
-  const search = useSearch();
   // The model switch (ui/SwitchModelPage.tsx) rides the session's own URL as a
   // query stage, so it is a client-side move: the view behind it stays mounted.
+  const search = useSearch();
   const switchingModel = new URLSearchParams(search).get("switch") === "model";
   const ownId = session.topics.session_identity?.id ?? sessionId();
   // A switch restarts the session — the archive closes its log and the resume
@@ -351,9 +348,6 @@ export function SessionView() {
   );
 
   const overlaySidebar = useSidebarOverlay();
-  if (session.connection === "unauthenticated") {
-    return <Login onAuthenticated={() => connector.retry()} />;
-  }
 
   const gate = session.topics.gate;
   const processes = session.topics.processes ?? [];

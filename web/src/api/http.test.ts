@@ -171,3 +171,106 @@ test("apiFetch sends the bearer to its own origin only", async () => {
   const sent = fetchMock.mock.calls.at(-1)?.[1] as RequestInit;
   expect(new Headers(sent.headers).get("authorization")).toBe("Bearer tok");
 });
+
+const refused = () =>
+  json(401, { code: "unauthorized", message: "no valid device token" });
+
+test("a 401 to a request that carried the held bearer clears it, and the caller still gets the answer", async () => {
+  const { fetchMock } = await signedIn("tok");
+  fetchMock.mockResolvedValueOnce(refused());
+  const announced = vi.fn();
+  const stop = bearer.subscribe(announced);
+
+  const response = await apiFetch("/v1/state");
+
+  expect(response.status).toBe(401);
+  expect(((await response.json()) as { code: string }).code).toBe(
+    "unauthorized",
+  );
+  expect(bearer.held()).toBeNull();
+  expect(announced).toHaveBeenCalledOnce();
+  stop();
+});
+
+test("a refusal through a helper clears the bearer and still throws as an ApiError", async () => {
+  const { fetchMock } = await signedIn("tok");
+  fetchMock.mockResolvedValueOnce(refused());
+
+  const error = await continueLoop().catch((e: unknown) => e);
+
+  expect(error).toBeInstanceOf(ApiError);
+  expect((error as ApiError).status).toBe(401);
+  expect(bearer.held()).toBeNull();
+});
+
+test("only a 401 clears: other refusals and successes leave the bearer held", async () => {
+  const { fetchMock } = await signedIn("tok");
+  for (const status of [200, 304, 403, 404, 409, 500]) {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status }));
+    await apiFetch("/v1/state");
+    expect(bearer.held()).toBe("tok");
+  }
+});
+
+test("a 401 to a request that brought its own Authorization leaves the held bearer alone", async () => {
+  const { fetchMock } = await signedIn("tok");
+  fetchMock.mockResolvedValueOnce(refused());
+
+  await apiFetch("/v1/state", { headers: { Authorization: "Bearer theirs" } });
+
+  expect(bearer.held()).toBe("tok");
+});
+
+test("a 401 from another origin, which was sent no bearer, leaves the held bearer alone", async () => {
+  const { fetchMock } = await signedIn("tok");
+  fetchMock.mockResolvedValueOnce(refused());
+
+  await apiFetch("https://elsewhere.example/x");
+
+  expect(bearer.held()).toBe("tok");
+});
+
+test("a 401 to a request sent with no bearer has nothing to clear", async () => {
+  vi.stubGlobal("location", new URL("http://localhost:7777/"));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(refused()));
+  const announced = vi.fn();
+  const stop = bearer.subscribe(announced);
+
+  await apiFetch("/sessions");
+
+  expect(bearer.held()).toBeNull();
+  expect(announced).not.toHaveBeenCalled();
+  stop();
+});
+
+test("a late 401 for an older bearer leaves the fresh one held", async () => {
+  const { fetchMock } = await signedIn("old");
+  let answer!: (response: Response) => void;
+  fetchMock.mockReturnValueOnce(
+    new Promise<Response>((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const late = apiFetch("/v1/state");
+
+  // The sign-in lands while the request is out, and its refusal arrives after.
+  await bearer.store("fresh");
+  answer(refused());
+  const response = await late;
+
+  expect(response.status).toBe(401);
+  expect(bearer.held()).toBe("fresh");
+});
+
+test("several requests refused together clear the bearer once", async () => {
+  const { fetchMock } = await signedIn("tok");
+  fetchMock.mockImplementation(() => Promise.resolve(refused()));
+  const announced = vi.fn();
+  const stop = bearer.subscribe(announced);
+
+  await Promise.all([apiFetch("/a"), apiFetch("/b"), apiFetch("/c")]);
+
+  expect(bearer.held()).toBeNull();
+  expect(announced).toHaveBeenCalledOnce();
+  stop();
+});

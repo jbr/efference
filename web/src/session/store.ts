@@ -69,7 +69,6 @@ export type Connection =
   | "connecting"
   | "live"
   | "reconnecting"
-  | "unauthenticated"
   | "missing"
   // The stream ended after a failed start: nothing is left to reconnect to
   // (docs/control-api.md).

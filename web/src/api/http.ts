@@ -46,8 +46,15 @@ export class ApiError extends Error {
  * The header joins whatever headers the caller passed, in any form `fetch`
  * takes, and an `Authorization` the caller set is left as it is. It goes only
  * to this page's own origin. With no bearer held, or another origin addressed,
- * the arguments pass through as given. */
-export function apiFetch(
+ * the arguments pass through as given.
+ *
+ * A `401` to a request that carried the held bearer is the host refusing it,
+ * and this is the one place that takes it so: the bearer is cleared, the app
+ * shows the sign-in view (ui/App.tsx), and the streams its views held close.
+ * Only the bearer the request carried is cleared. One stored since the request
+ * left is a newer sign-in, and a request that brought its own `Authorization`
+ * says nothing about the held one (docs/web-client.md). */
+export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
@@ -58,10 +65,13 @@ export function apiFetch(
   const headers = new Headers(
     init?.headers ?? (input instanceof Request ? input.headers : undefined),
   );
-  if (!headers.has("authorization")) {
-    headers.set("authorization", `Bearer ${token}`);
+  const carriesHeld = !headers.has("authorization");
+  if (carriesHeld) headers.set("authorization", `Bearer ${token}`);
+  const response = await fetch(input, { ...init, headers });
+  if (carriesHeld && response.status === 401 && bearer.held() === token) {
+    void bearer.clear();
   }
-  return fetch(input, { ...init, headers });
+  return response;
 }
 
 /** Whether a request addresses the page's own origin, the only one its bearer

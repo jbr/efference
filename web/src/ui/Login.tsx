@@ -4,9 +4,10 @@
 // Otherwise it asks the host to sign this browser in under a label naming it
 // (deviceLabel.ts), shows the short code for the operator to type into
 // `efference devices approve` at the host, and asks every second whether they
-// have. The token that comes back is kept (api/bearer.ts) before
-// `onAuthenticated` re-runs the session connect. A code that expires is said so,
-// with a new one a click away; a link that names nothing falls back to a code.
+// have. The token that comes back is kept (api/bearer.ts), and the app takes it
+// from there: it shows the page's view in this one's place (ui/App.tsx). A code
+// that expires is said so, with a new one a click away; a link that names
+// nothing falls back to a code.
 
 import { useEffect, useRef, useState } from "react";
 import { bearer } from "../api/bearer.ts";
@@ -56,7 +57,7 @@ function remaining(ms: number): string {
   return `expires in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
 }
 
-export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
+export function Login() {
   const [view, setView] = useState<View>({ step: "asking" });
   const [now, setNow] = useState(() => Date.now());
   // The running flow's number: asking for a new code or claiming a link starts a
@@ -82,7 +83,6 @@ export function Login({ onAuthenticated }: { onAuthenticated: () => void }) {
         const answer = await claimSignIn(claim, label);
         if ("token" in answer) {
           await bearer.store(answer.token);
-          if (mounted.current) onAuthenticated();
           return "done";
         }
         // Still waiting, so whatever went wrong on an earlier ask has passed.

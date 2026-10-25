@@ -28,7 +28,6 @@ test("live sessions yield the slot to the turn; other connections occupy it", ()
   for (const connection of [
     "connecting",
     "reconnecting",
-    "unauthenticated",
     "missing",
     "ended",
   ] as const) {

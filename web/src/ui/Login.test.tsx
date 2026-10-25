@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 // The sign-in view (docs/web-bind.md): a bare visit asks the host for a code
 // under the browser's label, shows it with the command that approves it, and
-// asks every second until the token comes back, which is held before the
-// connect re-runs; an expired code is said so with a new one offered; and a
-// link's claim, from the boot fragment or a later hashchange, is claimed at once.
+// asks every second until the token comes back, which is held and announced to
+// the store's listeners (the app resumes from there); an expired code is said so
+// with a new one offered; and a link's claim, from the boot fragment or a later
+// hashchange, is claimed at once.
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -82,17 +83,13 @@ async function settle(ms = 0) {
 }
 
 async function render(view: typeof Login = Login) {
-  const onAuthenticated = vi.fn();
   const element = document.body.appendChild(document.createElement("div"));
   const root = createRoot(element);
   const View = view;
-  await act(async () =>
-    root.render(<View onAuthenticated={onAuthenticated} />),
-  );
+  await act(async () => root.render(<View />));
   await settle();
   return {
     element,
-    onAuthenticated,
     unmount: () => {
       act(() => root.unmount());
       element.remove();
@@ -117,26 +114,29 @@ test("a bare visit asks under the browser's label and shows the code with the co
   }
 });
 
-test("it asks every second, and holds the token before the connect re-runs", async () => {
+test("it asks every second, and holds the token as it announces it", async () => {
   const server = host({
     pair: [asked("c1", "KQ7-M4X")],
     claim: [pending(), pending(), minted("minted")],
   });
-  const heldAtConnect: (string | null)[] = [];
-  const { onAuthenticated, unmount } = await render();
-  onAuthenticated.mockImplementation(() => heldAtConnect.push(bearer.held()));
+  const heldWhenAnnounced: (string | null)[] = [];
+  const unsubscribe = bearer.subscribe(() =>
+    heldWhenAnnounced.push(bearer.held()),
+  );
+  const { unmount } = await render();
   try {
     expect(server.claims()).toHaveLength(1);
     await settle(POLL_MS);
     expect(server.claims()).toHaveLength(2);
-    expect(onAuthenticated).not.toHaveBeenCalled();
+    expect(heldWhenAnnounced).toEqual([]);
     await settle(POLL_MS);
     expect(server.claims()).toHaveLength(3);
     expect(server.claims()[0].body).toEqual({ claim: "c1", label });
-    expect(heldAtConnect).toEqual(["minted"]);
+    expect(heldWhenAnnounced).toEqual(["minted"]);
     await settle(5 * POLL_MS);
     expect(server.claims()).toHaveLength(3);
   } finally {
+    unsubscribe();
     unmount();
   }
 });
@@ -146,7 +146,7 @@ test("an expired code says so and offers a new one", async () => {
     pair: [asked("c1", "KQ7-M4X"), asked("c2", "ZZZ-222")],
     claim: [unknown(), pending()],
   });
-  const { element, onAuthenticated, unmount } = await render();
+  const { element, unmount } = await render();
   try {
     expect(element.textContent).toContain("That code expired");
     expect(element.querySelector(".login-code")).toBeNull();
@@ -160,7 +160,6 @@ test("an expired code says so and offers a new one", async () => {
     expect(server.pairs()).toHaveLength(2);
     expect(element.querySelector(".login-code")?.textContent).toBe("ZZZ-222");
     expect(server.claims().at(-1)?.body).toEqual({ claim: "c2", label });
-    expect(onAuthenticated).not.toHaveBeenCalled();
     expect(bearer.held()).toBeNull();
   } finally {
     unmount();
@@ -179,7 +178,7 @@ test("a failure that passes is shown while it lasts, and the asking goes on", as
       minted("minted"),
     ],
   });
-  const { element, onAuthenticated, unmount } = await render();
+  const { element, unmount } = await render();
   try {
     expect(element.textContent).toContain(
       "could not read the pending sign-ins",
@@ -189,7 +188,6 @@ test("a failure that passes is shown while it lasts, and the asking goes on", as
     expect(element.textContent).not.toContain("could not read");
     await settle(POLL_MS);
     expect(server.claims()).toHaveLength(3);
-    expect(onAuthenticated).toHaveBeenCalledOnce();
     expect(bearer.held()).toBe("minted");
   } finally {
     unmount();
@@ -220,13 +218,12 @@ test("a link's claim in the boot fragment is claimed at once, and the fragment s
   expect(location.hash).toBe("");
   expect(location.pathname).toBe("/sessions/work/");
   const server = host({ claim: [minted("from-link")] });
-  const { onAuthenticated, unmount } = await render(Booted);
+  const { unmount } = await render(Booted);
   try {
     expect(server.pairs()).toEqual([]);
     expect(server.claims()).toEqual([
       { url: "/pair/claim", body: { claim: "from-the-link", label } },
     ]);
-    expect(onAuthenticated).toHaveBeenCalledOnce();
     expect(booted.held()).toBe("from-link");
   } finally {
     unmount();
@@ -239,7 +236,7 @@ test("a link opened into a waiting view is claimed, and the code's asking stops"
     pair: [asked("c1", "KQ7-M4X")],
     claim: [pending()],
   });
-  const { onAuthenticated, unmount } = await render();
+  const { unmount } = await render();
   try {
     expect(server.claims()).toHaveLength(1);
     const opened = vi.fn().mockResolvedValue(minted("from-dev-open"));
@@ -256,7 +253,6 @@ test("a link opened into a waiting view is claimed, and the code's asking stops"
       label,
     });
     expect(bearer.held()).toBe("from-dev-open");
-    expect(onAuthenticated).toHaveBeenCalledOnce();
     await settle(5 * POLL_MS);
     expect(opened).toHaveBeenCalledOnce();
   } finally {

@@ -140,13 +140,27 @@ they do not flag, and `apiFetch` reads `fetch` at call time, so the stub is what
 runs. The service worker (`public/sw.js`) sits outside `src` and calls its own
 `fetch`.
 
-The catch-up read and stream opener retain structured HTTP failures. A `401`
-clears the held bearer and parks the connector for login; a `404` marks the
-session `missing` and stops
+**A refused bearer is decided in `apiFetch`.** A `401` to a request that carried the
+held bearer clears it, and only that one: a bearer stored since the request left is a
+newer sign-in, and a request that brought its own `Authorization` says nothing about the
+held one, so a late `401` leaves a fresh sign-in alone. The bearer store announces each
+change (`subscribe`), and the top of the app follows it: while none is held `useEntry`
+answers `unauthenticated` and `App` renders the sign-in view in place of whichever view
+was showing — the list, a session, the archived-sessions page, the file sidebar — so a
+`401` does not reach a view's own error text. The replaced view unmounts and closes what
+it held (the listing stream, a session's connection, its file streams), which is why
+none reconnects against the dead bearer; the attention reporter (`attention.ts`), which
+no view owns, sends nothing while none is held and checks for a due report as soon as
+one is stored. Storing a bearer mounts the page's view afresh: a session catches up and
+opens its stream from its warm store's cursor, and the list opens a new listing stream.
+
+The catch-up read and stream opener retain structured HTTP failures. A `404` marks
+the session `missing` and stops
 retries. `SessionView` replaces a missing host session's page with the root,
 without a toast, so Back does not return to the absent session. A known handoff
 successor takes precedence over going home. Network failures and other HTTP
-errors stay on the reconnect path rather than triggering navigation — the `409
+errors stay on the reconnect path rather than triggering navigation — a `401`
+(the paragraph above) and the `409
 starting` a starting session answers the catch-up read with among them, so its
 stream opens from zero. A stream that ends after a failed start (the `starting`
 topic carries a `failure`) marks the connection `ended` and stops retries: nothing
@@ -248,10 +262,13 @@ the root instead.
 binding is genuinely ambiguous — the shell is byte-identical — so `session/entry.ts`
 asks: the host answers `GET /sessions` with the listing, a session daemon serves no
 such route and answers `404`, and a host with no credential yet answers `401`
-(which clears the held bearer and is the sign-in view, after which the probe re-runs). Anything else — offline, a
-daemon that went away — reads as a session, which is what a root has always been;
+(the sign-in view). Anything else — offline, a daemon that went away — reads as a
+session, which is what a root has always been;
 the session view's composer status reports the network state, where a second
-failure screen would only restate it.
+failure screen would only restate it. The probe runs again whenever the held bearer
+changes, signed out included, and an answer that arrives after the bearer has moved
+again is dropped, so at a sign-in the sign-in view stays up until the probe under
+the new bearer answers.
 
 **The list is a subscription** (`ui/SessionList.tsx` over `api/sessions.ts`).
 `GET /sessions` is one resource with two readings: asked for JSON it answers the
@@ -2168,8 +2185,9 @@ naming the browser (`ui/deviceLabel.ts`). On a bare visit, or a link that names
 nothing, it asks `POST /pair` under that label and shows the short code with
 `efference devices approve`, the command that approves it, and a countdown, then
 claims every second until the host answers with this browser's device token, which it
-keeps (`api/bearer.ts`) before the session connects. A code that expires says so and
-offers a new one. The SPA index answers the client's
+keeps (`api/bearer.ts`); the app takes it from there (*A refused bearer is decided in
+`apiFetch`*, under *Layering*). A code that expires says so and offers a new one. The
+SPA index answers the client's
 named routes and nothing else (`SPA_ROUTES`, `src/daemon/tcp/gate.rs`) — a broader index
 fallback would answer scanner probes `200`. On a host those routes are also answered
 under a session prefix, which is the one place the anonymous shell sits among guarded

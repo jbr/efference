@@ -1,15 +1,17 @@
 // The connection lifecycle (docs/control-api.md, "Connection lifecycle"):
 // a bounded catch-up read, then the one long-lived stream from the cursor —
 // `GET /log?tail=N`, then `GET /events?since=last_seq+1`. Reconnect inside the
-// stream reader replays by cursor; a 401 anywhere clears the held bearer
-// (api/bearer.ts) and parks the session as unauthenticated until the sign-in
-// view (ui/Login.tsx) collects one and calls retry(). A 404 marks the session missing and stops
-// retries, and so does a stream that ended on a failed start. The stream stays
-// open while the tab is hidden: whether a person is attending is reported
-// separately (attention.ts), not inferred from the connection.
+// stream reader replays by cursor. A 404 marks the session missing and stops
+// retries, and so does a stream that ended on a failed start. A 401 is not the
+// connection's to settle: `apiFetch` clears the bearer it refused (api/http.ts)
+// and the app replaces the session's view with the sign-in view, which closes
+// this connection (ui/App.tsx). Until then it retries like any failed request,
+// so a refusal of a bearer that has since been replaced is followed by an
+// attempt that carries the new one. The stream stays open while the tab is
+// hidden: whether a person is attending is reported separately (attention.ts),
+// not inferred from the connection.
 
 import { apiBase } from "../api/base.ts";
-import { bearer } from "../api/bearer.ts";
 import type { Frame } from "../api/types.ts";
 import { ApiError, fetchLogTail } from "../api/http.ts";
 import {
@@ -24,7 +26,8 @@ import { coherentWindow, HISTORY_PAGE } from "./history.ts";
 export const CATCH_UP_TAIL = HISTORY_PAGE;
 
 export interface Connector {
-  /** Re-run catch-up + stream, e.g. after the sign-in view collects a token. */
+  /** Re-run catch-up + stream, e.g. once a session that was starting has
+   * started. */
   retry(): void;
   close(): void;
 }
@@ -73,15 +76,8 @@ export function connect(
       }
     } catch (error) {
       if (closed) return;
-      if (
-        error instanceof ApiError &&
-        (error.status === 401 || error.status === 404)
-      ) {
-        if (error.status === 401) void bearer.clear();
-        store.update((s) => ({
-          ...s,
-          connection: error.status === 404 ? "missing" : "unauthenticated",
-        }));
+      if (error instanceof ApiError && error.status === 404) {
+        store.update((s) => ({ ...s, connection: "missing" }));
         return;
       }
       // The daemon is unreachable or errored; the stream opener below will
@@ -105,16 +101,9 @@ export function connect(
         },
         onDisconnect: (error) => {
           observer?.onDisconnect?.(error);
-          if (
-            error instanceof ApiError &&
-            (error.status === 401 || error.status === 404)
-          ) {
+          if (error instanceof ApiError && error.status === 404) {
             stream?.close();
-            if (error.status === 401) void bearer.clear();
-            store.update((s) => ({
-              ...s,
-              connection: error.status === 404 ? "missing" : "unauthenticated",
-            }));
+            store.update((s) => ({ ...s, connection: "missing" }));
           } else if (store.snapshot().topics.starting?.failure) {
             // A failed start ends its stream after the frame that says why, and
             // there is nothing behind it to reconnect to (docs/control-api.md).
