@@ -1,6 +1,8 @@
 /* Switching a session's models (docs/resumption.md). The page is rendered in flow
    so the gallery can show it; the session view puts it in an overlay of its own,
-   covering the transcript, which stays mounted and keeps its scroll. */
+   covering the transcript, which stays mounted and keeps its scroll. The overlay
+   paints nothing: the page's own --bg-page background is what hides the
+   transcript. */
 .switch-model-overlay {
   position: fixed;
   inset: 0;

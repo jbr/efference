@@ -5,7 +5,7 @@
   padding: 0.4rem 1rem;
   border-top: 1px solid var(--border);
   font: 0.75rem var(--font-mono);
-  background: var(--bg);
+  background: var(--bg-page);
   min-width: 0;
 }
 .task-strip-items {

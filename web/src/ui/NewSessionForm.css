@@ -2,7 +2,7 @@
    width; model browsing remains in document flow, not a nested overlay. */
 .new-session-page {
   min-height: 100dvh;
-  background: var(--bg);
+  background: var(--bg-page);
   color: var(--fg);
   font-family: var(--font-ui);
 }
