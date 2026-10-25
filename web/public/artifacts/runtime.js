@@ -25,11 +25,14 @@
   let queued = false;
   const sendSize = () => {
     queued = false;
-    const body = document.body;
-    if (body === null) return;
-    // Measure the content box rather than the document root: root height often
-    // includes the iframe viewport and would prevent a short page shrinking.
-    const height = Math.ceil(Math.max(body.scrollHeight, body.offsetHeight));
+    // The root element's box: in standards mode it is as tall as the content,
+    // collapsed child margins included, and is not stretched to the frame, so a
+    // page that gets shorter shrinks its frame. The body's box would miss those
+    // margins, and quirks mode stretches both to the viewport — the server adds a
+    // doctype to every artifact so a fragment never renders in quirks mode.
+    const height = Math.ceil(
+      document.documentElement.getBoundingClientRect().height,
+    );
     if (Number.isFinite(height) && height > 0) {
       window.parent.postMessage({ type: resizeMessage, height }, "*");
     }

@@ -278,21 +278,35 @@ pub(crate) async fn asset(conn: Conn) -> Conn {
         .halt()
 }
 
+/// Put the runtime first in the document, right after its doctype, adding
+/// `<!doctype html>` when the source has none (docs/artifacts.md). A fragment with no
+/// doctype renders in quirks mode, which stretches the root element to the frame and
+/// leaves the runtime no content height to report. A script before `<html>` is valid
+/// in any document: the parser opens the head for it, and an authored `<html>` or
+/// `<head>` tag later merges into the elements already open.
 fn inject_runtime(html: &str) -> String {
-    let lower = html.to_ascii_lowercase();
-    if let Some(index) = lower.find("</head>") {
-        return format!("{}{}{}", &html[..index], RUNTIME_TAG, &html[index..]);
+    let html = html.strip_prefix('\u{feff}').unwrap_or(html);
+    match doctype_end(html) {
+        Some(end) => format!("{}{RUNTIME_TAG}{}", &html[..end], &html[end..]),
+        None => format!("<!doctype html>{RUNTIME_TAG}{html}"),
     }
-    if let Some(index) = lower.find("<body") {
-        return format!("{}{}{}", &html[..index], RUNTIME_TAG, &html[index..]);
+}
+
+/// The offset just past a doctype that opens the document — preceded by nothing but
+/// whitespace and comments, the only place the parser honours one.
+fn doctype_end(html: &str) -> Option<usize> {
+    let mut rest = html;
+    loop {
+        rest = rest.trim_start_matches(|c: char| c.is_ascii_whitespace());
+        let Some(comment) = rest.strip_prefix("<!--") else {
+            break;
+        };
+        rest = &comment[comment.find("-->")? + 3..];
     }
-    if let Some(index) = lower.find("<!doctype")
-        && let Some(end) = html[index..].find('>')
-    {
-        let index = index + end + 1;
-        return format!("{}\n{}{}", &html[..index], RUNTIME_TAG, &html[index..]);
+    if !rest.get(..9)?.eq_ignore_ascii_case("<!doctype") {
+        return None;
     }
-    format!("{RUNTIME_TAG}{html}")
+    Some(html.len() - rest.len() + rest.find('>')? + 1)
 }
 
 fn fail(conn: Conn, status: u16, message: &str) -> Conn {

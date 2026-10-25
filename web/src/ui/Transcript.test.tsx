@@ -157,6 +157,52 @@ test("a closed html-artifact fence resolves to a sandboxed preview with source a
   expect(html).toContain("preview content");
 });
 
+// SessionView rebuilds the transcript tree on every streamed token. A committed
+// entry's frame that remounted then would reload and resolve on each one.
+test("a streaming delta leaves committed artifact frames and code blocks mounted", async () => {
+  const fetchMock = stubArtifactResolution();
+  const entries = [
+    entry(25, {
+      Assistant: messagesAssistant(
+        [],
+        [
+          {
+            Text: "```html-artifact\n<div>chart</div>\n```\n\n```rust\nfn main() {}\n```\n",
+          },
+        ],
+        [],
+      ),
+    }),
+  ];
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const settle = (element: React.ReactElement) =>
+    act(async () => {
+      root.render(element);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  await settle(element(entries, { artifactEnabled: true }));
+  const frame = host.querySelector("iframe");
+  const code = host.querySelector('pre[data-lang="rust"]');
+  expect(frame).not.toBeNull();
+  expect(code).not.toBeNull();
+
+  await settle(
+    element(entries, {
+      artifactEnabled: true,
+      streaming: {
+        ...emptyStreaming,
+        blocks: [{ index: 0, kind: "text", text: "the next token" }],
+      },
+    }),
+  );
+
+  expect(host.querySelector("iframe")).toBe(frame);
+  expect(host.querySelector('pre[data-lang="rust"]')).toBe(code);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  act(() => root.unmount());
+});
+
 test.each([
   ["ordinary HTML", "```html\n<div>ordinary HTML</div>\n```", "ordinary HTML"],
   ["ordinary SVG", "```svg\n<svg>ordinary SVG</svg>\n```", "ordinary SVG"],

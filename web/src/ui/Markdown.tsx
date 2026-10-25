@@ -273,7 +273,16 @@ export function Markdown({
     ],
     [changedLines, stampFences],
   );
+  // Keyed on the context's values, not its object: callers build `artifact`
+  // inline, and a fresh `code` component on every render would remount each
+  // code block — reloading every artifact frame on each streamed token.
+  const artifactSeq = artifact?.seq;
+  const artifactTextBlock = artifact?.textBlock;
   const linked = useMemo<Components>(() => {
+    const artifact =
+      artifactSeq === undefined || artifactTextBlock === undefined
+        ? undefined
+        : { seq: artifactSeq, textBlock: artifactTextBlock };
     const proseComponents: Components = {
       pre: ({ children }) => <>{children}</>,
       code: ({ className, children, node }) => {
@@ -330,7 +339,7 @@ export function Markdown({
         );
       },
     };
-  }, [artifact, followLink]);
+  }, [artifactSeq, artifactTextBlock, followLink]);
   return (
     <div className="prose">
       <ReactMarkdown
