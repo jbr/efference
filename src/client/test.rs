@@ -70,7 +70,7 @@ fn stub_router() -> Router {
         })
         .get(
             "/sessions/minted/v1/artifacts/:seq/:text_block/:fence",
-                        |conn: Conn| async move {
+            |conn: Conn| async move {
                 let rec = rec_of(&conn);
                 let seq = conn.param("seq").unwrap_or_default().to_string();
                 let text_block = conn.param("text_block").unwrap_or_default().to_string();
@@ -84,7 +84,6 @@ fn stub_router() -> Router {
                 )
             },
         )
-
         .get("/auth/devices", |conn: Conn| async move {
             conn.with_status(200).with_body(
                 r#"{"devices":[{"id":"00112233445566778899aabbccddeeff","kind":"script","label":"root-level","joined":"add","created_at":1,"last_seen_at":null}]}"#,
@@ -246,7 +245,6 @@ async fn a_prefixed_client_joins_v1_only() {
         &[String::from("12/3/2")]
     );
     let devices = client.devices().await.unwrap();
-
     assert_eq!(
         devices.iter().map(|d| d.label.as_str()).collect::<Vec<_>>(),
         ["root-level"]

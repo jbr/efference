@@ -40,7 +40,6 @@ pub(crate) struct Transcript {
     dirty: BTreeSet<usize>,
     /// Resolved artifact-only URLs keyed by their assistant entry and fence coordinates.
     artifact_urls: HashMap<Coordinate, String>,
-
     /// The gate this document was last built with — a change dirties both the call
     /// it left and the call it moved to. The bound action is part of the value: a
     /// bound `agents__decide` moving onto the same call still changes the render.
@@ -75,7 +74,8 @@ impl Transcript {
         true
     }
 
-    /// Mark every committed entry stale — the correct fallback when an invalidation is hard to pin down.
+    /// Mark every committed entry stale — the next update rebuilds the document.
+    /// The correct fallback whenever an invalidation is hard to pin down.
     pub(crate) fn invalidate_all(&mut self) {
         self.dirty.extend(0..self.counts.len());
     }
@@ -171,7 +171,6 @@ impl Transcript {
             }
             let nodes = entry_nodes(log, idx, &self.index, view, gate, &self.artifact_urls);
             self.counts.push(nodes.len());
-
             let at = doc.document.nodes.len();
             doc.splice_nodes(at..at, nodes);
         }
@@ -190,7 +189,6 @@ impl Transcript {
             cursor = idx;
             let nodes = entry_nodes(log, idx, &self.index, view, gate, &self.artifact_urls);
             let was = self.counts[idx];
-
             self.counts[idx] = nodes.len();
             doc.splice_nodes(offset..offset + was, nodes);
         }

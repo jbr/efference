@@ -303,7 +303,6 @@ impl SessionRuntime {
             loop_session.reap_all_bg().await;
             // Scratch lifecycle (docs/tools.md): cleaned on session end unless
             // retained for post-mortem inspection.
-
             if let Some(scratch) = scratch {
                 if keep_scratch {
                     log::debug!("scratch kept: {}", scratch.display());

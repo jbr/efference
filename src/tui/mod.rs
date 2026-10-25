@@ -21,7 +21,6 @@
 mod artifacts;
 pub(crate) mod attention;
 pub(crate) mod block_menu;
-
 pub(crate) mod clipboard;
 pub(crate) mod closed;
 pub(crate) mod color_scheme;

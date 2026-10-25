@@ -90,6 +90,7 @@ fn mismatched_or_too_short_closing_markers_do_not_close_a_fence() {
     );
     assert!(closed_html_artifact_fences(markdown).is_empty());
 }
+
 #[test]
 fn container_prefix_lookalikes_in_fence_content_are_not_closers() {
     let markdowns = [

@@ -49,7 +49,6 @@ pub(crate) fn project(
         nodes.extend(entry_nodes(log, idx, &index, view, gate, &artifact_urls));
     }
     nodes.extend(tail_nodes(live, view, pending_turns));
-
     Document::with_nodes(nodes)
 }
 
@@ -329,7 +328,6 @@ pub(crate) fn entry_nodes(
                     }
                     nodes.push(DocumentNode::entry(EntryKind::AssistantMessage, body));
                 }
-
                 let calls = output.tool_calls().unwrap_or_default();
                 for (i, call) in calls.iter().enumerate() {
                     // A question put to the operator is drawn as the assistant's prose

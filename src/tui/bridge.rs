@@ -143,7 +143,6 @@ fn decode_frame(
             for coordinate in artifacts {
                 let _ = artifact_requests.send(coordinate);
             }
-
             return Continue(());
         }
         Some("output") => return decode_delta(kind, data, tx),

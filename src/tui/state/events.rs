@@ -238,7 +238,6 @@ impl<'a> InteractiveState<'a> {
                     self.mark_reproject();
                 }
             }
-
             TuiEvent::Notice(note) => {
                 // Status-line chrome from a dispatched call that answered after the
                 // keypress (docs/tui.md) — repaint, no reproject.

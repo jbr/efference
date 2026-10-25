@@ -442,7 +442,6 @@ async fn attach(
     host_dispatcher.abort();
     fetcher.abort();
     artifact_fetcher.abort();
-
     result.context("the TUI event loop failed")
 }
 
