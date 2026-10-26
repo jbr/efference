@@ -317,6 +317,14 @@ session while it starts ([control-channel.md](control-channel.md)). A setup offe
 its own questions first (`setup::terminal::Terminal::erase`, which counts the rows its
 prompts leave), keeping only the line naming a file the wizard wrote.
 
+**The host's terminal title** (`src/terminal_title.rs`). A host whose stdout is a terminal —
+`efference --host` in the foreground — sets that terminal's title to its session count,
+`efference · 3 sessions`, rewritten when a session arrives or leaves (`Host::title_terminal`,
+woken by the same signal as the listing stream). The title it found is saved on the
+terminal's title stack at start and put back when the host shuts down. An island's stdout
+is `host.log`, so it never writes one; the TUI in front of it titles the terminal instead
+([tui.md](tui.md)).
+
 **The browser island** (`src/bin/efference/island/browser.rs`) is the same launch with
 `--bind`: a plaintext loopback web bind, on a port the kernel picks unless the operator
 named one, which the host records once listening so its links name it

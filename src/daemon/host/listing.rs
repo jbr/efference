@@ -126,6 +126,27 @@ impl Host {
     pub(crate) fn touch_listing(&self) {
         self.listing_changed.notify_waiters();
     }
+
+    /// Keep the terminal title of the terminal this host runs in at its session
+    /// count until the host shuts down, then put back the one it found
+    /// (docs/operating.md). Another reader of the listing signal: a status wake
+    /// that leaves the count alone writes nothing.
+    pub async fn title_terminal(self: Arc<Self>, mut out: impl std::io::Write) {
+        use crate::terminal_title::{self, TerminalTitle};
+        let _ = terminal_title::save(&mut out);
+        let mut title = TerminalTitle::default();
+        loop {
+            // Armed before the count is read, as in `listing_stream`.
+            let changed = self.listing_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            let _ = title.show(&mut out, &terminal_title::for_host(self.ids().len()));
+            if self.swansong.interrupt(changed).await.is_none() {
+                break;
+            }
+        }
+        let _ = terminal_title::restore(&mut out);
+    }
 }
 
 /// One frame of the listing stream: the whole listing, as `event: sessions`.

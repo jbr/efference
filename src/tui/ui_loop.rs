@@ -2,6 +2,7 @@
 
 use super::*;
 
+use crate::terminal_title::{self, TerminalTitle};
 use crate::tui::frame_cost::FrameCost;
 use ratatui::prelude::Backend;
 use std::io::Write;
@@ -80,6 +81,7 @@ pub(super) fn ui_loop(
             PopKeyboardEnhancementFlags,
             crossterm::cursor::Show
         );
+        let _ = terminal_title::restore(&mut stdout());
         default_hook(info);
     }));
 
@@ -98,6 +100,10 @@ pub(super) fn ui_loop(
         EnableFocusChange,
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     )?;
+    // The terminal title names the attached session once its identity arrives
+    // (docs/tui.md); the one in place now comes back at teardown.
+    terminal_title::save(&mut stdout)?;
+    let mut title = TerminalTitle::default();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -197,6 +203,15 @@ pub(super) fn ui_loop(
                             Ok(ev) => exit = state.handle_event(ev),
                             Err(_) => break,
                         }
+                    }
+                    // The identity arrives only on this channel; `show` skips an
+                    // unchanged title.
+                    if let Some(identity) = &state.session_identity {
+                        let text = terminal_title::for_session(
+                            &identity.id,
+                            identity.title.as_deref(),
+                        );
+                        title.show(terminal.backend_mut(), &text)?;
                     }
                 }
                 Err(_) => exit = true, // bridge dropped → daemon gone.
@@ -326,6 +341,7 @@ pub(super) fn ui_loop(
         DisableFocusChange,
         PopKeyboardEnhancementFlags
     )?;
+    terminal_title::restore(terminal.backend_mut())?;
     terminal.show_cursor()?;
 
     // After the alt-screen is gone, so the distribution lands on the real terminal

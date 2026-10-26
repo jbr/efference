@@ -181,7 +181,7 @@ Read top-down; open the subsystem doc you need.
 | The web client, component gallery, and stream tape/replay API | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp/gate.rs`, `src/daemon/tcp/headers.rs`, `src/daemon/tcp/routes.rs` |
 | Fenced HTML artifacts — signed links, sandbox, runtime, theme, built-in libraries and files | [artifacts.md](artifacts.md) | `src/artifact.rs`, `src/daemon/artifacts.rs` (+ `src/daemon/artifacts/`), `src/tui/artifacts.rs`, `web/src/ui/Artifact.tsx`, `web/public/artifacts/`, `web/src/theme/`, `assets/artifact-libs/`, `assets/guide/artifacts.md` |
 | Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/push.rs` (+ `src/push/`), `src/daemon/push.rs`, `src/daemon/attention.rs`, `src/daemon/delayed_push.rs` |
-| The TUI client | [tui.md](tui.md) | `src/tui/` |
+| The TUI client | [tui.md](tui.md) | `src/tui/`, `src/terminal_title.rs` |
 
 Where a module has grown a directory beside it (`src/api/`, `src/config/`, `src/policy/`,
 `src/project/`, `src/triage/`, `src/context/`, `src/daemon/`, `src/tui/*/`), the `.rs` file

@@ -51,6 +51,7 @@ pub mod sign_ins;
 pub mod spawn;
 pub mod spotter;
 pub mod state;
+pub mod terminal_title;
 pub mod tools;
 pub mod triage;
 pub mod tui;

@@ -20,6 +20,7 @@ mod resume;
 mod shell;
 mod starting;
 mod supervise;
+mod terminal_title;
 mod worktree;
 
 struct Roots(PathBuf);

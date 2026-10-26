@@ -20,6 +20,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- The TUI sets the terminal title (kitty's tab title) to the attached session's title and id, and a foreground `efference --host` to its session count; each saves the title it found on the terminal's title stack and restores it on exit (docs/tui.md, docs/operating.md).
 - Both config files have published JSON schemas (`assets/schemas/`, served at efference.net/schemas/), generated from the config types with hover text for every key; `efference setup`, the default session config and the project template open with the `#:schema` line, which config edits keep first, and a misspelled key in a `[context]` or `[paths]` table now fails the file by name (docs/config-schemas.md).
 - Assistant `mermaid` fences draw as diagrams in the web transcript, in the same sandboxed frame as artifacts, with built-in Mermaid 11.4.1 coloured from the operator's theme and redrawn when it changes; Mermaid also loads with `efference.load("mermaid")`, and artifact frames load lazily (docs/artifacts.md).
 - Assistant `html-artifact` fences render as sandboxed HTML in the web transcript, sized to their content and styled with the transcript's fonts, theme and prose rules, with built-in d3, Vega-Lite and Chart.js, data read from the working directory, a placeholder while one streams, a source view, local-browser links from the TUI, and a guide for agents at `efference://guide/artifacts` (docs/artifacts.md).

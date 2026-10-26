@@ -422,7 +422,17 @@ pub(crate) async fn host(
     if let Some(owner) = &owner {
         owner.adopt(host.swansong());
     }
-    daemon::serve_host(host, socket.clone(), bind).await?;
+    // A host in the foreground titles its terminal; an island's stdout is its log
+    // file, so it never does.
+    let titling = std::io::IsTerminal::is_terminal(&std::io::stdout())
+        .then(|| tokio::spawn(std::sync::Arc::clone(&host).title_terminal(std::io::stdout())));
+    let served = daemon::serve_host(host, socket.clone(), bind).await;
+    // The shutdown that ended the serve ends the titling, which puts back the
+    // terminal title it found.
+    if let Some(titling) = titling {
+        let _ = titling.await;
+    }
+    served?;
     if island {
         efference::daemon::island::remove_island_files(&socket);
     }
