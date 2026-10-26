@@ -149,7 +149,6 @@ async fn built_in_libraries_load_as_one_script_and_a_missing_one_names_the_rest(
         .get_str(KnownHeaderName::Etag)
         .unwrap()
         .to_owned();
-    assert_eq!(etag, "\"d3@7.9.0\"");
     server
         .get("/artifacts/_efference/lib/d3")
         .with_request_header(KnownHeaderName::IfNoneMatch, etag)
@@ -169,13 +168,20 @@ async fn built_in_libraries_load_as_one_script_and_a_missing_one_names_the_rest(
         .map(|(global, build)| build.contains(&format!(").{global}=")))
         .collect();
     assert_eq!(defines, [true, true, true], "builds in dependency order");
-    assert_eq!(
-        vega.body(),
-        format!(
-            "{}\n;efference.__loaded(\"vega-embed\", vegaEmbed);\n",
-            embed.builds.join("\n;\n")
-        )
+    assert_eq!(vega.body(), library_script(embed));
+    assert!(
+        vega.body()
+            .ends_with("\n;efference.__loaded(\"vega-embed\", vegaEmbed);\n")
     );
+    // The builds name source maps that are not vendored; developer tools would fetch
+    // them and be refused by `connect-src`.
+    assert!(
+        embed
+            .builds
+            .iter()
+            .all(|build| build.contains("sourceMappingURL"))
+    );
+    assert!(!vega.body().contains("sourceMappingURL"));
 
     let missing = server.get("/artifacts/_efference/lib/d4").await;
     missing.assert_status(200);

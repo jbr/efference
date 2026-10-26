@@ -51,3 +51,10 @@ textarea {
   font-size: 0.85em;
   color: var(--warn);
 }
+
+/* vega-embed's own stylesheet makes its container inline-block, which shrinks
+   to fit a chart sized from the container — `width: "container"` then draws at
+   zero width. A full-width container lets it fill the frame. */
+.vega-embed {
+  width: 100%;
+}

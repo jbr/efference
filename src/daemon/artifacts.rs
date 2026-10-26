@@ -255,8 +255,8 @@ async fn asset(conn: Conn) -> Conn {
 /// One built-in library as a script the runtime adds to the page: its builds in order,
 /// then a call handing `efference.load` the library's global. A name with no library
 /// gets a script that rejects the load with the names there are, which the runtime also
-/// shows on the page, since the agent that wrote it cannot see it fail. Revalidated by
-/// version rather than re-sent, as a built-in library is the same bytes until an upgrade.
+/// shows on the page, since the agent that wrote it cannot see it fail. Revalidated by a
+/// hash of the script rather than re-sent: a library is the same bytes until an upgrade.
 async fn library(conn: Conn) -> Conn {
     let name = conn.param("name").unwrap_or_default().to_owned();
     let Some(library) = LIBRARIES.iter().find(|library| library.name == name) else {
@@ -277,7 +277,12 @@ async fn library(conn: Conn) -> Conn {
             .with_body(body)
             .halt();
     };
-    let etag = format!("\"{}@{}\"", library.name, library.version);
+    let body = library_script(library);
+    let etag = format!("\"{:016x}\"", {
+        let mut hasher = std::hash::DefaultHasher::new();
+        std::hash::Hash::hash(&body, &mut hasher);
+        std::hash::Hasher::finish(&hasher)
+    });
     let conn = conn
         .with_response_header(
             KnownHeaderName::ContentType,
@@ -289,13 +294,35 @@ async fn library(conn: Conn) -> Conn {
     if conn.request_headers().get_str(KnownHeaderName::IfNoneMatch) == Some(etag.as_str()) {
         return conn.with_status(304).halt();
     }
-    let mut body = library.builds.join("\n;\n");
-    body.push_str(&format!(
-        "\n;efference.__loaded({}, {});\n",
+    conn.with_status(200).with_body(body).halt()
+}
+
+/// A library's builds as one script, named and versioned in a leading comment for
+/// whoever reads it in developer tools, in order, then the call that resolves
+/// `efference.load`. Each build loses its `sourceMappingURL` comment: the maps are not
+/// vendored, and developer tools fetching one would be refused by `connect-src`.
+fn library_script(library: &Library) -> String {
+    let builds: Vec<&str> = library
+        .builds
+        .iter()
+        .map(|build| without_source_map(build))
+        .collect();
+    format!(
+        "/* {} {}, built into efference (docs/artifacts.md) */\n{}\n;efference.__loaded({}, {});\n",
+        library.name,
+        library.version,
+        builds.join("\n;\n"),
         serde_json::json!(library.name),
         library.global
-    ));
-    conn.with_status(200).with_body(body).halt()
+    )
+}
+
+fn without_source_map(build: &str) -> &str {
+    let build = build.trim_end();
+    match build.rsplit_once('\n') {
+        Some((code, last)) if last.starts_with("//# sourceMappingURL=") => code,
+        _ => build,
+    }
 }
 
 /// Put the stylesheet and the runtime first in the document, right after its doctype,

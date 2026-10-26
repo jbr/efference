@@ -14,7 +14,8 @@ an agent writes against an API it has seen. The artifacts guide
 | | vega-embed | 6.29.0 | `vega-embed/vega-embed.min.js` | `sha512-PmlshTLtLFLgWtF/b23T1OwX53AugJ9RZ3qPE2c01VFAbgt3/GSNI/etzA/GzdrkceXFma+FDHNXUppKuM0U6Q==` |
 | `chart.js` | chart.js | 4.4.9 | `chart.js/chart.umd.js` | `sha512-EyZ9wWKgpAU0fLJ43YAEIF8sr5F2W3LqbS40ZJyHIner2lY14ufqv2VMp69MAiZ2rpwxEUxEhIH/0U3xyRynxg==` |
 
-Each file is the package's published UMD build, unmodified, taken from the tarball
+Each file is the package's published UMD build, unmodified — the host drops its
+`sourceMappingURL` comment when serving it, as the maps are not vendored — taken from the tarball
 `npm pack <package>@<version>` downloads; the integrity column is that tarball's, as
 `npm view <package>@<version> dist.integrity` reports it. Licences sit beside each build.
 The vega tarball ships no licence file: `vega/LICENSE` is vega-lite's, whose holder and

@@ -81,7 +81,8 @@ the library's usual global; write against the version named here, not a newer on
 
 - `efference.load("d3")` — d3 7.9.0, resolving to `d3`.
 - `efference.load("vega-embed")` — vega-embed 6.29.0, with Vega 5.33.1 and Vega-Lite
-  5.23.0, resolving to `vegaEmbed`. Vega-Lite specs use the v5 schema.
+  5.23.0, resolving to `vegaEmbed`. Vega-Lite specs use the v5 schema, and
+  `width: "container"` fills the frame's width.
 - `efference.load("chart.js")` — Chart.js 4.4.9, resolving to `Chart`.
 
 ```html
