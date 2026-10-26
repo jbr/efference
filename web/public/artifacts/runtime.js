@@ -1,4 +1,4 @@
-/* global window, document, matchMedia, requestAnimationFrame, ResizeObserver, setTimeout, Element */
+/* global window, document, console, matchMedia, requestAnimationFrame, ResizeObserver, setTimeout, Element */
 
 (() => {
   const themeMessage = "efference:artifact:theme";
@@ -9,6 +9,56 @@
   // The stylesheet's prose rules apply under `.prose`, as they do in the
   // transcript; here the whole document is the prose (docs/artifacts.md).
   root.classList.add("prose");
+
+  // The libraries built into efference (docs/artifacts.md): `await
+  // efference.load("d3")` resolves to the library's global. The host serves each
+  // as one script ending in `__loaded`, and answers a name it has no library for
+  // with `__missing` and the names it has. A failed load also puts a line at the
+  // top of the page: the agent that wrote the call cannot see it fail, and the
+  // operator can tell it.
+  const loads = new Map();
+  const waiting = new Map();
+  const notice = (message) => {
+    const line = document.createElement("p");
+    line.className = "efference-notice";
+    line.textContent = message;
+    (document.body ?? root).prepend(line);
+  };
+  const fail = (name, message) => {
+    waiting.get(name)?.reject(new Error(message));
+    waiting.delete(name);
+    notice(message);
+    console.error(message);
+  };
+  window.efference = {
+    load(name) {
+      const key = String(name);
+      if (!loads.has(key)) {
+        loads.set(
+          key,
+          new Promise((resolve, reject) => {
+            waiting.set(key, { resolve, reject });
+            const script = document.createElement("script");
+            script.src = `/artifacts/_efference/lib/${encodeURIComponent(key)}`;
+            script.onerror = () =>
+              fail(key, `efference.load("${key}") could not reach the host.`);
+            document.head.append(script);
+          }),
+        );
+      }
+      return loads.get(key);
+    },
+    __loaded(name, library) {
+      waiting.get(name)?.resolve(library);
+      waiting.delete(name);
+    },
+    __missing(name, available) {
+      fail(
+        name,
+        `efference.load("${name}"): no such library here. Available: ${available.join(", ")}.`,
+      );
+    },
+  };
 
   // Opened in a tab of its own there is no parent to name a theme, so follow
   // the system's, as the app does before it knows the operator's choice.

@@ -20,7 +20,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
-- Assistant `html-artifact` fences render as sandboxed HTML in the web transcript, sized to their content and styled with the transcript's fonts, theme and prose rules, with a source view, local-browser links from the TUI, and a guide for agents at `efference://guide/artifacts` (docs/artifacts.md).
+- Assistant `html-artifact` fences render as sandboxed HTML in the web transcript, sized to their content and styled with the transcript's fonts, theme and prose rules, with built-in d3, Vega-Lite and Chart.js, a placeholder while one streams, a source view, local-browser links from the TUI, and a guide for agents at `efference://guide/artifacts` (docs/artifacts.md).
 - The web client switches a session's main, spotter and triage models from its details — a `⋯` menu on the session's hover card, the overview card and the archived card and rows — where a running session is archived and resumed on the chosen models and an archived one resumes on them directly (docs/resumption.md, docs/web-client.md).
 - A failed web upload states its reason on the composer chip, and the daemon logs the failing stage (docs/web-client.md).
 - Web live summary previews at their covered spans, temporary triage thinking above the composer, and detached consolidation text/thinking output frames.

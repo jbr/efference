@@ -134,6 +134,57 @@ async fn the_shared_assets_are_served_without_a_tag() {
         .assert_status(404);
 }
 
+/// A built-in library is one script: its builds in order, then the call that hands
+/// `efference.load` its global. Revalidation by version answers 304, and a name with
+/// no library gets a script that names the ones there are (docs/artifacts.md).
+#[tokio::test]
+async fn built_in_libraries_load_as_one_script_and_a_missing_one_names_the_rest() {
+    let server = session_server(&session(Some("work"))).await;
+
+    let d3 = server.get("/artifacts/_efference/lib/d3").await;
+    d3.assert_status(200);
+    assert!(d3.body().ends_with("\n;efference.__loaded(\"d3\", d3);\n"));
+    let etag = d3
+        .response_headers()
+        .get_str(KnownHeaderName::Etag)
+        .unwrap()
+        .to_owned();
+    assert_eq!(etag, "\"d3@7.9.0\"");
+    server
+        .get("/artifacts/_efference/lib/d3")
+        .with_request_header(KnownHeaderName::IfNoneMatch, etag)
+        .await
+        .assert_status(304);
+
+    let vega = server.get("/artifacts/_efference/lib/vega-embed").await;
+    vega.assert_status(200);
+    // vega-embed's build expects `vega` and `vegaLite` defined before it runs.
+    let embed = LIBRARIES
+        .iter()
+        .find(|library| library.name == "vega-embed")
+        .unwrap();
+    let defines: Vec<bool> = ["vega", "vegaLite", "vegaEmbed"]
+        .iter()
+        .zip(embed.builds)
+        .map(|(global, build)| build.contains(&format!(").{global}=")))
+        .collect();
+    assert_eq!(defines, [true, true, true], "builds in dependency order");
+    assert_eq!(
+        vega.body(),
+        format!(
+            "{}\n;efference.__loaded(\"vega-embed\", vegaEmbed);\n",
+            embed.builds.join("\n;\n")
+        )
+    );
+
+    let missing = server.get("/artifacts/_efference/lib/d4").await;
+    missing.assert_status(200);
+    assert_eq!(
+        missing.body(),
+        "efference.__missing(\"d4\", [\"chart.js\",\"d3\",\"vega-embed\"]);\n"
+    );
+}
+
 #[test]
 fn only_exact_artifact_shapes_are_artifact_routes() {
     let tag = "A".repeat(TAG_LENGTH);
@@ -143,6 +194,11 @@ fn only_exact_artifact_shapes_are_artifact_routes() {
         ("/artifacts/_efference/runtime.js".into(), true),
         ("/artifacts/_efference/theme.css".into(), true),
         ("/artifacts/_efference/private.js".into(), false),
+        ("/artifacts/_efference/lib/d3".into(), true),
+        ("/artifacts/_efference/lib/chart.js".into(), true),
+        ("/artifacts/_efference/lib/".into(), false),
+        ("/artifacts/_efference/lib/..".into(), false),
+        ("/artifacts/_efference/lib/d3/extra".into(), false),
         ("/artifacts/_efference/runtime.js/".into(), false),
         (format!("/artifacts/brisk-otter/12/0/3/{tag}/"), false),
         (

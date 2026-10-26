@@ -312,6 +312,29 @@ test("an artifact fence with no link stays code", async () => {
   expect(html).toContain("unlinked");
 });
 
+test("an artifact fence still streaming draws as a placeholder with its source folded", async () => {
+  const html = await markupAfterEffects(
+    element([], {
+      artifactEnabled: true,
+      streaming: {
+        ...emptyStreaming,
+        blocks: [
+          {
+            index: 0,
+            kind: "text",
+            text: "A chart:\n\n```html-artifact\n<svg>\n<rect/>\n",
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(html).toContain(
+    "Drawing an artifact · 2 lines · it renders when the reply finishes",
+  );
+  expect(html).not.toContain("<iframe");
+});
+
 test("user, tool-result, and live text fences never render as artifacts", async () => {
   const fence = (label: string) =>
     `\`\`\`html-artifact\n<div>${label}</div>\n\`\`\``;

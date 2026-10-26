@@ -61,18 +61,44 @@ You can use:
 
 - inline `<style>` and `<script>`, including `<script type="module">`;
 - the DOM: `createElement`, `innerHTML`, `insertAdjacentHTML`, template literals, event
-  listeners, `requestAnimationFrame`, `setTimeout` with a function;
-- SVG and `<canvas>`;
+  listeners, `requestAnimationFrame`, timers;
+- SVG, `<canvas>` and WebAssembly; `eval` and `new Function` work too;
+- the libraries below;
 - images as `data:` or `blob:` URLs.
 
 You cannot use:
 
 - the network: `fetch`, `import()` of a URL, and scripts, styles, images or fonts from
-  anywhere else. A library from a CDN does not load, and nothing tells you so: write the
-  few lines you need;
-- `eval`, `new Function`, or a timer given a string;
+  anywhere else. A library from a CDN does not load, and nothing tells you so; use one
+  built in, or write the few lines you need;
 - storage: `localStorage`, `sessionStorage`, IndexedDB and cookies throw;
 - form submission or popups.
+
+## Libraries
+
+Three libraries are built in, one version each. `await efference.load(name)` resolves to
+the library's usual global; write against the version named here, not a newer one:
+
+- `efference.load("d3")` — d3 7.9.0, resolving to `d3`.
+- `efference.load("vega-embed")` — vega-embed 6.29.0, with Vega 5.33.1 and Vega-Lite
+  5.23.0, resolving to `vegaEmbed`. Vega-Lite specs use the v5 schema.
+- `efference.load("chart.js")` — Chart.js 4.4.9, resolving to `Chart`.
+
+```html
+<div id="chart"></div>
+<script type="module">
+  const vegaEmbed = await efference.load("vega-embed");
+  await vegaEmbed("#chart", {
+    $schema: "https://vega.github.io/schema/vega-lite/v5.json",
+    data: { values: [{ crate: "core", seconds: 41 }, { crate: "tui", seconds: 28 }] },
+    mark: "bar",
+    encoding: { x: { field: "seconds", type: "quantitative" }, y: { field: "crate", type: "nominal" } },
+  }, { actions: false });
+</script>
+```
+
+A name that is not one of these rejects, and the page shows a line naming the ones there
+are, so the operator can tell you.
 
 ## Size
 

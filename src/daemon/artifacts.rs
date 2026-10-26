@@ -49,12 +49,57 @@ const THEME_CSS: &str = concat!(
 const INJECTED: &str = "<link rel=\"stylesheet\" href=\"/artifacts/_efference/theme.css\">\
     <script src=\"/artifacts/_efference/runtime.js\"></script>";
 
-pub(super) const ARTIFACT_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; \
-    style-src 'self' 'unsafe-inline'; img-src data: blob:; font-src 'self' data:; \
+/// Scripts may come from the page itself, the shared assets and the built-in libraries,
+/// and may evaluate code: every line in an artifact is the agent's already, so `eval`
+/// and WebAssembly reach nothing an inline script could not (docs/artifacts.md).
+pub(super) const ARTIFACT_CSP: &str = "default-src 'none'; \
+    script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src data: blob:; font-src 'self' data:; \
     connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; \
     object-src 'none'; frame-ancestors 'self'; sandbox allow-scripts";
 
 type HmacSha256 = Hmac<Sha256>;
+
+/// A library built into the binary for artifacts, loaded with `efference.load(name)`
+/// (docs/artifacts.md). One version each, not the newest: a major version models know
+/// well, so an agent writes against an API it has seen. `assets/artifact-libs/README.md`
+/// records where each build came from.
+pub(crate) struct Library {
+    /// What an artifact passes to `efference.load`: the package it gets back.
+    pub(crate) name: &'static str,
+    /// The version the guide names, packages bundled with it included.
+    pub(crate) version: &'static str,
+    /// The global the last build defines, which `efference.load` resolves to.
+    global: &'static str,
+    /// UMD builds, served in this order as one script.
+    builds: &'static [&'static str],
+}
+
+pub(crate) const LIBRARIES: &[Library] = &[
+    Library {
+        name: "chart.js",
+        version: "4.4.9",
+        global: "Chart",
+        builds: &[include_str!(
+            "../../assets/artifact-libs/chart.js/chart.umd.js"
+        )],
+    },
+    Library {
+        name: "d3",
+        version: "7.9.0",
+        global: "d3",
+        builds: &[include_str!("../../assets/artifact-libs/d3/d3.min.js")],
+    },
+    Library {
+        name: "vega-embed",
+        version: "6.29.0, with Vega 5.33.1 and Vega-Lite 5.23.0",
+        global: "vegaEmbed",
+        builds: &[
+            include_str!("../../assets/artifact-libs/vega/vega.min.js"),
+            include_str!("../../assets/artifact-libs/vega-lite/vega-lite.min.js"),
+            include_str!("../../assets/artifact-libs/vega-embed/vega-embed.min.js"),
+        ],
+    },
+];
 
 /// A fresh signing key, one per [`Session`].
 pub(crate) fn new_key() -> [u8; KEY_BYTES] {
@@ -140,6 +185,7 @@ fn tag(key: &[u8; KEY_BYTES], session: &str, seq: u64, text_block: usize, fence:
 pub(crate) fn routes() -> Router {
     Router::new()
         .get("/artifacts/_efference/:asset", asset)
+        .get("/artifacts/_efference/lib/:name", library)
         .get("/artifacts/:session/:seq/:text_block/:fence/:tag", document)
 }
 
@@ -204,6 +250,52 @@ async fn asset(conn: Conn) -> Conn {
         .with_status(200)
         .with_body(body)
         .halt()
+}
+
+/// One built-in library as a script the runtime adds to the page: its builds in order,
+/// then a call handing `efference.load` the library's global. A name with no library
+/// gets a script that rejects the load with the names there are, which the runtime also
+/// shows on the page, since the agent that wrote it cannot see it fail. Revalidated by
+/// version rather than re-sent, as a built-in library is the same bytes until an upgrade.
+async fn library(conn: Conn) -> Conn {
+    let name = conn.param("name").unwrap_or_default().to_owned();
+    let Some(library) = LIBRARIES.iter().find(|library| library.name == name) else {
+        let available: Vec<&str> = LIBRARIES.iter().map(|library| library.name).collect();
+        let body = format!(
+            "efference.__missing({}, {});\n",
+            serde_json::json!(name),
+            serde_json::json!(available)
+        );
+        return conn
+            .with_response_header(
+                KnownHeaderName::ContentType,
+                "text/javascript; charset=utf-8",
+            )
+            .with_response_header(KnownHeaderName::CacheControl, "no-store")
+            .with_response_header("x-content-type-options", "nosniff")
+            .with_status(200)
+            .with_body(body)
+            .halt();
+    };
+    let etag = format!("\"{}@{}\"", library.name, library.version);
+    let conn = conn
+        .with_response_header(
+            KnownHeaderName::ContentType,
+            "text/javascript; charset=utf-8",
+        )
+        .with_response_header(KnownHeaderName::CacheControl, "no-cache")
+        .with_response_header(KnownHeaderName::Etag, etag.clone())
+        .with_response_header("x-content-type-options", "nosniff");
+    if conn.request_headers().get_str(KnownHeaderName::IfNoneMatch) == Some(etag.as_str()) {
+        return conn.with_status(304).halt();
+    }
+    let mut body = library.builds.join("\n;\n");
+    body.push_str(&format!(
+        "\n;efference.__loaded({}, {});\n",
+        serde_json::json!(library.name),
+        library.global
+    ));
+    conn.with_status(200).with_body(body).halt()
 }
 
 /// Put the stylesheet and the runtime first in the document, right after its doctype,
@@ -301,6 +393,13 @@ pub(super) fn is_artifact_route(path: &str) -> bool {
     let number = |segment: &str| !segment.is_empty() && segment.bytes().all(|b| b.is_ascii_digit());
     match segments.as_slice() {
         ["_efference", "runtime.js" | "theme.css"] => true,
+        ["_efference", "lib", name] => {
+            !matches!(*name, "" | "." | "..")
+                && name.len() <= 64
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+        }
         [session, seq, text_block, fence, tag] => {
             !matches!(*session, "" | "." | ".." | "_efference")
                 && session

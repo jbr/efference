@@ -61,3 +61,26 @@
 .artifact-source code {
   font: inherit;
 }
+
+.artifact-placeholder {
+  color: var(--fg-dim);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+}
+
+.artifact-placeholder > summary {
+  cursor: pointer;
+}
+
+.artifact-placeholder pre {
+  overflow: auto;
+  max-height: 24rem;
+  margin: 0.4rem 0 0;
+  padding: 0.75rem;
+  background: var(--bg-inset);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre;
+}

@@ -130,3 +130,20 @@ export function Artifact({ source, url }: { source: string; url: string }) {
     </div>
   );
 }
+
+/** An `html-artifact` fence in text still streaming (docs/artifacts.md): a line
+ * saying what is coming, with the source so far folded beneath it. */
+export function ArtifactPlaceholder({ source }: { source: string }) {
+  const lines = source === "" ? 0 : source.split("\n").length;
+  return (
+    <details className="artifact-placeholder">
+      <summary>
+        Drawing an artifact · {lines} {lines === 1 ? "line" : "lines"} · it
+        renders when the reply finishes
+      </summary>
+      <pre data-lang="html">
+        <code>{source}</code>
+      </pre>
+    </details>
+  );
+}

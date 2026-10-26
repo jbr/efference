@@ -191,9 +191,10 @@ fn artifact_routes_are_anonymous_only_on_their_exact_get_shapes() {
     let document = format!("/artifacts/brisk-otter/12/0/3/{}", "A".repeat(43));
     let runtime = "/artifacts/_efference/runtime.js".to_string();
     let theme = "/artifacts/_efference/theme.css".to_string();
+    let library = "/artifacts/_efference/lib/d3".to_string();
     let mut cases = Vec::new();
     for surface in [Surface::Session, Surface::Host] {
-        for path in [&document, &runtime, &theme] {
+        for path in [&document, &runtime, &theme, &library] {
             cases.push((surface, Method::Get, path.clone(), true));
         }
     }

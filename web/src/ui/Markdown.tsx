@@ -18,7 +18,7 @@ import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ArtifactLink } from "../api/types.ts";
-import { Artifact } from "./Artifact.tsx";
+import { Artifact, ArtifactPlaceholder } from "./Artifact.tsx";
 import { Code } from "./Code.tsx";
 
 /** A fenced block goes through the same highlighter as a tool result body,
@@ -65,6 +65,18 @@ function artifactComponents({ textBlock, links }: ArtifactContext): Components {
     },
   };
 }
+
+/** While a reply streams, an `html-artifact` fence draws as a placeholder line
+ * with its source folded beneath; the frame replaces it once the entry commits
+ * and its view carries the fence's link. */
+const placeholderComponents: Components = {
+  ...components,
+  code: ({ className, children, node }) => {
+    if (node?.properties[ARTIFACT_FENCE] === undefined)
+      return fencedCode(className, children);
+    return <ArtifactPlaceholder source={String(children).replace(/\n$/, "")} />;
+  },
+};
 
 /** The shape of a hast node this file needs — structural, because hast's own
  * types are a transitive dependency this package does not declare. */
@@ -127,6 +139,7 @@ export function Markdown({
   changedLines,
   followLink,
   artifacts,
+  streamingArtifacts = false,
 }: {
   children: string;
   /** 1-based source line ranges to stamp as changed (the file viewer);
@@ -138,6 +151,9 @@ export function Markdown({
   /** Supplied only by the committed session transcript, for an entry whose
    * view carries artifact links. */
   artifacts?: ArtifactContext;
+  /** Supplied by the session transcript's streaming tail: artifact fences in
+   * text not yet committed draw as placeholders. */
+  streamingArtifacts?: boolean;
 }) {
   // Both memos key on the context's values, not its object: callers build it
   // inline, and a fresh `code` component on every render would remount every
@@ -148,16 +164,19 @@ export function Markdown({
   // every render of the caller.
   const rehypePlugins = useMemo(
     () => [
-      ...(links === undefined ? [] : [numberArtifactFences]),
+      ...(links === undefined && !streamingArtifacts
+        ? []
+        : [numberArtifactFences]),
       ...(changedLines === undefined || changedLines.length === 0
         ? []
         : [stampChanged(changedLines)]),
     ],
-    [changedLines, links],
+    [changedLines, links, streamingArtifacts],
   );
   const linked = useMemo<Components>(() => {
-    const base =
-      textBlock === undefined || links === undefined
+    const base = streamingArtifacts
+      ? placeholderComponents
+      : textBlock === undefined || links === undefined
         ? components
         : artifactComponents({ textBlock, links });
     return followLink === undefined
@@ -185,7 +204,7 @@ export function Markdown({
             );
           },
         };
-  }, [followLink, links, textBlock]);
+  }, [followLink, links, streamingArtifacts, textBlock]);
   return (
     <div className="prose">
       <ReactMarkdown

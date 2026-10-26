@@ -469,12 +469,21 @@ const Call = memo(function Call({
  * or verdict lands, so the memo invalidates exactly then. */
 const MemoLeaf = memo(Leaf);
 
-function LiveBlockView({ block }: { block: LiveBlock }) {
+function LiveBlockView({
+  block,
+  artifactEnabled,
+}: {
+  block: LiveBlock;
+  artifactEnabled: boolean;
+}) {
   if (block.kind === "thinking") return <LiveThinking text={block.text} />;
   if (block.kind === "text") {
+    // An artifact fence still being written shows as a line saying so: its
+    // frame needs the committed entry's link, and the page's source scrolling
+    // past says little to someone waiting for a chart (docs/artifacts.md).
     return (
       <Entry label={null}>
-        <Markdown>{block.text}</Markdown>
+        <Markdown streamingArtifacts={artifactEnabled}>{block.text}</Markdown>
       </Entry>
     );
   }
@@ -523,11 +532,14 @@ function OutputPeek({ chunk }: { chunk: string }) {
 function StreamingTail({
   streaming,
   committed,
+  artifactEnabled,
 }: {
   streaming: Streaming;
   /** Calls already in the tree: their output renders in their own result
    * slot, so only output for a call not yet committed peeks here. */
   committed: Set<CallId>;
+  /** As for committed entries: only the session transcript draws artifacts. */
+  artifactEnabled: boolean;
 }) {
   const { thinking } = useViewSettings();
   const liveOutput = Object.entries(streaming.toolOutput).filter(
@@ -538,7 +550,11 @@ function StreamingTail({
       {streaming.blocks
         .filter((block) => thinking || block.kind !== "thinking")
         .map((block) => (
-          <LiveBlockView key={block.index} block={block} />
+          <LiveBlockView
+            key={block.index}
+            block={block}
+            artifactEnabled={artifactEnabled}
+          />
         ))}
       {liveOutput.map(([callId, chunk]) => (
         <OutputPeek key={callId} chunk={chunk} />
@@ -666,7 +682,11 @@ export function TranscriptContent({
           />
         )}
       />
-      <StreamingTail streaming={streaming} committed={committed} />
+      <StreamingTail
+        streaming={streaming}
+        committed={committed}
+        artifactEnabled={artifactEnabled}
+      />
       <PendingTurns
         pending={pending}
         answering={ask !== null}

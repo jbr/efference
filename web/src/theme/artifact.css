@@ -41,3 +41,13 @@ textarea {
   font-family: var(--font-ui);
   font-size: 0.85em;
 }
+
+/* The line the runtime puts at the top of the page when `efference.load`
+   fails: the agent that wrote the call cannot see the page, so the operator
+   reads it here. */
+.efference-notice {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-ui);
+  font-size: 0.85em;
+  color: var(--warn);
+}

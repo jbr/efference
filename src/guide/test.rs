@@ -390,3 +390,39 @@ fn every_variable_the_artifacts_guide_names_is_defined() {
         );
     }
 }
+
+/// The artifacts guide lists exactly the libraries `efference.load` serves, each with
+/// the version it is: an agent writes against the API the guide names
+/// (docs/artifacts.md).
+#[test]
+fn the_artifacts_guide_lists_the_built_in_libraries() {
+    let guide = DOCUMENTS
+        .iter()
+        .find(|document| document.slug == "artifacts")
+        .expect("the artifacts guide is listed")
+        .body;
+    let mut listed: Vec<&str> = guide
+        .match_indices("efference.load(\"")
+        .map(|(at, prefix)| {
+            let rest = &guide[at + prefix.len()..];
+            &rest[..rest.find('"').expect("a closed name")]
+        })
+        .collect();
+    listed.sort_unstable();
+    listed.dedup();
+    let built_in: Vec<&str> = crate::daemon::artifacts::LIBRARIES
+        .iter()
+        .map(|library| library.name)
+        .collect();
+    assert_eq!(listed, built_in, "efference.load names in the guide");
+    // A version may wrap across the guide's lines.
+    let flat = guide.split_whitespace().collect::<Vec<_>>().join(" ");
+    for library in crate::daemon::artifacts::LIBRARIES {
+        assert!(
+            flat.contains(library.version),
+            "the guide names {} {}",
+            library.name,
+            library.version
+        );
+    }
+}
