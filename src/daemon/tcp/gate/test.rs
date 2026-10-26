@@ -192,9 +192,10 @@ fn artifact_routes_are_anonymous_only_on_their_exact_get_shapes() {
     let runtime = "/artifacts/_efference/runtime.js".to_string();
     let theme = "/artifacts/_efference/theme.css".to_string();
     let library = "/artifacts/_efference/lib/d3".to_string();
+    let file = format!("{document}/file");
     let mut cases = Vec::new();
     for surface in [Surface::Session, Surface::Host] {
-        for path in [&document, &runtime, &theme, &library] {
+        for path in [&document, &runtime, &theme, &library, &file] {
             cases.push((surface, Method::Get, path.clone(), true));
         }
     }

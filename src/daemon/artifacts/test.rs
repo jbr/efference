@@ -119,6 +119,97 @@ async fn a_document_verifies_its_tag_under_the_named_sessions_key() {
     );
 }
 
+/// A scratch working directory, removed when dropped.
+struct Scratch(std::path::PathBuf);
+
+impl Scratch {
+    fn new() -> Self {
+        use std::hash::{BuildHasher, Hasher, RandomState};
+        let nonce = RandomState::new().build_hasher().finish();
+        let path = std::env::temp_dir().join(format!("efference-artifact-files-{nonce:016x}"));
+        std::fs::create_dir_all(&path).unwrap();
+        Self(path.canonicalize().unwrap())
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// `efference.file` hands an artifact a file's text only as its session's own `read`
+/// would get it without asking, and says why when it does not; a path whose tag does
+/// not verify is no artifact at all (docs/artifacts.md).
+#[tokio::test]
+async fn an_artifact_gets_a_file_only_as_its_session_could_read_it() {
+    let scratch = Scratch::new();
+    std::fs::write(scratch.0.join("sizes.csv"), "crate,lines\ncore,41\n").unwrap();
+    std::fs::create_dir(scratch.0.join("dir")).unwrap();
+    std::fs::write(scratch.0.join("binary.dat"), [0xff, 0xfe, 0x00]).unwrap();
+    // A role that grants reading the working directory, as a project config would.
+    let role = crate::config::Config::from_toml(
+        r#"
+        tools = ["read"]
+
+        [paths]
+        "." = { read = true }
+        "#,
+    )
+    .unwrap();
+    let work = Session::full(SessionParts {
+        id: Some("work".into()),
+        role: crate::config::LoadedConfig {
+            role,
+            source: crate::config::ConfigSource::Default,
+        },
+        ..SessionParts::new(crate::policy::Directories::at(&scratch.0), Log::in_memory())
+    })
+    .0;
+    let seq = work.append(1, assistant(TWO_FENCES, None)).unwrap();
+    let url = links(&work, &work.entry_at(seq).unwrap())[0].url.clone();
+    let server = session_server(&work).await;
+    let file = |url: &str, path: &str| {
+        let query: String =
+            trillium_client::url::form_urlencoded::byte_serialize(path.as_bytes()).collect();
+        format!("{url}/file?path={query}")
+    };
+
+    let served = server.get(&file(&url, "sizes.csv")).await;
+    served.assert_status(200);
+    assert_eq!(
+        served.body(),
+        "efference.__file(\"sizes.csv\", \"crate,lines\\ncore,41\\n\");\n"
+    );
+
+    for (path, reason) in [
+        ("missing.csv", "no such file"),
+        ("dir", "not a file"),
+        ("binary.dat", "not UTF-8 text"),
+        ("", "no path given"),
+        ("/etc/hosts", "this session cannot read it without asking"),
+    ] {
+        let refused = server.get(&file(&url, path)).await;
+        refused.assert_status(200);
+        assert_eq!(
+            refused.body(),
+            format!(
+                "efference.__fileRefused({}, {});\n",
+                serde_json::json!(path),
+                serde_json::json!(reason)
+            ),
+            "{path:?}"
+        );
+    }
+
+    let (path, tag) = url.rsplit_once('/').unwrap();
+    let forged = format!("{path}/{}", tag.chars().rev().collect::<String>());
+    server
+        .get(&file(&forged, "sizes.csv"))
+        .await
+        .assert_status(404);
+}
+
 #[tokio::test]
 async fn the_shared_assets_are_served_without_a_tag() {
     let server = session_server(&session(Some("work"))).await;
@@ -207,6 +298,12 @@ fn only_exact_artifact_shapes_are_artifact_routes() {
         ("/artifacts/_efference/lib/d3/extra".into(), false),
         ("/artifacts/_efference/runtime.js/".into(), false),
         (format!("/artifacts/brisk-otter/12/0/3/{tag}/"), false),
+        (format!("/artifacts/brisk-otter/12/0/3/{tag}/file"), true),
+        (
+            format!("/artifacts/brisk-otter/12/0/3/{tag}/file/more"),
+            false,
+        ),
+        (format!("/artifacts/brisk-otter/12/0/3/{tag}/other"), false),
         (
             format!("/artifacts/brisk-otter/12/0/3/{}", &tag[1..]),
             false,

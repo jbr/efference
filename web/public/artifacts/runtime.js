@@ -10,13 +10,14 @@
   // transcript; here the whole document is the prose (docs/artifacts.md).
   root.classList.add("prose");
 
-  // The libraries built into efference (docs/artifacts.md): `await
-  // efference.load("d3")` resolves to the library's global. The host serves each
-  // as one script ending in `__loaded`, and answers a name it has no library for
-  // with `__missing` and the names it has. A failed load also puts a line at the
-  // top of the page: the agent that wrote the call cannot see it fail, and the
-  // operator can tell it.
-  const loads = new Map();
+  // What the host hands an artifact (docs/artifacts.md), each by a script it
+  // adds to the page: `await efference.load("d3")` resolves to a built-in
+  // library's global, and `await efference.file("data/sizes.csv")` to a file's
+  // text from the session's working directory, read when the page loads. The
+  // host answers each with a script calling back into this object. A request it
+  // refuses also puts a line at the top of the page: the agent that wrote the
+  // call cannot see it fail, and the operator can tell it.
+  const requests = new Map();
   const waiting = new Map();
   const notice = (message) => {
     const line = document.createElement("p");
@@ -24,39 +25,62 @@
     line.textContent = message;
     (document.body ?? root).prepend(line);
   };
-  const fail = (name, message) => {
-    waiting.get(name)?.reject(new Error(message));
-    waiting.delete(name);
+  const settle = (key, value) => {
+    waiting.get(key)?.resolve(value);
+    waiting.delete(key);
+  };
+  const fail = (key, message) => {
+    waiting.get(key)?.reject(new Error(message));
+    waiting.delete(key);
     notice(message);
     console.error(message);
+  };
+  const request = (key, src, call) => {
+    if (!requests.has(key)) {
+      requests.set(
+        key,
+        new Promise((resolve, reject) => {
+          waiting.set(key, { resolve, reject });
+          const script = document.createElement("script");
+          script.src = src;
+          script.onerror = () => fail(key, `${call} could not reach the host.`);
+          document.head.append(script);
+        }),
+      );
+    }
+    return requests.get(key);
   };
   window.efference = {
     load(name) {
       const key = String(name);
-      if (!loads.has(key)) {
-        loads.set(
-          key,
-          new Promise((resolve, reject) => {
-            waiting.set(key, { resolve, reject });
-            const script = document.createElement("script");
-            script.src = `/artifacts/_efference/lib/${encodeURIComponent(key)}`;
-            script.onerror = () =>
-              fail(key, `efference.load("${key}") could not reach the host.`);
-            document.head.append(script);
-          }),
-        );
-      }
-      return loads.get(key);
+      return request(
+        `load:${key}`,
+        `/artifacts/_efference/lib/${encodeURIComponent(key)}`,
+        `efference.load("${key}")`,
+      );
+    },
+    file(path) {
+      const key = String(path);
+      return request(
+        `file:${key}`,
+        `${window.location.pathname}/file?path=${encodeURIComponent(key)}`,
+        `efference.file("${key}")`,
+      );
     },
     __loaded(name, library) {
-      waiting.get(name)?.resolve(library);
-      waiting.delete(name);
+      settle(`load:${name}`, library);
     },
     __missing(name, available) {
       fail(
-        name,
+        `load:${name}`,
         `efference.load("${name}"): no such library here. Available: ${available.join(", ")}.`,
       );
+    },
+    __file(path, text) {
+      settle(`file:${path}`, text);
+    },
+    __fileRefused(path, reason) {
+      fail(`file:${path}`, `efference.file("${path}"): ${reason}.`);
     },
   };
 

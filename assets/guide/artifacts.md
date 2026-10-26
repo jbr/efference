@@ -40,10 +40,9 @@ Write a fragment, as above, or a whole document; the server adds what a page nee
 ## What it costs you
 
 The source stays in the conversation and is sent again with every request for the rest of
-the session, so a richer artifact is context you pay for on every later turn. Aggregate
-before you draw — 30 bins rather than 300 points, unless the detail is the point — and
-draw with a few lines of script over an inline data array rather than writing every
-element out.
+the session, so a richer artifact is context you pay for on every later turn. Keep data
+out of it: draw from a file (below) rather than typing values in, and draw with a few
+lines of script rather than writing every element out.
 
 ## Checking your work
 
@@ -100,6 +99,23 @@ the library's usual global; write against the version named here, not a newer on
 
 A name that is not one of these rejects, and the page shows a line naming the ones there
 are, so the operator can tell you.
+
+## Data from files
+
+`await efference.file(path)` resolves to a file's text, read from disk each time the page
+loads, so a dataset never passes through your context or your reply. Produce the data
+however you like, look at just enough of it to know its shape, and draw from the file:
+
+```html
+<script type="module">
+  const d3 = await efference.load("d3");
+  const rows = d3.csvParse(await efference.file("target/sizes.csv"), d3.autoType);
+</script>
+```
+
+Paths resolve against the session's working directory. The page gets only text files you
+could `read` without asking for permission, up to 8 MB; anything else rejects, with a line
+on the page saying why. The chart follows the file: change it, and a reload redraws.
 
 ## Size
 

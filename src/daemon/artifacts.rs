@@ -24,12 +24,15 @@ use trillium_router::{Router, RouterConnExt};
 
 use super::{Host, Session};
 use crate::artifact::html_artifact_fences;
-use crate::log::{LogEntry, Payload};
+use crate::log::{LogEntry, Payload, ToolCall};
+use crate::policy::Verdict;
 
 /// The length of a session's signing key.
 pub(crate) const KEY_BYTES: usize = 32;
 /// An HMAC-SHA256 tag in unpadded base64url.
 const TAG_LENGTH: usize = 43;
+/// The largest file `efference.file` hands an artifact.
+const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
 const RUNTIME_JS: &str = include_str!("../../web/public/artifacts/runtime.js");
 /// The web client's own fonts, tokens, element defaults and prose rules, built in
@@ -187,6 +190,10 @@ pub(crate) fn routes() -> Router {
         .get("/artifacts/_efference/:asset", asset)
         .get("/artifacts/_efference/lib/:name", library)
         .get("/artifacts/:session/:seq/:text_block/:fence/:tag", document)
+        .get(
+            "/artifacts/:session/:seq/:text_block/:fence/:tag/file",
+            file,
+        )
 }
 
 async fn document(conn: Conn) -> Conn {
@@ -204,9 +211,9 @@ async fn document(conn: Conn) -> Conn {
         .halt()
 }
 
-/// The fence a document path names, when its tag verifies under the named session's
-/// key and that session's log holds the fence.
-fn artifact_html(conn: &Conn) -> Option<String> {
+/// The session an artifact path names and the coordinates its tag was signed over,
+/// when the tag verifies under that session's key.
+fn verified(conn: &Conn) -> Option<(Arc<Session>, u64, usize, usize)> {
     let id = conn.param("session")?;
     let seq = conn.param("seq")?.parse().ok()?;
     let text_block = conn.param("text_block")?.parse().ok()?;
@@ -216,6 +223,13 @@ fn artifact_html(conn: &Conn) -> Option<String> {
     mac(session.artifact_key(), id, seq, text_block, fence)
         .verify_slice(&tag)
         .ok()?;
+    Some((session, seq, text_block, fence))
+}
+
+/// The fence a document path names, when its tag verifies and the session's log holds
+/// the fence.
+fn artifact_html(conn: &Conn) -> Option<String> {
+    let (session, seq, text_block, fence) = verified(conn)?;
     let entry = session.entry_at(seq)?;
     let Payload::Assistant {
         output,
@@ -235,6 +249,75 @@ fn session_named(conn: &Conn, id: &str) -> Option<Arc<Session>> {
         Some(host) => host.session(id),
         None => super::http::shared_of(conn).filter(|session| session.id() == Some(id)),
     }
+}
+
+/// A file from the session's working directory for the artifact the path names
+/// (`efference.file`, docs/artifacts.md), as a script handing the runtime its text or
+/// the reason it is withheld. Read from disk on every request: the data is never
+/// projected and the agent never sees it, so it may change under an old transcript, and
+/// the chart with it.
+async fn file(conn: Conn) -> Conn {
+    let Some((session, ..)) = verified(&conn) else {
+        return not_found(conn);
+    };
+    let path = trillium_client::url::form_urlencoded::parse(conn.querystring().as_bytes())
+        .find(|(key, _)| key == "path")
+        .map(|(_, value)| value.into_owned())
+        .unwrap_or_default();
+    let script = match file_text(&session, &path).await {
+        Ok(text) => format!(
+            "efference.__file({}, {});\n",
+            serde_json::json!(path),
+            serde_json::json!(text)
+        ),
+        Err(reason) => format!(
+            "efference.__fileRefused({}, {});\n",
+            serde_json::json!(path),
+            serde_json::json!(reason)
+        ),
+    };
+    conn.with_response_header(
+        KnownHeaderName::ContentType,
+        "text/javascript; charset=utf-8",
+    )
+    .with_response_header(KnownHeaderName::CacheControl, "no-store")
+    .with_response_header("x-content-type-options", "nosniff")
+    .with_status(200)
+    .with_body(script)
+    .halt()
+}
+
+/// The text of `path` for one of `session`'s artifacts, or why it is withheld, in words
+/// the page shows the operator. Only what the session's own `read` of that path would
+/// do without asking: an artifact sees nothing the agent could not read and inline.
+async fn file_text(session: &Session, path: &str) -> Result<String, String> {
+    if path.is_empty() {
+        return Err("no path given".into());
+    }
+    let read = ToolCall::new(
+        "read",
+        "artifact-file",
+        serde_json::json!({ "paths": [path] }),
+    );
+    let verdict =
+        crate::policy::classify(&session.directories(), &session.effective_config(), &read);
+    if !matches!(verdict, Verdict::Clear) {
+        return Err("this session cannot read it without asking".into());
+    }
+    let full = session.cwd().join(path);
+    let metadata = tokio::fs::metadata(&full)
+        .await
+        .map_err(|_| "no such file".to_owned())?;
+    if !metadata.is_file() {
+        return Err("not a file".into());
+    }
+    if metadata.len() > MAX_FILE_BYTES {
+        return Err(format!("larger than {} MB", MAX_FILE_BYTES / (1024 * 1024)));
+    }
+    let bytes = tokio::fs::read(&full)
+        .await
+        .map_err(|e| format!("could not be read: {e}"))?;
+    String::from_utf8(bytes).map_err(|_| "not UTF-8 text".to_owned())
 }
 
 async fn asset(conn: Conn) -> Conn {
@@ -427,7 +510,7 @@ pub(super) fn is_artifact_route(path: &str) -> bool {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
         }
-        [session, seq, text_block, fence, tag] => {
+        [session, seq, text_block, fence, tag] | [session, seq, text_block, fence, tag, "file"] => {
             !matches!(*session, "" | "." | ".." | "_efference")
                 && session
                     .bytes()
