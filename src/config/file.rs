@@ -106,11 +106,15 @@ impl ConfigFile {
     /// document parses") cannot be broken by the harness's own edit; a change that somehow
     /// wouldn't parse is rejected with the document untouched rather than written out.
     pub fn apply(&mut self, change: &ConfigChange) -> std::io::Result<()> {
+        let invalid = |e: String| std::io::Error::new(std::io::ErrorKind::InvalidData, e);
         let mut doc = self.doc.clone();
         apply_to_document(&mut doc, change);
-        let config = parse(&self.path, &doc.to_string())
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-        self.doc = doc;
+        let text =
+            crate::config_schemas::keep_directives_first(&self.doc.to_string(), doc.to_string());
+        let config = parse(&self.path, &text).map_err(|e| invalid(e.to_string()))?;
+        self.doc = text
+            .parse()
+            .map_err(|e: toml_edit::TomlError| invalid(e.to_string()))?;
         self.config = config;
         self.sync()
     }

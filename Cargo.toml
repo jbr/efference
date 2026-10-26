@@ -21,8 +21,10 @@ mcplease = { version = "0.5.0", features = [
 # `efference mcp` drives mcplease's stdio transport over tokio's stdio.
 async-compat = "0.2"
 # JSON Schema derive for the control tools' arguments — what an MCP client reads
-# out of `tools/list`. Same major as mcplease's own, so there is one schemars.
-schemars = "1.2.2"
+# out of `tools/list` — and for the config files' published schemas
+# (assets/schemas). Same major as mcplease's own, so there is one schemars.
+# `indexmap2` for `[context]`, an `IndexMap`.
+schemars = { version = "1.2.2", features = ["indexmap2"] }
 anyhow = "1"
 # Lightweight logging facade + env-driven backend. The daemon emits request sizes,
 # triage fallbacks, capped tool results, and full API error bodies; control verbosity

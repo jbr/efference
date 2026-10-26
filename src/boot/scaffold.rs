@@ -44,8 +44,10 @@ pub(super) fn self_surface_grants(
 /// teaches the schema, plus the one default that isn't empty: an `Environment at boot` `[context]`
 /// exec entry, orientation expressed as config rather than hardcoded (docs/context.md). It's a real,
 /// visible line in the session's own file, so a session that `cat`s its config sees it and an
-/// operator can edit or delete it (docs/permissions.md).
+/// operator can edit or delete it (docs/permissions.md). Its first line names the published
+/// project schema for an editor (docs/config-schemas.md).
 pub const CONFIG_SCAFFOLD: &str = "\
+#:schema https://efference.net/schemas/project.v1.json
 # Your session's permissions config. Edit it to request changes — edits are reviewed before they
 # take effect, and a malformed file is rejected wholesale (fail-closed): if an edit doesn't seem to
 # \"take\", check that the file still parses. Unknown keys are rejected. Schema (all keys optional):

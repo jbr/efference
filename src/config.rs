@@ -70,6 +70,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value, value};
@@ -144,33 +145,37 @@ impl Default for TransportLimits {
     }
 }
 
-/// What a `[commands]` key says about the prefix it addresses (docs/permissions.md) — the
-/// spotter's stance vocabulary, spelled the same way at the fast path so one word means one
-/// thing at both rungs. A `bool` value is sugar: `true` = [`Clear`], `false` = [`Deny`].
-///
-/// The declaration order is the **restrictiveness order** (`Clear < Watch < Gate < Deny`), and
-/// the derived `Ord` is what breaks a tie between two keys of equal token depth: the more
-/// restrictive one governs. Equal depth is only reachable through two spellings of the same
-/// prefix (`"git diff"` and `"git  diff"` lex alike), so the tie-break decides a case that is
-/// otherwise a coin flip, in the safe direction.
-///
-/// [`Clear`]: CommandStance::Clear
-/// [`Deny`]: CommandStance::Deny
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+// What a `[commands]` key says about the prefix it addresses (docs/permissions.md) — the
+// spotter's stance vocabulary, spelled the same way at the fast path so one word means one
+// thing at both rungs. A `bool` value is sugar: `true` = `Clear`, `false` = `Deny`. The variants'
+// `///` docs are the published schema's per-value hover text (docs/config-schemas.md); the
+// value's own hover text is `RawCommandValue`'s, so this type carries no `///`.
+//
+// The declaration order is the **restrictiveness order** (`Clear < Watch < Gate < Deny`), and
+// the derived `Ord` is what breaks a tie between two keys of equal token depth: the more
+// restrictive one governs. Equal depth is only reachable through two spellings of the same
+// prefix (`"git diff"` and `"git  diff"` lex alike), so the tie-break decides a case that is
+// otherwise a coin flip, in the safe direction.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum CommandStance {
-    /// Auto-approve at the fast path: no human, no spotter round-trip.
+    /// Run without review.
+    // Auto-approve at the fast path: no human, no spotter round-trip.
     Clear,
-    /// Send the move to the rung that gates it. Distinct from [`CommandStance::Gate`] as a
-    /// parsed value, identical in effect until the watch-window lands and gives `watch` its own
-    /// intervention latency (docs/permissions.md) — the same collapse `Stance::Watch` has at the
-    /// spotter rung.
+    /// Send to review, as `gate` does.
+    // Distinct from `Gate` as a parsed value, identical in effect until the watch-window gives
+    // `watch` its own intervention latency (docs/permissions.md) — the same collapse
+    // `Stance::Watch` has at the spotter rung.
     Watch,
-    /// Send the move to the rung that gates it — the spotter, then the human.
+    /// Send to review: the spotter, then the operator.
     Gate,
-    /// Refuse without consulting the spotter: the move skips the model rung entirely and goes
-    /// to whoever gates (the human, or the autonomous redirect). No stance below it, so nothing
-    /// a spotter could say would change the outcome — which is why the call is not made.
+    /// Skip the spotter and go to the operator, who can still allow it; an autonomous
+    /// session declines it.
+    // The move skips the model rung entirely and goes to whoever gates (the human, or the
+    // autonomous redirect). No stance below it, so nothing a spotter could say would change
+    // the outcome — which is why the call is not made.
     Deny,
 }
 
@@ -427,6 +432,7 @@ mod raw;
 pub use edit::diff_changes;
 pub use file::{ConfigFile, Refreshed};
 pub use load::{ConfigSource, LoadError, LoadedConfig, load, load_in};
+pub(crate) use raw::RawConfig;
 pub use raw::{ValidationError, wire_tool_name};
 
 use edit::apply_to_document;

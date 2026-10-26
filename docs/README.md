@@ -172,6 +172,7 @@ Read top-down; open the subsystem doc you need.
 | The `[env]` table — stripping and injecting env vars at spawn, masking them at append, resolving vault references | [env.md](env.md) | `src/env_table.rs`, `src/env_table/resolve.rs`, `src/persist.rs`, `src/bash.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/http.rs` |
 | Host-owned inference — named connections, credential loading, per-role model selection | [transport.md](transport.md) | `src/inference.rs`, `src/boot.rs`, `src/daemon/host.rs` |
+| Config schemas — the published JSON schemas for both config files, and the `#:schema` line that names them | [config-schemas.md](config-schemas.md) | `src/config_schemas.rs`, `src/config/raw.rs`, `src/inference.rs`, `assets/schemas/` |
 | The user state database — `~/.efference/state.db`, and the table per module that owns it | [state-store.md](state-store.md) | `src/state.rs` (+ each table's module) |
 | Model catalog — each connection's normalized model listing, stored in the state database | [model-catalog.md](model-catalog.md) | `src/catalog.rs`, `src/daemon/host/catalog.rs`, `src/api/provider/row.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |

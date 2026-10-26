@@ -65,29 +65,40 @@ pub const CONFIG_RELATIVE_PATH: &str = ".efference/config.toml";
 const BUILTIN_CONNECTION_NAMES: [&str; 5] =
     ["anthropic", "openrouter", "openai", "openai-codex", "codex"];
 
-/// Secret-free user configuration at `~/.efference/config.toml`.
-#[derive(Default, Deserialize)]
+/// Settings for every session on this machine: connections to model providers, role
+/// defaults, the web interface, and how the terminal UI draws. It names where each
+/// credential comes from, never the credential itself. `efference setup` writes it, and
+/// a host reads it when it starts.
+// Secret-free user configuration at `~/.efference/config.toml`. The `///` docs on it and the
+// types below are the published user schema's hover text (docs/config-schemas.md). `[defaults]`,
+// `[host]`, and `[tui]` carry none on their fields: Taplo shows a `$ref` target's description
+// and ignores one beside it.
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "User")]
 pub struct InferenceConfig {
     #[serde(default)]
     defaults: Defaults,
+    /// Connections to model providers, by name. A session names its model as
+    /// `<connection>/<model>`, as in `"anthropic/claude-sonnet-4-5"`.
     #[serde(default)]
     connections: BTreeMap<String, ConnectionConfig>,
-    /// `[host]`: the web bind (`inference/host.rs`). Parsed here so the one
-    /// file keeps its unknown-key refusal whole; read by `efference --host`.
+    // `[host]`: the web bind (`inference/host.rs`). Parsed here so the one file keeps its
+    // unknown-key refusal whole; read by `efference --host`.
     #[serde(default)]
     host: HostConfig,
-    /// `[tui]`: how a terminal client draws (`inference/tui.rs`), read by
-    /// whichever process draws a TUI, not by the host.
+    // `[tui]`: how a terminal client draws (`inference/tui.rs`), read by whichever process
+    // draws a TUI, not by the host.
     #[serde(default)]
     tui: TuiConfig,
-    /// `env_hook`: the argv a session's launch environment is established from
-    /// (docs/env.md). A program and its arguments, invoked directly — shell
-    /// syntax needs an explicit shell in the array, and the harness neither
-    /// discovers one nor chooses login/interactive flags. Absent means a
-    /// session inherits the host environment, which is what a session does
-    /// today; a hook is opt-in because reconstructing a user's shell
-    /// environment is a decision only the user can make.
+    /// A program and its arguments whose output is a session's starting environment, as
+    /// in `["/bin/zsh", "-l", "-c", "env -0"]`. It runs directly, without a shell, in the
+    /// session's project directory, and must print NUL-separated `KEY=value` records
+    /// (what `env -0` writes); they replace the host's environment rather than adding to
+    /// it. Omitted, sessions inherit the host's environment.
+    // docs/env.md. A hook is opt-in because reconstructing a user's shell environment is a
+    // decision only the user can make, and the harness neither discovers a shell nor chooses
+    // login/interactive flags.
     #[serde(default)]
     env_hook: Option<Vec<String>>,
 }
@@ -133,85 +144,101 @@ impl InferenceConfig {
     }
 }
 
-#[derive(Default, Deserialize)]
+/// `[defaults]`: role choices for sessions that make none.
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Defaults {
+    /// The spotter model, as `<connection>/<model>`, for sessions that name none. Unset, a
+    /// session uses its main connection's `spotter-model`, then the provider's default.
     spotter: Option<String>,
 }
 
-#[derive(Deserialize)]
+/// A connection to a model provider: a `provider` efference knows by name, or a
+/// `dialect` and `base-url` describing another endpoint.
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
+#[schemars(rename = "Connection")]
 struct ConnectionConfig {
-    /// A provider this crate knows by name. Mutually exclusive with [`Self::dialect`]:
-    /// naming a provider and describing one are two ways of saying the same thing
-    /// ([`resolve_declaration`]).
+    /// A provider efference knows by name, which sets the endpoint, the credential's
+    /// shape, and the wire format. Takes no `dialect` or `base-url`.
+    // Mutually exclusive with `dialect`: naming a provider and describing one are two ways of
+    // saying the same thing ([`resolve_declaration`]).
     #[serde(default)]
+    #[schemars(schema_with = "Provider::name_schema")]
     provider: Option<String>,
-    /// Where the credential comes from. Omitted on a described connection, it
-    /// sends none (a local server); a named provider must have one.
+    // Where the credential comes from. Omitted on a described connection, it sends none (a
+    // local server); a named provider must have one. Its hover text is `AuthConfig`'s.
     #[serde(default)]
     auth: Option<AuthConfig>,
-    /// The wire dialect — `"messages"` or `"responses"` — which describes an
-    /// endpoint this crate knows no name for (docs/transport.md). Mutually
-    /// exclusive with [`Self::provider`], whose every value derives its own
-    /// dialect, so a second spelling of it could only disagree.
+    /// The wire format of an endpoint efference has no name for. Requires `base-url`;
+    /// takes no `provider`.
+    // docs/transport.md. Mutually exclusive with `provider`, whose every value derives its own
+    // dialect, so a second spelling of it could only disagree.
     #[serde(default)]
+    #[schemars(schema_with = "WireDialect::name_schema")]
     dialect: Option<String>,
-    /// The endpoint's base URL — the path the dialect's route hangs off, as in
-    /// `https://api.example.com/v1`. Required beside a `dialect` and refused
-    /// beside a `provider`, which owns its URLs.
+    /// The endpoint's base URL, as in `https://api.example.com/v1`. Required with
+    /// `dialect`; refused with `provider`, which has its own.
     #[serde(default)]
     base_url: Option<String>,
-    /// The model this connection's sessions use as their **spotter** when nothing
-    /// else names one (docs/permissions.md) — the cheap model beside the main
-    /// one. It answers for this connection alone, which is what a per-connection
-    /// answer is for: an account's cheap band is its own, and the arm's built-in
-    /// default is a guess about a catalog the harness does not compile.
-    ///
-    /// It is a fallback, not a selection: an explicit `--spotter-model` and
-    /// `[defaults].spotter` both come first (docs/operating.md).
+    /// The spotter model for sessions whose main model is on this connection, when
+    /// neither the session nor `[defaults].spotter` names one.
+    // The cheap model beside the main one (docs/permissions.md). It answers for this
+    // connection alone: an account's cheap band is its own, and the arm's built-in default is a
+    // guess about a catalog the harness does not compile (docs/operating.md).
     #[serde(default)]
     spotter_model: Option<String>,
-    /// Kept in the catalog with its credential source intact, never a
-    /// candidate for a session (docs/operating.md). `load_credential` is not
-    /// even called: the connection's credential is unconditionally
-    /// unavailable, by the same mechanism as a credential that fails to load.
+    /// Keep the connection written down without offering it to any session. Default
+    /// `false`.
+    // Kept in the catalog with its credential source intact (docs/operating.md).
+    // `load_credential` is not even called: the credential is unconditionally unavailable, by
+    // the same mechanism as a credential that fails to load.
     #[serde(default)]
     disabled: bool,
-    /// Fields merged into every request body, for a vendor parameter whose value
-    /// is fixed (`body = { parallel_tool_calls = false }`). Read on a `completions`
-    /// connection only; keys the encoder writes are refused (`RequestOptions`,
-    /// docs/transport.md).
+    /// Fields merged into every request body, for a vendor parameter with a fixed value,
+    /// as in `{ parallel_tool_calls = false }`. Read on a `completions` connection only;
+    /// a field efference writes itself is refused.
+    // `RequestOptions`, docs/transport.md.
     #[serde(default)]
     body: Option<serde_json::Map<String, serde_json::Value>>,
-    /// The output cap's key, `max_tokens` (the default) or `max_completion_tokens`.
-    /// Read on a `completions` connection only.
+    /// The request field that carries the output cap. Read on a `completions` connection
+    /// only. Default `"max_tokens"`.
     #[serde(default)]
+    #[schemars(schema_with = "crate::api::OutputCapField::name_schema")]
     output_cap_field: Option<String>,
 }
 
-/// The location of an inference credential, never its value.
-#[derive(Deserialize)]
+/// Where the connection's credential comes from, by `kind`; never the credential
+/// itself. Required with `provider`. On a described endpoint it may be omitted, and
+/// then no credential is sent.
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+#[schemars(rename = "Auth")]
 enum AuthConfig {
+    /// `{ kind = "env", key = "ANTHROPIC_API_KEY" }`: an environment variable in the
+    /// host's environment.
     Env {
+        /// The environment variable that holds the credential.
         key: String,
     },
+    /// `{ kind = "codex-cache" }`: the Codex CLI's ChatGPT login. For `openai-codex`.
     CodexCache,
-    /// `auth = { kind = "oauth" }`: a grant efference obtained and maintains,
-    /// in the secret store under `oauth:<name>` (docs/secrets.md). Names the
-    /// mechanism as the other kinds do; which issuer is the *provider's* to
-    /// say, so no issuer is configured here.
-    ///
-    /// Distinct from `keychain`, whose contract is "the operator placed a
-    /// secret and we read it": this one is obtained by a login flow, rewritten
-    /// on refresh, and carries an issuer and an expiry.
+    /// `{ kind = "oauth" }`: a ChatGPT login made in `efference setup`, which keeps it in
+    /// the OS secret store and refreshes it. For `openai-codex`.
+    // A grant efference obtained and maintains, in the secret store under `oauth:<name>`
+    // (docs/secrets.md). Names the mechanism as the other kinds do; which issuer is the
+    // *provider's* to say, so no issuer is configured here. Distinct from `keychain`, whose
+    // contract is "the operator placed a secret and we read it": this one is obtained by a login
+    // flow, rewritten on refresh, and carries an issuer and an expiry.
     Oauth {
+        /// The login's name in the secret store. Default: the connection's name.
         name: Option<String>,
     },
-    /// `auth = { kind = "keychain" }`: the OS secret store (docs/secrets.md),
-    /// item `inference:<name>`, `name` defaulting to the connection's.
+    /// `{ kind = "keychain" }`: a key in the OS secret store, which `efference setup`
+    /// fills when a key is pasted.
+    // Item `inference:<name>` (docs/secrets.md).
     Keychain {
+        /// The key's name in the secret store. Default: the connection's name.
         name: Option<String>,
     },
 }

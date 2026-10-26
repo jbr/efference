@@ -75,18 +75,26 @@ pub struct EnvEntry {
     pub bare: Option<String>,
 }
 
-/// The inline-table spelling of [`EnvEntry`], kept separate so
-/// `deny_unknown_fields` still names a typo'd key (`{ msak = true }`) instead of
-/// falling through to the bare-string arm.
-#[derive(Deserialize)]
+// The inline-table spelling of [`EnvEntry`], kept separate so `deny_unknown_fields` still names
+// a typo'd key (`{ msak = true }`) instead of falling through to the bare-string arm. The `///`
+// docs on its fields are the published project schema's hover text, and its own is the union's
+// (docs/config-schemas.md).
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "EnvTable")]
 struct EnvEntryFields {
+    /// Keep this variable's value out of the session log: it is replaced with a marker
+    /// wherever it appears.
     #[serde(default)]
     mask: Option<bool>,
+    /// Leave this variable out of every subprocess the session starts.
     #[serde(default)]
     strip: Option<bool>,
+    /// A literal value, used as written; never resolved as a reference.
     #[serde(default)]
     value: Option<String>,
+    /// A command whose output is the value, run when the session starts. The value is
+    /// masked.
     #[serde(default)]
     cmd: Option<String>,
 }
@@ -124,6 +132,29 @@ impl<'de> Deserialize<'de> for EnvEntry {
             }
         }
         deserializer.deserialize_any(EntryVisitor)
+    }
+}
+
+/// The two spellings [`EnvEntry`]'s hand-written `Deserialize` accepts, for the
+/// published schema (docs/env.md): a value string or the inline table.
+impl schemars::JsonSchema for EnvEntry {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "EnvEntry".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        /// One variable's policy: an inline table, or a string that sets its value. A
+        /// string in a registered reference scheme, such as `"op://Vault/Item/field"`, is
+        /// resolved when the session starts, and its value is masked. In the table, an
+        /// omitted `mask` or `strip` keeps the built-in answer for the name.
+        #[derive(schemars::JsonSchema)]
+        #[schemars(untagged)]
+        #[allow(dead_code)] // never constructed: it exists to derive the schema
+        enum Spellings {
+            Value(String),
+            Table(EnvEntryFields),
+        }
+        Spellings::json_schema(generator)
     }
 }
 

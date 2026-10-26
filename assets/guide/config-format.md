@@ -3,6 +3,12 @@
 Every key is optional. Unknown keys are a hard error — a typo fails the whole file rather
 than being silently ignored, and so does any entry the harness cannot read soundly.
 
+A first line of `#:schema https://efference.net/schemas/project.v1.json` gives an editor
+running a TOML language server (Taplo, Tombi) the file's schema: completion, a description
+of each key on hover, and a warning on a misspelled key before efference reads the file. The
+editor fetches the schema from efference.net, so efference.net sees a request from the
+operator's machine; deleting the line stops that, and nothing else reads it.
+
 `consolidation-bytes = 65536` sets the opportunistic consolidation threshold:
 UTF-8 tool argument JSON plus post-triage projected result text in the newly
 eligible working span. Default: 64 KiB. Images and pure dialogue do not count.

@@ -3,7 +3,9 @@
 //! Rendering goes through a format-preserving document so an existing file keeps
 //! its comments and order: new `[connections.<name>]` tables are appended, and
 //! `[defaults]` is set only when the draft chose one. A fresh file gets a short
-//! header saying what the file is and what it never holds.
+//! header saying what the file is and what it never holds, under the `#:schema`
+//! line that gives an editor its published schema (docs/config-schemas.md). An
+//! existing file is the user's, so it gains no schema line it did not have.
 
 use std::path::Path;
 
@@ -62,9 +64,10 @@ pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
         }
         connections.insert(name, Item::Table(table));
     }
-    let body = doc.to_string();
+    let body = crate::config_schemas::keep_directives_first(existing_text, doc.to_string());
     Ok(if fresh {
-        format!("{HEADER}{body}")
+        let directive = crate::config_schemas::directive(crate::config_schemas::USER);
+        format!("{directive}\n{HEADER}{body}")
     } else {
         body
     })

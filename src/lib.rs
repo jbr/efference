@@ -14,6 +14,7 @@ pub mod catalog;
 pub mod client;
 pub mod compact;
 pub mod config;
+pub mod config_schemas;
 pub mod consolidate;
 pub mod context;
 pub mod control_tools;

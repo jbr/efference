@@ -186,3 +186,13 @@ fn a_star_outside_the_terminal_position_fails_validation() {
         );
     }
 }
+
+/// A misspelled permission in a `[paths]` table fails the file and is named
+/// (docs/permissions.md).
+#[test]
+fn path_grant_table_names_an_unknown_key() {
+    let error = super::parse(Path::new("bad.toml"), "[paths]\n\".\" = { raed = true }\n")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `raed`"), "{error}");
+}

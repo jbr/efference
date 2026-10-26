@@ -13,20 +13,23 @@ use serde::Deserialize;
 use crate::api::Error;
 use crate::tui::ImageMode;
 
-/// `[tui]` as written. Every key is optional.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+/// `[tui]`: how the terminal UI draws. Read by each terminal client, not by the host.
+// `[tui]` as written. Every key is optional. The `///` docs are the published user schema's
+// hover text (docs/config-schemas.md).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
+#[schemars(rename = "Tui")]
 pub struct TuiConfig {
-    /// Syntax/UI theme: a built-in theme name (e.g. "Catppuccin Frappe",
-    /// "Nord", "gruvbox-dark") or a path to a `.tmTheme` file. An unknown name
-    /// lists the available ones at launch. Omitted, "Catppuccin Frappe".
+    /// The color theme: a built-in name such as `"Catppuccin Frappe"`, `"Nord"`, or
+    /// `"gruvbox-dark"`, or the path to a `.tmTheme` file. An unknown name lists the
+    /// built-in ones at launch, and a leading `~/` in a path is your home directory.
+    /// Default `"Catppuccin Frappe"`.
     pub theme: Option<String>,
-    /// Result-image rendering: `"auto"` queries the terminal, `"kitty"` and
-    /// `"iterm2"` force a protocol detection missed (tmux), `"off"` disables.
+    // Its hover text is `ImageMode`'s: Taplo ignores a description beside a `$ref`.
     #[serde(default)]
     pub images: ImageMode,
-    /// Time each paint and print the distribution on exit: development
-    /// instrumentation for the streaming render.
+    /// Time each paint and print the distribution on exit. Development instrumentation
+    /// for the streaming render.
     #[serde(default)]
     pub frame_cost: bool,
 }

@@ -38,7 +38,8 @@ async fn first_run_with_key_in_environment() {
     assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
     assert_eq!(
         render("", &draft).unwrap(),
-        r#"# The efference user configuration, written by `efference setup`.
+        r#"#:schema https://efference.net/schemas/user.v1.json
+# The efference user configuration, written by `efference setup`.
 # Connections name a provider and where its credential comes from; the
 # credential itself is never in this file. Sessions select a model as
 # <connection>/<native model>; [defaults] names the spotter.

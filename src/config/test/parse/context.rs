@@ -261,3 +261,16 @@ fn context_false_is_rejected() {
         LoadError::Validate(_, ValidationError::ContextDisabled(_))
     ));
 }
+
+/// A misspelled key in a `[context]` table fails the file and is named, rather than
+/// being ignored or reported as matching neither spelling (docs/context.md).
+#[test]
+fn context_table_names_an_unknown_key() {
+    let error = super::parse(
+        Path::new("bad.toml"),
+        "[context]\nNotes = { pth = \"notes/\" }\n",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("unknown field `pth`"), "{error}");
+}

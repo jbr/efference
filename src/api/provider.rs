@@ -272,21 +272,54 @@ impl Provider {
         }
     }
 
+    /// Every name [`Self::from_name`] accepts, with the hover text the published user
+    /// schema shows for it (docs/config-schemas.md): one table for the parser, its error,
+    /// and the schema's `enum`, so the three cannot disagree.
+    const NAMED: &[(&str, Self, &str)] = &[
+        ("anthropic", Self::Anthropic, "Anthropic's API."),
+        ("openrouter", Self::OpenRouter, "OpenRouter."),
+        ("openai", Self::OpenAI, "OpenAI's platform API."),
+        (
+            "openai-codex",
+            Self::OpenAICodex,
+            "The Codex backend, billed to a ChatGPT subscription.",
+        ),
+        (
+            "codex",
+            Self::OpenAICodex,
+            "Another name for `openai-codex`.",
+        ),
+        (
+            "typesafe",
+            Self::TypeSafe,
+            "TypeSafe's decision models, which can serve as the spotter only.",
+        ),
+    ];
+
     /// Parse a configured provider name. The vocabulary is closed because a provider
     /// selects the endpoint, auth shape, metadata lookup, and wire dialect together.
     pub fn from_name(value: &str) -> Result<Self, Error> {
-        match value.trim() {
-            "anthropic" => Ok(Self::Anthropic),
-            "openrouter" => Ok(Self::OpenRouter),
-            "openai" => Ok(Self::OpenAI),
-            "openai-codex" | "codex" => Ok(Self::OpenAICodex),
-            "typesafe" => Ok(Self::TypeSafe),
-            other => Err(format!(
-                "provider {other:?} not recognized: valid values are `anthropic`, \
-                 `openrouter`, `openai`, and `openai-codex` (docs/transport.md)"
-            )
-            .into()),
-        }
+        let value = value.trim();
+        Self::NAMED
+            .iter()
+            .find(|(name, ..)| *name == value)
+            .map(|(_, provider, _)| *provider)
+            .ok_or_else(|| {
+                let valid = Self::NAMED
+                    .iter()
+                    .map(|(name, ..)| format!("`{name}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("provider {value:?} not recognized: valid values are {valid} (docs/transport.md)")
+                    .into()
+            })
+    }
+
+    /// The published user schema for a connection's `provider` (docs/config-schemas.md).
+    pub fn name_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        crate::config_schemas::documented_enum(
+            Self::NAMED.iter().map(|(name, _, doc)| (*name, *doc)),
+        )
     }
 
     /// Where projection places a tool result's images for this provider and model

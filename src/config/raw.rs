@@ -1,170 +1,265 @@
 //! The on-disk TOML shape and its validation into a [`Config`] (docs/permissions.md).
+//!
+//! The types here are also the source of the published project schema
+//! (docs/config-schemas.md): their `///` comments are the hover text an editor shows
+//! someone writing `efference.toml`, and `//` comments are for implementers.
 
 use super::*;
 
-/// The literal TOML shape, before validation. `deny_unknown_fields` makes a typo'd key fail
-/// loudly — the schema is the contract. [`validate`] folds this into a [`Config`].
-#[derive(Deserialize, Default)]
+/// Policy for sessions in this project: what they are for, what they may do without
+/// review, and what they start out knowing. Read from `efference.toml`; each session
+/// keeps its own copy as `.efference/<session>/config.toml`. Every key is optional, and
+/// an unknown key or an entry efference cannot read soundly fails the whole file.
+// The literal TOML shape, before validation. `deny_unknown_fields` makes a typo'd key fail
+// loudly. [`validate`] folds this into a [`Config`].
+#[derive(Deserialize, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(super) struct RawConfig {
+pub(crate) struct RawConfig {
+    /// What sessions here are for, in prose. It opens each session's preamble, and the
+    /// spotter judges every move it reviews against it: the question is whether the move
+    /// is inside this scope, not whether it is dangerous.
     #[serde(default)]
     scope: Option<String>,
+    /// Hazards the spotter should look out for in this project. Shown to the spotter
+    /// only, never to the session.
     #[serde(rename = "watch-for", default)]
     watch_for: Vec<String>,
+    /// Reserved: parsed, with no effect.
     #[serde(rename = "trust-threshold", default)]
     trust_threshold: Option<f64>,
+    /// A user turn sent when a session starts with nothing yet said, so the agent speaks
+    /// first. Read once at boot and not drawn in the clients. Omit it for sessions that
+    /// wait for the operator.
     #[serde(rename = "first-turn", default)]
     first_turn: Option<String>,
+    /// How much new tool work, in bytes, prompts the session to consolidate it: tool
+    /// arguments plus the result text it kept. Images and dialogue do not count.
+    /// Default `65536` (64 KiB).
     #[serde(rename = "consolidation-bytes", default)]
     consolidation_bytes: Option<usize>,
-    /// `[commands]` table: each value is a [`CommandStance`] or the `bool` sugar
-    /// ([`RawCommandValue`]).
+    /// Bash command prefixes and the stance each one gets, as in `cargo = true` or
+    /// `"git push" = "deny"`. The longest matching prefix decides, so a broad grant can
+    /// carry exceptions. A key that is not a single simple command fails the file.
+    /// Grants apply only to structurally simple commands: pipes, substitutions, globs,
+    /// and expansions go to review whatever this table says.
+    // Each value is a [`CommandStance`] or the `bool` sugar ([`RawCommandValue`]).
     #[serde(default)]
     commands: BTreeMap<String, RawCommandValue>,
+    /// Structured tools a call may use without review. Names match exactly, except that a
+    /// trailing `.*` grants a namespace: `ferritin.*` for one server's tools, `efference.*`
+    /// for efference's own. A server's tool may be written `ferritin__get` or
+    /// `ferritin.get`. A tool that takes a path also needs that path granted in `[paths]`.
     #[serde(default)]
     tools: Vec<String>,
+    /// Filesystem subtrees the structured tools may read or write. The longest matching
+    /// prefix decides, so a deeper key carves an exception out of a broader one. Matching
+    /// is lexical, without resolving symlinks: a guard against mistakes, not access
+    /// control. Bash commands answer to `[commands]` instead.
     #[serde(default)]
     paths: BTreeMap<String, RawPathValue>,
+    /// Reserved: parsed as configs to inherit from, with no effect.
     #[serde(default)]
     extends: Vec<String>,
-    /// `[context]` table. An [`IndexMap`] (not `BTreeMap`) so **document order is preserved** — the
-    /// entries render as preamble sections in the order the operator wrote them. Each value is the
-    /// `true` sugar or an inline table ([`RawContextValue`]); [`validate`] interprets each into a
-    /// [`ContextEntry`].
+    /// What a session starts out knowing, rendered into its preamble in the order written.
+    /// Nothing is discovered automatically. A key is either a file path (`"CLAUDE.md" =
+    /// true`) or a section label whose inline table names the source. Read once at boot;
+    /// a listed file that cannot be read fails startup. A file with a frontmatter
+    /// `description` rides as a one-line stub the session can read in full; one without
+    /// rides whole.
+    // An [`IndexMap`] (not `BTreeMap`) so document order is preserved: the entries render as
+    // preamble sections in the order the operator wrote them. [`validate`] interprets each
+    // value into a [`ContextEntry`].
     #[serde(default)]
     context: IndexMap<String, RawContextValue>,
-    /// `[mcp]` table — connected-provider declarations ([`Config::mcp_servers`]).
+    // `[mcp]`, `[bash]`, and `[transport]` carry no `///`: their hover text is their type's.
+    // Taplo reads a `$ref`'s target and ignores a description beside it, so a field doc
+    // here would show in Tombi only.
     #[serde(default)]
     mcp: RawMcp,
-    /// `[bash]` table — the foreground-lifetime knobs ([`Config::bash`]).
     #[serde(default)]
     bash: RawBash,
-    /// `[transport]` table — the upstream-stream knobs ([`Config::transport`]).
     #[serde(default)]
     transport: RawTransport,
-    /// `[env]` table — per-variable `strip`/`mask` (docs/env.md). Only the inline-table
-    /// form parses: a bare `"*_KEY" = false` cannot say which of the two questions it
-    /// answers, so it is a parse error rather than a guess. `deny_unknown_fields` on
-    /// [`crate::env_table::EnvEntry`] makes a typo'd key loud, as everywhere else.
+    /// Per-variable environment policy: what reaches the session's subprocesses, what
+    /// the log may store, and values to set. Keys are exact names or `*` globs, and an
+    /// exact name beats a glob. `*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, and
+    /// `*_CREDENTIALS` are masked by default.
+    // docs/env.md. A bare `"*_KEY" = false` is a parse error: it cannot say which of the two
+    // questions it answers.
     #[serde(default)]
     env: BTreeMap<String, crate::env_table::EnvEntry>,
 }
 
-/// The `[bash]` table: how long a foreground command may block the turn before
-/// it is moved to the background (docs/process-monitor.md). Two numbers, because one
-/// value cannot be both the default and the clamp — `background_after` is what a
-/// call gets when it names nothing, and `background_after_max` is the ceiling a
-/// call's own `background_after` is clamped to. The ceiling is the loop-safety
-/// property, which is why it is operator-set and not call-set.
-#[derive(Deserialize, Default)]
+/// `[bash]`: how long a foreground bash command may hold the turn before it moves to
+/// the background, where it keeps running.
+// docs/process-monitor.md. Two numbers, because one value cannot be both the default and the
+// clamp. The ceiling is the loop-safety property, which is why it is operator-set and not
+// call-set.
+#[derive(Deserialize, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Bash")]
 pub(super) struct RawBash {
+    /// Seconds a foreground command runs before it moves to the background, for a call
+    /// that names no limit of its own. Default `300`.
     #[serde(rename = "background-after", default)]
     background_after: Option<u64>,
+    /// The most seconds any one call may ask to stay in the foreground; a call's own
+    /// limit is clamped to this. Default `1800`.
     #[serde(rename = "background-after-max", default)]
     background_after_max: Option<u64>,
 }
 
-/// The `[transport]` table (docs/transport.md). The two durations are seconds,
-/// like `[bash]`'s knobs; absent → [`crate::api::DEFAULT_STREAM_CEILING`] and the
-/// provider's derived keepalive interval ([`crate::daemon::keepalive_interval`]).
-#[derive(Deserialize, Default)]
+/// `[transport]`: the connection to the model.
+// docs/transport.md. Absent durations fall back to [`crate::api::DEFAULT_STREAM_CEILING`] and
+// the provider's derived keepalive interval ([`crate::daemon::keepalive_interval`]).
+#[derive(Deserialize, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Transport")]
 pub(super) struct RawTransport {
+    /// Seconds one response's stream may stay open. Default `3600`.
     #[serde(rename = "stream-ceiling", default)]
     stream_ceiling: Option<u64>,
+    /// Seconds the prompt cache may go untouched while the session is idle before a
+    /// keepalive request touches it; `0` turns keepalives off. Runs only for a provider
+    /// that reports a prompt cache. Default: chosen per provider.
     #[serde(rename = "keepalive-interval", default)]
     keepalive_interval: Option<u64>,
-    /// `effort = "high"` — held as a string and passed through unchanged: the
-    /// vocabulary is the model's metadata, not a local enum, so any spelling
-    /// parses and the boot check (`ModelCapabilities::check_effort`) is what
-    /// rejects one the model doesn't declare (docs/transport.md).
+    /// How much effort the model spends per turn, such as `"low"`, `"medium"`, `"high"`,
+    /// `"xhigh"`, or `"max"`. Checked at session start against the levels the model
+    /// declares; omit it for the provider's default. `--effort` at session creation
+    /// overrides it, and it cannot change mid-session.
+    // Held as a string and passed through unchanged: the vocabulary is the model's metadata,
+    // not a local enum, so any spelling parses and the boot check
+    // (`ModelCapabilities::check_effort`) rejects one the model doesn't declare.
     #[serde(default)]
     effort: Option<String>,
 }
 
-/// The `[mcp]` table. Only `servers` today; a table (rather than hoisting
-/// `servers` to the top level) so future mcp-wide knobs have a home.
-#[derive(Deserialize, Default)]
+/// `[mcp]`: MCP servers whose tools sessions here can call.
+// A table (rather than hoisting `servers` to the top level) so mcp-wide knobs have a home.
+#[derive(Deserialize, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Mcp")]
 pub(super) struct RawMcp {
+    /// One `[mcp.servers.<name>]` table per server. A name uses `a-z`, `A-Z`, `0-9`, `_`,
+    /// and `-`, is at most 32 characters, and contains no `__`: a server's tools are
+    /// named `<server>__<tool>`.
     #[serde(default)]
     servers: BTreeMap<String, RawMcpServer>,
 }
 
-/// One `[mcp.servers.<name>]` stanza. Which keys are present picks the
-/// transport — see [`McpTransport`]; [`validate_mcp_server`] rejects ambiguous
-/// or empty shapes.
-#[derive(Deserialize)]
+/// An MCP server: exactly one of `command` (a stdio subprocess) or `url` (a
+/// streamable-HTTP endpoint). A server that fails to mount stops the session from
+/// starting, unless it is `optional`.
+// Which keys are present picks the transport — see [`McpTransport`]; [`validate_mcp_server`]
+// rejects ambiguous or empty shapes.
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "McpServer")]
 pub(super) struct RawMcpServer {
+    /// The program to run as a stdio server.
     #[serde(default)]
     command: Option<String>,
+    /// Arguments to `command`.
     #[serde(default)]
     args: Vec<String>,
+    /// Environment variables set for `command`.
     #[serde(default)]
     env: BTreeMap<String, String>,
+    /// A streamable-HTTP endpoint. Takes no `command`, `args`, or `env`.
     #[serde(default)]
     url: Option<String>,
-    /// Start the session even if this server does not mount. Defaults to
-    /// `false` — see [`McpServerEntry::optional`].
+    /// Start the session even when this server fails to mount. The failure is reported to
+    /// the operator and to the session. Default `false`.
+    // See [`McpServerEntry::optional`].
     #[serde(default)]
     optional: bool,
 }
 
-/// A `[context]` value: the `true`/`false` sugar (a bare read-only path) or an inline table
-/// ([`RawContextEntry`]). Interpreted by [`validate_context_entry`].
-#[derive(Deserialize)]
-#[serde(untagged)]
+/// A `[context]` entry. `true` lists the key as a read-only file. An inline table's keys
+/// pick its kind: `path` or `paths` make a group headed by the entry's key, `exec` a
+/// command's output, `builtin` documents compiled into efference. With none of those the
+/// key is itself a file path, and only `update` may be set. `false` is refused.
+// Interpreted by [`validate_context_entry`]. The union carries the hover text and its table arm
+// none: Taplo prints every arm's description on hover, one after another. Deserialized through [`BoolOr`] so a misspelled
+// key in the table is named; `#[schemars(untagged)]` gives the schema the same two spellings.
+#[derive(JsonSchema)]
+#[schemars(untagged, rename = "ContextValue")]
 pub(super) enum RawContextValue {
-    /// `"./CLAUDE.md" = true` → a bare read-only path (the key is the path).
+    // `"./CLAUDE.md" = true` → a bare read-only path (the key is the path).
     Sugar(bool),
-    /// A table: a labeled group (`{ path|paths = … }`), a dynamic section (`{ exec = … }`), or a
-    /// bare path carrying `update` (the key is the path, no `path`/`paths`).
+    // A labeled group (`{ path|paths = … }`), a dynamic section (`{ exec = … }`), a builtin, or
+    // a bare path carrying `update` (the key is the path, no `path`/`paths`).
     Table(RawContextEntry),
 }
 
-/// The inline-table form of a `[context]` value. Which shape it is (labeled group / exec / bare
-/// updatable path) is disambiguated by which keys are present — see [`validate_context_entry`].
-#[derive(Deserialize)]
+impl<'de> Deserialize<'de> for RawContextValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match BoolOr::deserialize(deserializer)? {
+            BoolOr::Bool(sugar) => RawContextValue::Sugar(sugar),
+            BoolOr::Table(table) => RawContextValue::Table(table),
+        })
+    }
+}
+
+// The inline-table form of a `[context]` value; which kind it is is disambiguated by which keys
+// are present — see [`validate_context_entry`]. Its hover text is `RawContextValue`'s.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "ContextEntry")]
 pub(super) struct RawContextEntry {
+    /// A file or directory for the group. A directory expands to every `.md` file beneath
+    /// it, recursively.
     #[serde(default)]
     path: Option<String>,
+    /// Files or directories for the group, as with `path`.
     #[serde(default)]
     paths: Vec<String>,
+    /// A command run once at boot under `bash -c` in the session's directory; its stdout
+    /// becomes the section, frozen for the session. It runs without review. Takes no
+    /// other key.
     #[serde(default)]
     exec: Option<String>,
-    /// `{ builtin = "guide" }` — list a set of documents compiled into the binary
-    /// (docs/context.md, [`crate::guide`]). Like `exec`, it names a source rather than
-    /// files, so it mixes with nothing else.
+    /// Documents compiled into efference: `"guide"` lists them all as stubs, and
+    /// `"guide/<name>"` puts one document's whole text in the preamble. Takes no other key.
+    // Like `exec`, it names a source rather than files, so it mixes with nothing else
+    // (docs/context.md, [`crate::guide`]).
     #[serde(default)]
+    #[schemars(schema_with = "crate::guide::builtin_schema")]
     builtin: Option<String>,
+    /// Let the session edit the listed files that exist. Default `false`.
     #[serde(default)]
     update: bool,
+    /// Let the session add files under the group's directories; without `update`, the
+    /// group is append-only. Group only. Default `false`.
     #[serde(default)]
     create: bool,
+    /// The order of the group's files: comma-separated `<field> [asc|desc]` clauses over
+    /// their frontmatter keys and the built-in `name` and `modified`, as in
+    /// `"priority desc, name asc"`. Default `"name asc"`. Group only.
     #[serde(default)]
     sort: Option<String>,
-    /// Paths pruned from a directory's expansion (`exclude = ["MEMORY.md", "archive"]`),
-    /// relative to each configured directory. Group-only; a bare path carrying `exclude`
-    /// is rejected in [`validate_context_entry`].
+    /// Paths left out of a directory's expansion, relative to each of the group's
+    /// directories, as in `["MEMORY.md", "archive"]`. Group only.
+    // A bare path carrying `exclude` is rejected in [`validate_context_entry`].
     #[serde(default)]
     exclude: Vec<String>,
-    /// A prose hint rendered inside the group's tag — what the model should know
-    /// about how to use these files (e.g. how to read or write a memory). Group-only;
-    /// a bare path carrying `description` is rejected in [`validate_context_entry`].
+    /// A note shown with the group telling the session how to use its files, such as how
+    /// to read or write a memory. Group only.
     #[serde(default)]
     description: Option<String>,
 }
 
-/// A `[commands]` value: the stance word (`"clear"` / `"watch"` / `"gate"` / `"deny"`) or the
-/// `bool` sugar. Booleans keep parsing because every config written before the vocabulary
-/// existed spells its grants that way; `true` = [`CommandStance::Clear`] is what those files
-/// already meant, and `false` = [`CommandStance::Deny`] is the carve-out spelling
-/// (`git = true` + `"git push" = false`) the longest-prefix resolution reads
-/// (docs/permissions.md).
-#[derive(Deserialize)]
+/// The stance a command prefix gets. `"clear"` runs it without review. `"watch"` and
+/// `"gate"` send it to review: the spotter, then the operator. `"deny"` skips the
+/// spotter and goes to the operator, who can still allow it; an autonomous session
+/// declines it. `true` is `"clear"`, and `false` is `"deny"`.
+// Booleans parse because every config written before the stance vocabulary spells its grants
+// that way; `false` is the carve-out spelling (`git = true` + `"git push" = false`) the
+// longest-prefix resolution reads (docs/permissions.md).
+#[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
+#[schemars(rename = "CommandValue")]
 pub(super) enum RawCommandValue {
     Sugar(bool),
     Stance(CommandStance),
@@ -180,20 +275,37 @@ impl RawCommandValue {
     }
 }
 
-/// A `[paths]` value: either the `true`/`false` sugar (`true` = read+write) or an explicit
-/// `{ read = …, write = … }` inline table.
-#[derive(Deserialize)]
-#[serde(untagged)]
+/// Access to a subtree: `true` for read and write, `false` for none (a denial where it
+/// is the longest matching prefix), or `{ read = …, write = … }`, where an omitted
+/// permission is `false`.
+// Deserialized through [`BoolOr`], like [`RawContextValue`].
+#[derive(JsonSchema)]
+#[schemars(untagged, rename = "PathValue")]
 pub(super) enum RawPathValue {
-    /// `"." = true` → read+write; `false` → no access.
     Sugar(bool),
-    /// `"/refs" = { read = true }` — omitted perms default `false`.
-    Perms {
-        #[serde(default)]
-        read: bool,
-        #[serde(default)]
-        write: bool,
-    },
+    Perms(RawPerms),
+}
+
+impl<'de> Deserialize<'de> for RawPathValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match BoolOr::deserialize(deserializer)? {
+            BoolOr::Bool(sugar) => RawPathValue::Sugar(sugar),
+            BoolOr::Table(perms) => RawPathValue::Perms(perms),
+        })
+    }
+}
+
+// The inline-table form of a `[paths]` value; its hover text is `RawPathValue`'s.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "PathAccess")]
+pub(super) struct RawPerms {
+    /// Allow reading.
+    #[serde(default)]
+    read: bool,
+    /// Allow writing, which implies reading.
+    #[serde(default)]
+    write: bool,
 }
 
 impl RawPathValue {
@@ -207,8 +319,42 @@ impl RawPathValue {
                 read: false,
                 write: false,
             },
-            RawPathValue::Perms { read, write } => Perms { read, write },
+            RawPathValue::Perms(RawPerms { read, write }) => Perms { read, write },
         }
+    }
+}
+
+/// A value spelled as the `bool` sugar or an inline table. Hand-written rather than
+/// `#[serde(untagged)]` so a misspelled key inside the table is reported by name, through the
+/// table's own `deny_unknown_fields`: an untagged enum tries each arm and reports only that
+/// none matched.
+enum BoolOr<T> {
+    Bool(bool),
+    Table(T),
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for BoolOr<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct BoolOrVisitor<T>(std::marker::PhantomData<T>);
+        impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for BoolOrVisitor<T> {
+            type Value = BoolOr<T>;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("`true`, `false`, or an inline table")
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<BoolOr<T>, E> {
+                Ok(BoolOr::Bool(v))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<BoolOr<T>, A::Error> {
+                T::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(BoolOr::Table)
+            }
+        }
+        deserializer.deserialize_any(BoolOrVisitor(std::marker::PhantomData))
     }
 }
 

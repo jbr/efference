@@ -29,6 +29,20 @@ pub enum OutputCapField {
     MaxCompletionTokens,
 }
 
+impl OutputCapField {
+    /// The published user schema for a connection's `output-cap-field`: the spellings
+    /// [`RequestOptions::new`] accepts (docs/config-schemas.md).
+    pub fn name_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        crate::config_schemas::documented_enum([
+            ("max_tokens", "The default, which most servers read."),
+            (
+                "max_completion_tokens",
+                "OpenAI's own Chat Completions endpoint.",
+            ),
+        ])
+    }
+}
+
 /// Keys the Completions encoder writes, which a `body` table may not replace. The
 /// effort has its own knob (`--effort`, `[transport] effort`), which the encoder
 /// sends as `reasoning_effort`, so a fixed copy in `body` would shadow it.

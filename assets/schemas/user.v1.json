@@ -1,0 +1,270 @@
+{
+  "$id": "https://efference.net/schemas/user.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "efference user configuration",
+  "description": "Settings for every session on this machine: connections to model providers, role\ndefaults, the web interface, and how the terminal UI draws. It names where each\ncredential comes from, never the credential itself. `efference setup` writes it, and\na host reads it when it starts.",
+  "type": "object",
+  "properties": {
+    "connections": {
+      "description": "Connections to model providers, by name. A session names its model as\n`<connection>/<model>`, as in `\"anthropic/claude-sonnet-4-5\"`.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Connection"
+      }
+    },
+    "defaults": {
+      "$ref": "#/$defs/Defaults"
+    },
+    "env_hook": {
+      "description": "A program and its arguments whose output is a session's starting environment, as\nin `[\"/bin/zsh\", \"-l\", \"-c\", \"env -0\"]`. It runs directly, without a shell, in the\nsession's project directory, and must print NUL-separated `KEY=value` records\n(what `env -0` writes); they replace the host's environment rather than adding to\nit. Omitted, sessions inherit the host's environment.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "host": {
+      "$ref": "#/$defs/Host"
+    },
+    "tui": {
+      "$ref": "#/$defs/Tui"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Auth": {
+      "description": "Where the connection's credential comes from, by `kind`; never the credential\nitself. Required with `provider`. On a described endpoint it may be omitted, and\nthen no credential is sent.",
+      "oneOf": [
+        {
+          "description": "`{ kind = \"env\", key = \"ANTHROPIC_API_KEY\" }`: an environment variable in the\nhost's environment.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The environment variable that holds the credential.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "env"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "key"
+          ]
+        },
+        {
+          "description": "`{ kind = \"codex-cache\" }`: the Codex CLI's ChatGPT login. For `openai-codex`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "codex-cache"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "`{ kind = \"oauth\" }`: a ChatGPT login made in `efference setup`, which keeps it in\nthe OS secret store and refreshes it. For `openai-codex`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "oauth"
+            },
+            "name": {
+              "description": "The login's name in the secret store. Default: the connection's name.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "`{ kind = \"keychain\" }`: a key in the OS secret store, which `efference setup`\nfills when a key is pasted.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "keychain"
+            },
+            "name": {
+              "description": "The key's name in the secret store. Default: the connection's name.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "Connection": {
+      "description": "A connection to a model provider: a `provider` efference knows by name, or a\n`dialect` and `base-url` describing another endpoint.",
+      "type": "object",
+      "properties": {
+        "auth": {
+          "$ref": "#/$defs/Auth"
+        },
+        "base-url": {
+          "description": "The endpoint's base URL, as in `https://api.example.com/v1`. Required with\n`dialect`; refused with `provider`, which has its own.",
+          "type": "string"
+        },
+        "body": {
+          "description": "Fields merged into every request body, for a vendor parameter with a fixed value,\nas in `{ parallel_tool_calls = false }`. Read on a `completions` connection only;\na field efference writes itself is refused.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "dialect": {
+          "description": "The wire format of an endpoint efference has no name for. Requires `base-url`;\ntakes no `provider`.",
+          "type": "string",
+          "enum": [
+            "messages",
+            "responses",
+            "completions",
+            "systemone"
+          ],
+          "x-taplo": {
+            "docs": {
+              "enumValues": [
+                "Anthropic Messages.",
+                "OpenAI Responses.",
+                "OpenAI Chat Completions.",
+                "TypeSafe's System One decision models, which can serve as the spotter only."
+              ]
+            }
+          }
+        },
+        "disabled": {
+          "description": "Keep the connection written down without offering it to any session. Default\n`false`.",
+          "type": "boolean",
+          "default": false
+        },
+        "output-cap-field": {
+          "description": "The request field that carries the output cap. Read on a `completions` connection\nonly. Default `\"max_tokens\"`.",
+          "type": "string",
+          "enum": [
+            "max_tokens",
+            "max_completion_tokens"
+          ],
+          "x-taplo": {
+            "docs": {
+              "enumValues": [
+                "The default, which most servers read.",
+                "OpenAI's own Chat Completions endpoint."
+              ]
+            }
+          }
+        },
+        "provider": {
+          "description": "A provider efference knows by name, which sets the endpoint, the credential's\nshape, and the wire format. Takes no `dialect` or `base-url`.",
+          "type": "string",
+          "enum": [
+            "anthropic",
+            "openrouter",
+            "openai",
+            "openai-codex",
+            "codex",
+            "typesafe"
+          ],
+          "x-taplo": {
+            "docs": {
+              "enumValues": [
+                "Anthropic's API.",
+                "OpenRouter.",
+                "OpenAI's platform API.",
+                "The Codex backend, billed to a ChatGPT subscription.",
+                "Another name for `openai-codex`.",
+                "TypeSafe's decision models, which can serve as the spotter only."
+              ]
+            }
+          }
+        },
+        "spotter-model": {
+          "description": "The spotter model for sessions whose main model is on this connection, when\nneither the session nor `[defaults].spotter` names one.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Defaults": {
+      "description": "`[defaults]`: role choices for sessions that make none.",
+      "type": "object",
+      "properties": {
+        "spotter": {
+          "description": "The spotter model, as `<connection>/<model>`, for sessions that name none. Unset, a\nsession uses its main connection's `spotter-model`, then the provider's default.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Host": {
+      "description": "`[host]`: where a host started with `efference --host` serves the web interface.\nWith no `bind` it serves only its Unix socket. A flag beside `efference --host`\noverrides each key for that launch.",
+      "type": "object",
+      "properties": {
+        "bind": {
+          "description": "`ADDR:PORT` for the web interface's TCP listener, as in `\"127.0.0.1:7878\"`. Plain\nHTTP is refused on any address but loopback, so another address needs `tls-cert`\nand `tls-key`.",
+          "type": "string"
+        },
+        "public-url": {
+          "description": "The address browsers open, `https://name[:port]`: the link the host prints, and\nthe only Host a request may name. Required with TLS; on a loopback bind it\ndefaults to `http://localhost:<port>`.",
+          "type": "string"
+        },
+        "tls-cert": {
+          "description": "The PEM certificate chain the bind serves, such as `tailscale cert` writes. A\nleading `~/` is your home directory.",
+          "type": "string"
+        },
+        "tls-key": {
+          "description": "The PEM private key matching `tls-cert`. A leading `~/` is your home directory.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ImageMode": {
+      "description": "How the terminal UI draws images in tool results. Default `\"auto\"`.",
+      "type": "string",
+      "enum": [
+        "auto",
+        "kitty",
+        "iterm2",
+        "off"
+      ],
+      "x-taplo": {
+        "docs": {
+          "enumValues": [
+            "Ask the terminal which graphics protocol it supports, and fall back to half-block\ncharacters when nothing answers.",
+            "Use the kitty graphics protocol, for a kitty terminal that tmux hides from\ndetection.",
+            "Use iTerm2's inline image protocol, for a terminal detection missed.",
+            "Show each image as a one-line reference."
+          ]
+        }
+      }
+    },
+    "Tui": {
+      "description": "`[tui]`: how the terminal UI draws. Read by each terminal client, not by the host.",
+      "type": "object",
+      "properties": {
+        "frame-cost": {
+          "description": "Time each paint and print the distribution on exit. Development instrumentation\nfor the streaming render.",
+          "type": "boolean",
+          "default": false
+        },
+        "images": {
+          "$ref": "#/$defs/ImageMode"
+        },
+        "theme": {
+          "description": "The color theme: a built-in name such as `\"Catppuccin Frappe\"`, `\"Nord\"`, or\n`\"gruvbox-dark\"`, or the path to a `.tmTheme` file. An unknown name lists the\nbuilt-in ones at launch, and a leading `~/` in a path is your home directory.\nDefault `\"Catppuccin Frappe\"`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

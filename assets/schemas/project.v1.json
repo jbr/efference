@@ -1,0 +1,355 @@
+{
+  "$id": "https://efference.net/schemas/project.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "efference project configuration",
+  "description": "Policy for sessions in this project: what they are for, what they may do without\nreview, and what they start out knowing. Read from `efference.toml`; each session\nkeeps its own copy as `.efference/<session>/config.toml`. Every key is optional, and\nan unknown key or an entry efference cannot read soundly fails the whole file.",
+  "type": "object",
+  "properties": {
+    "bash": {
+      "$ref": "#/$defs/Bash"
+    },
+    "commands": {
+      "description": "Bash command prefixes and the stance each one gets, as in `cargo = true` or\n`\"git push\" = \"deny\"`. The longest matching prefix decides, so a broad grant can\ncarry exceptions. A key that is not a single simple command fails the file.\nGrants apply only to structurally simple commands: pipes, substitutions, globs,\nand expansions go to review whatever this table says.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/CommandValue"
+      }
+    },
+    "consolidation-bytes": {
+      "description": "How much new tool work, in bytes, prompts the session to consolidate it: tool\narguments plus the result text it kept. Images and dialogue do not count.\nDefault `65536` (64 KiB).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "context": {
+      "description": "What a session starts out knowing, rendered into its preamble in the order written.\nNothing is discovered automatically. A key is either a file path (`\"CLAUDE.md\" =\ntrue`) or a section label whose inline table names the source. Read once at boot;\na listed file that cannot be read fails startup. A file with a frontmatter\n`description` rides as a one-line stub the session can read in full; one without\nrides whole.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ContextValue"
+      }
+    },
+    "env": {
+      "description": "Per-variable environment policy: what reaches the session's subprocesses, what\nthe log may store, and values to set. Keys are exact names or `*` globs, and an\nexact name beats a glob. `*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, and\n`*_CREDENTIALS` are masked by default.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/EnvEntry"
+      }
+    },
+    "extends": {
+      "description": "Reserved: parsed as configs to inherit from, with no effect.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "first-turn": {
+      "description": "A user turn sent when a session starts with nothing yet said, so the agent speaks\nfirst. Read once at boot and not drawn in the clients. Omit it for sessions that\nwait for the operator.",
+      "type": "string"
+    },
+    "mcp": {
+      "$ref": "#/$defs/Mcp"
+    },
+    "paths": {
+      "description": "Filesystem subtrees the structured tools may read or write. The longest matching\nprefix decides, so a deeper key carves an exception out of a broader one. Matching\nis lexical, without resolving symlinks: a guard against mistakes, not access\ncontrol. Bash commands answer to `[commands]` instead.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/PathValue"
+      }
+    },
+    "scope": {
+      "description": "What sessions here are for, in prose. It opens each session's preamble, and the\nspotter judges every move it reviews against it: the question is whether the move\nis inside this scope, not whether it is dangerous.",
+      "type": "string"
+    },
+    "tools": {
+      "description": "Structured tools a call may use without review. Names match exactly, except that a\ntrailing `.*` grants a namespace: `ferritin.*` for one server's tools, `efference.*`\nfor efference's own. A server's tool may be written `ferritin__get` or\n`ferritin.get`. A tool that takes a path also needs that path granted in `[paths]`.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "transport": {
+      "$ref": "#/$defs/Transport"
+    },
+    "trust-threshold": {
+      "description": "Reserved: parsed, with no effect.",
+      "type": "number"
+    },
+    "watch-for": {
+      "description": "Hazards the spotter should look out for in this project. Shown to the spotter\nonly, never to the session.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Bash": {
+      "description": "`[bash]`: how long a foreground bash command may hold the turn before it moves to\nthe background, where it keeps running.",
+      "type": "object",
+      "properties": {
+        "background-after": {
+          "description": "Seconds a foreground command runs before it moves to the background, for a call\nthat names no limit of its own. Default `300`.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "background-after-max": {
+          "description": "The most seconds any one call may ask to stay in the foreground; a call's own\nlimit is clamped to this. Default `1800`.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "CommandStance": {
+      "type": "string",
+      "enum": [
+        "clear",
+        "watch",
+        "gate",
+        "deny"
+      ],
+      "x-taplo": {
+        "docs": {
+          "enumValues": [
+            "Run without review.",
+            "Send to review, as `gate` does.",
+            "Send to review: the spotter, then the operator.",
+            "Skip the spotter and go to the operator, who can still allow it; an autonomous\nsession declines it."
+          ]
+        }
+      }
+    },
+    "CommandValue": {
+      "description": "The stance a command prefix gets. `\"clear\"` runs it without review. `\"watch\"` and\n`\"gate\"` send it to review: the spotter, then the operator. `\"deny\"` skips the\nspotter and goes to the operator, who can still allow it; an autonomous session\ndeclines it. `true` is `\"clear\"`, and `false` is `\"deny\"`.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/CommandStance"
+        }
+      ]
+    },
+    "ContextEntry": {
+      "type": "object",
+      "properties": {
+        "builtin": {
+          "description": "Documents compiled into efference: `\"guide\"` lists them all as stubs, and\n`\"guide/<name>\"` puts one document's whole text in the preamble. Takes no other key.",
+          "type": "string",
+          "enum": [
+            "guide",
+            "guide/new-project",
+            "guide/advanced-config",
+            "guide/host",
+            "guide/config-format",
+            "guide/editing",
+            "guide/supervising",
+            "guide/artifacts"
+          ],
+          "x-taplo": {
+            "docs": {
+              "enumValues": [
+                "Every document, each listed as a one-line stub.",
+                "Setting up a project: where the config lives, what belongs in it, and the difference between the project template and a session's own copy.",
+                "What a setup can offer when the project calls for it: mounting efference in another agent harness, secrets through [env], denying secret-bearing files, Claude Code memories, watch-for.",
+                "Above any one project: the user-wide config (connections, the three roles), the host, the web interface, reaching it over Tailscale, and keeping the host running as a service.",
+                "Reference for every `efference.toml` key: scope, tools, [commands], [paths], [context], [env], [bash], [transport], [mcp.servers].",
+                "Working with files: batched reads, the no-clobber write, and the anchor-based edit pipeline (edit / find_anchor / retarget_edit / undo_edit).",
+                "Read before supervising agents you create with the agents__* tools: the verbs, what each status asks of you, gates and decide, questions, reading a transcript, and what an agent sees of your decisions.",
+                "Read before your first html-artifact fence: showing a chart, diagram or small page in the web transcript, its sandbox and sizing, and the stylesheet and variables every artifact gets."
+              ]
+            }
+          }
+        },
+        "create": {
+          "description": "Let the session add files under the group's directories; without `update`, the\ngroup is append-only. Group only. Default `false`.",
+          "type": "boolean",
+          "default": false
+        },
+        "description": {
+          "description": "A note shown with the group telling the session how to use its files, such as how\nto read or write a memory. Group only.",
+          "type": "string"
+        },
+        "exclude": {
+          "description": "Paths left out of a directory's expansion, relative to each of the group's\ndirectories, as in `[\"MEMORY.md\", \"archive\"]`. Group only.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "exec": {
+          "description": "A command run once at boot under `bash -c` in the session's directory; its stdout\nbecomes the section, frozen for the session. It runs without review. Takes no\nother key.",
+          "type": "string"
+        },
+        "path": {
+          "description": "A file or directory for the group. A directory expands to every `.md` file beneath\nit, recursively.",
+          "type": "string"
+        },
+        "paths": {
+          "description": "Files or directories for the group, as with `path`.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "sort": {
+          "description": "The order of the group's files: comma-separated `<field> [asc|desc]` clauses over\ntheir frontmatter keys and the built-in `name` and `modified`, as in\n`\"priority desc, name asc\"`. Default `\"name asc\"`. Group only.",
+          "type": "string"
+        },
+        "update": {
+          "description": "Let the session edit the listed files that exist. Default `false`.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ContextValue": {
+      "description": "A `[context]` entry. `true` lists the key as a read-only file. An inline table's keys\npick its kind: `path` or `paths` make a group headed by the entry's key, `exec` a\ncommand's output, `builtin` documents compiled into efference. With none of those the\nkey is itself a file path, and only `update` may be set. `false` is refused.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/ContextEntry"
+        }
+      ]
+    },
+    "EnvEntry": {
+      "description": "One variable's policy: an inline table, or a string that sets its value. A\nstring in a registered reference scheme, such as `\"op://Vault/Item/field\"`, is\nresolved when the session starts, and its value is masked. In the table, an\nomitted `mask` or `strip` keeps the built-in answer for the name.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/EnvTable"
+        }
+      ]
+    },
+    "EnvTable": {
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "description": "A command whose output is the value, run when the session starts. The value is\nmasked.",
+          "type": "string"
+        },
+        "mask": {
+          "description": "Keep this variable's value out of the session log: it is replaced with a marker\nwherever it appears.",
+          "type": "boolean"
+        },
+        "strip": {
+          "description": "Leave this variable out of every subprocess the session starts.",
+          "type": "boolean"
+        },
+        "value": {
+          "description": "A literal value, used as written; never resolved as a reference.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Mcp": {
+      "description": "`[mcp]`: MCP servers whose tools sessions here can call.",
+      "type": "object",
+      "properties": {
+        "servers": {
+          "description": "One `[mcp.servers.<name>]` table per server. A name uses `a-z`, `A-Z`, `0-9`, `_`,\nand `-`, is at most 32 characters, and contains no `__`: a server's tools are\nnamed `<server>__<tool>`.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/McpServer"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "McpServer": {
+      "description": "An MCP server: exactly one of `command` (a stdio subprocess) or `url` (a\nstreamable-HTTP endpoint). A server that fails to mount stops the session from\nstarting, unless it is `optional`.",
+      "type": "object",
+      "properties": {
+        "args": {
+          "description": "Arguments to `command`.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "command": {
+          "description": "The program to run as a stdio server.",
+          "type": "string"
+        },
+        "env": {
+          "description": "Environment variables set for `command`.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "optional": {
+          "description": "Start the session even when this server fails to mount. The failure is reported to\nthe operator and to the session. Default `false`.",
+          "type": "boolean",
+          "default": false
+        },
+        "url": {
+          "description": "A streamable-HTTP endpoint. Takes no `command`, `args`, or `env`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PathAccess": {
+      "type": "object",
+      "properties": {
+        "read": {
+          "description": "Allow reading.",
+          "type": "boolean",
+          "default": false
+        },
+        "write": {
+          "description": "Allow writing, which implies reading.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "PathValue": {
+      "description": "Access to a subtree: `true` for read and write, `false` for none (a denial where it\nis the longest matching prefix), or `{ read = …, write = … }`, where an omitted\npermission is `false`.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/PathAccess"
+        }
+      ]
+    },
+    "Transport": {
+      "description": "`[transport]`: the connection to the model.",
+      "type": "object",
+      "properties": {
+        "effort": {
+          "description": "How much effort the model spends per turn, such as `\"low\"`, `\"medium\"`, `\"high\"`,\n`\"xhigh\"`, or `\"max\"`. Checked at session start against the levels the model\ndeclares; omit it for the provider's default. `--effort` at session creation\noverrides it, and it cannot change mid-session.",
+          "type": "string"
+        },
+        "keepalive-interval": {
+          "description": "Seconds the prompt cache may go untouched while the session is idle before a\nkeepalive request touches it; `0` turns keepalives off. Runs only for a provider\nthat reports a prompt cache. Default: chosen per provider.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "stream-ceiling": {
+          "description": "Seconds one response's stream may stay open. Default `3600`.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

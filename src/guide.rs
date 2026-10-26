@@ -40,6 +40,23 @@ pub fn is_builtin(value: &str) -> bool {
     value == BUILTIN || inline_document(value).is_some()
 }
 
+/// The values [`is_builtin`] accepts, as the published project schema's `enum` for a
+/// `[context]` entry's `builtin` (docs/config-schemas.md).
+pub fn builtin_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let slugs: Vec<String> = DOCUMENTS
+        .iter()
+        .map(|d| format!("{BUILTIN}/{}", d.slug))
+        .collect();
+    crate::config_schemas::documented_enum(
+        std::iter::once((BUILTIN, "Every document, each listed as a one-line stub.")).chain(
+            slugs
+                .iter()
+                .map(String::as_str)
+                .zip(DOCUMENTS.iter().map(|d| d.description)),
+        ),
+    )
+}
+
 /// The document a `guide/<slug>` builtin names.
 fn inline_document(value: &str) -> Option<&'static Document> {
     let slug = value.strip_prefix(BUILTIN)?.strip_prefix('/')?;

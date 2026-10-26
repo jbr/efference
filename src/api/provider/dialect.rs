@@ -71,23 +71,46 @@ impl WireDialect {
         }
     }
 
+    /// Every name [`Self::from_name`] accepts, with the hover text the published user
+    /// schema shows for it (docs/config-schemas.md).
+    const NAMED: &[(&str, Self, &str)] = &[
+        ("messages", Self::Messages, "Anthropic Messages."),
+        ("responses", Self::Responses, "OpenAI Responses."),
+        ("completions", Self::Completions, "OpenAI Chat Completions."),
+        (
+            "systemone",
+            Self::SystemOne,
+            "TypeSafe's System One decision models, which can serve as the spotter only.",
+        ),
+    ];
+
     /// Parse a configured dialect name, for a described endpoint
     /// (docs/transport.md). The vocabulary is closed: a dialect is an encoder and
     /// an assembler in this crate, so an unrecognized name has nothing to select.
     pub fn from_name(value: &str) -> Result<Self, Error> {
-        match value.trim() {
-            "messages" => Ok(Self::Messages),
-            "responses" => Ok(Self::Responses),
-            "completions" => Ok(Self::Completions),
-            "systemone" => Ok(Self::SystemOne),
-            other => Err(format!(
-                "dialect {other:?} not recognized: valid values are `messages` \
-                 (Anthropic Messages), `responses` (OpenAI Responses), `completions` \
-                 (Chat Completions), and `systemone` (System One decision models) \
-                 (docs/transport.md)"
-            )
-            .into()),
-        }
+        let value = value.trim();
+        Self::NAMED
+            .iter()
+            .find(|(name, ..)| *name == value)
+            .map(|(_, dialect, _)| *dialect)
+            .ok_or_else(|| {
+                let valid = Self::NAMED
+                    .iter()
+                    .map(|(name, _, doc)| format!("`{name}` ({})", doc.trim_end_matches('.')))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "dialect {value:?} not recognized: valid values are {valid} (docs/transport.md)"
+                )
+                .into()
+            })
+    }
+
+    /// The published user schema for a connection's `dialect` (docs/config-schemas.md).
+    pub fn name_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        crate::config_schemas::documented_enum(
+            Self::NAMED.iter().map(|(name, _, doc)| (*name, *doc)),
+        )
     }
 }
 

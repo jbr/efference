@@ -180,6 +180,13 @@ are you contributing to it?" The answer decides what the setup may leave in git'
   it is what the work will be reviewed against.
 - **No answer:** `.git/info/exclude` for `.efference/` is right either way.
 
+**The editor schema line.** Ask alongside the four, in a sentence or two: `efference.toml` can
+open with a `#:schema` line that lets their editor complete its keys, describe each one, and
+flag a misspelled key, and to do that the editor fetches the schema from efference.net — so
+efference.net sees a request from their machine when they edit the file. Write the line if
+they agree and leave it out if they decline; nothing else reads it. If they leave it to you,
+write it, and say so in your report.
+
 **On your next turn, write the files** from the answers — `AGENTS.md` only if the project
 has no guide for agents already, then `efference.toml` — show them, and run
 `efference check`.
@@ -215,6 +222,7 @@ The shape, shown for a TypeScript project; the build tool, the orientation file,
 `scope` are the parts that change with the project.
 
 ```toml
+#:schema https://efference.net/schemas/project.v1.json
 scope = "Work inside this repository: read, build, test, and edit its sources."
 
 tools = ["efference.*"]
@@ -236,7 +244,9 @@ node = true
 "Environment at boot" = { exec = 'echo "working directory: $PWD"; echo "platform: $(uname -sm)"; echo "node: $(node --version 2>/dev/null || echo missing)"' }
 ```
 
-Every key is described in `efference://guide/config-format`.
+Every key is described in `efference://guide/config-format`. The `#:schema` line is there if
+the operator agreed to it (the interview, above), and then it stays the first line, where
+editors read it.
 
 ## The built-in tools
 

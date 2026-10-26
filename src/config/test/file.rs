@@ -384,3 +384,43 @@ fn persist_tool_does_not_duplicate_a_hand_written_wire_form_entry() {
 
     std::fs::remove_file(&path).unwrap();
 }
+
+/// A config change keeps a `#:schema` line on the file's first line, where an editor reads
+/// it (docs/config-schemas.md), whatever the change inserts: a top-level key ahead of the
+/// first table, or the first item of a file that held only comments.
+#[test]
+fn persist_keeps_the_schema_line_first() {
+    let directive = crate::config_schemas::directive(crate::config_schemas::PROJECT);
+    let changes = [
+        ConfigChange::Tool {
+            name: "read".into(),
+        },
+        ConfigChange::Scope { text: "x".into() },
+        ConfigChange::Command {
+            command: "cargo".into(),
+        },
+    ];
+    for (n, original) in [
+        format!("{directive}\n"),
+        format!("{directive}\n# a note\n\n[commands]\ngit = true\n"),
+        format!("{directive}\nscope = \"y\"\n"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        for change in &changes {
+            let path = std::env::temp_dir().join(format!(
+                "efference-persist-schema-{}-{n}.toml",
+                std::process::id()
+            ));
+            std::fs::write(&path, original).unwrap();
+            persist_config_change(&path, change).unwrap();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                text.starts_with(&format!("{directive}\n")),
+                "{change:?} on {original:?}:\n{text}"
+            );
+            std::fs::remove_file(&path).unwrap();
+        }
+    }
+}
