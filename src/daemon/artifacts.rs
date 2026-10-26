@@ -1,11 +1,12 @@
-//! Fenced HTML artifacts, served by signed pointer (docs/artifacts.md).
+//! Fenced artifacts, served by signed pointer (docs/artifacts.md).
 //!
 //! Nothing is stored. An artifact's URL names its session, entry, text block and fence,
 //! with an HMAC over them under the session's own key ([`Session::artifact_key`]), and
 //! the client entry view carries it ([`links`]). Serving checks the tag, finds the
-//! session among the host's, and extracts the fence from the log entry again. A session
-//! that leaves the host takes its key with it, so its URLs stop resolving with nothing
-//! to clean up.
+//! session among the host's, and extracts the fence from the log entry again: an
+//! `html-artifact` fence is the document, and a `mermaid` fence is written into one
+//! that draws it ([`mermaid_document`]). A session that leaves the host takes its key
+//! with it, so its URLs stop resolving with nothing to clean up.
 //!
 //! The same routes are served at the web origin's root and on the artifact-only
 //! loopback listener ([`spawn_listener`]), which the host starts under its `Swansong`.
@@ -23,7 +24,7 @@ use trillium::{Conn, KnownHeaderName};
 use trillium_router::{Router, RouterConnExt};
 
 use super::{Host, Session};
-use crate::artifact::html_artifact_fences;
+use crate::artifact::{Fence, Kind, fences};
 use crate::log::{LogEntry, Payload, ToolCall};
 use crate::policy::Verdict;
 
@@ -35,6 +36,8 @@ const TAG_LENGTH: usize = 43;
 const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
 const RUNTIME_JS: &str = include_str!("../../web/public/artifacts/runtime.js");
+/// The script that draws a `mermaid` fence's diagram with the built-in library.
+const MERMAID_JS: &str = include_str!("../../web/public/artifacts/mermaid.js");
 /// The web client's own fonts, tokens, element defaults and prose rules, built in
 /// from the files the app imports, then the artifact baseline — all but the fonts in
 /// a cascade layer, so any rule an artifact writes takes precedence (docs/artifacts.md).
@@ -76,6 +79,7 @@ pub(crate) fn new_key() -> [u8; KEY_BYTES] {
 pub(crate) struct Link {
     pub(crate) text_block: usize,
     pub(crate) fence: usize,
+    pub(crate) kind: Kind,
     /// Root-relative: a web client loads it from the origin it already uses.
     pub(crate) url: String,
     /// The same document on the artifact-only loopback listener, for a local browser;
@@ -99,7 +103,7 @@ pub(crate) fn links(session: &Session, entry: &LogEntry) -> Vec<Link> {
     };
     let mut links = Vec::new();
     for (text_block, text) in output.text().into_iter().enumerate() {
-        for fence in 0..html_artifact_fences(text).len() {
+        for (fence, Fence { kind, .. }) in fences(text).into_iter().enumerate() {
             let tag = tag(session.artifact_key(), id, entry.seq, text_block, fence);
             let url = format!("/artifacts/{id}/{}/{text_block}/{fence}/{tag}", entry.seq);
             let external_url = session
@@ -108,6 +112,7 @@ pub(crate) fn links(session: &Session, entry: &LogEntry) -> Vec<Link> {
             links.push(Link {
                 text_block,
                 fence,
+                kind,
                 url,
                 external_url,
             });
@@ -157,8 +162,12 @@ pub(crate) fn routes() -> Router {
 }
 
 async fn document(conn: Conn) -> Conn {
-    let Some(html) = artifact_html(&conn) else {
+    let Some(fence) = artifact_fence(&conn) else {
         return not_found(conn);
+    };
+    let html = match fence.kind {
+        Kind::Html => fence.source,
+        Kind::Mermaid => mermaid_document(&fence.source),
     };
     conn.with_response_header(KnownHeaderName::ContentType, "text/html; charset=utf-8")
         .with_response_header(KnownHeaderName::CacheControl, "no-store")
@@ -188,7 +197,7 @@ fn verified(conn: &Conn) -> Option<(Arc<Session>, u64, usize, usize)> {
 
 /// The fence a document path names, when its tag verifies and the session's log holds
 /// the fence.
-fn artifact_html(conn: &Conn) -> Option<String> {
+fn artifact_fence(conn: &Conn) -> Option<Fence> {
     let (session, seq, text_block, fence) = verified(conn)?;
     let entry = session.entry_at(seq)?;
     let Payload::Assistant {
@@ -199,7 +208,21 @@ fn artifact_html(conn: &Conn) -> Option<String> {
         return None;
     };
     let text = output.text().into_iter().nth(text_block)?;
-    html_artifact_fences(text).into_iter().nth(fence)
+    fences(text).into_iter().nth(fence)
+}
+
+/// The page a `mermaid` fence is drawn in: the source as a JSON string, then the script
+/// that draws it with the built-in library (docs/artifacts.md). Every `<` in the JSON is
+/// escaped, so no source can end the element it sits in.
+fn mermaid_document(source: &str) -> String {
+    let source = serde_json::to_string(source)
+        .expect("a string serializes")
+        .replace('<', "\\u003c");
+    format!(
+        "<!doctype html><div id=\"efference-mermaid\"></div>\
+         <script type=\"application/json\" id=\"efference-mermaid-source\">{source}</script>\
+         <script src=\"/artifacts/_efference/mermaid.js\"></script>"
+    )
 }
 
 /// The session a document path names: one of the host's, or the one a session bind
@@ -283,6 +306,7 @@ async fn file_text(session: &Session, path: &str) -> Result<String, String> {
 async fn asset(conn: Conn) -> Conn {
     let (content_type, body) = match conn.param("asset") {
         Some("runtime.js") => ("text/javascript; charset=utf-8", RUNTIME_JS),
+        Some("mermaid.js") => ("text/javascript; charset=utf-8", MERMAID_JS),
         Some("theme.css") => ("text/css; charset=utf-8", THEME_CSS),
         _ => return not_found(conn),
     };
@@ -389,7 +413,7 @@ pub(super) fn is_artifact_route(path: &str) -> bool {
     let segments: Vec<&str> = rest.split('/').collect();
     let number = |segment: &str| !segment.is_empty() && segment.bytes().all(|b| b.is_ascii_digit());
     match segments.as_slice() {
-        ["_efference", "runtime.js" | "theme.css"] => true,
+        ["_efference", "runtime.js" | "mermaid.js" | "theme.css"] => true,
         ["_efference", "lib", name] => {
             !matches!(*name, "" | "." | "..")
                 && name.len() <= 64

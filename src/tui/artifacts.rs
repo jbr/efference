@@ -1,5 +1,5 @@
 //! Artifact links as the TUI receives them (docs/artifacts.md): the entry view of a
-//! committed assistant entry carries each `html-artifact` fence's signed links, and
+//! committed assistant entry carries each artifact fence's signed links, and
 //! the TUI shows the loopback one, which a local browser can open.
 
 /// One artifact's position within a committed assistant entry, zero-based. Ordered

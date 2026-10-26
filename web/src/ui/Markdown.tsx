@@ -17,7 +17,7 @@ import { useMemo, type ReactNode } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { ArtifactLink } from "../api/types.ts";
+import type { ArtifactKind, ArtifactLink } from "../api/types.ts";
 import { Artifact, ArtifactPlaceholder } from "./Artifact.tsx";
 import { Code } from "./Code.tsx";
 
@@ -44,37 +44,53 @@ interface ArtifactContext {
   links: readonly ArtifactLink[];
 }
 
-/** The hast property the fence numbering leaves on an artifact's `<code>`. */
+/** The hast properties the fence numbering leaves on an artifact's `<code>`:
+ * its ordinal and its kind. */
 const ARTIFACT_FENCE = "dataArtifactFence";
+const ARTIFACT_KIND = "dataArtifactKind";
 
-/** An `html-artifact` fence whose link the entry view carries renders as its
+/** An artifact fence whose link the entry view carries renders as its
  * sandboxed frame; one without a link (a mismatch, a session with no id) stays
- * code, which `language-(\w+)` reads as HTML. */
+ * code, which `language-(\w+)` reads as HTML or Mermaid. */
 function artifactComponents({ textBlock, links }: ArtifactContext): Components {
   return {
     ...components,
     code: ({ className, children, node }) => {
       const fence = node?.properties[ARTIFACT_FENCE];
+      const kind = node?.properties[ARTIFACT_KIND];
       const link = links.find(
-        (link) => link.text_block === textBlock && link.fence === fence,
+        (link) =>
+          link.text_block === textBlock &&
+          link.fence === fence &&
+          link.kind === kind,
       );
       if (link === undefined) return fencedCode(className, children);
       return (
-        <Artifact source={String(children).replace(/\n$/, "")} url={link.url} />
+        <Artifact
+          kind={link.kind}
+          source={String(children).replace(/\n$/, "")}
+          url={link.url}
+        />
       );
     },
   };
 }
 
-/** While a reply streams, an `html-artifact` fence draws as a placeholder line
- * with its source folded beneath; the frame replaces it once the entry commits
- * and its view carries the fence's link. */
+/** While a reply streams, an artifact fence draws as a placeholder line with
+ * its source folded beneath; the frame replaces it once the entry commits and
+ * its view carries the fence's link. */
 const placeholderComponents: Components = {
   ...components,
   code: ({ className, children, node }) => {
-    if (node?.properties[ARTIFACT_FENCE] === undefined)
+    const kind = node?.properties[ARTIFACT_KIND];
+    if (kind !== "html" && kind !== "mermaid")
       return fencedCode(className, children);
-    return <ArtifactPlaceholder source={String(children).replace(/\n$/, "")} />;
+    return (
+      <ArtifactPlaceholder
+        kind={kind}
+        source={String(children).replace(/\n$/, "")}
+      />
+    );
   },
 };
 
@@ -89,23 +105,37 @@ interface StampNode {
   children?: StampNode[];
 }
 
-/** Number the text block's `html-artifact` fences in document order: the count
- * the server makes over the same text (src/artifact.rs), each by CommonMark's
- * rules; `artifact-fences.json` holds the cases both sides are tested against.
- * remark puts an info string's first word in the class and the rest in `meta`,
- * so `html-artifact preview` is not one. */
+/** The info string each kind of artifact fence opens with. */
+const ARTIFACT_INFO = new Map<unknown, ArtifactKind>([
+  ["language-html-artifact", "html"],
+  ["language-mermaid", "mermaid"],
+]);
+
+/** Number the text block's artifact fences, of both kinds, in document order:
+ * the count the server makes over the same text (src/artifact.rs), each by
+ * CommonMark's rules; `artifact-fences.json` holds the cases both sides are
+ * tested against. remark puts an info string's first word in the class and
+ * the rest in `meta`, so `html-artifact preview` is not one. */
 const numberArtifactFences = () => (tree: StampNode) => {
   let fence = 0;
   const visit = (node: StampNode) => {
     const className = node.properties?.className;
+    const kind = Array.isArray(className)
+      ? className
+          .map((name) => ARTIFACT_INFO.get(name))
+          .find((kind) => kind !== undefined)
+      : undefined;
     if (
       node.type === "element" &&
       node.tagName === "code" &&
-      Array.isArray(className) &&
-      className.includes("language-html-artifact") &&
+      kind !== undefined &&
       (node.data?.meta ?? "") === ""
     ) {
-      node.properties = { ...node.properties, [ARTIFACT_FENCE]: fence };
+      node.properties = {
+        ...node.properties,
+        [ARTIFACT_FENCE]: fence,
+        [ARTIFACT_KIND]: kind,
+      };
       fence += 1;
     }
     for (const child of node.children ?? []) visit(child);

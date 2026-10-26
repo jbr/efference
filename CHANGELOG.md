@@ -20,6 +20,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- Assistant `mermaid` fences draw as diagrams in the web transcript, in the same sandboxed frame as artifacts, with built-in Mermaid 11.4.1 coloured from the operator's theme and redrawn when it changes; Mermaid also loads with `efference.load("mermaid")`, and artifact frames load lazily (docs/artifacts.md).
 - Assistant `html-artifact` fences render as sandboxed HTML in the web transcript, sized to their content and styled with the transcript's fonts, theme and prose rules, with built-in d3, Vega-Lite and Chart.js, data read from the working directory, a placeholder while one streams, a source view, local-browser links from the TUI, and a guide for agents at `efference://guide/artifacts` (docs/artifacts.md).
 - The web client switches a session's main, spotter and triage models from its details — a `⋯` menu on the session's hover card, the overview card and the archived card and rows — where a running session is archived and resumed on the chosen models and an archived one resumes on them directly (docs/resumption.md, docs/web-client.md).
 - A failed web upload states its reason on the composer chip, and the daemon logs the failing stage (docs/web-client.md).
@@ -156,6 +157,7 @@ behind a change, see [`journal/`](journal/).
 - **A worktree toggle in the new-session forms** (docs/tui.md, docs/web-session-creation.md): the web and TUI forms offer *start in its own worktree* (its own checkout and branch at `.efference/worktrees/<id>`), sent as `worktree: true` on creation; outside a git work tree the host refuses it like any other creation.
 
 ### Fixed
+- **An artifact frame out of view sizes itself there** (docs/artifacts.md): it kept its opening height until it scrolled into view, then resized under the reader, because the browser runs neither animation frames nor resize observers in an off-screen frame.
 - **A device label's terminal escape sequences are dropped whole** (docs/web-bind.md): only the `ESC` byte was stripped, so `ESC[31m` printed as `[31m` in `efference devices`.
 - **A device token the host refuses shows the web client's sign-in view wherever it is** (docs/web-client.md, docs/web-bind.md): a `401` to any request that carried the held token clears it, and the sign-in view replaces the list, session or page that asked and closes its streams — a revoked browser kept retrying the listing and its attention reports and showed the `401` as a view's error — and a late `401` for an older token leaves a new sign-in alone.
 - **`wait()` ends when a turn is queued** (docs/process-monitor.md): it slept through the turn until an unrelated notification or an interrupt released it.

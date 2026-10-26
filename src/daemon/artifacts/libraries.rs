@@ -34,6 +34,15 @@ pub(crate) const LIBRARIES: &[Library] = &[
         global: "d3",
         builds: &[include_str!("../../../assets/artifact-libs/d3/d3.min.js")],
     },
+    // Also what draws a `mermaid` fence (`web/public/artifacts/mermaid.js`).
+    Library {
+        name: "mermaid",
+        version: "11.4.1",
+        global: "mermaid",
+        builds: &[include_str!(
+            "../../../assets/artifact-libs/mermaid/mermaid.min.js"
+        )],
+    },
     Library {
         name: "vega-embed",
         version: "6.29.0, with Vega 5.33.1 and Vega-Lite 5.23.0",

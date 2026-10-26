@@ -2,46 +2,131 @@
   {
     "case": "one fence",
     "markdown": "A chart:\n\n```html-artifact\n<svg></svg>\n```\n",
-    "fences": ["<svg></svg>"]
+    "fences": [
+      {
+        "kind": "html",
+        "source": "<svg></svg>"
+      }
+    ]
   },
   {
     "case": "only exact html-artifact fences count",
     "markdown": "```rust\nlet a = 1;\n```\n\n```html-artifact\n<main>first</main>\n```\n\n```html\n<p>source</p>\n```\n\n```html-artifact preview\n<p>source</p>\n```\n\n~~~html-artifact\n<main>second</main>\n~~~\n\n````html-artifact\n<main>third</main>\n````\n\n```html-artifact   \n<main>fourth</main>\n```\n",
     "fences": [
-      "<main>first</main>",
-      "<main>second</main>",
-      "<main>third</main>",
-      "<main>fourth</main>"
+      {
+        "kind": "html",
+        "source": "<main>first</main>"
+      },
+      {
+        "kind": "html",
+        "source": "<main>second</main>"
+      },
+      {
+        "kind": "html",
+        "source": "<main>third</main>"
+      },
+      {
+        "kind": "html",
+        "source": "<main>fourth</main>"
+      }
+    ]
+  },
+  {
+    "case": "mermaid fences count, numbered with html-artifact fences in document order",
+    "markdown": "```html-artifact\n<main>page</main>\n```\n\n```mermaid\ngraph TD\n  A --> B\n```\n\n~~~mermaid\nsequenceDiagram\n  A->>B: hi\n~~~\n\n```mermaid   \npie\n  \"a\" : 1\n```\n",
+    "fences": [
+      {
+        "kind": "html",
+        "source": "<main>page</main>"
+      },
+      {
+        "kind": "mermaid",
+        "source": "graph TD\n  A --> B"
+      },
+      {
+        "kind": "mermaid",
+        "source": "sequenceDiagram\n  A->>B: hi"
+      },
+      {
+        "kind": "mermaid",
+        "source": "pie\n  \"a\" : 1"
+      }
+    ]
+  },
+  {
+    "case": "only exact mermaid fences count",
+    "markdown": "```mermaid flowchart\ngraph TD\n  A --> B\n```\n\n```Mermaid\ngraph TD\n  C --> D\n```\n\n```mmd\ngraph TD\n  E --> F\n```\n\n```mermaid\ngraph LR\n  G --> H\n```\n\n> ```mermaid\n> graph LR\n>   I --> J\n> ```\n",
+    "fences": [
+      {
+        "kind": "mermaid",
+        "source": "graph LR\n  G --> H"
+      },
+      {
+        "kind": "mermaid",
+        "source": "graph LR\n  I --> J"
+      }
     ]
   },
   {
     "case": "fences inside quotes and lists",
     "markdown": "> ```html-artifact\n> <main>quoted</main>\n> ```\n\n- item\n\n  ```html-artifact\n  <main>listed</main>\n  ```\n\n  - nested\n\n    ```html-artifact\n    <main>nested</main>\n    ```\n\n- ```html-artifact\n  <main>on the marker line</main>\n  ```\n",
     "fences": [
-      "<main>quoted</main>",
-      "<main>listed</main>",
-      "<main>nested</main>",
-      "<main>on the marker line</main>"
+      {
+        "kind": "html",
+        "source": "<main>quoted</main>"
+      },
+      {
+        "kind": "html",
+        "source": "<main>listed</main>"
+      },
+      {
+        "kind": "html",
+        "source": "<main>nested</main>"
+      },
+      {
+        "kind": "html",
+        "source": "<main>on the marker line</main>"
+      }
     ]
   },
   {
     "case": "indented code is not a fence",
     "markdown": "    ```html-artifact\n    <main>indented</main>\n    ```\n\n```html-artifact\n<main>fenced</main>\n```\n",
-    "fences": ["<main>fenced</main>"]
+    "fences": [
+      {
+        "kind": "html",
+        "source": "<main>fenced</main>"
+      }
+    ]
   },
   {
     "case": "a fence nobody closes runs to the end",
     "markdown": "Before.\n\n```html-artifact\n<main>open</main>\n",
-    "fences": ["<main>open</main>"]
+    "fences": [
+      {
+        "kind": "html",
+        "source": "<main>open</main>"
+      }
+    ]
   },
   {
     "case": "fence-like lines inside a longer fence are content",
     "markdown": "````markdown\n```html-artifact\n<main>quoted source</main>\n```\n````\n\n```html-artifact\n<main>real</main>\n> ```\n- ```\n```\n",
-    "fences": ["<main>real</main>\n> ```\n- ```"]
+    "fences": [
+      {
+        "kind": "html",
+        "source": "<main>real</main>\n> ```\n- ```"
+      }
+    ]
   },
   {
     "case": "tables and footnotes around a fence",
     "markdown": "| a | b |\n| - | - |\n| 1 | 2 |\n\nText[^1].\n\n```html-artifact\n<main>after a table</main>\n```\n\n[^1]: A note.\n",
-    "fences": ["<main>after a table</main>"]
+    "fences": [
+      {
+        "kind": "html",
+        "source": "<main>after a table</main>"
+      }
+    ]
   }
 ]

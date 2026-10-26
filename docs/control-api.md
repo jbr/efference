@@ -1552,19 +1552,20 @@ client still resolves that from the content it holds
 ([web-client.md](web-client.md) "The cordon").
 
 **A committed assistant entry's view carries its artifacts' links.** On every
-route, an `Assistant` entry whose text holds `html-artifact` fences gains
-`artifacts` beside `output`:
+route, an `Assistant` entry whose text holds `html-artifact` or `mermaid` fences
+gains `artifacts` beside `output`:
 
 ```jsonc
 "artifacts": [
-  { "text_block": 1, "fence": 0,
+  { "text_block": 1, "fence": 0, "kind": "mermaid",
     "url": "/artifacts/brisk-otter/12/1/0/<tag>",
     "external_url": "http://127.0.0.1:52144/artifacts/brisk-otter/12/1/0/<tag>" }
 ]
 ```
 
-`text_block` counts the entry's text blocks and `fence` that block's
-`html-artifact` fences. `url` is root-relative; `external_url` is the same document
+`text_block` counts the entry's text blocks and `fence` that block's artifact
+fences of both kinds; `kind` is `html` or `mermaid`, by the fence's info string.
+`url` is root-relative; `external_url` is the same document
 on the host's artifact-only loopback listener, absent outside a host. The tag in
 both is an HMAC under the session's own key, so the links stop resolving when the
 session leaves the host. Absent on an entry with no such fence, whose view stays

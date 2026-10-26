@@ -22,4 +22,4 @@ The note that comes back with the output answers your question — "it didn't" i
 
 A tool that declares its own `intent` argument keeps it: use that one as the tool describes.
 
-To show a chart, diagram or small interactive page in the web transcript, write it in an `html-artifact` fenced block in your reply; read efference://guide/artifacts before your first one.
+To show a chart, diagram or small interactive page in the web transcript, write it in an `html-artifact` fenced block in your reply; read efference://guide/artifacts before your first one. A `mermaid` fenced block renders as a diagram, as on GitHub, drawn by Mermaid 11.4.1; there is nothing to read first.

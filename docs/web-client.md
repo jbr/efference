@@ -1014,7 +1014,8 @@ output does not come through it — the cordon gives it per-tool
 representations — and that exclusion is the point of the split.
 
 Committed assistant text can opt into a separate browser document with an
-`html-artifact` fence. Ordinary `html` and `svg` fences remain code; user messages,
+`html-artifact` fence, or a drawn diagram with a `mermaid` fence. Ordinary `html`
+and `svg` fences remain code; user messages,
 thinking and tool output cannot opt in. The frame, its signed link and the runtime
 are described in [artifacts.md](artifacts.md).
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ArtifactKind } from "../api/types.ts";
 import { departFromFrame } from "./followTail.ts";
 import type { ThemeName } from "./theme.ts";
 import "./Artifact.css";
@@ -9,6 +10,19 @@ const colorScheme = (theme: ThemeName): "dark" | "light" =>
 const RESIZE_MESSAGE = "efference:artifact:resize";
 const SCROLLED_UP_MESSAGE = "efference:artifact:scrolled-up";
 const INITIAL_HEIGHT = 360;
+
+/** How each kind of fence is named on its frame and its source. */
+const KINDS: Record<
+  ArtifactKind,
+  { title: string; lang: string; drawing: string }
+> = {
+  html: {
+    title: "HTML artifact preview",
+    lang: "html",
+    drawing: "an artifact",
+  },
+  mermaid: { title: "Mermaid diagram", lang: "mermaid", drawing: "a diagram" },
+};
 
 function pageTheme(): ThemeName {
   return globalThis.document?.documentElement.dataset.theme === "lilac"
@@ -29,10 +43,20 @@ function isResizeMessage(
   );
 }
 
-/** One `html-artifact` fence in committed assistant prose, at the signed URL
- * its entry view carries (docs/artifacts.md). The sandboxed frame loads that
- * page directly; nothing here fetches on its behalf. */
-export function Artifact({ source, url }: { source: string; url: string }) {
+/** One artifact fence in committed assistant prose, at the signed URL its
+ * entry view carries (docs/artifacts.md). The sandboxed frame loads that page
+ * directly; nothing here fetches on its behalf. A frame far off screen waits to
+ * load until the transcript nears it: each one parses its own copy of any
+ * library it draws with. */
+export function Artifact({
+  kind,
+  source,
+  url,
+}: {
+  kind: ArtifactKind;
+  source: string;
+  url: string;
+}) {
   const [height, setHeight] = useState(INITIAL_HEIGHT);
   const [theme, setTheme] = useState<ThemeName>(pageTheme);
   const [copied, setCopied] = useState(false);
@@ -109,9 +133,10 @@ export function Artifact({ source, url }: { source: string; url: string }) {
       <iframe
         ref={frame}
         className="artifact-frame"
-        title="HTML artifact preview"
+        title={KINDS[kind].title}
         src={url}
         sandbox="allow-scripts"
+        loading="lazy"
         style={{ height: `${height}px` }}
       />
       <details className="artifact-source">
@@ -123,7 +148,7 @@ export function Artifact({ source, url }: { source: string; url: string }) {
           {copied && <span role="status">Copied</span>}
           {copyFailed && <span role="status">Copy unavailable</span>}
         </div>
-        <pre data-lang="html">
+        <pre data-lang={KINDS[kind].lang}>
           <code>{source}</code>
         </pre>
       </details>
@@ -131,17 +156,23 @@ export function Artifact({ source, url }: { source: string; url: string }) {
   );
 }
 
-/** An `html-artifact` fence in text still streaming (docs/artifacts.md): a line
+/** An artifact fence in text still streaming (docs/artifacts.md): a line
  * saying what is coming, with the source so far folded beneath it. */
-export function ArtifactPlaceholder({ source }: { source: string }) {
+export function ArtifactPlaceholder({
+  kind,
+  source,
+}: {
+  kind: ArtifactKind;
+  source: string;
+}) {
   const lines = source === "" ? 0 : source.split("\n").length;
   return (
     <details className="artifact-placeholder">
       <summary>
-        Drawing an artifact · {lines} {lines === 1 ? "line" : "lines"} · it
-        renders when the reply finishes
+        Drawing {KINDS[kind].drawing} · {lines} {lines === 1 ? "line" : "lines"}{" "}
+        · it renders when the reply finishes
       </summary>
-      <pre data-lang="html">
+      <pre data-lang={KINDS[kind].lang}>
         <code>{source}</code>
       </pre>
     </details>

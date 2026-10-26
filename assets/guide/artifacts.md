@@ -30,6 +30,16 @@ operator can interact with.
 
 Write a fragment, as above, or a whole document; the server adds what a page needs.
 
+## Mermaid diagrams
+
+A fenced block whose info string is exactly `mermaid` draws as a diagram in the same kind
+of frame, as GitHub draws one: flowcharts, sequence, class, state and entity-relationship
+diagrams, Gantt and pie charts, and the rest of Mermaid 11.4.1. For boxes and arrows it is
+the shorter source. The diagram takes its colours and font from the operator's theme and
+is drawn again when the theme changes; a `classDef` or `style` line you write overrides
+them for its nodes. A diagram that does not parse shows the parser's error in its
+place, which the operator can read out to you. In the TUI it stays source, with a link.
+
 ## What the operator sees
 
 - **Web client:** the page, with a Source toggle beside it.
@@ -75,7 +85,7 @@ You cannot use:
 
 ## Libraries
 
-Three libraries are built in, one version each. `await efference.load(name)` resolves to
+Four libraries are built in, one version each. `await efference.load(name)` resolves to
 the library's usual global; write against the version named here, not a newer one:
 
 - `efference.load("d3")` — d3 7.9.0, resolving to `d3`.
@@ -83,6 +93,8 @@ the library's usual global; write against the version named here, not a newer on
   5.23.0, resolving to `vegaEmbed`. Vega-Lite specs use the v5 schema, and
   `width: "container"` fills the frame's width.
 - `efference.load("chart.js")` — Chart.js 4.4.9, resolving to `Chart`.
+- `efference.load("mermaid")` — Mermaid 11.4.1, resolving to `mermaid`. A `mermaid` fence
+  needs none of this; load it to draw a diagram inside a page of your own.
 
 ```html
 <div id="chart"></div>

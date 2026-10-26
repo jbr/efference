@@ -1,4 +1,4 @@
-/* global window, document, console, matchMedia, requestAnimationFrame, ResizeObserver, setTimeout, Element */
+/* global window, document, console, matchMedia, MutationObserver, ResizeObserver, setTimeout, Element */
 
 (() => {
   const themeMessage = "efference:artifact:theme";
@@ -163,6 +163,7 @@
   );
 
   let queued = false;
+  let sent = 0;
   const sendSize = () => {
     queued = false;
     // The root element's box: in standards mode it is as tall as the content,
@@ -173,20 +174,33 @@
     const height = Math.ceil(
       document.documentElement.getBoundingClientRect().height,
     );
-    if (Number.isFinite(height) && height > 0) {
+    // Only a change: an animation reports on every mutation.
+    if (Number.isFinite(height) && height > 0 && height !== sent) {
+      sent = height;
       window.parent.postMessage({ type: resizeMessage, height }, "*");
     }
   };
+  // A timer rather than an animation frame, and mutations as well as resizes:
+  // the browser runs neither animation frames nor resize observers in a frame
+  // scrolled out of view, which would leave it at its opening height until it
+  // came into view and then resize under the operator's eyes. Measured while
+  // off screen, it takes its height where scroll anchoring absorbs it.
   const scheduleSize = () => {
     if (queued) return;
     queued = true;
-    requestAnimationFrame(sendSize);
+    setTimeout(sendSize);
   };
 
   const start = () => {
     const observer = new ResizeObserver(scheduleSize);
     observer.observe(document.documentElement);
     if (document.body !== null) observer.observe(document.body);
+    new MutationObserver(scheduleSize).observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
     window.addEventListener("load", scheduleSize);
     window.addEventListener("resize", scheduleSize);
     scheduleSize();

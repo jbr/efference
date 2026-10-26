@@ -426,3 +426,21 @@ fn the_artifacts_guide_lists_the_built_in_libraries() {
         );
     }
 }
+
+/// The session preamble says a `mermaid` fence renders and with which version, so an
+/// agent writing one without reading the guide knows which diagram types and syntax it
+/// has (docs/artifacts.md).
+#[test]
+fn the_preamble_names_the_built_in_mermaid_version() {
+    let mermaid = crate::daemon::artifacts::libraries::LIBRARIES
+        .iter()
+        .find(|library| library.name == "mermaid")
+        .expect("Mermaid is built in");
+    let preamble = include_str!("../../assets/prompts/session.md");
+    let flat = preamble.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(&format!("Mermaid {}", mermaid.version)),
+        "the preamble names Mermaid {}",
+        mermaid.version
+    );
+}

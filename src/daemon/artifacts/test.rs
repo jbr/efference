@@ -119,6 +119,57 @@ async fn a_document_verifies_its_tag_under_the_named_sessions_key() {
     );
 }
 
+/// A `mermaid` fence is numbered with the `html-artifact` fences around it, its link
+/// says so, and its document is a page the host writes: the source as a JSON string
+/// no source can break out of, then the script that draws it (docs/artifacts.md).
+#[tokio::test]
+async fn a_mermaid_fence_is_served_inside_a_page_that_draws_it() {
+    let work = session(Some("work"));
+    let text = "```html-artifact\n<main>page</main>\n```\n\n\
+                ```mermaid\ngraph TD\n  A[\"</script><script>alert(1)</script>\"] --> B\n```\n";
+    let seq = work.append(1, assistant(text, None)).unwrap();
+    let links = links(&work, &work.entry_at(seq).unwrap());
+    assert_eq!(
+        links
+            .iter()
+            .map(|link| (link.fence, link.kind))
+            .collect::<Vec<_>>(),
+        [(0, Kind::Html), (1, Kind::Mermaid)]
+    );
+    assert_eq!(serde_json::to_value(&links[1]).unwrap()["kind"], "mermaid");
+    let server = session_server(&work).await;
+
+    let page = server.get(&links[1].url).await;
+    page.assert_status(200);
+    assert_eq!(
+        page.body(),
+        "<!doctype html>\
+         <link rel=\"stylesheet\" href=\"/artifacts/_efference/theme.css\">\
+         <script src=\"/artifacts/_efference/runtime.js\"></script>\
+         <div id=\"efference-mermaid\"></div>\
+         <script type=\"application/json\" id=\"efference-mermaid-source\">\
+         \"graph TD\\n  A[\\\"\\u003c/script>\\u003cscript>alert(1)\\u003c/script>\\\"] --> B\\n\"\
+         </script>\
+         <script src=\"/artifacts/_efference/mermaid.js\"></script>"
+    );
+    assert_eq!(
+        page.response_headers()
+            .get_str(KnownHeaderName::ContentSecurityPolicy),
+        Some(ARTIFACT_CSP)
+    );
+    // The page's JSON reads back as the fence's source.
+    let json = page
+        .body()
+        .split_once("id=\"efference-mermaid-source\">")
+        .and_then(|(_, rest)| rest.split_once("</script>"))
+        .unwrap()
+        .0;
+    assert_eq!(
+        serde_json::from_str::<String>(json).unwrap(),
+        "graph TD\n  A[\"</script><script>alert(1)</script>\"] --> B\n"
+    );
+}
+
 /// A scratch working directory, removed when dropped.
 struct Scratch(std::path::PathBuf);
 
@@ -216,6 +267,9 @@ async fn the_shared_assets_are_served_without_a_tag() {
     let runtime = server.get("/artifacts/_efference/runtime.js").await;
     runtime.assert_status(200);
     assert_eq!(runtime.body(), RUNTIME_JS);
+    let mermaid = server.get("/artifacts/_efference/mermaid.js").await;
+    mermaid.assert_status(200);
+    assert_eq!(mermaid.body(), MERMAID_JS);
     let theme = server.get("/artifacts/_efference/theme.css").await;
     theme.assert_status(200);
     assert_eq!(theme.body(), THEME_CSS);
@@ -278,7 +332,7 @@ async fn built_in_libraries_load_as_one_script_and_a_missing_one_names_the_rest(
     missing.assert_status(200);
     assert_eq!(
         missing.body(),
-        "efference.__missing(\"d4\", [\"chart.js\",\"d3\",\"vega-embed\"]);\n"
+        "efference.__missing(\"d4\", [\"chart.js\",\"d3\",\"mermaid\",\"vega-embed\"]);\n"
     );
 }
 
@@ -290,6 +344,7 @@ fn only_exact_artifact_shapes_are_artifact_routes() {
         (format!("/artifacts/1787453029792/0/0/0/{tag}"), true),
         ("/artifacts/_efference/runtime.js".into(), true),
         ("/artifacts/_efference/theme.css".into(), true),
+        ("/artifacts/_efference/mermaid.js".into(), true),
         ("/artifacts/_efference/private.js".into(), false),
         ("/artifacts/_efference/lib/d3".into(), true),
         ("/artifacts/_efference/lib/chart.js".into(), true),

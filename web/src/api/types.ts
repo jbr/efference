@@ -10,12 +10,17 @@
 export type Seq = number;
 export type CallId = string;
 
-/** One `html-artifact` fence's signed address, which the entry view of a
- * committed assistant entry carries (docs/artifacts.md). `fence` counts the text
- * block's artifact fences only. */
+/** What an artifact fence draws (docs/artifacts.md): a page from an
+ * `html-artifact` fence, or a diagram from a `mermaid` one. */
+export type ArtifactKind = "html" | "mermaid";
+
+/** One artifact fence's signed address, which the entry view of a committed
+ * assistant entry carries (docs/artifacts.md). `fence` counts the text block's
+ * artifact fences only, of both kinds. */
 export interface ArtifactLink {
   text_block: number;
   fence: number;
+  kind: ArtifactKind;
   /** Root-relative: loaded from the origin this client already uses. */
   url: string;
   /** The same document on the host's loopback listener. */
@@ -78,7 +83,7 @@ export type Payload =
          * finalized turn. */
         excluded?: Exclusion;
         /** View-only: derived on every read, never in the log. Present when the
-         * entry's text has `html-artifact` fences. */
+         * entry's text has `html-artifact` or `mermaid` fences. */
         artifacts?: ArtifactLink[];
       };
     }

@@ -6,7 +6,7 @@
 import { expect, test, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { Ask, LogEntry } from "../api/types.ts";
+import type { ArtifactKind, Ask, LogEntry } from "../api/types.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { emptyStreaming } from "../session/store.ts";
 import type { Streaming } from "../session/store.ts";
@@ -105,7 +105,10 @@ const render = (entries: LogEntry[], over?: Parameters<typeof element>[1]) =>
 async function renderWithArtifacts(
   entries: LogEntry[],
   over: Parameters<typeof element>[1] = {},
-): Promise<{ html: string; artifacts: { url: string; source: string }[] }> {
+): Promise<{
+  html: string;
+  artifacts: { url: string; lang: string; source: string }[];
+}> {
   const host = document.createElement("div");
   const root = createRoot(host);
   await act(async () => {
@@ -114,6 +117,10 @@ async function renderWithArtifacts(
   });
   const artifacts = [...host.querySelectorAll(".artifact")].map((artifact) => ({
     url: artifact.querySelector("iframe")?.getAttribute("src") ?? "",
+    lang:
+      artifact
+        .querySelector(".artifact-source pre")
+        ?.getAttribute("data-lang") ?? "",
     source: artifact.querySelector(".artifact-source code")?.textContent ?? "",
   }));
   const html = host.innerHTML;
@@ -122,11 +129,12 @@ async function renderWithArtifacts(
 }
 
 /** A committed assistant entry as the entry view serves it: text blocks, and a
- * link for each `[textBlock, fence]` given (docs/artifacts.md). */
+ * link for each `[textBlock, fence, kind]` given, `html` unless named
+ * (docs/artifacts.md). */
 const withArtifacts = (
   seq: number,
   blocks: string[],
-  linked: [number, number][],
+  linked: [number, number, ArtifactKind?][],
 ): LogEntry =>
   entry(seq, {
     Assistant: {
@@ -135,9 +143,10 @@ const withArtifacts = (
         blocks.map((Text) => ({ Text })),
         [],
       ),
-      artifacts: linked.map(([text_block, fence]) => ({
+      artifacts: linked.map(([text_block, fence, kind = "html"]) => ({
         text_block,
         fence,
+        kind,
         url: `/artifacts/brisk-otter/${seq}/${text_block}/${fence}/tag`,
       })),
     },
@@ -171,6 +180,7 @@ test("a fence the entry view links renders as a sandboxed frame with its source"
   expect(artifacts).toEqual([
     {
       url: "/artifacts/brisk-otter/20/0/0/tag",
+      lang: "html",
       source: "<div>preview content</div>",
     },
   ]);
@@ -245,7 +255,11 @@ test.each([
     ]);
 
     expect(artifacts).toEqual([
-      { url: "/artifacts/brisk-otter/21/0/0/tag", source: "<div>linked</div>" },
+      {
+        url: "/artifacts/brisk-otter/21/0/0/tag",
+        lang: "html",
+        source: "<div>linked</div>",
+      },
     ]);
     expect(html).toContain(expected);
   },
@@ -267,8 +281,16 @@ test("fences are numbered per text block, counting artifact fences only", async 
   ]);
 
   expect(artifacts).toEqual([
-    { url: "/artifacts/brisk-otter/23/0/0/tag", source: "<div>first</div>" },
-    { url: "/artifacts/brisk-otter/23/1/0/tag", source: "<div>second</div>" },
+    {
+      url: "/artifacts/brisk-otter/23/0/0/tag",
+      lang: "html",
+      source: "<div>first</div>",
+    },
+    {
+      url: "/artifacts/brisk-otter/23/1/0/tag",
+      lang: "html",
+      source: "<div>second</div>",
+    },
   ]);
 });
 
@@ -281,13 +303,18 @@ test.each(fenceCases.map((c) => [c.case, c] as const))(
       withArtifacts(
         40,
         [markdown],
-        fences.map((_, fence): [number, number] => [0, fence]),
+        fences.map(({ kind }, fence): [number, number, ArtifactKind] => [
+          0,
+          fence,
+          kind as ArtifactKind,
+        ]),
       ),
     ]);
 
     expect(artifacts).toEqual(
-      fences.map((source, fence) => ({
+      fences.map(({ kind, source }, fence) => ({
         url: `/artifacts/brisk-otter/40/0/${fence}/tag`,
+        lang: kind,
         source,
       })),
     );
@@ -306,7 +333,11 @@ test("an artifact fence with no link stays code", async () => {
   ]);
 
   expect(artifacts).toEqual([
-    { url: "/artifacts/brisk-otter/33/0/0/tag", source: "<div>linked</div>" },
+    {
+      url: "/artifacts/brisk-otter/33/0/0/tag",
+      lang: "html",
+      source: "<div>linked</div>",
+    },
   ]);
   expect(html).toContain('data-lang="html"');
   expect(html).toContain("unlinked");
@@ -333,6 +364,51 @@ test("an artifact fence still streaming draws as a placeholder with its source f
     "Drawing an artifact · 2 lines · it renders when the reply finishes",
   );
   expect(html).not.toContain("<iframe");
+});
+
+test("a mermaid fence still streaming draws as a diagram's placeholder", async () => {
+  const html = await markupAfterEffects(
+    element([], {
+      artifactEnabled: true,
+      streaming: {
+        ...emptyStreaming,
+        blocks: [
+          {
+            index: 0,
+            kind: "text",
+            text: "The flow:\n\n```mermaid\ngraph TD\n  A --> B\n  B --> C\n",
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(html).toContain(
+    "Drawing a diagram · 3 lines · it renders when the reply finishes",
+  );
+  expect(html).toContain('data-lang="mermaid"');
+});
+
+test("a linked mermaid fence is a lazily loaded frame; a link of another kind leaves it code", async () => {
+  const { html, artifacts } = await renderWithArtifacts([
+    withArtifacts(
+      41,
+      ["```mermaid\ngraph TD\n  A --> B\n```\n"],
+      [[0, 0, "mermaid"]],
+    ),
+    withArtifacts(42, ["```mermaid\ngraph TD\n  C --> D\n```\n"], [[0, 0]]),
+  ]);
+
+  expect(artifacts).toEqual([
+    {
+      url: "/artifacts/brisk-otter/41/0/0/tag",
+      lang: "mermaid",
+      source: "graph TD\n  A --> B",
+    },
+  ]);
+  expect(html).toContain('title="Mermaid diagram"');
+  expect(html).toContain('loading="lazy"');
+  expect(html).toContain("C --&gt; D");
 });
 
 test("user, tool-result, and live text fences never render as artifacts", async () => {

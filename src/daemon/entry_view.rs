@@ -18,7 +18,7 @@
 //!   N of M bytes" rather than inferring it from a length.
 //!
 //! And two additions. A committed assistant entry's view carries `artifacts`, the
-//! signed links of its `html-artifact` fences (`artifacts.rs`, docs/artifacts.md),
+//! signed links of its artifact fences (`artifacts.rs`, docs/artifacts.md),
 //! when the caller names the session that signs them ([`EntryView::with_artifacts`]).
 //! A result's view carries `selection: {total_lines, kept_lines}`
 //! — the line arithmetic of the verdict against the whole `content`, computed here
