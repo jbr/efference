@@ -410,14 +410,14 @@ fn the_artifacts_guide_lists_the_built_in_libraries() {
         .collect();
     listed.sort_unstable();
     listed.dedup();
-    let built_in: Vec<&str> = crate::daemon::artifacts::LIBRARIES
+    let built_in: Vec<&str> = crate::daemon::artifacts::libraries::LIBRARIES
         .iter()
         .map(|library| library.name)
         .collect();
     assert_eq!(listed, built_in, "efference.load names in the guide");
     // A version may wrap across the guide's lines.
     let flat = guide.split_whitespace().collect::<Vec<_>>().join(" ");
-    for library in crate::daemon::artifacts::LIBRARIES {
+    for library in crate::daemon::artifacts::libraries::LIBRARIES {
         assert!(
             flat.contains(library.version),
             "the guide names {} {}",

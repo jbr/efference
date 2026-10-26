@@ -249,7 +249,7 @@ async fn built_in_libraries_load_as_one_script_and_a_missing_one_names_the_rest(
     let vega = server.get("/artifacts/_efference/lib/vega-embed").await;
     vega.assert_status(200);
     // vega-embed's build expects `vega` and `vegaLite` defined before it runs.
-    let embed = LIBRARIES
+    let embed = libraries::LIBRARIES
         .iter()
         .find(|library| library.name == "vega-embed")
         .unwrap();
@@ -259,7 +259,7 @@ async fn built_in_libraries_load_as_one_script_and_a_missing_one_names_the_rest(
         .map(|(global, build)| build.contains(&format!(").{global}=")))
         .collect();
     assert_eq!(defines, [true, true, true], "builds in dependency order");
-    assert_eq!(vega.body(), library_script(embed));
+    assert_eq!(vega.body(), libraries::library_script(embed));
     assert!(
         vega.body()
             .ends_with("\n;efference.__loaded(\"vega-embed\", vegaEmbed);\n")
