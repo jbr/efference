@@ -355,6 +355,7 @@ export function ResultBlock({
       !(shown.content_elided && view.body.kind === "text"));
   const ranges = (
     <ResultRanges
+      variant="transcript"
       tool={tool}
       raw={shown}
       wire={wire}

@@ -12,156 +12,25 @@ import "./inspector/Layout.css";
 // cordon's renderers rather than growing its own.
 
 import { useEffect, useMemo, useState } from "react";
-import type {
-  CallId,
-  Process,
-  SelectionLines,
-  Keep,
-  RawResult,
-  ToolOutcome,
-  ToolTelemetry,
-  WireState,
-} from "../api/types.ts";
+import type { CallId, Process } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
 import { assistantView } from "../session/assistant.ts";
 import { CommandView } from "./inspector/CommandView.tsx";
+import { ForkPanel, TelemetryPanel } from "./inspector/DetailPanels.tsx";
 import { ArgsTab } from "./ArgsTab.tsx";
 import { CallSignature } from "./CallHead.tsx";
 import { ResultBody, ResultImages } from "./ToolBlocks.tsx";
-import { resultRender, wireLabel } from "../render/parse.ts";
+import { resultRender } from "../render/parse.ts";
 import { callView } from "./signature.ts";
 import { layoutSignature } from "./signatureLayout.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
 import { useWholeResult } from "./wholeResult.ts";
-import { rustLines } from "../render/triage.ts";
 import { fetchProcessOutput } from "../api/http.ts";
 
 // Generic tools retain result/args/raw/spot views; file operations use captured
 // content and navigate to explicitly current-file context (docs/web-client.md).
 type Tab = "result" | "args" | "raw" | "spot";
 const TABS: Tab[] = ["result", "args", "raw", "spot"];
-
-const keepLabel = (keep: Keep): string => {
-  if (keep === "All") return "All";
-  if (keep === "None") return "None";
-  return `Ranges(${keep.Ranges.map(([a, b]) => `${a}..${b}`).join(", ")})`;
-};
-
-const surfacedLines = (keep: Keep, total: number): number => {
-  if (keep === "All") return total;
-  if (keep === "None") return 0;
-  return keep.Ranges.reduce((n, [a, b]) => n + (b - a + 1), 0);
-};
-
-/** "What the fork returned": the verdict's account of the result — raw size,
- * what survived, the keep, the wire state (docs/triage.md is the
- * mechanism; this is its audit view). */
-function ForkPanel({
-  raw,
-  wire,
-  selection,
-}: {
-  raw: RawResult;
-  wire: WireState;
-  selection?: SelectionLines;
-}) {
-  // The daemon's count when it sent one; the local split is only right when the
-  // content on hand is whole.
-  const total = selection?.total_lines ?? rustLines(raw.content).length;
-  const rows: [string, string][] = [
-    ["raw", `${total} ${total === 1 ? "line" : "lines"}`],
-  ];
-  if (typeof wire === "object" && "Triaged" in wire) {
-    rows.push([
-      "surfaced",
-      `${selection?.kept_lines ?? surfacedLines(wire.Triaged.keep, total)} lines`,
-    ]);
-    rows.push(["keep", keepLabel(wire.Triaged.keep)]);
-  }
-  rows.push(["wire", wireLabel(wire)]);
-  return (
-    <div className="fork-panel">
-      <div className="fork-title">what the fork returned</div>
-      <div className="fork-grid">
-        {rows.map(([k, v]) => (
-          <div className="fork-row" key={k}>
-            <span className="dim">{k}</span>
-            <span className={k === "keep" ? "call-type" : undefined}>{v}</span>
-          </div>
-        ))}
-      </div>
-      {typeof wire === "object" &&
-        "Triaged" in wire &&
-        wire.Triaged.note !== null && (
-          <div className="note">
-            <span className="note-glyph">✧</span>
-            <span className="note-text">{wire.Triaged.note}</span>
-          </div>
-        )}
-    </div>
-  );
-}
-
-const OUTCOME_LABEL: Record<ToolOutcome, string> = {
-  applied: "applied",
-  rejected: "rejected",
-  harnesserror: "harness error",
-};
-
-const formatBytes = (n: number): string =>
-  n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KiB`;
-
-/** "What the call cost": the harness's own measurement of the dispatch
- * (docs/tools.md), as distinct from `ForkPanel`, which reports what the fork did
- * to the result afterwards. `duration_ms` excludes the permission cascade, so a
- * call that waited at a gate does not read as a slow call; `result_bytes` is the
- * raw size before triage, which is what makes the pair with the fork panel
- * legible. */
-function TelemetryPanel({ telemetry }: { telemetry: ToolTelemetry }) {
-  const rows: [string, string][] = [
-    ["outcome", OUTCOME_LABEL[telemetry.outcome] ?? telemetry.outcome],
-    ["duration", `${telemetry.duration_ms} ms`],
-    ["result", formatBytes(telemetry.result_bytes)],
-  ];
-  if (telemetry.images !== undefined && telemetry.images > 0) {
-    rows.push([
-      "images",
-      `${telemetry.images} ${telemetry.images === 1 ? "block" : "blocks"}`,
-    ]);
-  }
-  const bash = telemetry.bash;
-  if (bash !== undefined) {
-    // Absent `exit_status` on a completed foreground command is exit zero — the
-    // log omits the field rather than writing "0", so the label is restored here.
-    rows.push([
-      "exit",
-      bash.background ? "backgrounded" : (bash.exit_status ?? "0"),
-    ]);
-  }
-  const edit = telemetry.edit;
-  if (edit !== undefined) {
-    if (edit.operation !== undefined) rows.push(["operation", edit.operation]);
-    if (edit.anchor_bytes !== undefined) {
-      rows.push(["anchor", formatBytes(edit.anchor_bytes)]);
-    }
-    if (edit.content_bytes !== undefined) {
-      rows.push(["content", formatBytes(edit.content_bytes)]);
-    }
-  }
-  return (
-    <div className="fork-panel">
-      <div className="fork-title">what the call cost</div>
-      <div className="fork-grid">
-        {rows.map(([k, v]) => (
-          <div className="fork-row" key={k}>
-            <span className="dim">{k}</span>
-            <span>{v}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /** What the command itself printed, for the two cases where the call's
  * `ToolResult` is not it (docs/process-monitor.md):
@@ -332,7 +201,23 @@ export function Inspector({
         : null,
     [node.name, result],
   );
-  const retained = useRetainedOutput(processId, processOutput, processLost);
+  // A foreground command's committed result *is* its output, so the handoff
+  // test reads the result rather than the process mapping: every bash call
+  // spawns into the one process namespace (docs/process-monitor.md), so having a
+  // process id says nothing about where the output lives. The mapping stands in
+  // for the handle until the telemetry row that records it lands.
+  const handle =
+    recordedHandle ?? (processId !== undefined ? `p#${processId}` : undefined);
+  const backgroundHandoff =
+    isHandoff(result?.raw.content ?? "", handle) ||
+    node.telemetry?.bash?.background === true ||
+    view?.shell?.background === true;
+  const commandResult = !backgroundHandoff ? result : null;
+  // The process monitor holds a capture only while the result is not the
+  // output: a foreground command is dropped from the registry when its call
+  // completes, so asking after it answers 404 by design.
+  const captureId = commandResult === null ? processId : undefined;
+  const retained = useRetainedOutput(captureId, processOutput, processLost);
   // The live tail wins where both exist: for a foreground call it is the buffer
   // that is still growing, while the capture read is a point-in-time snapshot.
   const output: { label: string; read: OutputRead } | null =
@@ -344,11 +229,6 @@ export function Inspector({
       : retained !== null
         ? { label: `p#${processId} output`, read: retained }
         : null;
-  const backgroundHandoff =
-    isHandoff(result?.raw.content ?? "", recordedHandle) ||
-    processId !== undefined ||
-    node.telemetry?.bash?.background === true ||
-    view?.shell?.background === true;
   const fileInspection = fileOperation(node.name);
   const filePaths = call ? openablePaths(call.name, call.input) : [];
   const commandInspection =
@@ -381,7 +261,7 @@ export function Inspector({
         ) : commandInspection ? (
           <strong>
             {command.trim().split(/\s+/)[0]}
-            {processId !== undefined && ` · p#${processId}`}
+            {handle !== undefined && ` · ${handle}`}
           </strong>
         ) : (
           <span className="inspector-title">inspecting</span>
@@ -445,14 +325,17 @@ export function Inspector({
               <CommandView
                 key={node.callId}
                 process={process}
-                processId={processId}
+                processId={captureId}
                 command={command}
                 running={liveOutput !== undefined && result === null}
-                completed={result !== null && !backgroundHandoff}
-                output={
-                  output?.read.output ??
-                  (!backgroundHandoff ? (result?.raw.content ?? "") : "")
+                handedOff={result !== null && backgroundHandoff}
+                result={
+                  commandResult !== null && rendered !== null
+                    ? { ...commandResult, tool: node.name, rendered }
+                    : undefined
                 }
+                telemetry={node.telemetry}
+                output={output?.read.output ?? ""}
                 lost={output?.read.lost ?? 0}
               />
             ) : rendered !== null ? (
@@ -526,13 +409,17 @@ export function Inspector({
         {fileInspection && call && view && (
           <ArgsTab name={call.name} input={call.input} intent={view.intent} />
         )}
-        {(commandInspection || fileInspection) && result !== null && (
-          <Disclosure label="Raw tool result">
-            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {result.raw.content}
-            </pre>
-          </Disclosure>
-        )}
+        {/* A finished command's result is already the drawer's body; the
+            raw disclosure is for a result that is not the output (a
+            handoff) and for file operations, whose body is a capture. */}
+        {(fileInspection || (commandInspection && commandResult === null)) &&
+          result !== null && (
+            <Disclosure label="Raw tool result">
+              <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {result.raw.content}
+              </pre>
+            </Disclosure>
+          )}
         {(commandInspection || fileInspection) && node.spot !== null && (
           <Disclosure label="Permission verdict">
             <p>

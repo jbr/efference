@@ -6,17 +6,22 @@ import { RangeContent } from "./RangeContent.tsx";
 import { mergeRanges } from "./lineRanges.ts";
 
 /** Transcript expansion stays local; raw coordinates remain the verdict's
- * coordinates even when tool framing is removed (docs/web-client.md). */
+ * coordinates even when tool framing is removed (docs/web-client.md). The
+ * transcript variant is borderless and opens a long selection at its first ten
+ * kept lines; the inspector's opens every kept line, since opening the
+ * inspector is the request for the whole result. */
 export const ResultRanges = memo(function ResultRanges({
   tool,
   raw,
   wire,
   lang,
+  variant,
 }: {
   tool: string | null;
   raw: RawResult;
   wire: WireState;
   lang: string | null;
+  variant?: "transcript";
 }) {
   const diff =
     !raw.is_error && tool !== null && isDiffTool(tool)
@@ -39,7 +44,7 @@ export const ResultRanges = memo(function ResultRanges({
     rows.length,
   );
   const initial =
-    wire === "Pending" || selected.length <= 20
+    variant !== "transcript" || wire === "Pending" || selected.length <= 20
       ? retained
       : mergeRanges(
           selected.slice(0, 10).map((n) => [n, n]),
@@ -48,7 +53,7 @@ export const ResultRanges = memo(function ResultRanges({
   const classes = new Map(diff?.map(([n, line]) => [n, `diff-${line.kind}`]));
   return (
     <RangeContent
-      variant="transcript"
+      variant={variant}
       text={rows.length ? rows.map(([, line]) => line).join("\n") + "\n" : ""}
       numbers={rows.map(([n]) => n)}
       retained={retained}

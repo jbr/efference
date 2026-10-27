@@ -1842,28 +1842,44 @@ attribution. With no definition at all the tab renders exactly what it rendered
 before any of this — the sent arguments, unglossed, with no error surface and no
 retry spinner.
 
-Historical operation and explicitly current-file context are separate views in the same sidebar. The `result` and `raw` tabs also carry **the command's own output**, under
-whatever the committed result showed, for the two cases where a `ToolResult` is
-not the output ([process-monitor.md](process-monitor.md)):
+Historical operation and explicitly current-file context are separate views in the same sidebar.
+
+A shell command's inspection (`ui/inspector/CommandView.tsx`) has no tabs: a
+status line, the command, and **the command's own output**, from whichever of
+three places holds it ([process-monitor.md](process-monitor.md)):
 
 - **A call still running** has no committed result at all. Its live tail is
   already in the store as `streaming.toolOutput[callId]` — the transcript's
-  inline peek renders it — and the drawer reads the same buffer instead of
-  saying "no result yet".
+  inline peek renders it — and the drawer reads the same buffer, following the
+  tail until the reader scrolls away.
+- **A call that finished in the foreground** has its output as its committed
+  result. The drawer renders it through the transcript's `ResultRanges`: the
+  raw output whole while triage runs, then the verdict's kept lines with the
+  triager's note above them and every omitted stretch an expandable gap — the
+  shape a captured read takes, with every kept line open at first rather than
+  the transcript's first ten. The status line comes from the call's telemetry
+  (exit status, duration). Nothing is asked of the process monitor: it drops a
+  foreground entry when the call completes, so the process id every bash call
+  carries does not, by itself, mean the output is elsewhere.
 - **A backgrounded call**'s committed result is the *handoff* result naming
   `p#<n>`, not the output; the output lives in the process monitor's retained
-  capture. The drawer reaches it through the call↔process mapping: the daemon
-  carries the spawning `call_id` on each process, and `store.ts` folds every
-  pair it has seen into `session.processCalls` — kept after the process leaves
-  the level-triggered `processes` topic, since the capture outlives the exit and
-  the id is how it is read. While the process is live the store's own
+  capture. Whether a result is a handoff is read off the result — the
+  telemetry's `background`, the call's own `background: true`, or the handoff
+  prose naming the handle — never off the existence of a process id. The drawer
+  reaches the capture through the call↔process mapping: the daemon carries the
+  spawning `call_id` on each process, and `store.ts` folds every pair it has
+  seen into `session.processCalls` — kept after the process leaves the
+  level-triggered `processes` topic, since the capture outlives the exit and the
+  id is how it is read. While the process is live the store's own
   `processOutput` buffer is used; once it has exited the drawer reads
-  `GET /processes/:id/output` directly. A client that connected after the exit
-  never saw the row and has no mapping — the registry is ephemeral either way.
+  `GET /processes/:id/output` directly, and the status line reads
+  `GET /processes/:id`. A client that connected after the exit never saw the row
+  and falls back to the handle on the call's telemetry.
 
 A capture that hit the retention cap says so — "output incomplete; N bytes
 dropped at the retention cap", from the route's `lost` — rather than presenting a
-truncated capture as the whole output.
+truncated capture as the whole output. Under Details, the raw tool result is
+offered only where it is not already the body: a handoff, or a file operation.
 
 Below the tabs,
 **what the fork returned**: the raw line count, the surfaced count computed

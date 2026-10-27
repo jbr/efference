@@ -51,10 +51,8 @@
 .command-inspection > .dim,
 .command-output-heading {
   font-family: var(--font-sans);
-}
-.command-output-heading {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
 }

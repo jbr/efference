@@ -166,6 +166,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Fixed
 
+- Web: a command's inspector shows its output once it finishes in the foreground — the triaged result with its note and expandable omitted lines, the same shape a captured read takes, and exit status and duration from its telemetry — where a command the client had watched run showed "Process state unavailable" and no output, because its process id was read as a background handoff (docs/web-client.md).
 - Setup's "Variable name" prompts accept only an environment-variable name and refuse a pasted key (a known provider prefix, or 32+ characters with no `_`) without echoing it, so a key typed at the wrong prompt is no longer written to config.toml as a variable name.
 - A stdio MCP server mounts without reading the secret store, which only an HTTP server's sign-in needs, so a machine with no usable store can run a project that declares one (docs/mcp-auth.md).
 - A failed start prints its error as `efference: …` lines rather than Rust's quoted debug form with escaped newlines.
