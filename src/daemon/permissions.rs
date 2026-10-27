@@ -7,15 +7,21 @@
 //! outcome. Tightening is one-way — a file already stricter stays as its mode
 //! is — because a mode the operator set deliberately is not the daemon's to
 //! widen.
+//!
+//! A project's `.efference/` gets the same owner-only modes from the sessions
+//! that use it, not from boot ([`ensure_project_base`], [`tighten_project_base`]):
+//! the directory's mode is what protects the session directories, logs, usage
+//! records, attachments, and worktrees beneath it, and a worktree's checked-out
+//! files keep the modes git gave them (docs/state-store.md).
 
 use std::path::Path;
 
 /// Owner-only mode for the state directory and the host socket: nothing
 /// another local account can traverse or connect to.
-const DIR_MODE: u32 = 0o700;
+pub(crate) const DIR_MODE: u32 = 0o700;
 
 /// Owner read/write for the state files.
-const FILE_MODE: u32 = 0o600;
+pub(crate) const FILE_MODE: u32 = 0o600;
 
 /// The files beside the control socket that hold user state or secrets.
 /// `state.db` is the current store (the name of `crate::state::RELATIVE_PATH`)
@@ -46,6 +52,36 @@ pub(crate) fn tighten_state_dir(dir: &Path) {
 /// channel: connecting to a socket needs write permission.
 pub(crate) fn tighten_socket(socket: &Path) {
     tighten(socket, DIR_MODE);
+}
+
+/// Make sure a project's `.efference/` exists and is owner-only before a session
+/// directory is made inside it: created `0700` when absent, tightened when an
+/// earlier run, or another tool, left it more open. The project directory
+/// above it is created if missing and otherwise left as it is.
+pub(crate) fn ensure_project_base(base: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    if let Some(project) = base.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(project)?;
+    }
+    match std::fs::DirBuilder::new().mode(DIR_MODE).create(base) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    tighten_project_base(base);
+    Ok(())
+}
+
+/// Tighten an existing project `.efference/` — what a session opening one does.
+/// Its contents are not walked: the directory's mode is the boundary.
+pub(crate) fn tighten_project_base(base: &Path) {
+    tighten(base, DIR_MODE);
+}
+
+/// Tighten a file efference just wrote that it did not create with
+/// [`FILE_MODE`] (a copy carries its source's mode; a plain write takes the umask's).
+pub(crate) fn tighten_file(path: &Path) {
+    tighten(path, FILE_MODE);
 }
 
 /// Intersect `path`'s current mode with `target`, so a stricter mode — a file

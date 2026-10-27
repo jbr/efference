@@ -115,10 +115,12 @@ impl Log {
     /// what stops a second run here — it is what makes *every* sink hold one,
     /// including the one [`Log::open`] takes on a log that already exists.
     pub fn create(path: impl AsRef<Path>, metadata: Option<SessionMetadata>) -> io::Result<Self> {
+        use std::os::unix::fs::OpenOptionsExt;
         let path = path.as_ref();
         let file = OpenOptions::new()
             .write(true)
             .create_new(true)
+            .mode(crate::daemon::permissions::FILE_MODE)
             .open(path)
             .map_err(|error| {
                 io::Error::new(error.kind(), format!("{}: {error}", path.display()))

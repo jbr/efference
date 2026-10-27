@@ -137,7 +137,14 @@ checks as any other ([Permissions](permissions.md)).
 | `<project>/.efference/<session>/` | The session's log, its configuration, its usage record, and attached files | Your project's content and the agent's work |
 | `<project>/efference.toml` | The project's settings. A value written here literally is stored in plain text, and copied into each session's directory. | Only if you put one there; use an `op://` reference instead |
 <!-- src: src/secrets.rs::inference_name, oauth_name, mcp_name; src/auth.rs::ROOT_ITEM (module doc); src/setup/render.rs::write (0600 on create); src/state.rs; src/history.rs; src/catalog/store.rs; src/remembered.rs; src/session_ids.rs; src/push.rs::SCHEMA; src/devices.rs::SCHEMA; src/sign_ins.rs::SCHEMA; src/boot.rs::LOG_NAME, CONFIG_NAME; src/daemon/metrics/usage_line.rs; src/attachments.rs; src/boot/scaffold.rs -->
-<!-- TODO: blocked on backlog/local-file-modes.md — today session directories and logs are created with default permissions (readable by other local accounts under a 022 umask). State the modes once that ships. -->
+
+A project's `.efference/` directory is readable only by you (mode `0700`), and the files
+efference writes in a session's directory — the log, the configuration copy, the usage
+record, attached files — are `0600`. The directory is what keeps other accounts out of
+everything below it, including session worktrees, whose checked-out files keep their
+ordinary modes. An existing `.efference/` is tightened the next time a session starts
+or resumes in it, and a stricter mode is left alone.
+<!-- src: src/daemon/permissions.rs::ensure_project_base, tighten_project_base; src/boot/mint.rs::mint_session_dir; src/persist.rs::Log::create -->
 
 A ChatGPT connection that reuses Codex's sign-in reads Codex's own file,
 `~/.codex/auth.json`; efference never writes it.

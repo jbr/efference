@@ -118,6 +118,7 @@ pub struct Arrival {
 /// a colliding name gets to replace. Creates the directory if it does not exist — the store is
 /// an ordinary folder and a session that never attaches anything never needs one.
 pub fn store(dir: &Path, suggested: &str, bytes: &[u8]) -> io::Result<PathBuf> {
+    use std::os::unix::fs::OpenOptionsExt;
     std::fs::create_dir_all(dir)?;
     let (stem, ext) = split_extension(&sanitize(suggested));
     for n in 1..1000 {
@@ -131,6 +132,7 @@ pub fn store(dir: &Path, suggested: &str, bytes: &[u8]) -> io::Result<PathBuf> {
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
+            .mode(crate::daemon::permissions::FILE_MODE)
             .open(&path)
         {
             Ok(mut file) => {

@@ -74,9 +74,10 @@ Connections over the socket are not authenticated. Any program that can open the
 has full control of every session in the host, including starting one, and — when the
 host has a web listener — can obtain a sign-in for it. Treat access to the socket like
 access to your shell. The host makes the socket and `~/.efference` owner-only when it
-starts, so another account on the machine cannot connect.
-<!-- src: src/daemon/handler.rs::Transport::Socket; src/daemon/tcp/routes.rs::enrollment_routes; src/daemon/permissions.rs::tighten_state_dir, tighten_socket -->
-<!-- TODO: blocked on backlog/local-file-modes.md — a project's .efference/ is created under the umask today. Once it ships, say so here. -->
+starts, so another account on the machine cannot connect. A project's `.efference/`
+directory, which holds its session logs, is owner-only too: efference creates it that way,
+and makes an existing one that way the next time a session starts or resumes in it.
+<!-- src: src/daemon/handler.rs::Transport::Socket; src/daemon/tcp/routes.rs::enrollment_routes; src/daemon/permissions.rs::tighten_state_dir, tighten_socket, ensure_project_base, tighten_project_base -->
 
 A host can also listen on TCP, for browsers. That listener requires a sign-in for
 everything except the web client's own files and the sign-in request itself

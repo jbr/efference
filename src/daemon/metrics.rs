@@ -326,9 +326,11 @@ impl Session {
         if let Ok(lines) = UsageLine::read(path) {
             self.seed_clocks(&lines);
         }
+        use std::os::unix::fs::OpenOptionsExt;
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
+            .mode(crate::daemon::permissions::FILE_MODE)
             .open(path)
         {
             Ok(file) => *self.usage_log.lock().unwrap() = Some(io::BufWriter::new(file)),

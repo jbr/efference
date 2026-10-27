@@ -133,6 +133,7 @@ pub(super) fn snapshot_config(origin: &LoadedConfig, session_config: &Path) -> R
                 log::debug!("config: scaffolded {}", session_config.display());
             }
         }
+        crate::daemon::permissions::tighten_file(session_config);
     } else {
         log::debug!("config: reusing {}", session_config.display());
     }

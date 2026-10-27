@@ -248,7 +248,12 @@ async fn resume_minting(
     .await?;
 
     // The one step that writes (a torn tail is repaired), so it comes after every step
-    // that can refuse. Its lock refuses a second writer on this log.
+    // that can refuse. Its lock refuses a second writer on this log. The project's
+    // `.efference/` is tightened with it, so a refused resume changes no mode either
+    // (docs/state-store.md).
+    if let Some(base) = session_dir.parent() {
+        crate::daemon::permissions::tighten_project_base(base);
+    }
     let opened = Log::open(&log_path).map_err(std::io::Error::from)?;
     let mut log = opened.log;
     if let Some(repair) = &opened.repaired {

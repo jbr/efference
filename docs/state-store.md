@@ -81,6 +81,17 @@ picks, subscriptions, the device labels — so the tightening is part of boot ra
 of each file's creation. It is one-way (a file already stricter stays so), skips absent
 files, and warns without failing boot when a mode cannot be changed.
 
+A project's `.efference/` is owner-only by the same rule, applied by the sessions that
+use it rather than at boot (`src/daemon/permissions.rs`, called from `src/boot/mint.rs` and
+`src/boot/resume.rs`). Minting a session creates `.efference/` `0700` when absent and
+tightens it when it exists; resuming a session tightens it before the log is reopened. The
+session directory is created `0700`, and the files efference writes in it — the log
+(and a torn tail's saved fragment), the `config.toml` snapshot, `usage.jsonl`, attachments
+— are `0600`. The directory's mode is what protects everything beneath it, so existing
+session directories and logs are not walked, and a worktree under `.efference/worktrees/`
+keeps the modes git gives its checked-out files. The control socket is not peer-checked:
+its owner-only mode is the boundary ([control-channel.md](control-channel.md)).
+
 ## Concurrency
 
 Every daemon under the user shares this file, and writes to it at the same time — a

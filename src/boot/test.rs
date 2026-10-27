@@ -3,6 +3,8 @@ use super::*;
 use crate::worktree::testing::{commit, git};
 use std::path::Path;
 
+mod modes;
+
 /// The re-serve guard (docs/control-channel.md): a fresh name mints its dir, and a name whose
 /// dir already exists is refused rather than opening a second seq space into the same log. The
 /// error names the dir and the log inside it, so the operator can find the prior session.

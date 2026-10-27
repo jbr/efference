@@ -93,12 +93,17 @@ impl Drop for Minted {
 ///
 /// `create_dir` rather than `create_dir_all` on the leaf: the leaf creation is the exclusive
 /// one, so two creations racing the same name cannot both pass the check. The parent
-/// (`.efference/`) is still created recursively — it is shared by every session.
+/// (`.efference/`) is shared by every session: it is created owner-only when absent and
+/// tightened when it exists (`daemon::permissions`, docs/state-store.md).
 pub fn mint_session_dir(session_dir: &Path) -> Result<(), Error> {
     if let Some(parent) = session_dir.parent() {
-        std::fs::create_dir_all(parent)?;
+        crate::daemon::permissions::ensure_project_base(parent)?;
     }
-    match std::fs::create_dir(session_dir) {
+    use std::os::unix::fs::DirBuilderExt;
+    match std::fs::DirBuilder::new()
+        .mode(crate::daemon::permissions::DIR_MODE)
+        .create(session_dir)
+    {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(format!(
             "session dir {} already exists — creation mints a new session and does not resume one. \

@@ -744,7 +744,7 @@ mod frontend;
 mod host;
 pub mod island;
 mod paths;
-mod permissions;
+pub(crate) mod permissions;
 mod review;
 mod runtime;
 pub mod slug;
