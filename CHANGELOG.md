@@ -164,6 +164,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Fixed
 
+- Setup's "Variable name" prompts accept only an environment-variable name and refuse a pasted key (a known provider prefix, or 32+ characters with no `_`) without echoing it, so a key typed at the wrong prompt is no longer written to config.toml as a variable name.
 - A stdio MCP server mounts without reading the secret store, which only an HTTP server's sign-in needs, so a machine with no usable store can run a project that declares one (docs/mcp-auth.md).
 - A failed start prints its error as `efference: …` lines rather than Rust's quoted debug form with escaped newlines.
 - The secret store opens when it is first used, not at every start: a Linux host with no usable Secret Service (no session bus, none on the bus, or a locked keyring with nobody to unlock it) starts on environment-variable keys, and an item it does need fails promptly with an error naming the item; setup still asks the store up front before offering to save a key there (docs/secrets.md).

@@ -331,14 +331,7 @@ async fn reveal_and_switch_to_env<P: Prompter, Q: Probe>(
         }
     };
     prompter.say(Tone::Note, &format!("{item}: {secret}"));
-    let variable = loop {
-        let typed = prompter.text("Variable name", None)?.trim().to_string();
-        if typed.is_empty() || typed.contains('=') {
-            prompter.say(Tone::Bad, "A variable name is nonempty and has no '='.");
-            continue;
-        }
-        break typed;
-    };
+    let variable = crate::setup::flow::ask_variable_name(prompter, None)?;
     draft.record(Change::SetAuth {
         name: name.to_string(),
         auth: AuthSource::Env {

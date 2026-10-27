@@ -275,9 +275,11 @@ A ChatGPT connection that reuses Codex's sign-in reads Codex's own file,
 `~/.codex/auth.json`; efference never writes it.
 <!-- src: src/api/endpoint.rs::codex_cached_credentials, codex_auth_path -->
 
-Two places a key can still reach a file by accident: setup's "Variable name" prompt
-accepts any text, so a key pasted there is written to `config.toml` as a variable name;
-and a provider's error message, printed by the host, lands in a standalone host's log file
-at `~/.efference/islands/<pid>/host.log` if the provider quotes the key back.
-<!-- src: src/setup/flow.rs::api_key_source (only empty or '=' rejected); src/api/client/send.rs::open_error; src/bin/efference/island.rs::Island::launch (stderr to host.log) -->
+One place a key can still reach a file by accident: a provider's error message, printed
+by the host, lands in a standalone host's log file at `~/.efference/islands/<pid>/host.log`
+if the provider quotes the key back. Setup's "Variable name" prompt accepts only a
+portable name (letters, digits and `_`, not starting with a digit) and refuses text that
+looks like a key, without repeating it, so a key pasted there is not written to
+`config.toml`.
+<!-- src: src/setup/flow/variable.rs::ask_variable_name; src/api/client/send.rs::open_error; src/bin/efference/island.rs::Island::launch (stderr to host.log) -->
 <!-- Not planned (backlog/parked/config-grant-written-before-masking.md): an approved grant is written to the session config before masking; a secret in a command has already reached the provider. -->

@@ -14,6 +14,8 @@ use super::*;
 
 mod chatgpt;
 pub(super) use chatgpt::{chatgpt_source, codex_cache_source, oauth_source};
+mod variable;
+pub(super) use variable::ask_variable_name;
 
 /// Run the questions against `existing` and return what to change. Says what it
 /// finds as it goes; the caller renders and writes the result.
@@ -287,17 +289,7 @@ pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
     if prompter.select("Where will the API key come from?", &choices)? == 1 {
         return keychain_source(prompter, probe, target, connection).await;
     }
-    let variable = loop {
-        let variable = prompter
-            .text("Variable name", Some(default_key))?
-            .trim()
-            .to_string();
-        if variable.is_empty() || variable.contains('=') {
-            prompter.say(Tone::Bad, "A variable name is nonempty and has no '='.");
-            continue;
-        }
-        break variable;
-    };
+    let variable = ask_variable_name(prompter, Some(default_key))?;
     let key = match probe.env_var(&variable) {
         Some(value) => {
             prompter.say(Tone::Good, &format!("{variable} is set in this shell."));

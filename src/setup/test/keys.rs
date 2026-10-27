@@ -54,6 +54,58 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
     assert!(parsed.is_ok());
 }
 
+/// A key pasted at the variable-name prompt is refused with the key-shaped
+/// line, an ordinary bad name with the plain one, and neither line repeats what
+/// was typed. The prompt asks again until it gets a portable name.
+#[tokio::test]
+async fn variable_name_prompt_refuses_a_pasted_key() {
+    const PASTED: &str = "sk-ant-api03-abcdefghijklmnop";
+    let probe = Table {
+        env: BTreeMap::from([("ANTHROPIC_API_KEY".to_string(), "sk-real".to_string())]),
+        accepted_keys: strings(&["sk-real"]),
+        known_models: strings(&["claude-sonnet-4-5"]),
+        ..Default::default()
+    };
+    let (draft, script) = run_script(
+        vec![
+            Answer::Pick("Anthropic"),
+            Answer::Type(""),
+            Answer::Pick("An environment variable"),
+            Answer::Type(PASTED),
+            Answer::Type("abcdefghijklmnopqrstuvwxyz0123456789"),
+            Answer::Type("MY-KEY"),
+            Answer::Type("1KEY"),
+            Answer::Type("ANTHROPIC_API_KEY"),
+            Answer::No,
+        ],
+        &probe,
+        "",
+    )
+    .await;
+    let draft = draft.unwrap();
+    let said = |needle: &str| {
+        script
+            .transcript
+            .iter()
+            .filter(|line| line.starts_with("Bad:") && line.contains(needle))
+            .count()
+    };
+    assert_eq!(said("That looks like a key, not a variable name"), 2);
+    assert_eq!(said("A variable name is letters, digits and '_'"), 2);
+    assert!(
+        !script
+            .transcript
+            .iter()
+            .any(|line| line.contains("sk-ant") || line.contains("abcdefghijklmnop")),
+        "{:?}",
+        script.transcript
+    );
+    assert!(script.said("ANTHROPIC_API_KEY is set in this shell"));
+    let text = render("", &draft).unwrap();
+    assert!(text.contains(r#"auth = { kind = "env", key = "ANTHROPIC_API_KEY" }"#));
+    assert!(!text.contains("sk-ant"));
+}
+
 /// A key not in the shell can be pasted for the check alone: the probe sees it,
 /// the file never does.
 #[tokio::test]

@@ -391,6 +391,55 @@ auth = { kind = "env", key = "PLAIN_KEY" }
     );
 }
 
+/// The reveal path asks the same question through the same check: a key typed
+/// as the variable name is refused, and what was typed is not repeated.
+#[tokio::test]
+async fn reveal_refuses_a_key_typed_as_the_variable_name() {
+    let secrets = Secrets::in_memory();
+    secrets.set("inference:work", "sk-1").unwrap();
+    let probe = Table {
+        secrets: Some(secrets),
+        ..Default::default()
+    };
+    let existing = r#"
+[connections.work]
+provider = "anthropic"
+auth = { kind = "keychain" }
+"#;
+    let (draft, script) = run_script(
+        vec![
+            Answer::Pick("Connections"),
+            Answer::Pick("work (anthropic)"),
+            Answer::Pick("Edit"),
+            Answer::Pick("Reveal the key and switch to an environment variable"),
+            Answer::Type("sk-typed-by-mistake"),
+            Answer::Type("WORK_KEY"),
+            Answer::No,
+            Answer::Pick("Back"),
+            Answer::Pick("Done"),
+        ],
+        &probe,
+        existing,
+    )
+    .await;
+    let draft = draft.unwrap();
+    assert!(script.said("Bad: That looks like a key, not a variable name"));
+    assert!(
+        !script.said("sk-typed-by-mistake"),
+        "{:?}",
+        script.transcript
+    );
+    assert_eq!(
+        draft.edits,
+        vec![Change::SetAuth {
+            name: "work".into(),
+            auth: AuthSource::Env {
+                key: "WORK_KEY".into()
+            },
+        }]
+    );
+}
+
 /// The reverse move is reveal-then-switch, never a silent delete: the stored
 /// key is shown, the config switches to a variable, and the store item is
 /// left unless the operator separately asks to clear it.
