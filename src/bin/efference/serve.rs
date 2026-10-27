@@ -32,12 +32,13 @@ impl BindFlags {
 
 /// Validate the bind flags into a [`TcpBind`] (docs/web-bind.md), enforcing the
 /// operator posture at the flag boundary: plaintext only on loopback, TLS wants an
-/// explicit public name, and a bind without the machine root is refused rather than
-/// silently unauthenticated.
+/// explicit public name, and a bind without the machine root, read from `secrets`,
+/// is refused rather than silently unauthenticated.
 ///
 /// [`TcpBind`]: efference::daemon::TcpBind
 pub(crate) fn resolve_bind(
     flags: BindFlags,
+    secrets: &efference::secrets::Secrets,
 ) -> Result<Option<efference::daemon::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
     // An empty bind is the explicit "UDS-only" spelling: `--bind ""` overrides a
     // configured `[host] bind` (e.g. for a second concurrent host).
@@ -92,8 +93,9 @@ pub(crate) fn resolve_bind(
         }
     };
     // The bind's credentials all derive from the stored root (docs/web-bind.md):
-    // read it, or mint it if this is the first bind on this machine.
-    let root = efference::auth::Root::load(&efference::secrets::Secrets::detect())?;
+    // read it, or mint it if this is the first bind on this machine and the store
+    // is not the `[secrets]` commands.
+    let root = efference::auth::Root::load(secrets)?;
     efference::auth::Root::install(Some(root.clone()));
     Ok(Some(efference::daemon::TcpBind {
         addr,
@@ -361,16 +363,14 @@ pub(crate) async fn host(
         Some(socket) => socket,
         None => user_host_socket().ok_or("no HOME to place ~/.efference/host.sock under")?,
     };
+    let home = std::env::var_os("HOME").ok_or("no HOME to read ~/.efference/config.toml under")?;
     // An island takes no bind from the table (docs/operating.md): the machine's
     // bind belongs to the machine's host, and two islands would contend for
     // it. `--bind` still reaches one, since the operator named that address for
     // this launch alone.
-
     let bind_flags = if island {
         bind_flags
     } else {
-        let home =
-            std::env::var_os("HOME").ok_or("no HOME to read ~/.efference/config.toml under")?;
         bind_flags.over(efference::inference::HostConfig::load(Path::new(&home))?)
     };
     let owner = island.then(|| {
@@ -381,7 +381,12 @@ pub(crate) async fn host(
             std::process::exit(0);
         })
     });
-    let bind = resolve_bind(bind_flags)?;
+    // Shared rather than borrowed: a keychain-backed connection keeps the store
+    // to re-read its credential from when one expires (docs/transport.md). Every
+    // host reads `[secrets]`, an island included: it names where this user's
+    // secrets are, not the machine's bind.
+    let secrets = std::sync::Arc::new(efference::secrets::Secrets::configured(Path::new(&home))?);
+    let bind = resolve_bind(bind_flags, &secrets)?;
     if let Some(dir) = socket.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)?;
     }
@@ -398,9 +403,6 @@ pub(crate) async fn host(
     .try_init();
     let host_cwd = std::env::current_dir()?;
     let host_env = efference::env_table::EnvSnapshot::capture()?;
-    // Shared rather than borrowed: a keychain-backed connection keeps the store
-    // to re-read its credential from when one expires (docs/transport.md).
-    let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect());
     // Cloned before the registry consumes it: the host needs the same snapshot as
     // the baseline a session launched without one of its own inherits
     // (docs/env.md).

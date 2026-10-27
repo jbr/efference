@@ -14,7 +14,7 @@ one of two places:
 - **An environment variable**, read once, when the host starts. This suits a secrets
   manager that fills in variables for one command, such as 1Password's `op run` — for
   example, if you want to approve each launch that can spend money on inference.
-<!-- src: src/inference/credential.rs::load_credential; src/secrets.rs::Secrets::detect, native::DESCRIPTION; src/setup/flow.rs::api_key_source, keychain_source -->
+<!-- src: src/inference/credential.rs::load_credential; src/secrets.rs::Secrets::configured, detect, native::DESCRIPTION; src/setup/flow.rs::api_key_source, keychain_source -->
 
 A ChatGPT subscription has no key: setup either signs you in through the browser and keeps
 that sign-in in the keychain, or reuses the sign-in the Codex CLI already has.
@@ -40,12 +40,89 @@ it finds. A refusal for another reason, such as a spending limit, reads nothing.
 
 A Linux server usually has no Secret Service to keep keys in: no keyring program is
 installed, or its keyring stays locked because nobody signs in to a desktop. On a server
-like that, keep keys in environment variables. efference opens the keychain only when it
+like that, keep keys in environment variables, or name commands that keep efference's
+secrets somewhere else (the next section). efference opens the keychain only when it
 needs to read or write something there, so a host whose keys all come from environment
 variables starts without one. On such a server, a host with a connection whose key is in
 the keychain refuses to start, and its error names that connection and the keychain item
 it could not read.
-<!-- src: src/secrets.rs::Secrets::detect, native::open; src/bin/efference/serve.rs::refuse_broken_connections -->
+<!-- src: src/secrets.rs::Secrets::configured, detect, native::open; src/bin/efference/serve.rs::refuse_broken_connections -->
+
+### Secret commands
+
+Instead of the keychain, efference can keep its secrets with commands you name: a
+password manager's command-line tool, a cloud secrets service, or `systemd-creds`. This is
+the way to keep a ChatGPT or MCP server sign-in, or the web address's secret, on a server
+with no keychain. A `[secrets]` table in `~/.efference/config.toml` names a command that
+prints a secret (`get`), one that stores it (`set`), and optionally one that removes it
+(`delete`). With the table there, efference never opens the keychain: keys pasted into
+`efference setup`, sign-ins, and the web address's secret all go through the commands, and
+a connection with `auth = { kind = "keychain" }` reads its key through them too.
+<!-- src: src/secrets/commands.rs::SecretCommands; src/secrets.rs::Secrets::configured, from_table; src/inference.rs::InferenceConfig (secrets); src/setup/probe.rs::LiveProbe::capture -->
+
+Each command is a program and its arguments, run directly rather than by a shell. `{name}`
+in any argument becomes the name of the secret, such as `oauth:codex` or `root`. The
+secret itself never appears in an argument: `set` receives it on standard input, and `get`
+prints it. `absent_status` is the exit status your tool gives when a secret does not
+exist; without it, a secret efference has not stored yet reads as a failure, so a first
+sign-in has nowhere to go.
+<!-- src: src/secrets/commands.rs::SecretCommands::get, set, delete, run, validate -->
+
+AWS Systems Manager Parameter Store, with the AWS CLI:
+
+```toml
+[secrets]
+get    = ["aws", "ssm", "get-parameter", "--with-decryption", "--query", "Parameter.Value", "--output", "text", "--name", "/efference/{name}"]
+set    = ["aws", "ssm", "put-parameter", "--type", "SecureString", "--overwrite", "--name", "/efference/{name}", "--value", "file:///dev/stdin"]
+delete = ["aws", "ssm", "delete-parameter", "--name", "/efference/{name}"]
+absent_status = 254
+```
+
+`pass`, which encrypts each secret with your GPG key. A host running as a service has no
+terminal to ask for a passphrase, so the key must have none, or `gpg-agent` must already
+hold it:
+
+```toml
+[secrets]
+get    = ["pass", "show", "efference/{name}"]
+set    = ["pass", "insert", "--multiline", "--force", "efference/{name}"]
+delete = ["pass", "rm", "--force", "efference/{name}"]
+absent_status = 1
+```
+
+1Password's `op`, keeping each secret as a document in a vault named `efference`. `set`
+edits the document if it exists and creates it if not:
+
+```toml
+[secrets]
+get    = ["op", "document", "get", "--vault", "efference", "{name}"]
+set    = ["sh", "-c", 'if op document get --vault efference "$1" </dev/null >/dev/null 2>&1; then exec op document edit --vault efference "$1" -; else exec op document create --vault efference --title "$1" -; fi', "sh", "{name}"]
+delete = ["op", "document", "delete", "--vault", "efference", "{name}"]
+absent_status = 1
+```
+
+`systemd-creds`, which encrypts each secret so that only your user, or root, can decrypt
+it, in a file under `~/.config/efference/credentials`. Its `--user` option is in systemd
+256 and later:
+
+```toml
+[secrets]
+get    = ["sh", "-c", 'f="$HOME/.config/efference/credentials/$1"; [ -e "$f" ] || exit 3; exec systemd-creds --user decrypt "$f" -', "sh", "{name}"]
+set    = ["sh", "-c", 'd="$HOME/.config/efference/credentials"; mkdir -p "$d" && exec systemd-creds --user encrypt - "$d/$1"', "sh", "{name}"]
+delete = ["sh", "-c", 'exec rm -f "$HOME/.config/efference/credentials/$1"', "sh", "{name}"]
+absent_status = 3
+```
+
+The last two run a short shell script, and pass `{name}` to it as an argument of its own
+(`$1`) rather than writing it into the script. The commands run with the host's
+environment, and a host started by a service manager may have a shorter `PATH` than your
+shell: if a program is not found, name it by its full path.
+<!-- src: src/secrets/commands.rs::run (argv run directly; {name} replaced per argument); AWS CLI return codes (docs.aws.amazon.com/cli/latest/topic/return-codes.html: 254, the service returned an error); pass(1); op document --help (2.39.0); systemd NEWS, CHANGES WITH 256 ("systemd-creds gained new options --user/--uid="); systemd-creds(1) -->
+
+A host does not create the web address's secret through the commands. Before the first
+`efference --host --bind`, run `efference auth rotate` once to store one; until then, a
+host with a bind refuses to start and says to run it.
+<!-- src: src/auth.rs::Root::load (RootError::Absent), Root::rotate; src/bin/efference/main.rs::rotate -->
 
 ### Keys in environment variables, with `op run`
 
@@ -134,14 +211,53 @@ through the operating system, and on Linux can read the Secret Service once it i
 unlocked; a command that reads a keychain item directly passes through the same permission
 checks as any other ([Permissions](permissions.md)).
 <!-- src: src/secrets.rs (module doc); src/policy.rs (no keychain special case) -->
+
+With secret commands, any program running as you can run the same `get` command,
+including a command the agent runs, which passes through the same permission checks. What
+stands in its way is whatever your tool asks for before it answers.
+<!-- src: src/secrets/commands.rs::run (inherits the host's environment and user); src/policy.rs (no special case) -->
 <!-- TODO: macOS item access depends on release signing (src/secrets.rs::identity_signed). -->
+
+### Secret commands, precisely
+
+`set` receives the secret exactly, with no newline added. Of what `get` prints, one
+trailing newline is removed, since most tools end their output with one; a secret is
+otherwise returned as printed, spaces included.
+<!-- src: src/secrets/commands.rs::SecretCommands::get, run -->
+
+`get` exiting 0 means the secret is what it printed, and exiting with `absent_status`
+means there is no such secret. Any other exit is an error, and the error efference reports
+names the secret, the program, its exit status, and its error output. `delete` exiting
+with `absent_status` counts as success: the secret is already gone.
+<!-- src: src/secrets/commands.rs::SecretCommands::is_absent, delete, succeeded -->
+
+Many tools give the same exit status for "not found" as for other failures: `op` exits 1
+for any error, `pass` exits 1 for several of its own errors as well, and `aws` exits 254
+for any error the service returns, such as a refused permission. For a sign-in, that
+costs at most a sign-in: a failed read taken for a missing one asks you to sign in again.
+For the web address's secret, creating a new one over a read that failed would sign out
+every browser, so a host never does; only `efference auth rotate` writes it, and it
+writes rather than deletes, so it needs no `delete` command.
+<!-- src: src/auth.rs::Root::load, Root::rotate, RootError; src/mcp/auth/credentials.rs::stored_credentials; src/inference/credential.rs::load_credential; password-store.sh (die exits 1; cmd_show); 1password.community "Exit code documentation" (op uses 0 and 1); AWS CLI return codes -->
+
+Without a `delete` command, the few operations that remove a secret fail, naming the
+secret for you to remove by hand: `--reauth` for an MCP server, and a connection renamed
+in `efference setup` or moved out of the store.
+<!-- src: src/secrets/commands.rs::SecretCommands::delete; src/boot/mcp_mount.rs::mount_all (reauth clear); src/setup/manage/credential.rs -->
+
+efference runs `get` each time it reads a secret: when the host starts, for each connection
+whose key or sign-in is stored; when a session starts with an MCP server that is reached
+over HTTP; before it refreshes a sign-in; and when a provider refuses a stored key. A tool
+that asks you to approve each read asks at each of these. efference sets no time limit on
+a command.
+<!-- src: src/inference/credential.rs::load_credential (keychain reload, oauth reload re-reads); src/boot/mcp_mount.rs::mount_one; src/mcp/auth/credentials.rs::stored_credentials; src/secrets/commands.rs (no cache, no timeout) -->
 
 ### What is stored where
 
 | Where | What | Secret? |
 | --- | --- | --- |
-| OS keychain, service `efference` | `inference:<connection>` (a pasted key), `oauth:<connection>` (a ChatGPT sign-in), `mcp:<server>` (an MCP server sign-in), `root` (the secret every web sign-in and the notification signing key derive from) | Yes |
-| `~/.efference/config.toml` | Connections, where each key comes from, the `[host]` table. Setup creates it readable only by you. | No |
+| OS keychain, service `efference`, or wherever your secret commands keep them | `inference:<connection>` (a pasted key), `oauth:<connection>` (a ChatGPT sign-in), `mcp:<server>` (an MCP server sign-in), `root` (the secret every web sign-in and the notification signing key derive from) | Yes |
+| `~/.efference/config.toml` | Connections, where each key comes from, the `[host]` table, and the `[secrets]` commands. Setup creates it readable only by you. | No |
 | `~/.efference/state.db` | Model choices per directory, model lists, the projects and sessions efference has run, each notifying browser's push subscription, the devices signed in to the web address, the browsers waiting to sign in | No model keys; the push subscriptions are per-browser secrets |
 | `<project>/.efference/<session>/` | The session's log, its configuration, its usage record, and attached files | Your project's content and the agent's work |
 | `<project>/efference.toml` | The project's settings. A value written here literally is stored in plain text, and copied into each session's directory. | Only if you put one there; use an `op://` reference instead |

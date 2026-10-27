@@ -31,9 +31,10 @@ a host.
 A host started in a terminal ends when that terminal does. To keep one running across
 logins, run `efference --host` under your system's service manager (launchd on macOS, a
 systemd user unit on Linux). A service does not see your shell's environment, so keep
-model keys in the keychain rather than in environment variables
-([Credentials](credentials.md)).
-<!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture) -->
+model keys in the keychain rather than in environment variables. A Linux server usually
+has no keychain a service can open; there, name secret commands for efference to keep
+them with instead ([Credentials](credentials.md), "Secret commands").
+<!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/secrets/commands.rs -->
 <!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. The service examples are host-as-a-service (backlog/inbox/host-as-a-service.md). -->
 
 ### What leaves your machine

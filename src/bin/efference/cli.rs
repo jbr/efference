@@ -444,10 +444,11 @@ pub(crate) enum Command {
 pub(crate) enum AuthCommand {
     /// Replace the machine root every bind credential derives from.
     ///
-    /// Deletes the stored root, every enrolled device, and every pending sign-in;
-    /// the next `efference --host --bind` mints a new root. This signs out every
-    /// device, browsers and scripts alike, and drops every push subscription. Run
-    /// it when the root may have leaked, or when the secret store reports it
-    /// unreadable; one lost device is `efference devices revoke`.
+    /// Stores a fresh root over the old one, then deletes every enrolled device and
+    /// every pending sign-in; the next `efference --host --bind` serves the new
+    /// root. This signs out every device, browsers and scripts alike, and drops
+    /// every push subscription. Run it when the root may have leaked, when the
+    /// secret store reports it unreadable, or, with `[secrets]` commands, to create
+    /// the first one; one lost device is `efference devices revoke`.
     Rotate,
 }

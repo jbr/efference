@@ -23,6 +23,9 @@ pub(super) struct ToolboxInputs<'a> {
     pub capabilities: &'a ModelCapabilities,
     pub endpoint: &'a Endpoint,
     pub host: Option<std::sync::Arc<crate::daemon::Host>>,
+    /// Where MCP grants are read and written: the store the session's credentials
+    /// came from ([`SessionInference::secrets`]).
+    pub secrets: &'a std::sync::Arc<crate::secrets::Secrets>,
     pub session_id: &'a str,
     pub reauth: &'a [String],
     pub authorization: &'a mcp_mount::AuthorizationHandling,
@@ -49,6 +52,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         capabilities,
         endpoint,
         host,
+        secrets,
         session_id,
         reauth,
         authorization,
@@ -62,9 +66,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         .with_image_input(capabilities.supports_image_input);
     // Credentials live in the user's secret store (docs/secrets.md): an
     // authorization belongs to the operator and the server, not to one session.
-    let mut store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
-        crate::secrets::Secrets::detect(),
-    ));
+    let mut store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::clone(secrets));
     if let Some(host) = host {
         // A hosted session refreshes under the host's locks, so the host's
         // sessions share one refresh of a server's grant (docs/mcp-auth.md).

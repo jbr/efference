@@ -133,7 +133,9 @@ At boot, inside the mount loop (`src/boot/mcp_mount.rs`), which is the only
 place the harness stops and waits for a human mid-startup. Per server:
 
 1. Mount with whatever credentials are stored, refreshing a stale grant first — one
-   round trip beats a `401` plus full rediscovery.
+   round trip beats a `401` plus full rediscovery. Only an HTTP server's grant is
+   read: a stdio server takes its credentials from its environment, so its mount
+   never opens the secret store, and works on a machine that has none.
 2. If the mount returns `AuthorizationRequired` (a typed error, not a message —
    the boot step has to recognize it among every other way a mount fails, and
    read the challenge out of it), run the dance and mount again with the token.

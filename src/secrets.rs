@@ -1,13 +1,16 @@
 //! The secret store (docs/secrets.md): `get`/`set`/`delete` of one named string
-//! in the user's OS credential store, under the service name `efference`.
+//! in the user's OS credential store, under the service name `efference`, or
+//! through commands the user configuration names.
 //!
 //! Three populations share it under prefixed names — `inference:<connection>`
 //! for API keys, `oauth:<connection>` for ChatGPT grants, and `mcp:<server>`
-//! for MCP grants — so a listing in the OS's own UI reads, and none can shadow
-//! another.
+//! for MCP grants — beside the web bind's `root`, so a listing in the OS's own
+//! UI reads, and none can shadow another.
 //!
-//! The backend is chosen once per process by [`Secrets::detect`]:
+//! The backend is chosen once per process by [`Secrets::configured`]:
 //!
+//! - **`[secrets]` commands**: when the user configuration has the table, the `get`,
+//!   `set` and `delete` commands it names ([`commands`]), and no platform store.
 //! - **macOS, identity-signed binary**: the login keychain in-process. A
 //!   keychain item's access list names the code that stored it by its
 //!   designated requirement, which for an identity-signed binary is stable
@@ -18,7 +21,7 @@
 //!   Writes go through `security -i` on stdin so the value never sits on argv.
 //! - **Linux**: Secret Service in-process; nothing there binds to the binary.
 //!
-//! Detection connects to nothing. The in-process store is opened by the first
+//! Choosing connects to nothing. The in-process store is opened by the first
 //! `get`/`set`/`delete`, so a process that never touches an item never needs
 //! a Secret Service, and one that does fails that call, naming the item.
 //!
@@ -26,10 +29,16 @@
 //! drives its own async runtime, which cannot be entered from a tokio worker.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Mutex;
 
+mod commands;
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+pub(crate) mod testing;
+
+pub use commands::SecretCommands;
 
 /// The service every item is filed under.
 pub const SERVICE: &str = "efference";
@@ -79,6 +88,8 @@ impl std::error::Error for SecretError {}
 type Open = fn() -> Result<(), String>;
 
 enum Backend {
+    /// The user configuration's `[secrets]` commands.
+    Commands(SecretCommands),
     /// `keyring-core` over the platform store, opened by `open` on the first
     /// operation that needs it.
     Native { open: Open },
@@ -104,10 +115,36 @@ impl std::fmt::Debug for Secrets {
 }
 
 impl Secrets {
+    /// The store the user configuration under `home` names: its `[secrets]`
+    /// commands when it has the table, and otherwise the platform's store. An
+    /// unreadable or unparsable configuration is an error naming its path; a
+    /// missing one names no commands.
+    pub fn configured(home: &Path) -> Result<Self, crate::api::Error> {
+        let config = crate::inference::InferenceConfig::read_user(home)?;
+        Ok(Self::from_table(config.and_then(|config| config.secrets)))
+    }
+
+    /// [`configured`](Self::configured) under this process's home directory.
+    pub fn for_user() -> Result<Self, crate::api::Error> {
+        let home = std::env::home_dir()
+            .ok_or("no home directory to read ~/.efference/config.toml under")?;
+        Self::configured(&home)
+    }
+
+    /// The `[secrets]` commands when there are some, else the platform's store.
+    pub(crate) fn from_table(table: Option<SecretCommands>) -> Self {
+        match table {
+            Some(commands) => Self {
+                backend: Backend::Commands(commands),
+            },
+            None => Self::detect(),
+        }
+    }
+
     /// The store for this platform and this binary's signature. Chooses a
     /// backend without contacting it: a store that cannot be opened fails the
     /// operations that need it, not detection.
-    pub fn detect() -> Self {
+    fn detect() -> Self {
         #[cfg(target_os = "macos")]
         if !identity_signed() {
             return Self {
@@ -129,6 +166,7 @@ impl Secrets {
     /// is the store's own words, with no item to name.
     pub fn open(&self) -> Result<(), String> {
         match &self.backend {
+            Backend::Commands(_) => Ok(()),
             Backend::Native { open } => on_fresh_thread(*open),
             #[cfg(target_os = "macos")]
             Backend::SecurityCli => Ok(()),
@@ -143,9 +181,18 @@ impl Secrets {
         }
     }
 
+    /// Whether this is the `[secrets]` commands. Their absent status may be one
+    /// the tool also gives for other failures, so a caller that would create an
+    /// item on absence, where creating one over a misread failure costs more than
+    /// a sign-in, refuses instead (the web root, docs/web-bind.md).
+    pub fn runs_commands(&self) -> bool {
+        matches!(self.backend, Backend::Commands(_))
+    }
+
     /// Where values go, for a prompt or a report: the store, not any item.
     pub fn describe(&self) -> &'static str {
         match &self.backend {
+            Backend::Commands(_) => "the `[secrets]` store",
             Backend::Native { .. } => native::DESCRIPTION,
             #[cfg(target_os = "macos")]
             Backend::SecurityCli => "the login keychain, through `security`",
@@ -160,6 +207,7 @@ impl Secrets {
             detail,
         };
         match &self.backend {
+            Backend::Commands(commands) => commands.get(name).map_err(wrap),
             Backend::Native { open } => native_call(*open, name, native::get).map_err(wrap),
             #[cfg(target_os = "macos")]
             Backend::SecurityCli => security_cli::get(name).map_err(wrap),
@@ -175,6 +223,7 @@ impl Secrets {
             detail,
         };
         match &self.backend {
+            Backend::Commands(commands) => commands.set(name, value).map_err(wrap),
             Backend::Native { open } => {
                 let value = value.to_string();
                 native_call(*open, name, move |name| native::set(name, &value)).map_err(wrap)
@@ -198,6 +247,7 @@ impl Secrets {
             detail,
         };
         match &self.backend {
+            Backend::Commands(commands) => commands.delete(name).map_err(wrap),
             Backend::Native { open } => native_call(*open, name, native::delete).map_err(wrap),
             #[cfg(target_os = "macos")]
             Backend::SecurityCli => security_cli::delete(name).map_err(wrap),

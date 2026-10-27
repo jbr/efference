@@ -66,13 +66,13 @@ const BUILTIN_CONNECTION_NAMES: [&str; 5] =
     ["anthropic", "openrouter", "openai", "openai-codex", "codex"];
 
 /// Settings for every session on this machine: connections to model providers, role
-/// defaults, the web interface, and how the terminal UI draws. It names where each
-/// credential comes from, never the credential itself. `efference setup` writes it, and
-/// a host reads it when it starts.
+/// defaults, the web interface, how the terminal UI draws, and where efference keeps the
+/// secrets it writes. It names where each credential comes from, never the credential
+/// itself. `efference setup` writes it, and a host reads it when it starts.
 // Secret-free user configuration at `~/.efference/config.toml`. The `///` docs on it and the
 // types below are the published user schema's hover text (docs/config-schemas.md). `[defaults]`,
-// `[host]`, and `[tui]` carry none on their fields: Taplo shows a `$ref` target's description
-// and ignores one beside it.
+// `[host]`, `[tui]`, and `[secrets]` carry none on their fields: Taplo shows a `$ref` target's
+// description and ignores one beside it.
 #[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "User")]
@@ -101,6 +101,11 @@ pub struct InferenceConfig {
     // login/interactive flags.
     #[serde(default)]
     env_hook: Option<Vec<String>>,
+    // `[secrets]`: the command backend of the secret store (`secrets/commands.rs`,
+    // docs/secrets.md), read by every process that opens the store. Its hover text is
+    // `SecretCommands`'s.
+    #[serde(default)]
+    pub(crate) secrets: Option<crate::secrets::SecretCommands>,
 }
 
 impl InferenceConfig {
@@ -139,6 +144,9 @@ impl InferenceConfig {
                         inherit the host environment"
                 .to_string()
                 .into());
+        }
+        if let Some(commands) = &config.secrets {
+            commands.validate()?;
         }
         Ok(config)
     }
@@ -306,6 +314,9 @@ pub struct InferenceRegistry {
     /// re-reading the file, and sits beside the credential-variable set because
     /// both describe what a host carries into a session's environment.
     env_hook: Option<Vec<String>>,
+    /// The secret store the credentials were read from (docs/secrets.md), handed to
+    /// each session so its MCP grants come from the same one.
+    secrets: Arc<Secrets>,
 }
 
 struct Connection {
@@ -347,6 +358,9 @@ pub struct SessionInference {
     /// The host's credential variables ([`InferenceRegistry`]), for the
     /// session's env table to strip (docs/env.md).
     credential_variables: Vec<String>,
+    /// The registry's secret store, which the session's MCP grants are read from
+    /// and written to (docs/mcp-auth.md).
+    secrets: Arc<Secrets>,
 }
 
 struct ResolvedRole {
@@ -365,6 +379,12 @@ impl SessionInference {
     /// from its tools' environment (docs/env.md).
     pub fn credential_variables(&self) -> &[String] {
         &self.credential_variables
+    }
+
+    /// The secret store this session's credentials came from, where its MCP grants
+    /// live too (docs/secrets.md).
+    pub fn secrets(&self) -> &Arc<Secrets> {
+        &self.secrets
     }
 
     pub fn main(&self) -> (&ModelSelection, Endpoint) {

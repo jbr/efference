@@ -23,6 +23,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- Secret commands: a `[secrets]` table in the user config names `get`/`set` (and optionally `delete`) commands that hold what efference writes — sign-ins, the web root, pasted keys — in the user's own store (SSM, `pass`, `op`, `systemd-creds`), with the item name as an argument and the value only on stdin/stdout; `absent_status` declares "no such item", a host never mints the web root through it (`efference auth rotate` writes one), and with the table present the OS keychain is never opened (docs/secrets.md).
 - The TUI sets the terminal title (kitty's tab title) to the attached session's title and id, and a foreground `efference --host` to its session count; each saves the title it found on the terminal's title stack and restores it on exit (docs/tui.md, docs/operating.md).
 - Both config files have published JSON schemas (`assets/schemas/`, served at efference.net/schemas/), generated from the config types with hover text for every key; `efference setup`, the default session config and the project template open with the `#:schema` line, which config edits keep first, and a misspelled key in a `[context]` or `[paths]` table now fails the file by name (docs/config-schemas.md).
 - Assistant `mermaid` fences draw as diagrams in the web transcript, in the same sandboxed frame as artifacts, with built-in Mermaid 11.4.1 coloured from the operator's theme and redrawn when it changes; Mermaid also loads with `efference.load("mermaid")`, and artifact frames load lazily (docs/artifacts.md).
@@ -163,6 +164,8 @@ behind a change, see [`journal/`](journal/).
 
 ### Fixed
 
+- A stdio MCP server mounts without reading the secret store, which only an HTTP server's sign-in needs, so a machine with no usable store can run a project that declares one (docs/mcp-auth.md).
+- A failed start prints its error as `efference: …` lines rather than Rust's quoted debug form with escaped newlines.
 - The secret store opens when it is first used, not at every start: a Linux host with no usable Secret Service (no session bus, none on the bus, or a locked keyring with nobody to unlock it) starts on environment-variable keys, and an item it does need fails promptly with an error naming the item; setup still asks the store up front before offering to save a key there (docs/secrets.md).
 - A web tab whose event stream has gone silent reconnects on its own: any read resets a 35 s deadline (the host heartbeats every 15 s), and a tab returning to view with a stream last read over 20 s ago reconnects at once, resuming from its cursor; the four copies of the reconnect loop are one reader (`web/src/api/sse.ts`, docs/web-client.md).
 - An MCP server's OAuth grant is renewed while a session runs: past its expiry before a call, and once on a `401`, through the refresh the mount already ran, under a per-server lock on the host so concurrent sessions share one refresh and a rotated refresh token is never presented twice; a renewal that fails fails the call and says a session restart signs in again, instead of every call failing until a restart (docs/mcp-auth.md).

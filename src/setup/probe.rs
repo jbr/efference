@@ -130,17 +130,19 @@ pub struct LiveProbe {
 }
 
 impl LiveProbe {
-    pub fn capture() -> Result<Self, crate::api::Error> {
+    /// The probe for a run that edits the configuration `config_text`, whose
+    /// `[secrets]` table names the store a pasted key or a sign-in goes to.
+    pub fn capture(config_text: &str) -> Result<Self, crate::api::Error> {
         Ok(Self {
             env: EnvSnapshot::capture()?,
             cwd: std::env::current_dir()?,
             // Opened here rather than by the first write, which is the
             // default (docs/secrets.md): setup offers to keep a value only
             // where keeping one can work, and says why not otherwise.
-            secrets: {
-                let secrets = Secrets::detect();
-                secrets.open().map(|()| secrets)
-            },
+            secrets: crate::inference::InferenceConfig::from_toml(config_text)
+                .map_err(|error| error.to_string())
+                .map(|config| Secrets::from_table(config.secrets))
+                .and_then(|secrets| secrets.open().map(|()| secrets)),
         })
     }
 

@@ -1,14 +1,14 @@
 //! Root-derived credentials for the TCP bind (docs/web-bind.md).
 //!
 //! One machine-scoped root secret lives in the secret store (docs/secrets.md) as the
-//! `root` item: minted from the OS random source the first time a bind needs it, read
-//! every boot after, and held only in memory. HKDF with per-purpose context strings
-//! derives everything else — the key device tokens are tagged under, the VAPID
-//! push-signing keypair (docs/web-push.md). Same root in, same credentials out, every
-//! boot: signed-in devices survive restarts, and rotation — deleting the item, so the
-//! next bind mints another — revokes everything derived at once. Nobody supplies or
-//! sees the root. What is stored beside it is public: the enrolled devices' ids
-//! (`crate::devices`, docs/state-store.md).
+//! `root` item: minted from the OS random source the first time a bind needs it (under
+//! the `[secrets]` commands, by `efference auth rotate` instead), read every boot after,
+//! and held only in memory. HKDF with per-purpose context strings derives everything
+//! else — the key device tokens are tagged under, the VAPID push-signing keypair
+//! (docs/web-push.md). Same root in, same credentials out, every boot: signed-in devices
+//! survive restarts, and rotation — writing a fresh item over the old — revokes
+//! everything derived at once. Nobody supplies or sees the root. What is stored beside
+//! it is public: the enrolled devices' ids (`crate::devices`, docs/state-store.md).
 //!
 //! Everything here is pure credential arithmetic; which conns it gates — and which
 //! listener is exempt — is the daemon's wiring (docs/web-bind.md).
@@ -33,19 +33,31 @@ pub const ROOT_ITEM: &str = "root";
 pub const ROTATION_CONSEQUENCES: &str = "signs out every enrolled device, browsers and \
     scripts alike, and drops every push subscription";
 
-/// The root could not be read. Absence is not this — an absent item is minted — so
-/// this is a store that answered with an error, where minting would silently be a
-/// rotation. Names the store's complaint and the way out.
+/// The root could not be had. Each names the way out and what it costs.
 #[derive(Debug)]
-pub struct RootError(pub String);
+pub enum RootError {
+    /// The store answered with an error, or with an empty root. Not absence: minting
+    /// over an item that could not be read would silently be a rotation.
+    Unreadable(String),
+    /// The `[secrets]` commands report no root, and a bind does not mint one through
+    /// them: their absent status may be one the tool also gives for other failures, and
+    /// a mint over a misread failure would sign out every device (docs/web-bind.md).
+    Absent { store: &'static str },
+}
 
 impl std::fmt::Display for RootError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}; `efference auth rotate` replaces it, which {ROTATION_CONSEQUENCES}",
-            self.0
-        )
+        match self {
+            Self::Unreadable(why) => write!(
+                f,
+                "{why}; `efference auth rotate` replaces it, which {ROTATION_CONSEQUENCES}"
+            ),
+            Self::Absent { store } => write!(
+                f,
+                "no web root is stored in {store}; `efference auth rotate` creates one, \
+                 which {ROTATION_CONSEQUENCES}"
+            ),
+        }
     }
 }
 
@@ -72,31 +84,39 @@ impl Root {
         ))
     }
 
-    /// The stored root, minting one when there is none. A store that fails to
-    /// answer is an error rather than a mint: minting over an unreadable item
-    /// would be a rotation nobody asked for.
+    /// The stored root, minting one when there is none, except through the
+    /// `[secrets]` commands ([`RootError::Absent`]). A store that fails to answer is
+    /// an error rather than a mint: minting over an unreadable item would be a
+    /// rotation nobody asked for. So is an empty root, which would derive
+    /// credentials anyone could compute.
     pub fn load(secrets: &Secrets) -> Result<Self, RootError> {
         match secrets.get(ROOT_ITEM) {
+            Ok(Some(secret)) if secret.trim().is_empty() => Err(RootError::Unreadable(format!(
+                "the `{ROOT_ITEM}` item in {} is empty",
+                secrets.describe()
+            ))),
             Ok(Some(secret)) => Ok(Self::new(&secret)),
+            Ok(None) if secrets.runs_commands() => Err(RootError::Absent {
+                store: secrets.describe(),
+            }),
             Ok(None) => {
-                let mut bytes = [0u8; 32];
-                rand::fill(&mut bytes);
-                let secret = URL_SAFE_NO_PAD.encode(bytes);
+                let secret = mint();
                 secrets
                     .set(ROOT_ITEM, &secret)
-                    .map_err(|error| RootError(error.to_string()))?;
+                    .map_err(|error| RootError::Unreadable(error.to_string()))?;
                 Ok(Self::new(&secret))
             }
-            Err(error) => Err(RootError(error.to_string())),
+            Err(error) => Err(RootError::Unreadable(error.to_string())),
         }
     }
 
-    /// Delete the stored root; the next bind mints a fresh one. This is the
-    /// revocation for everything derived — [`ROTATION_CONSEQUENCES`]: no device token
-    /// verifies under the next root, and `efference auth rotate` deletes the device
-    /// rows beside it (docs/web-bind.md).
+    /// Store a fresh root over the old one. This is the revocation for everything
+    /// derived — [`ROTATION_CONSEQUENCES`]: no device token verifies under the new
+    /// root, and `efference auth rotate` deletes the device rows beside it
+    /// (docs/web-bind.md). A write rather than a delete, so it needs no `delete`
+    /// command under `[secrets]`, where it is also how the first root is made.
     pub fn rotate(secrets: &Secrets) -> Result<(), SecretError> {
-        secrets.delete(ROOT_ITEM)
+        secrets.set(ROOT_ITEM, &mint())
     }
 
     /// Make `root` the process's root for [`installed`](Self::installed).
@@ -146,6 +166,13 @@ impl Root {
             attempt += 1;
         }
     }
+}
+
+/// A fresh root: 32 bytes from the OS random source, base64url without padding.
+fn mint() -> String {
+    let mut bytes = [0u8; 32];
+    rand::fill(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 /// What every device token starts with: fixed and recognizable, so secret scanners and

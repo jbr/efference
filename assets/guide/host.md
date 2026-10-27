@@ -134,7 +134,13 @@ A host started in a terminal ends with it. To have it start at login and restart
 exits, run it under the system's service manager. Either way the service does not see the
 operator's shell environment, so model credentials in environment variables will not be
 there: use keychain credentials (`efference setup` can move a connection to the keychain)
-before making the host a service.
+before making the host a service. A Linux server usually has no Secret Service a service
+can unlock; there, a `[secrets]` table in `~/.efference/config.toml` names commands that
+keep efference's secrets instead: `get` and `set` argv arrays (required), `delete`
+(optional), `{name}` in an argument for the item's name, the value on `set`'s stdin and
+`get`'s stdout, and `absent_status` for the exit status the tool gives a missing item. A
+host does not create the web bind's root through them, so run `efference auth rotate`
+once before the first bind.
 
 **macOS (launchd)** — `~/Library/LaunchAgents/dev.efference.host.plist`, with the full
 path to the `efference` binary (`command -v efference`):

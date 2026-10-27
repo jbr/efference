@@ -2,6 +2,7 @@ use super::*;
 use efference::boot::CONFIG_SCAFFOLD;
 #[cfg(feature = "dev")]
 use efference::persist::Log;
+use efference::secrets::Secrets;
 
 /// Target resolution (docs/control-channel.md): a `--name` no host lists here is an
 /// error, not a blank UI. (Live discovery is exercised live.)
@@ -412,7 +413,11 @@ fn bind_flags_override_the_host_table_key_by_key() {
     assert_eq!(merged.tls_key, Some(PathBuf::from("/c.key")));
 
     let off = bind_flags(Some("")).over(table.clone());
-    assert!(serve::resolve_bind(off).unwrap().is_none());
+    assert!(
+        serve::resolve_bind(off, &Secrets::in_memory())
+            .unwrap()
+            .is_none()
+    );
 
     let from_table = bind_flags(None).over(table);
     assert_eq!(from_table.bind.as_deref(), Some("100.64.0.1:7878"));
@@ -424,7 +429,7 @@ fn bind_flags_override_the_host_table_key_by_key() {
 fn a_half_tls_pair_and_an_open_without_a_bind_are_refused() {
     let mut half = bind_flags(Some("127.0.0.1:0"));
     half.tls_cert = Some("/c.crt".into());
-    let Err(err) = serve::resolve_bind(half) else {
+    let Err(err) = serve::resolve_bind(half, &Secrets::in_memory()) else {
         panic!("a half pair resolved");
     };
     let err = err.to_string();
@@ -432,7 +437,7 @@ fn a_half_tls_pair_and_an_open_without_a_bind_are_refused() {
 
     let mut open = bind_flags(None);
     open.open = true;
-    let Err(err) = serve::resolve_bind(open) else {
+    let Err(err) = serve::resolve_bind(open, &Secrets::in_memory()) else {
         panic!("--open without a bind resolved");
     };
     let err = err.to_string();
@@ -457,7 +462,8 @@ fn a_bare_port_binds_loopback() {
 /// tools. It also names both ways out.
 #[test]
 fn a_routable_cleartext_bind_is_refused_with_the_reason() {
-    let Err(err) = serve::resolve_bind(bind_flags(Some("0.0.0.0:8080"))) else {
+    let Err(err) = serve::resolve_bind(bind_flags(Some("0.0.0.0:8080")), &Secrets::in_memory())
+    else {
         panic!("a routable cleartext bind resolved");
     };
     let err = err.to_string();

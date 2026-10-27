@@ -118,7 +118,7 @@ pub(crate) async fn run(config: Option<PathBuf>, bind: Option<&str>) -> CliResul
     let existing = Existing::from_toml(&existing_text)
         .map_err(|error| format!("{}: {error}", path.display()))?;
     let mut terminal = Terminal::open()?;
-    let probe = LiveProbe::capture()?;
+    let probe = LiveProbe::capture(&existing_text)?;
     terminal.say(
         Tone::Plain,
         &format!("efference setup · writing {}\n", path.display()),

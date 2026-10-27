@@ -2,7 +2,7 @@
   "$id": "https://efference.net/schemas/user.v1.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "efference user configuration",
-  "description": "Settings for every session on this machine: connections to model providers, role\ndefaults, the web interface, and how the terminal UI draws. It names where each\ncredential comes from, never the credential itself. `efference setup` writes it, and\na host reads it when it starts.",
+  "description": "Settings for every session on this machine: connections to model providers, role\ndefaults, the web interface, how the terminal UI draws, and where efference keeps the\nsecrets it writes. It names where each credential comes from, never the credential\nitself. `efference setup` writes it, and a host reads it when it starts.",
   "type": "object",
   "properties": {
     "connections": {
@@ -24,6 +24,9 @@
     },
     "host": {
       "$ref": "#/$defs/Host"
+    },
+    "secrets": {
+      "$ref": "#/$defs/Secrets"
     },
     "tui": {
       "$ref": "#/$defs/Tui"
@@ -246,6 +249,44 @@
           ]
         }
       }
+    },
+    "Secrets": {
+      "description": "`[secrets]`: keep the secrets efference writes (sign-ins, the web interface's root\nsecret, keys pasted into setup) with commands you name instead of the OS keychain,\nas on a server with no Secret Service. With the table present the keychain is never\nopened. `{name}` in an argument is replaced by the item's name, such as\n`oauth:codex` or `root`; a value travels on stdin and stdout, never in an argument.\nAny program running as you can run the same `get`.",
+      "type": "object",
+      "properties": {
+        "absent_status": {
+          "description": "The exit status `get` gives for an item that does not exist, such as `254` for\n`aws ssm` or `1` for `secret-tool`; `delete` exiting with it is a success too.\nUnset, every failure of `get` is an error, including the first read of an item\nefference has not stored yet.",
+          "type": "integer",
+          "maximum": 255,
+          "minimum": 1
+        },
+        "delete": {
+          "description": "The program and arguments that remove an item. Optional: without it, an\noperation that removes one (an MCP server's `--reauth`, a connection renamed in\n`efference setup`) fails, naming the item to remove by hand.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "get": {
+          "description": "The program and arguments that print an item's value on stdout, as in\n`[\"pass\", \"show\", \"efference/{name}\"]`. One trailing newline is trimmed. It runs\ndirectly, without a shell.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "set": {
+          "description": "The program and arguments that store an item, replacing any previous value. The\nvalue arrives on stdin, with no newline added, as in\n`[\"pass\", \"insert\", \"--multiline\", \"--force\", \"efference/{name}\"]`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "get",
+        "set"
+      ]
     },
     "Tui": {
       "description": "`[tui]`: how the terminal UI draws. Read by each terminal client, not by the host.",

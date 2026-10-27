@@ -655,6 +655,7 @@ impl InferenceRegistry {
             triage,
             secret_values,
             credential_variables: self.credential_variables.iter().cloned().collect(),
+            secrets: std::sync::Arc::clone(&self.secrets),
         })
     }
 

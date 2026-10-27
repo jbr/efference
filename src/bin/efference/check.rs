@@ -67,12 +67,18 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
     if !role.mcp_servers.is_empty() {
         let store: std::sync::Arc<dyn efference::mcp::auth::store::TokenStore> =
             std::sync::Arc::new(efference::mcp::auth::store::KeychainStore::new(
-                std::sync::Arc::new(efference::secrets::Secrets::detect()),
+                std::sync::Arc::new(efference::secrets::Secrets::for_user()?),
             ));
         let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
         let mut failed: Option<(String, String)> = None;
         for (name, entry) in &role.mcp_servers {
-            let credentials = efference::mcp::auth::stored_credentials(&store, name).await?;
+            // As at boot, only an HTTP server's grant is read (docs/mcp-auth.md).
+            let credentials = match &entry.transport {
+                efference::config::McpTransport::Http { .. } => {
+                    efference::mcp::auth::stored_credentials(&store, name).await?
+                }
+                efference::config::McpTransport::Stdio { .. } => None,
+            };
             let before = toolbox.definitions().len();
             let mount = toolbox
                 .mount_connected(name, &entry.transport, &cwd, credentials)

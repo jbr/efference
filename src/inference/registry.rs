@@ -166,6 +166,7 @@ impl InferenceRegistry {
             history: crate::history::History::disabled(),
             catalog: None,
             env_hook: config.env_hook,
+            secrets: Arc::clone(secrets),
         })
     }
 
@@ -246,6 +247,7 @@ impl InferenceRegistry {
             .collect()
     }
 
+    /// No connections, and a secret store in process memory.
     pub fn empty() -> Self {
         Self {
             connections: BTreeMap::new(),
@@ -254,6 +256,7 @@ impl InferenceRegistry {
             history: crate::history::History::disabled(),
             catalog: None,
             env_hook: None,
+            secrets: Arc::new(Secrets::in_memory()),
         }
     }
 

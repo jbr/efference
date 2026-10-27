@@ -111,10 +111,13 @@ checked after the table and flags are merged, since each may come from either.
 ## Credentials: one root, everything derived
 
 One machine-scoped root secret lives in the secret store ([secrets.md](secrets.md))
-as the `root` item: 32 bytes from the OS random source, minted the first time a
-bind needs it and read at every bind after, held only in memory. Nobody supplies
-it and nothing prints it. `src/auth.rs` derives everything else by HKDF-SHA256
-with per-purpose context strings:
+as the `root` item: 32 bytes from the OS random source, minted the first time a bind
+needs it and read at every bind after, held only in memory. Nobody supplies it and
+nothing prints it. Through `[secrets]` commands a bind never mints: their absent
+status may be one the tool also gives for other failures, so a missing `root` fails
+the bind with "no web root is stored", naming `efference auth rotate`, which writes
+the first one. `src/auth.rs` derives everything else by HKDF-SHA256 with per-purpose
+context strings:
 
 | derived | context | purpose |
 | --- | --- | --- |
@@ -123,15 +126,17 @@ with per-purpose context strings:
 
 Same root in, same credentials out, every boot: signed-in devices survive restarts.
 One device is revoked by deleting its row (below), and everything at once by root
-rotation — `efference auth rotate` deletes the item, every device row, and every
-pending sign-in, and the next bind mints another root, which signs out every enrolled
-device and drops every push subscription. A store that answers a read with an error is
-not treated as absent: minting over it would be an unasked rotation, so the bind fails
-with the store's complaint and names the rotate verb. Received secrets that cannot be
+rotation — `efference auth rotate` writes a fresh root over the item, then deletes
+every device row and every pending sign-in, which signs out every enrolled device and
+drops every push subscription. A write rather than a delete, so the `[secrets]`
+commands need no `delete` for it. A store that answers a read with an error is not
+treated as absent: minting over it would be an unasked rotation, so the bind fails
+with the store's complaint and names the rotate verb. An empty root fails the same
+way, since it would derive credentials anyone could compute. Received secrets that cannot be
 re-derived (OAuth tokens) are out of scope here and stay with
 [mcp-auth.md](mcp-auth.md). 32 bytes is the size the derivations can use: HKDF's
-extract is 256-bit, the device-token key and its tags are 256-bit, and P-256 is bounded
-by its 128-bit level.
+extract is 256-bit, the device-token key and its tags are 256-bit, and P-256 is
+bounded by its 128-bit level.
 
 **Enrolled devices: one row per credential.** Every TCP credential is an *enrolled
 device*: a row in the `devices` table of the user state database
@@ -209,8 +214,8 @@ A bind to port 0 learns its port once listening, and minted links name that port
 **The root is not in any environment.** It is read from the store into the binding
 process and nowhere else, so no spawn site has to strip it. A tool child that wants
 it must read the store itself, which on every backend is a visibly gated command
-(`security`, or a keychain prompt against the signed binary); the gate is the
-enforcement ([secrets.md](secrets.md)).
+(`security`, a keychain prompt against the signed binary, or the `[secrets]` table's
+`get`); the gate is the enforcement ([secrets.md](secrets.md)).
 
 ## Signing a browser in
 

@@ -101,7 +101,13 @@ async fn mount_one(
     store: &Arc<dyn TokenStore>,
     authorization: &AuthorizationHandling,
 ) -> anyhow::Result<()> {
-    let credentials = auth::stored_credentials(store, name).await?;
+    // Only an HTTP server is sent a grant; a stdio server takes its credentials from
+    // its environment. So a stdio mount reads nothing from the secret store, and
+    // mounts on a machine that has no usable one (docs/mcp-auth.md).
+    let credentials = match &entry.transport {
+        crate::config::McpTransport::Http { .. } => auth::stored_credentials(store, name).await?,
+        crate::config::McpTransport::Stdio { .. } => None,
+    };
     let first = toolbox
         .mount_connected(name, &entry.transport, cwd, credentials)
         .await;

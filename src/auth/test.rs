@@ -19,27 +19,111 @@ fn the_root_is_minted_once_and_read_after() {
     assert_eq!(token, Root::new(&stored).device_tokens().token(&id));
 }
 
-/// Two mints differ: the root is random, not derived from anything.
+/// Rotation writes a fresh root over the old, and the next load reads it: two mints
+/// differ, since the root is random, not derived from anything.
 #[test]
-fn rotation_deletes_the_item_and_the_next_load_mints_a_different_root() {
+fn rotation_writes_a_different_root_that_the_next_load_reads() {
     let secrets = Secrets::in_memory();
     let before = Root::load(&secrets).unwrap();
+    let first = secrets.get(ROOT_ITEM).unwrap().expect("minted");
     Root::rotate(&secrets).unwrap();
-    assert_eq!(secrets.get(ROOT_ITEM).unwrap(), None);
+    let second = secrets.get(ROOT_ITEM).unwrap().expect("rotated");
+    assert_eq!(second.len(), 43, "{second}");
+    assert_ne!(first, second);
     let after = Root::load(&secrets).unwrap();
-    let token = before.device_tokens().token(&DeviceId::random());
+    let id = DeviceId::random();
+    let token = before.device_tokens().token(&id);
     assert_eq!(after.device_tokens().parse(&token), None);
+    assert_eq!(
+        after.device_tokens().token(&id),
+        Root::new(&second).device_tokens().token(&id)
+    );
     assert_ne!(before.vapid_key().to_bytes(), after.vapid_key().to_bytes());
 }
 
 /// An unreadable store names the way out and what it costs.
 #[test]
 fn an_unreadable_root_points_at_rotation() {
-    let error = RootError("could not read secret `root`: keychain locked".into());
+    let error = RootError::Unreadable("could not read secret `root`: keychain locked".into());
     let text = error.to_string();
     assert!(text.starts_with("could not read secret `root`: keychain locked; "));
     assert!(text.contains("`efference auth rotate`"));
     assert!(text.contains("signs out every enrolled device"));
+}
+
+/// An empty root would derive credentials anyone could compute, so it is refused
+/// like an unreadable one rather than used.
+#[test]
+fn an_empty_root_is_refused() {
+    let secrets = Secrets::in_memory();
+    secrets.set(ROOT_ITEM, " \n").unwrap();
+    let Err(error) = Root::load(&secrets) else {
+        panic!("an empty root loaded");
+    };
+    assert!(matches!(error, RootError::Unreadable(_)));
+    assert!(
+        error
+            .to_string()
+            .starts_with("the `root` item in process memory is empty; `efference auth rotate`"),
+        "{error}"
+    );
+}
+
+/// Through the `[secrets]` commands a bind never mints: an absent root fails the load,
+/// naming the verb that makes one, and writes nothing. `efference auth rotate` writes
+/// one with `set`, which every load after reads.
+#[test]
+fn under_the_commands_an_absent_root_fails_the_bind_until_rotate_writes_one() {
+    let store = crate::secrets::testing::ScriptStore::new("root", "absent_status = 3");
+    let secrets = store.secrets();
+    let Err(error) = Root::load(&secrets) else {
+        panic!("a root was minted through the commands");
+    };
+    assert!(matches!(error, RootError::Absent { .. }));
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "no web root is stored in the `[secrets]` store; `efference auth rotate` creates \
+             one, which {ROTATION_CONSEQUENCES}"
+        )
+    );
+    assert_eq!(store.item(ROOT_ITEM), None);
+
+    Root::rotate(&secrets).unwrap();
+    let stored = store.item(ROOT_ITEM).expect("rotate wrote the root");
+    assert_eq!(stored.len(), 43, "{stored}");
+    let id = DeviceId::random();
+    let loaded = Root::load(&secrets).unwrap();
+    assert_eq!(
+        loaded.device_tokens().token(&id),
+        Root::new(&stored).device_tokens().token(&id)
+    );
+    assert_eq!(
+        Root::load(&store.secrets())
+            .unwrap()
+            .device_tokens()
+            .token(&id),
+        loaded.device_tokens().token(&id)
+    );
+}
+
+/// A failure of `get` other than the absent status is unreadable, not absent, and is
+/// not minted over either.
+#[test]
+fn under_the_commands_a_failed_read_is_not_absence() {
+    let store = crate::secrets::testing::ScriptStore::new("root-sealed", "absent_status = 3");
+    store.script("sealed.sh", "echo 'vault is sealed' >&2; exit 2");
+    store.configure(&format!(
+        "get = {}\nset = {}\nabsent_status = 3",
+        store.argv("sealed.sh"),
+        store.argv("set.sh")
+    ));
+    let Err(error) = Root::load(&store.secrets()) else {
+        panic!("a sealed store loaded a root");
+    };
+    assert!(matches!(error, RootError::Unreadable(_)));
+    assert!(error.to_string().contains("vault is sealed"), "{error}");
+    assert_eq!(store.item(ROOT_ITEM), None);
 }
 
 // ---- derivation ----

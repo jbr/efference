@@ -271,6 +271,7 @@ async fn prepare_minting(
         capabilities: &capabilities,
         endpoint: &endpoint,
         host,
+        secrets: inference.secrets(),
         session_id: &session_id,
         reauth: &reauth,
         authorization: &authorization,

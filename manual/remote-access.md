@@ -192,8 +192,10 @@ other device.
 
 Every token derives from one secret the host keeps in your OS keychain, created the first
 time a host listens on TCP; neither the list of devices nor the list of waiting sign-ins
-holds a secret. `efference auth rotate` replaces that secret and deletes every enrolled
-device and waiting sign-in, which signs out every browser and every program at once.
+holds a secret. With secret commands in place of the keychain, `efference auth rotate`
+creates it instead, before the first host listens ([Credentials](credentials.md)).
+`efference auth rotate` replaces that secret and deletes every enrolled device and waiting
+sign-in, which signs out every browser and every program at once.
 `rotate` refuses while a local daemon is listening — it would keep serving the root the
 store no longer has — so stop the host, rotate, and start it again. One lost device needs
 only `efference devices revoke`.

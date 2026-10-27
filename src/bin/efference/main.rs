@@ -30,8 +30,21 @@ use efference::tools::Toolbox;
 
 type CliError = Box<dyn std::error::Error + Send + Sync>;
 
+/// Runs the command, and prints a failure's `Display` to stderr under the program's
+/// name. A `main` returning the error would print its `Debug` form instead: quoted,
+/// with every newline escaped.
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> std::process::ExitCode {
+    match run().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("efference: {error}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run() -> CliResult {
     let cli = Cli::parse().checked().unwrap_or_else(|error| error.exit());
     let Some(command) = cli.command else {
         if cli.host.run {
@@ -70,11 +83,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
-/// `efference auth rotate`: delete the root, then every enrolled device and pending
-/// sign-in (docs/web-bind.md).
+/// `efference auth rotate`: store a fresh root, then delete every enrolled device and
+/// pending sign-in (docs/web-bind.md).
 fn rotate() -> CliResult {
-    // Rotation removes the root from the store; a daemon already running holds
-    // it in memory and would keep serving after the store no longer has it. A
+    // Rotation replaces the root in the store; a daemon already running holds
+    // the old one in memory and would keep serving it after the store moved on. A
     // false positive — something answering the socket that is not a host — only
     // skips a rotation, so the probe may over-refuse.
     let socket = cli::mount_host();
@@ -87,15 +100,15 @@ fn rotate() -> CliResult {
         )
         .into());
     }
-    let secrets = efference::secrets::Secrets::detect();
+    let secrets = efference::secrets::Secrets::for_user()?;
     efference::auth::Root::rotate(&secrets)?;
-    // The root goes first: no token verifies under the next one, so a table that
+    // The root goes first: no token verifies under the new one, so a table that
     // cannot be cleared leaves rows that sign nothing in, never a token that does.
     let removed = efference::devices::Store::user_scoped()
         .clear()
         .map_err(|e| {
             format!(
-                "rotated: the root is gone from {}, so no device token verifies any \
+                "rotated: {} holds a fresh root, so no device token verifies any \
                  more, but the enrolled devices could not be deleted ({e}), and \
                  `efference devices` lists them until they are revoked",
                 secrets.describe()
@@ -115,8 +128,8 @@ fn rotate() -> CliResult {
             )
         })?;
     eprintln!(
-        "Rotated: the root is gone from {}, {removed} enrolled device{} deleted, and the \
-         next `efference --host --bind` mints another root. This {}.",
+        "Rotated: {} holds a fresh root, which the next `efference --host --bind` serves, \
+         and {removed} enrolled device{} deleted. This {}.",
         secrets.describe(),
         if removed == 1 { " is" } else { "s are" },
         efference::auth::ROTATION_CONSEQUENCES
