@@ -35,8 +35,7 @@ pub(super) struct Reopening {
 impl Host {
     /// Resume the sessions the last host left open, creators before the children that
     /// end with them, and return the ids that started. Waits for the host-start pass
-    /// (the empty-log sweep and the id backfill) first, so a discarded stub is never
-    /// resumed. Returns once every session has started or failed to; on an island,
+    /// (the id backfill) first, so every session it resumes holds its id. Returns once every session has started or failed to; on an island,
     /// at once, having resumed nothing.
     pub async fn resume_open_sessions(self: &Arc<Self>) -> Vec<String> {
         if self.is_island() {

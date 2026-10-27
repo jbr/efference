@@ -196,6 +196,50 @@ async fn an_island_leaves_an_interrupted_session_dormant_and_another_host_resume
     host.swansong().shut_down().await;
 }
 
+/// A session that never had a turn, left by a host that stopped, is not removed at
+/// start: a host that is not an island reopens it as interrupted, and archiving it
+/// discards the directory and releases its id (docs/resumption.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_empty_session_a_host_left_is_reopened_and_discarded_at_archive() {
+    let root = Root::new("boot-resume-empty");
+    let boot = crate::boot::prepare(request(root.path(), "stub", None))
+        .await
+        .expect("the session mints");
+    drop_boot(boot);
+    let dir = root.session_dir("stub");
+    // The scaffold's `first-turn` kickoff would give the reopened session a turn of
+    // its own; the operator deleting that line is the session this test is about.
+    let config = dir.join("config.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    let waiting: Vec<&str> = text
+        .lines()
+        .filter(|line| !line.starts_with("first-turn"))
+        .collect();
+    assert_ne!(
+        waiting.len(),
+        text.lines().count(),
+        "the scaffold has a kickoff"
+    );
+    std::fs::write(&config, waiting.join("\n")).unwrap();
+    // Older than any host that starts now; nothing may remove it on that account.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let host = host_over(&root);
+
+    assert_eq!(host.resume_open_sessions().await, ["stub"]);
+    assert!(dir.join(crate::boot::LOG_NAME).is_file());
+    let register = crate::session_ids::SessionIds::at(root.path().join("state.db"));
+    assert!(
+        register.holder("stub").is_some(),
+        "the backfill registered it"
+    );
+
+    let ended = host.end("stub").expect("hosted").await;
+    assert!(ended.discarded);
+    assert!(!dir.exists());
+    assert_eq!(register.holder("stub"), None, "the id can be minted again");
+    host.swansong().shut_down().await;
+}
+
 /// A resume starts nothing: a restored notification no triage showed leaves the log as
 /// the resume wrote it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

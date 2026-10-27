@@ -202,12 +202,12 @@ archived:
   ([worktrees.md](worktrees.md)). A clean one is removed and the discard goes on, the
   response carrying `worktree: {"removed": true, ...}`. One that is kept or whose removal
   failed makes the session an ordinary archive.
-- **At host start.** The background pass that registers ids
-  ([session-title.md](session-title.md)) first sweeps the remembered roots for empty
-  logs and removes them, whether or not they carry an `Archived` entry: the leftovers of
-  a host that stopped between a creation and its first turn. A log last written at or
-  after the host started is skipped, since a session this host is already running may
-  own it. A log that does not parse is logged and left.
+- **Not at host start.** A host removes no log when it starts, so it cannot take the
+  directory of a session another host is running. An empty session a crashed or stopped
+  host left reads as interrupted: a host that is not an island reopens it at its next
+  start like any interrupted session (below), and the archive that ends it discards it.
+  A configured `first-turn` is submitted when such a session is reopened, since the log
+  holds no `User` entry ([context.md](context.md), "The kickoff").
 
 ## The session as a resource
 
@@ -292,13 +292,12 @@ retry is the same PATCH. Archiving a session while it is starting cancels the re
 ends its log in `Archived` unless that is already its last lifecycle entry, so it reads as
 archived rather than interrupted.
 
-**The resume at boot.** After the host-start pass that sweeps empty logs and registers
-ids, a background task (`Host::resume_open_sessions`, `src/daemon/host/boot_resume.rs`)
-reads the remembered roots and resumes every session whose row is `interrupted` and has no
-`problem`, through the same `Host::resume` the PATCH reaches: each is reserved as
-`starting` and prepared in the background while the host serves, with
-`refuse_authorization` set so a server that asks for authorization fails that session's
-resume instead of opening a browser for each. At most four sessions prepare at once
+**The resume at boot.** After the host-start pass that registers ids, a background task
+(`Host::resume_open_sessions`, `src/daemon/host/boot_resume.rs`) reads the remembered
+roots and resumes every session whose row is `interrupted` and has no `problem`, through
+the same `Host::resume` the PATCH reaches: each is reserved as `starting` and prepared
+in the background while the host serves, with `refuse_authorization` set so a server that
+asks for authorization fails that session's resume instead of opening a browser for each. At most four sessions prepare at once
 (`BOOT_PREPARING`); the next starts when one has started or failed. A session that fails
 stays dormant with its `resume_failure`, and nothing in the pass stops the host. The pass
 runs creators before the children that end with them: a session whose header's

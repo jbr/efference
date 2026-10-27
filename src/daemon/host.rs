@@ -94,8 +94,8 @@ pub struct Host {
     /// Scanned rows of the dormant sessions under each root asked about
     /// (`archived.rs`, docs/log-and-projection.md).
     inventory: crate::inventory::Inventory,
-    /// Turns `true` when the host-start pass (the empty-log sweep, then the id backfill)
-    /// has run; the boot resume waits for it (`boot_resume.rs`).
+    /// Turns `true` when the host-start pass (the id backfill) has run; the boot
+    /// resume waits for it (`boot_resume.rs`).
     start_pass: tokio::sync::watch::Receiver<bool>,
     /// Set when an owner watch adopts this host, which makes it an island
     /// (`island_exit.rs`, docs/operating.md): it runs no boot resume, and it
@@ -184,8 +184,7 @@ impl Host {
             .map_or_else(crate::remembered::Projects::disabled, |path| {
                 crate::remembered::Projects::at(path.to_owned())
             });
-        let start_pass =
-            Self::backfill_session_ids(&session_ids, &remembered, std::time::SystemTime::now());
+        let start_pass = Self::backfill_session_ids(&session_ids, &remembered);
         Arc::new(Self {
             swansong: Swansong::new(),
             catalog,
@@ -225,23 +224,18 @@ impl Host {
             .as_deref()
     }
 
-    /// Discard the empty session logs under the remembered roots, then register
-    /// the session directories, in a background thread, so a slow volume does not
-    /// hold up boot. A collision —
-    /// one id under two roots — is reported and nothing else happens
+    /// Register the session directories under the remembered roots in a background
+    /// thread, so a slow volume does not hold up boot. A collision — one id under
+    /// two roots — is reported and nothing else happens
     /// (docs/session-title.md). The receiver turns `true` when the thread is done,
     /// which is what the boot resume waits for.
     fn backfill_session_ids(
         session_ids: &crate::session_ids::SessionIds,
         remembered: &crate::remembered::Projects,
-        booted: std::time::SystemTime,
     ) -> tokio::sync::watch::Receiver<bool> {
         let (session_ids, remembered) = (session_ids.clone(), remembered.clone());
         let (done, passed) = tokio::sync::watch::channel(false);
         std::thread::spawn(move || {
-            // Empty logs a previous host left are removed first, so the backfill
-            // registers only what stays (docs/resumption.md).
-            crate::discard::sweep(&remembered.roots(), booted, &session_ids);
             for collision in session_ids.backfill(&remembered.roots()) {
                 log::warn!(
                     "session id {:?} is under both {} and {}; the id stays with the first",
