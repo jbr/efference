@@ -24,7 +24,8 @@ provider — Anthropic, OpenRouter, OpenAI, a ChatGPT subscription, or another e
 speaks one of the same APIs — a name for it, and where its key comes from: an environment
 variable, or pasted now and kept in your OS keychain. (A ChatGPT subscription signs in
 through the browser instead.) The answers go to `~/.efference/config.toml`, which records
-*where* each key is, not the key. [Credentials](credentials.md) explains the choices.
+*where* each key is, not the key. [Credentials](credentials.md) explains the choices, and
+[Configuration](configuration.md) the rest of the file.
 <!-- src: src/bin/efference/setup.rs::default_verb, run; src/setup.rs::PROVIDERS; src/setup/flow.rs::one_connection, api_key_source, describe_endpoint; src/setup/flow/chatgpt.rs::chatgpt_source; src/setup/render.rs::HEADER -->
 
 If the key is in an environment variable that isn't set in this shell, setup stops there

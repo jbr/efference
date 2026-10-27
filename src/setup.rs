@@ -571,7 +571,7 @@ pub(crate) const PROVIDERS: [ProviderCard; 6] = [
     ProviderCard {
         provider: None,
         label: "Something else",
-        detail: "an endpoint speaking Anthropic Messages or OpenAI Responses",
+        detail: "an endpoint speaking Anthropic Messages, OpenAI Responses, or Chat Completions",
         // A described endpoint has no conventional variable name; the flow
         // suggests one from the connection's own name instead.
         env_key: None,

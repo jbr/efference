@@ -1,44 +1,13 @@
-# The host, the user-wide config, and the web interface
+# The host and the web interface
 
-What sits above any one project: where efference keeps its connections to model
-providers, the process that holds sessions, and how to reach sessions from a browser or a
-phone. `efference://guide/new-project` is the per-project setup.
+The process that holds sessions, how to reach sessions from a browser or a phone, and
+keeping the host running as a service. `efference://guide/user-config` is every key in the
+user-wide `~/.efference/config.toml`, including connections and the environment sessions
+start with; `efference://guide/new-project` is the per-project setup.
 
-Everything here lives in the user's home directory, outside every session's grants. You
-can explain it and propose edits; a write you propose there is held for the operator to
-approve, and the choice to expose anything over a network is theirs.
-
-## The user-wide config: `~/.efference/config.toml`
-
-`efference setup` writes it on first run and edits it on later runs. It holds no secrets —
-only where each credential comes from — and it is read when a host starts.
-
-```toml ~/.efference/config.toml
-[defaults]
-spotter = "anthropic/claude-haiku-4-5"  # optional
-
-[connections.anthropic]
-provider = "anthropic"
-auth = { kind = "env", key = "ANTHROPIC_API_KEY" }  # or { kind = "keychain" }
-```
-
-- **Connections** name a provider and where its credential comes from: an environment
-  variable (`kind = "env"`), the OS keychain (`kind = "keychain"`, which `efference setup`
-  fills when a key is pasted), or for a ChatGPT subscription, Codex's login or one made in
-  setup. `disabled = true` keeps one written down without using it.
-- **Three roles** run models in a session. The **main model** is the agent itself. The
-  **spotter** reviews tool calls the project's grants do not clear. **Triage** reads each
-  tool result and keeps the lines that matter.
-- **What each role falls back to:** the main model has no configured default —
-  an omitted model takes past picks (the project mode, else the system-wide
-  aggregate), else creation refuses and the new-session form names one. An
-  unset spotter uses the main connection's `spotter-model` if it has one, then
-  jev — a model built for that decision — when a TypeSafe or OpenRouter
-  connection exists, then the provider's cheap model. An unset triage shares
-  the main model.
-
-To change a connection or a key, the operator runs `efference setup`: it checks
-credentials live and keeps pasted keys out of the file.
+Everything here lives in the user's home directory, outside every session's grants, so
+reading or writing it goes to the spotter. Explain a change and let the operator agree
+before you write it; the choice to expose anything over a network is theirs.
 
 ## The host
 
@@ -135,12 +104,10 @@ exits, run it under the system's service manager. Either way the service does no
 operator's shell environment, so model credentials in environment variables will not be
 there: use keychain credentials (`efference setup` can move a connection to the keychain)
 before making the host a service. A Linux server usually has no Secret Service a service
-can unlock; there, a `[secrets]` table in `~/.efference/config.toml` names commands that
-keep efference's secrets instead: `get` and `set` argv arrays (required), `delete`
-(optional), `{name}` in an argument for the item's name, the value on `set`'s stdin and
-`get`'s stdout, and `absent_status` for the exit status the tool gives a missing item. A
-host does not create the web bind's root through them, so run `efference auth rotate`
-once before the first bind.
+can unlock; there, a `[secrets]` table names commands that keep efference's secrets
+instead (`efference://guide/user-config`). A service's environment also becomes the
+starting environment of every session the host resumes or creates for the web interface,
+unless `env_hook` names a command that builds a project's environment (same document).
 
 **macOS (launchd)** — `~/Library/LaunchAgents/dev.efference.host.plist`, with the full
 path to the `efference` binary (`command -v efference`):

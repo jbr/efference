@@ -43,7 +43,8 @@ async fn first_run_with_key_in_environment() {
 # Connections name a provider and where its credential comes from; the
 # credential itself is never in this file. Sessions select a model as
 # <connection>/<native model>; [defaults] names the spotter.
-# Reference: docs/operating.md.
+# Every key is described in efference://guide/user-config, which an
+# efference session can read.
 
 [connections.anthropic]
 provider = "anthropic"

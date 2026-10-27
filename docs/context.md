@@ -239,7 +239,8 @@ preamble (omitting the entry omits the block — explicit over magic).
 `Label = { builtin = "guide" }` lists a set of documents compiled into the binary
 (`src/guide.rs`, sources in `assets/guide/`). The one mount name is `guide`; any other
 fails the file rather than rendering an empty section. The documents are written for a
-session's model: setting up a project and its config, the host, the file tools, and
+session's model: setting up a project and its config, the user-wide config, the host, the
+file tools, and
 `supervising`, for a session supervising the agents it creates with the `agents__*` verbs
 ([tools.md](tools.md)). The human operator's document, [operating.md](operating.md), is
 not among them.

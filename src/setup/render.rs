@@ -18,7 +18,8 @@ const HEADER: &str = "\
 # Connections name a provider and where its credential comes from; the
 # credential itself is never in this file. Sessions select a model as
 # <connection>/<native model>; [defaults] names the spotter.
-# Reference: docs/operating.md.
+# Every key is described in efference://guide/user-config, which an
+# efference session can read.
 
 ";
 

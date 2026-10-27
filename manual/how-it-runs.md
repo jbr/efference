@@ -33,8 +33,11 @@ logins, run `efference --host` under your system's service manager (launchd on m
 systemd user unit on Linux). A service does not see your shell's environment, so keep
 model keys in the keychain rather than in environment variables. A Linux server usually
 has no keychain a service can open; there, name secret commands for efference to keep
-them with instead ([Credentials](credentials.md), "Secret commands").
-<!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/secrets/commands.rs -->
+them with instead ([Credentials](credentials.md), "Secret commands"). Sessions the host
+resumes, or creates for the web client, start with the service's environment too, unless
+an `env_hook` names a command that sets up a project's environment
+([Configuration](configuration.md)).
+<!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/secrets/commands.rs; src/daemon/host/preparation.rs::establish_environment; src/env_table/launch.rs::run_hook -->
 <!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. The service examples are host-as-a-service (backlog/inbox/host-as-a-service.md). -->
 
 ### What leaves your machine

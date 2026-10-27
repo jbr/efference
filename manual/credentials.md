@@ -257,7 +257,7 @@ a command.
 | Where | What | Secret? |
 | --- | --- | --- |
 | OS keychain, service `efference`, or wherever your secret commands keep them | `inference:<connection>` (a pasted key), `oauth:<connection>` (a ChatGPT sign-in), `mcp:<server>` (an MCP server sign-in), `root` (the secret every web sign-in and the notification signing key derive from) | Yes |
-| `~/.efference/config.toml` | Connections, where each key comes from, the `[host]` table, and the `[secrets]` commands. Setup creates it readable only by you. | No |
+| `~/.efference/config.toml` | Connections, where each key comes from, the `[host]` table, the `[secrets]` commands, the environment hook, and the terminal interface's settings ([Configuration](configuration.md)). Setup creates it readable only by you. | No |
 | `~/.efference/state.db` | Model choices per directory, model lists, the projects and sessions efference has run, each notifying browser's push subscription, the devices signed in to the web address, the browsers waiting to sign in | No model keys; the push subscriptions are per-browser secrets |
 | `<project>/.efference/<session>/` | The session's log, its configuration, its usage record, and attached files | Your project's content and the agent's work |
 | `<project>/efference.toml` | The project's settings. A value written here literally is stored in plain text, and copied into each session's directory. | Only if you put one there; use an `op://` reference instead |

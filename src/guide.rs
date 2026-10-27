@@ -103,10 +103,17 @@ pub const DOCUMENTS: &[Document] = &[
         tools: &["read"],
     },
     Document {
+        slug: "user-config",
+        description: "Every key in the user-wide ~/.efference/config.toml: connections and \
+                      their credentials, the three roles, env_hook (the environment sessions \
+                      start with), [secrets], [host], [tui].",
+        body: include_str!("../assets/guide/user-config.md"),
+        tools: &["read"],
+    },
+    Document {
         slug: "host",
-        description: "Above any one project: the user-wide config (connections, \
-                      the three roles), the host, the web interface, reaching it over Tailscale, \
-                      and keeping the host running as a service.",
+        description: "The host that holds sessions, the web interface, reaching it over \
+                      Tailscale, signing browsers in, and keeping the host running as a service.",
         body: include_str!("../assets/guide/host.md"),
         tools: &["read"],
     },
