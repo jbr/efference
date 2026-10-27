@@ -36,7 +36,7 @@ the provider refuses the old key, the host reads the keychain again and retries 
 it finds. A refusal for another reason, such as a spending limit, reads nothing.
 <!-- src: src/api/failure.rs::rejects_credential; src/api/auth_value.rs; src/inference/credential.rs::load_credential (keychain arm re-reads; env arm has no reloader) -->
 <!-- TODO: macOS keychain access prompts depend on how release binaries are signed; describe once dist signing is settled. -->
-<!-- TODO: blocked on backlog/inbox/linux-without-secret-service.md — today a Linux host with no Secret Service fails to start even with environment-variable keys. -->
+<!-- TODO: blocked on backlog/linux-without-secret-service.md — today a Linux host with no Secret Service fails to start even with environment-variable keys. -->
 
 ### Keys in environment variables, with `op run`
 
@@ -102,7 +102,7 @@ connection's key. The values it knows are:
 
 The last two apply to values of at least 8 characters.
 <!-- src: src/env_table.rs::BUILT_IN, EnvPolicy::build_session; src/env_table/mask.rs::MASKABILITY_FLOOR, Masker::absorb_secret; src/inference.rs::SessionInference::absorb_secrets -->
-<!-- TODO: blocked on backlog/inbox/refreshed-token-mask-needle.md — a credential replaced mid-session is masked only with its `Bearer ` prefix today. -->
+<!-- TODO: blocked on backlog/refreshed-token-mask-needle.md — a credential replaced mid-session is masked only with its `Bearer ` prefix today. -->
 
 A value is also caught in its common encodings: URL-encoded, JSON-escaped, base64. What the
 model is sent and what triage reads come from the log, so they carry the masked text too.
@@ -135,7 +135,7 @@ checks as any other ([Permissions](permissions.md)).
 | `<project>/.efference/<session>/` | The session's log, its configuration, its usage record, and attached files | Your project's content and the agent's work |
 | `<project>/efference.toml` | The project's settings. A value written here literally is stored in plain text, and copied into each session's directory. | Only if you put one there; use an `op://` reference instead |
 <!-- src: src/secrets.rs::inference_name, oauth_name, mcp_name; src/auth.rs::ROOT_ITEM (module doc); src/setup/render.rs::write (0600 on create); src/state.rs; src/history.rs; src/catalog/store.rs; src/remembered.rs; src/session_ids.rs; src/push.rs::SCHEMA; src/devices.rs::SCHEMA; src/sign_ins.rs::SCHEMA; src/boot.rs::LOG_NAME, CONFIG_NAME; src/daemon/metrics/usage_line.rs; src/attachments.rs; src/boot/scaffold.rs -->
-<!-- TODO: blocked on backlog/inbox/local-file-modes.md — today session directories and logs are created with default permissions (readable by other local accounts under a 022 umask). State the modes once that ships. -->
+<!-- TODO: blocked on backlog/local-file-modes.md — today session directories and logs are created with default permissions (readable by other local accounts under a 022 umask). State the modes once that ships. -->
 
 A ChatGPT connection that reuses Codex's sign-in reads Codex's own file,
 `~/.codex/auth.json`; efference never writes it.
@@ -146,4 +146,4 @@ accepts any text, so a key pasted there is written to `config.toml` as a variabl
 and a provider's error message, printed by the host, lands in a standalone host's log file
 at `~/.efference/islands/<pid>/host.log` if the provider quotes the key back.
 <!-- src: src/setup/flow.rs::api_key_source (only empty or '=' rejected); src/api/client/send.rs::open_error; src/bin/efference/island.rs::Island::launch (stderr to host.log) -->
-<!-- TODO: blocked on backlog/inbox/config-grant-written-before-masking.md — an approved grant is written to the session config before masking. -->
+<!-- Not planned (backlog/parked/config-grant-written-before-masking.md): an approved grant is written to the session config before masking; a secret in a command has already reached the provider. -->

@@ -32,7 +32,7 @@ systemd user unit on Linux). A service does not see your shell's environment, so
 model keys in the keychain rather than in environment variables
 ([Credentials](credentials.md)).
 <!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture) -->
-<!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. Blocked on backlog/inbox/linux-without-secret-service.md for headless Linux. -->
+<!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. Blocked on backlog/linux-without-secret-service.md for headless Linux. -->
 
 ### What leaves your machine
 
@@ -71,9 +71,10 @@ host.
 Connections over the socket are not authenticated. Any program that can open the socket
 has full control of every session in the host, including starting one, and — when the
 host has a web listener — can obtain a sign-in for it. Treat access to the socket like
-access to your shell.
-<!-- src: src/daemon/handler.rs::Transport::Socket; src/daemon/tcp/routes.rs::enrollment_routes -->
-<!-- TODO: blocked on backlog/inbox/local-file-modes.md. Today nothing sets the mode of the socket or ~/.efference, and there is no peer-uid check. Once owner-only modes ship, say so here; until then do not claim owner-only. -->
+access to your shell. The host makes the socket and `~/.efference` owner-only when it
+starts, so another account on the machine cannot connect.
+<!-- src: src/daemon/handler.rs::Transport::Socket; src/daemon/tcp/routes.rs::enrollment_routes; src/daemon/permissions.rs::tighten_state_dir, tighten_socket -->
+<!-- TODO: blocked on backlog/local-file-modes.md — a project's .efference/ is created under the umask today. Once it ships, say so here. -->
 
 A host can also listen on TCP, for browsers. That listener requires a sign-in for
 everything except the web client's own files and the sign-in request itself
@@ -94,7 +95,7 @@ message or continue the session. A reopened session may still make small request
 own — keeping the provider's cache of the conversation warm, or reading a notification
 that arrives.
 <!-- src: src/daemon/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/recovery.rs; src/daemon/keepalive.rs; src/daemon/metrics.rs::seed_clocks -->
-<!-- TODO: blocked on backlog/inbox/standalone-resumes-every-project.md — today a standalone host does this too, for every project. Restate once decided. -->
+<!-- TODO: blocked on backlog/standalone-exit-archives.md — today a standalone host does this too, for every project; once it ships, a standalone archives its sessions on exit and reopens nothing at start. -->
 
 ### Every outbound connection
 
