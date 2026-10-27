@@ -199,12 +199,14 @@ pub struct ConnectedProvider {
 
 impl ConnectedProvider {
     /// Connect to a declared server, negotiate, and snapshot its tool table.
-    /// `cwd` is the working directory a stdio server is spawned in.
+    /// `cwd` is the working directory a stdio server is spawned in;
+    /// `credentials` are what an HTTP server is sent and renewed with
+    /// (docs/mcp-auth.md).
     pub async fn mount(
         name: &str,
         config: &McpTransport,
         cwd: &Path,
-        authorization: Option<&str>,
+        credentials: Option<auth::Credentials>,
         child_env: &crate::env_table::ChildEnv,
     ) -> anyhow::Result<Self> {
         let transport = match config {
@@ -218,7 +220,7 @@ impl ConnectedProvider {
                 )?)
             }
             McpTransport::Http { url } => {
-                Transport::Http(http::HttpTransport::new(url)?.with_authorization(authorization))
+                Transport::Http(http::HttpTransport::new(url)?.with_credentials(credentials))
             }
         };
         Self::mount_transport(name, transport).await

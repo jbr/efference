@@ -10,7 +10,7 @@
 //! advertises against the file's `tools` grants — the computed perimeter, so an
 //! onboarding agent writes the grant with the tool table in front of it.
 //!
-//! Mounting reuses stored credentials (`auth::stored_header` against the same
+//! Mounting reuses stored credentials (`auth::stored_credentials` against the same
 //! `KeychainStore` boot uses) and never runs the authorization dance: a server
 //! that answers `401` is reported as requiring authorization (a session
 //! started there runs the dance) and counts as not mounted. A required server that does
@@ -65,16 +65,17 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
     // namespaced `<server>__<tool>` by construction, so attribution is exact.
     // Stored credentials are reused; the dance is not run (see module docs).
     if !role.mcp_servers.is_empty() {
-        let store = efference::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
-            efference::secrets::Secrets::detect()?,
-        ));
+        let store: std::sync::Arc<dyn efference::mcp::auth::store::TokenStore> =
+            std::sync::Arc::new(efference::mcp::auth::store::KeychainStore::new(
+                std::sync::Arc::new(efference::secrets::Secrets::detect()?),
+            ));
         let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
         let mut failed: Option<(String, String)> = None;
         for (name, entry) in &role.mcp_servers {
-            let header = efference::mcp::auth::stored_header(&store, name).await?;
+            let credentials = efference::mcp::auth::stored_credentials(&store, name).await?;
             let before = toolbox.definitions().len();
             let mount = toolbox
-                .mount_connected(name, &entry.transport, &cwd, header.as_deref())
+                .mount_connected(name, &entry.transport, &cwd, credentials)
                 .await;
             if let Err(e) = mount {
                 let reason = if e

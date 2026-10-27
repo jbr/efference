@@ -16,8 +16,20 @@
 //! The item is per user, not per project: an authorization belongs to the
 //! operator and the server, and a second checkout of the same project reuses
 //! the grant rather than registering again.
+//!
+//! ## One refresh at a time per server
+//!
+//! A refresh is a read-modify-write of the item: load the grant, trade its
+//! refresh token, save what comes back. Authorization servers rotate refresh
+//! tokens for public clients, so two refreshes racing on the same stored token
+//! would leave one of them refused, or get the grant revoked as replayed. Each
+//! store handle therefore gives out one lock per server ([`RefreshLocks`]), and
+//! the handles a host's sessions use share one set, so a host refreshes a
+//! server's grant once however many of its sessions find it expired
+//! (docs/mcp-auth.md).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
@@ -53,16 +65,50 @@ pub trait TokenStore: Send + Sync {
     fn save(&self, server: &str, auth: &StoredAuth) -> anyhow::Result<()>;
     /// Forget one server's credentials — a revoked grant, or `--reauth`.
     fn clear(&self, server: &str) -> anyhow::Result<()>;
+    /// The lock a refresh of `server`'s grant holds from its load to its save
+    /// (module docs, "One refresh at a time per server").
+    fn refresh_lock(&self, server: &str) -> Arc<tokio::sync::Mutex<()>>;
+}
+
+/// One lock per server, for refreshes of its stored grant. Cloning shares the
+/// set: a host holds one (`Host::mcp_refresh_locks`) and hands it to the store
+/// each of its sessions mounts with.
+#[derive(Clone, Default)]
+pub struct RefreshLocks(Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>);
+
+impl RefreshLocks {
+    /// The lock for `server`, made on first use. One entry per server name ever
+    /// refreshed, which a config bounds.
+    pub fn lock_for(&self, server: &str) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(
+            self.0
+                .lock()
+                .unwrap()
+                .entry(server.to_string())
+                .or_default(),
+        )
+    }
 }
 
 /// The secret store, one item per server.
 pub struct KeychainStore {
     secrets: Arc<Secrets>,
+    refresh_locks: RefreshLocks,
 }
 
 impl KeychainStore {
+    /// A handle with a refresh lock set of its own.
     pub fn new(secrets: Arc<Secrets>) -> Self {
-        Self { secrets }
+        Self {
+            secrets,
+            refresh_locks: RefreshLocks::default(),
+        }
+    }
+
+    /// Take refresh locks from `locks`, shared with the other handles holding it.
+    pub fn with_refresh_locks(mut self, locks: RefreshLocks) -> Self {
+        self.refresh_locks = locks;
+        self
     }
 }
 
@@ -86,6 +132,10 @@ impl TokenStore for KeychainStore {
 
     fn clear(&self, server: &str) -> anyhow::Result<()> {
         Ok(self.secrets.delete(&crate::secrets::mcp_name(server))?)
+    }
+
+    fn refresh_lock(&self, server: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.refresh_locks.lock_for(server)
     }
 }
 

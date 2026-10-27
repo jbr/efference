@@ -64,8 +64,8 @@ async fn a_refused_authorization_fails_the_mount_without_the_dance() {
             optional: false,
         },
     )]);
-    let store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
-        crate::secrets::Secrets::in_memory(),
+    let store: Arc<dyn TokenStore> = Arc::new(crate::mcp::auth::store::KeychainStore::new(
+        Arc::new(crate::secrets::Secrets::in_memory()),
     ));
     let waited = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let told = std::sync::Arc::clone(&waited);

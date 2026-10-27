@@ -27,7 +27,12 @@
 //! callback and waits. That keeps the sequence testable and puts the
 //! presentation where it belongs, at the call site.
 
+mod credentials;
 pub mod store;
+
+pub use credentials::{Credentials, stored_credentials};
+
+use std::sync::Arc;
 
 use anyhow::Context as _;
 use trillium_client::Url;
@@ -45,6 +50,12 @@ use crate::www_authenticate::Challenge;
 /// it — recognize it among all the other ways a mount fails, and read the
 /// challenge out of it — and matching on error text is how that quietly stops
 /// working.
+///
+/// A transport holding stored credentials renews them before giving up
+/// ([`Credentials::renew`]), so from one of those this also means the renewal
+/// failed. A mount runs the dance on it whichever it means; a call fails with
+/// it as its result, which after a failed renewal says a session restart signs
+/// in again.
 #[derive(Debug, Clone)]
 pub struct AuthorizationRequired {
     /// The `Bearer` challenge, when the server sent a parseable one. It carries
@@ -52,11 +63,21 @@ pub struct AuthorizationRequired {
     /// both have fallbacks, so its absence is survivable (Atlassian sends a
     /// challenge with no `resource_metadata` at all).
     pub challenge: Option<Challenge>,
+    /// Why the transport's stored credentials could not be renewed, when it held
+    /// some. `None` from a transport that was mounted without any.
+    pub renewal_failed: Option<String>,
 }
 
 impl std::fmt::Display for AuthorizationRequired {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the server requires authorization (401)")
+        match &self.renewal_failed {
+            None => f.write_str("the server requires authorization (401)"),
+            Some(why) => write!(
+                f,
+                "its sign-in expired and could not be renewed ({why}); a session restart \
+                 signs in again"
+            ),
+        }
     }
 }
 
@@ -318,58 +339,20 @@ fn check_resource(url: &Url, protected: &ProtectedResource) -> anyhow::Result<()
 #[cfg(test)]
 mod test;
 
-/// The `Authorization` header to try for `server`, from stored credentials.
-///
-/// A grant past its expiry is refreshed here rather than being sent and left to
-/// fail — one round trip beats a `401` plus a full rediscovery. A refresh that
-/// fails is *not* an error: the caller's next step on a missing or rejected
-/// token is the same either way, and turning a stale grant into a hard failure
-/// would make an expired token worse than no token at all.
-pub async fn stored_header(
-    store: &dyn store::TokenStore,
-    server: &str,
-) -> anyhow::Result<Option<String>> {
-    let Some(mut stored) = store.load(server)? else {
-        return Ok(None);
-    };
-    if stored.tokens.is_expired() && stored.tokens.refresh_token().is_some() {
-        log::debug!("refreshing the expired grant for `{server}`");
-        match token::refresh(
-            &crate::oauth::http_client(),
-            &stored.token_endpoint,
-            &stored.tokens,
-            &stored.client_id,
-            &stored.resource,
-        )
-        .await
-        {
-            Ok(tokens) => {
-                stored.tokens = tokens;
-                store.save(server, &stored)?;
-            }
-            Err(e) => {
-                log::debug!("refresh for `{server}` failed, falling back to authorizing: {e}");
-                return Ok(None);
-            }
-        }
-    }
-    Ok(Some(stored.tokens.authorization_header()))
-}
-
-/// Authorize `server` from scratch and persist the result, returning the header
-/// to retry the mount with.
+/// Authorize `server` from scratch and persist the result, returning the
+/// credentials to retry the mount with.
 ///
 /// Any stored registration is offered to [`authorize`], which uses it only if
 /// it belongs to the authorization server discovery lands on. That is what
 /// keeps repeated runs from littering the authorization server with a fresh
 /// anonymous client record each time — dynamic registration is not idempotent.
 pub async fn authorize_and_store<P>(
-    store: &dyn store::TokenStore,
+    store: &Arc<dyn store::TokenStore>,
     server: &str,
     url: &str,
     challenge: Option<&Challenge>,
     present: P,
-) -> anyhow::Result<String>
+) -> anyhow::Result<Credentials>
 where
     P: FnOnce(&Url) -> anyhow::Result<()>,
 {
@@ -377,7 +360,7 @@ where
     let registration = previous.as_ref().and_then(|p| p.registration.as_ref());
     let authorization = authorize(url, challenge, registration, present).await?;
 
-    let header = authorization.tokens.authorization_header();
+    let credentials = Credentials::new(store, server, authorization.tokens.clone());
     store.save(
         server,
         &store::StoredAuth {
@@ -394,5 +377,5 @@ where
                 .or_else(|| previous.and_then(|p| p.registration)),
         },
     )?;
-    Ok(header)
+    Ok(credentials)
 }

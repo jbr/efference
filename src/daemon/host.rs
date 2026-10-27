@@ -126,6 +126,10 @@ pub struct Host {
     /// the first adopt, under this host's `Swansong`; `None` once its bind failed, so
     /// the bind is tried once.
     artifact_origin: std::sync::OnceLock<Option<String>>,
+    /// One lock per MCP server for refreshing its stored grant, shared by the token
+    /// store every session here mounts with, so the host's sessions refresh a
+    /// server's grant once however many find it expired (docs/mcp-auth.md).
+    mcp_refresh_locks: crate::mcp::auth::store::RefreshLocks,
 }
 
 /// What the host keeps per session: the state handlers read, the child
@@ -203,7 +207,13 @@ impl Host {
             listing_changed: Notify::new(),
             attention: Arc::default(),
             artifact_origin: std::sync::OnceLock::new(),
+            mcp_refresh_locks: Default::default(),
         })
+    }
+
+    /// The MCP refresh locks a session's token store shares (docs/mcp-auth.md).
+    pub(crate) fn mcp_refresh_locks(&self) -> crate::mcp::auth::store::RefreshLocks {
+        self.mcp_refresh_locks.clone()
     }
 
     /// The artifact-only loopback listener's origin, starting the listener on first

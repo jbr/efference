@@ -175,7 +175,7 @@ Read top-down; open the subsystem doc you need.
 | Config schemas — the published JSON schemas for both config files, and the `#:schema` line that names them | [config-schemas.md](config-schemas.md) | `src/config_schemas.rs`, `src/config/raw.rs`, `src/inference.rs`, `assets/schemas/` |
 | The user state database — `~/.efference/state.db`, and the table per module that owns it | [state-store.md](state-store.md) | `src/state.rs` (+ each table's module) |
 | Model catalog — each connection's normalized model listing, stored in the state database | [model-catalog.md](model-catalog.md) | `src/catalog.rs`, `src/daemon/host/catalog.rs`, `src/api/provider/row.rs` |
-| MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |
+| MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/auth.rs` (+ `src/mcp/auth/`), `src/mcp/http.rs` |
 | The secret store — API keys and OAuth grants in the OS credential store | [secrets.md](secrets.md) | `src/secrets.rs`, `src/mcp/auth/store.rs`, `src/inference.rs` |
 | The TCP bind — the web client's front door (root-derived credentials, enrolled devices, signing a browser in by approval, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/devices.rs`, `src/sign_ins.rs`, `src/daemon/handler.rs`, `src/daemon/tcp.rs` (+ `src/daemon/tcp/`), `src/bin/efference/devices.rs` |
 | The web client, component gallery, and stream tape/replay API | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp/gate.rs`, `src/daemon/tcp/headers.rs`, `src/daemon/tcp/routes.rs` |

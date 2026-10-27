@@ -18,6 +18,7 @@
 //! a message pointing here instead.
 
 use std::io::IsTerminal;
+use std::sync::Arc;
 
 use crate::mcp::Unmounted;
 use crate::mcp::auth::store::TokenStore;
@@ -51,7 +52,7 @@ pub async fn mount_all(
     toolbox: &mut Toolbox,
     servers: &std::collections::BTreeMap<String, crate::config::McpServerEntry>,
     cwd: &std::path::Path,
-    store: &dyn TokenStore,
+    store: &Arc<dyn TokenStore>,
     reauth: &[String],
     authorization: &AuthorizationHandling,
 ) -> Result<Vec<Unmounted>, Box<dyn std::error::Error + Send + Sync>> {
@@ -97,12 +98,12 @@ async fn mount_one(
     name: &str,
     entry: &crate::config::McpServerEntry,
     cwd: &std::path::Path,
-    store: &dyn TokenStore,
+    store: &Arc<dyn TokenStore>,
     authorization: &AuthorizationHandling,
 ) -> anyhow::Result<()> {
-    let header = auth::stored_header(store, name).await?;
+    let credentials = auth::stored_credentials(store, name).await?;
     let first = toolbox
-        .mount_connected(name, &entry.transport, cwd, header.as_deref())
+        .mount_connected(name, &entry.transport, cwd, credentials)
         .await;
     let Err(e) = first else { return Ok(()) };
 
@@ -136,11 +137,11 @@ async fn mount_one(
     if let Some(waiting) = &authorization.waiting {
         waiting(None);
     }
-    let header = authorized?;
+    let credentials = authorized?;
     eprintln!("[mcp: `{name}` authorized]");
 
     toolbox
-        .mount_connected(name, &entry.transport, cwd, Some(&header))
+        .mount_connected(name, &entry.transport, cwd, Some(credentials))
         .await
 }
 

@@ -60,18 +60,22 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         // about this model's image input, so an image-producing tool refuses
         // clearly instead of attaching bytes the model cannot read.
         .with_image_input(capabilities.supports_image_input);
-    // The in-session `sessions` provider (docs/tools.md): a session created on
-    // a host reaches its project's sessions directly, with its own id as the
-    // caller. Mounted before the first projection so `tools[]` is fixed from
-    // turn one.
-    if let Some(host) = host {
-        toolbox.mount_sessions(host, session_id.to_string());
-    }
     // Credentials live in the user's secret store (docs/secrets.md): an
     // authorization belongs to the operator and the server, not to one session.
-    let store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
+    let mut store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
         crate::secrets::Secrets::detect()?,
     ));
+    if let Some(host) = host {
+        // A hosted session refreshes under the host's locks, so the host's
+        // sessions share one refresh of a server's grant (docs/mcp-auth.md).
+        store = store.with_refresh_locks(host.mcp_refresh_locks());
+        // The in-session `sessions` provider (docs/tools.md): a session created
+        // on a host reaches its project's sessions directly, with its own id as
+        // the caller. Mounted before the first projection so `tools[]` is fixed
+        // from turn one.
+        toolbox.mount_sessions(host, session_id.to_string());
+    }
+    let store: std::sync::Arc<dyn crate::mcp::auth::store::TokenStore> = std::sync::Arc::new(store);
     let unmounted = mcp_mount::mount_all(
         &mut toolbox,
         &loaded.role.mcp_servers,

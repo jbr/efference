@@ -159,6 +159,35 @@ refusal leaves someone staring at a stalled boot. The bare URL gets its own line
 with the OSC 8 hyperlink layered on top rather than instead — captured output is
 exactly where the escape is least likely to be honored.
 
+## Renewal while a session runs
+
+A mount hands the HTTP transport (`src/mcp/http.rs`) the server's stored credentials
+(`auth::Credentials`, `src/mcp/auth/credentials.rs`) rather than a bare header, and the
+transport renews them through the same refresh the mount runs on a stale grant
+(`oauth::token::refresh`): before a request when the grant is past its expiry, and when
+the server answers `401`, after which the request is sent once more with the renewed
+grant. No person is involved while the refresh token works.
+
+A renewal holds a lock for the server (`store::RefreshLocks`) from its load to its save.
+It re-reads the stored grant and takes it without refreshing when it differs from the
+grant the transport holds and has not expired: another session's renewal, or a new
+authorization, has already replaced it. Otherwise it refreshes the stored grant, whose
+refresh token is under rotation the only one the issuer still honours, and writes the
+result back to `mcp:<server>` ([secrets.md](secrets.md)). Every session on a host mounts
+with a store handle sharing the host's locks (`Host::mcp_refresh_locks`), so concurrent
+calls across the host's sessions share one refresh, and a rotated refresh token is not
+presented twice. Separate processes (two hosts, `efference check`) share the item but not
+the locks; the re-read narrows that race without closing it.
+
+A renewal that fails (nothing stored, no refresh token, a refresh token the issuer
+refuses, an unreachable issuer), or a renewed grant the server refuses as well, ends the
+request as `AuthorizationRequired`, carrying why. A call fails with it as its result,
+which names the server and says the sign-in expired and a session restart signs in again:
+the restart's mount refreshes once more and runs the dance if that fails. One request is
+renewed at most once, so a server that refuses every grant costs a call one refresh. At
+mount the same error is a `401` like any other and starts the dance. A transport mounted
+without credentials renews nothing.
+
 ## Credential storage
 
 `src/mcp/auth/store.rs` keeps one item per server in the secret store
@@ -177,6 +206,7 @@ of its quieter advantages.
 
 ## What is not built
 
-Mid-session refresh (a token that expires during a long session fails the tool call
-rather than refreshing), `403 insufficient_scope` step-up, pre-registered client
-credentials in config, and the subagent case. See `backlog/inbox/mcp-auth.md`.
+Signing in again mid-session (a renewal that fails fails the call until the session
+restarts; `backlog/inbox/remote-mcp-authorization.md`), `403 insufficient_scope` step-up,
+pre-registered client credentials in config, and the subagent case. See
+`backlog/inbox/mcp-auth.md`.
