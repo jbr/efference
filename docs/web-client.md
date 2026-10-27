@@ -64,7 +64,7 @@ the wire:
 
 | layer | job | React? |
 | --- | --- | --- |
-| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the page's bearer (`bearer.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
+| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the page's bearer (`bearer.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE parser and the one reconnecting reader every stream shares (`sse.ts`), the control stream over it (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
 | `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), session verbs whose error recovery folds into the store (`actions.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
 | `web/src/ui/` | display — transcript, login, composer; the churn zone | yes |
 
@@ -121,6 +121,31 @@ the daemon sets `event:` to the frame's kind, and `EventSource` dispatches named
 events — a client would register one listener per known kind and silently drop
 frames from a newer daemon. Reconnection resumes by `?since=` (the daemon does not
 read `Last-Event-ID`), replaying the durable subset exactly.
+
+**One reader keeps every stream open** (`readEventStream`, `api/sse.ts`). The
+control stream (`openStream`), the listing and an overview card's feed
+(`api/sessions.ts`), and the `/files` change pokes (`api/files.ts`) each give it a
+per-attempt URL function (the two that resume read their cursor there) and an
+event callback; the fresh `AbortController` per attempt, the status check, the
+doubling backoff (1 s to a 15 s cap, reset when a request succeeds) and `close()`
+live in the reader. A `401` stays handled in `apiFetch`. Every one of those routes
+sends a `:` comment after 15 s of quiet (`EVENTS_HEARTBEAT` in the daemon's
+`http.rs`, the same interval on `/sessions` and `/files`), which is what makes
+silence meaningful:
+
+- **A deadline of 35 s on reads** (`STALL_DEADLINE_MS`) — two missed heartbeats and
+  a margin. Any read, an event or a comment, moves it; it is armed when an attempt
+  starts, so a request that never answers is covered too. When it passes the reader
+  aborts the attempt and reconnects the ordinary way: `onDisconnect` hears a
+  "no read" error, the backoff's first wait is one second, and the retry resumes
+  from the cursor.
+- **A visibility check** — when the page becomes visible, an attempt whose last read
+  is older than 20 s (`VISIBLE_STALE_MS`) is aborted and reopened at once, without
+  the backoff; a reader sitting in a backoff retries at once. A stream read within
+  20 s is left alone, and hiding the page does nothing. The check exists because a
+  phone's sleep or a network change can leave a socket dead without the transport
+  reporting it, and a hidden tab no longer drops its stream (the drop went with push
+  suppression, [web-push.md](web-push.md)).
 
 Every request the client makes — reads, verbs, streams, and the bytes of images —
 goes through one function, `apiFetch` in `api/http.ts`, which calls the global
@@ -221,7 +246,7 @@ Two mechanisms bound that, both below `ui/`:
   immediately for a caller that needs the render to have happened: the scrubber
   uses it while held, so `step()` from the console lands before the call returns,
   and stays batched while following.
-- **The dispatch loop yields to the task queue.** Every step of `openStream`'s
+- **The dispatch loop yields to the task queue.** Every step of the reader's
   `for await` is a promise continuation, and `sseData` yields each event parsed
   out of one read without awaiting anything else, so a producer faster than the
   consumer holds the thread against timers, input, paint — and against the
@@ -1882,8 +1907,9 @@ edit in the log (the `lastEdit` derivation) supplies a new target while followin
 `api/files.ts`; the content negotiation and the watcher behind it are
 [web-bind.md](web-bind.md) "Watching for changes"), held while the tab is
 visible and closed while hidden. The reader parses the frames with `sseData`,
-reports each connect and each poke, and reconnects with the capped backoff
-`openStream` uses after a refusal, a failed request, or a stream that ends.
+reports each connect and each poke, and reconnects through `readEventStream`'s
+backoff and silence deadline after a refusal, a failed request, a stream that ends,
+or one that goes quiet.
 Every poke, and every (re)open of the stream — which is what covers changes
 missed while hidden or disconnected — answers with the same conditional GET, so
 the stream carries no content and replaced only the old 2 s poll's timer when it
@@ -2370,7 +2396,7 @@ raw byte reads including heartbeats, delivered frame counts and sequence,
 folded store sequence, last reported view render, and recorder mode/window.
 The overlay remains visible for screenshots; session unmount removes it and its
 timer. Production builds omit the recorder and overlay. Raw activity observation
-in `api/stream.ts` does not change heartbeat parsing or reconnect policy.
+in `api/sse.ts` does not change heartbeat parsing or reconnect policy.
 
 A recording is saved to IndexedDB (`session/tapeStore.ts`) once it holds streamed
 output — a reload that only reconnects records a state snapshot, and saving those

@@ -12,7 +12,7 @@
 // reconnect is just a fresh subscription. That is what makes the retry below a
 // plain backoff rather than a resume handshake.
 
-import { sseData } from "./stream.ts";
+import { readEventStream } from "./sse.ts";
 import { apiFetch, type SessionEntry } from "./http.ts";
 import type { Frame, LogEntry, Seq, StateSnapshot } from "./types.ts";
 
@@ -58,43 +58,17 @@ export function openSessions(
 
 /** The stream itself, from the first reader to the last. Answers its stop. */
 function followSessions(): () => void {
-  let closed = false;
-  let controller = new AbortController();
-  let attempt = 0;
-
-  async function run() {
-    while (!closed) {
-      controller = new AbortController();
-      try {
-        const response = await apiFetch("/sessions", {
-          headers: { accept: "text/event-stream" },
-          signal: controller.signal,
-        });
-        if (!response.ok || !response.body) {
-          throw new Error(`sessions: http ${response.status}`);
-        }
-        attempt = 0;
-        for await (const data of sseData(response.body)) {
-          const listing = JSON.parse(data) as SessionEntry[];
-          for (const reader of readers) reader.onSessions(listing);
-        }
-        throw new Error("sessions: stream ended");
-      } catch (error) {
-        if (closed) return;
-        for (const reader of readers) reader.onError?.(error);
-        attempt += 1;
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.min(500 * 2 ** attempt, 15_000)),
-        );
-      }
-    }
-  }
-
-  void run();
-  return () => {
-    closed = true;
-    controller.abort();
-  };
+  const stream = readEventStream({
+    url: () => "/sessions",
+    onEvent(data) {
+      const listing = JSON.parse(data) as SessionEntry[];
+      for (const reader of readers) reader.onSessions(listing);
+    },
+    onDisconnect(error) {
+      for (const reader of readers) reader.onError?.(error);
+    },
+  });
+  return () => stream.close();
 }
 
 /** The state topics an overview card reads. */
@@ -133,67 +107,38 @@ export function openSessionCard(
   id: string,
   onFeed: (feed: CardFeed) => void,
 ): SessionsHandle {
-  let closed = false;
-  let controller = new AbortController();
-  let attempt = 0;
   let cursor: Seq | null = null;
+  let state: StateSnapshot = { last_seq: null };
   const base = `/sessions/${encodeURIComponent(id)}/v1`;
   const include = ["log", ...CARD_TOPICS.map((topic) => `state:${topic}`)].join(
     ",",
   );
 
-  async function run() {
-    while (!closed) {
-      controller = new AbortController();
-      const state: StateSnapshot = { last_seq: null };
-      try {
-        if (cursor === null) {
-          const response = await apiFetch(`${base}/log?tail=${CARD_TAIL}`, {
-            signal: controller.signal,
-          });
-          if (!response.ok) throw new Error(`log: http ${response.status}`);
-          const entries = (await response.json()) as LogEntry[];
-          cursor = (entries.at(-1)?.seq ?? -1) + 1;
-          onFeed({ state: { ...state }, entries });
-        }
-        const response = await apiFetch(
-          `${base}/events?include=${include}&since=${cursor}`,
-          {
-            headers: { accept: "text/event-stream" },
-            signal: controller.signal,
-          },
-        );
-        if (!response.ok || !response.body) {
-          throw new Error(`events: http ${response.status}`);
-        }
-        attempt = 0;
-        for await (const data of sseData(response.body)) {
-          const frame = JSON.parse(data) as Frame;
-          if (frame.class === "log") {
-            cursor = frame.seq + 1;
-            onFeed({ state: { ...state }, entries: [frame.data] });
-          } else if (frame.class === "state") {
-            (state as unknown as Record<string, unknown>)[frame.kind] =
-              frame.data;
-            onFeed({ state: { ...state }, entries: [] });
-          }
-        }
-        throw new Error("events: stream ended");
-      } catch {
-        if (closed) return;
-        attempt += 1;
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.min(500 * 2 ** attempt, 15_000)),
-        );
+  return readEventStream({
+    async url(signal) {
+      // The host replays every state topic on connect, so a reconnect starts
+      // the accumulated state over.
+      state = { last_seq: null };
+      if (cursor === null) {
+        const response = await apiFetch(`${base}/log?tail=${CARD_TAIL}`, {
+          signal,
+        });
+        if (!response.ok) throw new Error(`log: http ${response.status}`);
+        const entries = (await response.json()) as LogEntry[];
+        cursor = (entries.at(-1)?.seq ?? -1) + 1;
+        onFeed({ state: { ...state }, entries });
       }
-    }
-  }
-
-  void run();
-  return {
-    close() {
-      closed = true;
-      controller.abort();
+      return `${base}/events?include=${include}&since=${cursor}`;
     },
-  };
+    onEvent(data) {
+      const frame = JSON.parse(data) as Frame;
+      if (frame.class === "log") {
+        cursor = frame.seq + 1;
+        onFeed({ state: { ...state }, entries: [frame.data] });
+      } else if (frame.class === "state") {
+        (state as unknown as Record<string, unknown>)[frame.kind] = frame.data;
+        onFeed({ state: { ...state }, entries: [] });
+      }
+    },
+  });
 }

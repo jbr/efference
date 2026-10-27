@@ -14,11 +14,8 @@
 import { apiBase } from "../api/base.ts";
 import type { Frame } from "../api/types.ts";
 import { ApiError, fetchLogTail } from "../api/http.ts";
-import {
-  openStream,
-  type StreamCallbacks,
-  type StreamHandle,
-} from "../api/stream.ts";
+import type { StreamHandle } from "../api/sse.ts";
+import { openStream, type StreamCallbacks } from "../api/stream.ts";
 import { applyFrame, reseed, type Store } from "./store.ts";
 import { coherentWindow, HISTORY_PAGE } from "./history.ts";
 

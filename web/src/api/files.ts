@@ -13,8 +13,8 @@
 // the SSE parser stream.ts exports (`changeStream` below).
 
 import { join as joinBase } from "./base.ts";
-import { apiFetch, throwIfFailed } from "./http.ts";
-import { sseData } from "./stream.ts";
+import { apiFetch } from "./http.ts";
+import { readEventStream } from "./sse.ts";
 import type { ErrorEnvelope } from "./types.ts";
 
 // Joined onto the client's base like every other control path (api/base.ts).
@@ -44,68 +44,24 @@ export interface ChangeStreamCallbacks {
   onChange(path: string): void;
 }
 
-/** The wait before reconnect attempt `attempt`: the doubling backoff
- * `openStream` uses (api/stream.ts), from 1 s to a 15 s cap. */
-const retryDelay = (attempt: number): number =>
-  Math.min(500 * 2 ** attempt, 15_000);
-
 /**
- * `GET` the URL as an event stream and report its pokes, reconnecting with a
- * capped backoff after a refusal, a failed request, or a stream that ends. The
- * server frames every poke as `event: change` with the path as `data:`, and
- * idles with `:` comments; `sseData` drops the `event:` field and the
- * comments, so each event it yields is a poke. The URL is fixed when the
- * stream opens, so a reconnect after the page has moved to another session
- * still reaches this one.
+ * `GET` the URL as an event stream and report its pokes, reconnecting after a
+ * refusal, a failed request, a stream that ends or one that goes silent
+ * (`readEventStream`). The server frames every poke as `event: change` with
+ * the path as `data:`, and idles with `:` comments; `sseData` drops the
+ * `event:` field and the comments, so each event it yields is a poke. The URL
+ * is fixed when the stream opens, so a reconnect after the page has moved to
+ * another session still reaches this one.
  */
 function changeStream(
   url: string,
   callbacks: ChangeStreamCallbacks,
 ): ChangeStream {
-  let closed = false;
-  let controller = new AbortController();
-  let attempt = 0;
-
-  async function run() {
-    while (!closed) {
-      controller = new AbortController();
-      try {
-        const response = await apiFetch(url, {
-          headers: { accept: "text/event-stream" },
-          signal: controller.signal,
-        });
-        await throwIfFailed(response);
-        if (!response.body) {
-          throw new Error("files: missing response body");
-        }
-        if (closed) return;
-        attempt = 0;
-        callbacks.onOpen();
-        for await (const data of sseData(response.body)) {
-          if (closed) return;
-          callbacks.onChange(data);
-        }
-        throw new Error("files: stream ended");
-      } catch {
-        if (closed) return;
-        // A callback that threw leaves this response open; end it before the
-        // next attempt starts another.
-        controller.abort();
-        attempt += 1;
-        await new Promise((resolve) =>
-          setTimeout(resolve, retryDelay(attempt)),
-        );
-      }
-    }
-  }
-
-  void run();
-  return {
-    close() {
-      closed = true;
-      controller.abort();
-    },
-  };
+  return readEventStream({
+    url: () => url,
+    onConnect: () => callbacks.onOpen(),
+    onEvent: (path) => callbacks.onChange(path),
+  });
 }
 
 /** The change-poke stream for one file. */

@@ -1,5 +1,5 @@
-// The control-stream reader: `GET /v1/events` over fetch, with a hand-rolled
-// SSE parser (docs/control-api.md).
+// The control-stream reader: `GET /v1/events` over fetch, with the hand-rolled
+// SSE parser and reconnecting loop of `sse.ts` (docs/control-api.md).
 //
 // Not `EventSource`, for two reasons. The daemon sets `event:` to the frame's
 // kind, and `EventSource` dispatches named events — a client would register one
@@ -12,12 +12,8 @@
 // and `:` heartbeat comments fall out of the grammar for free.
 
 import { apiBase } from "./base.ts";
-import { apiFetch, throwIfFailed } from "./http.ts";
+import { readEventStream, type StreamHandle } from "./sse.ts";
 import type { Frame, Seq } from "./types.ts";
-
-export interface StreamHandle {
-  close(): void;
-}
 
 export interface StreamCallbacks {
   onFrame(frame: Frame): void;
@@ -31,7 +27,8 @@ export interface StreamCallbacks {
 
 /**
  * Open the stream from `since`, dispatching every frame, reconnecting with a
- * capped backoff. The resume cursor advances to `seq + 1` past each log frame
+ * capped backoff (`readEventStream`, which also reopens a stream that has gone
+ * silent). The resume cursor advances to `seq + 1` past each log frame
  * (the durable subset; docs/control-api.md), so a reconnect replays exactly.
  * `base` is the session the stream belongs to, fixed when it opens: a reconnect
  * after the page has moved to another session must still reach this one.
@@ -42,63 +39,39 @@ export function openStream(
   base: string = apiBase(),
 ): StreamHandle {
   let cursor = since;
-  let closed = false;
-  let controller = new AbortController();
-  let attempt = 0;
+  let sliceStart = performance.now();
 
-  async function run() {
-    while (!closed) {
-      controller = new AbortController();
-      try {
-        callbacks.onAttempt?.(cursor);
-        const response = await apiFetch(`${base}/v1/events?since=${cursor}`, {
-          headers: { accept: "text/event-stream" },
-          signal: controller.signal,
-        });
-        await throwIfFailed(response);
-        if (!response.body) {
-          throw new Error("events: missing response body");
-        }
-        attempt = 0;
-        callbacks.onConnect?.();
-        let sliceStart = performance.now();
-        for await (const data of sseData(response.body, callbacks.onActivity)) {
-          const frame = JSON.parse(data) as Frame;
-          if (frame.class === "log") {
-            cursor = frame.seq + 1;
-          }
-          callbacks.onFrame(frame);
-          if (performance.now() - sliceStart >= SLICE_MS) {
-            await yieldToTasks();
-            sliceStart = performance.now();
-          }
-        }
-        throw new Error("events: stream ended");
-      } catch (error) {
-        if (closed) return;
-        callbacks.onDisconnect?.(error);
-        if (closed) return;
-        attempt += 1;
-        await sleep(Math.min(500 * 2 ** attempt, 15_000));
-      }
-    }
-  }
-
-  void run();
-  return {
-    close() {
-      closed = true;
-      controller.abort();
+  return readEventStream({
+    url() {
+      callbacks.onAttempt?.(cursor);
+      return `${base}/v1/events?since=${cursor}`;
     },
-  };
+    onConnect() {
+      callbacks.onConnect?.();
+      sliceStart = performance.now();
+    },
+    onActivity: callbacks.onActivity,
+    onDisconnect: callbacks.onDisconnect,
+    onEvent(data) {
+      const frame = JSON.parse(data) as Frame;
+      if (frame.class === "log") {
+        cursor = frame.seq + 1;
+      }
+      callbacks.onFrame(frame);
+      if (performance.now() - sliceStart < SLICE_MS) return;
+      return yieldToTasks().then(() => {
+        sliceStart = performance.now();
+      });
+    },
+  });
 }
 
 /**
  * How long the dispatch loop may run before it gives the browser a task slice,
  * in ms (docs/web-client.md, "Coalescing the fold").
  *
- * The loop above is built out of promise continuations end to end: `for await`
- * resumes on a microtask, and `sseData` yields every event it parsed out of one
+ * The dispatch loop (`readEventStream`, with `onEvent` below) is built out of
+ * promise continuations end to end: `for await` resumes on a microtask, and `sseData` yields every event it parsed out of one
  * read without awaiting anything else. Microtasks run to exhaustion before the
  * task queue is looked at, so while a producer delivers frames faster than they
  * are consumed the loop holds the thread against input, timers, animation
@@ -129,46 +102,4 @@ function yieldToTasks(): Promise<void> {
     };
     channel.port2.postMessage(null);
   });
-}
-
-/**
- * Yield the `data:` payload of each SSE event on the stream. Minimal but
- * conformant for what the daemon emits: CR/LF/CRLF line splits, multi-`data:`
- * concatenation, comment (`:`) and non-`data:` field lines ignored.
- */
-export async function* sseData(
-  body: ReadableStream<Uint8Array>,
-  onActivity?: (bytes: number) => void,
-): AsyncGenerator<string> {
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let dataLines: string[] = [];
-  const reader = body.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      onActivity?.(value.byteLength);
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r\n|\r|\n/);
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line === "") {
-          if (dataLines.length > 0) {
-            yield dataLines.join("\n");
-            dataLines = [];
-          }
-        } else if (line.startsWith("data:")) {
-          dataLines.push(line.slice(5).replace(/^ /, ""));
-        }
-        // `event:`/`id:` are redundant with the envelope; `:` is the heartbeat.
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
