@@ -37,7 +37,12 @@ export function installOverflowReport(): void {
           ancestor = ancestor.parentElement
         ) {
           const style = getComputedStyle(ancestor);
-          if (style.visibility === "hidden" || style.overflowX !== "visible")
+          // `clip` is the transcript items' safety net (Transcript.css): it
+          // hides the spill rather than containing it, so it still counts.
+          if (
+            style.visibility === "hidden" ||
+            (style.overflowX !== "visible" && style.overflowX !== "clip")
+          )
             return false;
         }
         return true;

@@ -37,6 +37,10 @@ export function ArgValue({
   );
 }
 
+/** How many of the path's last characters stay on one line with the ⤢ glyph
+ * when the chip wraps: the glyph never starts a line of its own. */
+const TAIL = 6;
+
 /** The path argument, as the link that opens the file — the affordance the
  * argument itself cannot carry. A button, so the call's open-the-inspector
  * click handler ignores it (Transcript.tsx); it opens the *current* file from
@@ -59,12 +63,15 @@ export function PathChip({
   return (
     <button
       type="button"
-      className="linkish arg-chip path-chip"
+      className="linkish path-chip"
       title={`view ${path} as it is now on disk`}
       onClick={() => onOpenFile(path, callId)}
     >
-      {text}
-      <span className="chip-glyph"> ⤢</span>
+      {text.slice(0, -TAIL)}
+      <span className="chip-tail">
+        {text.slice(-TAIL)}
+        <span className="chip-glyph"> ⤢</span>
+      </span>
     </button>
   );
 }
@@ -92,7 +99,7 @@ export function ProcessChip({
           : `exit ${exit.outcome.code}`;
   return (
     <span
-      className={`arg-chip process-chip ${record.running ? "running" : "exited"}`}
+      className={`process-chip ${record.running ? "running" : "exited"}`}
       title={`p#${record.id} · ${record.command}${record.running ? "" : ` · ${ended}`}`}
     >
       ⟨p#{record.id} <span className="call-sep">·</span>{" "}

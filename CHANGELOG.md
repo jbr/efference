@@ -159,6 +159,8 @@ behind a change, see [`journal/`](journal/).
 - **A worktree toggle in the new-session forms** (docs/tui.md, docs/web-session-creation.md): the web and TUI forms offer *start in its own worktree* (its own checkout and branch at `.efference/worktrees/<id>`), sent as `worktree: true` on creation; outside a git work tree the host refuses it like any other creation.
 
 ### Fixed
+
+- No transcript item can widen the phone page: each is `overflow-x: clip`, so an overlong value loses its tail at the item's edge instead of making iOS zoom the whole page out; a path chip wraps inside itself with its ` ⤢` kept on the last line, the gallery's "Overlong values" section is the 390 px specimen, and `?overflow` still lists what the clip contains (docs/web-client.md).
 - **An artifact frame out of view sizes itself there** (docs/artifacts.md): it kept its opening height until it scrolled into view, then resized under the reader, because the browser runs neither animation frames nor resize observers in an off-screen frame.
 - **A device label's terminal escape sequences are dropped whole** (docs/web-bind.md): only the `ESC` byte was stripped, so `ESC[31m` printed as `[31m` in `efference devices`.
 - **A device token the host refuses shows the web client's sign-in view wherever it is** (docs/web-client.md, docs/web-bind.md): a `401` to any request that carried the held token clears it, and the sign-in view replaces the list, session or page that asked and closes its streams — a revoked browser kept retrying the listing and its attention reports and showed the `401` as a view's error — and a late `401` for an older token leaves a new sign-in alone.

@@ -664,10 +664,25 @@ input[type="checkbox"]:disabled {
 
 /* An argument the chip table upgraded (chips.tsx). A chip sits inside the
    signature's own value span, so it inherits the value's color and reads as
-   part of the sentence; only what the chip adds is toned differently. It stays
-   on one line — a chip is short by construction, and breaking one turns it into
-   two columns. */
-.arg-chip {
+   part of the sentence; only what the chip adds is toned differently. The
+   process chip stays on one line — it is short by construction (a handle and
+   a clipped command), and breaking it turns it into two columns. A path chip
+   is the whole quoted path, so it wraps (below). */
+.process-chip {
+  white-space: nowrap;
+}
+
+/* A path chip is a button, so an atomic inline box: it is held to the line's
+   width and breaks anywhere inside it, rather than overrunning its row. The
+   last characters and the glyph travel together (`.chip-tail`). */
+.path-chip {
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.chip-tail {
   white-space: nowrap;
 }
 

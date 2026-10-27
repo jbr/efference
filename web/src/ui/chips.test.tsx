@@ -178,6 +178,24 @@ test("a path argument carries the file-view link, on the argument itself", () =>
   expect(opened).toEqual([]);
 });
 
+test("a path chip at phone width keeps its whole path, with the glyph on the path's tail", () => {
+  // The signature at ~45 columns: a path that fits the three-line allowance
+  // but is wider than one line. The chip is the path and nothing is dropped;
+  // the glyph sits in the same no-break run as the path's last characters, so
+  // wrapping cannot leave it alone on a line (the wrapping itself is CSS, `.path-chip` in
+  // index.css, checked in a browser at 390px: the gallery's overlong values).
+  const path = "journal/2026-10-10-web-follow-tail-intent.md";
+  const call = { id: "toolu_4", name: "write", input: { path } };
+  const markup = head(call, undefined, 45);
+  expect(markup).toContain("path-chip");
+  expect(markup).toMatch(
+    /<span class="chip-tail">nt\.md&quot;<span class="chip-glyph"> ⤢<\/span><\/span>/,
+  );
+  expect(markup.replace(/<[^>]+>/g, "").replaceAll("&quot;", '"')).toContain(
+    `"${path}" ⤢`,
+  );
+});
+
 test("a read's paths still carry no chip, so its signature is untouched", () => {
   const call = {
     id: "toolu_2",

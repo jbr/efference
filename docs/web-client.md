@@ -871,8 +871,9 @@ when a web font loads), and the layout is a pure function of the view and that i
 memoized per call, recomputed only when the integer changes. Rows indent in `ch`, the
 unit the layout counted in. A chip's added width (the path chip's ` ⤢`, a process
 chip's resolved command) is budgeted as an upper bound, and a wide character counts
-as one column; either can overrun a row, which then wraps as text rather than clipping.
-Before the first measurement the signature renders flat.
+as one column; either can overrun a row, which then wraps as text (the path chip wraps
+inside itself, below) rather than clipping. Before the first measurement the signature
+renders flat.
 
 Call bodies truncate at both widths
 (`ui/truncate.ts`: 12 lines at desktop, 4 on the phone) — which is what stopped
@@ -911,6 +912,21 @@ blockified by the CSS Display spec — so a signature built of sibling spans wra
 *whole boxes* onto their own lines. A chip rides the argument it refers to (below), so
 there is nothing to place at the end of the row.
 
+**A transcript item never widens the page.** On a phone, an element whose text runs
+past the viewport makes the document wider than the screen, and iOS zooms the page out
+and autosizes the overflowing text. Each transcript item (`.entry`, `.t-entry`:
+`Transcript.css`) is `overflow-x: clip`, so what overruns an item is cut at the item's
+edge instead of reaching the document. `clip`, not `hidden`: it makes no scroll
+container, so sticky positioning and scroll anchoring are unaffected. The edge is the
+item's padding box, which is why a call's hover field and the gate's halo (the item's
+own box) are not cut and a plain call's shell prompt hangs into its padding; the
+capped item and the gate float have their own clips and keep their own room for the
+prompt. Anything meant to escape an item is `fixed` or portalled. This is the net, not
+the layout: an element that overruns loses its tail, so each known case (the path
+chip) also wraps by its own rule, and `?overflow` (below) still lists elements whose
+content spills even when the clip contains them. The gallery's "Overlong values"
+section is the specimen to check at 390px: `scrollWidth` equals the viewport width.
+
 `ui/CallHead.tsx` is kept apart from `ToolBlocks.tsx` so it imports nothing but
 React, the cordon, and the chip renderer it is handed: the markup is what the
 wrapping test asserts on, and it renders with no highlighter and no media query.
@@ -939,9 +955,13 @@ Two renderers cover the table's seven entries.
 - **A path argument is the file link** — `write`'s `path`, the edit family's
   `file_path`. Within-cwd only, as the viewer is categorically
   (`session/touchedFiles.ts`): an absolute or `..`-leading path yields no chip.
-  A button, so the call's open-the-inspector click handler ignores it. This
-  replaced a detached `open ⤢` in a trailing slot on the head, which named the
-  file a second time to say which one it meant.
+  A button, so the call's open-the-inspector click handler ignores it. The chip is
+  the whole quoted path, so it is held to the line's width and breaks anywhere inside
+  (`overflow-wrap: anywhere`); the glyph and the path's last characters share one
+  no-break run (`.chip-tail`), so the glyph never starts a line. The process chip is
+  short by construction and stays on one line. This replaced a detached `open ⤢` in
+  a trailing slot on the head, which named the file a second time to say which one it
+  meant.
 - **A `p#<n>` handle resolves to what it was** — `handle` on `kill_process`,
   `read_process`, `watch_process`. The handle is opaque in the transcript, and
   `GET /v1/processes/:id` answers for any handle ever minted, running or exited
@@ -2234,8 +2254,9 @@ With `?overflow` on the URL (dev builds), a fixed panel lists the viewport's
 width, the document's scroll width, and the outermost elements whose right edge
 passes the viewport. It also lists innermost visible text spills: elements whose
 content is wider than their box, excluding content confined by a hidden or
-scrolling ancestor. Both are readable off a simulator screenshot, where no
-inspector is attached. A column wider than the screen shows on iOS as enlarged text (text
+scrolling ancestor. A `clip` ancestor does not exclude: the transcript items' clip
+(above) hides a spill rather than fixing it, so the report keeps naming it. Both are
+readable off a simulator screenshot, where no inspector is attached. A column wider than the screen shows on iOS as enlarged text (text
 autosizing inflates an overflowing block), not only as a horizontal scroll, so
 "the text is huge" on a phone is a width bug first.
 
@@ -2244,7 +2265,7 @@ autosizing inflates an overflowing block), not only as a horizontal scroll, so
 With `?gallery` on the URL (dev builds), the page renders the client's widgets
 on fixture data instead of the app. A section index links to composed scenes,
 buttons, neon glyphs, session
-tabs and their hover card, composers, code/results, images, session cards, archived
+tabs and their hover card, composers, code/results, overlong values (a transcript with a path chip and result lines wider than a phone), images, session cards, archived
 cards and rows, the switch page, launch settings, the model picker, and resume lists. Specimen labels stack above their
 controls on narrow screens; state comparisons wrap rather than widening the page.
 `SessionArchiveSpecimens.tsx` shows idle archiving, active-session confirmation, pending

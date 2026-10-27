@@ -25,6 +25,7 @@ import { ArchivedSpecimens } from "./ArchivedSpecimens.tsx";
 import { emptyDraft, type Draft } from "../ui/sessionForm.ts";
 import { setThemeChoice, themeChoice } from "../ui/theme.ts";
 import { ContextMeter, CostMeter } from "../ui/TopBar.tsx";
+import { OverflowSpecimens } from "./OverflowSpecimens.tsx";
 import {
   GalleryScenes,
   ComposerSpecimens,
@@ -108,6 +109,7 @@ export function Gallery() {
           "Plan allowance",
           "Composer",
           "Code and results",
+          "Overlong values",
           "Expandable ranges",
           "Transport status",
           "Ambients",
@@ -249,6 +251,9 @@ export function Gallery() {
 
       <Section title="Code and results">
         <SyntaxSpecimens />
+      </Section>
+      <Section title="Overlong values">
+        <OverflowSpecimens />
       </Section>
       <Section title="Expandable ranges">
         <RangeContentSpecimens />

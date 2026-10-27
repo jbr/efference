@@ -1,5 +1,22 @@
 /* The transcript's items (ui/TranscriptItems.tsx, docs/web-client.md). */
 
+/* A transcript item never widens the page. On a phone an element whose text
+   runs past the viewport makes the document wider than the screen, and iOS
+   zooms the whole page out (index.css `.transcript.col`); every such case so
+   far was an element whose value turned out longer than its styling assumed.
+   The net: whatever overruns an item is clipped at the item's edge instead.
+   `clip`, unlike `hidden`, makes no scroll container, so sticky positioning
+   and scroll anchoring are unaffected. The item's padding box is the edge, so
+   the gate's halo and the call's hover field (the item's own box) are not cut,
+   and a shell command's hanging prompt sits in the item's padding (below).
+   Anything meant to escape an item is fixed or portalled. The clip hides what
+   it contains: the dev `?overflow` report (overflowReport.ts) still lists the
+   elements whose content spills. docs/web-client.md. */
+.transcript .entry,
+.t-entry {
+  overflow-x: clip;
+}
+
 /* Rhythm, not rules: one gap between entries — a call, a thinking block, a
    paragraph run, a turn — and tight spacing inside one, so what belongs to a
    call (its intent, result, note) reads as grouped by proximity alone. */
