@@ -93,7 +93,7 @@ pub(crate) fn resolve_bind(
     };
     // The bind's credentials all derive from the stored root (docs/web-bind.md):
     // read it, or mint it if this is the first bind on this machine.
-    let root = efference::auth::Root::load(&efference::secrets::Secrets::detect()?)?;
+    let root = efference::auth::Root::load(&efference::secrets::Secrets::detect())?;
     efference::auth::Root::install(Some(root.clone()));
     Ok(Some(efference::daemon::TcpBind {
         addr,
@@ -400,7 +400,7 @@ pub(crate) async fn host(
     let host_env = efference::env_table::EnvSnapshot::capture()?;
     // Shared rather than borrowed: a keychain-backed connection keeps the store
     // to re-read its credential from when one expires (docs/transport.md).
-    let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect()?);
+    let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect());
     // Cloned before the registry consumes it: the host needs the same snapshot as
     // the baseline a session launched without one of its own inherits
     // (docs/env.md).

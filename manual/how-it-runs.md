@@ -34,7 +34,7 @@ systemd user unit on Linux). A service does not see your shell's environment, so
 model keys in the keychain rather than in environment variables
 ([Credentials](credentials.md)).
 <!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture) -->
-<!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. Blocked on backlog/linux-without-secret-service.md for headless Linux. -->
+<!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. The service examples are host-as-a-service (backlog/inbox/host-as-a-service.md). -->
 
 ### What leaves your machine
 

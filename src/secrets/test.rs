@@ -36,6 +36,52 @@ fn errors_name_the_operation_and_item_but_never_the_value() {
     );
 }
 
+/// Detection connects to nothing: the platform store is opened by the first
+/// operation, so a store that cannot be opened fails that operation, naming
+/// its item and carrying the store's reason. A failed open is not kept; each
+/// operation tries again.
+#[test]
+fn a_store_that_cannot_be_opened_fails_the_operation_that_needed_it() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static OPENS: AtomicUsize = AtomicUsize::new(0);
+    fn no_session_bus() -> Result<(), String> {
+        OPENS.fetch_add(1, Ordering::SeqCst);
+        Err("no session bus".to_string())
+    }
+    let failure = |operation, name: &str| SecretError {
+        operation,
+        name: name.to_string(),
+        detail: "no session bus".to_string(),
+    };
+
+    let secrets = Secrets::native(no_session_bus);
+    assert_eq!(secrets.describe(), native::DESCRIPTION);
+    assert_eq!(
+        OPENS.load(Ordering::SeqCst),
+        0,
+        "constructing opened the store"
+    );
+
+    let error = secrets.get("inference:anthropic").unwrap_err();
+    assert_eq!(error, failure("read", "inference:anthropic"));
+    assert_eq!(
+        error.to_string(),
+        "could not read secret `inference:anthropic`: no session bus"
+    );
+    assert_eq!(OPENS.load(Ordering::SeqCst), 1);
+
+    assert_eq!(
+        secrets.set("oauth:codex", "grant").unwrap_err(),
+        failure("write", "oauth:codex")
+    );
+    assert_eq!(
+        secrets.delete("root").unwrap_err(),
+        failure("delete", "root")
+    );
+    assert_eq!(secrets.open(), Err("no session bus".to_string()));
+    assert_eq!(OPENS.load(Ordering::SeqCst), 4);
+}
+
 /// The `security -i` line: a value with quotes, backslashes, a `$`, and a
 /// newline-free shell metacharacter soup arrives as one quoted word, and the
 /// line ends with the newline the interactive parser needs.
@@ -75,7 +121,7 @@ fn security_cli_round_trips_a_value_with_quotes() {
 fn a_test_binary_is_not_identity_signed() {
     assert!(!identity_signed());
     assert_eq!(
-        Secrets::detect().unwrap().describe(),
+        Secrets::detect().describe(),
         "the login keychain, through `security`"
     );
 }

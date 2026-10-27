@@ -7,9 +7,10 @@ only *where* each key comes from; it has no setting meant to hold a key. A key c
 one of two places:
 <!-- src: src/inference.rs::ConnectionConfig, AuthConfig (deny_unknown_fields; no literal-key field); src/setup/render.rs::HEADER -->
 
-- **Your OS keychain** — the login keychain on macOS, the Secret Service (the desktop's
-  password store) on Linux. `efference setup` stores a key there when you paste it in.
-  This is the simplest choice, and the one to use if the host runs as a login service.
+- **Your OS keychain** — the login keychain on macOS. On desktop Linux it is the Secret
+  Service your desktop already runs: GNOME's keyring, KDE's wallet, or KeePassXC.
+  `efference setup` stores a key there when you paste it in. This is the simplest choice,
+  and the one to use if the host runs as a login service.
 - **An environment variable**, read once, when the host starts. This suits a secrets
   manager that fills in variables for one command, such as 1Password's `op run` — for
   example, if you want to approve each launch that can spend money on inference.
@@ -36,7 +37,15 @@ the provider refuses the old key, the host reads the keychain again and retries 
 it finds. A refusal for another reason, such as a spending limit, reads nothing.
 <!-- src: src/api/failure.rs::rejects_credential; src/api/auth_value.rs; src/inference/credential.rs::load_credential (keychain arm re-reads; env arm has no reloader) -->
 <!-- TODO: macOS keychain access prompts depend on how release binaries are signed; describe once dist signing is settled. -->
-<!-- TODO: blocked on backlog/linux-without-secret-service.md — today a Linux host with no Secret Service fails to start even with environment-variable keys. -->
+
+A Linux server usually has no Secret Service to keep keys in: no keyring program is
+installed, or its keyring stays locked because nobody signs in to a desktop. On a server
+like that, keep keys in environment variables. efference opens the keychain only when it
+needs to read or write something there, so a host whose keys all come from environment
+variables starts without one. On such a server, a host with a connection whose key is in
+the keychain refuses to start, and its error names that connection and the keychain item
+it could not read.
+<!-- src: src/secrets.rs::Secrets::detect, native::open; src/bin/efference/serve.rs::refuse_broken_connections -->
 
 ### Keys in environment variables, with `op run`
 

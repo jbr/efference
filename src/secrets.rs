@@ -18,8 +18,12 @@
 //!   Writes go through `security -i` on stdin so the value never sits on argv.
 //! - **Linux**: Secret Service in-process; nothing there binds to the binary.
 //!
-//! Native calls run on a fresh thread: the Secret Service store drives its own
-//! async runtime, which cannot be entered from a tokio worker.
+//! Detection connects to nothing. The in-process store is opened by the first
+//! `get`/`set`/`delete`, so a process that never touches an item never needs
+//! a Secret Service, and one that does fails that call, naming the item.
+//!
+//! Native calls, and the open, run on a fresh thread: the Secret Service store
+//! drives its own async runtime, which cannot be entered from a tokio worker.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -69,9 +73,15 @@ impl std::fmt::Display for SecretError {
 
 impl std::error::Error for SecretError {}
 
+/// Opens the platform store if this process has not yet ([`native::open`]).
+/// Called before every native operation, and cheap once the store is open
+/// (docs/secrets.md).
+type Open = fn() -> Result<(), String>;
+
 enum Backend {
-    /// `keyring-core` over the platform store registered at detection.
-    Native,
+    /// `keyring-core` over the platform store, opened by `open` on the first
+    /// operation that needs it.
+    Native { open: Open },
     /// macOS `security(1)`.
     #[cfg(target_os = "macos")]
     SecurityCli,
@@ -79,8 +89,8 @@ enum Backend {
     Memory(Mutex<BTreeMap<String, String>>),
 }
 
-/// One handle on the store. Cheap to construct after the first detection; the
-/// platform store is registered once per process.
+/// One handle on the store. Cheap to construct: detection connects to nothing,
+/// and the platform store is opened once per process, by the first operation.
 pub struct Secrets {
     backend: Backend,
 }
@@ -94,22 +104,36 @@ impl std::fmt::Debug for Secrets {
 }
 
 impl Secrets {
-    /// The store for this platform and this binary's signature.
-    pub fn detect() -> Result<Self, SecretError> {
+    /// The store for this platform and this binary's signature. Chooses a
+    /// backend without contacting it: a store that cannot be opened fails the
+    /// operations that need it, not detection.
+    pub fn detect() -> Self {
         #[cfg(target_os = "macos")]
         if !identity_signed() {
-            return Ok(Self {
+            return Self {
                 backend: Backend::SecurityCli,
-            });
+            };
         }
-        native::register().map_err(|detail| SecretError {
-            operation: "open",
-            name: String::new(),
-            detail,
-        })?;
-        Ok(Self {
-            backend: Backend::Native,
-        })
+        Self::native(native::open)
+    }
+
+    /// The in-process platform store, opened by `open` when first used.
+    fn native(open: Open) -> Self {
+        Self {
+            backend: Backend::Native { open },
+        }
+    }
+
+    /// Open the store now rather than at the first operation, for a caller
+    /// that offers to write only where writing can work (setup). The reason
+    /// is the store's own words, with no item to name.
+    pub fn open(&self) -> Result<(), String> {
+        match &self.backend {
+            Backend::Native { open } => on_fresh_thread(*open),
+            #[cfg(target_os = "macos")]
+            Backend::SecurityCli => Ok(()),
+            Backend::Memory(_) => Ok(()),
+        }
     }
 
     /// A store that lives in this process only.
@@ -122,7 +146,7 @@ impl Secrets {
     /// Where values go, for a prompt or a report: the store, not any item.
     pub fn describe(&self) -> &'static str {
         match &self.backend {
-            Backend::Native => native::DESCRIPTION,
+            Backend::Native { .. } => native::DESCRIPTION,
             #[cfg(target_os = "macos")]
             Backend::SecurityCli => "the login keychain, through `security`",
             Backend::Memory(_) => "process memory",
@@ -136,7 +160,7 @@ impl Secrets {
             detail,
         };
         match &self.backend {
-            Backend::Native => off_thread(name, native::get).map_err(wrap),
+            Backend::Native { open } => native_call(*open, name, native::get).map_err(wrap),
             #[cfg(target_os = "macos")]
             Backend::SecurityCli => security_cli::get(name).map_err(wrap),
             Backend::Memory(map) => Ok(map.lock().unwrap().get(name).cloned()),
@@ -151,9 +175,9 @@ impl Secrets {
             detail,
         };
         match &self.backend {
-            Backend::Native => {
+            Backend::Native { open } => {
                 let value = value.to_string();
-                off_thread(name, move |name| native::set(name, &value)).map_err(wrap)
+                native_call(*open, name, move |name| native::set(name, &value)).map_err(wrap)
             }
             #[cfg(target_os = "macos")]
             Backend::SecurityCli => security_cli::set(name, value).map_err(wrap),
@@ -174,7 +198,7 @@ impl Secrets {
             detail,
         };
         match &self.backend {
-            Backend::Native => off_thread(name, native::delete).map_err(wrap),
+            Backend::Native { open } => native_call(*open, name, native::delete).map_err(wrap),
             #[cfg(target_os = "macos")]
             Backend::SecurityCli => security_cli::delete(name).map_err(wrap),
             Backend::Memory(map) => {
@@ -185,15 +209,25 @@ impl Secrets {
     }
 }
 
-/// Run a native store call on its own thread and wait for it.
-fn off_thread<T: Send + 'static>(
+/// Open the platform store if this process has not, then make one call on
+/// it, both on a fresh thread.
+fn native_call<T: Send + 'static>(
+    open: Open,
     name: &str,
     call: impl FnOnce(&str) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     let name = name.to_string();
+    on_fresh_thread(move || {
+        open()?;
+        call(&name)
+    })
+}
+
+/// Run `work` on its own thread and wait for it.
+fn on_fresh_thread<T: Send>(work: impl FnOnce() -> Result<T, String> + Send) -> Result<T, String> {
     std::thread::scope(|scope| {
         scope
-            .spawn(move || call(&name))
+            .spawn(work)
             .join()
             .map_err(|_| "the store call panicked".to_string())?
     })
@@ -216,7 +250,7 @@ pub fn identity_signed() -> bool {
 }
 
 mod native {
-    use std::sync::OnceLock;
+    use std::sync::{Mutex, PoisonError};
 
     use keyring_core::{Entry, Error};
 
@@ -227,32 +261,43 @@ mod native {
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     pub const DESCRIPTION: &str = "no store on this platform";
 
-    static REGISTERED: OnceLock<Result<(), String>> = OnceLock::new();
+    /// Whether the platform store is `keyring-core`'s default yet. Held for
+    /// the length of an open, so concurrent first operations make one
+    /// connection between them.
+    static OPENED: Mutex<bool> = Mutex::new(false);
 
-    /// Register the platform store as `keyring-core`'s default, once.
-    pub fn register() -> Result<(), String> {
-        REGISTERED
-            .get_or_init(|| {
-                #[cfg(target_os = "macos")]
-                {
-                    let store = apple_native_keyring_store::keychain::Store::new()
-                        .map_err(|error| error.to_string())?;
-                    keyring_core::set_default_store(store);
-                    Ok(())
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    let store = zbus_secret_service_keyring_store::Store::new()
-                        .map_err(|error| error.to_string())?;
-                    keyring_core::set_default_store(store);
-                    Ok(())
-                }
-                #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-                {
-                    Err(DESCRIPTION.to_string())
-                }
-            })
-            .clone()
+    /// Make the platform store `keyring-core`'s default if no earlier call
+    /// has. A failure is not kept: the next operation tries again, so a
+    /// store that comes up later serves a process that is already running.
+    pub fn open() -> Result<(), String> {
+        let mut opened = OPENED.lock().unwrap_or_else(PoisonError::into_inner);
+        if !*opened {
+            let store = platform_store()
+                .map_err(|error| format!("{DESCRIPTION} could not be opened: {error}"))?;
+            keyring_core::set_default_store(store);
+            *opened = true;
+        }
+        Ok(())
+    }
+
+    /// Connect to this platform's store. On Linux this is the D-Bus dial.
+    fn platform_store() -> Result<std::sync::Arc<keyring_core::CredentialStore>, String> {
+        #[cfg(target_os = "macos")]
+        {
+            let store = apple_native_keyring_store::keychain::Store::new()
+                .map_err(|error| error.to_string())?;
+            Ok(store)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let store = zbus_secret_service_keyring_store::Store::new()
+                .map_err(|error| error.to_string())?;
+            Ok(store)
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            Err("efference has no store backend for this platform".to_string())
+        }
     }
 
     fn entry(name: &str) -> Result<Entry, String> {

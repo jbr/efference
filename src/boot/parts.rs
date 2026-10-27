@@ -63,7 +63,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
     // Credentials live in the user's secret store (docs/secrets.md): an
     // authorization belongs to the operator and the server, not to one session.
     let mut store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
-        crate::secrets::Secrets::detect()?,
+        crate::secrets::Secrets::detect(),
     ));
     if let Some(host) = host {
         // A hosted session refreshes under the host's locks, so the host's

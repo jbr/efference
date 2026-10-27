@@ -163,6 +163,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Fixed
 
+- The secret store opens when it is first used, not at every start: a Linux host with no usable Secret Service (no session bus, none on the bus, or a locked keyring with nobody to unlock it) starts on environment-variable keys, and an item it does need fails promptly with an error naming the item; setup still asks the store up front before offering to save a key there (docs/secrets.md).
 - A web tab whose event stream has gone silent reconnects on its own: any read resets a 35 s deadline (the host heartbeats every 15 s), and a tab returning to view with a stream last read over 20 s ago reconnects at once, resuming from its cursor; the four copies of the reconnect loop are one reader (`web/src/api/sse.ts`, docs/web-client.md).
 - An MCP server's OAuth grant is renewed while a session runs: past its expiry before a call, and once on a `401`, through the refresh the mount already ran, under a per-server lock on the host so concurrent sessions share one refresh and a rotated refresh token is never presented twice; a renewal that fails fails the call and says a session restart signs in again, instead of every call failing until a restart (docs/mcp-auth.md).
 - A host removes no session at start: the boot sweep of empty logs is gone, since it checked no lock and a second host (the browser launch's island beside a running host) could remove a session the first was holding before its first turn; an empty session is discarded when it is archived (docs/resumption.md).

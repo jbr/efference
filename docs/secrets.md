@@ -30,7 +30,7 @@ another client.
 
 ## Backends
 
-`Secrets::detect` picks one per process:
+`Secrets::detect` picks one per process, and contacts none of them:
 
 - **macOS, identity-signed binary** — the login keychain in-process, through
   `keyring-core` and the Apple keychain store. A keychain item's access list
@@ -54,8 +54,41 @@ an item a dev build wrote gets one prompt, and "always allow" then sticks; the
 reverse direction prompts through `security`. In practice one set is
 development's and the other a release's.
 
-Native calls run on a fresh thread: the Secret Service store drives its own
-async runtime, which cannot be entered from a tokio worker.
+## When the store is opened
+
+Every host start, session boot and CLI entry calls `Secrets::detect`, whether
+or not anything there reads an item, so detection only chooses. The in-process
+store (the Secret Service, or the keychain for a signed binary) is opened by
+the first `get`, `set` or `delete` in the process; on Linux that is the D-Bus
+dial. A host whose connections all read their keys from the environment, and
+that has no `--bind`, starts without opening it, so it starts on a machine with
+no Secret Service. A session opens it when it mounts an MCP server, because the
+mount reads the server's grant first ([mcp-auth.md](mcp-auth.md)).
+
+A store that cannot be opened fails the operation that needed it, and the
+error names that operation's item — ``could not read secret
+`inference:anthropic`: the Secret Service (login collection) could not be
+opened: …`` — which the host's launch check prefixes with the connection. An
+open that fails is not remembered: the next operation tries again, so a store
+that comes up later serves a host that is already running. One that succeeds
+stays open for the life of the process; concurrent first operations wait on
+one open rather than each dialing.
+
+Setup is the exception: it opens the store when it starts, through
+`Secrets::open`, so the choice to keep a pasted key there can be listed as
+unavailable, with the store's reason, before anyone pastes one.
+
+The Secret Service store works when three things hold: a D-Bus session bus, a
+daemon serving the Secret Service API on it (GNOME's keyring, KDE's wallet,
+KeePassXC), and the collection unlocked. A desktop login has all three. A
+systemd user service usually has the bus (the user's systemd instance provides
+it at `$XDG_RUNTIME_DIR/bus`) and lacks the other two on a server: no keyring
+daemon is installed, or its login collection is encrypted with the login
+password and unlocked by PAM at a desktop login, which a lingering service
+never has.
+
+Native calls, and the open, run on a fresh thread: the Secret Service store
+drives its own async runtime, which cannot be entered from a tokio worker.
 
 ## What the store does not protect against
 
@@ -73,8 +106,9 @@ never in a diff.
 
 An unreadable or missing item is loud and names the item, never the value: a
 connection whose `inference:<name>` is absent carries that reason and fails the
-sessions that select it, and a store that cannot be opened at all fails the
-host launch. Setup lists the "paste it now" choice as unavailable, with the
-store's own reason, when there is none to write. A locked keychain prompts
+sessions that select it, and a store that cannot be opened fails each
+operation that needed it, in the same words with the store's reason. Setup
+lists the "paste it now" choice as unavailable, with the store's own reason,
+when there is none to write. A locked keychain prompts
 through the OS as any keychain read does; a host with no way to prompt
 (a service with no session) fails the read instead of hanging.

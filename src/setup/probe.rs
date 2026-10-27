@@ -134,7 +134,13 @@ impl LiveProbe {
         Ok(Self {
             env: EnvSnapshot::capture()?,
             cwd: std::env::current_dir()?,
-            secrets: Secrets::detect().map_err(|error| error.to_string()),
+            // Opened here rather than by the first write, which is the
+            // default (docs/secrets.md): setup offers to keep a value only
+            // where keeping one can work, and says why not otherwise.
+            secrets: {
+                let secrets = Secrets::detect();
+                secrets.open().map(|()| secrets)
+            },
         })
     }
 

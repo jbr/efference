@@ -67,7 +67,7 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
     if !role.mcp_servers.is_empty() {
         let store: std::sync::Arc<dyn efference::mcp::auth::store::TokenStore> =
             std::sync::Arc::new(efference::mcp::auth::store::KeychainStore::new(
-                std::sync::Arc::new(efference::secrets::Secrets::detect()?),
+                std::sync::Arc::new(efference::secrets::Secrets::detect()),
             ));
         let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
         let mut failed: Option<(String, String)> = None;
