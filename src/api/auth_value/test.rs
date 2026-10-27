@@ -9,6 +9,7 @@ fn counting(values: Vec<Result<String, String>>) -> (AuthValue, Arc<AtomicUsize>
     let seen = calls.clone();
     let initial = "old".to_string();
     let value = AuthValue::reloadable(
+        Provider::Anthropic,
         initial,
         sync_reload(move || {
             let n = seen.fetch_add(1, Ordering::SeqCst);
@@ -116,6 +117,31 @@ async fn a_replacement_is_masked_in_the_sessions_holding_it() {
     );
 }
 
+/// A refreshed token arrives as a header value, `Bearer <token>`, but the model
+/// can only ever see the bare token, so that is what has to be masked.
+#[tokio::test]
+async fn a_replacement_is_masked_bare_not_with_its_auth_prefix() {
+    let provider = Provider::OpenAICodex;
+    let masker = Arc::new(Masker::default());
+    masker.absorb_secret(&[("codex".into(), "stale-token-0001".into())]);
+    let value = AuthValue::reloadable(
+        provider,
+        provider.auth_header_value("stale-token-0001"),
+        sync_reload(move || Ok(provider.auth_header_value("fresh-token-0002"))),
+    );
+    value.mask_replacements_in("codex", &masker);
+
+    let header = provider.auth_header_value("stale-token-0001");
+    assert_eq!(value.reload(&header).await, Reloaded::Replaced);
+    assert_eq!(value.get(), "Bearer fresh-token-0002");
+
+    let masked = masker.mask("the refresh gave fresh-token-0002 and not stale-token-0001");
+    assert!(
+        !masked.contains("fresh-token-0002") && !masked.contains("stale-token-0001"),
+        "both tokens are redacted bare: {masked}"
+    );
+}
+
 /// The cell outlives the sessions using it, so a dead session's masker must not
 /// be retained by it.
 #[tokio::test]
@@ -137,6 +163,7 @@ fn renewing(
     let calls = Arc::new(AtomicUsize::new(0));
     let seen = calls.clone();
     let value = AuthValue::renewing(
+        Provider::Anthropic,
         "old".into(),
         renew_at,
         Box::new(move || {

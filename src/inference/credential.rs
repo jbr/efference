@@ -109,8 +109,12 @@ pub(super) fn load_credential(
     let mut endpoint = Endpoint::from_credentials(provider, token.clone(), account, base)
         .map_err(|error| error.to_string())?;
     if let Some(reload) = reload {
-        endpoint.auth_value =
-            AuthValue::renewing(provider.auth_header_value(&token), renew_at, reload);
+        endpoint.auth_value = AuthValue::renewing(
+            provider,
+            provider.auth_header_value(&token),
+            renew_at,
+            reload,
+        );
     }
     Ok(Credential {
         endpoint,

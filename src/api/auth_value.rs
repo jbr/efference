@@ -27,6 +27,7 @@ use std::pin::Pin;
 use std::sync::{Arc, RwLock, Weak};
 use std::time::{Duration, SystemTime};
 
+use super::Provider;
 use crate::env_table::Masker;
 
 /// Re-reads a credential from wherever it came from, yielding the assembled
@@ -74,6 +75,11 @@ pub struct AuthValue(Arc<Cell>);
 
 struct Cell {
     current: RwLock<String>,
+    /// What precedes the secret in `current` (`Bearer `), so the secret can be
+    /// masked bare. The first absorb takes the secret bare; a replacement has to
+    /// match it, or a refreshed token appearing alone in a tool result is not
+    /// caught (docs/secrets.md).
+    prefix: &'static str,
     reload: Option<Reload>,
     /// When `current` should be re-read before it is sent, from the source's
     /// own statement of expiry. Moved by every successful re-read, and pushed
@@ -125,14 +131,23 @@ impl std::fmt::Display for Reloaded {
 
 impl AuthValue {
     /// A value with a source it can be re-read from.
-    pub fn reloadable(initial: String, reload: Reload) -> Self {
-        Self::renewing(initial, None, reload)
+    pub fn reloadable(provider: Provider, initial: String, reload: Reload) -> Self {
+        Self::renewing(provider, initial, None, reload)
     }
 
     /// A value with a source, renewed from it once `renew_at` passes.
-    pub fn renewing(initial: String, renew_at: Option<SystemTime>, reload: Reload) -> Self {
+    ///
+    /// `provider` names the auth prefix on `initial` and on every re-read value
+    /// ([`Provider::auth_header_value`]).
+    pub fn renewing(
+        provider: Provider,
+        initial: String,
+        renew_at: Option<SystemTime>,
+        reload: Reload,
+    ) -> Self {
         Self(Arc::new(Cell {
             current: RwLock::new(initial),
+            prefix: provider.auth_prefix(),
             reload: Some(reload),
             renew_at: RwLock::new(renew_at),
             reloading: tokio::sync::Mutex::new(()),
@@ -150,13 +165,16 @@ impl AuthValue {
         registered.push((Arc::downgrade(masker), name.to_string()));
     }
 
-    /// Register a replacement everywhere the old value was masked.
+    /// Register a replacement everywhere the old value was masked. `value` is a
+    /// header value; the secret within it is what gets absorbed, matching the
+    /// bare secret the first absorb took.
     fn mask(&self, value: &str) {
+        let secret = value.strip_prefix(self.0.prefix).unwrap_or(value);
         let mut registered = self.0.maskers.write().unwrap();
         registered.retain(|(weak, _)| weak.strong_count() > 0);
         for (weak, name) in registered.iter() {
             if let Some(masker) = weak.upgrade() {
-                masker.absorb_secret(&[(name.clone(), value.to_string())]);
+                masker.absorb_secret(&[(name.clone(), secret.to_string())]);
             }
         }
     }
@@ -264,6 +282,7 @@ impl From<String> for AuthValue {
     fn from(value: String) -> Self {
         Self(Arc::new(Cell {
             current: RwLock::new(value),
+            prefix: "",
             reload: None,
             renew_at: RwLock::new(None),
             reloading: tokio::sync::Mutex::new(()),

@@ -746,7 +746,9 @@ Not every kind has a source to re-read, and this is where the auth kinds differ
 An outcome that leaves the same value on the wire (`Unchanged`, `NoSource`, a
 failed read) joins the upstream error rather than retrying, so the stall says
 what was tried. A replacement is masked before it becomes reachable, in every
-session that was protected from the value it replaces (docs/secrets.md); the
+session that was protected from the value it replaces (docs/secrets.md), and
+as the bare secret, without its provider's auth prefix (`Bearer `), the form the
+first absorb takes; the cell is built with its `Provider` for that. The
 maskers are held weakly, since a session's masker dies with the session while the
 cell lives as long as the host.
 

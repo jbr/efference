@@ -227,7 +227,7 @@ impl Provider {
     /// The literal prepended to the secret to form the auth header value.
     /// Split off the secret so the secret stays a *whole* value (an `op://…`
     /// reference `op run` can substitute — docs/transport.md).
-    fn auth_prefix(&self) -> &'static str {
+    pub(in crate::api) fn auth_prefix(&self) -> &'static str {
         match self {
             Self::Anthropic => "",
             Self::OpenRouter

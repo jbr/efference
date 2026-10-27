@@ -101,8 +101,10 @@ connection's key. The values it knows are:
 - variables a project marks for masking, and every value it gives as an `op://` reference.
 
 The last two apply to values of at least 8 characters.
+
+A key that is replaced while a session runs, such as a refreshed ChatGPT sign-in or a key
+you changed in the keychain, is masked from that moment on, the same way as the original.
 <!-- src: src/env_table.rs::BUILT_IN, EnvPolicy::build_session; src/env_table/mask.rs::MASKABILITY_FLOOR, Masker::absorb_secret; src/inference.rs::SessionInference::absorb_secrets -->
-<!-- TODO: blocked on backlog/refreshed-token-mask-needle.md — a credential replaced mid-session is masked only with its `Bearer ` prefix today. -->
 
 A value is also caught in its common encodings: URL-encoded, JSON-escaped, base64. What the
 model is sent and what triage reads come from the log, so they carry the masked text too.
