@@ -1682,8 +1682,8 @@ Durable curation removes the temporary panel, leaving the result's kept-line rea
 `compactOffer`: the cold notice's button and the standing action in the context-meter
 popup (`ui/ContextPopup.tsx`). Opening the popup then choosing **Summarize history**
 starts the operation without a further confirmation; the request supplies consent
-to spend a live cache when the `verbs` topic's `compact` entry says the route needs
-it (`warm: true`). Both entry points are the route's published answer: blocked, with
+to give up a cache not known to have expired when the `verbs` topic's `compact` entry
+says the route needs it (`warm: true`). Both entry points are the route's published answer: blocked, with
 the route's own reason shown, where the entry refuses — a gate or question pending, a
 loop doing something, nothing to compact — and ready otherwise, a loop parked at its
 cold check or held at a triage included. The popup prevents duplicate clicks while its

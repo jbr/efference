@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Cold, CurrentOperations, Verbs } from "../api/types.ts";
-import { compactOffer, compactionWarning, kilotokens } from "./compact.ts";
+import { compactOffer, kilotokens } from "./compact.ts";
 
 const cold: Cold = {
   since: 1_754_300_000_000,
@@ -59,12 +59,6 @@ describe("the compaction offer", () => {
 });
 
 describe("the compaction wording", () => {
-  it("says what a warm compaction gives up and that there is no undo", () => {
-    expect(compactionWarning(null)).toMatch(/cache is live/);
-    expect(compactionWarning(null)).toMatch(/no undo/);
-    expect(compactionWarning(cold)).toMatch(/expired/);
-  });
-
   it("rounds tokens to thousands", () => {
     expect(kilotokens(120_400)).toBe("120k");
   });

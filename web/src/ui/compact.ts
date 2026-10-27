@@ -9,7 +9,7 @@ export interface CompactOffer {
   /** `writing`: a compaction is in flight. `blocked`: not now, and `reason` says why. */
   kind: "ready" | "writing" | "blocked";
   reason?: string;
-  /** Whether the compaction gives up a live cache, so the operator confirms first. */
+  /** Whether the compaction may give up a cache that is not known to have expired, so the operator confirms first. */
   warm: boolean;
 }
 
@@ -27,20 +27,6 @@ export function compactOffer(
     return { kind: "blocked", reason: verb.message, warm: cold === null };
   }
   return { kind: "ready", warm: verb.warm };
-}
-
-/** The sentence a confirm shows before a compaction runs. */
-export function compactionWarning(cold: Cold | null): string {
-  const read =
-    cold === null
-      ? "The prompt cache is live, and the next request after the summary reads the new, shorter context uncached."
-      : "The cache has expired, so this replaces paying for the full uncached read.";
-  return (
-    "The session's model writes a summary of the conversation so far, and " +
-    "about the last 15k tokens of work stay verbatim after it. " +
-    read +
-    " The full log is kept, but there is no undo yet."
-  );
 }
 
 /** Tokens in the compact form the cold notice uses: `120k`. */

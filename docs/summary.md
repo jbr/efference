@@ -115,6 +115,13 @@ or an unsummarized read: whether to retry, edit or accept the cost of a cold rea
 operator's, and whatever asks for a compaction asks the operator (the cold session's
 compaction is the intended caller; backlog/inbox/cold-session.md).
 
+The compaction worker (`daemon/compact.rs`) starts with every session, whatever the
+connection's capabilities say about a prompt cache. Only the cache-expiry machinery — the
+cache lifetime the cold belief reads, its watcher, the keepalive — is conditional on a known
+prompt cache. A route that accepts `warm: true` needs no cold belief, so an accepted
+request must always have a worker; a connection whose cache support is unknown can be
+caching implicitly, and unknown is not treated as absent.
+
 ## The cut
 
 A compaction can leave the most recent payloads on the wire verbatim after the summary

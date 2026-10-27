@@ -286,8 +286,8 @@ async fn a_compaction_streams_its_writers_deltas() {
             r#"{"type":"message_stop"}"#.to_string(),
         ]))
     });
-    // The compaction loop runs on the session's own client; the test starts it directly
-    // because the runtime spawns it only for a model with a prompt cache.
+    // The compaction loop runs on the session's own client; the test starts it directly,
+    // without a runtime around it.
     let endpoint = crate::api::Endpoint {
         provider: crate::api::Provider::Anthropic,
         url: Some(format!("http://{addr}/v1/messages")),
@@ -323,4 +323,84 @@ async fn a_compaction_streams_its_writers_deltas() {
         });
     }
     assert_eq!(seen, ["thinking:weighing it", "text:the ", "text:account"]);
+}
+
+/// A connection whose capabilities name no prompt cache still writes a compaction asked
+/// for with `warm: true` (docs/summary.md). The request is accepted without a cold
+/// belief, so the worker has to exist whatever the capabilities say; the cache-expiry
+/// machinery (the cache lifetime the cold watcher reads, the keepalive) stays off.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
+    use super::upstream_hold::{Answer, end_turn, scripted, start, wait_until};
+    let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let addr = scripted(Arc::clone(&requests), |_| Answer::Stream(end_turn()));
+    let (host, runtime) = start(addr);
+    let session = Arc::clone(runtime.session());
+    wait_until("the loop went idle", || session.loop_idled()).await;
+    assert!(
+        !crate::api::ModelCapabilities::unknown()
+            .prompt_cache
+            .is_supported(),
+        "the boot's capabilities name no prompt cache"
+    );
+    assert!(
+        session.cache_ttl.get().is_none(),
+        "no cache lifetime is recorded, so the cold watcher and keepalive were not started"
+    );
+
+    // The compaction names the model it was written by, from the boot's preamble.
+    session
+        .append(
+            0,
+            Payload::preamble(
+                "",
+                "sys",
+                Default::default(),
+                Some(crate::log::LoggedInference::new(
+                    "c",
+                    crate::api::Provider::Anthropic,
+                    "m",
+                )),
+            ),
+        )
+        .unwrap();
+    append_compactable_history(&session);
+    assert_eq!(
+        session.request_compaction(false),
+        Err(NotCompactable::NotCold)
+    );
+    assert_eq!(session.request_compaction(true), Ok(()));
+
+    wait_until("the compaction finishes", || !session.compacting()).await;
+    let entries = session.snapshot();
+    let summaries: Vec<&Summary> = entries
+        .iter()
+        .filter_map(|e| match &e.payload {
+            Payload::Summary(summary) => Some(summary),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(summaries.len(), 1, "the compaction ends in its Summary");
+    assert!(matches!(
+        summaries[0].made_by,
+        crate::log::MadeBy::Compaction(_)
+    ));
+    assert!(
+        summaries[0].text.ends_with("ok"),
+        "the writer's account follows the header"
+    );
+    assert!(
+        !entries.iter().any(|e| matches!(
+            e.payload,
+            Payload::Telemetry(crate::log::Telemetry::CompactionFailed { .. })
+        )),
+        "the compaction did not fail"
+    );
+    assert_eq!(
+        requests.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the compaction's request is the only one the upstream saw"
+    );
+    assert!(session.cache_ttl.get().is_none());
+    host.shut_down().await;
 }

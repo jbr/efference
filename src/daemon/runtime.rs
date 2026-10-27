@@ -205,13 +205,16 @@ impl SessionRuntime {
         if cacheable {
             session.set_cache_ttl(client.endpoint().provider.cache_ttl());
             tokio::spawn(swansong.interrupt(super::cold::cold_watch(Arc::clone(&session))));
-            // The compaction writes on the session's own client (docs/summary.md).
-            tokio::spawn(swansong.interrupt(super::compact::compact_loop(
-                Arc::clone(&client),
-                Arc::clone(&session),
-                tools.clone(),
-            )));
         }
+        // The compaction writes on the session's own client (docs/summary.md). It starts
+        // whatever the capabilities say about a prompt cache: a warm `POST /loop/compact`
+        // is accepted without a cold belief, and unknown cache support is not evidence
+        // that none exists.
+        tokio::spawn(swansong.interrupt(super::compact::compact_loop(
+            Arc::clone(&client),
+            Arc::clone(&session),
+            tools.clone(),
+        )));
         if cacheable && !ping_at.is_zero() {
             tokio::spawn(swansong.interrupt(keepalive_loop(
                 KeepaliveSpec {

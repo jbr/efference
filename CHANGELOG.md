@@ -161,6 +161,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Fixed
 
+- A manual compaction runs on a model with no known prompt cache: the compaction worker started only for cached models, so the request was accepted and the session waited forever; the web wording no longer claims a live cache the host does not know of (docs/summary.md).
 - No transcript item can widen the phone page: each is `overflow-x: clip`, so an overlong value loses its tail at the item's edge instead of making iOS zoom the whole page out; a path chip wraps inside itself with its ` ⤢` kept on the last line, the gallery's "Overlong values" section is the 390 px specimen, and `?overflow` still lists what the clip contains (docs/web-client.md).
 - **An artifact frame out of view sizes itself there** (docs/artifacts.md): it kept its opening height until it scrolled into view, then resized under the reader, because the browser runs neither animation frames nor resize observers in an off-screen frame.
 - **A device label's terminal escape sequences are dropped whole** (docs/web-bind.md): only the `ESC` byte was stripped, so `ESC[31m` printed as `[31m` in `efference devices`.
