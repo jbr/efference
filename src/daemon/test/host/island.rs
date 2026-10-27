@@ -93,7 +93,9 @@ fn archived_count(entries: &[Payload]) -> usize {
 }
 
 /// The owner going archives every session before the shutdown begins: each log with
-/// a turn ends in exactly one `Archived`, a child ending with its creator included; a
+/// a turn ends in exactly one `Archived`, a child ending with its creator included; the
+/// sessions the exit archives itself name it as the `source`, and a child archived by
+/// its creator's cascade names none, as any child ending with its creator does; a
 /// clean worktree is retired as an archive retires it; a session that never had a
 /// turn is discarded. All of it is on disk by the time the host starts shutting down.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -124,11 +126,17 @@ async fn an_islands_exit_archives_each_session_before_it_shuts_down() {
     drop(owner);
     shuts_down(&host).await;
 
-    for path in [&talked, &parent, &child, &in_worktree] {
+    let standalone_exit = Some("standalone exit".to_string());
+    for (path, source) in [
+        (&talked, &standalone_exit),
+        (&parent, &standalone_exit),
+        (&child, &None),
+        (&in_worktree, &standalone_exit),
+    ] {
         let entries = entries(path);
         assert!(
-            matches!(entries.last(), Some(Payload::Archived { source: None })),
-            "{} ends in Archived: {entries:?}",
+            matches!(entries.last(), Some(Payload::Archived { source: recorded }) if recorded == source),
+            "{} ends in Archived with source {source:?}: {entries:?}",
             path.display()
         );
         assert_eq!(archived_count(&entries), 1, "{}", path.display());

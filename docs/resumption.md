@@ -180,7 +180,10 @@ cascade its creator's end runs, so each session is archived once; a session that
 arrives while the archive runs is taken in another round. The shutdown starts only when
 every session has left the host's map, because `Host::end` archives only while the host
 is running: a session it reached after the shutdown began would be stopped without
-`Archived`, as a host shutdown stops it. The entry carries no `source`. A crash, a
+`Archived`, as a host shutdown stops it. The entry's `source` is `standalone exit`, so
+the log tells the standalone closing from an operator's archive, and a client whose
+stream ended says "archived by standalone exit" ([tui.md](tui.md)); a child archived by
+its creator's cascade carries none, as any child ending with its creator does. A crash, a
 signal, or `kill -9` takes none of this, and the island's sessions are left interrupted.
 
 ## Sessions that never had a turn

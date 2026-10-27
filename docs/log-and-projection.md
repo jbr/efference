@@ -133,9 +133,10 @@ before. Each `Resumed` entry skips its own range.
 island's exit), under the turn of the log's last entry. It projects to nothing. `source`
 records who archived it, spelled as a turn's `source` is: `web` from the web client,
 `mcp[<client>]` from a call over MCP, `session[<id>]` from a session archiving one it
-drives. It is client-asserted and unverified, skipped when `None` (the operator's own
+drives, and `standalone exit` from an island's exit, which the host records itself. A
+source a client sends is asserted and unverified. It is skipped when `None` (the operator's own
 command line or TUI, a child ending with its creator, a session cancelled while
-starting, an island's exit), and absent from every log written before the field
+starting), and absent from every log written before the field
 existed, which read back with `None`; adding it needed no version bump. The dormant inventory reads it as the row's `archived_by`,
 and a client whose stream ended reads it to say who archived the session
 ([tui.md](tui.md)). The later of `Resumed` and
