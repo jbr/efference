@@ -135,6 +135,12 @@ impl Toolbox {
         )));
     }
 
+    /// Mount the `lsp` built-ins (docs/tools.md) over a session's binding. Mounted before
+    /// the first projection, like every provider, so `tools[]` is fixed from turn one.
+    pub fn mount_lsp(&mut self, lsp: super::lsp::Lsp) {
+        self.providers.push(Provider::Lsp(Box::new(lsp)));
+    }
+
     /// Keep only the tools `enabled` admits, by wire name (docs/tools.md): the session's
     /// `[tools]` table, applied once every provider is mounted and before the first
     /// projection, so `tools[]` is fixed from turn one (docs/log-and-projection.md). A

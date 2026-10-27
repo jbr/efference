@@ -12,6 +12,7 @@ impl Provider {
             Provider::Fs(s) => s.definitions.clone(),
             Provider::SemanticEdit(s) => s.definitions.clone(),
             Provider::Sessions(s) => s.definitions.clone(),
+            Provider::Lsp(l) => l.server.definitions.clone(),
             Provider::Connected(c) => c.definitions(),
         }
     }
@@ -24,6 +25,7 @@ impl Provider {
             Provider::Fs(s) => s.retain_enabled(enabled),
             Provider::SemanticEdit(s) => s.retain_enabled(enabled),
             Provider::Sessions(s) => s.retain_enabled(enabled),
+            Provider::Lsp(l) => l.server.retain_enabled(enabled),
             Provider::Connected(c) => c.retain_enabled(enabled),
         }
     }
@@ -36,6 +38,7 @@ impl Provider {
             Provider::Fs(s) => s.handles(name),
             Provider::SemanticEdit(s) => s.handles(name),
             Provider::Sessions(s) => s.handles(name),
+            Provider::Lsp(l) => l.server.handles(name),
             Provider::Connected(c) => c.handles(name),
         }
     }
@@ -61,6 +64,10 @@ impl Provider {
                 server: None,
                 definition,
             }),
+            Provider::Lsp(l) => l.server.schema(name).map(|definition| ToolBrief {
+                server: None,
+                definition,
+            }),
             Provider::Connected(c) => c.brief(name),
         }
     }
@@ -83,6 +90,10 @@ impl Provider {
                 .schema(&call.name)
                 .is_some_and(|d| declares_own_intent(&d.input_schema)),
             Provider::Sessions(s) => s
+                .schema(&call.name)
+                .is_some_and(|d| declares_own_intent(&d.input_schema)),
+            Provider::Lsp(l) => l
+                .server
                 .schema(&call.name)
                 .is_some_and(|d| declares_own_intent(&d.input_schema)),
             Provider::Connected(c) => c
@@ -131,6 +142,11 @@ impl Provider {
                 entry.name = name.to_string();
                 Some(entry)
             }
+            Provider::Lsp(l) => {
+                let mut entry = ToolEntry::from_definition(l.server.schema(name)?, None, true);
+                entry.name = name.to_string();
+                Some(entry)
+            }
             Provider::Connected(c) => {
                 let brief = c.brief(name)?;
                 Some(ToolEntry::from_definition(
@@ -169,6 +185,8 @@ impl Provider {
             Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input).await.into(),
             // `create` and `archive` await real work on this runtime (docs/tools.md).
             Provider::Sessions(s) => s.run_call(&call.name, &call.input).await.into(),
+            // A query can wait minutes on a server's first index, so it races `abort`.
+            Provider::Lsp(l) => l.run(call, abort).await.into(),
             Provider::ReadImage(r) => r.run(&call.input).into(),
             // Async over a wire, but no OS process of the *call's* own: the
             // server's progress ticks stream as live output and its messages

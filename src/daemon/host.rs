@@ -130,6 +130,11 @@ pub struct Host {
     /// store every session here mounts with, so the host's sessions refresh a
     /// server's grant once however many find it expired (docs/mcp-auth.md).
     mcp_refresh_locks: crate::mcp::auth::store::RefreshLocks,
+    /// The language servers behind the `lsp` built-ins (docs/tools.md). Workspaces are
+    /// keyed by project root, so the sessions in one project share one set of servers;
+    /// each session's binding releases its interest when its toolbox drops, and
+    /// [`serve_host`] stops what remains after the sessions have ended.
+    language_servers: Arc<crate::tools::lsp::LanguageServers>,
 }
 
 /// What the host keeps per session: the state handlers read, the child
@@ -208,7 +213,14 @@ impl Host {
             attention: Arc::default(),
             artifact_origin: std::sync::OnceLock::new(),
             mcp_refresh_locks: Default::default(),
+            language_servers: crate::tools::lsp::language_servers(),
         })
+    }
+
+    /// The language servers behind the `lsp` built-ins, shared by every session on this
+    /// host (docs/tools.md).
+    pub(crate) fn language_servers(&self) -> &Arc<crate::tools::lsp::LanguageServers> {
+        &self.language_servers
     }
 
     /// The MCP refresh locks a session's token store shares (docs/mcp-auth.md).
@@ -629,5 +641,8 @@ pub async fn serve_host(
     // The listener's shutdown completes only when every session's teardown
     // guard has dropped: the runtimes are children of the same `Swansong`.
     server.await;
+    // Every session has released its binding by now; this reaps what is still starting
+    // or running (docs/tools.md).
+    crate::tools::lsp::shut_down(Arc::clone(host.language_servers())).await;
     Ok(())
 }

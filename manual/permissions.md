@@ -146,7 +146,7 @@ recorded in the session's log.
 
 - **`[tools]`**: efference's own tools and MCP tools with `granted = true`. A bare key is a
   namespace: `efference` is every tool efference provides, `agents` the tools that reach
-  other sessions, and a server's name all of its tools. A quoted key is one tool
+  other sessions, `lsp` the language-server tools, and a server's name all of its tools. A quoted key is one tool
   (`"agents.message"`), and overrides its namespace. The same table says which tools a
   session has at all: efference's own need `enabled = true`, so a tool efference adds later
   in a namespace of its own reaches no session that did not enable it.

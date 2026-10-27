@@ -124,6 +124,10 @@ pub enum Provider {
     Sessions(
         Box<McpServer<crate::control_tools::Control, crate::control_tools::in_session::Tools>>,
     ),
+    /// The `lsp` built-ins (docs/tools.md): `lsp__*`, structural-lsp's tools over
+    /// the host's shared language servers. Mounted only for a session created on a
+    /// host whose config enables them.
+    Lsp(Box<lsp::Lsp>),
     /// A connected provider (docs/tools.md): a user-declared server reached
     /// over stdio or HTTP, its tool table discovered at mount.
     Connected(Box<crate::mcp::ConnectedProvider>),
@@ -361,6 +365,7 @@ pub struct Toolbox {
 #[cfg(test)]
 mod test;
 
+pub mod lsp;
 mod mcp_server;
 mod provider;
 pub mod read_image;

@@ -61,7 +61,7 @@
       "type": "string"
     },
     "tools": {
-      "description": "Which tools sessions here have, and which of those run without review. A bare key\nnames a namespace: `efference` for efference's own tools, `agents` for the tools that\nreach other sessions, or a server declared under `[mcp.servers]`. A quoted dotted key\nnames one tool and overrides its namespace, as in `\"agents.message\" = { granted =\ntrue }` or `\"efference.bash\" = { enabled = false }`. The tools a session's own loop\nrelies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always\npresent.",
+      "description": "Which tools sessions here have, and which of those run without review. A bare key\nnames a namespace: `efference` for efference's own tools, `agents` for the tools that\nreach other sessions, `lsp` for the language-server tools (definition, references,\nrename), or a server declared under `[mcp.servers]`. A quoted dotted key\nnames one tool and overrides its namespace, as in `\"agents.message\" = { granted =\ntrue }` or `\"efference.bash\" = { enabled = false }`. The tools a session's own loop\nrelies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always\npresent.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/ToolEntry"

@@ -75,7 +75,19 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         // on a host reaches its project's sessions directly, with its own id as
         // the caller. Mounted before the first projection so `tools[]` is fixed
         // from turn one.
-        toolbox.mount_sessions(host, session_id.to_string());
+        toolbox.mount_sessions(std::sync::Arc::clone(&host), session_id.to_string());
+        // The `lsp` built-ins (docs/tools.md), bound at the working directory. Binding
+        // starts the project's language servers, so it waits on `enabled` rather than
+        // leaving the tools to the filter below.
+        if crate::tools::lsp::enabled(&loaded.role) {
+            let lsp = crate::tools::lsp::Lsp::bind(
+                std::sync::Arc::clone(host.language_servers()),
+                session_id,
+                cwd.to_path_buf(),
+            )
+            .await?;
+            toolbox.mount_lsp(lsp);
+        }
     }
     let store: std::sync::Arc<dyn crate::mcp::auth::store::TokenStore> = std::sync::Arc::new(store);
     let unmounted = mcp_mount::mount_all(

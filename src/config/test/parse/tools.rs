@@ -12,7 +12,7 @@ fn parse_err(text: &str) -> LoadError {
 #[test]
 fn an_empty_table_mounts_none_of_efferences_own_tools() {
     let role = parse_str("");
-    for name in ["read", "bash", "edit", "agents__message"] {
+    for name in ["read", "bash", "edit", "agents__message", "lsp__definition"] {
         assert!(!role.tool_enabled(name), "{name}");
         assert!(!role.tools.granted(name), "{name}");
     }
@@ -195,7 +195,7 @@ fn the_list_form_fails_the_file() {
 /// share.
 #[test]
 fn a_server_named_for_a_builtin_namespace_fails_the_file() {
-    for name in ["efference", "agents"] {
+    for name in ["efference", "agents", "lsp"] {
         let err = parse_err(&format!("[mcp.servers.{name}]\ncommand = \"x\"\n"));
         assert!(
             matches!(

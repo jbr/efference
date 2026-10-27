@@ -9,6 +9,9 @@ serde_json = { version = "1.0.151", features = ["raw_value"] }
 # In-process MCP tool servers consumed as lib crates (DESIGN §5), not subprocesses.
 fs-mcp = { path = "/Users/jbr/code/fs-mcp" }
 semantic-edit-mcp = { path = "/Users/jbr/code/semantic-edit-mcp" }
+# The `lsp` built-ins (docs/tools.md): one language-server host shared by every
+# session on this host, each session bound at its working directory.
+structural-lsp = "0.1.2"
 # `client` is the transport-agnostic client protocol (docs/tools.md); the
 # in-process servers above bring the `server` half through their own dependency.
 # `cli` adds the `tools!` macro's clap derive and the stdio serve loop, which is

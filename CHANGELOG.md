@@ -23,6 +23,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- Language-server tools: `lsp = { enabled = true }` in `[tools]` mounts `lsp__definition`, `lsp__references` and `lsp__rename` (structural-lsp, in-process), with the host running one set of language servers per project root that its sessions share, stopped when the last session there ends (docs/tools.md).
 - Secret commands: a `[secrets]` table in the user config names `get`/`set` (and optionally `delete`) commands that hold what efference writes — sign-ins, the web root, pasted keys — in the user's own store (SSM, `pass`, `op`, `systemd-creds`), with the item name as an argument and the value only on stdin/stdout; `absent_status` declares "no such item", a host never mints the web root through it (`efference auth rotate` writes one), and with the table present the OS keychain is never opened (docs/secrets.md).
 - The TUI sets the terminal title (kitty's tab title) to the attached session's title and id, and a foreground `efference --host` to its session count; each saves the title it found on the terminal's title stack and restores it on exit (docs/tui.md, docs/operating.md).
 - Both config files have published JSON schemas (`assets/schemas/`, served at efference.net/schemas/), generated from the config types with hover text for every key; `efference setup`, the default session config and the project template open with the `#:schema` line, which config edits keep first, and a misspelled key in a `[context]` or `[paths]` table now fails the file by name (docs/config-schemas.md).

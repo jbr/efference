@@ -47,7 +47,8 @@ pub(crate) struct RawConfig {
     commands: BTreeMap<String, RawCommandValue>,
     /// Which tools sessions here have, and which of those run without review. A bare key
     /// names a namespace: `efference` for efference's own tools, `agents` for the tools that
-    /// reach other sessions, or a server declared under `[mcp.servers]`. A quoted dotted key
+    /// reach other sessions, `lsp` for the language-server tools (definition, references,
+    /// rename), or a server declared under `[mcp.servers]`. A quoted dotted key
     /// names one tool and overrides its namespace, as in `"agents.message" = { granted =
     /// true }` or `"efference.bash" = { enabled = false }`. The tools a session's own loop
     /// relies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always

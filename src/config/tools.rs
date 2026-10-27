@@ -9,11 +9,13 @@
 use super::*;
 
 /// The namespaces efference serves itself: [`crate::mcp::BUILTIN_NAMESPACE`] for the
-/// unprefixed built-ins (`read`, `bash`, …) and the session-control verbs (`agents__<verb>`).
-/// Off unless a `[tools]` entry enables them, and no declared server may take their names.
-pub const BUILTIN_NAMESPACES: [&str; 2] = [
+/// unprefixed built-ins (`read`, `bash`, …), the session-control verbs (`agents__<verb>`),
+/// and the language-server tools (`lsp__<tool>`). Off unless a `[tools]` entry enables them,
+/// and no declared server may take their names.
+pub const BUILTIN_NAMESPACES: [&str; 3] = [
     crate::mcp::BUILTIN_NAMESPACE,
     crate::control_tools::NAMESPACE,
+    crate::tools::lsp::NAMESPACE,
 ];
 
 /// One `[tools]` entry as written. A field left `None` comes from the namespace's entry, then

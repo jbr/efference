@@ -48,7 +48,8 @@ agents = { enabled = true }                      # reaching other sessions, revi
 ```
 
 A bare key names a **namespace**: `efference` for the tools efference ships, `agents` for
-the tools that reach other sessions, or a server declared under `[mcp.servers]`. A quoted
+the tools that reach other sessions, `lsp` for the language-server tools (`definition`,
+`references`, `rename`), or a server declared under `[mcp.servers]`. A quoted
 dotted key names **one tool** — `"agents.message"`, `"ferritin.get"`, `"efference.read"`
 (efference's own tools are written with their `efference.` prefix here). Only the first dot
 divides the two, so a server's tool may itself contain dots. An unquoted

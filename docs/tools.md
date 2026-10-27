@@ -121,8 +121,8 @@ projection, so `tools[]` is fixed from turn one ([log-and-projection.md](log-and
 Filtering keeps mount order, so a session that enables everything sends the same `tools[]`
 it would unfiltered; a provider left with no tools is dropped.
 
-The defaults are where the opt-in lives. efference's own namespaces (`efference`, `agents`)
-are off unless an entry enables them, so a built-in that ships later in a namespace of its
+The defaults are where the opt-in lives. efference's own namespaces (`efference`, `agents`,
+`lsp`) are off unless an entry enables them, so a built-in that ships later in a namespace of its
 own reaches no session that did not ask for it. A declared server is on, since declaring it
 is the request; an entry can turn a namespace or one tool off. The scaffolded config and the
 setup guide enable `efference` (granted) and `agents` (reviewed).
@@ -734,6 +734,42 @@ file the edit was made to.
 Dispatch is async: the state is cloned into each call, and both crates run their
 synchronous tool bodies on tokio's blocking pool, which is why they need a tokio
 host.
+
+### The `lsp` built-ins
+
+structural-lsp's `definition`, `references` and `rename` mount as `lsp__<tool>`
+(`src/tools/lsp.rs`, `Provider::Lsp`), on a session created on a host whose config
+enables the `lsp` namespace or one of its tools. Unlike fs-mcp and semantic-edit-mcp they
+share state across sessions: the host holds one structural `Host` (`Host::language_servers`),
+whose workspaces are keyed by the project root above a working directory, so the sessions
+in one project share one set of language servers. A session in its own worktree is its own
+project root, with its own servers, as it has its own build directory.
+
+- **Binding.** Boot binds the session, by its id, at its working directory
+  (`Lsp::bind`), and only when `lsp::enabled` says the config mounts an `lsp` tool:
+  binding starts every server the project's tree calls for, without waiting for them, so
+  binding first and filtering after would start servers for a session that never sees
+  the tools. Finding the project root reads the filesystem, so the bind runs on the
+  blocking pool.
+- **Release.** The provider holds the session's interest in its workspace and drops it
+  with the toolbox. When it was the last interest on that root, the root's servers stop,
+  and stopping joins their threads after a bounded graceful exit, so the release runs on
+  the blocking pool rather than on the worker that dropped the toolbox. A server no call
+  has addressed for structural's idle interval stops on its own and restarts on the next
+  query.
+- **Host shutdown.** Once every session has ended, `serve_host` calls `lsp::shut_down`:
+  admission closes, admitted calls finish, every child is reaped, and after ten seconds
+  the servers are forced, failing a call still waiting rather than answering it partly.
+- **Calls.** A tool body is synchronous and waits on its servers for as long as they
+  need, which on a first index is minutes, so it runs on a blocking pool and races the
+  loop's `abort`: a kill answers the call as cancelled, while the body finishes in the
+  background holding its workspace. structural's progress reports go nowhere yet:
+  efference's in-process request context carries no progress token.
+- **Operator events.** A server that would not start, a fallback, a language nothing
+  serves, a server released, a watch lost: structural pushes these to an operator sink,
+  which logs them at info.
+- **Configuration.** Each workspace reads `structural.toml` at its project root, or runs
+  structural's built-in servers when there is none.
 
 ## Connected providers: user-declared MCP servers
 
