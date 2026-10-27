@@ -1,0 +1,45 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist' (process/releasing.md)
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell"]
+# Target platforms to build apps for (Rust target-triple syntax). Unix only:
+# the island, the bash tool and the secret stores are macOS and Linux.
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+# Path that installers should place binaries in. `~/.local/bin` is already on
+# PATH for many users, so a first install often needs no new shell.
+install-path = ["$XDG_BIN_HOME/", "~/.local/bin"]
+# The repository is private, so its release assets are unreachable anonymously:
+# installers download from efference.net only, which the
+# publish-efference-net job fills from the R2 bucket.
+hosting = ["simple"]
+simple-download-url = "https://efference.net/releases/{tag}"
+# Whether to install an updater program; `efference update` is the updater.
+install-updater = false
+# The source is not published.
+source-tarball = false
+# A release build leaves out the `dev` verb group.
+default-features = false
+# Developer ID signing with the CODESIGN_* repository secrets. The hardened
+# runtime the notary service requires is turned on by build-setup.yml.
+macos-sign = true
+# Node and pnpm for the web client, which the build compiles in.
+github-build-setup = "../build-setup.yml"
+# Notarize the macOS binaries before anything is published.
+host-jobs = ["./notarize"]
+# Sign every artifact with minisign and upload to R2. Prereleases run it too,
+# into their own directory, without moving install.sh or latest.json.
+publish-jobs = ["./publish-efference-net"]
+publish-prereleases = true
+
+# aarch64-apple-darwin builds on macos-latest rather than dist's default
+# macos-14, which GitHub has left unacquired for want of arm64 capacity while
+# macos-latest jobs ran (structural-lsp's v0.1.1 release).
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-latest"

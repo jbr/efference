@@ -1,0 +1,74 @@
+# Notarizes the macOS binaries dist built and signed (host-jobs in
+# dist-workspace.toml). publish-efference-net needs it, so a binary the notary
+# service refuses never reaches efference.net. The GitHub release, in the
+# private repository, does not wait: dist creates it in its host job.
+#
+# A bare Mach-O binary cannot be stapled: the ticket stays with Apple, and
+# Gatekeeper fetches it online the first time a quarantined copy runs. Nothing
+# here changes a byte of what dist packaged (process/releasing.md).
+name: Notarize
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  notarize:
+    runs-on: macos-latest
+    steps:
+      - name: Fetch artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Notarize
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/AuthKey.p8"
+          (umask 077; printf '%s\n' "$APPLE_API_KEY" > "$key")
+          auth=(--key "$key" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER")
+
+          shopt -s nullglob
+          archives=(target/distrib/*-apple-darwin.tar.xz)
+          if [ ${#archives[@]} -eq 0 ]; then
+            echo "::error::no macOS archives among the artifacts"
+            exit 1
+          fi
+
+          for archive in "${archives[@]}"; do
+            name=$(basename "$archive" .tar.xz)
+            work="$RUNNER_TEMP/$name"
+            mkdir -p "$work"
+            tar -xJf "$archive" -C "$work"
+            # dist's archive holds one directory named for it.
+            bin="$work/$name/efference"
+
+            # The notary service refuses each of these, with a less direct message.
+            codesign --verify --strict --verbose=2 "$bin"
+            details=$(codesign -dvv "$bin" 2>&1)
+            grep -q '^Authority=Developer ID Application' <<<"$details" \
+              || { echo "::error::$archive: not signed with a Developer ID identity"; exit 1; }
+            grep -q 'flags=.*runtime' <<<"$details" \
+              || { echo "::error::$archive: signed without the hardened runtime"; exit 1; }
+            grep -q '^Timestamp=' <<<"$details" \
+              || { echo "::error::$archive: signed without a secure timestamp"; exit 1; }
+
+            zip="$work.zip"
+            ditto -c -k --keepParent "$bin" "$zip"
+            result=$(xcrun notarytool submit "$zip" "${auth[@]}" --wait --output-format json) || true
+            echo "$result"
+            if [ "$(jq -r '.status // empty' <<<"$result")" != Accepted ]; then
+              id=$(jq -r '.id // empty' <<<"$result")
+              [ -n "$id" ] && xcrun notarytool log "$id" "${auth[@]}"
+              echo "::error::$archive: notarization did not succeed"
+              exit 1
+            fi
+          done

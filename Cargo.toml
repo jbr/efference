@@ -2,6 +2,8 @@
 name = "efference"
 version = "0.1.0"
 edition = "2024"
+# dist's GitHub workflow names the repository it runs in (process/releasing.md).
+repository = "https://github.com/jbr/efference"
 
 [dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
@@ -271,3 +273,7 @@ syntect = { version = "5.3", default-features = false, features = [
   "regex-onig",
 ] }
 
+# The profile dist builds release artifacts with (process/releasing.md).
+[profile.dist]
+inherits = "release"
+lto = "thin"

@@ -1,0 +1,113 @@
+# Signs every release artifact with minisign and uploads it to the R2 bucket
+# efference.net serves /releases/ and /install.sh from (publish-jobs in
+# dist-workspace.toml; process/releasing.md).
+#
+# Layout in the bucket:
+#   releases/<tag>/<artifact> and <artifact>.minisig   every release
+#   install.sh, releases/latest.json, and their .minisig   stable releases only
+#
+# Each signature's trusted comment is "efference <tag> <file name>", so a
+# signature cannot be replayed for another file or another version.
+name: Publish to efference.net
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      PLAN: ${{ inputs.plan }}
+    steps:
+      - name: Fetch artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Install minisign
+        run: sudo apt-get update && sudo apt-get install -y minisign
+      - name: Sign
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/minisign.key"
+          (umask 077; printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key")
+
+          tag=$(jq -r .announcement_tag <<<"$PLAN")
+          version=$(jq -r '.releases[] | select(.app_name == "efference") | .app_version' <<<"$PLAN")
+          # The release's own artifact list, so no manifest or stray file is uploaded.
+          jq -r '.releases[] | select(.app_name == "efference") | .artifacts[]' <<<"$PLAN" > "$RUNNER_TEMP/artifacts"
+
+          mkdir -p staged/releases/"$tag"
+          while read -r name; do
+            cp "target/distrib/$name" "staged/releases/$tag/$name"
+          done < "$RUNNER_TEMP/artifacts"
+          if [ "$(jq -r .announcement_is_prerelease <<<"$PLAN")" = false ]; then
+            cp target/distrib/efference-installer.sh staged/install.sh
+            jq -n --arg version "$version" --arg tag "$tag" \
+              '{version: $version, tag: $tag, url: "https://efference.net/releases/\($tag)"}' \
+              > staged/releases/latest.json
+          fi
+
+          # Listed before signing, so no .minisig is itself signed.
+          find staged -type f > "$RUNNER_TEMP/staged"
+          while read -r file; do
+            minisign -S -s "$key" -m "$file" -t "efference $tag $(basename "$file")"
+          done < "$RUNNER_TEMP/staged"
+      - name: Upload
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 does not implement every checksum header the CLI sends by default.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          cd staged
+          tag=$(jq -r .announcement_tag <<<"$PLAN")
+
+          put() { # put <key> <cache-control>
+            local type=application/octet-stream
+            case "$1" in
+              *.json) type=application/json ;;
+              *.sh | *.minisig | *.sha256 | *.sum) type="text/plain; charset=utf-8" ;;
+            esac
+            aws s3 cp "$1" "s3://$R2_BUCKET/$1" --endpoint-url "$R2_ENDPOINT" \
+              --content-type "$type" --cache-control "$2" --only-show-errors
+          }
+
+          # A versioned file is served as immutable, so it is written once. A re-run
+          # of this job re-uploads the same bytes (minisign's signatures are
+          # deterministic); a rebuilt release with different bytes is refused.
+          find "releases/$tag" -type f | sort | while read -r key; do
+            if aws s3api head-object --bucket "$R2_BUCKET" --key "$key" \
+                --endpoint-url "$R2_ENDPOINT" > /dev/null 2>&1; then
+              aws s3 cp "s3://$R2_BUCKET/$key" "$RUNNER_TEMP/existing" \
+                --endpoint-url "$R2_ENDPOINT" --only-show-errors
+              if ! cmp -s "$key" "$RUNNER_TEMP/existing"; then
+                echo "::error::$key is already published with different contents"
+                exit 1
+              fi
+              echo "$key: already published, identical"
+            else
+              put "$key" "public, max-age=31536000, immutable"
+              echo "$key: uploaded"
+            fi
+          done
+
+          # The pointers move last, once everything they point at is in place.
+          for key in install.sh install.sh.minisig releases/latest.json releases/latest.json.minisig; do
+            if [ -f "$key" ]; then
+              put "$key" "public, max-age=300"
+              echo "$key: uploaded"
+            fi
+          done
