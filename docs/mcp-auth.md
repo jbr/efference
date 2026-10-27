@@ -55,8 +55,8 @@ normative rather than a matter of taste (`src/oauth/metadata.rs`):
 A rung that does not answer `2xx` with parseable JSON is a rung, not an error. Only
 running out of rungs is an error.
 
-Two checks happen at fetch time rather than being left to callers, because
-forgetting either is silent:
+Three checks happen at fetch time rather than being left to callers, because
+forgetting any is silent:
 
 - **Issuer identity.** An authorization-server document's `issuer` must be
   byte-identical to the issuer identifier its URL was built from (RFC 8414 §3.3) —
@@ -64,6 +64,13 @@ forgetting either is silent:
   from an attacker's origin could claim to be an honest issuer and redirect the
   whole dance.
 - **PKCE support**, as above.
+- **Transport.** Every URL the dance contacts or hands to the browser — the issuer,
+  the protected-resource document (the challenge's `resource_metadata` and the probes
+  built from the server's URL), and the document's `authorization_endpoint`,
+  `token_endpoint`, and `registration_endpoint` — must be `https`, or `http` on a
+  loopback host (`localhost`, `127.0.0.1`, `[::1]`). The error names the URL and the
+  rule. The token endpoint carries the authorization code, the PKCE verifier, and the
+  tokens, so a document that offers it over plaintext is refused rather than followed.
 
 The resource identifier that the RFC 8707 `resource` parameter carries is the
 `resource` field from the protected-resource document — *not* the URL efference

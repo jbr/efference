@@ -22,8 +22,8 @@
 //!
 //! ## Validation
 //!
-//! Two checks here are load-bearing and are done at fetch time rather than
-//! left to callers, because forgetting either is silent:
+//! Three checks here are load-bearing and are done at fetch time rather than
+//! left to callers, because forgetting any is silent:
 //!
 //! - **Issuer identity.** The `issuer` in an authorization-server document
 //!   must be byte-identical to the issuer identifier the URL was built from
@@ -33,6 +33,12 @@
 //! - **PKCE support.** A missing `code_challenge_methods_supported` means the
 //!   server does not support PKCE, and a public client MUST refuse to proceed
 //!   rather than fall back to an unprotected authorization code.
+//! - **Transport.** Every URL the dance contacts or hands to the browser —
+//!   the issuer, the protected-resource document, and the authorization,
+//!   token, and registration endpoints — must be `https`, or `http` on a
+//!   loopback host ([`require_transport`]). The authorization code, the PKCE
+//!   verifier, and the tokens cross the token endpoint; a document that
+//!   names it over plaintext is refused rather than followed.
 
 use anyhow::Context as _;
 use serde::Deserialize;
@@ -96,6 +102,35 @@ pub struct AuthorizationServer {
     pub authorization_response_iss_parameter_supported: Option<bool>,
 }
 
+/// Refuse a URL the dance would contact or open that is not `https` and not
+/// `http` on a loopback host (`localhost`, `127.0.0.1`, `[::1]`). `what` names
+/// the URL's role in the error, which also states the rule.
+pub fn require_transport(url: &Url, what: &str) -> anyhow::Result<()> {
+    let allowed = match url.scheme() {
+        "https" => true,
+        "http" => url.host_str().is_some_and(is_loopback_host),
+        _ => false,
+    };
+    anyhow::ensure!(
+        allowed,
+        "{what} {url} is refused: OAuth URLs must be https, or http on a loopback host \
+         (localhost, 127.0.0.1, [::1])"
+    );
+    Ok(())
+}
+
+/// Whether a URL's host string names the local machine: the `localhost` name
+/// or a loopback IP literal (an IPv6 literal arrives bracketed).
+fn is_loopback_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    host.trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
+}
+
 impl AuthorizationServer {
     /// The authorization endpoint, or an error naming what is missing. Split
     /// out because a metadata document that parses but omits an endpoint is a
@@ -110,6 +145,23 @@ impl AuthorizationServer {
         self.token_endpoint
             .as_deref()
             .with_context(|| format!("{} advertises no token_endpoint", self.issuer))
+    }
+
+    /// Apply [`require_transport`] to each endpoint the document names. An
+    /// endpoint the document omits is not checked here; the caller that needs
+    /// it reports its absence.
+    fn require_transport(&self) -> anyhow::Result<()> {
+        for (what, endpoint) in [
+            ("authorization_endpoint", &self.authorization_endpoint),
+            ("token_endpoint", &self.token_endpoint),
+            ("registration_endpoint", &self.registration_endpoint),
+        ] {
+            let Some(endpoint) = endpoint else { continue };
+            let url = Url::parse(endpoint)
+                .with_context(|| format!("{} names a {what} that is not a URL", self.issuer))?;
+            require_transport(&url, what)?;
+        }
+        Ok(())
     }
 
     /// Whether this server prefers a Client ID Metadata Document `client_id`.
@@ -184,7 +236,9 @@ impl Discovery {
         advertised: Option<&str>,
     ) -> anyhow::Result<ProtectedResource> {
         let mut attempted = Vec::new();
+        require_transport(resource_url, "protected resource")?;
         for url in protected_resource_urls(resource_url, advertised) {
+            require_transport(&url, "protected resource metadata")?;
             attempted.push(url.to_string());
             if let Some(metadata) = self.fetch::<ProtectedResource>(&url).await {
                 return Ok(metadata);
@@ -198,11 +252,12 @@ impl Discovery {
 
     /// Fetch and validate authorization-server metadata for `issuer`.
     ///
-    /// The returned document has passed both the issuer-identity check and the
-    /// PKCE check, so callers may use it without re-validating.
+    /// The returned document has passed the issuer-identity, PKCE, and transport
+    /// checks, so callers may use it without re-validating.
     pub async fn authorization_server(&self, issuer: &str) -> anyhow::Result<AuthorizationServer> {
         let issuer_url = Url::parse(issuer)
             .with_context(|| format!("authorization server {issuer} is not a URL"))?;
+        require_transport(&issuer_url, "authorization server issuer")?;
         let mut attempted = Vec::new();
         for url in authorization_server_urls(&issuer_url) {
             attempted.push(url.to_string());
@@ -219,6 +274,7 @@ impl Discovery {
                 metadata.issuer
             );
             metadata.require_pkce()?;
+            metadata.require_transport()?;
             return Ok(metadata);
         }
         anyhow::bail!(

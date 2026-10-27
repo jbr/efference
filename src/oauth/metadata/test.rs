@@ -283,3 +283,140 @@ fn the_rung_order_puts_rfc_8414_path_insertion_first() {
         "https://github.com/login/oauth/.well-known/openid-configuration"
     );
 }
+
+/// An authorization server on a loopback port whose document names `token_endpoint`
+/// (or a loopback one when `None`), so discovery runs end to end over plain `http`.
+/// The listener runs until the test's runtime ends.
+async fn serving_document(token_endpoint: Option<&'static str>) -> String {
+    let base = std::sync::Arc::new(std::sync::OnceLock::<String>::new());
+    let served = std::sync::Arc::clone(&base);
+    let handle = trillium_tokio::config()
+        .without_signals()
+        .listeners()
+        .bind_tcp(("127.0.0.1", 0))
+        .unwrap()
+        .spawn(move |conn: trillium::Conn| {
+            let base = std::sync::Arc::clone(&served);
+            async move {
+                let base = base.get().cloned().unwrap_or_default();
+                let document = serde_json::json!({
+                    "issuer": base,
+                    "authorization_endpoint": format!("{base}/authorize"),
+                    "token_endpoint": token_endpoint
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("{base}/token")),
+                    "code_challenge_methods_supported": ["S256"],
+                });
+                conn.with_status(200)
+                    .with_response_header("content-type", "application/json")
+                    .with_body(document.to_string())
+            }
+        });
+    let issuer = format!(
+        "http://{}",
+        handle
+            .info()
+            .await
+            .tcp_socket_addr()
+            .expect("a TCP listener")
+    );
+    base.set(issuer.clone()).unwrap();
+    issuer
+}
+
+/// A cleartext issuer on a host other than this machine is refused before any
+/// request is made, and the error names the URL and the rule.
+#[tokio::test]
+async fn an_http_issuer_off_loopback_is_refused_at_discovery() {
+    let error = Discovery::new()
+        .authorization_server("http://auth.example.com")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("http://auth.example.com"), "{error}");
+    assert!(error.contains("https"), "{error}");
+    assert!(error.contains("loopback"), "{error}");
+}
+
+/// A protected resource reached over cleartext off loopback is refused the same way,
+/// as is an advertised metadata URL that downgrades.
+#[tokio::test]
+async fn an_http_protected_resource_off_loopback_is_refused() {
+    let discovery = Discovery::new();
+    let error = discovery
+        .protected_resource(&url("http://mcp.example.com/mcp"), None)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("http://mcp.example.com/mcp"), "{error}");
+
+    let error = discovery
+        .protected_resource(
+            &url("https://mcp.example.com/mcp"),
+            Some("http://elsewhere.example.com/.well-known/oauth-protected-resource"),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("http://elsewhere.example.com"), "{error}");
+}
+
+/// A loopback `http` issuer is the local-lab case: discovery proceeds, and the
+/// loopback endpoints in its document are allowed.
+#[tokio::test]
+async fn a_loopback_http_issuer_and_token_endpoint_are_allowed() {
+    let issuer = serving_document(None).await;
+    let server = Discovery::new()
+        .authorization_server(&issuer)
+        .await
+        .expect("a loopback http issuer proceeds");
+    assert_eq!(server.token_endpoint().unwrap(), format!("{issuer}/token"));
+}
+
+/// A document that is otherwise valid but names a cleartext token endpoint off
+/// loopback is refused at fetch time, naming the endpoint.
+#[tokio::test]
+async fn a_non_loopback_http_token_endpoint_is_refused() {
+    let issuer = serving_document(Some("http://auth.example.com/token")).await;
+    let error = Discovery::new()
+        .authorization_server(&issuer)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("token_endpoint"), "{error}");
+    assert!(error.contains("http://auth.example.com/token"), "{error}");
+}
+
+/// The rule itself, over each endpoint the document can name and each accepted
+/// loopback spelling.
+#[test]
+fn transport_accepts_https_and_loopback_http_only() {
+    for allowed in [
+        "https://auth.example.com/token",
+        "http://localhost:8080/token",
+        "http://127.0.0.1:8080/token",
+        "http://[::1]:8080/token",
+    ] {
+        require_transport(&url(allowed), "token_endpoint").expect(allowed);
+    }
+    for refused in [
+        "http://auth.example.com/token",
+        "http://localhost.example.com/token",
+        "http://127.0.0.1.example.com/token",
+        "ftp://localhost/token",
+    ] {
+        require_transport(&url(refused), "token_endpoint").expect_err(refused);
+    }
+    for field in [
+        "authorization_endpoint",
+        "token_endpoint",
+        "registration_endpoint",
+    ] {
+        let metadata = authorization_server(serde_json::json!({
+            "issuer": "https://auth.example.com",
+            field: "http://auth.example.com/x",
+        }));
+        let error = metadata.require_transport().unwrap_err().to_string();
+        assert!(error.contains(field), "{field}: {error}");
+    }
+}
