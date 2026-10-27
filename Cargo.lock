@@ -1850,6 +1850,8 @@ dependencies = [
 [[package]]
 name = "fs-mcp"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8524ca8aee01b4014504805785032bfe065b4b9df332cfa27c718102dd768cd3"
 dependencies = [
  "anyhow",
  "async-compat",
