@@ -7,7 +7,8 @@ use mcplease::types::ContentBlock;
 use serde::Serialize;
 use serde_json::Value;
 
-/// A `/state` snapshot as a tool result (docs/control-api.md).
+/// A `/state` snapshot as a tool result.
+// docs/control-api.md
 #[derive(Serialize, schemars::JsonSchema)]
 pub struct StateResult {
     /// Present only on a call that waited. `false` means the wait hit its
@@ -39,7 +40,8 @@ impl StateResult {
     }
 }
 
-/// Whole log entries fetched by seq (`GET /log/:seq`, docs/control-api.md).
+/// Whole log entries fetched by seq (`GET /log/:seq`).
+// docs/control-api.md
 #[derive(Serialize, schemars::JsonSchema)]
 pub struct EntriesResult {
     /// One full entry view per requested seq, in the order asked.
@@ -78,7 +80,8 @@ pub(super) fn pretty<T: Serialize>(value: &T) -> String {
 }
 
 /// One logged result image, handed back the way the caller can use it: as bytes on
-/// disk at a terminal, as an image content block over MCP (docs/control-api.md).
+/// disk at a terminal, as an image content block over MCP.
+// docs/control-api.md
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum ImageResult {

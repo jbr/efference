@@ -70,7 +70,7 @@ impl MountedSpotter {
             (true, Some(_)) => Err(format!(
                 "spotter model {model:?} is a decision model, which takes no persona: it \
                  answers fixed questions and has no prompt to replace. Its tuning knob is \
-                 the sketch and precedent fold (docs/permissions.md)."
+                 the sketch and precedent fold."
             )
             .into()),
             (true, None) => Ok(MountedSpotter::Jev(JevSpot::new(endpoint, model))),

@@ -758,7 +758,7 @@ fn requires_inference(
         IssueCode::InvalidSelection,
         format!(
             "connection {:?} is a {} connection, which serves decision models only — it can \
-             back the spotter, but not {field} (docs/permissions.md)",
+             back the spotter, but not {field}",
             selection.connection,
             selection.provider.name(),
         ),

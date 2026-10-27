@@ -99,10 +99,7 @@ impl WireDialect {
                     .map(|(name, _, doc)| format!("`{name}` ({})", doc.trim_end_matches('.')))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!(
-                    "dialect {value:?} not recognized: valid values are {valid} (docs/transport.md)"
-                )
-                .into()
+                format!("dialect {value:?} not recognized: valid values are {valid}").into()
             })
     }
 

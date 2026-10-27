@@ -164,7 +164,7 @@ impl Tool<Control> for McpStatus {
         let Executor::Client(state) = &control.executor else {
             return Err(anyhow!(
                 "`follow` is served by `efference mcp`; a session hears its agents through \
-                 its inbox (docs/tools.md)"
+                 its inbox"
             ));
         };
         let agent = match &self.agent {

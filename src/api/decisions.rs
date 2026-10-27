@@ -423,7 +423,7 @@ impl Endpoint {
             .ok_or_else(|| -> Error {
                 format!(
                     "provider {} serves no decisions route, so it cannot run a decision \
-                     model (docs/permissions.md)",
+                     model",
                     self.provider
                 )
                 .into()

@@ -229,6 +229,10 @@ dev = []
 dev-proxy = ["trillium-frontend/dev-proxy"]
 
 [dev-dependencies]
+# The output-text tests match repository-relative paths (`docs/…`) in help and tool
+# schemas.
+regex = "1.13"
+
 # Paused time (`start_paused`) for the escalation timer's tests: a two-minute
 # delay is advanced, not slept.
 tokio = { version = "1.53.1", features = ["test-util"] }

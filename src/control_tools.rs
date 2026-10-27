@@ -209,7 +209,8 @@ impl Control {
         match &self.executor {
             Executor::Host(state) => state.resolve_bound_action(call),
             Executor::Client(_) => Err(anyhow!(
-                "no in-process host to resolve a bound action against (docs/tools.md)"
+                // docs/tools.md
+                "no in-process host to resolve a bound action against"
             )),
         }
     }
@@ -243,10 +244,8 @@ impl Executor {
 /// What a verb that is not on the agent surfaces answers when an in-session executor
 /// reaches it: these are the operator's, on `efference control` (docs/operating.md).
 fn operator_verb(name: &str) -> anyhow::Error {
-    anyhow!(
-        "`{name}` is an operator verb on `efference control`, not mounted in a session \
-         (docs/tools.md)"
-    )
+    // docs/tools.md
+    anyhow!("`{name}` is an operator verb on `efference control`, not mounted in a session")
 }
 
 /// The clock the answers measure durations against, in Unix millis.

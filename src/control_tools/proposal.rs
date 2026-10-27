@@ -7,7 +7,7 @@ use mcplease::{
 use serde::{Deserialize, Serialize};
 
 /// Resolve a pending config-edit proposal — the spotter's prefix-promotion, filed
-/// non-blocking and inert until an orchestrator-above decides it (docs/permissions.md).
+/// non-blocking and inert until an orchestrator-above decides it.
 /// Ids and the proposed change come from `state.proposals`. With no `cancel`, the
 /// proposal commits: its change folds into the effective config, and for a
 /// session-visible key (`scope`, `paths`) the session is notified. `cancel` drops
@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// A session can file a proposal but never resolve its own — the caller here is
 /// the orchestrator-above, one level up from whoever's perimeter is changing.
+// docs/permissions.md
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "proposal")]
 pub struct Proposal {

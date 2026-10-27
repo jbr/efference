@@ -15,12 +15,13 @@ pub(crate) struct Cli {
     /// Listen on a TCP address as well: the web client's front door. A port
     /// (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or
     /// `host:port`; a bare port means loopback, and a cleartext bind is
-    /// accepted only there, so the short spelling never widens exposure
-    /// (docs/web-bind.md). With `--host`, overrides `[host] bind`;
+    /// accepted only there, so the short spelling never widens exposure.
+    /// With `--host`, overrides `[host] bind`;
     /// `--bind ""` serves the Unix socket alone whatever the table says.
     ///
     /// Without `--host` this is the island's: with no host running, the
     /// island answers in the browser on that address instead of in the TUI.
+    // docs/web-bind.md
     #[arg(long, global = true, value_name = "ADDR:PORT")]
     pub(crate) bind: Option<String>,
     /// The session to attach to, by id, without asking.
@@ -90,10 +91,11 @@ pub(crate) struct HostFlags {
     #[arg(long, requires = "host")]
     pub(crate) open: bool,
     /// Run as a terminal-owned island: stdin is the launcher's ownership
-    /// connection, and its closing archives the host's sessions and shuts it down
-    /// (docs/resumption.md). Set by the island launcher, never typed: a person's
+    /// connection, and its closing archives the host's sessions and shuts it down.
+    /// Set by the island launcher, never typed: a person's
     /// `--host` runs until stopped, and a person without one gets an island
     /// started for them.
+    // docs/resumption.md
     #[arg(long, hide = true, requires = "host")]
     pub(crate) island: bool,
 }
@@ -408,7 +410,8 @@ pub(crate) enum Command {
         #[arg(long, value_name = "PATH")]
         config: Option<PathBuf>,
     },
-    /// The web bind's credentials (docs/web-bind.md).
+    /// The web bind's credentials.
+    // docs/web-bind.md
     Auth {
         #[command(subcommand)]
         command: AuthCommand,

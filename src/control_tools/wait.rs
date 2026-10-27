@@ -57,7 +57,7 @@ impl Tool<Control> for Wait {
         let Executor::Client(state) = &control.executor else {
             return Err(anyhow!(
                 "`wait` is served by `efference mcp`; a session hears its agents through \
-                 its inbox (docs/tools.md)"
+                 its inbox"
             ));
         };
         if let Some(agent) = self.agent.as_deref() {

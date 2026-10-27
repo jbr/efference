@@ -50,7 +50,8 @@ pub const CONFIG_SCAFFOLD: &str = "\
 #:schema https://efference.net/schemas/project.v1.json
 # Your session's permissions config. Edit it to request changes — edits are reviewed before they
 # take effect, and a malformed file is rejected wholesale (fail-closed): if an edit doesn't seem to
-# \"take\", check that the file still parses. Unknown keys are rejected. Schema (all keys optional):
+# \"take\", check that the file still parses. Unknown keys are rejected. Schema (all keys optional; each in full at
+# efference://guide/config-format):
 #   scope = \"...\"                       # STRING, top-level — what this session is for (NOT a [scope] table)
 #   watch-for = [\"...\"]                 # hazards the permission spotter should watch for
 #   trust-threshold = 0.5               # where the watch-window/gate cutoffs sit (optional float)
@@ -60,10 +61,10 @@ pub const CONFIG_SCAFFOLD: &str = "\
 #                                       #   The longest matching prefix governs, so a broad grant can carry
 #                                       #   carve-outs: git = true with \"git push\" = \"deny\".
 #   [paths]                             # filesystem grants, e.g. \".\" = true or \"/refs\" = { read = true }
-#   [context]                           # knowledge the session boots with (docs/context.md), e.g.
+#   [context]                           # knowledge the session boots with, e.g.
 #                                       #   \"CLAUDE.md\" = true, Label = { exec = \"...\" } (stdout at boot),
 #                                       #   or Label = { builtin = \"guide\" } (the harness's own docs)
-#   [env]                               # per-variable env policy (docs/env.md): strip = keep it out of
+#   [env]                               # per-variable env policy: strip = keep it out of
 #                                       #   spawned children, mask = never store its value in the log.
 #                                       #   e.g. \"*_KEY\" = { mask = true } or \"CI_*\" = { strip = true }.
 #                                       #   *_KEY/*_SECRET/*_TOKEN/*_PASSWORD/*_CREDENTIALS mask by default.
@@ -72,22 +73,22 @@ pub const CONFIG_SCAFFOLD: &str = "\
 #                                       #   and always masked), or { cmd = \"...\" } for any other vault.
 
 # What this session is for. The permission spotter judges each move against it, so an
-# ordinary look around the project reads as part of the task (docs/permissions.md).
+# ordinary look around the project reads as part of the task.
 scope = \"Set this project up for efference: look over the project to learn how it is built and laid out, ask the operator what they want sessions here to be allowed and to know, write efference.toml and AGENTS.md at the project root, and keep efference's files out of version control in .gitignore or .git/info/exclude, as the operator chooses. Stay out of any file the operator asks you to avoid.\"
 
 # The kickoff: in a session that has said nothing yet, the harness sends this as the opening
-# turn, so the agent speaks first (docs/context.md). Like the preamble, it is not shown as a
+# turn, so the agent speaks first. Like the preamble, it is not shown as a
 # turn; what you see is the reply. Delete the line for a session that waits for you.
 first-turn = \"efference opened this session in a directory with no efference.toml, after the operator chose to set it up. They have not said anything yet.\"
 
 # A session here is setting the project up, which means reading it and writing efference.toml
 # and AGENTS.md into it: the built-in tools and the directory are granted so that work is not
 # a string of approvals. This session's own config (this file) stays review-only, and
-# `.efference/` stays denied, whatever is granted here (docs/permissions.md).
+# `.efference/` stays denied, whatever is granted here.
 tools = [\"efference.*\"]
 
-# The one command cleared by name: validating the template the session is about to write
-# (docs/operating.md). Every other command goes through the spotter.
+# The one command cleared by name: validating the template the session is about to write.
+# Every other command goes through the spotter.
 [commands]
 \"efference check\" = true
 

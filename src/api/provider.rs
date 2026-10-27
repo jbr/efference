@@ -310,8 +310,7 @@ impl Provider {
                     .map(|(name, ..)| format!("`{name}`"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!("provider {value:?} not recognized: valid values are {valid} (docs/transport.md)")
-                    .into()
+                format!("provider {value:?} not recognized: valid values are {valid}").into()
             })
     }
 

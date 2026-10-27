@@ -113,7 +113,7 @@ impl Endpoint {
         {
             return Err(format!(
                 "{model} is a decision model: it answers typed questions about a state and \
-                 produces no turn, so it can back the spotter only (docs/transport.md)"
+                 produces no turn, so it can back the spotter only"
             )
             .into());
         }

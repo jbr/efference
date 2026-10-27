@@ -36,7 +36,8 @@ pub(crate) enum WireFormat {
 /// A dialect the `wire` view can translate a recorded session into.
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum ViewDialect {
-    /// Chat Completions (backlog/inbox/completions-dialect.md).
+    /// Chat Completions.
+    // docs/transport.md
     Completions,
 }
 

@@ -46,7 +46,8 @@ pub struct Create {
     #[arg(long)]
     pub effort: Option<String>,
     /// Sampling temperature, 0–100 (percent). 0 is (near-)deterministic; omitted
-    /// uses the provider default (docs/transport.md).
+    /// uses the provider default.
+    // docs/transport.md
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     #[schemars(range(min = 0, max = 100))]

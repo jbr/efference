@@ -111,7 +111,7 @@ pub(super) fn library_script(library: &Library) -> String {
         .map(|build| without_source_map(build))
         .collect();
     format!(
-        "/* {} {}, built into efference (docs/artifacts.md) */\n{}\n;efference.__loaded({}, {});\n",
+        "/* {} {}, built into efference */\n{}\n;efference.__loaded({}, {});\n",
         library.name,
         library.version,
         builds.join("\n;\n"),

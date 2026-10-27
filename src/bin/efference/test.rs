@@ -521,3 +521,56 @@ fn a_listening_socket_answers_and_a_stale_or_absent_one_does_not() {
     );
     let _ = std::fs::remove_file(&stale);
 }
+
+/// Every piece of help text a person can read from `--help` is free of repository
+/// paths: `docs/` is internal and ships nowhere. Implementer cross-references sit in
+/// `//` comments beside the `///` text, which clap never sees. Each command's rendered
+/// long help is checked, along with the help and about strings of hidden arguments and
+/// commands, which render nowhere until someone unhides them.
+#[test]
+fn help_text_names_no_repository_path() {
+    use clap::CommandFactory;
+
+    fn walk(command: &clap::Command, trail: &str, paths: &regex::Regex, found: &mut Vec<String>) {
+        let mut texts = vec![command.clone().render_long_help().to_string()];
+        let styled = [
+            command.get_about(),
+            command.get_long_about(),
+            command.get_before_help(),
+            command.get_after_help(),
+            command.get_before_long_help(),
+            command.get_after_long_help(),
+        ];
+        texts.extend(styled.into_iter().flatten().map(|text| text.to_string()));
+        for arg in command.get_arguments() {
+            texts.extend(
+                [arg.get_help(), arg.get_long_help()]
+                    .into_iter()
+                    .flatten()
+                    .map(|text| text.to_string()),
+            );
+            texts.extend(
+                arg.get_possible_values()
+                    .iter()
+                    .filter_map(|value| value.get_help())
+                    .map(|text| text.to_string()),
+            );
+        }
+        for text in texts {
+            if let Some(path) = paths.find(&text) {
+                found.push(format!("`{trail}`: {:?}", path.as_str()));
+            }
+        }
+        for sub in command.get_subcommands() {
+            walk(sub, &format!("{trail} {}", sub.get_name()), paths, found);
+        }
+    }
+
+    let paths = regex::Regex::new(r"\b(docs|backlog|journal|process|src)/[\w./-]+").unwrap();
+    let mut found = Vec::new();
+    walk(&Cli::command(), "efference", &paths, &mut found);
+    assert!(
+        found.is_empty(),
+        "help text names repository paths: {found:#?}"
+    );
+}

@@ -292,3 +292,31 @@ fn a_numeric_seq_reads_as_a_handle() {
     .unwrap();
     assert_eq!(message.reply_to.as_deref(), Some("3.1"));
 }
+
+/// What the three sets advertise to a model or a mounting harness names no path in this
+/// repository: the tool descriptions and schemas are read where `docs/` does not exist,
+/// and the MCP instructions travel with them. Implementer cross-references are `//`
+/// comments, which never reach the schema.
+#[test]
+fn advertised_tools_name_no_repository_path() {
+    let paths = regex::Regex::new(r"\b(docs|backlog|journal|process|src)/[\w./-]+").unwrap();
+    let sets = [
+        ("in-session", in_session::Tools::tools_list()),
+        ("mcp", mcp::Tools::tools_list()),
+        ("command-line", cli::Tools::tools_list()),
+    ];
+    for (set, tools) in sets {
+        let advertised = serde_json::to_string(&tools).unwrap();
+        if let Some(found) = paths.find(&advertised) {
+            panic!(
+                "the {set} set names the repository path {:?}: {}",
+                found.as_str(),
+                &advertised[found.start().saturating_sub(120)..found.end()]
+            );
+        }
+    }
+    assert!(
+        !paths.is_match(mcp::INSTRUCTIONS),
+        "the MCP instructions name a repository path"
+    );
+}

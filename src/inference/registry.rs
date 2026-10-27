@@ -35,8 +35,7 @@ impl InferenceRegistry {
             Ok(text) => text,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Err(format!(
-                    "no inference config at {}: run `efference setup` to create it \
-                     (docs/operating.md)",
+                    "no inference config at {}: run `efference setup` to create it",
                     path.display()
                 )
                 .into());
