@@ -56,6 +56,8 @@ mod preparation;
 
 mod boot_resume;
 
+mod island_exit;
+
 mod agents;
 
 mod routes;
@@ -92,6 +94,10 @@ pub struct Host {
     /// Turns `true` when the host-start pass (the empty-log sweep, then the id backfill)
     /// has run; the boot resume waits for it (`boot_resume.rs`).
     start_pass: tokio::sync::watch::Receiver<bool>,
+    /// Set when an owner watch adopts this host, which makes it an island
+    /// (`island_exit.rs`, docs/operating.md): it runs no boot resume, and it
+    /// archives its sessions when its owner goes (docs/resumption.md).
+    island: std::sync::atomic::AtomicBool,
     /// The host's own environment, captured once at start (docs/env.md).
     ///
     /// This is the base a session launched without a caller-supplied environment
@@ -210,6 +216,7 @@ impl Host {
             resume_failures: Mutex::new(BTreeMap::new()),
             inventory: crate::inventory::Inventory::new(),
             start_pass,
+            island: std::sync::atomic::AtomicBool::new(false),
             host_env,
             listing_changed: Notify::new(),
             attention: Arc::default(),
@@ -569,10 +576,11 @@ impl Host {
     /// gone). `None` when no session has that id. The map entry is removed by the
     /// watcher [`adopt`](Self::adopt) spawned, once the loop has returned.
     ///
-    /// This is the archive path only. A host shutdown stops sessions without it and
-    /// leaves every worktree in place, including through the cascade that ends a
-    /// stopped session's children: those reach here with the host already shutting
-    /// down, and retire nothing.
+    /// This is the archive path only, which an island's exit also takes for each of
+    /// its sessions before it shuts down (`island_exit.rs`). A host shutdown stops
+    /// sessions without it and leaves every worktree in place, including through the
+    /// cascade that ends a stopped session's children: those reach here with the host
+    /// already shutting down, and retire nothing.
     ///
     /// A session still starting has its preparation cancelled instead
     /// (`preparation.rs`), leaving nothing a creation minted and a resumed session as

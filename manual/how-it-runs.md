@@ -11,19 +11,21 @@ interface.
 There are two ways to run one.
 
 - **Standalone.** With no host running, `efference` starts one for this terminal alone.
-  When you quit the terminal interface, or close the terminal, that host stops, and any
-  work in progress stops with it. Each session's record stays in the project, and
-  `efference` there offers to resume it.
-  <!-- src: src/bin/efference/island.rs::Island::launch, end; src/daemon/island.rs::OwnerWatch; src/bin/efference/picker.rs::resume_on -->
+  When you quit the terminal interface, or close the terminal, that host archives its
+  sessions and stops, and any work in progress stops with them. Each session's record
+  stays in the project, and `efference` there offers to resume it under "resume an
+  archived session…".
+  <!-- src: src/bin/efference/island.rs::Island::launch, end; src/daemon/island.rs::OwnerWatch; src/daemon/host/island_exit.rs::archive_and_shut_down; src/bin/efference/picker.rs::resume_on; src/bin/efference/picker/app.rs::RESUME -->
 - **Host mode.** `efference --host` starts a host that runs until you stop it. Every project
   on the machine uses it. Quitting the terminal interface detaches from a session, which
   keeps working, and you can attach again later. This is the mode that can serve the web
   client ([Remote access](remote-access.md)).
   <!-- src: src/bin/efference/serve.rs::host; src/bin/efference/cli.rs::user_host_socket, host_candidates -->
 
-"Quit" therefore means two things: in standalone mode it stops the session; with a host
-running it only closes the window onto it. The terminal interface says which: its leaving
-action reads "quit" in standalone mode and "detach" with a host.
+"Quit" therefore means two things: in standalone mode it ends the session, which you can
+resume later; with a host running it only closes the window onto it. The terminal
+interface says which: its leaving action reads "quit" in standalone mode and "detach" with
+a host.
 <!-- src: src/tui/control_strip.rs::strip_live_items -->
 
 A host started in a terminal ends when that terminal does. To keep one running across
@@ -89,13 +91,21 @@ session sees it. Resuming a session reopens its log. [Credentials](credentials.m
 what is kept out of it.
 <!-- src: src/boot.rs::LOG_NAME, CONFIG_NAME; src/persist.rs::Log; src/boot/resume.rs -->
 
-When a host starts, it reopens the sessions that were still open when the previous host
-stopped, and leaves them idle: work that was interrupted does not continue until you
-message or continue the session. A reopened session may still make small requests of its
-own — keeping the provider's cache of the conversation warm, or reading a notification
-that arrives.
+When `efference --host` starts, it reopens the sessions that were still open when a host
+last stopped, in every project, and leaves them idle: work that was interrupted does not
+continue until you message or continue the session. A reopened session may still make
+small requests of its own — keeping the provider's cache of the conversation warm, or
+reading a notification that arrives.
 <!-- src: src/daemon/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/recovery.rs; src/daemon/keepalive.rs; src/daemon/metrics.rs::seed_clocks -->
-<!-- TODO: blocked on backlog/standalone-exit-archives.md — today a standalone host does this too, for every project; once it ships, a standalone archives its sessions on exit and reopens nothing at start. -->
+
+A standalone host reopens nothing when it starts. When you quit or close its terminal, it
+archives each of its sessions before it stops, the same as archiving a session yourself, so
+no host reopens them later. A session that worked in its own git worktree keeps the worktree
+if it holds changes, and the worktree is removed if it holds none. A session in which
+nothing was said yet is deleted rather than archived. A standalone host that crashes or is
+killed archives nothing: its sessions stay open, and the next `efference --host` reopens
+them, or you resume them from `efference`'s menu.
+<!-- src: src/daemon/host/island_exit.rs::archive_and_shut_down; src/daemon/island.rs::OwnerWatch; src/daemon/host/boot_resume.rs::resume_open_sessions (is_island); src/daemon/host.rs::Host::end; src/worktree.rs::retire; src/discard.rs -->
 
 ### Every outbound connection
 

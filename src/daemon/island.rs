@@ -9,15 +9,15 @@
 //! the island alive or end it.
 //!
 //! Owner loss is watched from before the host has initialized anything. Until the
-//! host's `Swansong` exists there are no sessions to tear down and the process
-//! exits outright; after, it is the same graceful shutdown a signal starts, which
-//! reaps every session's tool processes before the listener completes
-//! (docs/process-monitor.md).
+//! host exists there are no sessions to tear down and the process exits outright;
+//! after, the host archives every session it holds, as `DELETE` would, and then
+//! shuts down as a signal would, which reaps every session's tool processes before
+//! the listener completes (docs/resumption.md, docs/process-monitor.md).
 
+use super::Host;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use trillium_tokio::Swansong;
+use std::sync::{Arc, Mutex, Weak};
 
 /// Where islands live: `~/.efference/islands/<launcher pid>/`, one directory each.
 pub const ISLANDS_DIR: &str = "islands";
@@ -37,23 +37,44 @@ pub fn island_dir(home: &Path, pid: u32) -> PathBuf {
         .join(pid.to_string())
 }
 
-/// What owner loss acts on: the host's `Swansong` once it exists, and whether the
-/// owner went before it did.
+/// What owner loss acts on: the host once it exists, and whether the owner went
+/// before it did.
 #[derive(Default)]
 struct Watch {
-    swansong: Option<Swansong>,
+    host: Option<Adopted>,
     owner_gone: bool,
 }
 
+/// The adopted host, and the runtime its exit runs on: the watch thread is not one
+/// of the runtime's. Held weakly, since the host's owner is the process that serves
+/// it; a host already gone has nothing left to end.
+#[derive(Clone)]
+struct Adopted {
+    host: Weak<Host>,
+    runtime: tokio::runtime::Handle,
+}
+
+impl Adopted {
+    /// Archive the host's sessions and shut it down, on the host's runtime
+    /// ([`Host::archive_and_shut_down`]).
+    fn exit(&self) {
+        if let Some(host) = self.host.upgrade() {
+            self.runtime
+                .spawn(async move { host.archive_and_shut_down().await });
+        }
+    }
+}
+
 /// The host side of the ownership connection. Created before the host
-/// initializes; [`adopt`](Self::adopt) hands it the `Swansong` once there is one.
+/// initializes; [`adopt`](Self::adopt) hands it the host once there is one.
 #[derive(Clone, Default)]
 pub struct OwnerWatch(Arc<Mutex<Watch>>);
 
 impl OwnerWatch {
     /// Read `owner` until it closes, on a thread of its own, then end the host:
-    /// `before_host` runs if no `Swansong` has been adopted yet (the process has
-    /// nothing to wind down), otherwise the adopted one is shut down.
+    /// `before_host` runs if no host has been adopted yet (the process has nothing
+    /// to wind down), otherwise the adopted one archives its sessions and shuts
+    /// down.
     ///
     /// Bytes the owner writes are discarded; the pipe carries no protocol, only
     /// its own closing.
@@ -70,29 +91,36 @@ impl OwnerWatch {
         watch
     }
 
-    /// The host's `Swansong` now exists. If the owner already went, it is shut
-    /// down here: the watch thread saw no `Swansong` and ran `before_host`, which
-    /// for the process launch exits — so this branch is reached only by a
-    /// `before_host` that returns.
-    pub fn adopt(&self, swansong: &Swansong) {
+    /// The host now exists, and is an island from here: it runs no boot resume, so
+    /// this comes before the resume is spawned (docs/resumption.md). Called on the
+    /// host's runtime, which its exit will run on.
+    ///
+    /// If the owner already went, the exit starts here: the watch thread saw no
+    /// host and ran `before_host`, which for the process launch exits — so this
+    /// branch is reached only by a `before_host` that returns.
+    pub fn adopt(&self, host: &Arc<Host>) {
+        host.become_island();
+        let adopted = Adopted {
+            host: Arc::downgrade(host),
+            runtime: tokio::runtime::Handle::current(),
+        };
         let mut watch = self.lock();
         if watch.owner_gone {
-            // Initiating is the whole act; the listener awaits the completion.
-            drop(swansong.shut_down());
+            adopted.exit();
         }
-        watch.swansong = Some(swansong.clone());
+        watch.host = Some(adopted);
     }
 
     fn owner_lost(&self, before_host: impl FnOnce()) {
-        let swansong = {
+        let adopted = {
             let mut watch = self.lock();
             watch.owner_gone = true;
-            watch.swansong.clone()
+            watch.host.clone()
         };
-        match swansong {
-            Some(swansong) => {
-                log::info!("island owner closed; shutting down");
-                drop(swansong.shut_down());
+        match adopted {
+            Some(adopted) => {
+                log::info!("island owner closed; archiving its sessions and shutting down");
+                adopted.exit();
             }
             None => before_host(),
         }

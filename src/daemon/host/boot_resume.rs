@@ -7,6 +7,10 @@
 //! `starting` at once and prepared in the background while the host serves. A session
 //! that fails to resume stays dormant with its `resume_failure`; nothing here stops the
 //! host.
+//!
+//! The pass runs only on a host that is not an island. An island reopens nothing: its
+//! exit archives what it hosts (`island_exit.rs`), so a session it reopened, another
+//! host's or a crashed island's, would be archived when the island's owner went.
 
 use super::resume::ResumeRefused;
 use super::*;
@@ -32,8 +36,12 @@ impl Host {
     /// Resume the sessions the last host left open, creators before the children that
     /// end with them, and return the ids that started. Waits for the host-start pass
     /// (the empty-log sweep and the id backfill) first, so a discarded stub is never
-    /// resumed. Returns once every session has started or failed to.
+    /// resumed. Returns once every session has started or failed to; on an island,
+    /// at once, having resumed nothing.
     pub async fn resume_open_sessions(self: &Arc<Self>) -> Vec<String> {
+        if self.is_island() {
+            return Vec::new();
+        }
         let mut passed = self.start_pass.clone();
         if passed.wait_for(|done| *done).await.is_err() {
             log::warn!("boot resume skipped: the host-start pass did not finish");

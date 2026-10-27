@@ -92,8 +92,9 @@ project's `post-checkout` hook, bridge them.
 ## Archive and resume
 
 An archived session is resumable, so archive does not assume the session is finished
-(`worktree::retire`, run from `Host::end` — archive only; a host shutdown leaves
-worktrees in place):
+(`worktree::retire`, run from `Host::end` — archive only, including an island's exit,
+which archives each of its sessions ([resumption.md](resumption.md)); a host shutdown
+leaves worktrees in place):
 
 - a worktree with no uncommitted or untracked changes (`git status --porcelain` empty;
   ignored files such as `target/` do not count) is removed; its branch is deleted only

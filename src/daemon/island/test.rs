@@ -2,6 +2,22 @@ use super::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+/// A host with no connections and no state database: enough to adopt, and to
+/// archive nothing on its way out.
+fn bare_host() -> Arc<Host> {
+    Host::new(
+        crate::inference::InferenceRegistry::empty(),
+        crate::env_table::EnvSnapshot::new(Default::default()).unwrap(),
+    )
+}
+
+/// Wait for `host` to start shutting down, failing the test after five seconds.
+async fn shuts_down(host: &Host) {
+    tokio::time::timeout(Duration::from_secs(5), host.swansong().shutting_down())
+        .await
+        .expect("the host shut down");
+}
+
 /// A pipe whose write end the test holds, as the launcher holds the host's stdin.
 fn pipe() -> (std::io::PipeReader, std::io::PipeWriter) {
     std::io::pipe().unwrap()
@@ -27,41 +43,42 @@ fn owner_closing_before_the_host_exists_runs_the_early_exit() {
     wait_for("the early exit", || exited.load(Ordering::SeqCst));
 }
 
-#[test]
-fn owner_closing_after_adoption_shuts_the_swansong_down() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn owner_closing_after_adoption_shuts_the_host_down() {
     let (reader, writer) = pipe();
     let watch = OwnerWatch::spawn(reader, || panic!("the host already existed"));
-    let swansong = Swansong::new();
-    watch.adopt(&swansong);
-    assert!(swansong.state().is_running());
+    let host = bare_host();
+    watch.adopt(&host);
+    assert!(host.is_island(), "adoption makes the host an island");
+    assert!(host.swansong().state().is_running());
     drop(writer);
-    wait_for("shutdown", || !swansong.state().is_running());
+    shuts_down(&host).await;
 }
 
-#[test]
-fn bytes_from_the_owner_do_not_end_the_host() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bytes_from_the_owner_do_not_end_the_host() {
     let (reader, mut writer) = pipe();
     let watch = OwnerWatch::spawn(reader, || panic!("the host already existed"));
-    let swansong = Swansong::new();
-    watch.adopt(&swansong);
+    let host = bare_host();
+    watch.adopt(&host);
     std::io::Write::write_all(&mut writer, b"anything\n").unwrap();
-    std::thread::sleep(Duration::from_millis(50));
-    assert!(swansong.state().is_running());
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(host.swansong().state().is_running());
     drop(writer);
-    wait_for("shutdown", || !swansong.state().is_running());
+    shuts_down(&host).await;
 }
 
-#[test]
-fn adopting_after_the_owner_went_shuts_down_at_once() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn adopting_after_the_owner_went_shuts_down_at_once() {
     let (reader, writer) = pipe();
     let returned = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&returned);
     let watch = OwnerWatch::spawn(reader, move || flag.store(true, Ordering::SeqCst));
     drop(writer);
     wait_for("the early exit", || returned.load(Ordering::SeqCst));
-    let swansong = Swansong::new();
-    watch.adopt(&swansong);
-    assert!(!swansong.state().is_running());
+    let host = bare_host();
+    watch.adopt(&host);
+    shuts_down(&host).await;
 }
 
 #[test]

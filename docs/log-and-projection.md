@@ -129,14 +129,14 @@ with a seq after `resumes_after` and before the `Resumed` entry are skipped by
 before. Each `Resumed` entry skips its own range.
 
 `Archived` is appended when a session is archived on purpose (`DELETE /sessions/:id`,
-`PATCH {"state": "archived"}`, or a non-detached child ending with its creator), under
-the turn of the log's last entry. It projects to nothing. `source` records who
-archived it, spelled as a turn's `source` is: `web` from the web client, `mcp[<client>]`
-from a call over MCP, `session[<id>]` from a session archiving one it drives. It is
-client-asserted and unverified, skipped when `None` (the operator's own command line or
-TUI, a child ending with its creator, a session cancelled while starting), and absent
-from every log written before the field existed, which read back with `None`; adding it
-needed no version bump. The dormant inventory reads it as the row's `archived_by`,
+`PATCH {"state": "archived"}`, a non-detached child ending with its creator, or an
+island's exit), under the turn of the log's last entry. It projects to nothing. `source`
+records who archived it, spelled as a turn's `source` is: `web` from the web client,
+`mcp[<client>]` from a call over MCP, `session[<id>]` from a session archiving one it
+drives. It is client-asserted and unverified, skipped when `None` (the operator's own
+command line or TUI, a child ending with its creator, a session cancelled while
+starting, an island's exit), and absent from every log written before the field
+existed, which read back with `None`; adding it needed no version bump. The dormant inventory reads it as the row's `archived_by`,
 and a client whose stream ended reads it to say who archived the session
 ([tui.md](tui.md)). The later of `Resumed` and
 `Archived` is the session's lifecycle, which tells a deliberate archive from a session

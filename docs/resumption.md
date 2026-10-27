@@ -161,14 +161,27 @@ triage.
 
 Two non-projecting entries record the lifecycle. `Resumed` is appended on a reopen;
 `Archived` is appended when a session is archived on purpose: `DELETE /sessions/:id`,
-`PATCH {"state": "archived"}`, and a child that ends with its creator. It is the last
-append of the archive, after the worktree outcome, under the turn of the log's last
-entry. A host shutdown stops its sessions without appending it, and so does a session
-whose loop ends on its own.
+`PATCH {"state": "archived"}`, a child that ends with its creator, and an island's exit
+(below). It is the last append of the archive, after the worktree outcome, under the
+turn of the log's last entry. A host shutdown stops its sessions without appending it,
+and so does a session whose loop ends on its own.
 
 The later of the two is the session's lifecycle. A log whose last lifecycle entry is not
 `Archived` (including one with neither) was open when its host stopped, and the dormant
 listing marks its row `interrupted` (`src/inventory.rs`).
+
+**An island's exit** (`src/daemon/host/island_exit.rs`). An island is a host whose life
+is bound to the client that launched it by an owner watch ([operating.md](operating.md)).
+When the owner goes, the island archives every session it hosts, starting or hosted,
+then shuts down. Each session takes `Host::end`, the path `DELETE` takes: one mid-turn is
+stopped as `DELETE` stops it, its worktree is retired ([worktrees.md](worktrees.md)), and
+one that never had a turn is discarded (below). A non-detached child is left to the
+cascade its creator's end runs, so each session is archived once; a session that
+arrives while the archive runs is taken in another round. The shutdown starts only when
+every session has left the host's map, because `Host::end` archives only while the host
+is running: a session it reached after the shutdown began would be stopped without
+`Archived`, as a host shutdown stops it. The entry carries no `source`. A crash, a
+signal, or `kill -9` takes none of this, and the island's sessions are left interrupted.
 
 ## Sessions that never had a turn
 
@@ -179,9 +192,9 @@ the operator wrote or the agent did (`src/discard.rs`). Such a session is discar
 archived:
 
 - **At archive.** Each archive path (`DELETE`, `PATCH {"state": "archived"}`, a child
-  ending with its creator) removes the session directory and releases the id's row in
-  the `session_ids` register ([session-title.md](session-title.md)), so the id can be
-  minted again, and appends no `Archived`. The response says `"state": "discarded"`.
+  ending with its creator, an island's exit) removes the session directory and releases
+  the id's row in the `session_ids` register ([session-title.md](session-title.md)), so
+  the id can be minted again, and appends no `Archived`. The response says `"state": "discarded"`.
   Removal refuses anything that is not a real directory directly under the project's
   `.efference`; if it fails, the session is archived as usual. A host shutdown discards
   nothing.
@@ -297,6 +310,14 @@ header, so a non-detached child ends with its creator again. Session ids are uni
 across roots (the register), so a session is resumed from one root only. The supervisor
 pointer and succession are host state and start again from the creator
 (`Hosted.supervisor`), as after any resume.
+
+An island runs no pass: `resume_open_sessions` returns at once on a host the owner watch
+has adopted, which it does before the pass is spawned (`Host::is_island`). Since an
+island's exit archives its sessions, what an island would find interrupted is a crashed
+island's sessions or those of a host that is not an island, stopped by a reboot or an
+upgrade, and the island's exit would archive any it reopened. An interrupted session is
+resumed from a client's resume list (below), or by the next start of a host that is not
+an island.
 
 The PATCH is idempotent. On a live or starting session it answers `200` with
 `resumed: false`; the revival itself answers `resumed: true`. The same id live under a different root is `409`

@@ -150,6 +150,52 @@ async fn a_session_that_fails_to_resume_stays_dormant_and_the_pass_goes_on() {
     after.swansong().shut_down().await;
 }
 
+/// An island reopens nothing: an interrupted session under a remembered root stays
+/// dormant, its log untouched and its row still `interrupted`, and a host that is not
+/// an island, started after, resumes it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_island_leaves_an_interrupted_session_dormant_and_another_host_resumes_it() {
+    let root = Root::new("boot-resume-island");
+    left(&root, "open", None, false, |_| {}).await;
+    let log = root.session_dir("open").join(crate::boot::LOG_NAME);
+    let before = std::fs::read(&log).unwrap();
+    let island = host_over(&root);
+    let (reader, owner) = std::io::pipe().unwrap();
+    let watch =
+        crate::daemon::island::OwnerWatch::spawn(reader, || panic!("the host already existed"));
+    watch.adopt(&island);
+
+    assert_eq!(island.resume_open_sessions().await, Vec::<String>::new());
+    assert!(island.ids().is_empty());
+    assert_eq!(std::fs::read(&log).unwrap(), before, "the log is untouched");
+    let rows = json(
+        host_server(&island)
+            .await
+            .get(&format!(
+                "/sessions?state=archived&cwd={}",
+                root.path().to_string_lossy().replace('/', "%2F")
+            ))
+            .await
+            .body(),
+    );
+    let row = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == "open")
+        .expect("the session is listed dormant");
+    assert_eq!(row["interrupted"], true, "{row}");
+    drop(owner);
+    tokio::time::timeout(Duration::from_secs(10), island.swansong().shutting_down())
+        .await
+        .expect("the island shut down when its owner went");
+
+    let host = host_over(&root);
+    assert_eq!(host.resume_open_sessions().await, ["open"]);
+    assert_eq!(host.ids(), ["open"]);
+    host.swansong().shut_down().await;
+}
+
 /// A resume starts nothing: a restored notification no triage showed leaves the log as
 /// the resume wrote it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

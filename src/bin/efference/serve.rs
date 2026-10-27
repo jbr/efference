@@ -350,7 +350,8 @@ pub(crate) async fn spotter_check(
 ///
 /// `island` binds the host's life to the process that launched it: stdin is the
 /// ownership connection, watched from before anything else initializes
-/// ([`efference::daemon::island`]).
+/// ([`efference::daemon::island`]). When it closes, the island archives its
+/// sessions and exits.
 pub(crate) async fn host(
     bind_flags: BindFlags,
     socket: Option<PathBuf>,
@@ -411,17 +412,19 @@ pub(crate) async fn host(
         tokio::spawn(auth.keep_renewed());
     }
     let host = efference::daemon::Host::new(inference, launch_baseline);
+    // Adopted first: an island archives its sessions when its owner goes, and so
+    // reopens none at start (docs/resumption.md).
+    if let Some(owner) = &owner {
+        owner.adopt(&host);
+    }
     // The sessions the last host left open, reopened in the background while this one
-    // serves (docs/resumption.md).
+    // serves; on an island, nothing (docs/resumption.md).
     tokio::spawn({
         let host = std::sync::Arc::clone(&host);
         async move {
             host.resume_open_sessions().await;
         }
     });
-    if let Some(owner) = &owner {
-        owner.adopt(host.swansong());
-    }
     // A host in the foreground titles its terminal; an island's stdout is its log
     // file, so it never does.
     let titling = std::io::IsTerminal::is_terminal(&std::io::stdout())

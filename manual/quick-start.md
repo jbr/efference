@@ -53,9 +53,9 @@ To add or change a connection later, run `efference setup`.
 ## Keeping sessions running
 
 Started this way, efference runs **standalone**: the session runs inside this terminal's
-efference process, and quitting stops it. Its record is kept, and `efference` in the
-project offers to resume it.
-<!-- src: src/daemon/island.rs::OwnerWatch; src/bin/efference/picker.rs::resume_on -->
+efference process, and quitting, or closing the terminal, ends it. Its record is kept, and
+`efference` in the project offers to resume it under "resume an archived session…".
+<!-- src: src/daemon/island.rs::OwnerWatch; src/daemon/host/island_exit.rs::archive_and_shut_down; src/bin/efference/picker.rs::resume_on; src/bin/efference/picker/app.rs::RESUME -->
 
 For sessions that keep working when you close the terminal interface, run a **host**, a
 long-lived efference process that holds sessions, in a terminal you leave open:

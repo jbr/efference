@@ -14,6 +14,7 @@ mod control;
 mod creation;
 mod discard;
 mod files;
+mod island;
 mod preview;
 mod projects;
 mod resume;

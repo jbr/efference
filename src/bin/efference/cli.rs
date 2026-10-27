@@ -90,9 +90,10 @@ pub(crate) struct HostFlags {
     #[arg(long, requires = "host")]
     pub(crate) open: bool,
     /// Run as a terminal-owned island: stdin is the launcher's ownership
-    /// connection, and its closing shuts the host down (docs/control-channel.md).
-    /// Set by the island launcher, never typed: a person's `--host` is a
-    /// standalone host, and a person without one gets an island started for them.
+    /// connection, and its closing archives the host's sessions and shuts it down
+    /// (docs/resumption.md). Set by the island launcher, never typed: a person's
+    /// `--host` runs until stopped, and a person without one gets an island
+    /// started for them.
     #[arg(long, hide = true, requires = "host")]
     pub(crate) island: bool,
 }

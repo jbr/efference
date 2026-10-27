@@ -302,13 +302,19 @@ The host is a separate process from birth: its own OS session (`setsid`), so the
 Ctrl-C and hangup never reach it; stdout and stderr to `host.log`, so nothing it prints lands
 over the full-screen UI; and stdin a pipe the TUI holds and never writes. That pipe is the
 ownership connection. The kernel closes it however the TUI ends — quitting, a crash, SIGKILL —
-and the host reads EOF and shuts down as a signal would, reaping every session's processes
-([process-monitor.md](process-monitor.md)). Owner loss is watched from before the host initializes, so
-a TUI that dies during startup leaves nothing running. No other client carries ownership: a
-second TUI, the web client, or an agent attaching and leaving does not extend or end the
-island. An island leaves the terminal as it found it: while the host starts the launcher
-shows one status line, erased before the TUI takes the screen, and the host's output goes
-to `host.log`. Echoed before the TUI, it was left on the normal screen when the TUI gave the
+and the host reads EOF, archives every session it hosts through the path `DELETE` takes, and
+then shuts down as a signal would, reaping every session's processes
+([process-monitor.md](process-monitor.md)). The sessions end archived rather than interrupted, so
+the picker's "resume an archived session…" entry is the way back to one, and no host reopens
+them at its start. An island runs no boot resume of its own either: a session left
+interrupted by a crash or a stopped host stays dormant until the picker resumes it or a host
+that is not an island starts ([resumption.md](resumption.md)). A crash of the island's own
+process, or a signal sent to it, leaves its sessions interrupted. Owner loss is watched from
+before the host initializes, so a TUI that dies during startup leaves nothing running. No
+other client carries ownership: a second TUI, the web client, or an agent attaching and
+leaving does not extend or end the island. An island leaves the terminal as it found it:
+while the host starts the launcher shows one status line, erased before the TUI takes the
+screen, and the host's output goes to `host.log`. Echoed before the TUI, it was left on the normal screen when the TUI gave the
 terminal back. The log is printed only when startup fails — the host refuses to start or
 refuses the creation — where it is the explanation; by default it carries session lifecycle
 and failures. A creation refusal's detail rides the refusal itself, and a preparation that
