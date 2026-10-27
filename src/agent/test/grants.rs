@@ -121,7 +121,7 @@ pub(super) fn legislate_does_not_let_an_uncovered_call_ride_along() {
         "uncovered call stays gated"
     );
     // The change still landed — legislation happens regardless of the current call.
-    assert!(shared.effective_config().tools.contains("read"));
+    assert!(shared.effective_config().tools.granted("read"));
 }
 
 /// The autonomous redirect names the config file (the policy interface the model edits to
@@ -179,7 +179,10 @@ pub(super) fn a_gated_structured_edit_names_the_missing_grant_not_a_tool_defect(
         msg.contains("not about the tool's behavior") || msg.contains("behavior"),
         "rules out the tool-defect reading: {msg}"
     );
-    assert!(msg.contains("`tools` does not list `edit`"), "{msg}");
+    assert!(
+        msg.contains("`[tools]` does not grant `efference.edit`"),
+        "{msg}"
+    );
     assert!(msg.contains("`[paths]`") && msg.contains("write"), "{msg}");
     assert!(msg.contains("src/lib.rs"), "names the target: {msg}");
     assert!(
@@ -196,7 +199,7 @@ pub(super) fn a_gated_structured_edit_names_the_missing_grant_not_a_tool_defect(
 }
 
 /// Only the halves that are actually missing are named — a call gated on the path alone does
-/// not accuse the `tools` grant it has, and a read does not talk about writes.
+/// not accuse the `[tools]` grant it has, and a read does not talk about writes.
 #[test]
 pub(super) fn the_missing_grant_message_names_only_what_is_missing() {
     let msg = missing_grant_message(

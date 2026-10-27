@@ -21,7 +21,6 @@ scope = "Work only inside this repo."          # what this session is for
 watch-for = ["network egress to non-registry hosts"]
 trust-threshold = 0.5
 first-turn = "Summarize what changed since the last session."
-tools = ["read", "write", "ferritin.*"]
 extends = ["base.toml"]
 ```
 
@@ -35,13 +34,43 @@ extends = ["base.toml"]
   said, so the agent speaks first. Like the preamble it opens the session rather than being
   a turn: the clients do not draw it, and it arrives marked `source: efference`. Read once at
   boot. Omit it for a session that waits for the operator.
-- **`tools`** — the structured tools a call may use without review. Matching is exact, with
-  one glob: a terminal `.*` grants a whole namespace (`ferritin.*` for that server's tools,
-  `efference.*` for every tool the harness itself ships). A star anywhere else fails the
-  file. A connected server's tool may be written either as the harness spells it on the wire
-  (`ferritin__get`) or in the dotted display form (`ferritin.get`).
 - **`extends`** — parsed as an ancestor pointer; the merge engine is not built, so it does
   nothing today.
+
+## `[tools]` — which tools a session has
+
+```toml
+[tools]
+efference = { enabled = true, granted = true }   # efference's own tools
+agents = { enabled = true }                      # reaching other sessions, reviewed
+"agents.message" = { granted = true }            # one tool, quoted
+"efference.bash" = { enabled = false }           # an exception inside the namespace
+```
+
+A bare key names a **namespace**: `efference` for the tools efference ships, `agents` for
+the tools that reach other sessions, or a server declared under `[mcp.servers]`. A quoted
+dotted key names **one tool** — `"agents.message"`, `"ferritin.get"`, `"efference.read"`
+(efference's own tools are written with their `efference.` prefix here). Only the first dot
+divides the two, so a server's tool may itself contain dots. An unquoted
+`agents.message = …` is TOML's nested-table syntax, and the file says to quote it.
+
+Each entry sets either or both of:
+
+- **`enabled`** — the tool is in the session's tool list. efference's own tools are **off
+  unless enabled**, so a new or experimental one never appears in a session that did not ask
+  for it. A declared server's tools are on, since declaring the server is the request; an
+  entry can turn one off. Read when the session starts: a change takes effect at the next
+  start.
+- **`granted`** — a call runs without review. A tool that takes a path also needs the path
+  granted in `[paths]`. A granted tool must be enabled, or the file fails.
+
+A tool's own entry overrides its namespace's, field by field. A granted namespace covers
+every tool it has now and any it adds later: it is trust in the party, so grant one only to
+a party you trust that far.
+
+The tools a session's own loop relies on — `consolidate`, `ask`, `wait`, `check_inbox`, and
+the process tools (`list_processes`, `read_process`, `watch_process`, `kill_process`) — are
+always present. They take `granted` but not `enabled`.
 
 ## `[commands]` — bash prefixes
 

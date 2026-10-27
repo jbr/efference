@@ -336,7 +336,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     for label in ["one", "two"] {
         std::fs::write(
             roots.0.join(label).join("efference.toml"),
-            "scope = 'test'\ntools = ['read']\n[paths]\n'.' = true\n[context]\nChildEnv = { exec = \"env\" }\n",
+            "scope = 'test'\n[tools]\nefference = { enabled = true }\n'efference.read' = { granted = true }\n[paths]\n'.' = true\n[context]\nChildEnv = { exec = \"env\" }\n",
         )
         .unwrap();
     }

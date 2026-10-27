@@ -55,7 +55,11 @@ pub const CONFIG_SCAFFOLD: &str = "\
 #   scope = \"...\"                       # STRING, top-level — what this session is for (NOT a [scope] table)
 #   watch-for = [\"...\"]                 # hazards the permission spotter should watch for
 #   trust-threshold = 0.5               # where the watch-window/gate cutoffs sit (optional float)
-#   tools = [\"read\", \"list\", \"search\"]  # structured tools you may use
+#   [tools]                             # which tools the session has, and which run without review:
+#                                       #   efference = { enabled = true, granted = true } (its own tools),
+#                                       #   agents = { enabled = true } (reaching other sessions),
+#                                       #   \"agents.message\" = { granted = true } (one tool; quote the key).
+#                                       #   efference's own tools are left out unless enabled.
 #   [commands]                          # bash prefixes → clear/watch/gate/deny (true = clear, false = deny),
 #                                       #   e.g. cargo = true, \"git diff\" = true, \"git push\" = \"deny\".
 #                                       #   The longest matching prefix governs, so a broad grant can carry
@@ -81,12 +85,6 @@ scope = \"Set this project up for efference: look over the project to learn how 
 # turn; what you see is the reply. Delete the line for a session that waits for you.
 first-turn = \"efference opened this session in a directory with no efference.toml, after the operator chose to set it up. They have not said anything yet.\"
 
-# A session here is setting the project up, which means reading it and writing efference.toml
-# and AGENTS.md into it: the built-in tools and the directory are granted so that work is not
-# a string of approvals. This session's own config (this file) stays review-only, and
-# `.efference/` stays denied, whatever is granted here.
-tools = [\"efference.*\"]
-
 # The one command cleared by name: validating the template the session is about to write.
 # Every other command goes through the spotter.
 [commands]
@@ -94,6 +92,15 @@ tools = [\"efference.*\"]
 
 [paths]
 \".\" = true
+
+# A session here is setting the project up, which means reading it and writing efference.toml
+# and AGENTS.md into it: efference's own tools and the directory are granted so that work is not
+# a string of approvals. This session's own config (this file) stays review-only, and
+# `.efference/` stays denied, whatever is granted here. The tools that reach other sessions are
+# available and reviewed.
+[tools]
+efference = { enabled = true, granted = true }
+agents = { enabled = true }
 
 # Orientation as config: this section's stdout is frozen into the session preamble at boot.
 [context]

@@ -28,7 +28,8 @@ session keeps its copy. A permission granted during a session goes into its copy
 | Key | What it sets | More |
 | --- | --- | --- |
 | `scope`, `watch-for` | What sessions here are for, in a sentence, and what the spotter should look out for | [Permissions](permissions.md) |
-| `tools`, `[paths]`, `[commands]` | What runs without asking: tools by name, files and directories, shell commands by prefix | [Permissions](permissions.md) |
+| `[tools]` | Which tools sessions have — efference's own are off unless enabled — and which of them run without asking | [Permissions](permissions.md) |
+| `[paths]`, `[commands]` | What else runs without asking: files and directories, shell commands by prefix | [Permissions](permissions.md) |
 | `[context]` | What a session starts out knowing: files such as `AGENTS.md`, and the output of commands run at start | |
 | `[env]` | Environment variables for the agent's commands: which are removed, which are masked in the session's record, and values to set, including `op://` references | [Credentials](credentials.md) |
 | `[mcp.servers.<name>]` | MCP servers whose tools sessions here can call | |
@@ -67,6 +68,6 @@ before starting a session in it.
 <!-- src: src/context.rs::run_exec (bash -c at boot, no review); src/mcp/stdio.rs; src/boot/mcp_mount.rs::mount_one; src/env_table/resolve.rs::run_command; absence of a project-trust check in src/boot/ -->
 
 A session started with no `efference.toml`, the setup session or any other, may read and
-write the project directory and use efference's own tools; everything else goes to the
-spotter.
+write the project directory and use efference's own tools; it also has the tools that reach
+other sessions, reviewed. Everything else goes to the spotter.
 <!-- src: src/boot/scaffold.rs::CONFIG_SCAFFOLD, snapshot_config -->

@@ -292,6 +292,8 @@ behind a change, see [`journal/`](journal/).
 
 ### Changed
 
+- Tools are configured in a `[tools]` table: each entry says whether a tool or namespace is `enabled` (in the session's tool list) and `granted` (runs without review). efference's own tools are off unless enabled, so a new built-in in a namespace of its own reaches no session that did not ask for it; the `tools = [...]` grant list is gone, and every existing config was migrated to keep its behaviour (docs/tools.md, docs/permissions.md).
+
 - A standalone host's exit records itself as the cause of the archives it makes (`source: "standalone exit"`), so the log tells a closed standalone apart from an operator's archive; a child ending with its creator still records none (docs/resumption.md, docs/log-and-projection.md).
 - Closing a standalone host (an island: the terminal closes, the TUI quits, the browser launcher ends) archives each session it hosts through the ordinary archive path before it shuts down, so its worktrees are retired and a session is resumed from the picker's archived list; an island no longer reopens interrupted sessions at start, which had revived other projects' sessions in a host that lived as long as one terminal (docs/resumption.md, docs/operating.md).
 - **"Escalate" is kept for passing a gate decision up** (docs/web-push.md, docs/process-monitor.md): the push held while a client is attending is the delayed push, and its log event is `released` instead of `escalated`; a standalone triage that pinned something starts a trajectory. Log version 7: `scripts/migrate-log-v7.py` rewrites existing logs with the host stopped.

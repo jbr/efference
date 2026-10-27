@@ -31,7 +31,9 @@ less and read each held call.
 ```toml
 scope = "Work on this Rust crate: edit its source and tests, run its build and tests."
 watch-for = ["changes to CI configuration", "new dependencies"]
-tools = ["efference.*"]
+
+[tools]
+efference = { enabled = true, granted = true }   # efference's own tools, without asking
 
 [paths]
 "." = { read = true }       # read anything in the project; writes go to the spotter
@@ -86,9 +88,9 @@ network. Nothing restricts which hosts a command can reach. A command you allow 
 also leave something running — a server, a watcher — after it returns.
 <!-- src: absence of sandboxing in src/; src/bash.rs; src/policy/commands.rs (no network rule) -->
 
-`[paths]` and `[commands]` don't apply to MCP tools. Permitting a tool by name, or a whole
-server with `server.*`, trusts it with everything it can do, including tools the server adds
-later.
+`[paths]` and `[commands]` don't apply to MCP tools. Granting a tool, or a whole server with
+`server = { granted = true }`, trusts it with everything it can do, including tools the server
+adds later.
 <!-- src: src/policy.rs::classify_structured, tool_granted -->
 
 ### Saying no
@@ -142,16 +144,20 @@ recorded in the session's log.
 
 ### What clears without asking
 
-- **`tools`**: efference's own tools and MCP tools, by name. `efference.*` is every tool
-  efference provides; `server.*` is all of one MCP server's tools.
+- **`[tools]`**: efference's own tools and MCP tools with `granted = true`. A bare key is a
+  namespace: `efference` is every tool efference provides, `agents` the tools that reach
+  other sessions, and a server's name all of its tools. A quoted key is one tool
+  (`"agents.message"`), and overrides its namespace. The same table says which tools a
+  session has at all: efference's own need `enabled = true`, so a tool efference adds later
+  in a namespace of its own reaches no session that did not enable it.
 - **`[paths]`**: for efference's file tools, read or write access by directory. A file tool
-  needs both its name in `tools` and access to every path it names.
+  needs both a grant in `[tools]` and access to every path it names.
 - **`[context]`**: files listed there for the session to start with are readable by the file
-  tools without a `tools` or `[paths]` entry, and writable if the entry says so.
+  tools without a `[tools]` or `[paths]` entry, and writable if the entry says so.
 - **`[commands]`**: shell commands by prefix, each `true` (or `"clear"`), `"deny"` (or
   `false`), or `"gate"`/`"watch"` (send to the spotter even under a broader `true`).
 - The session's scratch directory (`$TMPDIR`) is always readable and writable.
-<!-- src: src/policy.rs::tool_granted, classify_structured; src/policy/paths.rs::path_spec, context_granted, governing_grant; src/policy/commands.rs::command_stance; src/config.rs::CommandStance; src/boot/scaffold.rs::mint_scratch -->
+<!-- src: src/policy.rs::tool_granted, classify_structured; src/config/tools.rs::ToolsTable, Config::tool_enabled; src/policy/paths.rs::path_spec, context_granted, governing_grant; src/policy/commands.rs::command_stance; src/config.rs::CommandStance; src/boot/scaffold.rs::mint_scratch -->
 
 ### Shell commands
 

@@ -247,32 +247,17 @@ fn classify_structured(role: &Config, call: &ToolCall, dirs: &Directories) -> Ve
     verdict(cleared)
 }
 
-/// Whether the config's `tools` set grants this wire tool name (docs/permissions.md).
+/// Whether the config's `[tools]` table grants this wire tool name (docs/permissions.md):
+/// the tool's own entry, else its namespace's ([`crate::config::ToolsTable::granted`]).
 ///
-/// Three spellings resolve to one decision, all of them set lookups — the grant set never
-/// grows a pattern engine:
-///
-/// - the **wire name** itself (`ferritin__get`, `read`), which is what an exact grant stores
-///   after `config::raw::wire_tool_name` has resolved whatever the operator wrote;
-/// - the **namespace-qualified** name, so `efference.read` grants the built-in whose wire name
-///   is the unprefixed `read` (for a connected tool this is the wire name again);
-/// - the **whole-namespace glob** for the name's namespace ([`crate::mcp::namespace_glob`]).
-///
-/// The glob is a statement of trust in a *party* over a set nobody enumerated: `ferritin.*`
-/// clears every tool that server advertises now and every one it adds later, with no spotter on
-/// the way through, because the tool table is the server's to change. That is a different claim
-/// from a blanket `[commands]` grant — a bash command still passes stage 1's structural check
-/// first, and a structured call has no such pre-filter — which is why the glob is only ever an
-/// explicit config act and never a default on mount.
+/// A namespace grant is a statement of trust in a *party* over a set nobody enumerated:
+/// `ferritin = { granted = true }` clears every tool that server advertises now and every one
+/// it adds later, with no spotter on the way through, because the tool table is the server's to
+/// change. That is a different claim from a blanket `[commands]` grant — a bash command still
+/// passes stage 1's structural check first, and a structured call has no such pre-filter — which
+/// is why a grant is only ever an explicit config act and never a default on mount.
 pub fn tool_granted(role: &Config, wire_name: &str) -> bool {
-    let namespace = crate::mcp::namespace_of(wire_name);
-    role.tools.contains(wire_name)
-        || role.tools.contains(&crate::mcp::namespace_glob(namespace))
-        || (namespace == crate::mcp::BUILTIN_NAMESPACE
-            && role.tools.contains(&format!(
-                "{namespace}{}{wire_name}",
-                crate::mcp::NAMESPACE_SEPARATOR
-            )))
+    role.tools.granted(wire_name)
 }
 
 /// What a gated **structured** call is missing, phrased the way the config spells it
@@ -280,7 +265,7 @@ pub fn tool_granted(role: &Config, wire_name: &str) -> bool {
 /// model so a missing grant reads as a missing grant rather than as a broken tool.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MissingGrants {
-    /// The wire tool name, when the `tools` set does not grant it; `None` when it does.
+    /// The wire tool name, when the `[tools]` table does not grant it; `None` when it does.
     pub tool: Option<String>,
     /// The call's targets that no `[paths]` or `[context]` grant covers with the needed
     /// permission, as the call spelled them.

@@ -37,7 +37,10 @@ pub(super) fn missing_grant_message(
 ) -> String {
     let mut lacks = Vec::new();
     if let Some(tool) = &missing.tool {
-        lacks.push(format!("`tools` does not list `{tool}`"));
+        lacks.push(format!(
+            "`[tools]` does not grant `{}`",
+            crate::config::table_key(tool)
+        ));
     }
     if !missing.paths.is_empty() {
         let perm = if missing.needs_write { "write" } else { "read" };
@@ -86,7 +89,7 @@ fn config_request_sentence(config_path: Option<&Path>) -> String {
     match config_path {
         Some(p) => format!(
             "If it's essential to your task, edit your config at `{}` to request the access you \
-             need — a `[commands]`/`[paths]`/`tools` entry, or a wider `scope`. That edit is held \
+             need — a `[commands]`/`[paths]`/`[tools]` entry, or a wider `scope`. That edit is held \
              for the orchestrator to review over the control channel; it won't auto-apply.",
             p.display()
         ),

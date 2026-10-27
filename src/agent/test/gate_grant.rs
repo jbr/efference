@@ -44,7 +44,7 @@ async fn a_spotter_held_read_offers_its_directory_and_the_grant_clears_it() {
         "toolu_x",
         serde_json::json!({ "paths": ["/elsewhere/codex/README.md"] }),
     );
-    let (shared, grant) = gate_on("tools = [\"read\"]\n[paths]\n\".\" = true\n", &call, None).await;
+    let (shared, grant) = gate_on("[tools]\nefference = { enabled = true }\n\"efference.read\" = { granted = true }\n[paths]\n\".\" = true\n", &call, None).await;
     let grant = grant.expect("the gate offers a grant");
     assert_eq!(grant.label, "always allow reading /elsewhere/codex");
     let approval = commit_config_edit(&shared, 1, &call, grant.change, grant.label).unwrap();

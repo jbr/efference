@@ -48,7 +48,7 @@
 //! - [`Config::commands`] — the bash prefix-allowlist the deterministic fast-path matches
 //!   against (docs/permissions.md). A **map** from command-prefix key to [`CommandStance`],
 //!   resolved longest-prefix-wins. Consumed by that rung.
-//! - [`Config::tools`] — structured tools the fast-path clears by name (also a set).
+//! - [`Config::tools`] — which tools the session mounts, and which the fast-path clears by name.
 //! - [`Config::paths`] — filesystem subtree grants, the one genuine value-bearing map.
 //! - [`Config::trust_threshold`] — where the watch-window/gate cutoffs sit. The
 //!   watch-window rung is its only reader; the field lands ahead of it, per below.
@@ -73,7 +73,7 @@ use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use toml_edit::{Array, DocumentMut, InlineTable, Item, Value, value};
+use toml_edit::{DocumentMut, InlineTable, Item, Table, Value, value};
 
 use crate::log::ConfigChange;
 
@@ -230,11 +230,13 @@ pub struct Config {
     /// table; a `bool` value is sugar (`true` = `clear`, `false` = `deny`).
     pub commands: BTreeMap<String, CommandStance>,
 
-    /// Structured tools the fast-path clears by name, as a **set**. The path-bearing ones
-    /// (`read`/`write`/`search`/edit) additionally require their target under a
-    /// [`Config::paths`] grant; the daemon-internal ones clear on the name alone. Nothing is
-    /// sanctioned in code — even `kill_process` is just an entry here. TOML: `tools = ["read"]`.
-    pub tools: BTreeSet<String>,
+    /// The `[tools]` table (docs/tools.md): which tools the session mounts
+    /// ([`Config::tool_enabled`]) and which the fast-path clears by name
+    /// ([`ToolsTable::granted`]). The path-bearing ones (`read`/`write`/`search`/edit)
+    /// additionally require their target under a [`Config::paths`] grant; the daemon-internal
+    /// ones clear on the name alone. Nothing is sanctioned in code — even `kill_process` is
+    /// just an entry here. TOML: `[tools]` with `efference = { enabled = true, granted = true }`.
+    pub tools: ToolsTable,
 
     /// Filesystem permission grants — the one value-bearing map (docs/permissions.md).
     /// Each key is a subtree, its [`Perms`] the read/write it grants; the fast-path clears a
@@ -428,12 +430,14 @@ mod edit;
 mod file;
 mod load;
 mod raw;
+mod tools;
 
 pub use edit::diff_changes;
 pub use file::{ConfigFile, Refreshed};
 pub use load::{ConfigSource, LoadError, LoadedConfig, load, load_in};
 pub(crate) use raw::RawConfig;
 pub use raw::{ValidationError, wire_tool_name};
+pub use tools::{BUILTIN_NAMESPACES, ToolSettings, ToolsTable, always_present, table_key};
 
 use edit::apply_to_document;
 use raw::parse;

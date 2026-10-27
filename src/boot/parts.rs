@@ -87,6 +87,10 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         authorization,
     )
     .await?;
+    // The `[tools]` table's `enabled` (docs/tools.md): efference's own tools are mounted
+    // only when enabled, a declared server's unless an entry turns tools off. Applied once,
+    // here, so `tools[]` is fixed from turn one.
+    toolbox.retain_enabled(|name| loaded.role.tool_enabled(name));
     let unmounted_section = crate::mcp::unmounted_section(&unmounted);
     // The frozen toolbox against the dialect's name rule (docs/tools.md): a name the
     // request would reject fails the boot here, by its display name, instead of the

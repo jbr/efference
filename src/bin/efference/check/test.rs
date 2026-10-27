@@ -1,24 +1,30 @@
 //! Tests for the per-server perimeter report: the mark beside each advertised
-//! tool is the file's `tools` decision — exact grant, dotted-alias-resolved
-//! grant, or the terminal-`.*` namespace glob — and nothing else (docs/tools.md).
+//! tool is the file's `[tools]` decision — left out, granted by its own entry or
+//! its namespace's, or not granted — and nothing else (docs/tools.md).
 
 use super::*;
 
-fn role_with_tools(entries: &[&str]) -> efference::config::Config {
-    let list = entries
-        .iter()
-        .map(|s| format!("\"{s}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    efference::config::Config::from_toml(&format!("tools = [{list}]\n")).expect("valid config")
-}
-
 #[test]
-fn the_mark_follows_the_grant_exact_glob_or_absent() {
-    let role = role_with_tools(&["ferritin.get", "other.*"]);
+fn the_mark_follows_the_table_tool_namespace_absent_or_off() {
+    let role = efference::config::Config::from_toml(
+        r#"
+        [tools]
+        "ferritin.get" = { granted = true }
+        "ferritin.hidden" = { enabled = false }
+        other = { granted = true }
+
+        [mcp.servers.ferritin]
+        command = "ferritin"
+
+        [mcp.servers.other]
+        command = "other"
+        "#,
+    )
+    .expect("valid config");
     assert_eq!(grant_mark(&role, "ferritin__get"), "+");
     assert_eq!(grant_mark(&role, "other__anything"), "+");
     assert_eq!(grant_mark(&role, "ferritin__unlisted"), "-");
+    assert_eq!(grant_mark(&role, "ferritin__hidden"), "x");
 }
 
 fn write_config(text: &str) -> PathBuf {
@@ -34,9 +40,8 @@ fn write_config(text: &str) -> PathBuf {
 /// binary — the spawn itself fails.
 #[tokio::test]
 async fn an_unmountable_server_fails_unless_optional() {
-    let required = write_config(
-        "tools = []\n\n[mcp.servers.broken]\ncommand = \"efference-definitely-not-a-server\"\n",
-    );
+    let required =
+        write_config("[mcp.servers.broken]\ncommand = \"efference-definitely-not-a-server\"\n");
     let err = check(Some(required.clone()))
         .await
         .expect_err("a required server that cannot spawn must fail the check");
@@ -47,7 +52,7 @@ async fn an_unmountable_server_fails_unless_optional() {
     let _ = std::fs::remove_file(&required);
 
     let optional = write_config(
-        "tools = []\n\n[mcp.servers.broken]\ncommand = \"efference-definitely-not-a-server\"\noptional = true\n",
+        "[mcp.servers.broken]\ncommand = \"efference-definitely-not-a-server\"\noptional = true\n",
     );
     check(Some(optional.clone()))
         .await

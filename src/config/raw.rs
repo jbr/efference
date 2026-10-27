@@ -45,12 +45,16 @@ pub(crate) struct RawConfig {
     // Each value is a [`CommandStance`] or the `bool` sugar ([`RawCommandValue`]).
     #[serde(default)]
     commands: BTreeMap<String, RawCommandValue>,
-    /// Structured tools a call may use without review. Names match exactly, except that a
-    /// trailing `.*` grants a namespace: `ferritin.*` for one server's tools, `efference.*`
-    /// for efference's own. A server's tool may be written `ferritin__get` or
-    /// `ferritin.get`. A tool that takes a path also needs that path granted in `[paths]`.
+    /// Which tools sessions here have, and which of those run without review. A bare key
+    /// names a namespace: `efference` for efference's own tools, `agents` for the tools that
+    /// reach other sessions, or a server declared under `[mcp.servers]`. A quoted dotted key
+    /// names one tool and overrides its namespace, as in `"agents.message" = { granted =
+    /// true }` or `"efference.bash" = { enabled = false }`. The tools a session's own loop
+    /// relies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always
+    /// present.
+    // docs/tools.md, docs/permissions.md; validated by [`super::tools::validate_tools`].
     #[serde(default)]
-    tools: Vec<String>,
+    tools: BTreeMap<String, super::tools::RawToolSettings>,
     /// Filesystem subtrees the structured tools may read or write. The longest matching
     /// prefix decides, so a deeper key carves an exception out of a broader one. Matching
     /// is lexical, without resolving symlinks: a guard against mistakes, not access
@@ -391,11 +395,24 @@ pub enum ValidationError {
     /// `args`/`env` on a `url` server — those keys parameterize a spawned subprocess, and an HTTP
     /// server is not spawned.
     McpServerHttpExtras(String),
-    /// A `tools` entry whose `*` is not the whole-namespace glob. The only glob the grant set
-    /// understands is a terminal `.*` naming a namespace (`ferritin.*`, `efference.*`); a star
-    /// anywhere else would read as a pattern the matcher does not implement, so it fails the
-    /// whole file rather than silently matching nothing.
+    /// A `[tools]` key carrying a `*`. A whole namespace is its bare name (`ferritin`), so a
+    /// star would read as a pattern the table does not implement; it fails the whole file
+    /// rather than silently matching nothing.
     ToolGlob(String),
+    /// A `[tools]` key whose namespace is neither one of efference's
+    /// ([`super::tools::BUILTIN_NAMESPACES`]) nor a declared server, or a dotted key with
+    /// nothing after the dot. Most often one of efference's own tools written bare (`bash`),
+    /// which reads as a namespace.
+    ToolNamespace(String),
+    /// `enabled` on a tool the turn loop always mounts ([`super::tools::always_present`]):
+    /// turning it off would leave the loop asking for a tool the session does not have.
+    ToolAlwaysPresent(String),
+    /// A `[tools]` entry granting a tool or namespace that resolves to not enabled. A grant on
+    /// a tool the session does not have clears nothing, and reads as if it did.
+    ToolGrantedNotEnabled(String),
+    /// A declared server named for one of efference's own namespaces, whose wire names it
+    /// would share.
+    McpServerReserved(String),
     /// A server name that cannot prefix a wire tool name. Connected tools reach the wire as
     /// `<server>__<tool>`, and the API constrains tool names to `[a-zA-Z0-9_-]`, so the server
     /// name must fit the same alphabet (and stay short enough to leave room for the tool).
@@ -456,11 +473,41 @@ impl std::fmt::Display for ValidationError {
                 "mcp server `{name}` sets `url` together with `args`/`env` — those keys \
                  parameterize a spawned `command`, and an HTTP server is not spawned"
             ),
-            ValidationError::ToolGlob(entry) => write!(
+            ValidationError::ToolGlob(key) => write!(
                 f,
-                "tool grant `{entry}` uses `*` outside the terminal `.*` position — the only \
-                 glob is a whole-namespace grant (`ferritin.*` for a server's tools, \
-                 `efference.*` for the built-ins); a partial or mid-name star matches nothing"
+                "`[tools]` key `{key}` uses `*`; a whole namespace is written as its bare name \
+                 (`{}`), and a key matches no pattern",
+                key.trim_end_matches(".*")
+            ),
+            ValidationError::ToolNamespace(key) => {
+                let namespace = key.split_once('.').map_or(key.as_str(), |(n, _)| n);
+                write!(
+                    f,
+                    "`[tools]` key `{key}` names no namespace `{namespace}` — a namespace is \
+                     `efference` (efference's own tools), `agents`, or a server declared under \
+                     `[mcp.servers]`, and one tool is a quoted dotted key after it"
+                )?;
+                if !key.contains('.') {
+                    write!(
+                        f,
+                        "; if `{key}` is one of efference's own tools, write `\"efference.{key}\"`"
+                    )?;
+                }
+                Ok(())
+            }
+            ValidationError::ToolAlwaysPresent(key) => write!(
+                f,
+                "`[tools]` key `{key}` sets `enabled`, but the session's own loop relies on this \
+                 tool and it is always present; it takes `granted` only"
+            ),
+            ValidationError::ToolGrantedNotEnabled(key) => write!(
+                f,
+                "`[tools]` key `{key}` is granted but not enabled — add `enabled = true` to it \
+                 or to its namespace's entry"
+            ),
+            ValidationError::McpServerReserved(name) => write!(
+                f,
+                "mcp server name `{name}` is one of efference's own namespaces; choose another"
             ),
             ValidationError::McpServerName(name) => write!(
                 f,
@@ -502,19 +549,12 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
     for (key, value) in raw.context {
         context.push(validate_context_entry(key, value)?);
     }
-    let mut tools = BTreeSet::new();
-    for entry in raw.tools {
-        let entry = wire_tool_name(entry);
-        if entry.contains('*') && !crate::mcp::is_namespace_glob(&entry) {
-            return Err(ValidationError::ToolGlob(crate::mcp::display_name(&entry)));
-        }
-        tools.insert(entry);
-    }
     let mut mcp_servers = BTreeMap::new();
     for (name, server) in raw.mcp.servers {
         let entry = validate_mcp_server(&name, server)?;
         mcp_servers.insert(name, entry);
     }
+    let tools = super::tools::validate_tools(raw.tools, &mcp_servers)?;
     if raw
         .first_turn
         .as_deref()
@@ -556,22 +596,15 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
     })
 }
 
-/// Normalize a `tools` entry to the name the wire actually carries: the TUI shows a
-/// connected tool as `ferritin.get`, so that is what an operator types, but the grant is
-/// matched against `ferritin__get`. Only the **first** `.` is the namespace boundary —
-/// server names cannot contain one (validated above) while a server's own tool name may
-/// (the MCP spec permits `.` and offers `admin.tools.list` as an example), so
-/// `ferritin.admin.tools.list` resolves to `ferritin__admin.tools.list`.
-///
-/// The dotted form is an **input alias only** — it is resolved here and never stored, so
-/// the config, the log, and the fast-path all still key on one name. An entry with no `.`
-/// (every embedded tool name) passes through untouched.
-///
-/// A whole-namespace glob takes the same route with no special case: `ferritin.*` →
-/// `ferritin__*`, and `efference.*` → `efference__*` — the built-ins' namespace
-/// ([`crate::mcp::BUILTIN_NAMESPACE`]) spelled the way every other namespace is, even
-/// though no built-in's wire name carries the prefix. [`validate`] then rejects any other
-/// use of `*`, and the fast-path resolves the glob against the call's namespace.
+/// Normalize a tool name an operator typed to the name the wire carries: the TUI shows a
+/// connected tool as `ferritin.get`, so that is what an operator types, but the call is
+/// named `ferritin__get`. Only the **first** `.` is the namespace boundary — server names
+/// cannot contain one (validated above) while a server's own tool name may (the MCP spec
+/// permits `.` and offers `admin.tools.list` as an example), so
+/// `ferritin.admin.tools.list` resolves to `ferritin__admin.tools.list`. A name with no
+/// `.` (every embedded tool name) passes through untouched. The `[tools]` table resolves
+/// its own keys ([`super::tools::validate_tools`]), where a built-in is keyed
+/// `efference.<tool>`.
 pub fn wire_tool_name(entry: String) -> String {
     match entry.split_once('.') {
         Some((server, tool)) if !server.is_empty() && !tool.is_empty() => {
@@ -600,6 +633,9 @@ pub(super) fn validate_mcp_server(
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
     if !name_ok {
         return Err(ValidationError::McpServerName(name.to_string()));
+    }
+    if super::tools::BUILTIN_NAMESPACES.contains(&name) {
+        return Err(ValidationError::McpServerReserved(name.to_string()));
     }
     let optional = server.optional;
     let transport = match (server.command, server.url) {

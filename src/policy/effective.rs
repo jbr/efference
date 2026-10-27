@@ -54,7 +54,7 @@ pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
             );
         }
         ConfigChange::Tool { name } => {
-            role.tools.insert(name.clone());
+            role.tools.grant(name);
         }
         ConfigChange::Scope { text } => {
             role.scope = Some(text.clone());

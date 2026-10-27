@@ -432,7 +432,9 @@ fn state_reports_effective_role_contents() {
             r#"
             scope = "stay in the repo"
             watch-for = ["network egress"]
-            tools = ["read"]
+            [tools]
+            efference = { enabled = true }
+            "efference.read" = { granted = true }
 
             [commands]
             cargo = true
@@ -463,7 +465,14 @@ fn state_reports_effective_role_contents() {
         v["role"]["commands"],
         serde_json::json!({ "cargo": "clear", "git diff": "clear", "git push": "deny" })
     );
-    assert_eq!(v["role"]["tools"], serde_json::json!(["read"]));
+    // keyed as the file spells each entry, carrying only the fields it sets.
+    assert_eq!(
+        v["role"]["tools"],
+        serde_json::json!({
+            "efference": { "enabled": true },
+            "efference.read": { "granted": true },
+        })
+    );
     assert_eq!(
         v["role"]["paths"]["."],
         serde_json::json!({ "read": true, "write": true })

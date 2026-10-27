@@ -361,12 +361,29 @@ impl Session {
             .iter()
             .map(|(key, stance)| (key.clone(), Value::String(stance.as_str().to_string())))
             .collect();
+        // `tools` is an **object** keyed as the file spells each entry (`efference`,
+        // `"agents.message"`), carrying only the fields the entry sets: a `granted = false`
+        // carve-out under a granted namespace must read as one, not as a member of a list.
+        let tools: serde_json::Map<String, Value> = role
+            .tools
+            .entries()
+            .map(|(key, settings)| {
+                let mut entry = serde_json::Map::new();
+                if let Some(enabled) = settings.enabled {
+                    entry.insert("enabled".into(), Value::Bool(enabled));
+                }
+                if let Some(granted) = settings.granted {
+                    entry.insert("granted".into(), Value::Bool(granted));
+                }
+                (key, Value::Object(entry))
+            })
+            .collect();
         serde_json::json!({
             "source": source,
             "scope": role.scope,
             "watch_for": role.watch_for,
             "commands": commands,
-            "tools": role.tools,
+            "tools": tools,
             "paths": paths,
         })
     }

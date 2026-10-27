@@ -70,7 +70,7 @@ async fn the_gate_carries_its_grant_and_takes_it_back_verbatim() {
         std::env::current_dir().unwrap(),
         Log::in_memory(),
         crate::config::LoadedConfig {
-            role: crate::config::Config::from_toml("tools = [\"read\"]\n").unwrap(),
+            role: crate::config::Config::from_toml("[tools]\nefference = { enabled = true }\n\"efference.read\" = { granted = true }\n").unwrap(),
             source: crate::config::ConfigSource::Default,
         },
     );

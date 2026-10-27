@@ -615,9 +615,10 @@ export interface Role {
   // Key -> stance, not a list of keys: a `[commands]` entry can carry a
   // carve-out (`watch`/`gate`/`deny`) as well as a grant (`clear`).
   commands: Record<string, CommandStance>;
-  // Wire tool names (possibly a namespace glob like `ferritin__*`); render
-  // through the dotted display mapping, not raw (docs/permissions.md).
-  tools: string[];
+  // The `[tools]` table keyed as the file spells each entry (`efference`,
+  // `agents.message`), with only the fields the entry sets: a `granted: false`
+  // carve-out under a granted namespace reads as one (docs/permissions.md).
+  tools: Record<string, { enabled?: boolean; granted?: boolean }>;
   paths: Record<string, { read: boolean; write: boolean }>;
 }
 

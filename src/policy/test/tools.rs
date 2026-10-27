@@ -126,7 +126,10 @@ fn a_nested_deny_carves_an_exclusion_out_of_an_allowed_parent() {
     // is longest-prefix-wins, so each target is judged by its most specific grant.
     let role = role(
         r#"
-        tools = ["read", "write"]
+        [tools]
+        efference = { enabled = true }
+        "efference.read" = { granted = true }
+        "efference.write" = { granted = true }
 
         [paths]
         "." = true
@@ -229,7 +232,7 @@ fn missing_or_malformed_required_path_gates() {
 #[test]
 fn read_image_clears_like_a_read() {
     let mut role = fs_role();
-    role.tools.insert("read_image".to_string());
+    role.tools.grant("read_image");
     assert_eq!(
         structured(
             &role,
@@ -265,18 +268,17 @@ fn read_image_clears_like_a_read() {
 
 // --- the whole-namespace glob (docs/permissions.md) ---
 
-/// Build a role whose `tools` set is spelled the way a validated config stores it (wire names,
-/// globs as `<namespace>__*`).
-fn tool_role(entries: &[&str]) -> Config {
-    let list = entries
-        .iter()
-        .map(|s| format!("\"{s}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    role(&format!("tools = [{list}]"))
+/// Build a role holding the given grants as the log names them (wire names, a namespace as
+/// `<namespace>__*`), applied the way a logged grant is.
+fn tool_role(grants: &[&str]) -> Config {
+    let mut role = Config::default();
+    for name in grants {
+        role.tools.grant(name);
+    }
+    role
 }
 
-/// `ferritin.*` clears every tool that server advertises — the one the mount table held when the
+/// A granted `ferritin` namespace clears every tool that server advertises — the one the mount table held when the
 /// grant was written *and* one added later. Nothing enumerates the table, so the two cases are the
 /// same lookup: the grant is over the namespace, not over a snapshot of its members.
 #[test]
@@ -291,8 +293,8 @@ fn a_namespace_glob_clears_every_tool_in_that_namespace() {
     }
 }
 
-/// The glob stops at its own namespace in both directions: a server's glob reaches neither
-/// another server's tools nor a built-in, and `efference.*` reaches no connected tool.
+/// A namespace grant stops at its own namespace in both directions: a server's reaches neither
+/// another server's tools nor a built-in, and `efference`'s reaches no connected tool.
 #[test]
 fn a_namespace_glob_does_not_cross_the_namespace_boundary() {
     let role = tool_role(&["ferritin__*"]);
@@ -311,14 +313,15 @@ fn a_namespace_glob_does_not_cross_the_namespace_boundary() {
     );
 }
 
-/// `efference.*` clears the built-ins, whose wire names carry no `__` prefix at all — the
-/// namespace is supplied by [`crate::mcp::BUILTIN_NAMESPACE`]. The path-bearing ones still need
-/// their `[paths]` grant: the glob is a name grant, and a built-in's blast radius stays bounded
-/// by the second check.
+/// A granted `efference` namespace clears the built-ins, whose wire names carry no `__` prefix
+/// at all — the namespace is supplied by [`crate::mcp::BUILTIN_NAMESPACE`]. The path-bearing
+/// ones still need their `[paths]` grant: the namespace grant is a name grant, and a built-in's
+/// blast radius stays bounded by the second check.
 #[test]
 fn the_builtin_glob_clears_embedded_tools_within_their_path_grants() {
     let mut role = fs_role();
-    role.tools = ["efference__*"].iter().map(|s| s.to_string()).collect();
+    role.tools = crate::config::ToolsTable::default();
+    role.tools.grant("efference__*");
     // A path-less built-in clears on the glob alone.
     for name in ["kill_process", "read_process", "wait"] {
         assert_eq!(
@@ -345,8 +348,8 @@ fn the_builtin_glob_clears_embedded_tools_within_their_path_grants() {
     );
 }
 
-/// Exact entries keep exact-match semantics beside a glob, and a built-in may be granted by its
-/// namespace-qualified spelling (`efference.read` → the wire name `read`).
+/// Exact entries keep exact-match semantics beside a namespace grant, and a built-in grant
+/// logged in the qualified spelling (`efference__read`) lands on the wire name `read`.
 #[test]
 fn exact_grants_are_unaffected_by_a_neighbouring_glob() {
     let role = tool_role(&["ferritin__*", "github__create_issue", "efference__read"]);

@@ -525,7 +525,7 @@ async fn concurrent_creations_of_one_name_yield_one_session() {
 #[test]
 fn the_attachment_store_is_readable_through_the_self_surface_deny() {
     let mut role = crate::config::Config::from_toml(
-        "tools = [\"read\", \"read_image\", \"write\"]\n[paths]\n\".\" = { read = true, write = true }\n",
+        "[tools]\nefference = { enabled = true }\n\"efference.read\" = { granted = true }\n\"efference.read_image\" = { granted = true }\n\"efference.write\" = { granted = true }\n[paths]\n\".\" = { read = true, write = true }\n",
     )
     .unwrap();
     let session_dir = Path::new(BASE_DIR).join("s1");

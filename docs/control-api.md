@@ -997,7 +997,8 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "scope": "…",
     "watch_for": [ … ],
     "commands": { "<prefix>": "clear|watch|gate|deny" },
-    "tools": { … },
+    "tools": { "<key>": { "enabled"?: true, "granted"?: true } },  // the [tools] table, keyed as
+                                   //   the file spells it, with only the fields an entry sets
     "paths": { "<path>": { "read": true, "write": false } }
   },
   "notifications": [ { "id": 3, "source": "…", "body": "…", "slot": "…", "wake"?: true } ],

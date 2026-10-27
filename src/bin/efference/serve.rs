@@ -244,7 +244,7 @@ pub(crate) async fn spotter_check(
 
     let call = match &tool {
         // Either spelling is accepted, resolved by the same rule the config uses, so the
-        // tester and a `tools` grant agree on what a dotted name means.
+        // tester and a `[tools]` key agree on what a dotted name means.
         Some(name) => efference::log::ToolCall::new(
             efference::config::wire_tool_name(name.clone()),
             "toolu_spotter_check",

@@ -165,8 +165,7 @@ pub(super) fn bound_leaf(command: &str) -> crate::control_tools::BoundAction {
 #[tokio::test]
 async fn a_granted_decide_clears_blind() {
     let mut role = crate::config::Config::default();
-    role.tools
-        .insert(crate::control_tools::DECIDE_WIRE_NAME.into());
+    role.tools.grant(crate::control_tools::DECIDE_WIRE_NAME);
     let shared = parent_with(role);
     let mut frontend = RecordingFrontend::answering(Approval::Abort);
     let spotter = crate::spotter::StaticSpotter {
@@ -225,7 +224,7 @@ async fn an_ungranted_approve_clears_on_the_leafs_fast_path() {
         !shared
             .effective_config()
             .tools
-            .contains(crate::control_tools::DECIDE_WIRE_NAME),
+            .granted(crate::control_tools::DECIDE_WIRE_NAME),
         "the approval tool itself was never granted"
     );
 }

@@ -268,7 +268,9 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
     );
     // A batch mixing a granted file and a document clears; the ungranted file still
     // poisons it, exactly as any other mixed batch.
-    let granted = crate::config::parse_text("tools = [\"read\"]\n[paths]\n\"/work\" = true\n");
+    let granted = crate::config::parse_text(
+        "[tools]\nefference = { enabled = true }\n\"efference.read\" = { granted = true }\n[paths]\n\"/work\" = true\n",
+    );
     assert_eq!(
         crate::policy::classify(
             &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
@@ -289,7 +291,9 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
         crate::policy::Verdict::Gate
     );
     // No config can grant a write to the mount; there is nothing on disk to write.
-    let permissive = crate::config::parse_text("tools = [\"write\"]\n[paths]\n\"/\" = true\n");
+    let permissive = crate::config::parse_text(
+        "[tools]\nefference = { enabled = true }\n\"efference.write\" = { granted = true }\n[paths]\n\"/\" = true\n",
+    );
     assert_eq!(
         crate::policy::classify(
             &crate::policy::Directories::at(&std::env::current_dir().unwrap()),

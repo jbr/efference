@@ -135,6 +135,16 @@ impl Toolbox {
         )));
     }
 
+    /// Keep only the tools `enabled` admits, by wire name (docs/tools.md): the session's
+    /// `[tools]` table, applied once every provider is mounted and before the first
+    /// projection, so `tools[]` is fixed from turn one (docs/log-and-projection.md). A
+    /// provider left with no tools is dropped. Filtering keeps mount order, so a session
+    /// that enables everything sends the same `tools[]` it would unfiltered.
+    pub fn retain_enabled(&mut self, enabled: impl Fn(&str) -> bool) {
+        self.providers
+            .retain_mut(|provider| provider.retain_enabled(&enabled));
+    }
+
     /// The session scratch dir the bash provider exports as `$TMPDIR`, if any.
     /// The daemon reads it here to seed the path expander and the background
     /// spawn env — one source of truth: the value the toolbox was built with

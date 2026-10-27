@@ -8,7 +8,9 @@ use super::*;
 fn diff_emits_additive_changes_for_what_the_file_adds() {
     let from = parse_str("scope = \"old\"\n[commands]\ncargo = true\n");
     let to = parse_str(
-        "scope = \"new\"\ntools = [\"read\"]\n\
+        "scope = \"new\"\n\
+             [tools]\nefference = { enabled = true }\n\"efference.read\" = { granted = true }\n\
+             agents = { enabled = true, granted = true }\n\
              [commands]\ncargo = true\n\"git diff\" = true\n[paths]\n\".\" = true\n",
     );
     let changes = diff_changes(&from, &to);
@@ -18,6 +20,10 @@ fn diff_emits_additive_changes_for_what_the_file_adds() {
             ConfigChange::Scope { text: "new".into() },
             ConfigChange::Command {
                 command: "git diff".into()
+            },
+            // A namespace grant is logged as its glob.
+            ConfigChange::Tool {
+                name: "agents__*".into()
             },
             ConfigChange::Tool {
                 name: "read".into()
@@ -35,7 +41,10 @@ fn diff_emits_additive_changes_for_what_the_file_adds() {
 /// auto-persist write-back a harmless no-op echo (the file already matches effective).
 #[test]
 fn diff_against_self_is_empty() {
-    let cfg = parse_str("scope = \"s\"\ntools = [\"read\"]\n[commands]\ncargo = true\n");
+    let cfg = parse_str(
+        "scope = \"s\"\n[tools]\nefference = { enabled = true, granted = true }\n\
+         [commands]\ncargo = true\n",
+    );
     assert!(diff_changes(&cfg, &cfg).is_empty());
 }
 

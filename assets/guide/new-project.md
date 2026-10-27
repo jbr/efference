@@ -147,8 +147,10 @@ someone new to all this; their call either way.
    sessions here are for, in their words; draft it from the README, but it is theirs to
    confirm — and the grants: the build tool (`cargo = true`), how much of `git` (read-only
    by default, `"git push" = "deny"` either way unless they say otherwise), anything that
-   touches a network or a registry. The built-in tools are all granted by default
-   (`"efference.*"`); withholding one is their choice to make, not yours. Write the grants
+   touches a network or a registry. efference's own tools are all enabled and granted by
+   default (`efference = { enabled = true, granted = true }`), and the tools that reach other
+   sessions enabled and reviewed (`agents = { enabled = true }`); withholding one is their
+   choice to make, not yours. Write the grants
    you proposed and they accepted, and no others: a runner that fetches from a registry
    (`npx`, `uvx`, `pip install`) is a separate question, not part of "the build tool".
 2. **Are there directories outside this one that sessions should always reach, or places
@@ -227,7 +229,9 @@ The shape, shown for a TypeScript project; the build tool, the orientation file,
 #:schema https://efference.net/schemas/project.v1.json
 scope = "Work inside this repository: read, build, test, and edit its sources."
 
-tools = ["efference.*"]
+[tools]
+efference = { enabled = true, granted = true }
+agents = { enabled = true }
 
 [commands]
 pnpm = true              # the project's own build/test tool, whatever it is
@@ -252,10 +256,13 @@ editors read it.
 
 ## The built-in tools
 
-`"efference.*"` grants every tool the harness ships, now and as built-ins are added, and is
-the right default: a path-bearing built-in still clears only inside a `[paths]` grant, so
-the blast radius is the `[paths]` table's, not the glob's. Name tools individually only
-when the operator wants one withheld. The set today:
+`efference = { enabled = true, granted = true }` gives a session every tool in the
+`efference` namespace and lets it use them without review. It is the right default: a
+path-bearing built-in still clears only inside a `[paths]` grant, so the blast radius is the
+`[paths]` table's, not the grant's. A tool that ships later in a namespace of its own is not
+included, so experimental tools stay out of sessions that did not enable them. Write an entry
+for one tool (`"efference.write" = { granted = false }`) only when the operator wants it
+withheld. The set today:
 
 - **Files** — `read`, `list`, `search`, `write`; `edit`, `find_anchor`, `retarget_edit`,
   `undo_edit` (the anchor-based edit pipeline); `read_image`, which drops out on its own on
@@ -264,12 +271,19 @@ when the operator wants one withheld. The set today:
   `check_inbox`, and the process process monitor `list_processes`, `read_process`,
   `watch_process`, `kill_process`. These act on the session, not the workspace, and there
   is rarely a reason to hold them behind a gate.
-- `bash` is not in this list on purpose: a shell command is judged as command text by
-  `[commands]` and the spotter, and no `tools` entry clears or withholds it.
+- **`bash`** — a shell command is judged as command text by `[commands]` and the spotter,
+  so a `[tools]` grant does not clear it. `"efference.bash" = { enabled = false }` leaves
+  it out of the session entirely.
 
-A connected server's tools take the same shapes — `"ferritin.*"` for the whole server,
-`"ferritin.get"` for one — but a server glob is a statement of trust in that server's whole
-table, present and future, so it is the operator's call rather than a default.
+`agents = { enabled = true }` gives a session the tools that reach other sessions on this
+host (`agents.create`, `agents.message`, `agents.status`, …). Granting them is a separate
+decision: a session that may create and direct others without review should be one the
+operator has thought about, so the default leaves them reviewed.
+
+A declared server's tools are enabled by its declaration and take the same shapes in
+`[tools]` — `ferritin = { granted = true }` for the whole server, `"ferritin.get" = { granted
+= true }` for one — but granting a whole server is a statement of trust in its whole table,
+present and future, so it is the operator's call rather than a default.
 
 ## What belongs in `[context]`
 
@@ -345,7 +359,7 @@ count.
 `efference check` (or `efference check <path>`) validates a template without minting a session: the parse and
 the same soundness checks a session runs at boot, then every `[context]` entry resolved from
 the current directory — `exec` entries do run — then every `[mcp.servers.*]` stanza mounted,
-so each server's advertised tools print against the file's `tools` grants. It prints what the file grants and the
+so each server's advertised tools print against the file's `[tools]` entries. It prints what the file grants and the
 preamble's size, or the boot-time error. Stored MCP credentials are reused; a server needing
 authorization is reported, never authorized here. **The task is complete when the check passes and
 the operator has seen the decisions.** A session started from the file then holds a

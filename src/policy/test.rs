@@ -114,7 +114,15 @@ mod tools;
 fn fs_role() -> Config {
     role(
         r#"
-        tools = ["read", "list", "search", "write", "edit", "undo_edit", "kill_process"]
+        [tools]
+        efference = { enabled = true }
+        "efference.read" = { granted = true }
+        "efference.list" = { granted = true }
+        "efference.search" = { granted = true }
+        "efference.write" = { granted = true }
+        "efference.edit" = { granted = true }
+        "efference.undo_edit" = { granted = true }
+        "efference.kill_process" = { granted = true }
 
         [paths]
         "." = true
@@ -166,7 +174,9 @@ fn worktree_session() -> Directories {
 fn a_worktree_write_clears_under_the_project_grant() {
     let role = role(
         r#"
-        tools = ["write"]
+        [tools]
+        efference = { enabled = true }
+        "efference.write" = { granted = true }
         [paths]
         "." = { write = true }
         "#,
@@ -180,7 +190,9 @@ fn a_worktree_write_clears_under_the_project_grant() {
 fn a_project_deny_holds_inside_a_worktree() {
     let role = role(
         r#"
-        tools = ["write"]
+        [tools]
+        efference = { enabled = true }
+        "efference.write" = { granted = true }
         [paths]
         "." = { write = true }
         "secrets" = false
@@ -201,7 +213,9 @@ fn a_project_deny_holds_inside_a_worktree() {
 fn a_plain_session_reaches_any_worktree() {
     let role = role(
         r#"
-        tools = ["write"]
+        [tools]
+        efference = { enabled = true }
+        "efference.write" = { granted = true }
         [paths]
         "." = { write = true }
         "#,
@@ -218,7 +232,9 @@ fn a_plain_session_reaches_any_worktree() {
 fn a_grant_key_resolves_against_the_project() {
     let role = role(
         r#"
-        tools = ["list"]
+        [tools]
+        efference = { enabled = true }
+        "efference.list" = { granted = true }
         [paths]
         "../sib" = { read = true }
         "#,

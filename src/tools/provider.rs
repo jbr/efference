@@ -16,6 +16,18 @@ impl Provider {
         }
     }
 
+    /// Drop the tools `enabled` refuses ([`Toolbox::retain_enabled`]); whether any remain.
+    pub(super) fn retain_enabled(&mut self, enabled: &impl Fn(&str) -> bool) -> bool {
+        match self {
+            Provider::Bash(_) => enabled(bash::NAME),
+            Provider::ReadImage(_) => enabled(read_image::NAME),
+            Provider::Fs(s) => s.retain_enabled(enabled),
+            Provider::SemanticEdit(s) => s.retain_enabled(enabled),
+            Provider::Sessions(s) => s.retain_enabled(enabled),
+            Provider::Connected(c) => c.retain_enabled(enabled),
+        }
+    }
+
     /// Whether this backend owns the named tool.
     pub(super) fn handles(&self, name: &str) -> bool {
         match self {

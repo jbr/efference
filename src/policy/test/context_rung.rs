@@ -92,7 +92,9 @@ fn location_entry_clears_reads_under_its_subtree() {
 fn a_read_spanning_paths_and_context_clears_per_path() {
     let role = role(
         r#"
-        tools = ["read"]
+        [tools]
+        efference = { enabled = true }
+        "efference.read" = { granted = true }
 
         [paths]
         "." = true

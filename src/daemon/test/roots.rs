@@ -31,7 +31,7 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
     for (cwd, label) in [(&first, "one"), (&second, "two")] {
         std::fs::write(cwd.join("identity.txt"), label).unwrap();
         std::fs::write(cwd.join("efference.toml"), format!(
-            "scope = '{label}'\ntools = ['read', 'write']\n[paths]\n'.' = true\n[env]\nIDENTITY = {{ cmd = 'cat identity.txt' }}\n"
+            "scope = '{label}'\n[tools]\nefference = {{ enabled = true }}\n'efference.read' = {{ granted = true }}\n'efference.write' = {{ granted = true }}\n[paths]\n'.' = true\n[env]\nIDENTITY = {{ cmd = 'cat identity.txt' }}\n"
         )).unwrap();
         let role = crate::config::load_in(cwd, None).unwrap();
         assert_eq!(role.source, ConfigSource::Path(cwd.join("efference.toml")));

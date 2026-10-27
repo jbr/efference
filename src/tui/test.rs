@@ -1,6 +1,6 @@
 use crate::tui::UpstreamRetryView;
 use crate::tui::parse::{
-    parse_pending_gate, parse_session_identity, parse_stall, parse_upstream_failure,
+    parse_pending_gate, parse_policy, parse_session_identity, parse_stall, parse_upstream_failure,
     parse_upstream_retry,
 };
 use crate::tui::state::{stall_indicator, upstream_retry_indicator};
@@ -162,4 +162,37 @@ fn parses_session_identity_with_a_home_relative_cwd() {
 #[test]
 fn null_session_identity_is_no_view() {
     assert!(parse_session_identity(&serde_json::Value::Null).is_none());
+}
+
+/// The policy sidebar shows each `[tools]` entry with the fields it sets, so a carve-out
+/// reads as one; a proposed grant is labelled as the entry it becomes (docs/tui.md).
+#[test]
+fn tool_entries_show_their_fields_and_proposals_their_committed_label() {
+    let role = serde_json::json!({
+        "tools": {
+            "efference": { "enabled": true, "granted": true },
+            "efference.bash": { "enabled": false },
+            "agents": { "enabled": true },
+        },
+    });
+    let proposals = serde_json::json!([
+        { "seq": 7, "change": { "Tool": { "name": "agents__message" } } },
+    ]);
+    let view = parse_policy(
+        &role,
+        &proposals,
+        &serde_json::Value::Null,
+        &serde_json::Value::Null,
+    )
+    .expect("a role parses");
+    let labels: Vec<&str> = view.tools.iter().map(|e| e.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        [
+            "agents  enabled",
+            "agents.message  granted",
+            "efference  enabled · granted",
+            "efference.bash  off",
+        ]
+    );
 }

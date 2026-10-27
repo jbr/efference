@@ -157,6 +157,18 @@ pub(super) fn perm_str(read: bool, write: bool) -> &'static str {
 /// the committed grants, flagged `proposed`, so a commit drops the flag in place
 /// without reflow. `ConfigChange` is externally tagged
 /// (`{"Command":{"command":…}}`, `{"Path":{…}}`, `{"Tool":{"name":…}}`, `{"Scope":{"text":…}}`).
+/// A `[tools]` entry's sidebar label: its key, then the fields it sets.
+fn tool_label(key: &str, enabled: Option<bool>, granted: Option<bool>) -> String {
+    let fields: Vec<&str> = [
+        enabled.map(|on| if on { "enabled" } else { "off" }),
+        granted.map(|on| if on { "granted" } else { "not granted" }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    format!("{key}  {}", fields.join(" · "))
+}
+
 pub(super) fn parse_policy(
     role: &serde_json::Value,
     proposals: &serde_json::Value,
@@ -167,25 +179,26 @@ pub(super) fn parse_policy(
         return None;
     }
 
-    // `label` renders the stored key for a human. Commands are already what the operator
-    // typed; a tool name arrives in its wire form and is shown dotted, the same as in the
-    // transcript and in the config file the sidebar mirrors (docs/tools.md).
-    let str_entries = |key: &str, label: fn(&str) -> String| -> Vec<PolicyEntry> {
-        role.get(key)
-            .and_then(|a| a.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str())
-                    .map(|s| PolicyEntry {
-                        label: label(s),
-                        proposed: false,
-                        seq: None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let mut tools = str_entries("tools", crate::mcp::display_name);
+    // `tools` arrives as the `[tools]` table, keyed as the file spells each entry, with only the
+    // fields the entry sets (docs/control-api.md). Each shows its key and those fields, so a
+    // carve-out (`off`, `not granted`) reads as one rather than as a grant.
+    let mut tools: Vec<PolicyEntry> = role
+        .get("tools")
+        .and_then(|t| t.as_object())
+        .map(|m| {
+            m.iter()
+                .map(|(key, entry)| PolicyEntry {
+                    label: tool_label(
+                        key,
+                        entry.get("enabled").and_then(|b| b.as_bool()),
+                        entry.get("granted").and_then(|b| b.as_bool()),
+                    ),
+                    proposed: false,
+                    seq: None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     // `commands` arrives as key → stance (docs/control-api.md). A `clear` entry renders as the
     // bare key — the common case, and what the operator wrote — while any other stance is
     // tagged, the same way a path carries its perms: an untagged carve-out would read as a grant.
@@ -258,11 +271,16 @@ pub(super) fn parse_policy(
                 .and_then(|t| t.get("name"))
                 .and_then(|s| s.as_str())
             {
+                // A logged grant names a namespace as `<namespace>__*` and a tool by wire name.
+                let key = match n.strip_suffix(&crate::mcp::namespace_glob("")) {
+                    Some(namespace) => namespace.to_string(),
+                    None => crate::config::table_key(n),
+                };
                 tools.push(PolicyEntry {
                     // A proposal is shown in its committed section, in sorted position — so it
                     // must be labelled the same way a committed grant is, or it would sort and
                     // read as a different entry than the one it becomes.
-                    label: crate::mcp::display_name(n),
+                    label: tool_label(&key, None, Some(true)),
                     proposed: true,
                     seq: Some(seq),
                 });

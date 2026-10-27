@@ -41,14 +41,14 @@ fn directives_return_to_the_first_lines() {
     assert_eq!(
         keep_directives_first(
             original,
-            "tools = []\n#:schema https://example/s.json\n# note\n".into()
+            "watch-for = []\n#:schema https://example/s.json\n# note\n".into()
         ),
-        "#:schema https://example/s.json\ntools = []\n# note\n"
+        "#:schema https://example/s.json\nwatch-for = []\n# note\n"
     );
     let unmoved = "#:schema https://example/s.json\nscope = \"x\"\n";
     assert_eq!(keep_directives_first(original, unmoved.into()), unmoved);
     assert_eq!(
-        keep_directives_first("scope = \"x\"\n", "tools = []\n".into()),
-        "tools = []\n"
+        keep_directives_first("scope = \"x\"\n", "watch-for = []\n".into()),
+        "watch-for = []\n"
     );
 }

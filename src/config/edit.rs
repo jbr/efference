@@ -37,7 +37,9 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
             });
         }
     }
-    for name in to.tools.difference(&from.tools) {
+    // Tools: additive grants only, like commands. A namespace grant arrives as its glob
+    // (`ferritin__*`); `enabled` is read at boot and has no live change to emit.
+    for name in to.tools.grant_names().difference(&from.tools.grant_names()) {
         out.push(ConfigChange::Tool { name: name.clone() });
     }
     // Paths: a perms map — emit each path whose perms are new or changed in the file.
@@ -73,30 +75,36 @@ pub(super) fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
         } => {
             doc["paths"][p.as_str()] = path_value(*read, *write);
         }
-        // A tool-name grant: append to the `tools` array if absent (the array is set-shaped, so
-        // dedup is membership, not last-write-wins).
-        //
-        // Written in the **dotted** form the operator reads everywhere else — the file is a
-        // surface a human reviews, so it shows `ferritin.get`, not `ferritin__get`. The change
-        // itself carries the wire name (the log is a machine record); the dot is applied here,
-        // at the document boundary, and undone by `wire_tool_name` on the next load. That
-        // round-trip is what keeps the write-back's idempotent echo idempotent — the reloaded
-        // file normalizes back to the same wire name, so the diff finds nothing new.
-        //
-        // Membership is therefore compared *normalized*, not literally: a file that already
-        // spells the grant either way must not gain a second entry in the other spelling.
+        // A tool grant: set `granted = true` on the `[tools]` entry, adding the entry when the
+        // file has none. A namespace glob (`ferritin__*`) is the namespace's bare key; a tool is
+        // its dotted key (`ferritin.get`, `efference.read`), which toml_edit quotes. The change
+        // carries the wire name (the log is a machine record); the key is applied here, at the
+        // document boundary, and undone by the `[tools]` validation on the next load, so the
+        // reloaded file grants the same name and the idempotent echo diffs to nothing.
         ConfigChange::Tool { name } => {
-            let entry = doc
+            let key = match crate::mcp::is_namespace_glob(name) {
+                true => name
+                    .strip_suffix(&crate::mcp::namespace_glob(""))
+                    .unwrap_or(name)
+                    .to_string(),
+                false => tools::table_key(name),
+            };
+            let table = doc
                 .as_table_mut()
                 .entry("tools")
-                .or_insert(Item::Value(Value::Array(Array::new())));
-            if let Some(arr) = entry.as_array_mut()
-                && !arr.iter().any(|v| {
-                    v.as_str()
-                        .is_some_and(|s| raw::wire_tool_name(s.to_string()) == *name)
-                })
-            {
-                arr.push(crate::mcp::display_name(name).as_str());
+                .or_insert(Item::Table(Table::new()));
+            match table.get_mut(&key) {
+                Some(Item::Table(entry)) => entry["granted"] = value(true),
+                Some(Item::Value(Value::InlineTable(entry))) => {
+                    entry.insert("granted", Value::from(true));
+                    // `insert` copies the neighbouring key's spacing; normalize the braces.
+                    entry.fmt();
+                }
+                _ => {
+                    let mut entry = InlineTable::new();
+                    entry.insert("granted", Value::from(true));
+                    table[key.as_str()] = value(entry);
+                }
             }
         }
         // A scope replace: set the `scope` scalar in place. When it already exists, carry its

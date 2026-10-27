@@ -6,6 +6,8 @@ than one current meaning are listed with each sense, so a reader can tell which 
 
 | word | identifiers | governing doc |
 | --- | --- | --- |
+| **enabled** (a `[tools]` entry) — the tool is mounted: in the session's `tools[]` from boot | `ToolSettings::enabled`, `Config::tool_enabled`, `Toolbox::retain_enabled` | tools.md |
+| **granted** (a `[tools]` entry) — the fast path clears the tool by name | `ToolSettings::granted`, `ToolsTable::granted`, `policy::tool_granted`, `ConfigChange::Tool` | permissions.md |
 | **triage primer** — a capped request that plants the triage model's cache | `Triager::prime`, `RequestOrigin::TriagePrimer` | transport.md |
 | **stored request** (triage keepalive) — what the triage lineage's keepalive re-sends: the last primer, or the last result triage's request ending at its last breakpoint (its cache point) | `api::SentRequest`, `SentRequest::through_last_breakpoint`, `triage::SentTriage`, `Session::store_triage_request`, `daemon::keepalive::StoredRequest` | transport.md |
 | **text view** — what a separate triage model reads: the history (head summaries, the digest up to the view cut, the triaged tail), then the current step and the ask | `TriageView::Text`, `Triager::view`, `src/triage/text_view.rs`, `efference dev triage --view text` | triage.md |

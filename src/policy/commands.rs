@@ -102,7 +102,7 @@ struct RedirectWrite {
 /// **Two authorities govern, and the more restrictive one wins.** The command still has to
 /// clear stage 2 on its own (`cat` must carry a `clear` stance), *and* the target still has
 /// to be write-granted by `[paths]`. A `[commands]` `deny` refuses regardless of the path;
-/// a `clear` command writing to an ungranted path gates. The `tools` set is not consulted:
+/// a `clear` command writing to an ungranted path gates. The `[tools]` table is not consulted:
 /// it names structured tools, and the tool being called here is `bash`, whose name grant is
 /// its `[commands]` stance. The self-surface stack (docs/permissions.md) needs no special
 /// case — it already denies writes under `.efference/`, so a here-doc aimed at a session's

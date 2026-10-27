@@ -61,11 +61,10 @@
       "type": "string"
     },
     "tools": {
-      "description": "Structured tools a call may use without review. Names match exactly, except that a\ntrailing `.*` grants a namespace: `ferritin.*` for one server's tools, `efference.*`\nfor efference's own. A server's tool may be written `ferritin__get` or\n`ferritin.get`. A tool that takes a path also needs that path granted in `[paths]`.",
-      "type": "array",
-      "default": [],
-      "items": {
-        "type": "string"
+      "description": "Which tools sessions here have, and which of those run without review. A bare key\nnames a namespace: `efference` for efference's own tools, `agents` for the tools that\nreach other sessions, or a server declared under `[mcp.servers]`. A quoted dotted key\nnames one tool and overrides its namespace, as in `\"agents.message\" = { granted =\ntrue }` or `\"efference.bash\" = { enabled = false }`. The tools a session's own loop\nrelies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always\npresent.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ToolEntry"
       }
     },
     "transport": {
@@ -331,6 +330,21 @@
           "$ref": "#/$defs/PathAccess"
         }
       ]
+    },
+    "ToolEntry": {
+      "description": "A `[tools]` entry: `enabled` puts the tool in the session's tool list, and `granted` lets a\ncall to it run without review. A key left out comes from the namespace's entry.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Put this tool, or every tool in this namespace, in the session's tool list. efference's\nown tools are left out unless enabled; a server declared under `[mcp.servers]` is in.\nRead when the session starts.",
+          "type": "boolean"
+        },
+        "granted": {
+          "description": "Let calls run without review. A tool that takes a path also needs that path granted in\n`[paths]`. A granted tool must be enabled.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
     },
     "Transport": {
       "description": "`[transport]`: the connection to the model.",

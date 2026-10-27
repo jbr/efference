@@ -88,7 +88,10 @@ git = "clear"           # the stance vocabulary; `true` is sugar for this
 "." = true            # sugar for { read = true, write = true }
 "/refs" = { read = true }
 
-tools = ["read", "write"]
+[tools]
+efference = { enabled = true }
+"efference.read" = { granted = true }
+"efference.write" = { granted = true }
 ```
 
 For now there is **exactly one config file per session** — no built-in base, no merge.
@@ -107,8 +110,8 @@ the config holds:
   deception, so there's no test to game): the focused session shouldn't carry low-probability
   peripheral hazards in working memory; the spotter holds them. Consumed by the spotter rung.
 - **`[commands]`** — the bash prefix policy, a **map** from command-prefix key to stance (below).
-- **`tools`** and **`[paths]`** — the structured-tool name set and the filesystem-grant map
-  the fast-path reads (below).
+- **`[tools]`** and **`[paths]`** — which tools the session mounts and which it may call
+  without review, and the filesystem-grant map the fast-path reads (below).
 - **`[env]`** — per-variable `strip` (does a spawned child see it?) and `mask` (does the
   log ever store its value?). Its own subsystem: [env.md](env.md). It sits beside the
   cascade rather than inside it — the gates guard the *action* direction of an accident,
@@ -209,7 +212,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   **Two authorities govern and the more restrictive one wins.** The command must still clear
   stage 2 on its own — `cat` needs a `clear` stance — *and* the target must be write-granted.
   A `[commands]` `deny` refuses whatever the path says; a `clear` command writing outside a
-  write grant gates. The `tools` set is not consulted: it names structured tools, and the tool
+  write grant gates. The `[tools]` table is not consulted: it names structured tools, and the tool
   being called is `bash`, whose name grant is its `[commands]` stance. Composed with the `cd`
   tolerance, the target resolves against the **`cd`'s** directory, since that is where the
   command runs. The self-surface stack needs no special case — it already denies writes under
@@ -316,55 +319,68 @@ See the prefix-promotion section below.
 
 ### structured tools: name grant + path permission
 
-A structured (non-bash) tool clears only if its name is in the config's `tools` set
+A structured (non-bash) tool clears only if the config's `[tools]` table **grants** it
 **and**, for the path-bearing ones, its target resolves under a `[paths]` grant with the
 needed permission — reads (`read`/`list`/`search`/`find_anchor`) need `read`, writes
-(`write`/`edit`) need `write` (`write` implies `read`). Nothing clears in code; an
-empty config gates every tool, exactly as before.
+(`write`/`edit`) need `write` (`write` implies `read`). Nothing clears in code; a config with
+no `[tools]` grant gates every tool.
 
-The name match is **exact**, unlike `[commands]`'s token-prefix match — with one glob, below.
-A connected provider's tools reach the wire namespaced (`<server>__<tool>`, docs/tools.md), so
-clearing a whole server by exact entries means listing each of its tools; `tools = ["ferritin"]`
-clears nothing. An entry is written and displayed in the dotted form (`"ferritin.get"`) — the file
-the write-back produces, the session drawer's labels, and the transcript all agree — and is resolved
-to the wire name at validate, so the set the fast-path reads holds one name per grant
-however the operator spelled it.
-
-#### `"<namespace>.*"`: a whole-namespace grant, and what it claims
+#### The `[tools]` table: enabled and granted
 
 ```toml
-tools = ["efference.*", "ferritin.*", "github.create_issue"]
+[tools]
+efference = { enabled = true, granted = true }
+agents = { enabled = true }
+"agents.message" = { granted = true }
+"efference.bash" = { enabled = false }
+ferritin = { granted = true }     # a server declared under [mcp.servers]
 ```
 
-A terminal `.*` grants a **namespace**: every tool that server advertises, cleared on the
-fast path with no spotter on the way through. The namespace is the `<server>` half of the
-wire name, resolved at the **first** `__` (server names may not contain one, so the boundary
-is unambiguous in every direction); the harness's own embedded tools have no prefix, so they
-sit in the `efference` namespace, and `"efference.*"` is the "every tool this harness ships"
-grant that needs no editing when a built-in is added. The glob takes the same dotted→wire
-route an exact entry takes (`ferritin.*` is stored as `ferritin__*`), so one set holds both
-kinds, and `*` — absent from the API's tool-name alphabet — can never collide with a real
-name. The star is **only** legal in that terminal position: `"ferritin.ge*"`, `"*"`, and
-`"ferritin.admin.*"` fail the whole file at validate rather than parsing into a grant the
-matcher would silently never satisfy.
+A bare key names a **namespace** and a quoted dotted key names **one tool**, split at the
+first dot (a server's own tool name may contain dots; server names may not). The namespace is
+the `<server>` half of the wire name, resolved at the **first** `__`; the harness's own
+embedded tools have no prefix, so they sit in the `efference` namespace and are written
+`efference.<tool>` here (the key `bash` alone would name a namespace, and fails the file with
+a message naming `"efference.bash"`). The session-control verbs sit in `agents`. A key is not
+a pattern: a `*` fails the file. `config::tools::validate_tools` resolves each key to a
+wire name, so the table the fast path reads holds one key per tool however the file spelled
+it, and the write-back writes it back as the dotted key the session drawer, the transcript,
+and the file all show.
 
-**What a `.*` grant claims is trust in the *party*, not in an enumerated set.** A blanket
-`cargo = true` is survivable because of stage 1: the structural check runs before any prefix
-match, so a trusted prefix can never clear `cargo … > /etc/hosts`. A structured call has no
-stage 1 — there is nothing between the grant and whatever JSON the server interprets — and the
-granted set is defined by the other party and can grow: a server's table is frozen at mount
-and may differ at the next one. So `"ferritin.*"` means
-"anything you can do with this server is ok — if it adds a new tool, that is allowed too."
-A server not trusted to that degree should not hold a `.*` grant; the harness does not
-constrain the glob to the mount-time table, because a grant that needed that constraint is a
-grant that shouldn't have been written. It is never the default on mount — the glob is an
-explicit config act, and defaulting it would move the perimeter every time a server is added.
+Each entry sets either field, and a tool's entry overrides its namespace's **field by
+field** (`ToolsTable::granted`, `Config::tool_enabled`):
 
-**Where the glob sits relative to `[paths]`.** The glob is a *name* grant, so the second
-check is untouched: a path-bearing built-in under `"efference.*"` still clears only inside a
-`[paths]` grant, which is why a whole-namespace grant over the built-ins has a bounded blast
-radius. A connected tool's does not — the fast path knows nothing about what a remote tool
-touches, so `"ferritin.*"` is bounded by the grant alone.
+- **`enabled`** — whether the session mounts the tool (docs/tools.md). efference's own
+  namespaces default to **off**, so a built-in reaches only sessions whose config names it;
+  a declared server's tools default to on, the declaration being the request. Read once at
+  boot, when the toolbox is mounted: `tools[]` is fixed for the session
+  (docs/log-and-projection.md), so a live edit to `enabled` takes effect at the next boot. The
+  loop's own tools (`consolidate`, `ask`, `wait`, `check_inbox`, the process tools) are always
+  mounted and refuse `enabled`, since the loop asks for them.
+- **`granted`** — the fast path's name grant. Live: a gate grant, a committed proposal, or a
+  file edit grants a tool or namespace mid-session ([`ConfigChange::Tool`], whose `name` is a
+  wire name or a namespace as `<namespace>__*`). A grant on a tool that resolves to not
+  enabled fails the file: it would clear nothing and read as if it did.
+
+**What a namespace grant claims is trust in the *party*, not in an enumerated set.** A
+blanket `cargo = true` is survivable because of stage 1: the structural check runs before any
+prefix match, so a trusted prefix can never clear `cargo … > /etc/hosts`. A structured call
+has no stage 1 — there is nothing between the grant and whatever JSON the server interprets —
+and the granted set is defined by the other party and can grow: a server's table is frozen at
+mount and may differ at the next one. So `ferritin = { granted = true }` means "anything you
+can do with this server is ok — if it adds a new tool, that is allowed too." A server not
+trusted to that degree should not hold a namespace grant; the harness does not constrain it
+to the mount-time table, because a grant that needed that constraint is a grant that
+shouldn't have been written. It is never the default on mount — a grant is an explicit config
+act, and defaulting it would move the perimeter every time a server is added. The same
+reasoning is why `enabled` defaults off for efference's own namespaces: a built-in added
+later in a namespace of its own reaches no session that did not ask for it.
+
+**Where a namespace grant sits relative to `[paths]`.** It is a *name* grant, so the second
+check is untouched: a path-bearing built-in under a granted `efference` still clears only
+inside a `[paths]` grant, which is why a whole-namespace grant over the built-ins has a
+bounded blast radius. A connected tool's does not — the fast path knows nothing about what a
+remote tool touches, so `ferritin = { granted = true }` is bounded by the grant alone.
 
 **Multi-path clearance is per-path, unioned across sources.** A tool naming several paths
 (`read`'s `paths` array) clears only when *every* path is granted — but each path may be
@@ -435,7 +451,7 @@ schema) is later architectural work, and the coupling is marked rather than hidd
 
 A `[context]` entry ([context.md](context.md)) is an independent clearance source, unioned
 per-path with the name-grant rule (above): listing a path **is** a read grant — the preamble
-stub invites the model to `Read {path}`, so that read fast-path clears with no `tools` or
+stub invites the model to `Read {path}`, so that read fast-path clears with no `[tools]` or
 `[paths]` config at all. The same lexical subtree rule applies, and the caveat is stated loudly: a
 location entry (dir, and later glob) read-grants everything under it, so operators must
 list deliberately. The entry's write grants ride the same check: `update` clears a write
@@ -479,7 +495,7 @@ it runs.
 
 The parent's ladder then decides an allow on the leaf:
 
-- If `agents__decide` is in the parent's `tools` set, the call clears blind. That
+- If the parent's `[tools]` table grants `agents__decide`, the call clears blind. That
   grant is the config's statement of trust in the coordinator, and the child's move is
   not re-litigated.
 - Otherwise `policy::classify` runs on the leaf call, under the parent's effective
@@ -846,7 +862,7 @@ gated (a redirect). The orchestrator changes the *rule*; the mechanism authorize
 nothing rides along unchecked.
 
 A `ConfigEdit` projects to nothing on the wire (audit-only, like `Spot`). Its effect reaches
-the model **by key**: a `commands`/`tools` edit only through the classifier, but a
+the model **by key**: a `commands`/`[tools]` edit only through the classifier, but a
 **session-visible** edit (`scope`, `paths`) *also* surfaces as an `Ambient` notification.
 `Session::append` is the one choke point — it already folds each `ConfigEdit` into the effective config, so
 it also raises the notification there (`session_visible_notice`), which means **every**
@@ -978,8 +994,8 @@ without eliminating:
   has no reason to fix its config; one that knows it lacks a grant does. So when the fast path
   can decompose the refusal (`policy::missing_grants`), the redirect
   (`agent::missing_grant_message`) leads with "the call did not run — this is not about the
-  tool's behavior", names what is missing in the config's own vocabulary (`tools` does not
-  list `edit`; no `[paths]` entry grants `write` for `src/lib.rs`), points at the config-edit
+  tool's behavior", names what is missing in the config's own vocabulary (`[tools]` does not
+  grant `efference.edit`; no `[paths]` entry grants `write` for `src/lib.rs`), points at the config-edit
   remedy, and — for a write — says that the bash form lands on the same grant and gates the
   same way, which since the redirection carve-out it does. The two halves are reported
   independently: the path check requires the name grant as a precondition, which is true of

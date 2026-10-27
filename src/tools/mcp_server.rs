@@ -51,6 +51,21 @@ where
         }
     }
 
+    /// Drop the tools `enabled` refuses by wire name, keeping `schemas` and
+    /// `definitions` aligned; whether any remain.
+    pub(super) fn retain_enabled(&mut self, enabled: &impl Fn(&str) -> bool) -> bool {
+        let keep: Vec<bool> = self
+            .definitions
+            .iter()
+            .map(|d| d.get("name").and_then(Value::as_str).is_some_and(enabled))
+            .collect();
+        let mut flags = keep.iter();
+        self.schemas.retain(|_| *flags.next().unwrap_or(&false));
+        let mut flags = keep.iter();
+        self.definitions.retain(|_| *flags.next().unwrap_or(&false));
+        !self.definitions.is_empty()
+    }
+
     /// The bare tool name behind a wire name: strips this server's namespace
     /// when mounted namespaced, identity otherwise. `None` when the name does
     /// not carry this server's prefix.

@@ -432,7 +432,7 @@ pub(crate) enum Command {
     /// Parses the file, applies the same checks a session boot applies, resolves
     /// its `[context]` entries from the current directory (`exec` entries run), and
     /// mounts each `[mcp.servers.*]` stanza to list the server's tools against the
-    /// file's `tools` grants. Prints what the file grants and how many preamble
+    /// file's `[tools]` table. Prints what the file grants and how many preamble
     /// bytes it costs; exits non-zero with the boot-time error otherwise. Stored MCP
     /// credentials are reused; a server that needs authorization is reported, not
     /// authorized here.

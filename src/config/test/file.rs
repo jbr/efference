@@ -187,16 +187,25 @@ fn refresh_adopts_what_parses_and_reverts_what_does_not() {
     std::fs::remove_file(&path).unwrap();
 }
 
-/// Persisting into an **empty** file vivifies the missing sections — the case the gating
-/// test (which edited an existing `[commands]`) didn't cover. Tool grants append to the
-/// `tools` array and dedup on membership; path grants render the sugar / inline perms.
+/// Persisting into a file without the touched sections vivifies them — the case the gating
+/// test (which edited an existing `[commands]`) didn't cover. A tool grant sets `granted` on
+/// the tool's `[tools]` entry, once however often it lands; path grants render the sugar /
+/// inline perms.
 #[test]
 fn persist_into_empty_file_vivifies_sections() {
     let path = std::env::temp_dir().join(format!(
         "efference-persist-empty-{}.toml",
         std::process::id()
     ));
-    std::fs::write(&path, "").unwrap();
+    // `read` is mounted only when enabled, and a grant reaches the file only for a tool the
+    // session has.
+    std::fs::write(
+        &path,
+        "[tools]
+efference = { enabled = true }
+",
+    )
+    .unwrap();
 
     persist_config_change(
         &path,
@@ -233,12 +242,10 @@ fn persist_into_empty_file_vivifies_sections() {
 
     let text = std::fs::read_to_string(&path).unwrap();
     let role = parse(&path, &text).unwrap();
-    // The tool grant landed once (membership dedup, not last-write-wins).
-    assert_eq!(
-        role.tools.iter().filter(|t| *t == "read").count(),
-        1,
-        "{text}"
-    );
+    // The tool grant landed once, on its own entry.
+    assert!(role.tools.granted("read"), "{text}");
+    assert!(!role.tools.granted("write"), "{text}");
+    assert_eq!(text.matches("efference.read").count(), 1, "{text}");
     // Path sugar + inline perms both decode back.
     assert_eq!(
         role.paths["."],
@@ -319,21 +326,29 @@ fn persist_scope_replaces_in_place_then_inserts_when_absent() {
     std::fs::remove_file(&path).unwrap();
 }
 
-/// A connected tool's grant is written in the dotted form the operator reads everywhere
-/// else, and the file round-trips back to the wire name the fast-path matches. That
-/// round-trip is what keeps the auto-persist echo idempotent: the reloaded file normalizes
-/// to the same wire name, so the next diff finds nothing new.
+/// A connected tool's grant is written as the dotted key the operator reads everywhere else,
+/// and the file round-trips back to the wire name the fast-path matches. That round-trip is
+/// what keeps the auto-persist echo idempotent: the reloaded file grants the same wire name, so
+/// the next diff finds nothing new.
 #[test]
-fn persist_tool_writes_the_dotted_form_and_round_trips_to_the_wire_name() {
+fn persist_tool_writes_the_dotted_key_and_round_trips_to_the_wire_name() {
     let path = std::env::temp_dir().join(format!("efference-dotted-{}.toml", std::process::id()));
-    std::fs::write(&path, "tools = [\"read\"]\n").unwrap();
+    let declared = "[mcp.servers.ferritin]\ncommand = \"ferritin\"\n";
+    std::fs::write(
+        &path,
+        format!("[tools]\nefference = {{ enabled = true, granted = true }}\n\n{declared}"),
+    )
+    .unwrap();
 
     let change = ConfigChange::Tool {
         name: "ferritin__get".into(),
     };
     persist_config_change(&path, &change).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
-    assert!(text.contains("ferritin.get"), "dotted in the file: {text}");
+    assert!(
+        text.contains("\"ferritin.get\" = { granted = true }"),
+        "quoted dotted key: {text}"
+    );
     assert!(
         !text.contains("ferritin__get"),
         "wire form stays off the page: {text}"
@@ -341,46 +356,42 @@ fn persist_tool_writes_the_dotted_form_and_round_trips_to_the_wire_name() {
 
     // The loader resolves it back, so the fast-path still matches one name.
     let role = parse(&path, &text).unwrap();
-    assert!(role.tools.contains("ferritin__get"));
-    assert!(role.tools.contains("read"));
+    assert!(role.tools.granted("ferritin__get"));
+    assert!(role.tools.granted("read"));
 
-    // Re-persisting is a no-op: membership is compared normalized, so the entry already
-    // present in dotted form is recognized as the same grant.
+    // Re-persisting is a no-op: the entry is found by its key.
     persist_config_change(&path, &change).unwrap();
     let after = std::fs::read_to_string(&path).unwrap();
-    assert_eq!(
-        after.matches("ferritin.get").count(),
-        1,
-        "idempotent: {after}"
-    );
+    assert_eq!(after, text, "idempotent");
 
     std::fs::remove_file(&path).unwrap();
 }
 
-/// The other spelling of the same grant: a hand-written wire-form entry must not gain a
-/// second, dotted entry when the harness persists the same grant.
+/// A grant lands on an entry the file already has, keeping what it says, and a namespace grant
+/// (logged as its glob) lands on the namespace's bare key.
 #[test]
-fn persist_tool_does_not_duplicate_a_hand_written_wire_form_entry() {
-    let path = std::env::temp_dir().join(format!("efference-dotted2-{}.toml", std::process::id()));
-    std::fs::write(&path, "tools = [\"ferritin__get\"]\n").unwrap();
-
-    persist_config_change(
+fn persist_tool_sets_granted_on_an_existing_entry() {
+    let path = std::env::temp_dir().join(format!("efference-merge-{}.toml", std::process::id()));
+    std::fs::write(
         &path,
-        &ConfigChange::Tool {
-            name: "ferritin__get".into(),
-        },
+        "[tools]\nagents = { enabled = true } # the peer verbs\n\"agents.status\" = { granted = false }\n",
     )
     .unwrap();
+
+    for name in ["agents__status", "agents__*"] {
+        persist_config_change(&path, &ConfigChange::Tool { name: name.into() }).unwrap();
+    }
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(
-        !text.contains("ferritin.get"),
-        "no second spelling appended: {text}"
+        text.contains("agents = { enabled = true, granted = true } # the peer verbs"),
+        "{text}"
     );
-    assert_eq!(
-        text.matches("ferritin__get").count(),
-        1,
-        "unchanged: {text}"
+    assert!(
+        text.contains("\"agents.status\" = { granted = true }"),
+        "{text}"
     );
+    let role = parse(&path, &text).unwrap();
+    assert!(role.tools.granted("agents__create"));
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -392,8 +403,9 @@ fn persist_tool_does_not_duplicate_a_hand_written_wire_form_entry() {
 fn persist_keeps_the_schema_line_first() {
     let directive = crate::config_schemas::directive(crate::config_schemas::PROJECT);
     let changes = [
+        // A tool the loop always mounts, so the grant is valid in a file that enables nothing.
         ConfigChange::Tool {
-            name: "read".into(),
+            name: "kill_process".into(),
         },
         ConfigChange::Scope { text: "x".into() },
         ConfigChange::Command {

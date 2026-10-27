@@ -201,7 +201,9 @@ async fn an_artifact_gets_a_file_only_as_its_session_could_read_it() {
     // A role that grants reading the working directory, as a project config would.
     let role = crate::config::Config::from_toml(
         r#"
-        tools = ["read"]
+        [tools]
+        efference = { enabled = true }
+        "efference.read" = { granted = true }
 
         [paths]
         "." = { read = true }

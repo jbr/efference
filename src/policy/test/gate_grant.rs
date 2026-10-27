@@ -96,7 +96,9 @@ fn a_batched_read_offers_one_directory_or_none() {
 fn a_denied_path_offers_nothing() {
     let role = role(
         r#"
-        tools = ["read"]
+        [tools]
+        efference = { enabled = true }
+        "efference.read" = { granted = true }
 
         [paths]
         "." = true

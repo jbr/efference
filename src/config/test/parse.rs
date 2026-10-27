@@ -6,3 +6,4 @@ mod context;
 mod document;
 mod grants;
 mod mcp;
+mod tools;

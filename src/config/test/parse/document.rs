@@ -9,7 +9,7 @@ fn empty_document_is_a_valid_default_config() {
     assert!(role.watch_for.is_empty());
     assert!(role.trust_threshold.is_none());
     assert!(role.commands.is_empty());
-    assert!(role.tools.is_empty());
+    assert_eq!(role.tools, ToolsTable::default());
     assert!(role.paths.is_empty());
     assert!(role.extends.is_empty());
     assert!(role.context.is_empty());

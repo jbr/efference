@@ -74,9 +74,9 @@ pub const NAMESPACE_SEPARATOR: &str = "__";
 /// The namespace the harness's own embedded tools sit in for grant purposes
 /// (docs/permissions.md). Their wire names carry no prefix — `read` is `read` —
 /// so this is the name that stands in for the missing `<server>` half when a
-/// grant is resolved: `efference.*` is the whole-namespace grant over the
-/// built-ins, and `efference.read` is an accepted spelling of `read`. A declared
-/// server named `efference` would share the namespace, and nothing rejects that.
+/// `[tools]` entry is resolved: `efference` is the whole-namespace entry over the
+/// built-ins, and `"efference.read"` is how `read` is keyed. A declared server
+/// may not take the name (`config::BUILTIN_NAMESPACES`).
 pub const BUILTIN_NAMESPACE: &str = "efference";
 
 /// A namespaced wire name rendered for a human: `ferritin__get` → `ferritin.get`.
@@ -105,21 +105,17 @@ pub fn namespace_of(wire_name: &str) -> &str {
     }
 }
 
-/// The stored form of a whole-namespace tool grant (docs/permissions.md): the
-/// operator writes `ferritin.*`, `wire_tool_name` normalizes it to `ferritin__*`
-/// exactly as it normalizes `ferritin.get`, and [`display_name`] renders it back.
-/// So the glob lives in the same one-name-per-grant set every exact entry does,
-/// and `*` — absent from the API's tool-name alphabet — can never collide with a
-/// real advertised name.
+/// How a logged grant names a whole namespace (docs/permissions.md): a
+/// [`crate::log::ConfigChange::Tool`] carries `ferritin__*` for a granted
+/// `ferritin` entry, beside the wire names exact grants carry. `*` is absent from
+/// the API's tool-name alphabet, so it can never collide with a real advertised
+/// name.
 pub fn namespace_glob(namespace: &str) -> String {
     format!("{namespace}{NAMESPACE_SEPARATOR}*")
 }
 
-/// Whether a stored `tools` entry is a whole-namespace glob — `<namespace>__*`
-/// with a non-empty namespace that is itself star-free. This is the *only* shape
-/// carrying a `*` that validation admits ([`crate::config::ValidationError`]),
-/// which is what keeps the matcher a pair of set lookups rather than a pattern
-/// engine.
+/// Whether a logged grant name is a whole-namespace glob — `<namespace>__*`
+/// with a non-empty namespace that is itself star-free ([`namespace_glob`]).
 pub fn is_namespace_glob(entry: &str) -> bool {
     entry
         .strip_suffix(&namespace_glob(""))
@@ -273,6 +269,17 @@ impl ConnectedProvider {
     /// This provider's wire tool definitions (`tools[]` entries).
     pub fn definitions(&self) -> Vec<Value> {
         self.definitions.clone()
+    }
+
+    /// Drop the tools `enabled` refuses by wire name, keeping `tools` and
+    /// `definitions` aligned; whether any remain (`Toolbox::retain_enabled`).
+    pub fn retain_enabled(&mut self, enabled: &impl Fn(&str) -> bool) -> bool {
+        let keep: Vec<bool> = self.tools.iter().map(|t| enabled(&t.name)).collect();
+        let mut flags = keep.iter();
+        self.tools.retain(|_| *flags.next().unwrap_or(&false));
+        let mut flags = keep.iter();
+        self.definitions.retain(|_| *flags.next().unwrap_or(&false));
+        !self.tools.is_empty()
     }
 
     /// Whether this provider owns the (namespaced) tool name.

@@ -633,7 +633,7 @@ the time of the run (docs/transport.md).
 than a session: it parses `efference.toml` (or the path given), applies the soundness
 checks a session boot applies, resolves every `[context]` entry from the current
 directory (`exec` entries included), and mounts every `[mcp.servers.*]` stanza to
-enumerate each server's advertised tools against the file's `tools` grants — the computed
+enumerate each server's advertised tools against the file's `[tools]` table — the computed
 trust perimeter, so the grant is written with the tool table in front of it. Mounting
 reuses stored credentials and never runs the authorization dance; a server that needs
 authorization is reported, not authorized. It prints the grants and the preamble's byte

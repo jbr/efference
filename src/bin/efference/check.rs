@@ -7,7 +7,7 @@
 //! directory — a listed file that cannot be read, or an `exec` entry that fails,
 //! stops a boot, so it fails this check. `exec` entries do run. Then it mounts
 //! every `[mcp.servers.*]` stanza and reports, per server, the tools it
-//! advertises against the file's `tools` grants — the computed perimeter, so an
+//! advertises against the file's `[tools]` table — the computed perimeter, so an
 //! onboarding agent writes the grant with the tool table in front of it.
 //!
 //! Mounting reuses stored credentials (`auth::stored_credentials` against the same
@@ -52,7 +52,7 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
     );
     println!(
         "  grants: {} tool(s), {} command prefix(es), {} path(s)",
-        role.tools.len(),
+        role.tools.grant_names().len(),
         role.commands.len(),
         role.paths.len()
     );
@@ -112,7 +112,7 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
                 .filter(|tool| efference::policy::tool_granted(&role, tool))
                 .count();
             println!(
-                "  [mcp:{name}]: {} tool(s), {} cleared by `tools`; {} bytes of definitions",
+                "  [mcp:{name}]: {} tool(s), {} granted in `[tools]`; {} bytes of definitions",
                 advertised.len(),
                 cleared,
                 total
@@ -127,7 +127,7 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
             }
             if cleared < advertised.len() {
                 println!(
-                    "    note: {} advertised tool(s) not cleared — add exact grants or `{name}.*`, or leave them uncleared deliberately",
+                    "    note: {} advertised tool(s) not granted — grant them in `[tools]` (`{name} = {{ granted = true }}` for all), or leave them ungranted deliberately",
                     advertised.len() - cleared,
                 );
             }
@@ -143,11 +143,14 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
     Ok(())
 }
 
-/// The mark printed beside each advertised tool: granted by the file's `tools`
-/// (exact name or the terminal-`.*` namespace glob) or not. The decision is
-/// `policy::tool_granted`'s; this is only its one-character rendering.
+/// The mark printed beside each advertised tool: `x` when `[tools]` leaves it out of the
+/// session, else granted (`+`, by its own entry or its namespace's) or not (`-`). The
+/// decisions are `Config::tool_enabled`'s and `policy::tool_granted`'s; this is only their
+/// one-character rendering.
 fn grant_mark(role: &efference::config::Config, wire_name: &str) -> &'static str {
-    if efference::policy::tool_granted(role, wire_name) {
+    if !role.tool_enabled(wire_name) {
+        "x"
+    } else if efference::policy::tool_granted(role, wire_name) {
         "+"
     } else {
         "-"

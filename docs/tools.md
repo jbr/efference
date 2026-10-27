@@ -111,6 +111,31 @@ intent next time, through `intent_feedback`. The spotter is the case where the
 persuasion concern does hold, and it does not see the field —
 [permissions.md](permissions.md).
 
+## Which tools a session mounts
+
+The config's `[tools]` table decides, by `enabled` ([permissions.md](permissions.md) for
+the table's shape and its `granted` half). Boot builds the whole toolbox — bash, the
+embedded crates, the `agents` provider on a host, each declared server — and then
+`Toolbox::retain_enabled` drops every tool `Config::tool_enabled` refuses, before the first
+projection, so `tools[]` is fixed from turn one ([log-and-projection.md](log-and-projection.md)).
+Filtering keeps mount order, so a session that enables everything sends the same `tools[]`
+it would unfiltered; a provider left with no tools is dropped.
+
+The defaults are where the opt-in lives. efference's own namespaces (`efference`, `agents`)
+are off unless an entry enables them, so a built-in that ships later in a namespace of its
+own reaches no session that did not ask for it. A declared server is on, since declaring it
+is the request; an entry can turn a namespace or one tool off. The scaffolded config and the
+setup guide enable `efference` (granted) and `agents` (reviewed).
+
+The loop-owned tools — `consolidate`, the process-monitor/inbox family, `ask`, and the two
+triage tools — are not toolbox providers and are always mounted (`config::always_present`):
+the loop asks for `consolidate` under pressure, a backgrounded command is read through the
+process tools, and the triage tools stand in every array for cache lineage. `enabled` on one
+fails the config; `granted` works as on any tool.
+
+A tool that is not mounted is unknown to the loop: a call naming it gets the unknown-tool
+correction (below), which points at `bash` only when `bash` is mounted.
+
 ## Tool taxonomy
 
 Not everything belongs behind the in-process trait.
@@ -226,10 +251,10 @@ command line keeps `settle`, which waits on one agent per call ([operating.md](o
 #### The `sessions` provider
 
 A session created on a host mounts the in-session set as `Provider::Sessions`, wrapping
-`control_tools::in_session::Tools` in the in-process `McpServer`. The session's model
-reaches its project's other sessions by tool call, under namespaced wire names
-(`agents__message`, `agents__status`, `agents__create`). None is granted by default, so
-the spotter judges each call. Acting verbs never block: an in-session caller hears its
+`control_tools::in_session::Tools` in the in-process `McpServer`, when its `[tools]` table
+enables `agents` (or one of its verbs). The session's model reaches its project's other
+sessions by tool call, under namespaced wire names (`agents__message`, `agents__status`,
+`agents__create`). None is granted by default, so the spotter judges each call. Acting verbs never block: an in-session caller hears its
 children through its inbox (below) rather than through a waiting call. What a supervising
 session is told about this surface is the guide document `efference://guide/supervising`
 (`assets/guide/supervising.md`, [context.md](context.md)).
@@ -864,18 +889,20 @@ Responses. An offending name fails the boot, reported in its display form with t
 reason, rather than the first turn failing with a 400 that names nothing. Names are
 not rewritten: a mapping would have to hold across the advertised definition, the
 returned call, dispatch, the log, and replay, and the operator can rename the server
-or hide the tool instead.
+or turn the tool off instead (`"server.tool" = { enabled = false }`; the check runs on the
+toolbox after `[tools]` has filtered it).
 
 The alphabet has no separator that reads as one to a human, so the TUI renders
 the boundary as a dot — `ferritin__get` displays as `ferritin.get`
 (`mcp::display_name`, applied at the two transcript sites that print a tool
-name). The dotted form never reaches the wire or the log. It *is* accepted as a
-config **input alias**, since an operator types what the TUI shows them:
-`config::raw::wire_tool_name` resolves a dotted `tools` entry to the wire name at
-validate, so a grant is still stored and matched as exactly one name. Only the
-first dot is the boundary — a server's own tool name may contain dots (the MCP
-spec permits them), so `ferritin.admin.tools.list` resolves to
-`ferritin__admin.tools.list`.
+name). The dotted form never reaches the wire or the log. It *is* the config's
+spelling, since an operator types what the TUI shows them: a `[tools]` key is
+resolved to the wire name at validate (`config::tools::validate_tools`), so a grant
+is still stored and matched as exactly one name. Only the first dot is the
+boundary — a server's own tool name may contain dots (the MCP spec permits them),
+so `"ferritin.admin.tools.list"` resolves to `ferritin__admin.tools.list`. The
+built-ins carry no prefix on the wire, so their key names the namespace the
+display leaves implicit: `"efference.read"` resolves to `read`.
 
 Every human-facing surface uses the dotted form: the transcript, the session drawer's
 policy labels (including pending proposals, so a proposal reads and sorts as the
@@ -884,11 +911,10 @@ The wire and the log keep the underscores — the dot is applied at each display
 boundary and undone on the way back in, so exactly one name is ever stored or
 matched.
 
-Server-wide clearance is the terminal-`.*` glob — `tools = ["ferritin.*"]` clears
-every tool that server advertises, and `"efference.*"` the built-ins, whose
-unprefixed wire names sit in the `efference` namespace
-([permissions.md](permissions.md)). A bare `tools = ["ferritin"]` still clears
-nothing: the namespace has to be named as one.
+Server-wide clearance is a namespace's bare key — `ferritin = { granted = true }`
+clears every tool that server advertises, and `efference = { granted = true }` the
+built-ins, whose unprefixed wire names sit in the `efference` namespace
+([permissions.md](permissions.md)).
 
 One known gap: the offline `wire` dev view does not mount connected providers
 (mounting spawns processes), so a session with `[mcp.servers.*]` sends more
