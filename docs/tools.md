@@ -765,6 +765,10 @@ project root, with its own servers, as it has its own build directory.
   loop's `abort`: a kill answers the call as cancelled, while the body finishes in the
   background holding its workspace. structural's progress reports go nowhere yet:
   efference's in-process request context carries no progress token.
+- **Permissions.** The tools are not in the policy's path table (`policy::paths::path_spec`),
+  so a `[tools]` grant clears a call by name: `[paths]` does not narrow where a query reads,
+  a `workspace` argument can name any directory, and a granted `rename` writes every file
+  the rename touches. The setup guide leaves `rename` reviewed by default.
 - **Operator events.** A server that would not start, a fallback, a language nothing
   serves, a server released, a watch lost: structural pushes these to an operator sink,
   which logs them at info.

@@ -150,7 +150,9 @@ someone new to all this; their call either way.
    touches a network or a registry. efference's own tools are all enabled and granted by
    default (`efference = { enabled = true, granted = true }`), and the tools that reach other
    sessions enabled and reviewed (`agents = { enabled = true }`); withholding one is their
-   choice to make, not yours. Write the grants
+   choice to make, not yours. When the project's source is in a language that has a
+   language server, offer the language-server tools as well (`lsp`, below); they are not
+   on unless enabled. Write the grants
    you proposed and they accepted, and no others: a runner that fetches from a registry
    (`npx`, `uvx`, `pip install`) is a separate question, not part of "the build tool".
 2. **Are there directories outside this one that sessions should always reach, or places
@@ -279,6 +281,17 @@ withheld. The set today:
 host (`agents.create`, `agents.message`, `agents.status`, …). Granting them is a separate
 decision: a session that may create and direct others without review should be one the
 operator has thought about, so the default leaves them reviewed.
+
+`lsp = { enabled = true }` gives a session `lsp.definition`, `lsp.references`, and
+`lsp.rename`: go to a symbol's definition, list its uses, rename it everywhere. Language
+servers answer them, chosen from what the tree contains (rust-analyzer for a Cargo project,
+and so on) and shared by the sessions in one project; they start when the first session
+that has the tools begins. `[paths]` does not narrow these tools: they answer from the
+whole project, and a call's `workspace` argument can name another directory. `definition`
+and `references` only read, so granting them (`"lsp.definition" = { granted = true }`,
+`"lsp.references" = { granted = true }`) suits a project whose `[paths]` denies no source.
+`rename` rewrites files across the project, so the default leaves it reviewed; granting it,
+or the whole namespace, is the operator's call.
 
 A declared server's tools are enabled by its declaration and take the same shapes in
 `[tools]` — `ferritin = { granted = true }` for the whole server, `"ferritin.get" = { granted
