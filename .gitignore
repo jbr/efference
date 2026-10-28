@@ -13,3 +13,7 @@ eval/spotter/candidates.jsonl
 eval/spotter/results*.jsonl
 /tmp/
 __pycache__/
+
+# Personal cargo configuration, such as nightly-only rustflags: CI and release
+# builds run stable.
+/.cargo/config.toml
