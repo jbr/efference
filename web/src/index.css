@@ -7,6 +7,7 @@
 @import "./ui/SelectionRows.css";
 @import "./theme/elements.css";
 @import "./theme/prose.css";
+@import "./theme/matte.css";
 
 /* The vertical rhythm in one place: the mock runs generous leading (1.75 on
    transcript mono, 1.8 on code) and the browser default is ~1.2 — the gap
@@ -108,7 +109,7 @@ button {
   border: 1px solid var(--border-control);
   border-radius: 6px;
   background: var(--btn-bg);
-  background-image: var(--pressed-image);
+  background-image: var(--pressed-image), var(--matte-surface);
   color: var(--fg);
   cursor: pointer;
   transition: var(--interaction-transition);
@@ -150,7 +151,7 @@ button:where(:disabled) {
 button.primary {
   border-color: var(--btn-primary-border);
   background: var(--btn-primary-bg);
-  background-image: var(--pressed-image);
+  background-image: var(--pressed-image), var(--matte-surface);
   color: var(--btn-primary-fg);
   box-shadow: var(--btn-primary-shadow);
 }

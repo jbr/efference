@@ -26,13 +26,6 @@
   }
 }
 
-/* Lilac's paper grain. A file in public/, not the mock's data: URI and
-   not an src/ asset: the CSP has no data: source, and Vite inlines small
-   src/ assets as exactly that. public/ files are served as-is. */
-:root[data-theme="lilac"] body {
-  background-image: url("/paper.svg");
-}
-
 /* What the highlighter's theme resolves against. Aliases of the semantic
    tokens above, so they need no per-theme block: var() resolves at use.
    Provisional mapping: the web and TUI syntax palettes are not yet

@@ -1195,6 +1195,43 @@ legacy accent halo (`--accent-glow`) is transparent in Lilac. Glyphs use separat
 `--neon-ink` and `--neon-text` tokens: a near-white core with a stacked accent
 halo in After Dark, accent ink without a halo in Lilac.
 
+`theme/matte.css` adds a shallow token-driven gradient to page/chrome surfaces
+and buttons. `theme/matte.ts`, installed once by `main.tsx`, supplies opaque grain
+backgrounds to the page, gallery/header, top bar, dock, composer/input, status
+bar, session cards and approval panel. Transparent surfaces are left transparent;
+buttons keep their state fills and gradient rather than a grain image. Text and
+CSS box-shadow glows are not filtered or covered by a grain overlay.
+
+`theme/grainShader.ts` uses one detached WebGL 2 context to generate three-octave
+procedural value noise. It perturbs a surface's computed color in OKLab, with
+lightness amplitude 0.02, color amplitude 0.03 and spatial scale 0.15. Independent
+noise differences make the offsets statistically centered; symmetric gamut
+limiting reduces both directions together rather than clipping one side. A finite
+patch need not have an exactly zero mean, and rounding is to eight-bit sRGB.
+Pure white and black remain flat. The noise lattice wraps at image boundaries,
+so the generated images tile without a join. These are static backgrounds, not
+an animation or transparent blend over the page.
+
+Each draw is copied to a 2D canvas and encoded as a blob URL for the second CSS
+background layer, beneath the gradient. Matching color/dimension/density requests
+share a URL. The page image repeats at a viewport-sized period in an absolute
+`body::before`, beneath document content in the body's isolated stacking context.
+It travels with scrolling content without per-scroll rendering or a transcript-height
+allocation. The gallery is transparent over it. Other images fit their surface. Density is capped at 2,
+with a 4096-pixel dimension and roughly four-million-pixel allocation limit;
+large viewports reduce density rather than growing the backing store without
+bound. No new public grain asset is fetched or precached.
+
+Resize and intersection observers schedule coalesced draws only for visible
+surfaces. A mutation observer discovers newly inserted surface subtrees and
+invalidates theme/class changes; appended text does not redraw existing surfaces.
+Offscreen or removed surfaces release their URL reference; the last reference
+revokes it. Late encodings from invalidated/disposed surfaces are discarded.
+The page owner disconnects observers, revokes URLs and destroys the GPU context
+on disposal (including Vite hot replacement). Forced colors and print suppress
+the finish and release active images; missing WebGL or a rendering/encoding
+failure leaves ordinary surface colors and gradients, without resize retry loops.
+
 Control states read role tokens: `--btn-bg` / `--btn-bg-hover` /
 `--btn-border-hover` for secondary buttons, `--btn-primary-*` for primary
 buttons, and `--focus-border` / `--focus-shadow` / `--focus-ring` for keyboard
@@ -1268,11 +1305,10 @@ reversed on use, 2026-08-19), the intent line — while everything tool-shaped
 stays in the mono. The user turn's accent gutter carries no glow, dropped on
 use the same day.
 
-One asset trap, recorded because it will recur: Vite inlines small `src/`
-assets as `data:` URIs, and the CSP has no `data:` source. Lilac's
-paper-grain SVG therefore lives in `public/` (never inlined, served as-is),
-not `src/assets/` — anything else CSS references by URL follows the same rule
-or grows a hash in `default-src`.
+Vite inlines small `src/` assets as `data:` URIs, and the CSP has no `data:`
+source. CSS image assets must therefore avoid that inlining (for example, by
+living in `public/`). Runtime matte backgrounds use canvas blobs instead:
+`img-src` permits `blob:`, but not canvas data URLs.
 
 ## Transcript ergonomics
 
@@ -2073,7 +2109,7 @@ navigation falls back to the same cached shell. A transcript or a file's bytes s
 about what the agent did, and saying what the agent did is what this page is
 for. What is cached is the build's own hashed assets (cache-first, because the
 hash is the version) and the shell routes. The few public files the build does
-not hash (the manifest, every icon, `paper.svg`) are precached by name, and
+not hash (the manifest and every icon) are precached by name, and
 `src/daemon/tcp/gate.rs` names the same files as anonymous; changing their bytes means
 bumping `CACHE` in `sw.js`, or installed copies keep the old ones. Registration
 (`src/pwa.ts`) is `/sw.js` in production and `/sw.js?dev=1` under Vite. In dev

@@ -19,7 +19,7 @@
  * same name (the manifest, the icons): an installed worker keeps the copies it
  * cached until a new name replaces them, and activation deletes every other
  * cache. */
-const CACHE = "efference-shell-v3";
+const CACHE = "efference-shell-v4";
 
 /** Dev mode: `src/pwa.ts` registers `/sw.js?dev=1` when the page is served by
  * Vite. The worker then caches nothing and answers no fetch, so HMR always
@@ -57,7 +57,6 @@ const SHELL_ASSETS = [
   "/icon-512.png",
   "/icon-maskable-512.png",
   "/apple-touch-icon.png",
-  "/paper.svg",
 ];
 
 /** Prefixes that must always reach the daemon. */

@@ -16,6 +16,15 @@
   --bg-inset: #1b1825;
   --bg-chip: #2a2636;
 
+  --matte-highlight: rgb(255 255 255 / 0.018);
+  --matte-shade: rgb(0 0 0 / 0.035);
+  --matte-surface: linear-gradient(
+    155deg,
+    var(--matte-highlight),
+    transparent 45%,
+    var(--matte-shade)
+  );
+
   --border: #2a2636;
   --border-subtle: #221e2c;
   --border-strong: #2e2840;
@@ -98,6 +107,9 @@
   --bg-raised: #ffffff;
   --bg-inset: #f6f1f7;
   --bg-chip: #e5dce8;
+
+  --matte-highlight: rgb(255 255 255 / 0.35);
+  --matte-shade: rgb(91 58 116 / 0.018);
 
   --border: #e5dce8;
   --border-subtle: #ede6ef;

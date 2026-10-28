@@ -229,14 +229,13 @@ const ASSET_PREFIXES: [&str; 3] = ["/assets", "/fonts", "/splash"];
 
 /// Public files the build does not hash, so they are named rather than found by
 /// prefix. Mirrors `SHELL_ASSETS` in `web/public/sw.js`.
-const SHELL_ASSETS: [&str; 8] = [
+const SHELL_ASSETS: [&str; 7] = [
     "/manifest.webmanifest",
     "/icon.svg",
     "/icon-192.png",
     "/icon-512.png",
     "/icon-maskable-512.png",
     "/apple-touch-icon.png",
-    "/paper.svg",
     // The worker script itself, which the browser fetches to register the
     // worker and which nothing precaches (`web/src/pwa.ts`). It is fetched on a
     // bare visit, before any credential, so a gate that refused it would cost

@@ -3,7 +3,6 @@
    gallery stops showing what production shows. */
 .gallery {
   min-height: 100dvh;
-  background: var(--bg-page);
   color: var(--fg);
   padding: 0 2rem 6rem;
 }

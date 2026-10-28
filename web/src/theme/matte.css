@@ -1,0 +1,61 @@
+/* Surface finish (docs/web-client.md). Opaque shader backgrounds sit beneath
+   the shallow gradient, never over text or box-shadow halos. JavaScript owns
+   each --matte-texture URL; the local default prevents inheritance. */
+:root
+  :is(
+    .g-head,
+    .top-bar,
+    .dock,
+    .composer,
+    .status-bar,
+    .composer-input,
+    .card,
+    .gate-float
+  ) {
+  --matte-texture: none;
+  background-image: var(--matte-surface), var(--matte-texture);
+  background-size:
+    auto,
+    100% 100%;
+  background-repeat: no-repeat;
+}
+
+/* The seamless viewport-sized tile travels with the document, beneath its
+   content. Its allocation does not grow with the transcript's height. */
+body {
+  --matte-texture: none;
+  position: relative;
+  min-height: 100dvh;
+  isolation: isolate;
+}
+
+body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--matte-surface), var(--matte-texture);
+  background-size: auto, var(--matte-page-size, 100vw 100vh);
+  background-repeat: no-repeat, repeat;
+}
+
+@media (forced-colors: active), print {
+  body::before {
+    display: none;
+  }
+
+  :root
+    :is(
+      .g-head,
+      .top-bar,
+      .dock,
+      .composer,
+      .status-bar,
+      .composer-input,
+      .card,
+      .gate-float
+    ) {
+    background-image: none;
+  }
+}

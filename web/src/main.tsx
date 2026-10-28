@@ -7,9 +7,12 @@ import { resubscribeOnOpen } from "./push.ts";
 import { App } from "./ui/App.tsx";
 import { installLinkNavigation } from "./ui/route.ts";
 import { initTheme } from "./ui/theme.ts";
+import { installMatteFinish } from "./theme/matte.ts";
 import "./index.css";
 
 initTheme();
+const stopMatteFinish = installMatteFinish();
+if (import.meta.hot) import.meta.hot.dispose(stopMatteFinish);
 installLinkNavigation();
 registerServiceWorker();
 if (
