@@ -22,7 +22,7 @@ impl Scratch {
         // to push the socket past the platform's path limit for a Unix socket.
         let root = PathBuf::from(format!("/tmp/eff-isl-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join(".efference/islands/1")).unwrap();
+        std::fs::create_dir_all(root.join(".efference/standalone/1")).unwrap();
         std::fs::write(
             root.join(".efference/config.toml"),
             r#"
@@ -36,7 +36,7 @@ auth = { kind = "env", key = "EFFERENCE_ISLAND_TEST_KEY" }
     }
 
     fn dir(&self) -> PathBuf {
-        self.root.join(".efference/islands/1")
+        self.root.join(".efference/standalone/1")
     }
 
     fn socket(&self) -> PathBuf {

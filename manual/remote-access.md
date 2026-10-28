@@ -153,7 +153,7 @@ nothing from other origins and not to be framed.
 A browser signs in with a link or with a code.
 
 The link `efference --host` prints works once, within about a minute and a half, and signs
-one browser in. A browser island opens one for you.
+one browser in. A standalone host serving the browser opens one for you.
 <!-- src: src/daemon/tcp.rs::TcpAuth::mint_link; src/sign_ins.rs::Store::approved_link, Store::claim, TTL_SECS; src/daemon/host.rs::serve_host (logs the link); src/bin/efference/island/browser.rs::Links::mint; web/src/ui/bootClaim.ts -->
 
 A browser that opens the host's address without a link shows a short code, like `KQ7-M4X`,

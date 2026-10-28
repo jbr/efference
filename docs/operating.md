@@ -352,7 +352,7 @@ prints one, `q`, Esc, or Ctrl-C quits. Every link is minted when asked for, beca
 link's claim works once and only for a minute and a half; the device token it collects is
 what keeps a tab signed in, and each such sign-in is an enrolled device. Quitting erases the
 prompt and ends the island as the terminal island does. Each island lives in
-`~/.efference/islands/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a
+`~/.efference/standalone/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a
 clean exit and leaves in place when it fails. The strip's leaving verb reads `quit` rather
 than `detach` in the owning TUI. The island ignores the `[host]` table's web bind and
 takes its address from `--bind` alone ([web-bind.md](web-bind.md)). Islands are not in

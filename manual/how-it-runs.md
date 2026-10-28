@@ -68,7 +68,7 @@ you first ([Permissions](permissions.md)).
 ### The control channel
 
 A host listens on a Unix socket: `~/.efference/host.sock` in host mode, and
-`~/.efference/islands/<pid>/host.sock` for a standalone host. Every client on the machine
+`~/.efference/standalone/<pid>/host.sock` for a standalone host. Every client on the machine
 — the terminal interface, `efference control`, `efference mcp` — speaks HTTP to the host
 over that socket. `efference` looks for a host at `.efference/host.sock` in the current
 directory, then at `~/.efference/host.sock`; it never finds another terminal's standalone

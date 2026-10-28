@@ -19,8 +19,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 
-/// Where islands live: `~/.efference/islands/<launcher pid>/`, one directory each.
-pub const ISLANDS_DIR: &str = "islands";
+/// Where standalone hosts live: `~/.efference/standalone/<launcher pid>/`, one directory each.
+pub const STANDALONE_DIR: &str = "standalone";
 
 /// The island's control socket, inside its directory.
 pub const ISLAND_SOCKET: &str = "host.sock";
@@ -33,7 +33,7 @@ pub const ISLAND_LOG: &str = "host.log";
 /// The directory for an island launched by process `pid`, under `home`.
 pub fn island_dir(home: &Path, pid: u32) -> PathBuf {
     home.join(super::SESSION_BASE)
-        .join(ISLANDS_DIR)
+        .join(STANDALONE_DIR)
         .join(pid.to_string())
 }
 

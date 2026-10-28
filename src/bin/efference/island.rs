@@ -43,7 +43,8 @@ impl Island {
     /// `bind` is a web bind for the host to open beside its socket — the browser
     /// island's loopback listener; the terminal island has none.
     pub(crate) fn launch(bind: Option<&str>) -> Result<Self, CliError> {
-        let home = std::env::var_os("HOME").ok_or("no HOME to place ~/.efference/islands under")?;
+        let home =
+            std::env::var_os("HOME").ok_or("no HOME to place ~/.efference/standalone under")?;
         let dir = island_dir(Path::new(&home), std::process::id());
         std::fs::create_dir_all(&dir)?;
         let socket = dir.join(ISLAND_SOCKET);

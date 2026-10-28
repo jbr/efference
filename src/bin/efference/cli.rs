@@ -23,8 +23,9 @@ pub(crate) struct Cli {
     /// With `--host`, overrides `[host] bind`;
     /// `--bind ""` serves the Unix socket alone whatever the table says.
     ///
-    /// Without `--host` this is the island's: with no host running, the
-    /// island answers in the browser on that address instead of in the TUI.
+    /// Without `--host` this is the standalone host's: with no host running,
+    /// a standalone host answers in the browser on that address instead of
+    /// in the TUI.
     // docs/web-bind.md
     #[arg(long, global = true, value_name = "ADDR:PORT")]
     pub(crate) bind: Option<String>,
@@ -94,11 +95,11 @@ pub(crate) struct HostFlags {
     /// Open the operator's browser at the sign-in link once bound.
     #[arg(long, requires = "host")]
     pub(crate) open: bool,
-    /// Run as a terminal-owned island: stdin is the launcher's ownership
+    /// Run as a standalone host: stdin is the launcher's ownership
     /// connection, and its closing archives the host's sessions and shuts it down.
-    /// Set by the island launcher, never typed: a person's
-    /// `--host` runs until stopped, and a person without one gets an island
-    /// started for them.
+    /// Set by the launcher, never typed: a person's
+    /// `--host` runs until stopped, and a person without one gets a standalone
+    /// host started for them.
     // docs/resumption.md
     #[arg(long, hide = true, requires = "host")]
     pub(crate) island: bool,

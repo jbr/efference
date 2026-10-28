@@ -276,7 +276,7 @@ A ChatGPT connection that reuses Codex's sign-in reads Codex's own file,
 <!-- src: src/api/endpoint.rs::codex_cached_credentials, codex_auth_path -->
 
 One place a key can still reach a file by accident: a provider's error message, printed
-by the host, lands in a standalone host's log file at `~/.efference/islands/<pid>/host.log`
+by the host, lands in a standalone host's log file at `~/.efference/standalone/<pid>/host.log`
 if the provider quotes the key back. Setup's "Variable name" prompt accepts only a
 portable name (letters, digits and `_`, not starting with a digit) and refuses text that
 looks like a key, without repeating it, so a key pasted there is not written to

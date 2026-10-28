@@ -14,8 +14,8 @@ before you write it; the choice to expose anything over a network is theirs.
 A **host** is the process that holds sessions and runs them. The terminal UI, the web
 interface, scripts, and other agents are all clients of it.
 
-- **A plain `efference`** with no host running starts one for that terminal — an
-  *island* — and ends it, with its sessions, when the terminal UI exits.
+- **A plain `efference`** with no host running starts one for that terminal — a
+  *standalone* host — and ends it, with its sessions, when the terminal UI exits.
 - **`efference --host`** starts a host that stays up until stopped, at
   `~/.efference/host.sock`, where every project's `efference` finds it. Sessions then
   outlive any window showing them, several projects share it, and it is the host the web
@@ -148,7 +148,7 @@ Start it with `systemctl --user enable --now efference-host`. It runs while the 
 logged in; `loginctl enable-linger` keeps it running without a login.
 
 A host under a service manager is still the host `efference` finds: projects create
-sessions on it rather than starting islands.
+sessions on it rather than starting standalone hosts.
 
 ## Signing in to the web interface
 
@@ -156,7 +156,8 @@ A browser signs in one of two ways, and either makes it an enrolled device with 
 of its own:
 
 - **A sign-in link.** The host prints one when it starts with a web address, and a
-  browser island opens one itself. A link works once, within a minute and a half.
+  standalone host serving the browser opens one itself. A link works once, within a minute
+  and a half.
 - **A code approved at the host.** A browser that opens the web address without a link
   shows a short code, like `KQ7-M4X`, for a minute and a half. `efference devices
   approve` asks for the code on the terminal and lets that browser in;
