@@ -263,13 +263,7 @@ pub(super) fn gate_body(
 /// command line sends none.
 pub(super) fn escalated_body(source: Option<&str>, note: Option<&str>, gate: &str) -> String {
     let by = source
-        .map(|source| {
-            ["session[", "mcp["]
-                .iter()
-                .find_map(|open| source.strip_prefix(open)?.strip_suffix(']'))
-                .unwrap_or(source)
-                .to_string()
-        })
+        .map(|source| crate::frontend::source_name(source).to_string())
         .unwrap_or_else(|| "the operator".to_string());
     let note = note
         .map(str::trim)

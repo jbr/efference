@@ -21,8 +21,7 @@ use super::*;
 pub enum SupervisorRefused {
     /// The session being changed is not hosted here.
     NotHosted(String),
-    /// The change was refused, with the reason: an unknown supervisor, one in
-    /// another project, or a cycle.
+    /// The change was refused, with the reason: an unknown supervisor or a cycle.
     Refused(String),
 }
 
@@ -50,9 +49,9 @@ impl Host {
     /// Set `id`'s supervisor to `supervisor`, or clear it with `None`
     /// (docs/permissions.md). Returns the pointer as it now reads.
     ///
-    /// Refused when the new supervisor is not hosted, is in another project (it could
-    /// not reach `id` to answer its gates), or would make the supervisor chain cycle —
-    /// checked by walking the chain under the same lock that writes the pointer.
+    /// Refused when the new supervisor is not hosted or would make the supervisor chain
+    /// cycle — checked by walking the chain under the same lock that writes the pointer.
+    /// A supervisor in another project reaches `id` by its id (docs/tools.md).
     /// Setting the value the pointer already holds changes nothing.
     ///
     /// A set moves a dial sitting at the supervised default (`spotter_human`) to
@@ -70,15 +69,9 @@ impl Host {
             };
             let session = Arc::clone(&hosted.session);
             if let Some(next) = &supervisor {
-                let Some(candidate) = sessions.hosted(next) else {
+                if sessions.hosted(next).is_none() {
                     return Err(SupervisorRefused::Refused(format!(
                         "no session {next:?} on this host"
-                    )));
-                };
-                if candidate.session.storage_base() != session.storage_base() {
-                    return Err(SupervisorRefused::Refused(format!(
-                        "{next:?} is in another project than {id:?}, so it could not reach \
-                         {id:?} to answer its gates"
                     )));
                 }
                 if let Some(cycle) = cycle_through(&sessions, id, next) {

@@ -32,8 +32,10 @@ projected: a `User` entry carrying one opens its wire block with a prefix naming
 speaker, so the model can tell the voices apart when several clients submit into a
 session (docs/control-api.md). The stored `session[<id>]` opens the block as
 `<id> (agent):` (`frontend::wire_label`), the spelling the preamble teaches
-(`assets/prompts/session.md`); every other label opens it as written (`web:`,
-`mcp[<name>]:`). An `ask`'s reply from a source is prefixed the same way.
+(`assets/prompts/session.md`), and `session[<id> in <place>]`, from a session in another
+project, as `<id> (agent in <place>):`; every other label opens it as written (`web:`,
+`mcp[<name>]:`). A pinned inbox note's source goes through the same label, so a note
+from another project opens `⟢ <id> (agent in <place>):`. An `ask`'s reply from a source is prefixed the same way.
 `None` on operator turns and on entries the loop originates itself, and skipped
 when `None`, so an unsourced turn projects and serializes exactly as it did
 before the field existed.

@@ -321,8 +321,8 @@ sessions from one process. Its own routes are the listener's, not a session's:
   moving the pointer drops the previous supervisor's subscription and re-routes a
   held gate. Answers `200 {"id", "state": "active", "supervisor"}` with the pointer
   as it now reads; `404` for a session that is not hosted; `400` naming the reason
-  for a supervisor that is not hosted, one in another project, or one that would
-  make the chain cycle (the reason names the cycle). `supervisor` and `state` are
+  for a supervisor that is not hosted or one that would make the chain cycle (the
+  reason names the cycle); a supervisor in another project is accepted. `supervisor` and `state` are
   separate patches: a body carrying both is a `400`. Each change appends a
   `telemetry.supervisor_set` entry to the session's log, which projects to nothing;
   the pointer is not persisted, so a resumed session starts again from its creator.
@@ -477,9 +477,12 @@ question is pending, from every client (below).
   and the log records which submission produced each turn.
 - `source` names who is submitting, when it is not the operator — client-asserted,
   like `notify`'s source, and not verified. The convention is `web`,
-  `mcp[<clientInfo.name>]`, or `session[<id>]` for another session on the host.
+  `mcp[<clientInfo.name>]`, or `session[<id>]` for another session on the host —
+  `session[<id> in <place>]` when that session works in another project, `<place>` its
+  project directory with the home directory as `~`.
   Recorded on the resulting `User` entry and rendered as a prefix on its wire block —
-  `<id> (agent):` for `session[<id>]`, the label as written otherwise
+  `<id> (agent):` for `session[<id>]`, `<id> (agent in <place>):` for
+  `session[<id> in <place>]`, the label as written otherwise
   (docs/log-and-projection.md); absent means the operator, whose turns render no
   prefix. `efference` is reserved for the harness's `first-turn` kickoff, which the
   clients do not draw ([context.md](context.md)); a request claiming it is a 400.

@@ -67,7 +67,7 @@ impl Tool<Control> for Interrupt {
                 if signal {
                     // Attributed to the calling session, as its messages are (docs/tools.md).
                     target.interrupt(crate::log::InterruptOrigin {
-                        source: Some(crate::frontend::session_source(state.caller())),
+                        source: Some(state.source_for(&target)),
                         control: None,
                     });
                 }

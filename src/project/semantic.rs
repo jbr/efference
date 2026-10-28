@@ -452,9 +452,10 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                     .iter()
                     .filter(|(_, d)| matches!(d, Disposition::Pin))
                     .filter_map(|(seq, _)| {
-                        notifications
-                            .get(seq)
-                            .map(|n| format!("⟢ {}: {}", n.source, n.body))
+                        notifications.get(seq).map(|n| {
+                            let source = crate::frontend::wire_label(&n.source);
+                            format!("⟢ {source}: {}", n.body)
+                        })
                     })
                     .collect();
                 // Surfaced context items — name resolved to its one-line description and

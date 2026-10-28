@@ -72,7 +72,7 @@ supervise, and a predecessor that handed its work to you. `agents__message` foll
   is read after the current step; holding a call, after the decision; held by its
   operator, when the operator releases the hold. A message never resolves a gate. An
   empty `text` continues an agent that stopped or paused.
-- To any other agent in your project, it is a note in its inbox, which it may set aside.
+- To any other agent, it is a note in its inbox, which it may set aside.
 
 The answer says which: `delivered:`, `queued:` and what it waits behind, or
 `left in <id>'s inbox`.
@@ -184,9 +184,12 @@ branch kept unless merged. Agents you create end when you do, unless created `de
 - **It knows who you are.** Its identity line names you as its creator. Its first message,
   your messages and an allow's note open `<your id> (agent):`. A note to an agent you do
   not drive reaches it, if its triage keeps it, as `⟢ <your id>: …`.
-- **Reach is the project.** Status, transcript and message reach any agent in your
-  project; interrupt and archive only the agents you drive, and decide only the agents you
-  supervise and the calls escalated to you. You cannot address yourself, and an agent in another project is not found.
+- **An id reaches its agent anywhere on this host.** Status, transcript and message reach
+  any agent by its id, in your project or another; interrupt and archive only the agents
+  you drive, and decide only the agents you supervise and the calls escalated to you. You
+  cannot address yourself. `agents__status` with no agent lists your project's agents
+  only, so an agent in another project is one whose id you were given. What it receives
+  from you names your project: `<your id> (agent in <your project's directory>):`.
 
 ## Cost
 

@@ -142,24 +142,21 @@ async fn self_target_is_refused() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// Project scope is a visibility boundary: a session sharing no `.efference/`
-/// base with the caller is not found, not forbidden, and the overview leaves it out.
+/// An id reaches its session in any project (docs/tools.md): a session in another
+/// project is read and messaged by its id, and what it hears names the sender's
+/// project, on a note and, once the sender supervises it, on a turn. The overview
+/// stays the caller's project, and an id the host does not hold is not found.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_session_in_another_project_is_not_found() {
+async fn a_session_in_another_project_is_reached_by_its_id() {
     let fixture = Fixture::new();
     let control = fixture.control("parent");
-    let err = Status {
+    let read = Status {
         agent: Some("stranger".into()),
     }
     .execute(control.clone(), RequestContext::default())
     .await
-    .unwrap_err()
-    .to_string();
-    assert!(
-        err.contains("no agent \"stranger\" in this project"),
-        "{err}"
-    );
-    assert!(!err.contains("drive"), "not a permission refusal: {err}");
+    .expect("stranger is on this host");
+    assert!(read.starts_with("stranger"), "{read}");
 
     let overview = Status { agent: None }
         .execute(control.clone(), RequestContext::default())
@@ -167,12 +164,66 @@ async fn a_session_in_another_project_is_not_found() {
         .unwrap();
     assert!(!overview.contains("stranger"), "{overview}");
 
+    let said = message("stranger", "the brief is in NOTES.md", None)
+        .execute(control.clone(), RequestContext::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        said,
+        "left in stranger's inbox; it may set it aside (you don't drive it)"
+    );
+    let place = crate::home::tilde(&fixture.root.join("a"));
+    let source = format!("session[parent in {place}]");
+    let stranger = fixture.session("stranger");
+    wait_for("the note reached stranger", || {
+        stranger
+            .pending_notifications()
+            .iter()
+            .any(|n| n.source == source)
+            || stranger
+                .snapshot()
+                .iter()
+                .any(|e| matches!(&e.payload, Payload::Ambient(n) if n.source == source))
+    })
+    .await;
+
+    fixture
+        .host
+        .set_supervisor("stranger", Some("parent".into()))
+        .expect("a supervisor in another project is accepted");
+    message("stranger", "pick it up", None)
+        .execute(control.clone(), RequestContext::default())
+        .await
+        .expect("parent supervises stranger");
+    wait_for("stranger logged the turn", || {
+        stranger
+            .snapshot()
+            .iter()
+            .any(|entry| entry.source.as_deref() == Some(source.as_str()))
+    })
+    .await;
+    let wire = serde_json::to_string(&crate::project::project(&stranger.snapshot())).unwrap();
+    assert!(
+        wire.contains(&format!("parent (agent in {place}): pick it up")),
+        "{wire}"
+    );
+
+    let err = Status {
+        agent: Some("ghost".into()),
+    }
+    .execute(control, RequestContext::default())
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("no agent \"ghost\" on this host"), "{err}");
+    assert!(!err.contains("drive"), "not a permission refusal: {err}");
+
     fixture.host.swansong().shut_down().await;
 }
 
 /// A session creates only inside its own project (docs/tools.md): a cwd whose
 /// `.efference/` base is not the caller's is refused before anything is minted,
-/// since no later verb could reach the child. A cwd inside the project passes
+/// since the child would run under that project's config rather than the caller's. A cwd inside the project passes
 /// this check, and fails later here on the empty inference registry, with an error
 /// that says what the host offers.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

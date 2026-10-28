@@ -274,7 +274,7 @@ enforceable, and they are enforced by the executor rather than by config:
   `interrupt` and `archive` require it; supervision is not transitive, so a session given
   another to supervise does not reach that one's descendants through it. `status`,
   `transcript`, and `message` from a session that does not drive its target reach any
-  session in the caller's project.
+  session on the host, by its id.
 - **`decide` reaches the sessions the caller supervises.** In-session, only the session the
   host's supervisor pointer names ([permissions.md](permissions.md)) — its creator, until
   the operator sets another — decides a session's gates, wherever the review dial routes
@@ -294,10 +294,16 @@ enforceable, and they are enforced by the executor rather than by config:
 
 `message` does what the relation says. From a driver it is the target's next user
 message, carrying `source: session[<caller id>]`, which the projection opens as
-`<caller id> (agent):` ([log-and-projection.md](log-and-projection.md)); an empty one is
+`<caller id> (agent):` ([log-and-projection.md](log-and-projection.md)) — or, when the
+caller works in another project than the target, `session[<caller id> in <place>]`, opening
+as `<caller id> (agent in <place>):`, `<place>` the caller's project directory with the
+home directory written as `~`. Decisions, interrupts and archives carry the same
+label. An empty one is
 a continue, with the continue route's own precondition (`Session::continue_verdict`)
 and its refusal as the answer where it refuses. From any other session it is a note in
-the target's inbox under the caller's id, which the target's triage may set aside. The
+the target's inbox under the caller's id — from another project, under the
+`session[<caller id> in <place>]` label, which a pinned note opens as
+`⟢ <caller id> (agent in <place>):` — which the target's triage may set aside. The
 answer always says which happened: `delivered: <id> is working on it`, ``queued: <id>
 reads this after its current step (running bash `cargo test` for 40s)``, `queued: <id>
 is waiting for a decision on 8.2 (…); it reads this after the decision`, `held: <id> is
@@ -370,11 +376,13 @@ working directory — the caller's worktree, when it has one — unless `worktre
 gives the child its own checkout and branch ([worktrees.md](worktrees.md)); it takes the
 caller's child environment as the new session's base, records the caller as the
 child's `created_by` — and so as its supervisor, until the operator sets another
-([permissions.md](permissions.md)) — subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `decide`. It waits out the child's preparation, and an optional `message` is the child's first turn. The answer names the id, the resolved `<connection>/<model>`, the working directory and its own worktree and branch when it has one, where its gates go, and its status. A model the host cannot run is refused with what the host offers: its connections and the first ids of each one's held listing ([model-catalog.md](model-catalog.md)). Reach is the project: the overview lists, and every target
-resolves, only among sessions whose `.efference/` storage base is the caller's, so
-another project's id is not found rather than forbidden. `create` is bounded the same
-way at the other end: a `cwd` whose `.efference/` base is not the caller's is refused
-before anything is minted, since the caller could never reach the child it made.
+([permissions.md](permissions.md)) — subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `decide`. It waits out the child's preparation, and an optional `message` is the child's first turn. The answer names the id, the resolved `<connection>/<model>`, the working directory and its own worktree and branch when it has one, where its gates go, and its status. A model the host cannot run is refused with what the host offers: its connections and the first ids of each one's held listing ([model-catalog.md](model-catalog.md)). An id reaches its session in any project on the host; only
+the overview is bounded, to the sessions whose `.efference/` storage base is the
+caller's, so a session in another project is reached by an id the caller was given
+rather than one it listed. `create` stays inside the project: a `cwd` whose
+`.efference/` base is not the caller's is refused before anything is minted, since a
+child runs under its own project's `efference.toml`, and a child minted elsewhere would
+let a session work under another project's rules by commissioning there.
 The mount is unconditional for a hosted session today; which verbs a config mounts is
 later work.
 

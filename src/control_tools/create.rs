@@ -226,11 +226,10 @@ impl Tool<Control> for Create {
                 let caller = state.caller_session()?;
                 let request =
                     self.request(caller.cwd().to_path_buf(), caller.child_env().resolved());
-                // Reach is the project (docs/tools.md): every later verb finds a
-                // target only under the caller's `.efference/` base, so a child
-                // minted anywhere else could never be supervised or ended by the
-                // session that commissioned it. Refused here, before anything is
-                // minted, rather than discovered at the first `status` call. The
+                // A child runs under its own project's config (docs/tools.md): minted
+                // in another project, it would work under that project's rules rather
+                // than the caller's, so a session could reach past its own config by
+                // commissioning there. Refused here, before anything is minted. The
                 // child's project is resolved as the host will resolve it: a `cwd`
                 // inside a worktree belongs to that worktree's project
                 // (docs/worktrees.md).
@@ -244,9 +243,9 @@ impl Tool<Control> for Create {
                     .ok_or_else(|| anyhow!("the calling session has no project base"))?;
                 if base != project {
                     anyhow::bail!(
-                        "refused: {} is outside this project — a session creates only under \
-                         its own `.efference/` base ({}) so it can reach what it made; \
-                         create under this project's directory instead",
+                        "refused: {} is outside this project ({}) — a child runs under its own \
+                         project's efference.toml, so a session creates only in its own \
+                         project; create under this project's directory instead",
                         cwd.display(),
                         project.display()
                     );
@@ -264,7 +263,7 @@ impl Tool<Control> for Create {
                             text,
                             crate::daemon::mint_submission_id(),
                         )
-                        .sourced(Some(crate::frontend::session_source(state.caller())));
+                        .sourced(Some(state.source_for(&child)));
                         match child.submit_named_turn(turn, None) {
                             Ok(landing) => answers::sent(&id, landing, Some(&view), now),
                             Err(refusal) => format!(

@@ -294,6 +294,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Changed
 
+- An `agents__*` call reaches a session by its id in any project on the host, so a session can brief or reply to an agent elsewhere when given its id; what arrives names the sender's project (`<id> (agent in ~/code/other):`, and the same on a note), `agents__status` with no agent still lists the caller's project only, `create` stays in the caller's project, and an operator may set a supervisor from another project (docs/tools.md).
 - Tools are configured in a `[tools]` table: each entry says whether a tool or namespace is `enabled` (in the session's tool list) and `granted` (runs without review). efference's own tools are off unless enabled, so a new built-in in a namespace of its own reaches no session that did not ask for it; the `tools = [...]` grant list is gone, and every existing config was migrated to keep its behaviour (docs/tools.md, docs/permissions.md).
 
 - A standalone host's exit records itself as the cause of the archives it makes (`source: "standalone exit"`), so the log tells a closed standalone apart from an operator's archive; a child ending with its creator still records none (docs/resumption.md, docs/log-and-projection.md).

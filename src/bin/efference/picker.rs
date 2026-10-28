@@ -95,28 +95,7 @@ impl Menu {
     }
 }
 
-/// A path with the home directory written as `~`, for a prompt line.
-pub(crate) fn tilde(path: &Path) -> String {
-    under_home(path, std::env::var_os("HOME").as_deref().map(Path::new))
-}
-
-/// [`tilde`] against a given home, so the rewrite is testable without touching
-/// the process environment.
-pub(crate) fn under_home(path: &Path, home: Option<&Path>) -> String {
-    let display = path.display().to_string();
-    let Some(home) = home else {
-        return display;
-    };
-    let home = home.display().to_string();
-    if home.is_empty() {
-        return display;
-    }
-    match display.strip_prefix(&home) {
-        Some("") => "~".to_string(),
-        Some(rest) if rest.starts_with('/') => format!("~{rest}"),
-        _ => display,
-    }
-}
+pub(crate) use efference::home::tilde;
 
 /// Every live host's session listing, in candidate order.
 pub(crate) async fn live_listings() -> Result<Vec<(PathBuf, Vec<ListedSession>)>, CliError> {

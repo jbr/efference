@@ -26,6 +26,9 @@ use crate::log::ToolCall;
 ///    creating a session or succeeding its creator does not by itself make its gates
 ///    the caller's (docs/permissions.md). The one exception is a gate escalated to the
 ///    caller, which it may decide, and only that gate.
+///
+/// An id reaches its session wherever on the host it is; only the overview, `status`
+/// with no agent, is bounded to the caller's project.
 #[derive(Clone)]
 pub struct HostExecutor {
     /// The host, held weakly (see [`super::Executor::host`]).
@@ -77,8 +80,8 @@ impl HostExecutor {
     }
 
     /// Whether `id` is in the caller's project: its `.efference/` storage base is the
-    /// caller's (docs/tools.md).
-    fn in_view(&self, host: &Host, id: &str) -> bool {
+    /// caller's. The overview's bound (docs/tools.md).
+    fn in_project(&self, host: &Host, id: &str) -> bool {
         let Ok(caller) = self.caller_session() else {
             return false;
         };
@@ -97,28 +100,49 @@ impl HostExecutor {
         }
     }
 
-    /// The target's `Session`, if it is in the caller's project. A session outside it
-    /// is not found, not forbidden: project scope is a visibility boundary, not a
-    /// permission one.
-    fn in_project(&self, target: &str) -> Result<Arc<Session>> {
-        let host = self.host()?;
-        let not_found =
-            || anyhow!("no agent {target:?} in this project — `status` lists the ones there are");
-        let session = host.session(target).ok_or_else(not_found)?;
-        if !self.in_view(&host, target) {
-            return Err(not_found());
+    /// The target's `Session`, in whichever project it is (docs/tools.md).
+    fn hosted(&self, target: &str) -> Result<Arc<Session>> {
+        self.host()?.session(target).ok_or_else(|| {
+            anyhow!(
+                "no agent {target:?} on this host — `agents__status` lists the ones in this \
+                 project"
+            )
+        })
+    }
+
+    /// The `source` the caller's turns, decisions and interrupts carry into `target`:
+    /// `session[<id>]`, naming the caller's project as well when it is not `target`'s
+    /// (docs/tools.md).
+    pub(super) fn source_for(&self, target: &Session) -> String {
+        crate::frontend::session_source(&self.caller, self.place_for(target).as_deref())
+    }
+
+    /// The `source` of a note the caller leaves in `target`'s inbox: its bare id within
+    /// the project, as a status notification names its session, and the
+    /// [`source_for`](Self::source_for) label from another project (docs/inbox.md).
+    pub(super) fn note_source_for(&self, target: &Session) -> String {
+        match self.place_for(target) {
+            Some(place) => crate::frontend::session_source(&self.caller, Some(&place)),
+            None => self.caller.clone(),
         }
-        Ok(session)
+    }
+
+    /// The caller's project directory, with the home directory as `~`, when it is not
+    /// `target`'s project; `None` when they share one.
+    fn place_for(&self, target: &Session) -> Option<String> {
+        let caller = self.caller_session().ok()?;
+        (caller.storage_base() != target.storage_base())
+            .then(|| crate::home::tilde(caller.directories().project()))
     }
 
     /// The target for a read, or for a message from a session that does not drive
-    /// it: rule 1 and project scope.
+    /// it: rule 1.
     pub(super) fn resolve(&self, requested: Option<&str>) -> Result<(Arc<Session>, String)> {
         let target = self.target(requested)?;
-        Ok((self.in_project(&target)?, target))
+        Ok((self.hosted(&target)?, target))
     }
 
-    /// The target for a driving verb: rule 1, project scope, and rule 2.
+    /// The target for a driving verb: rule 1 and rule 2.
     pub(super) fn resolve_driven(&self, requested: Option<&str>) -> Result<(Arc<Session>, String)> {
         let (session, target) = self.resolve(requested)?;
         if !self.drives(&target)? {
@@ -131,7 +155,7 @@ impl HostExecutor {
         Ok((session, target))
     }
 
-    /// The target for `decide` on the held call `seq`: rule 1, project scope, and rule 3.
+    /// The target for `decide` on the held call `seq`: rule 1 and rule 3.
     /// A refusal says who decides the target's gates and which verbs still reach it.
     pub(super) fn resolve_decided(
         &self,
@@ -208,14 +232,14 @@ impl HostExecutor {
             || host.predecessor(driver).as_deref() == Some(target)
     }
 
-    /// The sessions in the caller's view, by id, the caller left out.
+    /// The sessions in the caller's project, by id, the caller left out.
     pub(super) fn project_ids(&self) -> Result<Vec<String>> {
         let host = self.host()?;
         Ok(host
             .listing()
             .into_iter()
             .map(|row| row.id)
-            .filter(|id| *id != self.caller && self.in_view(&host, id))
+            .filter(|id| *id != self.caller && self.in_project(&host, id))
             .collect())
     }
 
@@ -237,14 +261,14 @@ impl HostExecutor {
 
     /// Bind an allowing `agents__decide` call to the leaf action its target holds
     /// (docs/permissions.md). The first hop obeys the same target rules the verb
-    /// enforces when it runs — never self, supervised sessions only, same project.
+    /// enforces when it runs — never self, supervised sessions only.
     /// While the held call is itself an allowing decision, follow its `agent` and `seq`
     /// through the host to the leaf, each hop required to be supervised by the
     /// previous; refuse on a moved gate or a cycle.
     pub(super) fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
         let requested = call.input.get("agent").and_then(Value::as_str);
         let mut expected = Self::seq_of(call)?;
-        // The parent's own call: rule 1, project scope, rule 3.
+        // The parent's own call: rule 1 and rule 3.
         let (mut session, direct_id) = self.resolve_decided(requested, &expected)?;
         let mut chain = vec![direct_id];
         let mut previous = chain[0].clone();
@@ -301,7 +325,7 @@ impl HostExecutor {
                      the held decision, with a message saying why"
                 ));
             }
-            session = self.in_project(&next)?;
+            session = self.hosted(&next)?;
             expected = next_seq;
             previous = next.clone();
             chain.push(next);

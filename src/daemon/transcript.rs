@@ -81,7 +81,8 @@ impl Reading<'_> {
 
 /// A sender or a decider as a plain name for the reader `me` (docs/control-api.md):
 /// `operator` for no source, `operator (web)` for the web client, the id or client
-/// name inside a `session[…]`, `agent[…]` or `mcp[…]` label, `<id> (hand-off)` for a
+/// name inside a `session[…]`, `agent[…]` or `mcp[…]` label (a session's without the
+/// project it may name), `<id> (hand-off)` for a
 /// hand-off brief, `the permission review` for the loop's own (`review[<level>]`), any
 /// other label as written, and `you` where `me` names the label or the name inside it.
 pub(crate) fn sender(source: Option<&str>, me: Option<&str>) -> String {
@@ -101,11 +102,7 @@ pub(crate) fn sender(source: Option<&str>, me: Option<&str>) -> String {
     if let Some(predecessor) = crate::frontend::handoff_predecessor(source) {
         return format!("{} (hand-off)", named(predecessor));
     }
-    let name = ["session[", "agent[", "mcp["]
-        .iter()
-        .find_map(|open| source.strip_prefix(open)?.strip_suffix(']'))
-        .unwrap_or(source);
-    named(name)
+    named(crate::frontend::source_name(source))
 }
 
 /// `ok, 12 lines` — a result's outcome and size: `ok` or `error`, its text in lines,

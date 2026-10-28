@@ -54,25 +54,6 @@ fn a_listing_without_a_cwd_is_kept() {
     assert_eq!(menu.elsewhere, 0);
 }
 
-#[test]
-fn a_path_under_home_is_written_with_a_tilde() {
-    let home = Some(Path::new("/home/someone"));
-    assert_eq!(
-        under_home(Path::new("/home/someone/code/thing"), home),
-        "~/code/thing"
-    );
-    assert_eq!(under_home(Path::new("/home/someone"), home), "~");
-    assert_eq!(under_home(Path::new("/var/tmp"), home), "/var/tmp");
-    assert_eq!(
-        under_home(Path::new("/home/someone-else"), home),
-        "/home/someone-else"
-    );
-    assert_eq!(
-        under_home(Path::new("/home/someone"), None),
-        "/home/someone"
-    );
-}
-
 const NOW: u64 = 1_800_000_000_000;
 const HOUR: u64 = 3_600_000;
 

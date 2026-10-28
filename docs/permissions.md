@@ -483,7 +483,7 @@ a `BoundAction` — the leaf tool, the child's input, its intent, its cwd, and t
 session ids from the directly-targeted child down to the session holding the leaf. A seq
 that is not the target's pending gate is refused before classification with a "gate
 moved" error result, and the target rules the Host executor already enforces (self never,
-supervised sessions only, project reach) apply to the binding, each hop to the previous
+supervised sessions only) apply to the binding, each hop to the previous
 session: a held decision is followed only into a session its holder supervises, or whose
 held call was escalated to its holder (below).
 
@@ -1034,9 +1034,10 @@ without eliminating:
     resumes pushes from the session's next moment, and a gate held at that point is pushed
     then ([web-push.md](web-push.md)).
 
-  The setting is refused when the new supervisor is not hosted, sits in another project (its
-  in-session tools could not reach the session to answer it), or would make the chain cycle — the
-  pointer chain is walked at set time and the refusal names the cycle (`c → a → b → c`). Chains
+  The setting is refused when the new supervisor is not hosted or would make the chain cycle — the
+  pointer chain is walked at set time and the refusal names the cycle (`c → a → b → c`). A
+  supervisor in another project is accepted: it reaches the session by its id
+  ([tools.md](tools.md)). Chains
   therefore terminate at the operator, since each session's own position is asked in turn. Every
   surface today is an operator surface: there is no in-session verb for setting it, so a
   supervising session cannot yet hand a session on, and a session cannot set its own. Each change

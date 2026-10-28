@@ -112,20 +112,20 @@ impl Tool<Control> for Message {
                         return Err(anyhow!(answers::empty_from_a_peer(&id)));
                     }
                     // A note from a session that does not drive the target, under the
-                    // caller's id (docs/inbox.md).
-                    target.notify(state.caller().to_string(), text, None);
+                    // caller's id, and its project when that is another (docs/inbox.md).
+                    target.notify(state.note_source_for(&target), text, None);
                     return Ok(answers::left_in_inbox(&id));
                 }
                 if blank && self.reply_to.is_none() {
                     return match target.request_continue(crate::log::ContinueOrigin {
-                        source: Some(crate::frontend::session_source(state.caller())),
+                        source: Some(state.source_for(&target)),
                     }) {
                         Ok(()) => Ok(answers::continuing(&id)),
                         Err(why) => Err(anyhow!("not continued: {}", why.message())),
                     };
                 }
                 let view = target.status_view(&id, &target.status());
-                let source = crate::frontend::session_source(state.caller());
+                let source = state.source_for(&target);
                 let turn =
                     crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
                         .sourced(Some(source.clone()));

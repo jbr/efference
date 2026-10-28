@@ -378,7 +378,7 @@ pub(super) fn parse_session_identity(value: &serde_json::Value) -> Option<Sessio
             .and_then(|t| t.as_str())
             .map(str::to_string),
         model: value.get("model")?.as_str()?.to_string(),
-        cwd: home_relative(value.get("cwd")?.as_str()?),
+        cwd: crate::home::tilde(std::path::Path::new(value.get("cwd")?.as_str()?)),
         roles: value.get("inference").and_then(parse_session_roles),
         successor: value
             .get("successor")
@@ -408,25 +408,6 @@ fn parse_session_roles(value: &serde_json::Value) -> Option<SessionRolesView> {
             qualified(triage)?
         },
     })
-}
-
-/// `/Users/jbr/code/efference` → `~/code/efference`, when `$HOME` is a prefix of a
-/// whole path component. Anything else — no home, a different tree, a partial
-/// component match — is returned verbatim.
-fn home_relative(cwd: &str) -> String {
-    let Some(home) = std::env::home_dir() else {
-        return cwd.to_string();
-    };
-    let home = home.to_string_lossy();
-    let home = home.trim_end_matches('/');
-    if home.is_empty() {
-        return cwd.to_string();
-    }
-    match cwd.strip_prefix(home) {
-        Some("") => "~".to_string(),
-        Some(rest) if rest.starts_with('/') => format!("~{rest}"),
-        _ => cwd.to_string(),
-    }
 }
 
 /// Parse the `usage` topic's object into a [`UsageStats`]. `null` — no requests yet —

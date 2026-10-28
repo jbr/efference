@@ -49,13 +49,13 @@ impl Tool<Control> for Archive {
             Executor::Host(state) => {
                 // Archiving drives the target: a descendant, a supervised session, or
                 // the caller's own predecessor.
-                let (_, id) = state.resolve_driven(Some(&self.agent))?;
+                let (target, id) = state.resolve_driven(Some(&self.agent))?;
                 let host = state.host()?;
                 // Read before the end starts, while the children it cascades to are
                 // still listed.
                 let ended_with = host.ending_with(&id);
                 // Attributed to the calling session, as its messages are (docs/tools.md).
-                let source = crate::frontend::session_source(state.caller());
+                let source = state.source_for(&target);
                 let done = host
                     .end_by(&id, Some(source))
                     .ok_or_else(|| anyhow!("no agent {id:?} to archive"))?;

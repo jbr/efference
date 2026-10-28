@@ -36,7 +36,8 @@ export interface LogEntry {
    * entries the loop originates itself (docs/control-api.md). */
   submission_id?: string;
   /** Who submitted a `User` entry, when not the operator (docs/control-api.md):
-   * `web`, `mcp[<name>]`, `session[<id>]`, or {@link KICKOFF_SOURCE}. */
+   * `web`, `mcp[<name>]`, `session[<id>]` (`session[<id> in <place>]` from another
+   * project), or {@link KICKOFF_SOURCE}. */
   source?: string | null;
   payload: Payload;
 }
@@ -56,13 +57,26 @@ export function handoffPredecessor(
   return match === null ? null : match[1];
 }
 
+/** A `session[…]` source's id, and the project it names when the sending
+ * session worked in another project than the recipient (src/frontend.rs,
+ * `session_source`). An id holds no space, so the first ` in ` ends it. */
+export function sessionSource(
+  source: string,
+): { id: string; place: string | null } | null {
+  const match = /^session\[([^\s\]]+)(?: in (.+))?\]$/.exec(source);
+  return match === null ? null : { id: match[1], place: match[2] ?? null };
+}
+
 /** Who sent a turn, as the transcript names them (src/daemon/transcript.rs,
  * `sender`): `you` for the operator's own clients (no source, or `web`), and
  * otherwise the id or client name inside its `source` label — `parent` for
- * `session[parent]`, `claude-code` for `mcp[claude-code]`. */
+ * `session[parent]` and `session[parent in ~/code/other]`, `claude-code` for
+ * `mcp[claude-code]`. */
 export function senderName(source: string | null | undefined): string {
   if (source === null || source === undefined || source === "web") return "you";
-  const match = /^(?:session|agent|mcp)\[(.+)\]$/.exec(source);
+  const session = sessionSource(source);
+  if (session !== null) return session.id;
+  const match = /^(?:agent|mcp)\[(.+)\]$/.exec(source);
   return match === null ? source : match[1];
 }
 

@@ -169,7 +169,7 @@ impl Tool<Control> for Decide {
                     return Err(moved(&view));
                 };
                 // Decided by the calling session, as its messages are sent (docs/tools.md).
-                let source = crate::frontend::session_source(caller);
+                let source = state.source_for(&target);
                 let Some(approval) = self.approval() else {
                     return escalate(
                         state,

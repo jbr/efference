@@ -211,6 +211,9 @@ test("an interruption renders as the wire's line", () => {
   ).toBe(
     "[interrupted by parent (agent) after 1m 5s: the call finished, and its output was withheld]",
   );
+  expect(renderInterruption({ by: "session[parent in ~/code/other]" })).toBe(
+    "[interrupted by parent (agent in ~/code/other) before its result was read]",
+  );
   expect(renderInterruption({ after_ms: 5_000, killed: true })).toBe(
     "[interrupted by the operator after 5s: the command was killed, and its output was withheld]",
   );

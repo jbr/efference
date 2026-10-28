@@ -8,7 +8,13 @@
 // same order, same strings — so divergence is findable by diffing against
 // render.rs; the tests mirror `src/project/test/triaged.rs` case for case.
 
-import type { Interruption, Keep, RawResult, WireState } from "../api/types.ts";
+import {
+  sessionSource,
+  type Interruption,
+  type Keep,
+  type RawResult,
+  type WireState,
+} from "../api/types.ts";
 
 /** Mirrors `TRIAGE_LINE_CAP` (src/project.rs). */
 export const TRIAGE_LINE_CAP = 2000;
@@ -153,12 +159,12 @@ export interface WireViewText {
  * model read. */
 export function renderInterruption(interruption: Interruption): string {
   const by = interruption.by;
-  const session = by === undefined ? null : /^session\[(.+)\]$/.exec(by);
+  const session = by === undefined ? null : sessionSource(by);
   const who =
     by === undefined || by === "web"
       ? "the operator"
       : session !== null
-        ? `${session[1]} (agent)`
+        ? `${session.id} (agent${session.place === null ? "" : ` in ${session.place}`})`
         : by;
   if (interruption.after_ms === undefined) {
     return `[interrupted by ${who} before its result was read]`;

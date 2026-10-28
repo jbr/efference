@@ -38,10 +38,14 @@ pub fn handoff_predecessor(source: &str) -> Option<&str> {
     source.strip_prefix("handoff[")?.strip_suffix(']')
 }
 
-/// The `source` of a turn or decision another session sends: `session[<id>]`
-/// (docs/control-api.md).
-pub fn session_source(id: &str) -> String {
-    format!("session[{id}]")
+/// The `source` of a turn or decision another session sends: `session[<id>]`, or
+/// `session[<id> in <place>]` when the sender works in another project than the
+/// recipient, `<place>` its project directory (docs/control-api.md).
+pub fn session_source(id: &str, place: Option<&str>) -> String {
+    match place {
+        Some(place) => format!("session[{id} in {place}]"),
+        None => format!("session[{id}]"),
+    }
 }
 
 /// The `source` the loop's own permission review decides under, at the review level in
@@ -59,7 +63,31 @@ pub fn is_review_source(source: &str) -> bool {
 
 /// The session a `session[<id>]` source names, or `None` for any other.
 pub fn source_session(source: &str) -> Option<&str> {
-    source.strip_prefix("session[")?.strip_suffix(']')
+    session_parts(source).map(|(id, _)| id)
+}
+
+/// A `session[…]` source's id, and the project it names when the sender worked in
+/// another project than the recipient ([`session_source`]). An id holds no space, so
+/// the first ` in ` ends it.
+fn session_parts(source: &str) -> Option<(&str, Option<&str>)> {
+    let inner = source.strip_prefix("session[")?.strip_suffix(']')?;
+    Some(match inner.split_once(" in ") {
+        Some((id, place)) => (id, Some(place)),
+        None => (inner, None),
+    })
+}
+
+/// The name inside a `session[…]`, `agent[…]` or `mcp[…]` label — a session's id
+/// without the project it may name, or a client's name — and any other label as
+/// written (docs/control-api.md).
+pub fn source_name(source: &str) -> &str {
+    if let Some(id) = source_session(source) {
+        return id;
+    }
+    ["agent[", "mcp["]
+        .iter()
+        .find_map(|open| source.strip_prefix(open)?.strip_suffix(']'))
+        .unwrap_or(source)
 }
 
 /// Whether a turn's `source` is another agent's — a session's (`session[<id>]`) or an MCP
@@ -70,10 +98,12 @@ pub fn agent_source(source: Option<&str>) -> bool {
 }
 
 /// How a turn's `source` opens it on the wire (docs/log-and-projection.md): a turn
-/// from another session as `<id> (agent)`, any other label as written.
+/// from another session as `<id> (agent)`, or `<id> (agent in <place>)` from another
+/// project; any other label as written.
 pub fn wire_label(source: &str) -> std::borrow::Cow<'_, str> {
-    match source_session(source) {
-        Some(id) => format!("{id} (agent)").into(),
+    match session_parts(source) {
+        Some((id, None)) => format!("{id} (agent)").into(),
+        Some((id, Some(place))) => format!("{id} (agent in {place})").into(),
         None => source.into(),
     }
 }
@@ -248,3 +278,6 @@ pub trait Frontend {
     /// passes this as the bash tool's `abort` future (docs/process-monitor.md).
     fn interrupted(&mut self) -> impl Future<Output = Interrupt> + Send;
 }
+
+#[cfg(test)]
+mod test;

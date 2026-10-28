@@ -322,7 +322,7 @@ impl Form {
         let (effort, effort_source) = self.effective(|e| &e.effort, Clone::clone);
         let (temperature, temperature_source) = self.effective(|e| &e.temperature, u8::to_string);
         (
-            format!("new session in {}", tilde(&self.context.cwd)),
+            format!("new session in {}", crate::home::tilde(&self.context.cwd)),
             vec![
                 Row::plain(match self.creating {
                     true => "creating…",
@@ -361,19 +361,5 @@ impl Form {
             ],
             self.selected,
         )
-    }
-}
-
-/// `~`-shorten a path under the home directory, as the picker's location line
-/// does: the working root is the longest string in the question and the home
-/// prefix carries no information.
-fn tilde(path: &std::path::Path) -> String {
-    let rendered = path.display().to_string();
-    let Some(home) = std::env::var_os("HOME").filter(|home| !home.is_empty()) else {
-        return rendered;
-    };
-    match rendered.strip_prefix(&std::path::Path::new(&home).display().to_string()) {
-        Some(rest) => format!("~{rest}"),
-        None => rendered,
     }
 }

@@ -301,10 +301,10 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
 }
 
 /// A setting that would close the supervisor chain is refused, naming the cycle; so is
-/// a session supervising itself, a supervisor that is not hosted, and one in another
-/// project. A refused setting changes nothing.
+/// a session supervising itself and a supervisor that is not hosted. A refused setting
+/// changes nothing. A supervisor in another project is accepted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_cycle_and_an_unreachable_supervisor_are_refused() {
+async fn a_cycle_and_an_unhosted_supervisor_are_refused() {
     let fixture = Fixture::new().await;
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
     fixture.host.set_supervisor("b", Some("c".into())).unwrap();
@@ -324,19 +324,23 @@ async fn a_cycle_and_an_unreachable_supervisor_are_refused() {
     };
     assert!(reason.contains("c → c"), "{reason}");
 
-    for (supervisor, why) in [("ghost", "no session"), ("stranger", "another project")] {
-        let Err(SupervisorRefused::Refused(reason)) =
-            fixture.host.set_supervisor("c", Some(supervisor.into()))
-        else {
-            panic!("{supervisor} was accepted");
-        };
-        assert!(reason.contains(why), "{reason}");
-    }
+    let Err(SupervisorRefused::Refused(reason)) =
+        fixture.host.set_supervisor("c", Some("ghost".into()))
+    else {
+        panic!("an unhosted supervisor was accepted");
+    };
+    assert!(reason.contains("no session"), "{reason}");
     assert_eq!(
         fixture.host.set_supervisor("ghost", None),
         Err(SupervisorRefused::NotHosted("ghost".into()))
     );
     assert!(supervisor_records(&fixture.session("c")).is_empty());
+
+    // A supervisor in another project reaches `c` by its id (docs/tools.md).
+    assert_eq!(
+        fixture.host.set_supervisor("c", Some("stranger".into())),
+        Ok(Some("stranger".into()))
+    );
 
     fixture.host.swansong().shut_down().await;
 }

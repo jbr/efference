@@ -181,11 +181,14 @@ Two rules are enforced by the mount, not by config. A session is never its own t
 call naming the caller, or naming no `agent`, is an error. And a session *drives* only
 the sessions it created, those it supervises ([permissions.md](permissions.md)), and its
 own predecessor: `decide`, `interrupt` and `archive` reach those alone, and `message` to
-one is its next user message, while `message` to any other session in the project is a
-note in its inbox, which it may set aside. The answer says which. Reach is the project:
-`agents__status` lists, and every `agents__*` target resolves, only among sessions
-sharing the caller's `.efference/` base, so an id from another project reads as not
-found.
+one is its next user message, while `message` to any other session is a
+note in its inbox, which it may set aside. The answer says which. An `agents__*` target
+resolves by its id in any project on the host, while `agents__status` with no agent lists
+only the sessions sharing the caller's `.efference/` base: a session in another project
+is reached by an id the operator gives, and what it receives names the sender's project
+— `<caller id> (agent in ~/code/other):` for a turn, `⟢ <caller id> (agent in
+~/code/other):` for a note. `create` stays inside the caller's project, since a child
+runs under its own project's `efference.toml`.
 
 `create` from a session runs in the caller's cwd with the caller's child environment as
 the new session's base, and records the caller as the child's creator — the field
@@ -753,7 +756,7 @@ its own.
   clear it) — hand a session to another: `<id>` answers its gates, drives it (`message`,
   `decide`, `interrupt`, `archive`), and is woken by its status, and you
   are out of its gate path. A session at `spotter_human` moves to `supervisor`. Refused for a
-  supervisor in another project or one that would cycle the chain
+  supervisor that would cycle the chain; one in another project is accepted
   ([permissions.md](permissions.md)). `autonomous`
   removes the synchronous human: the spotter still runs and can clear, and what it will not
   clear is handed back to the model with the reason and a pointer at its own config file —
