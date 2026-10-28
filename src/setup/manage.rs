@@ -18,6 +18,7 @@ use credential::edit_connection;
 pub(super) struct Working {
     pub(super) connections: BTreeMap<String, ExistingConnection>,
     pub(super) default_spotter: Option<String>,
+    pub(super) update_check: Option<bool>,
 }
 
 impl Working {
@@ -25,6 +26,7 @@ impl Working {
         Self {
             connections: existing.connections.clone(),
             default_spotter: existing.default_spotter.clone(),
+            update_check: existing.update_check,
         }
     }
 
@@ -34,6 +36,7 @@ impl Working {
         Existing {
             connections: self.connections.clone(),
             default_spotter: self.default_spotter.clone(),
+            update_check: self.update_check,
         }
     }
 
@@ -59,6 +62,7 @@ pub async fn run<P: Prompter, Q: Probe>(
         let choices = vec![
             Choice::new("Connections").detail(summarize_connections(&working)),
             Choice::new("Default spotter").detail(summarize_defaults(&working)),
+            Choice::new("Update check").detail(super::updates::summary(working.update_check)),
             Choice::new("Done"),
         ];
         match prompter.select("Setup", &choices)? {
@@ -76,7 +80,17 @@ pub async fn run<P: Prompter, Q: Probe>(
                     }
                 }
             }
-            _ => return Ok(draft),
+            2 => {
+                let check = super::updates::ask(prompter, working.update_check)?;
+                draft.update_check = Some(check);
+                working.update_check = Some(check);
+            }
+            // A file without an answer is asked on the way out, once whatever the
+            // person came to change is done.
+            _ => {
+                super::updates::ask_unless_answered(prompter, existing, &mut draft)?;
+                return Ok(draft);
+            }
         }
     }
 }

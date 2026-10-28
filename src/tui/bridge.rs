@@ -169,6 +169,10 @@ fn decode_frame(
             "stall" => Some(send(TuiEvent::Stall(parse::parse_stall(data)))),
             // Level-triggered: `null` clears the header's expired-cache segment.
             "cold" => Some(send(TuiEvent::CacheExpired(parse::parse_cold(data)))),
+            // Level-triggered: `null` while no newer release is known.
+            "newer_version" => Some(send(TuiEvent::NewerVersion(
+                data["version"].as_str().map(str::to_string),
+            ))),
             // Static per session today, so this arrives once on the connect
             // snapshot; forwarded through the same path as anything else that
             // could move (docs/control-api.md).

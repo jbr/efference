@@ -438,6 +438,7 @@ export function SessionView() {
             triage={session.streaming.triage}
             operations={session.topics.current_operations ?? null}
             model={session.topics.session_identity?.model ?? "the model"}
+            newerVersion={session.topics.newer_version ?? null}
           />
         </div>
         <LightboxHost />

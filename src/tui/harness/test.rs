@@ -65,6 +65,7 @@ mod cold_line;
 mod hover;
 mod lifecycle;
 mod navigation;
+mod newer_version;
 mod pace;
 mod render_cost;
 mod replay;

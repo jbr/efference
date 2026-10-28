@@ -31,6 +31,7 @@ import type {
   CompactionFailure,
   CurrentOperations,
   LoopPhase,
+  NewerVersion,
   Pace,
   Stall,
   Verbs,
@@ -39,6 +40,7 @@ import {
   ComposerToolbar,
   HoldButton,
   ComposerActionIcon,
+  NewerVersionLine,
 } from "./ComposerToolbar.tsx";
 import { CompactNotice } from "./CompactNotice.tsx";
 import { compactOffer } from "./compact.ts";
@@ -85,6 +87,7 @@ export function Composer({
   model,
   status = null,
   triage = [],
+  newerVersion = null,
 }: {
   submit: (text: string, attachments: Attachment[]) => Promise<void>;
   /** A turn a recall pulled back out of the daemon's queue, to prepend to the
@@ -120,6 +123,9 @@ export function Composer({
   /** Session startup, connection, or inspection condition occupying the readout. */
   status?: ComposerStatusMessage | null;
   triage?: Streaming["triage"];
+  /** The `newer_version` topic (docs/update-check.md): a release newer than the
+   * host, stated beside the turn readout. */
+  newerVersion?: NewerVersion | null;
 }) {
   const store = useMemo(() => acquireDraft(apiBase()), []);
   const snapshot = useSyncExternalStore(store.subscribe, store.snapshot);
@@ -408,6 +414,7 @@ export function Composer({
               onInterrupt={() => act(interruptLoop("stop-button"))}
               holdPending={holdPending}
               onHoldChange={(held) => void changeHold(held)}
+              newerVersion={newerVersion}
             />
           </div>
         </div>
@@ -415,6 +422,7 @@ export function Composer({
       {collapsed && (
         <div className="status-bar">
           <ComposerStatus turn={turn} message={statusMessage} />
+          <NewerVersionLine newer={newerVersion} />
           <span className="spacer" />
           {running && (
             <button

@@ -27,6 +27,7 @@ async fn a_described_endpoint_is_named_after_its_host() {
             Answer::No,
             // A first run ends with no default model: the new-session form
             // names the current one.
+            Answer::Yes,
         ],
         &probe,
         "",
@@ -100,6 +101,7 @@ async fn a_base_url_that_is_not_a_url_is_refused_at_the_prompt() {
             Answer::Pick("An environment variable"),
             Answer::Type(""),
             Answer::No,
+            Answer::Yes,
         ],
         &probe,
         "",

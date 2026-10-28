@@ -153,6 +153,7 @@ impl<'a> InteractiveState<'a> {
             operation_text: None,
             stall: None,
             cold: None,
+            newer_version: None,
             session_identity: None,
             policy: None,
 

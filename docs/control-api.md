@@ -1193,6 +1193,13 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "background": [ { "id": 1, "command": "cargo watch -x test", "since": 1754300000000 } ],
       "queued": [ "session[calm-finch]", null ]  // each queued turn's source; null: the operator
     }
+  },
+  "newer_version": {               // null unless the host's update check found a release newer
+                                   //   than the host (update-check.md); the same on every session
+    "version": "0.2.0",            // from the signed latest.json
+    "tag": "v0.2.0",
+    "url": "https://efference.net/releases/v0.2.0",
+    "update_command": "curl -fsSL https://efference.net/install.sh | sh"  // what installs it
   }
 }
 ```
@@ -1331,6 +1338,17 @@ provider kind, and native model behind each role, and whether triage rides the
 main client (`shared`, in which case the selection repeats main's, so two accounts
 on one model stay distinguishable); a standalone session omits the field. The TUI
 session drawer and the web top bar print the roles from it.
+
+**`newer_version` is host state, carried on every session.** The host's update check
+([update-check.md](update-check.md)) holds one answer for the whole host, and each hosted
+session publishes it as this topic; when it moves, the host wakes every session's topic
+watcher, so each stream delivers the change. It is a session topic rather than a host
+route because a session's `/events` stream is the one thing both clients follow: the TUI
+follows nothing host-wide, and the web client's one host-wide subscription, the session
+listing, is a stream of session rows. It is `null` while no newer release is known, on a
+host whose user configuration does not turn the check on, and on a session outside a
+host; a starting session does not publish it. A client states it as `efference <version>
+is available`; `update_command` is the command that installs it.
 
 #### `GET /log`
 JSON array of `LogEntry`. The catch-up read. Unbounded by default — the whole

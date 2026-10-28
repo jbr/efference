@@ -626,6 +626,9 @@ pub(super) struct InteractiveState<'a> {
     /// The `cold` topic as the header shows it (backlog: cold-session.md): whether
     /// the cache is believed expired.
     pub cold: Option<ColdView>,
+    /// The version of a release newer than the host, from the `newer_version` topic
+    /// (docs/update-check.md). The status bar states it at its right edge.
+    pub newer_version: Option<String>,
     /// What this session is — the model and the working directory, from the
     /// `session_identity` topic (docs/control-api.md). `None` until the connect
     /// snapshot lands, and in views that never connect. Sidebar chrome.

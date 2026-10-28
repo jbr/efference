@@ -126,3 +126,40 @@ test("hold requests pause after the step and pending changes cannot be repeated"
     act(() => root.unmount());
   }
 });
+
+test("a newer release follows the readout, titled with its install command", () => {
+  const host = document.createElement("form");
+  const root = createRoot(host);
+  const render = (newer: boolean) =>
+    act(() =>
+      root.render(
+        <ComposerToolbar
+          turn={turnState({ phase: "idle" })}
+          narrow={false}
+          running={false}
+          newerVersion={
+            newer
+              ? {
+                  version: "0.2.0",
+                  tag: "v0.2.0",
+                  url: "https://efference.net/releases/v0.2.0",
+                  update_command:
+                    "curl -fsSL https://efference.net/install.sh | sh",
+                }
+              : null
+          }
+          onAttach={vi.fn()}
+          onInterrupt={vi.fn()}
+          onHoldChange={vi.fn()}
+        />,
+      ),
+    );
+  render(true);
+  const line = host.querySelector<HTMLElement>(".newer-version");
+  expect(line?.textContent).toBe("efference 0.2.0 is available");
+  expect(line?.title).toBe("curl -fsSL https://efference.net/install.sh | sh");
+  expect(line?.previousElementSibling?.className).toContain("turn-state");
+  render(false);
+  expect(host.querySelector(".newer-version")).toBeNull();
+  act(() => root.unmount());
+});

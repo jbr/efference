@@ -66,13 +66,14 @@ const BUILTIN_CONNECTION_NAMES: [&str; 5] =
     ["anthropic", "openrouter", "openai", "openai-codex", "codex"];
 
 /// Settings for every session on this machine: connections to model providers, role
-/// defaults, the web interface, how the terminal UI draws, and where efference keeps the
-/// secrets it writes. It names where each credential comes from, never the credential
-/// itself. `efference setup` writes it, and a host reads it when it starts.
+/// defaults, the web interface, how the terminal UI draws, where efference keeps the
+/// secrets it writes, and whether it checks for newer versions. It names where each
+/// credential comes from, never the credential itself. `efference setup` writes it, and
+/// a host reads it when it starts.
 // Secret-free user configuration at `~/.efference/config.toml`. The `///` docs on it and the
 // types below are the published user schema's hover text (docs/config-schemas.md). `[defaults]`,
-// `[host]`, `[tui]`, and `[secrets]` carry none on their fields: Taplo shows a `$ref` target's
-// description and ignores one beside it.
+// `[host]`, `[tui]`, `[updates]`, and `[secrets]` carry none on their fields: Taplo shows a
+// `$ref` target's description and ignores one beside it.
 #[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "User")]
@@ -91,6 +92,10 @@ pub struct InferenceConfig {
     // draws a TUI, not by the host.
     #[serde(default)]
     tui: TuiConfig,
+    // `[updates]`: whether a host checks for a newer efference (`inference/updates.rs`),
+    // read by `efference --host`. Its hover text is `UpdatesConfig`'s.
+    #[serde(default)]
+    updates: UpdatesConfig,
     /// A program and its arguments whose output is a session's starting environment, as
     /// in `["/bin/zsh", "-l", "-c", "env -0"]`. It runs directly, without a shell, in the
     /// session's project directory, and must print NUL-separated `KEY=value` records
@@ -584,6 +589,8 @@ mod host;
 pub use host::HostConfig;
 mod tui;
 pub use tui::TuiConfig;
+mod updates;
+pub use updates::UpdatesConfig;
 pub mod options;
 pub use options::{
     Effective, EffectiveOptions, EffectiveTriage, Issue, IssueCode, ResolvedOptions,

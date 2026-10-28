@@ -1667,6 +1667,14 @@ slot without a request; a `409 not_continuable` from a route that moved on since
 the same normal answer, so the daemon's `message` renders there on its own rather
 than as a thrown-error string.
 
+**A newer release follows the turn readout** (`ui/newerVersion.ts`, `NewerVersionLine` in
+`ui/ComposerToolbar.tsx`). While the `newer_version` topic names a release
+([update-check.md](update-check.md)), the readout row — the toolbar under the input, and the
+status bar of a collapsed phone composer — says `efference 0.2.0 is available` in faint UI
+type after the turn state, with the topic's `update_command` (the install command) as its
+hover title. In a phone's expanded composer the line takes a row of its own under the
+controls. The placement is a first one.
+
 **A cold session says what the next action reads** (`ui/coldLine.ts`). While the
 `cold` topic is set, a notice above the composer says `cache expired — a send
 reads ~120k tokens uncached` (the topic's `context_tokens`) and offers the

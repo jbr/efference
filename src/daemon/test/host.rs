@@ -22,6 +22,7 @@ mod shell;
 mod starting;
 mod supervise;
 mod terminal_title;
+mod update_check;
 mod worktree;
 
 struct Roots(PathBuf);

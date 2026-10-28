@@ -65,6 +65,15 @@ pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
         }
         connections.insert(name, Item::Table(table));
     }
+    if let Some(check) = draft.update_check {
+        if doc.get("updates").is_none() {
+            doc.insert("updates", Item::Table(Table::new()));
+        }
+        doc["updates"]
+            .as_table_like_mut()
+            .ok_or("[updates] is not a table")?
+            .insert("check", value(check));
+    }
     let body = crate::config_schemas::keep_directives_first(existing_text, doc.to_string());
     Ok(if fresh {
         let directive = crate::config_schemas::directive(crate::config_schemas::USER);

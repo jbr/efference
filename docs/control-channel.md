@@ -175,8 +175,9 @@ not held across preparation. An MCP authorization opens a browser on the host's
 machine.
 
 The host's output is logging, not a transcript. With `RUST_LOG` unset it
-announces session lifecycle — created, resumed, archived, ended (`info`) — and
-transport and operational failures (`warn`, `error`), and prints nothing else.
+announces session lifecycle — created, resumed, archived, ended (`info`) — a newer
+release when its update check finds one (`info`, [update-check.md](update-check.md)),
+and transport and operational failures (`warn`, `error`), and prints nothing else.
 Session-scoped lines carry the session's id as their prefix (`session <id>: …`),
 the shape the lifecycle announcements set; a session without an id — tests,
 offline — prints unattributed.

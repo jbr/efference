@@ -76,6 +76,7 @@ async fn run() -> CliResult {
         #[cfg(feature = "dev")]
         Command::Dev(command) => dev::run(command).await,
         Command::Check { path } => check(path).await,
+        Command::Update { check } => update::run(check).await,
         Command::Devices { command } => devices::run(command).await,
         Command::Auth {
             command: AuthCommand::Rotate,
@@ -184,6 +185,7 @@ mod spotter_eval;
 mod stop_report;
 #[cfg(feature = "dev")]
 mod triage_replay;
+mod update;
 mod verbs;
 
 #[cfg(test)]

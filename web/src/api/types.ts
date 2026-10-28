@@ -948,6 +948,18 @@ export interface StateTopics {
   // The session's preparation while it is starting; null once it has started
   // (docs/control-api.md).
   starting?: Starting | null;
+  // A release newer than the host, while the host's update check knows one
+  // (docs/update-check.md); the same on every session of a host.
+  newer_version?: NewerVersion | null;
+}
+
+/** The `newer_version` topic (docs/update-check.md): the newest release, from a
+ * signed `latest.json`, and the command that installs it. */
+export interface NewerVersion {
+  version: string;
+  tag: string;
+  url: string;
+  update_command: string;
 }
 
 /** The `starting` topic (docs/control-api.md): a session reserved on the host

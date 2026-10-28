@@ -5,7 +5,8 @@ use super::*;
 
 /// Adding to an existing file: the name collision is refused, the standing
 /// default is kept, comments and the `[host]` table survive, and the new table is
-/// appended.
+/// appended. The file had no update answer, so leaving asks for one, and it is
+/// appended too.
 #[tokio::test]
 async fn adding_to_an_existing_file_keeps_it_intact() {
     let existing = r#"# my notes
@@ -34,6 +35,7 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
             Answer::No,
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,
@@ -60,6 +62,9 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
 [connections.codex]
 provider = "openai-codex"
 auth = { kind = "codex-cache" }
+
+[updates]
+check = true
 "#
     );
 }
@@ -85,6 +90,7 @@ async fn two_connections_record_no_default() {
             Answer::Type(""),
             Answer::Pick("Piggyback on Codex's login"),
             Answer::No,
+            Answer::Yes,
         ],
         &probe,
         "",
@@ -121,6 +127,7 @@ auth = { kind = "env", key = "A" }
             Answer::No,
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,

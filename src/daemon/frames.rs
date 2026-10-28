@@ -169,6 +169,10 @@ pub(crate) enum Topic {
     /// footer of model, context, cost, background processes, and queued turns. What
     /// subscription notifications render (docs/tools.md).
     Status,
+    /// The newest release the host's update check found, while it is newer than the
+    /// host (`newer_version.rs`, docs/update-check.md): `{version, tag, url,
+    /// update_command}`, or `null`. Host state, the same for every session on the host.
+    NewerVersion,
 }
 
 impl Topic {
@@ -177,7 +181,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 25] = [
+    pub(crate) const ALL: [Topic; 26] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -203,6 +207,7 @@ impl Topic {
         Self::CurrentOperations,
         Self::Starting,
         Self::Status,
+        Self::NewerVersion,
     ];
 
     /// The topic named by a `?include=state:<topic>` token, or `None` if there is no such
@@ -240,6 +245,7 @@ impl Topic {
             Self::CurrentOperations => "current_operations",
             Self::Starting => "starting",
             Self::Status => "status",
+            Self::NewerVersion => "newer_version",
         }
     }
 }

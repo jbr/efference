@@ -155,7 +155,7 @@
                 "Every document, each listed as a one-line stub.",
                 "Setting up a project: where the config lives, what belongs in it, and the difference between the project template and a session's own copy.",
                 "What a setup can offer when the project calls for it: mounting efference in another agent harness, secrets through [env], denying secret-bearing files, Claude Code memories, watch-for.",
-                "Every key in the user-wide ~/.efference/config.toml: connections and their credentials, the three roles, env_hook (the environment sessions start with), [secrets], [host], [tui].",
+                "Every key in the user-wide ~/.efference/config.toml: connections and their credentials, the three roles, env_hook (the environment sessions start with), [secrets], [host], [updates], [tui].",
                 "The host that holds sessions, the web interface, reaching it over Tailscale, signing browsers in, and keeping the host running as a service.",
                 "Reference for every `efference.toml` key: scope, tools, [commands], [paths], [context], [env], [bash], [transport], [mcp.servers].",
                 "Working with files: batched reads, the no-clobber write, and the anchor-based edit pipeline (edit / find_anchor / retarget_edit / undo_edit).",

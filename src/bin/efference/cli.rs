@@ -10,7 +10,11 @@ pub(crate) const BASE_DIR: &str = efference::daemon::SESSION_BASE;
 pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
 
 #[derive(Parser)]
-#[command(name = "efference", about = "An API-backed agentic coding harness.")]
+#[command(
+    name = "efference",
+    version,
+    about = "An API-backed agentic coding harness."
+)]
 pub(crate) struct Cli {
     /// Listen on a TCP address as well: the web client's front door. A port
     /// (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or
@@ -426,6 +430,19 @@ pub(crate) enum Command {
     Devices {
         #[command(subcommand)]
         command: Option<devices::DevicesCommand>,
+    },
+    /// Check whether a newer version of efference is out.
+    ///
+    /// `--check` asks efference.net once and prints the installed and newest
+    /// versions, and, when the newest is newer, the command that installs it. The
+    /// answer is believed only when its signature checks against the release key
+    /// built into this binary. It asks whether or not `[updates]` turns on the
+    /// automatic check.
+    // docs/update-check.md
+    Update {
+        /// Ask efference.net once and print the answer.
+        #[arg(long)]
+        check: bool,
     },
     /// Validate an efference.toml without starting a session.
     ///

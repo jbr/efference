@@ -2,7 +2,7 @@
   "$id": "https://efference.net/schemas/user.v1.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "efference user configuration",
-  "description": "Settings for every session on this machine: connections to model providers, role\ndefaults, the web interface, how the terminal UI draws, and where efference keeps the\nsecrets it writes. It names where each credential comes from, never the credential\nitself. `efference setup` writes it, and a host reads it when it starts.",
+  "description": "Settings for every session on this machine: connections to model providers, role\ndefaults, the web interface, how the terminal UI draws, where efference keeps the\nsecrets it writes, and whether it checks for newer versions. It names where each\ncredential comes from, never the credential itself. `efference setup` writes it, and\na host reads it when it starts.",
   "type": "object",
   "properties": {
     "connections": {
@@ -30,6 +30,9 @@
     },
     "tui": {
       "$ref": "#/$defs/Tui"
+    },
+    "updates": {
+      "$ref": "#/$defs/Updates"
     }
   },
   "additionalProperties": false,
@@ -303,6 +306,18 @@
         "theme": {
           "description": "The color theme: a built-in name such as `\"Catppuccin Frappe\"`, `\"Nord\"`, or\n`\"gruvbox-dark\"`, or the path to a `.tmTheme` file. An unknown name lists the\nbuilt-in ones at launch, and a leading `~/` in a path is your home directory.\nDefault `\"Catppuccin Frappe\"`.",
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Updates": {
+      "description": "`[updates]`: whether efference checks for newer versions of itself.",
+      "type": "object",
+      "properties": {
+        "check": {
+          "description": "Ask efference.net when a host starts, and about once a day after, whether a\nnewer version of efference is out, and say so in the terminal UI and web\nclient. Nothing is installed. `efference setup` asks and writes the answer;\nwith no answer, nothing is asked. `efference update --check` asks once either\nway.",
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false

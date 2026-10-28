@@ -48,11 +48,12 @@ The efference process itself connects only to:
   (an OpenAI platform connection also reads model details from the ChatGPT backend);
 - the MCP servers your projects configure — tools the agent can call — and the sign-in
   servers they name;
-- the push service of each browser that turned on notifications in the web client.
+- the push service of each browser that turned on notifications in the web client;
+- efference.net, to check for a newer version of efference, only if you said yes when
+  `efference setup` asked, or when you run `efference update --check`.
 
-It makes no update checks, sends no telemetry, analytics, or crash reports, and does not
-contact efference.net, which is a static website. Every connection is listed below.
-<!-- src: src/http.rs::client (the one outbound client; callers src/api/, src/mcp/http.rs, src/oauth.rs, src/push.rs); absence: no update, telemetry, or crash-reporting code in src/ or crates in Cargo.lock -->
+It sends no telemetry, analytics, or crash reports. Every connection is listed below.
+<!-- src: src/http.rs::client (the one outbound client; callers src/api/, src/mcp/http.rs, src/oauth.rs, src/push.rs, src/update_check.rs); src/bin/efference/serve.rs::host (UpdatesConfig::load gates check_for_updates); absence: no telemetry or crash-reporting code in src/ or crates in Cargo.lock -->
 
 The programs efference starts are a different matter: the agent's commands, and the
 commands your configuration names (local MCP servers, an environment hook, secret
@@ -133,6 +134,8 @@ through a proxy blocks it.
 | Each MCP server a session's configuration names with a URL | Session start and resume, and each call to one of its tools | Carries tool arguments and results |
 | The authorization servers an MCP server names | When that server asks you to sign in, and when the sign-in is renewed | The server's own metadata names them |
 | The push address each notifying browser registered | When a session needs a decision from you, or finishes a turn | The message is encrypted to that browser; the push service sees where and when it is sent |
+| `efference.net/releases/latest.json` and `latest.json.minisig` | When a host starts and about once a day after, if `[updates] check = true`; and each time you run `efference update --check` | Sends nothing beyond the request itself. The answer is believed only when it is signed with efference's release key. To turn the daily check off, set `check = false` under `[updates]` in `~/.efference/config.toml`, or answer no in `efference setup`'s "Update check" entry |
+<!-- src: src/update_check.rs::LATEST_URL, UpdateCheck::newest, verify; src/daemon/host/update_check.rs::INTERVAL, RETRY; src/inference/updates.rs::UpdatesConfig; src/setup/updates.rs; src/bin/efference/update.rs -->
 <!-- src: src/api/provider/http.rs::messages_url, models_url, capabilities_url; src/api/provider/fetch.rs::fetch_capabilities, fetch_generation_cost; src/catalog.rs::CATALOG_TTL; src/daemon/host/catalog.rs::entry; src/api/provider/codex.rs::catalog, capabilities; src/daemon/runtime.rs (cost tracking for an OpenRouter main client); src/daemon/metrics.rs::price_request; src/inference/chatgpt.rs::ISSUER, refresh; src/mcp/http.rs; src/mcp/auth.rs::authorize; src/mcp/auth/credentials.rs::Credentials::renew; src/oauth/; src/push.rs::send_one; src/daemon/push.rs -->
 
 Requests on an OpenRouter connection carry attribution headers naming efference,

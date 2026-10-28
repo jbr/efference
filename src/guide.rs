@@ -106,7 +106,7 @@ pub const DOCUMENTS: &[Document] = &[
         slug: "user-config",
         description: "Every key in the user-wide ~/.efference/config.toml: connections and \
                       their credentials, the three roles, env_hook (the environment sessions \
-                      start with), [secrets], [host], [tui].",
+                      start with), [secrets], [host], [updates], [tui].",
         body: include_str!("../assets/guide/user-config.md"),
         tools: &["read"],
     },

@@ -12,14 +12,15 @@ efference reads two configuration files:
 <!-- src: src/inference.rs::CONFIG_RELATIVE_PATH, InferenceConfig; src/config/raw.rs::RawConfig -->
 
 `efference setup` writes `~/.efference/config.toml` the first time you run `efference`.
-Running it again adds, changes, renames, turns off, and removes connections, and sets the
-default spotter model. It leaves the rest of the file as you wrote it, comments included.
+Running it again adds, changes, renames, turns off, and removes connections, sets the
+default spotter model, and changes whether efference checks for new versions. It leaves the
+rest of the file as you wrote it, comments included.
 Everything else in the file is edited by hand; most people need none of it, and the
 sections below say when you do. Once a session is running, you can ask it to help: it can
 read efference's own description of every key, at `efference://guide/user-config`. The file
 is outside every project, so no project's settings let a session edit it without review: the
 spotter judges each edit ([Permissions](permissions.md)).
-<!-- src: src/bin/efference/setup.rs::default_verb; src/setup/render.rs::render, apply_change; src/setup/manage.rs::run; src/guide.rs::DOCUMENTS (user-config); src/policy/paths.rs::context_granted (the guide prefix is read-granted); absence of a ~/.efference grant in src/policy/ -->
+<!-- src: src/bin/efference/setup.rs::default_verb; src/setup/render.rs::render, apply_change; src/setup/manage.rs::run; src/setup/updates.rs; src/guide.rs::DOCUMENTS (user-config); src/policy/paths.rs::context_granted (the guide prefix is read-granted); absence of a ~/.efference grant in src/policy/ -->
 
 A host reads the file when it starts. A change takes effect the next time you run
 `efference` in standalone mode, or, with `efference --host`, once you stop the host and
@@ -190,6 +191,23 @@ connection's own `spotter-model` key names one for sessions whose main model is 
 connection. [Permissions](permissions.md) has the full order.
 <!-- src: src/inference.rs::Defaults, ConnectionConfig (spotter_model); src/setup/defaults.rs; src/inference/options.rs::resolve_spotter -->
 
+### Checking for new versions: `[updates]`
+
+```toml
+[updates]
+check = true
+```
+<!-- src: src/inference/updates.rs::UpdatesConfig -->
+
+With `check = true`, a host asks efference.net when it starts, and about once a day after,
+whether a newer version of efference is out, and the terminal interface and the web client
+say so in their status line. Nothing is installed: to update, run the install command again.
+`efference setup` asks the question, with yes preselected, and writes your answer; its
+"Update check" entry changes it later, and so does editing the key. A file with no answer
+never checks. `efference update --check` asks once whenever you run it, whatever the key
+says. [How efference runs](how-it-runs.md) lists what the check sends.
+<!-- src: src/bin/efference/serve.rs::host (UpdatesConfig::load gates check_for_updates); src/daemon/host/update_check.rs::check_for_updates; src/setup/updates.rs::ask, ask_unless_answered; src/setup/manage.rs::run (Update check entry); src/bin/efference/update.rs; src/tui/render_status_bar.rs; web/src/ui/ComposerToolbar.tsx::NewerVersionLine -->
+
 ### The terminal interface: `[tui]`
 
 ```toml
@@ -235,9 +253,10 @@ deleting the line stops that, and efference itself does not read it.
 | `env_hook` | The command whose output is a session's starting environment | by hand |
 | `[secrets]` `get`, `set`, `delete`, `absent_status` | Commands that keep efference's secrets instead of the OS keychain | by hand |
 | `[host]` `bind`, `public-url`, `tls-cert`, `tls-key` | The web client's address and certificate | by hand |
+| `[updates]` `check` | Whether a host checks efference.net for a newer version once a day | setup |
 | `[tui]` `theme`, `images` | How the terminal interface draws | by hand |
 | `[tui]` `frame-cost` | Time each frame and print a summary on exit, for developing efference | by hand |
-<!-- src: src/inference.rs::InferenceConfig, ConnectionConfig, AuthConfig, Defaults; src/api/provider.rs::Provider::NAMED; src/api/provider/dialect.rs::WireDialect::NAMED; src/inference.rs (body and output-cap-field refused off completions); src/api/request_options.rs::RequestOptions::new; src/secrets/commands.rs::SecretCommands; src/inference/host.rs::HostConfig; src/inference/tui.rs::TuiConfig; src/setup/render.rs::render, apply_change -->
+<!-- src: src/inference.rs::InferenceConfig, ConnectionConfig, AuthConfig, Defaults; src/api/provider.rs::Provider::NAMED; src/api/provider/dialect.rs::WireDialect::NAMED; src/inference.rs (body and output-cap-field refused off completions); src/api/request_options.rs::RequestOptions::new; src/secrets/commands.rs::SecretCommands; src/inference/host.rs::HostConfig; src/inference/updates.rs::UpdatesConfig; src/inference/tui.rs::TuiConfig; src/setup/render.rs::render, apply_change -->
 
 `efference setup` creates the file readable only by you, and it holds no keys
 ([Credentials](credentials.md)). `efference setup --config <path>` writes another file.

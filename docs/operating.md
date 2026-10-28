@@ -21,10 +21,14 @@ host takes beside it: `--socket` (the bind path), `--public-url`, `--tls-cert`,
 or the island alike. Neither `--host` nor `--name` is accepted beside a subcommand. How the
 TUI draws is not a flag: `theme`, `images` and `frame-cost` under `[tui]` in
 `~/.efference/config.toml`, read by whichever surface draws it ([tui.md](tui.md)).
-`efference --help` lists the subcommands a person types, `setup`, `auth`, `devices` (the
-browsers and scripts enrolled at the web bind: list them and the browsers waiting to sign
-in, `approve` a waiting browser's code, `add`, `revoke`; [web-bind.md](web-bind.md)) and
-`check`, beside the groups below.
+Whether a host checks for a newer efference is `[updates] check` in the same file, which
+`efference setup` asks about ([update-check.md](update-check.md)). `efference --version`
+prints the version. `efference --help` lists the subcommands a person types, `setup`,
+`auth`, `devices` (the browsers and scripts enrolled at the web bind: list them and the
+browsers waiting to sign in, `approve` a waiting browser's code, `add`, `revoke`;
+[web-bind.md](web-bind.md)), `check`, and `update` (`update --check` asks efference.net once
+whether a newer version is out and prints the install command when one is;
+[update-check.md](update-check.md)), beside the groups below.
 
 - **`efference control <verb>`** — the calls that drive a *running* session. The agent
   verbs: `create` (a session in a working directory, this process's environment as its
@@ -395,7 +399,9 @@ apply. The spotter and triage roles are not asked: each has a default that runs,
 new user cannot yet know what either is. The defaults editor on the management list
 sets `[defaults].spotter`. `TypeSafe` is on the provider menu as a decision-model
 provider backing the spotter; since it takes no turns, a first run that adds only it is
-asked for another provider.
+asked for another provider. A first run ends by asking whether to check for a newer
+efference, yes preselected, and writes `[updates] check` either way
+([update-check.md](update-check.md)).
 The credential source is an environment variable (prefilled with the provider's
 conventional name), a key pasted now and kept in the OS credential store as
 `inference:<name>` ([secrets.md](secrets.md); the file then records only
@@ -479,10 +485,12 @@ Declining the whole visit is a complete answer and writes no `[defaults]` at
 all: `src/inference.rs` treats the table as optional, and an omitted model
 with no past pick is a refusal naming the choice.
 
-**Managing what is already there** opens on a top level of two entries —
-Connections and Default spotter — each summarizing itself, because they are two
-concerns and a list that mixed them is what made the model questions land on every
-connection. Picking Connections gives the row list below.
+**Managing what is already there** opens on a top level of three entries —
+Connections, Default spotter, and Update check — each summarizing itself, because they
+are separate concerns and a list that mixed them is what made the model questions land
+on every connection. Picking Connections gives the row list below. Update check asks the
+update question again, preselecting the file's answer; a file with no answer is asked it
+on Done, once whatever the visit was for is finished.
 
 The subscription's two ways are asked as one question, since both spend the same
 Plus or Pro plan: piggyback on Codex's cached login (`kind = "codex-cache"`,

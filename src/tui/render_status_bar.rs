@@ -98,5 +98,23 @@ impl<'a> InteractiveState<'a> {
                     .set_style(if i < lead_len { warn } else { style });
             }
         }
+
+        // A newer release sits at the right edge, dimmed, and only where the line has
+        // room for it after the text above: it is the one thing on the bar that is not
+        // about this session, so it gives way to everything that is (docs/tui.md).
+        if let Some(version) = &self.newer_version {
+            let notice = format!("efference {version} is available");
+            let width = notice.chars().count() as u16;
+            let text_end = usize::from(BASELINE_LEFT_MARGIN) + text.chars().count();
+            let start = area.width.saturating_sub(width + BASELINE_LEFT_MARGIN);
+            if usize::from(start) >= text_end + 2 {
+                let dim = style.add_modifier(ratatui::style::Modifier::DIM);
+                for (col, ch) in (start..).zip(notice.chars()) {
+                    if let Some(cell) = buf.cell_mut((col, area.y)) {
+                        cell.set_char(ch).set_style(dim);
+                    }
+                }
+            }
+        }
     }
 }

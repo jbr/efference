@@ -4,8 +4,8 @@
 use super::*;
 
 /// The first-run path with a key already in the shell: no secret prompt, no
-/// model question — the new-session form names the current model — and a file
-/// whose bytes are pinned.
+/// model question — the new-session form names the current model — the update
+/// question last, and a file whose bytes are pinned.
 #[tokio::test]
 async fn first_run_with_key_in_environment() {
     let probe = Table {
@@ -21,6 +21,7 @@ async fn first_run_with_key_in_environment() {
             Answer::Pick("An environment variable"),
             Answer::Type(""),
             Answer::No,
+            Answer::Yes,
         ],
         &probe,
         "",
@@ -49,6 +50,9 @@ async fn first_run_with_key_in_environment() {
 [connections.anthropic]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
+
+[updates]
+check = true
 "#
     );
     let parsed = crate::inference::InferenceConfig::from_toml(&render("", &draft).unwrap());
@@ -78,6 +82,7 @@ async fn variable_name_prompt_refuses_a_pasted_key() {
             Answer::Type("1KEY"),
             Answer::Type("ANTHROPIC_API_KEY"),
             Answer::No,
+            Answer::Yes,
         ],
         &probe,
         "",
@@ -125,6 +130,7 @@ async fn pasted_key_is_checked_and_not_recorded() {
             Answer::Yes,
             Answer::Secret("sk-or-pasted"),
             Answer::No,
+            Answer::Yes,
         ],
         &probe,
         "",
@@ -182,6 +188,7 @@ async fn a_rejected_key_kept_anyway_records_no_default() {
             // The key is rejected and the connection kept anyway.
             Answer::Yes,
             Answer::No,
+            Answer::Yes,
         ],
         &probe,
         "",
@@ -212,6 +219,7 @@ async fn a_pasted_key_is_kept_in_the_store_and_the_file_names_only_the_kind() {
             Answer::Pick("Paste it now, kept in the OS keychain"),
             Answer::Secret("sk-pasted"),
             Answer::No,
+            Answer::Yes,
         ],
         &probe,
         "",
@@ -337,6 +345,7 @@ async fn a_typesafe_only_config_asks_for_a_provider_for_the_agent() {
             Answer::Pick("An environment variable"),
             Answer::Type(""),
             Answer::No,
+            Answer::Yes,
         ],
         &probe,
         "",

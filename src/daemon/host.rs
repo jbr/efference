@@ -63,6 +63,8 @@ mod island_exit;
 
 mod agents;
 
+mod update_check;
+
 mod routes;
 pub(crate) use routes::host_routes;
 use routes::{host_of, missing_host, no_such_session};
@@ -122,6 +124,10 @@ pub struct Host {
     /// (`attention.rs`, docs/web-push.md). Shared with each adopted session, so
     /// a push for any of them reads one table.
     pub(super) attention: Arc<super::attention::Attention>,
+    /// What the update check last found newer than this host (`update_check.rs`,
+    /// docs/update-check.md). Shared with each adopted session, which publishes it as
+    /// its `newer_version` topic; empty on a host that does not check.
+    newer_version: Arc<super::newer_version::NewerVersion>,
     /// The artifact-only loopback listener's origin (docs/artifacts.md): started by
     /// the first adopt, under this host's `Swansong`; `None` once its bind failed, so
     /// the bind is tried once.
@@ -211,6 +217,7 @@ impl Host {
             host_env,
             listing_changed: Notify::new(),
             attention: Arc::default(),
+            newer_version: Arc::default(),
             artifact_origin: std::sync::OnceLock::new(),
             mcp_refresh_locks: Default::default(),
             language_servers: crate::tools::lsp::language_servers(),
@@ -315,6 +322,7 @@ impl Host {
         // mount, and a push notification opens that path (docs/web-push.md).
         session.set_web_path(format!("/sessions/{id}/"));
         session.set_attention(Arc::clone(&self.attention));
+        session.set_newer_version(Arc::clone(&self.newer_version));
         if let Some(origin) = self.artifact_origin() {
             session.set_artifact_origin(origin.to_owned());
         }

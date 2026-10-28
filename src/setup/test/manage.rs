@@ -113,6 +113,9 @@ async fn re_authorizing_an_oauth_connection_keeps_the_file_unchanged() {
 [connections.work]
 provider = "openai-codex"
 auth = { kind = "oauth" }
+
+[updates]
+check = true
 "#;
     let (draft, script) = run_script(
         vec![
@@ -158,6 +161,7 @@ auth = { kind = "keychain" }
             Answer::Type("job"),
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,
@@ -209,6 +213,7 @@ auth = { kind = "env", key = "BACKUP_KEY" }
             Answer::Type("haiku-fresh"),
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,
@@ -247,6 +252,7 @@ auth = { kind = "keychain" }
             Answer::No,
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,
@@ -364,6 +370,7 @@ auth = { kind = "env", key = "PLAIN_KEY" }
             Answer::Pick("Move the key into the keychain"),
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,
@@ -417,6 +424,7 @@ auth = { kind = "keychain" }
             Answer::No,
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,
@@ -466,6 +474,7 @@ auth = { kind = "keychain" }
             Answer::Yes,
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,
@@ -531,6 +540,7 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
             Answer::Type("codex"),
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,
@@ -557,9 +567,13 @@ async fn deleting_a_connection_added_in_the_same_run_leaves_the_file_alone() {
         codex: Some("acct_1".into()),
         ..Default::default()
     };
+    // A file that has answered the update question is not asked it again.
     let existing = r#"
 [defaults]
 spotter = "other/claude-haiku-4-5"
+
+[updates]
+check = false
 
 [connections.other]
 provider = "anthropic"
@@ -632,6 +646,7 @@ auth = { kind = "codex-cache" }
             Answer::Type("codex"),
             Answer::Pick("Back"),
             Answer::Pick("Done"),
+            Answer::Yes,
         ],
         &probe,
         existing,

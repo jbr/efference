@@ -16,11 +16,11 @@ to paste one into the conversation. A key reaches efference through `efference s
 which the operator runs in their own terminal, or through an environment variable or
 secret store the operator fills.
 
-**`efference setup` owns connections and the default spotter.** It adds, edits, renames,
-disables, and deletes connections, checks each key with its provider, and keeps a pasted
-key in the OS keychain. For any of that, tell the operator to run `efference setup` rather
-than editing the connection by hand. It leaves everything else in the file as written,
-comments included. Every other key here is edited by hand.
+**`efference setup` owns connections, the default spotter, and the update check.** It
+adds, edits, renames, disables, and deletes connections, checks each key with its provider,
+and keeps a pasted key in the OS keychain. For any of that, tell the operator to run
+`efference setup` rather than editing the connection by hand. It leaves everything else in
+the file as written, comments included. Every other key here is edited by hand.
 
 **Edits take effect when a host next starts.** A host reads the file once, at start: in
 standalone mode that is the next `efference`; with `efference --host`, the operator stops
@@ -298,6 +298,22 @@ bind = "127.0.0.1:7878"
 
 Reaching it from a phone or another computer, over Tailscale, is in
 `efference://guide/host`.
+
+## `[updates]` — checking for a newer efference
+
+```toml ~/.efference/config.toml
+[updates]
+check = true
+```
+
+- **`check`** — `true`: a host asks efference.net when it starts, and about once a day
+  after, whether a newer version of efference is out, and the terminal UI and web client
+  say so in their status line. The answer is believed only when it is signed with
+  efference's release key. Nothing is installed; the install command
+  (`curl -fsSL https://efference.net/install.sh | sh`) updates. Absent or `false`, a host
+  never checks. `efference setup` asks the operator and writes the answer, and its "Update
+  check" entry changes it; the choice is the operator's, so do not set it on their behalf.
+  `efference update --check` asks once whenever it is run, whatever this key says.
 
 ## `[tui]` — how the terminal UI draws
 

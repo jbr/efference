@@ -224,6 +224,10 @@ pub struct Session {
     /// docs/web-push.md). Unset for a session outside a host, which treats nobody
     /// as attentive.
     attention: std::sync::OnceLock<Arc<attention::Attention>>,
+    /// The host's update-check answer, handed over at adopt (`newer_version.rs`,
+    /// docs/update-check.md). Unset for a session outside a host, which publishes
+    /// `newer_version: null`.
+    newer_version: std::sync::OnceLock<Arc<newer_version::NewerVersion>>,
     /// The push waiting out [`delayed_push::PUSH_DELAY`] because a client was
     /// attending when its moment fired (`delayed_push.rs`, docs/web-push.md). At most
     /// one; resolution and sightings of the moment empty it.
@@ -679,6 +683,8 @@ mod http;
 mod keepalive;
 mod metrics;
 mod named_turns;
+// The host's update-check answer, published as a session topic (docs/update-check.md).
+pub(crate) mod newer_version;
 mod notifications;
 mod operations;
 mod pace;

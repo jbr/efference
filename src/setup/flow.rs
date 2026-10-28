@@ -2,7 +2,8 @@
 //! loop: provider, name, credential source; then whether to add another. No
 //! role is asked: the main model has no default (the new-session form names
 //! the current one), and the spotter and triage each have a default that runs
-//! — the defaults editor reaches those two later.
+//! — the defaults editor reaches those two later. Last, whether to check for a
+//! newer efference (`updates.rs`), unless the file already says.
 //!
 //! What is checked live depends on what the flow can see. A key that is in this
 //! shell's environment is checked without asking. One that is not can be pasted
@@ -54,6 +55,7 @@ pub async fn run<P: Prompter, Q: Probe>(
         // A first run ends with no default model: the new-session form names
         // the current one, prefilled from past picks where they apply
         // (docs/operating.md).
+        super::updates::ask_unless_answered(prompter, existing, &mut draft)?;
         Ok(draft)
     } else {
         super::manage::run(prompter, probe, existing).await

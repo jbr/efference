@@ -1,8 +1,10 @@
 import type { TurnState } from "./turnState.ts";
+import type { NewerVersion } from "../api/types.ts";
 import {
   ComposerStatus,
   type ComposerStatusMessage,
 } from "./ComposerStatus.tsx";
+import { newerVersionLine } from "./newerVersion.ts";
 import "./ComposerToolbar.css";
 
 /** The input's controls and readout, without session actions (docs/web-client.md). */
@@ -14,6 +16,7 @@ export function ComposerToolbar({
   held = false,
   holdPending = false,
   uploading = false,
+  newerVersion = null,
   onAttach,
   onInterrupt,
   onHoldChange,
@@ -25,6 +28,8 @@ export function ComposerToolbar({
   held?: boolean;
   holdPending?: boolean;
   uploading?: boolean;
+  /** The `newer_version` topic: stated after the readout while it is set. */
+  newerVersion?: NewerVersion | null;
   onAttach: () => void;
   onInterrupt: () => void;
   onHoldChange: (held: boolean) => void;
@@ -49,6 +54,7 @@ export function ComposerToolbar({
           />
         </div>
         <ComposerStatus turn={turn} message={status} />
+        <NewerVersionLine newer={newerVersion} />
       </div>
       <div className="composer-toolbar-right">
         {running && (
@@ -76,6 +82,17 @@ export function ComposerToolbar({
         </button>
       </div>
     </div>
+  );
+}
+
+/** A release newer than the host, in the readout row's muted type; the hover
+ * title is the command that installs it (docs/web-client.md). */
+export function NewerVersionLine({ newer }: { newer: NewerVersion | null }) {
+  if (newer === null) return null;
+  return (
+    <span className="newer-version" title={newer.update_command}>
+      {newerVersionLine(newer)}
+    </span>
   );
 }
 

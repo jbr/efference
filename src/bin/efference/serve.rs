@@ -414,6 +414,11 @@ pub(crate) async fn host(
         tokio::spawn(auth.keep_renewed());
     }
     let host = efference::daemon::Host::new(inference, launch_baseline);
+    // Only with the user's answer: a configuration without one never checks
+    // (docs/update-check.md). An island is a host like any other here.
+    if efference::inference::UpdatesConfig::load(Path::new(&home))?.check {
+        host.check_for_updates(efference::update_check::UpdateCheck::published());
+    }
     // Adopted first: an island archives its sessions when its owner goes, and so
     // reopens none at start (docs/resumption.md).
     if let Some(owner) = &owner {

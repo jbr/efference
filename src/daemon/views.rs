@@ -44,6 +44,7 @@ impl Session {
             // A session exists only once it has started (`starting.rs`).
             Topic::Starting => Value::Null,
             Topic::Status => self.status_json(),
+            Topic::NewerVersion => self.newer_version_json(),
         }
     }
 

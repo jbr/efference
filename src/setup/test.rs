@@ -84,8 +84,10 @@ impl Prompter for Script {
         }
     }
 
-    fn confirm(&mut self, question: &str, _default: bool) -> Result<bool, Cancelled> {
-        self.transcript.push(format!("confirm: {question}"));
+    fn confirm(&mut self, question: &str, default: bool) -> Result<bool, Cancelled> {
+        let default = if default { "yes" } else { "no" };
+        self.transcript
+            .push(format!("confirm: {question} [default {default}]"));
         match self.next(question) {
             Answer::Yes => Ok(true),
             Answer::No => Ok(false),
@@ -240,6 +242,7 @@ mod file;
 mod keys;
 mod manage;
 mod subscription;
+mod updates;
 
 /// The hand-off names what it costs before asking, offers where to run, and a
 /// decline says where to run it instead.

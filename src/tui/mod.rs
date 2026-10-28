@@ -187,6 +187,9 @@ pub(crate) enum TuiEvent {
     /// The session's cache is believed expired, or no longer (the `cold` topic,
     /// backlog: cold-session.md). Level-triggered: `None` is warm or never-sent.
     CacheExpired(Option<ColdView>),
+    /// A release newer than the host is out, or none is known (the `newer_version`
+    /// topic, docs/update-check.md): its version. Level-triggered, status-bar chrome.
+    NewerVersion(Option<String>),
     /// The session's preparation (the `starting` topic, docs/control-api.md):
     /// `None` once it has started. Level-triggered, status-bar chrome — and a
     /// failure's turns go back in the composer (`starting.rs`).

@@ -25,6 +25,7 @@ mod manage;
 mod probe;
 mod render;
 pub mod terminal;
+mod updates;
 
 pub use flow::run;
 pub use handoff::{Surface, offer_project_setup};
@@ -147,6 +148,9 @@ pub struct Draft {
     /// [`Draft::record`], which is what keeps every entry naming a connection
     /// the file actually has.
     pub edits: Vec<Change>,
+    /// `[updates] check` as this run answered it (`updates.rs`), or `None` where the
+    /// run left it alone.
+    pub update_check: Option<bool>,
 }
 
 impl Draft {
@@ -372,6 +376,8 @@ pub struct ExistingConnection {
 pub struct Existing {
     pub connections: BTreeMap<String, ExistingConnection>,
     pub default_spotter: Option<String>,
+    /// `[updates] check`, or `None` where the file has no answer (docs/update-check.md).
+    pub update_check: Option<bool>,
 }
 
 impl Existing {
@@ -451,9 +457,24 @@ impl Existing {
                 .and_then(|value| value.as_str())
                 .map(str::to_string)
         };
+        // An answer that is not a boolean is reported like a connection this cannot
+        // read: a host refuses the same file.
+        let update_check = match doc
+            .get("updates")
+            .and_then(|item| item.as_table_like())
+            .and_then(|updates| updates.get("check"))
+        {
+            None => None,
+            Some(value) => Some(
+                value
+                    .as_bool()
+                    .ok_or("[updates] has a non-boolean `check`")?,
+            ),
+        };
         Ok(Self {
             connections,
             default_spotter: default_of("spotter"),
+            update_check,
         })
     }
 

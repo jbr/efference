@@ -55,6 +55,7 @@ pub mod terminal_title;
 pub mod tools;
 pub mod triage;
 pub mod tui;
+pub mod update_check;
 pub mod vision;
 pub mod worktree;
 pub mod www_authenticate;
