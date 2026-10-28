@@ -43,3 +43,8 @@ publish-prereleases = true
 # macos-latest jobs ran (structural-lsp's v0.1.1 release).
 [dist.github-custom-runners]
 aarch64-apple-darwin = "macos-latest"
+
+# The publish job checks every signature against the key the binaries carry,
+# read from the tagged source, so it needs to check the repository out.
+[dist.github-custom-job-permissions]
+publish-efference-net = { contents = "read" }

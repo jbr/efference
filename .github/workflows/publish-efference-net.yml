@@ -23,6 +23,14 @@ jobs:
     env:
       PLAN: ${{ inputs.plan }}
     steps:
+      # Only the file that holds the release key: Verify reads it from the tag.
+      # First, because checkout empties a workspace that is not yet a repository.
+      - name: Fetch the release key
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: src/update_check.rs
+          sparse-checkout-cone-mode: false
       - name: Fetch artifacts
         uses: actions/download-artifact@v8
         with:
@@ -59,6 +67,20 @@ jobs:
           find staged -type f > "$RUNNER_TEMP/staged"
           while read -r file; do
             minisign -S -s "$key" -m "$file" -t "efference $tag $(basename "$file")"
+          done < "$RUNNER_TEMP/staged"
+      # A secret key that is not the one the binaries carry would sign files no
+      # installed copy can verify, under paths uploaded once and never rewritten.
+      - name: Verify
+        run: |
+          set -euo pipefail
+          public=$(sed -n 's/^pub const RELEASE_PUBLIC_KEY: &str = "\(.*\)";$/\1/p' src/update_check.rs)
+          if [ -z "$public" ]; then
+            echo "::error::no RELEASE_PUBLIC_KEY in src/update_check.rs"
+            exit 1
+          fi
+          while read -r file; do
+            minisign -Vq -m "$file" -P "$public" \
+              || { echo "::error::$file: signature does not verify against RELEASE_PUBLIC_KEY"; exit 1; }
           done < "$RUNNER_TEMP/staged"
       - name: Upload
         env:
