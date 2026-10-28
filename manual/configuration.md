@@ -1,8 +1,13 @@
 # Configuration
 
-## What you need to know
+Setup gets you connected to a model without having to write a configuration file. When
+you want to adjust how efference runs — prepare project environments, use a different
+permission spotter, or change the terminal’s appearance — your settings are here.
+<!-- src: src/setup/render.rs::render; src/inference.rs::InferenceConfig; src/inference/tui.rs::TuiConfig -->
 
-efference reads two configuration files:
+## Find the right file
+
+There are two places for settings, depending on whether they belong to you or the project:
 
 - **`~/.efference/config.toml`**, yours, for every project on this machine: how to reach
   model providers, and how efference runs here. This page describes it.
@@ -11,15 +16,16 @@ efference reads two configuration files:
   describes it.
 <!-- src: src/inference.rs::CONFIG_RELATIVE_PATH, InferenceConfig; src/config/raw.rs::RawConfig -->
 
-`efference setup` writes `~/.efference/config.toml` the first time you run `efference`.
-Running it again adds, changes, renames, turns off, and removes connections, sets the
-default spotter model, and changes whether efference checks for new versions. It leaves the
-rest of the file as you wrote it, comments included.
-Everything else in the file is edited by hand; most people need none of it, and the
-sections below say when you do. Once a session is running, you can ask it to help: it can
-read efference's own description of every key, at `efference://guide/user-config`. The file
-is outside every project, so no project's settings let a session edit it without review: the
-spotter judges each edit ([Permissions](permissions.md)).
+For most changes to connections, run `efference setup` again. It can add, edit, rename,
+disable, or remove a connection, choose a default spotter model, and change whether
+new-version checks are enabled. It preserves the rest of your file, including comments.
+<!-- src: src/bin/efference/setup.rs::default_verb; src/setup/render.rs::render, apply_change; src/setup/manage.rs::run; src/setup/updates.rs -->
+
+For the other settings, edit `~/.efference/config.toml` directly. You can also ask a running
+session to help: it can read efference’s description of every key at
+`efference://guide/user-config`. Edits to this file normally go to the permission spotter
+because the file sits outside the project; [Permissions](permissions.md) explains how
+review works.
 <!-- src: src/bin/efference/setup.rs::default_verb; src/setup/render.rs::render, apply_change; src/setup/manage.rs::run; src/setup/updates.rs; src/guide.rs::DOCUMENTS (user-config); src/policy/paths.rs::context_granted (the guide prefix is read-granted); absence of a ~/.efference grant in src/policy/ -->
 
 A host reads the file when it starts. A change takes effect the next time you run
@@ -29,7 +35,7 @@ does not know, or a value it cannot read, stops it from starting, with an error 
 file: a misspelled key is never ignored.
 <!-- src: src/inference.rs::InferenceConfig (deny_unknown_fields), read_user, from_toml; src/bin/efference/serve.rs::host (InferenceRegistry::load); src/bin/efference/island.rs::Island::launch (a standalone host is a new --host process); src/bin/efference/verbs.rs (TuiConfig::load) -->
 
-### Connections
+## Connect the models you want to use
 
 Each `[connections.<name>]` table is one way to reach a model: a provider efference knows,
 or another endpoint that speaks one of the same APIs, and where its key comes from. A
@@ -54,12 +60,14 @@ A host refuses to start while any connection's key cannot be read, and names eac
 the file without using it.
 <!-- src: src/bin/efference/serve.rs::refuse_broken_connections; src/inference/registry.rs (disabled connections load no credential); src/setup/render.rs::apply_change (SetDisabled) -->
 
-### The environment sessions start with: `env_hook`
+## Give sessions your project environment
 
-A session you create in a terminal, with `efference` or `efference control create`, starts
-with that terminal's environment: its `PATH`, and any variables a tool such as direnv or
-mise loaded for the project. A session that starts with no terminal to copy from takes its
-environment from the host instead:
+If your project uses direnv, mise, or shell startup files to find its tools, you’ll want
+those tools available when you start a session from the browser or resume it later.
+
+A session created in the terminal with `efference` or `efference control create` already
+has that terminal’s environment: its `PATH` and the variables your project tools loaded.
+Sessions without a terminal to copy from get their environment from the host instead:
 <!-- src: src/tui/host_dispatch.rs::create_session (EnvSnapshot::capture); src/control_tools/create.rs::Create::execute (Executor::Client captures the caller's environment); src/daemon/host/create.rs (an omitted env is established); src/daemon/host/preparation.rs::establish_environment -->
 
 - one created in the web client;
@@ -67,20 +75,18 @@ environment from the host instead:
 - one a host reopens when `efference --host` starts.
 <!-- src: src/daemon/host/create.rs (supplied_env None); src/daemon/host/resume.rs::PatchSession::activate (env: None), prepare_resume; src/daemon/host/boot_resume.rs; web/src/api/sessionForm.ts (sends no env) -->
 
-With no `env_hook`, that environment is the one the host process started with. For a host
-started in a terminal, that is the terminal's environment when you started it, set up for
-whichever directory you were in, not for each project. For a host run as a service, it
-is what the service manager provides, often a `PATH` without your tools. So the same
-session can find `cargo` or `node` when you create it, and not after it is resumed.
+That can explain a session finding `cargo` or `node` at first, but not after a resume.
+Without an `env_hook`, the host passes on the environment it started with — perhaps set up
+for a different project, or supplied by a service manager with a `PATH` missing your tools.
 <!-- src: src/env_table/launch.rs::run_hook (no hook: the host environment as given); src/bin/efference/serve.rs::host (EnvSnapshot::capture once at start) -->
 
-`env_hook` names a command that prints the environment a session should start with. It
-runs in the session's project directory, each time one of those sessions starts. It is one
-setting for every project, so it should succeed in a project that has none of the tool's
-files, as each example below does.
+Use **`env_hook`** to prepare the right environment for these sessions. It names a command
+that runs in the project directory and prints the environment to use. Pick the example
+below that matches your tools. The setting applies to every project, so the command must
+also work in projects without that tool’s configuration, as these examples do.
 <!-- src: src/inference.rs::InferenceConfig (env_hook); src/env_table/launch.rs::run_hook (current_dir); src/daemon/host/preparation.rs::establish_environment -->
 
-Four things hold for any hook:
+Before choosing a hook, there are four requirements to know:
 
 - **It is a list, not a command line.** The first item is the program; the rest are its
   arguments, passed as written. Nothing runs a shell unless you name one.
@@ -94,7 +100,7 @@ Four things hold for any hook:
   discarded. Run the hook yourself in the project to see them.
 <!-- src: src/env_table/launch.rs::run_hook (Command::new(program).args(args); stderr null; host_env applied, so PATH is the host's), LaunchError (Display: Spawn, Exited, Unterminated); src/daemon/host/preparation.rs::establish_environment ("env: …"), preparation_failed -->
 
-#### direnv, and tools that work through it
+### With direnv, Nix, devenv, devbox, or Flox
 
 ```toml
 env_hook = ["direnv", "exec", ".", "env", "-0"]
@@ -112,7 +118,7 @@ time can take longer than the hook's 30 seconds. nix-direnv caches it, so enter 
 in your shell once before a session needs it.
 <!-- src: github.com/nix-community/nix-direnv README (use flake; caches the environment after the first run); devenv.sh/integrations/direnv (use devenv); jetify.com/docs/devbox/ide-configuration/direnv (devbox generate direnv); flox.dev/docs/concepts/activation (use flox); src/env_table/launch.rs::HOOK_TIMEOUT -->
 
-#### mise
+### With mise
 
 ```toml
 env_hook = ["mise", "exec", "--", "env", "-0"]
@@ -123,7 +129,7 @@ project without one gets the environment unchanged. mise refuses a configuration
 have not trusted, and the hook then exits 1, so run `mise trust` in each project first.
 <!-- src: mise 2026.4.15, checked 2026-10-27: [env] applied from a trusted mise.toml; no config passes through; an untrusted mise.toml prints "are not trusted" and exits 1 -->
 
-#### asdf, pyenv, rbenv, nodenv, Volta
+### With asdf, pyenv, rbenv, nodenv, or Volta
 
 These need no hook. Their commands are *shims*, small programs on the `PATH` that pick a
 version each time they run, from the version file (`.tool-versions`, `.python-version`, …)
@@ -133,7 +139,7 @@ on its `PATH`. A host started from your shell has it already. For a host run as 
 use a login-shell hook, below, if your shell's startup files add it.
 <!-- src: asdf-vm.com/guide/getting-started (PATH line for ${ASDF_DATA_DIR:-$HOME/.asdf}/shims); asdf-vm.com/manage/configuration (.tool-versions applies in its directory and subdirectories); pyenv 2.8.4 checked 2026-10-27: the same shim reported a different version in a directory with a .python-version -->
 
-#### Your shell's startup files
+### With your shell’s startup files
 
 For anything your shell sets up when it starts, such as a `PATH` line, nvm, or
 `conda init`, run your shell as a login shell:
@@ -167,7 +173,7 @@ The hook decides what the agent's commands see, not where model keys come from: 
 reads keys from its own environment, when it starts.
 <!-- src: src/inference/credential.rs::load_credential (env arm reads the host's start-time environment); src/bin/efference/serve.rs::host -->
 
-### Secret commands: `[secrets]`
+## Store secrets on a server: `[secrets]`
 
 On a machine with no OS keychain, usually a Linux server, `[secrets]` names commands that
 keep efference's secrets instead: keys pasted into `efference setup`, ChatGPT and MCP server
@@ -177,13 +183,13 @@ want setup to keep a key for you; keys in environment variables need neither.
 `systemd-creds`.
 <!-- src: src/secrets/commands.rs::SecretCommands; src/secrets.rs::Secrets::configured; src/setup/flow.rs::api_key_source (the keychain choice is unavailable without a store) -->
 
-### The web client: `[host]`
+## Open sessions in a browser: `[host]`
 
 `[host]` turns on the web client: where a host started with `efference --host` listens for
 browsers, and with which certificate. [Remote access](remote-access.md) covers it.
 <!-- src: src/inference/host.rs::HostConfig -->
 
-### The spotter model: `[defaults]`
+## Choose a default spotter: `[defaults]`
 
 `[defaults] spotter` names the model that reviews the agent's tool calls when a session
 doesn't name one, as `<connection>/<model>`. Setup's "Default spotter" entry sets it. A
@@ -191,7 +197,7 @@ connection's own `spotter-model` key names one for sessions whose main model is 
 connection. [Permissions](permissions.md) has the full order.
 <!-- src: src/inference.rs::Defaults, ConnectionConfig (spotter_model); src/setup/defaults.rs; src/inference/options.rs::resolve_spotter -->
 
-### Checking for new versions: `[updates]`
+## Hear about new versions: `[updates]`
 
 ```toml
 [updates]
@@ -199,16 +205,17 @@ check = true
 ```
 <!-- src: src/inference/updates.rs::UpdatesConfig -->
 
-With `check = true`, a host asks efference.net when it starts, and about once a day after,
-whether a newer version of efference is out, and the terminal interface and the web client
-say so in their status line. Nothing is installed: to update, run the install command again.
-`efference setup` asks the question, with yes preselected, and writes your answer; its
-"Update check" entry changes it later, and so does editing the key. A file with no answer
-never checks. `efference update --check` asks once whenever you run it, whatever the key
-says. [How efference runs](how-it-runs.md) lists what the check sends.
+Turn this on if you’d like the terminal and web clients to tell you when a new version is
+available. The host checks efference.net at startup and about once a day afterwards. It
+never installs an update for you; run the install command again when you’re ready.
+
+Setup asks about this with yes preselected and saves your answer. You can change it through
+setup’s “Update check” entry or by editing `check`. With no saved answer, no automatic
+check happens. To check just once, run `efference update --check`, regardless of this
+setting. [How efference runs](how-it-runs.md) lists what the request sends.
 <!-- src: src/bin/efference/serve.rs::host (UpdatesConfig::load gates check_for_updates); src/daemon/host/update_check.rs::check_for_updates; src/setup/updates.rs::ask, ask_unless_answered; src/setup/manage.rs::run (Update check entry); src/bin/efference/update.rs; src/tui/render_status_bar.rs; web/src/ui/ComposerToolbar.tsx::NewerVersionLine -->
 
-### The terminal interface: `[tui]`
+## Make the terminal your own: `[tui]`
 
 ```toml
 [tui]
@@ -227,7 +234,7 @@ images = "kitty"
   reference.
 <!-- src: src/inference/tui.rs::TuiConfig (theme, expand_home); src/tui/keyboard.rs (ThemePicker: Enter closes the picker, writes nothing); src/tui/mod.rs::ImageMode -->
 
-### Editor support
+## Editor support
 
 `efference setup` starts a new file with a `#:schema` line. An editor with a TOML language
 server — Taplo, which Even Better TOML uses, or Tombi — then completes keys, describes each
@@ -236,7 +243,7 @@ efference.net, so efference.net sees a request from your machine when you edit t
 deleting the line stops that, and efference itself does not read it.
 <!-- src: src/setup/render.rs::render (schema line on a fresh file); src/config_schemas.rs; assets/schemas/user.v1.json -->
 
-## How this works, precisely
+## Configuration reference
 
 ### Every key
 

@@ -1,10 +1,11 @@
 # Remote access
 
-## What you need to know
-
-A host can serve the web client, so you can follow and drive sessions from a browser —
-on this machine, or from a phone or another computer. It is off until you turn it on.
+You can check on a running session from your phone, answer a permission prompt, or
+continue a conversation from another computer. The web client connects to the host on
+your machine; browser access stays off until you turn it on.
 <!-- src: src/inference/host.rs::HostConfig; src/bin/efference/serve.rs::resolve_bind -->
+
+## Choose where you’ll connect from
 
 - **On this machine only**, the host serves plain HTTP on a loopback address
   (`127.0.0.1`), which other devices cannot reach.
@@ -17,12 +18,12 @@ on this machine, or from a phone or another computer. It is off until you turn i
   devices a private network, and gives this machine a certificate they trust.
 <!-- src: src/bin/efference/serve.rs::resolve_bind, loopback_addr, checked_public_url -->
 
-Anyone who reaches the address and signs in can do anything you can do in a session,
-including approving the agent's commands. So the question for any arrangement is who can
-reach the sign-in page, and the answer should be: only your own devices.
+Treat a signed-in browser like an open terminal to your sessions: it can do everything
+you can, including approve the agent’s commands. Keep the sign-in page reachable only
+from your own devices, and approve sign-ins only for browsers you’re using.
 <!-- src: src/daemon/tcp/gate.rs::gate, Surface::anonymous -->
 
-### On this machine
+## Open the web client on this machine
 
 Add a `[host]` table to `~/.efference/config.toml`:
 
@@ -37,8 +38,8 @@ only for about a minute and a half. A host that has been running a while needs n
 link: open its address, and approve the code the page shows ([Sign-in](#sign-in)).
 <!-- src: src/inference/host.rs::HostConfig; src/bin/efference/serve.rs::resolve_bind (--open); src/daemon/host.rs::serve_host (logs the link); src/daemon/tcp.rs::TcpAuth::mint_link; src/sign_ins.rs::Store::approved_link, TTL_SECS; web/src/ui/Login.tsx -->
 
-The port is yours to choose; there is no default. `--bind` on the command line overrides the
-table for one launch.
+Use a different port if you prefer; there is no default. You can also pass `--bind` on the
+command line to override the table for one launch.
 <!-- src: src/bin/efference/serve.rs::BindFlags::over, loopback_addr -->
 
 With no host running, `efference` can also open in the browser instead of the terminal:
@@ -46,7 +47,7 @@ choose "In the browser" when setup offers it, or run `efference --bind 127.0.0.1
 terminal stays open, holding the session; quitting there ends it.
 <!-- src: src/bin/efference/island/browser.rs::BIND, run, PROMPT; src/setup/handoff.rs; src/bin/efference/setup.rs::default_verb (bind reaches only a new standalone host) -->
 
-### From your phone or another computer, with Tailscale
+## Connect from your phone with Tailscale
 
 You need Tailscale installed and signed in on this machine and on the other device, with
 MagicDNS and HTTPS certificates enabled for your tailnet (the DNS page of Tailscale's admin
@@ -63,12 +64,17 @@ Use `tailscale serve`, never `tailscale funnel`: Funnel publishes the address to
 internet, leaving only the sign-in between strangers and your agent's tools.
 <!-- src: Tailscale docs, Funnel (kb/1223) -->
 
-Then pick one of two arrangements. In both, find this machine's tailnet name in
-`tailscale status --json`, as `Self.DNSName` without the trailing dot — a name like
-`laptop.tail1234.ts.net`.
+There are two ways to connect the host. Use `tailscale serve` if you want Tailscale to
+manage the certificate. Have efference serve HTTPS itself if you want HTTP/3 and are
+prepared to renew the certificate.
 
-**Behind `tailscale serve`** — Tailscale manages the certificate. The host stays on
-loopback and Tailscale forwards HTTPS from your tailnet to it.
+For either option, find this machine’s tailnet name in `tailscale status --json`, under
+`Self.DNSName`. Remove the trailing dot; the result looks like `laptop.tail1234.ts.net`.
+
+### Let Tailscale manage HTTPS
+
+The host listens on loopback while `tailscale serve` forwards HTTPS from your tailnet to
+it. Put this in `~/.efference/config.toml`, replacing the example name with your own:
 
 ```toml
 [host]
@@ -86,7 +92,10 @@ Tailscale is serving.
 <!-- src: src/bin/efference/serve.rs::checked_public_url; src/daemon/tcp/gate.rs::gate (Host check against public-url); tailscale serve --help (1.104.1) -->
 <!-- TODO: how the serve setting persists across reboots, and the command that removes it (`tailscale serve --https=443 off` in assets/guide/host.md is unverified against 1.104; `reset` exists). Needs a live check. -->
 
-**The host serves HTTPS itself** — needed for HTTP/3; you renew the certificate.
+### Have efference serve HTTPS directly
+
+For HTTP/3, give efference a certificate and let it handle HTTPS itself. You’ll need to
+renew that certificate. Start by requesting one for your machine’s tailnet name:
 
 ```sh
 mkdir -p ~/.tls && chmod 700 ~/.tls
@@ -106,12 +115,14 @@ every network this machine is on. The host reads the certificate once, at start.
 Tailscale's certificates expire; renew with `tailscale cert` again and restart the host.
 <!-- src: src/inference/host.rs::HostConfig, expand_home; src/bin/efference/serve.rs::resolve_bind (read once; TLS accepts any address); src/daemon/tcp.rs::bind; tailscale cert --help (1.104.1) -->
 
+### Sign in on the other device
+
 Either way, `efference --host` prints an `https://…ts.net` sign-in link; open it on the other
 device within a minute and a half, or open the address there and approve the code the page
 shows. If the page answers 403, `public-url` does not match the name in the address bar.
 <!-- src: src/daemon/host.rs::serve_host; src/sign_ins.rs::TTL_SECS; src/daemon/tcp/gate.rs::gate -->
 
-## How this works, precisely
+## Remote access details
 
 ### The `[host]` table
 
@@ -156,11 +167,16 @@ The link `efference --host` prints works once, within about a minute and a half,
 one browser in. A standalone host serving the browser opens one for you.
 <!-- src: src/daemon/tcp.rs::TcpAuth::mint_link; src/sign_ins.rs::Store::approved_link, Store::claim, TTL_SECS; src/daemon/host.rs::serve_host (logs the link); src/bin/efference/island/browser.rs::Links::mint; web/src/ui/bootClaim.ts -->
 
-A browser that opens the host's address without a link shows a short code, like `KQ7-M4X`,
-for a minute and a half. At the host, run `efference devices approve` and type the code, or
-pass it: `efference devices approve KQ7-M4X`. Case and the dash do not matter. The command
-prints the name the browser gave and how long ago it asked, and the browser signs in within
-a second. A code that expires, or that was used already, lets nothing in; the page offers a
+If you open the host’s address without a link, the browser shows a short code such as
+`KQ7-M4X`. Within a minute and a half, run this on the host machine:
+
+```sh
+efference devices approve KQ7-M4X
+```
+
+You can also run `efference devices approve` and type the code when asked. Case and the
+dash don’t matter. The command prints the browser’s name and how long ago it asked; the
+browser signs in within a second. Expired or used codes won’t work, and the page offers a
 new one.
 <!-- src: web/src/ui/Login.tsx::Login, POLL_MS; src/daemon/tcp/routes.rs::request_sign_in, claim_sign_in, approve_sign_in; src/sign_ins.rs::ShortCode::parse, Store::approve, TTL_SECS; src/bin/efference/devices.rs::DevicesCommand::Approve, ask_for_code -->
 
@@ -171,6 +187,8 @@ off a browser you are signing in. `efference devices` never shows a waiting brow
 only its name and how long ago it asked, so nobody can approve one by picking it from a
 list.
 <!-- src: src/bin/efference/devices.rs::listing; src/daemon/tcp/routes.rs::list_pending; src/sign_ins.rs::Pending, Store::waiting -->
+
+### Manage signed-in devices
 
 Each browser that signs in becomes an enrolled device with a token of its own, with no
 expiry. `efference devices` lists them: an id, the kind, how each joined (`link`, `code`, or
@@ -190,6 +208,8 @@ it as `Authorization: Bearer <token>`, and `efference devices revoke` ends it li
 other device.
 <!-- src: src/bin/efference/devices.rs::DevicesCommand::Add; src/daemon/tcp/routes.rs::add_device; src/daemon/tcp.rs::TcpAuth::credential -->
 
+### Sign every device out at once
+
 Every token derives from one secret the host keeps in your OS keychain, created the first
 time a host listens on TCP; neither the list of devices nor the list of waiting sign-ins
 holds a secret. With secret commands in place of the keychain, `efference auth rotate`
@@ -200,6 +220,8 @@ sign-in, which signs out every browser and every program at once.
 store no longer has — so stop the host, rotate, and start it again. One lost device needs
 only `efference devices revoke`.
 <!-- src: src/auth.rs::ROOT_ITEM, Root::load, Root::rotate, DeviceTokens; src/sign_ins.rs::SCHEMA (claim digests), Store::clear; src/bin/efference/main.rs::rotate, local_daemon_is_listening (the refusal); src/daemon/tcp.rs::arm_with_state (keys derived once at start) -->
+
+### Where the browser keeps its sign-in
 
 The browser keeps its sign-in where only pages at the host's own address can read it:
 other sites cannot, and neither can other servers you run on this machine at other

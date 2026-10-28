@@ -1,8 +1,16 @@
 # Permissions
 
-## What you need to know
+You don’t have to choose between approving every step and letting an agent do anything.
+A project can allow routine work, ask a second model to review calls outside those
+permissions, and bring held calls to you. The place to describe that balance is your
+project’s `efference.toml`.
+<!-- src: src/agent/step/judge.rs::judge; src/policy.rs::classify, Verdict; src/spotter.rs -->
 
-Every tool call the agent makes is decided before it runs, in three steps:
+## Decide what needs your attention
+
+For an ordinary tool call, efference checks three things in order. The
+[detailed order](#the-order-of-checks) covers special cases such as questions and edits to
+a session’s own configuration:
 
 1. **Your project's settings.** `efference.toml` lists what may run without asking: tools
    by name, files and directories, and shell commands by prefix. A call they cover runs.
@@ -12,21 +20,29 @@ Every tool call the agent makes is decided before it runs, in three steps:
 3. **You.** A held call waits at a **gate** until you decide. There is no timeout.
 <!-- src: src/agent/step.rs::run_call; src/agent/step/judge.rs::judge; src/policy.rs::classify, Verdict; src/spotter.rs -->
 
-At a gate you can approve the call (**approve** in the terminal, **Allow** in the web
-client), **decline** it with a message — the agent doesn't run it and carries on with what
-you said — or **stop the turn**. In the terminal interface, typing a message and pressing
-Return declines with it. The agent never learns that you approved something, only what
-you declined and why.
+When a call reaches you, read the call itself, not just the agent’s description of what it
+wants. Then you can:
+
+- **Approve** it (**approve** in the terminal, **Allow** in the web client).
+- **Decline with a message.** The call won’t run, and the agent continues with your
+  explanation. In the terminal, type the message and press Return.
+- **Stop the turn.**
+
+In the terminal, pressing Return with an empty message approves the call. The agent isn’t
+told about approvals; it sees only what you declined and why.
 <!-- src: src/frontend.rs::Approval; src/tui/control_strip.rs::strip_context_verbs; src/tui/state/gate.rs::submit_composer; web/src/ui/Gate.tsx::GateControls; src/agent/results.rs::rejected, aborted -->
 
-These checks are built to catch an agent's mistakes. They are not a defense against an agent
-that has been deliberately misled, by text in a file or a web page, or that is trying to get
-around them: a permitted command runs with your full access, the spotter is a model that can
-be wrong, and path rules compare text. When a project handles content you don't trust, grant
-less and read each held call.
+These are checks for mistakes, not a sandbox or a defense against a deliberately misled
+agent. Allowed commands run with your full access, the spotter can be wrong, and path
+rules compare text rather than enforce filesystem isolation. If the project handles
+content you don’t trust — including instructions hidden in files or web pages — grant less
+and inspect held calls carefully.
 <!-- src: docs/permissions.md ("Threat model: error, not deception"), checked against src/spotter.rs (module doc) and src/policy.rs -->
 
-### A starting point
+## Start with routine work
+
+For a Rust project, you might begin by allowing reads, builds, tests, and git inspection,
+while sending edits to the spotter:
 
 ```toml
 scope = "Work on this Rust crate: edit its source and tests, run its build and tests."
@@ -49,11 +65,14 @@ efference = { enabled = true, granted = true }   # efference's own tools, withou
 ```
 <!-- src: src/config/raw.rs; src/policy/paths.rs::governing_grant; src/policy/commands.rs::command_stance; src/spotter.rs::render_context (watch-for) -->
 
-This lets the agent read the project and build and test it without asking. Every file
-edit goes to the spotter, which judges it against `scope` and `watch-for`. Granting writes
-outright is possible — `"." = true` — but then no edit is looked at by anything. That
-includes edits to files that run later as you: `efference.toml` itself, git hooks and
-config, build scripts, and CI definitions.
+Here, `scope` tells the spotter what the sessions are for, and `watch-for` names changes
+that deserve attention. The agent can read, build, and test without interrupting you;
+file edits go to the spotter for review.
+
+You can allow writes outright with `"." = true`, but those edits then pass without review.
+That includes files that can run code later: `efference.toml`, git hooks and config, build
+scripts, and CI definitions. Choose this based on what you’re comfortable letting the
+agent change, not just how many prompts you’d like to avoid.
 <!-- src: src/policy.rs::classify_structured (a cleared write never reaches the spotter); src/config/load.rs (efference.toml read at session start) -->
 
 The setup session efference offers in a new project writes this file with you
@@ -62,7 +81,7 @@ The setup session efference offers in a new project writes this file with you
 own tools; everything else goes to the spotter.
 <!-- src: src/boot/scaffold.rs::CONFIG_SCAFFOLD, snapshot_config -->
 
-### What a permission covers
+## Grant only the access you intend
 
 A command permission is trust in a program, not a check on what it does. `"cargo test"`
 runs your build scripts and tests; `cargo = true` also allows `cargo install`, which
@@ -93,7 +112,7 @@ also leave something running — a server, a watcher — after it returns.
 adds later.
 <!-- src: src/policy.rs::classify_structured, tool_granted -->
 
-### Saying no
+### When you want a call held
 
 `"deny"` in `[commands]` skips the spotter and always comes to you; you can still approve
 the call. (An autonomous session, with no one to ask, declines it.) It matches a command
@@ -108,21 +127,20 @@ model, not a lock. To keep a file out of the agent's reach, keep it outside the 
 out of the environment efference runs in.
 <!-- src: src/policy.rs::classify_structured; src/policy/paths.rs::path_granted_at; src/spotter.rs::render_context -->
 
-### When you're away
+## Review calls from your phone
 
-If you've set up the web client on your phone ([Remote access](remote-access.md)) and
-turned on notifications, a gate sends one. It shows the tool and what the agent *says* it
-wants, not the command itself, so open the gate and read the call before approving. While
-you are actively using a client, the notification waits two minutes and is dropped if you
-look at or decide the gate first. A session another session supervises notifies you only
-about gates that come to you: one passed up to you, or one left with you when its
-supervisor ends or you take the session back.
+With the web client on your phone and notifications enabled, you can step away and hear
+when a call needs you ([Remote access](remote-access.md)). The notification shows the tool
+and what the agent *says* it wants, not the command itself. Open the gate and read the call
+before approving.
+
+While you’re actively using a client, notifications wait two minutes. Looking at or
+deciding the gate cancels the pending notification. For a session supervised by another
+session, you hear only about gates that reach you: ones passed up to you, or left with you
+when the supervisor ends or you take the session back.
 <!-- src: src/daemon/push.rs::push, MomentKind::title, gate_body; src/daemon/delayed_push.rs::PUSH_DELAY, cancel_delayed_push; src/daemon/attention.rs; docs/web-push.md (routing, not_sent), checked against src/daemon/approvals.rs::escalate -->
 
-In the terminal interface, pressing Return with nothing typed approves a gate.
-<!-- src: src/tui/state/gate.rs::submit_composer -->
-
-## How this works, precisely
+## Permission rules in detail
 
 ### The order of checks
 
@@ -161,12 +179,15 @@ recorded in the session's log.
 
 ### Shell commands
 
-efference parses each command with a bash parser. Only a single plain command can be
-cleared by `[commands]`. A pipe, `;`, `&&`, a subshell, `$(…)`, a `$VAR`, a glob, or a
-redirection to a file sends it to the spotter instead, whatever is permitted. Three shapes
-are allowed: `2>&1`-style descriptor redirection; one leading `cd <dir> &&` into a
-directory `[paths]` lets the agent read; and, for a command that is itself permitted, one
-`>` or `>>` write — with or without a here-doc — to a file `[paths]` lets it write.
+Command permissions apply to a single plain command, checked with a bash parser. More
+complex shell syntax goes to the spotter: pipes, `;`, `&&`, subshells, `$(…)`, variables
+such as `$VAR`, globs, and file redirections. There are three exceptions that can still
+clear without the spotter:
+
+- Descriptor redirections such as `2>&1`.
+- One leading `cd <dir> &&`, if `[paths]` allows reading that directory.
+- One `>` or `>>` write to a file, with or without a here-doc, if the command itself is
+  permitted and `[paths]` allows writing the file.
 <!-- src: src/policy/commands.rs::single_and_or_list, simple_command_tokens, is_safe_fd_dup, bash_tokens_in, classify_redirect_write, redirect_write_in, literal_heredoc -->
 
 Prefixes match whole words from the start, as written: `"git diff"` matches
@@ -195,13 +216,18 @@ own claims about its tools are grounds to hold, never to run. The spotter can le
 or hold it; it cannot refuse one. If it fails or gives no usable answer, the call is held.
 <!-- src: src/spotter.rs::render_context, render_move, render_brief, parse_spot, Spotting::fail_closed; src/policy/path_words.rs -->
 
-Each call it judges is a model request on the spotter's own connection, so the command
-text, scope, and path settings go to that provider. Its model is the first of: the "spotter
-model" chosen for the session; `[defaults] spotter` in `~/.efference/config.toml`; the
-connection's own `spotter-model`; a decision model built for this, when you have a TypeSafe
-or OpenRouter connection; or a small model from the main provider. Adding an OpenRouter
-connection can therefore change which provider the spotter's requests go to. A decision
-model also compares the call with earlier calls in the session that you approved.
+Each review is a model request on the spotter’s connection, so that provider receives the
+command text, scope, and path settings. To choose the model, efference uses the first
+available option in this order:
+
+1. The **spotter model** chosen for the session.
+2. `[defaults] spotter` in `~/.efference/config.toml`.
+3. The main connection’s `spotter-model`.
+4. A purpose-built decision model, if you have a TypeSafe or OpenRouter connection.
+5. A small model from the main provider.
+
+Adding an OpenRouter connection can therefore change where spotter requests go. A decision
+model also compares the call with earlier calls you approved in the session.
 <!-- src: src/inference/options.rs::resolve_spotter, decision_spotter; src/api/provider.rs::default_spotter_model; src/agent/step/judge.rs::judge (RequestOrigin::Spot); src/spotter/precedent.rs -->
 
 When the spotter sees a command prefix more than once, it may propose permitting it in the
@@ -209,32 +235,37 @@ session. A proposal changes nothing until you accept it, in the terminal interfa
 or with `efference control proposal`.
 <!-- src: src/policy.rs::MIN_SIGHTINGS_TO_PROBE; src/agent/step/judge.rs::judge (probe); src/tui/sidebar.rs (Proposal); src/control_tools (proposal) -->
 
-### Grants made at a gate
+### Changing permissions during a session
 
-A held call can come with one lasting permission that would have let it run, chosen from
-why it was held: the tool's name, access to the directory the call reached (read-only when
-the call only reads), or for a shell command the shortest prefix of it the spotter has not
-judged unsafe — often the program's name alone, which permits it with any arguments. A call held for more than one reason, or one
-no single permission would clear, comes with none. Neither the terminal interface nor the
-web client offers this permission yet.
+The agent can ask for a permission by editing its session configuration. That edit goes
+straight to whoever decides the session’s gates. Read the change itself: changing `scope`
+changes what the spotter allows, and a whole-file rewrite can change more than the line
+the agent points to. Approved additions take effect at once; removals and new `deny`
+entries take effect when the session next starts.
+<!-- src: src/agent/step.rs::run_call (config_write); src/daemon/watch.rs::config_watch_loop; src/config/edit.rs::diff_changes -->
+
+### Suggested permissions at a gate
+
+Approving a call is not the same as granting lasting permission. Internally, a held call
+can carry a suggested permission that would have cleared it, but neither the terminal nor
+the web client offers that control yet.
+
+The suggestion, when there is one, follows the reason the call was held: a tool name,
+access to a directory (read-only for a read), or the shortest shell command prefix the
+spotter hasn’t judged unsafe. That prefix is often just the program’s name, allowing any
+arguments. Calls held for several reasons, or with no single permission that would clear
+them, have no suggestion.
 <!-- src: src/policy/gate_grant.rs::gate_grant; src/agent/config_edit.rs::commit_config_edit; src/tui/control_strip.rs::strip_context_verbs; web/src/ui/Gate.tsx -->
 <!-- TODO: blocked on backlog/gate-grant-clients.md — restate as the clients' control once both offer it. -->
 
-A permission granted this way is written to the session's own configuration in
-`.efference/<session>/config.toml`, not to your project's `efference.toml`. A resumed
-session keeps it; a new session starts from `efference.toml` again, so copy the ones you want
-to keep into it.
+A lasting permission applied through this mechanism is written to the session’s own
+`.efference/<session>/config.toml`, not the project’s `efference.toml`. Resuming keeps the
+session copy; starting a new session copies the project file again. Put permissions you
+want future sessions to have in the project file.
 <!-- src: src/agent/config_edit.rs::commit_config_edit; src/boot/scaffold.rs::snapshot_config -->
 <!-- TODO: an accepted spotter proposal is logged, not written to config.toml (src/daemon/config_edits.rs::resolve_proposal_decision) — asked of jbr. -->
 
-The agent can ask for a permission by editing its session configuration itself. That edit
-goes straight to whoever decides the session's gates. Read the change itself: a new `scope`
-sentence changes what the spotter allows, and a whole-file rewrite can change more than the
-line it points to. Once approved, added permissions take effect at once. Removed ones, and a
-new `deny`, take effect when the session next starts.
-<!-- src: src/agent/step.rs::run_call (config_write); src/daemon/watch.rs::config_watch_loop; src/config/edit.rs::diff_changes -->
-
-### Who decides
+### Choose who reviews held calls
 
 A session's review level sets who answers a held call:
 
@@ -255,7 +286,7 @@ Separately, `efference control pace` pauses a session between turns, or slows it
 without changing who decides.
 <!-- src: src/control_tools/pace.rs::Pace -->
 
-### Worktrees
+### Keep edits separate with a worktree
 
 A session started in its own worktree works in a separate git checkout and branch, under
 `.efference/worktrees/`, so its edits don't land in the checkout you're using by default. It

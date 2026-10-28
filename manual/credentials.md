@@ -1,10 +1,14 @@
 # Credentials
 
-## What you need to know
+You can connect a model without putting its API key in an efference configuration file.
+Setup records *where* to find the key, not the key itself. Choose the storage that fits
+how you run efference: a desktop keychain, environment variables supplied by a secrets
+manager, or secret commands for a server without a keychain.
+<!-- src: src/inference.rs::ConnectionConfig, AuthConfig; src/secrets.rs::Secrets::configured; src/secrets/commands.rs::SecretCommands; src/setup/render.rs::HEADER -->
 
-efference keeps your model keys out of its own files. `~/.efference/config.toml` records
-only *where* each key comes from; it has no setting meant to hold a key. A key comes from
-one of two places:
+## Choose how to sign in
+
+For an API key, start with one of these two options:
 <!-- src: src/inference.rs::ConnectionConfig, AuthConfig (deny_unknown_fields; no literal-key field); src/setup/render.rs::HEADER -->
 
 - **Your OS keychain** — the login keychain on macOS. On desktop Linux it is the Secret
@@ -16,15 +20,16 @@ one of two places:
   example, if you want to approve each launch that can spend money on inference.
 <!-- src: src/inference/credential.rs::load_credential; src/secrets.rs::Secrets::configured, detect, native::DESCRIPTION; src/setup/flow.rs::api_key_source, keychain_source -->
 
-A ChatGPT subscription has no key: setup either signs you in through the browser and keeps
-that sign-in in the keychain, or reuses the sign-in the Codex CLI already has.
+Using a ChatGPT subscription instead? You don’t need an API key. Setup can sign you in
+through the browser and keep the sign-in in the keychain, or reuse the Codex CLI’s existing
+sign-in.
 <!-- src: src/setup/flow/chatgpt.rs::chatgpt_source, oauth_source, codex_cache_source -->
 
 Run `efference setup` again at any time to change a connection: replace its key, move an
 environment-variable key into the keychain, or take a key out of the keychain.
 <!-- src: src/setup/manage.rs::run; src/setup/manage/credential.rs::edit_connection -->
 
-### Keys in the keychain
+## Use your OS keychain
 
 Choose "Paste it now, kept in the OS keychain" in `efference setup`. Setup checks the key
 with the provider where it can, stores it, and records `auth = { kind = "keychain" }` in the
@@ -38,93 +43,15 @@ it finds. A refusal for another reason, such as a spending limit, reads nothing.
 <!-- src: src/api/failure.rs::rejects_credential; src/api/auth_value.rs; src/inference/credential.rs::load_credential (keychain arm re-reads; env arm has no reloader) -->
 <!-- TODO: macOS keychain access prompts depend on how release binaries are signed; describe once dist signing is settled. -->
 
-A Linux server usually has no Secret Service to keep keys in: no keyring program is
-installed, or its keyring stays locked because nobody signs in to a desktop. On a server
-like that, keep keys in environment variables, or name commands that keep efference's
-secrets somewhere else (the next section). efference opens the keychain only when it
-needs to read or write something there, so a host whose keys all come from environment
-variables starts without one. On such a server, a host with a connection whose key is in
-the keychain refuses to start, and its error names that connection and the keychain item
-it could not read.
+On a Linux server, there may be no Secret Service, or the keyring may stay locked without
+a desktop login. Use [environment variables](#keys-in-environment-variables-with-op-run)
+or [secret commands](#secret-commands) there instead. A host with only environment-variable
+keys can start without a keychain: efference opens it only when needed. If a connection
+needs a keychain item that cannot be read, the host won’t start, and the error names both
+the connection and the item.
 <!-- src: src/secrets.rs::Secrets::configured, detect, native::open; src/bin/efference/serve.rs::refuse_broken_connections -->
 
-### Secret commands
-
-Instead of the keychain, efference can keep its secrets with commands you name: a
-password manager's command-line tool, a cloud secrets service, or `systemd-creds`. This is
-the way to keep a ChatGPT or MCP server sign-in, or the web address's secret, on a server
-with no keychain. A `[secrets]` table in `~/.efference/config.toml` names a command that
-prints a secret (`get`), one that stores it (`set`), and optionally one that removes it
-(`delete`). With the table there, efference never opens the keychain: keys pasted into
-`efference setup`, sign-ins, and the web address's secret all go through the commands, and
-a connection with `auth = { kind = "keychain" }` reads its key through them too.
-<!-- src: src/secrets/commands.rs::SecretCommands; src/secrets.rs::Secrets::configured, from_table; src/inference.rs::InferenceConfig (secrets); src/setup/probe.rs::LiveProbe::capture -->
-
-Each command is a program and its arguments, run directly rather than by a shell. `{name}`
-in any argument becomes the name of the secret, such as `oauth:codex` or `root`. The
-secret itself never appears in an argument: `set` receives it on standard input, and `get`
-prints it. `absent_status` is the exit status your tool gives when a secret does not
-exist; without it, a secret efference has not stored yet reads as a failure, so a first
-sign-in has nowhere to go.
-<!-- src: src/secrets/commands.rs::SecretCommands::get, set, delete, run, validate -->
-
-AWS Systems Manager Parameter Store, with the AWS CLI:
-
-```toml
-[secrets]
-get    = ["aws", "ssm", "get-parameter", "--with-decryption", "--query", "Parameter.Value", "--output", "text", "--name", "/efference/{name}"]
-set    = ["aws", "ssm", "put-parameter", "--type", "SecureString", "--overwrite", "--name", "/efference/{name}", "--value", "file:///dev/stdin"]
-delete = ["aws", "ssm", "delete-parameter", "--name", "/efference/{name}"]
-absent_status = 254
-```
-
-`pass`, which encrypts each secret with your GPG key. A host running as a service has no
-terminal to ask for a passphrase, so the key must have none, or `gpg-agent` must already
-hold it:
-
-```toml
-[secrets]
-get    = ["pass", "show", "efference/{name}"]
-set    = ["pass", "insert", "--multiline", "--force", "efference/{name}"]
-delete = ["pass", "rm", "--force", "efference/{name}"]
-absent_status = 1
-```
-
-1Password's `op`, keeping each secret as a document in a vault named `efference`. `set`
-edits the document if it exists and creates it if not:
-
-```toml
-[secrets]
-get    = ["op", "document", "get", "--vault", "efference", "{name}"]
-set    = ["sh", "-c", 'if op document get --vault efference "$1" </dev/null >/dev/null 2>&1; then exec op document edit --vault efference "$1" -; else exec op document create --vault efference --title "$1" -; fi', "sh", "{name}"]
-delete = ["op", "document", "delete", "--vault", "efference", "{name}"]
-absent_status = 1
-```
-
-`systemd-creds`, which encrypts each secret so that only your user, or root, can decrypt
-it, in a file under `~/.config/efference/credentials`. Its `--user` option is in systemd
-256 and later:
-
-```toml
-[secrets]
-get    = ["sh", "-c", 'f="$HOME/.config/efference/credentials/$1"; [ -e "$f" ] || exit 3; exec systemd-creds --user decrypt "$f" -', "sh", "{name}"]
-set    = ["sh", "-c", 'd="$HOME/.config/efference/credentials"; mkdir -p "$d" && exec systemd-creds --user encrypt - "$d/$1"', "sh", "{name}"]
-delete = ["sh", "-c", 'exec rm -f "$HOME/.config/efference/credentials/$1"', "sh", "{name}"]
-absent_status = 3
-```
-
-The last two run a short shell script, and pass `{name}` to it as an argument of its own
-(`$1`) rather than writing it into the script. The commands run with the host's
-environment, and a host started by a service manager may have a shorter `PATH` than your
-shell: if a program is not found, name it by its full path.
-<!-- src: src/secrets/commands.rs::run (argv run directly; {name} replaced per argument); AWS CLI return codes (docs.aws.amazon.com/cli/latest/topic/return-codes.html: 254, the service returned an error); pass(1); op document --help (2.39.0); systemd NEWS, CHANGES WITH 256 ("systemd-creds gained new options --user/--uid="); systemd-creds(1) -->
-
-A host does not create the web address's secret through the commands. Before the first
-`efference --host --bind`, run `efference auth rotate` once to store one; until then, a
-host with a bind refuses to start and says to run it.
-<!-- src: src/auth.rs::Root::load (RootError::Absent), Root::rotate; src/bin/efference/main.rs::rotate -->
-
-### Keys in environment variables, with `op run`
+## Keys in environment variables, with `op run`
 
 1Password's command-line tool, `op`, can start a program with secrets filled into its
 environment. Keep a *reference* to the key, not the key, in a file:
@@ -167,14 +94,102 @@ something like it) must have done that before the host starts. A project's
 efference resolves those with `op read` when a session starts.
 <!-- src: src/inference/credential.rs::load_credential; src/env_table/resolve.rs::SCHEMES, run_command; src/boot/env.rs::resolve_env_table -->
 
-## How this works, precisely
+## Secret commands
 
-### What the agent can see
+If you’re setting up a server without a keychain, you can use a password manager’s CLI,
+a cloud secrets service, or `systemd-creds` as efference’s secret store. Unlike supplying
+only model keys through the environment, this also gives efference somewhere to keep
+ChatGPT and MCP server sign-ins and the secret used for browser access.
+<!-- src: src/secrets/commands.rs::SecretCommands; src/secrets.rs::Secrets::configured, from_table -->
+
+Add a `[secrets]` table to `~/.efference/config.toml` before setup. It names commands to
+read (`get`), store (`set`), and optionally remove (`delete`) a secret. These commands
+replace the keychain for all of efference’s stored secrets. Even a connection configured
+with `auth = { kind = "keychain" }` uses them when the table is present.
+<!-- src: src/secrets/commands.rs::SecretCommands; src/secrets.rs::Secrets::configured, from_table; src/inference.rs::InferenceConfig (secrets); src/setup/probe.rs::LiveProbe::capture -->
+
+Each command is a program and its arguments, run directly rather than by a shell. `{name}`
+in any argument becomes the name of the secret, such as `oauth:codex` or `root`. The
+secret itself never appears in an argument: `set` receives it on standard input, and `get`
+prints it. `absent_status` is the exit status your tool gives when a secret does not
+exist; without it, a secret efference has not stored yet reads as a failure, so a first
+sign-in has nowhere to go.
+<!-- src: src/secrets/commands.rs::SecretCommands::get, set, delete, run, validate -->
+
+### With AWS Systems Manager Parameter Store
+
+Use the AWS CLI to store encrypted parameters:
+
+```toml
+[secrets]
+get    = ["aws", "ssm", "get-parameter", "--with-decryption", "--query", "Parameter.Value", "--output", "text", "--name", "/efference/{name}"]
+set    = ["aws", "ssm", "put-parameter", "--type", "SecureString", "--overwrite", "--name", "/efference/{name}", "--value", "file:///dev/stdin"]
+delete = ["aws", "ssm", "delete-parameter", "--name", "/efference/{name}"]
+absent_status = 254
+```
+
+### With pass
+
+`pass` encrypts each secret with your GPG key. A host running as a service has no
+terminal to ask for a passphrase, so the key must have none, or `gpg-agent` must already
+hold it:
+
+```toml
+[secrets]
+get    = ["pass", "show", "efference/{name}"]
+set    = ["pass", "insert", "--multiline", "--force", "efference/{name}"]
+delete = ["pass", "rm", "--force", "efference/{name}"]
+absent_status = 1
+```
+
+### With 1Password documents
+
+This uses `op` to keep each secret as a document in a vault named `efference`. The `set`
+command edits an existing document or creates it if missing:
+
+```toml
+[secrets]
+get    = ["op", "document", "get", "--vault", "efference", "{name}"]
+set    = ["sh", "-c", 'if op document get --vault efference "$1" </dev/null >/dev/null 2>&1; then exec op document edit --vault efference "$1" -; else exec op document create --vault efference --title "$1" -; fi', "sh", "{name}"]
+delete = ["op", "document", "delete", "--vault", "efference", "{name}"]
+absent_status = 1
+```
+
+### With systemd-creds
+
+`systemd-creds` encrypts each secret in a file under `~/.config/efference/credentials`, so
+only your user or root can decrypt it. This example needs systemd 256 or later for the
+`--user` option:
+
+```toml
+[secrets]
+get    = ["sh", "-c", 'f="$HOME/.config/efference/credentials/$1"; [ -e "$f" ] || exit 3; exec systemd-creds --user decrypt "$f" -', "sh", "{name}"]
+set    = ["sh", "-c", 'd="$HOME/.config/efference/credentials"; mkdir -p "$d" && exec systemd-creds --user encrypt - "$d/$1"', "sh", "{name}"]
+delete = ["sh", "-c", 'exec rm -f "$HOME/.config/efference/credentials/$1"', "sh", "{name}"]
+absent_status = 3
+```
+
+The 1Password and systemd examples run a short shell script. They pass `{name}` as its
+own argument (`$1`) rather than inserting it into the script text. All the commands run
+with the host’s environment. A service manager may supply a shorter `PATH` than your
+shell; if a program isn’t found, use its full path.
+<!-- src: src/secrets/commands.rs::run (argv run directly; {name} replaced per argument); AWS CLI return codes (docs.aws.amazon.com/cli/latest/topic/return-codes.html: 254, the service returned an error); pass(1); op document --help (2.39.0); systemd NEWS, CHANGES WITH 256 ("systemd-creds gained new options --user/--uid="); systemd-creds(1) -->
+
+A host does not create the web address's secret through the commands. Before the first
+`efference --host --bind`, run `efference auth rotate` once to store one; until then, a
+host with a bind refuses to start and says to run it.
+<!-- src: src/auth.rs::Root::load (RootError::Absent), Root::rotate; src/bin/efference/main.rs::rotate -->
+
+## What is protected, and what is stored
+
+### Keeping model keys out of commands
 
 The agent's commands do not inherit the host's model keys: every variable a connection
 reads its key from is removed from the environment of the commands a session runs. A
 project can opt one back in, for a project that calls the provider itself.
 <!-- src: src/boot/env.rs::build_env_policy; src/env_table.rs::Table::merge_with_host; src/env_table/child.rs::ChildEnv::apply -->
+
+### Masking secrets in the record
 
 Before anything is written to a session's log, efference replaces the secret values it
 knows with a marker, such as `⟦anthropic (ANTHROPIC_API_KEY): elided by harness⟧` for a
@@ -205,6 +220,8 @@ transformed in a way the encodings above do not cover. Signed reasoning blocks f
 model and image data are stored as received. Files you attach to a message are stored in
 the session's directory as you sent them.
 <!-- src: src/env_table/mask.rs::mask_blocks, mask_payload; src/attachments.rs; src/env_table.rs::EnvPolicy::build_session -->
+
+### Where those protections stop
 
 The agent's commands run as you. Programs running as you can read the host's environment
 through the operating system, and on Linux can read the Secret Service once it is
@@ -275,11 +292,12 @@ A ChatGPT connection that reuses Codex's sign-in reads Codex's own file,
 `~/.codex/auth.json`; efference never writes it.
 <!-- src: src/api/endpoint.rs::codex_cached_credentials, codex_auth_path -->
 
-One place a key can still reach a file by accident: a provider's error message, printed
-by the host, lands in a standalone host's log file at `~/.efference/standalone/<pid>/host.log`
-if the provider quotes the key back. Setup's "Variable name" prompt accepts only a
-portable name (letters, digits and `_`, not starting with a digit) and refuses text that
-looks like a key, without repeating it, so a key pasted there is not written to
-`config.toml`.
+Two edge cases are worth knowing when you’re checking where keys might end up:
+
+- A provider can quote a key back in an error. In standalone mode, the host’s error
+  output goes to `~/.efference/standalone/<pid>/host.log`, so that file could contain it.
+- Setup’s “Variable name” prompt expects a name, not a key. It accepts letters, digits,
+  and `_`, with no leading digit. If you paste something that looks like a key there,
+  setup refuses it without repeating it or writing it to `config.toml`.
 <!-- src: src/setup/flow/variable.rs::ask_variable_name; src/api/client/send.rs::open_error; src/bin/efference/island.rs::Island::launch (stderr to host.log) -->
 <!-- Not planned (backlog/parked/config-grant-written-before-masking.md): an approved grant is written to the session config before masking; a secret in a command has already reached the provider. -->

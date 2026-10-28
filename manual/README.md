@@ -16,17 +16,27 @@ less often.
 
 ## Register
 
-Each page has two layers:
+Write for someone trying to do something, not someone studying the implementation.
+Before drafting a paragraph, know who is reading it and what they are trying to understand
+or decide. Lead with the possibility it opens for them, then explain the mechanism they
+need to use it. Concrete benefits — coming back to a running session from a phone, giving
+new sessions project context — do more work than praise words.
 
-1. **What you need to know** — up front, for a reader of any technical background:
-   what to do, what will happen, what to watch for. Terms are explained where they are
-   first used, not cited.
-2. **How this works, precisely** — after it, for the cautious, the security-conscious,
-   and the curious: the mechanism, its boundaries, and what it does not protect against.
+Pages move from practical use to reference detail:
 
-As in `../docs/`: describe, don't evaluate. No praise words and no comparisons with
-other harnesses by name; where efference differs from a reader's likely expectation
-(for example, network egress), state what efference does plainly.
+1. **A route through the task.** Explain what the reader can do, how to start, and what
+   happens next. Introduce terms when they become useful. Put common choices before
+   specialized setups, and give readers permission to stop when they have what they need.
+2. **Details for a closer look.** Keep mechanisms, limits, costs, and security boundaries
+   available for readers checking whether a setup fits their needs. Use descriptive
+   headings: the table of contents should help someone find their own question, not repeat
+   the same generic labels on every page.
+
+The voice can be warm and inviting without making promises the code cannot keep. Show
+what the tool lets a reader do; avoid superlatives, unsupported reassurance, and comparisons
+with other harnesses by name. Keep consequential caveats beside the choices they affect,
+not hidden in the reference section. Accuracy and an inviting reading experience are both
+requirements.
 
 Vocabulary: public words, not internal shorthand. A terminal-owned host is
 **standalone mode**, not "island". This manual is the **manual**; "guide" is the

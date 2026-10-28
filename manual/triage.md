@@ -1,54 +1,60 @@
 # Triage
 
-## What you need to know
+A test run can produce hundreds of lines when the agent needs just the failure. A file
+read can bring in a whole module when it needs one function. **Triage** is how efference
+selects what the agent reads: after a batch of tool calls, a model reads each result,
+keeps the relevant lines, and adds a one-line note about the rest. The agent receives
+those excerpts and notes rather than the raw output.
+<!-- src: src/agent/landing.rs::land; src/triage.rs::Triager::triage_results; src/triage/schema.rs::retain_tool; src/project/render.rs::render_hunks -->
 
-The agent does not read raw tool output. After it runs a batch of tool calls — shell
-commands, file reads, MCP tools — a model reads the full output of each and keeps the lines
-that matter, with a one-line note about the rest. The agent sees those kept lines and the
-note. This is **triage**. It applies to every tool result, small ones included, and it has
-no off switch.
+## Give the agent the output it needs
+
+Triage is part of the session’s normal workflow, not a mode you have to turn on. It applies
+to tool results from shell commands, file reads, and MCP tools, small results included.
+There’s no off switch; the limits and special cases are [listed below](#limits-and-exceptions).
 <!-- src: src/agent/landing.rs::land; src/triage.rs::Triager::triage_results; src/triage/schema.rs::retain_tool; src/project/render.rs::render_hunks; absence of a disable setting in src/config/raw.rs, src/bin/efference/cli.rs -->
 
-It exists because an agent can't know in advance which part of a command's output it will
-need. Without triage, an agent either reads everything, filling its context with noise, or
-cuts the output down itself — `cargo test | tail -3` — and loses the failure it needed. With
-triage, the agent runs commands plainly, and the model choosing what to keep can see the
-whole output and what the agent said it was looking for.
+This lets the agent run commands without guessing which lines to cut away first. Instead
+of `cargo test | tail -3`, which might hide the failure it needs, it runs `cargo test` and
+says what it’s looking for. The triage model uses that intent to choose what to keep. The
+aim is to spend the agent’s context on information it needs for the work, not on the volume
+of output a command happens to produce.
 <!-- src: docs/positions.md ("Origin"); assets/prompts/session.md (do not pre-filter); src/tools.rs::INTENT -->
 
-The full output is kept in the session's log, and the clients can show it beside the kept
-lines. The agent itself can't ask for dropped lines back; if it needs them, it runs the
-command again, often more narrowly.
+You can inspect both versions: the session log keeps the full output, subject to the
+[result-size limit](#limits-and-exceptions), and the clients can show it beside the selected
+lines. The agent can’t retrieve dropped lines from the log. If it needs more, it runs the
+command again, often with a narrower question.
 <!-- src: src/agent/batch.rs::run_calls (raw logged before triage); src/tui/block_menu.rs::menu_items (raw / triaged); web/src/ui/Inspector.tsx (raw tab); src/agent/surface.rs::tool_definitions (no retrieval tool) -->
 
-### What it costs
+## Choose a triage model
 
-Triage is one extra model request per batch of tool calls. By default it runs on the
-agent's own model and connection, as a branch of the agent's conversation. With a provider
-that caches prompts, that branch reuses the cached conversation, so the new part — the tool
-output and the instruction — is what costs full price, plus the triage's own answer.
+You can start with the default: triage uses the agent’s own model and connection. It adds
+one model request per batch of tool calls, branching from the agent’s conversation. If
+your provider caches prompts, that branch reuses the cached conversation. The new tool
+output, instruction, and triage answer are the parts charged at full price.
 <!-- src: src/triage.rs::Triager::shared, choice; src/inference/options.rs::resolve_triage; src/triage/prompt.rs::triage_messages (breakpoint before the tail) -->
 
 A model with no prompt cache pays for the whole conversation on every triage. Check what
 your model supports before pairing it with a long session.
 <!-- src: src/api/provider/capabilities.rs (PromptCachePolicy::None) -->
 
-You can give one session a different, cheaper triage model: the "triage model" choice in
-the new-session form. That model has its own
-cache, and it receives every tool result plus a text record of the session: recent steps in
-full and one line per older step. Its connection is one more place your project's content
-goes.
+To use a different model for this work, choose a **triage model** in the new-session form.
+That can be a cheaper model, but it has its own cache rather than sharing the agent’s.
+It receives every tool result and a text record of the session: recent steps in full, and
+one line per older step. Choose its connection with the same care as the main model’s;
+your project’s content goes there too.
 <!-- src: src/tui/session_form/draft.rs::TriageDraft; web/src/ui/NewSessionSettings.tsx; src/triage.rs::Triager::own; src/triage/text_view.rs::history; src/digest.rs -->
 
 The triage model also writes each session's title.
 <!-- src: src/triage/title.rs; src/agent/title.rs -->
 
-### Checking its work
+## See what the agent was shown
 
-A result the agent got only part of is labelled with how much it kept, such as "triaged,
-kept 3 of 412 lines". The note under it says what the rest was. Open the result whole to
-compare. If triage dropped something the agent needed, tell the agent, as you would about
-anything else; there is no control that changes a verdict after the fact.
+Look for a label such as “triaged, kept 3 of 412 lines” on a result. The note beneath it
+explains what the rest contained; open the full result to compare. If something important
+was left out, tell the agent so it can follow up. There’s no control for changing a triage
+decision after the fact.
 <!-- src: src/tui/projection.rs::result_entry, selection_note; web/src/render/parse.ts::wireLabel; src/log.rs::result_verdicts (first verdict wins) -->
 
 If triage can't reach its model, or can't produce a usable answer after several tries, the
@@ -56,7 +62,7 @@ session stops and says the results are held. The agent is never handed the outpu
 or an error in its place. Continuing tries triage again; interrupting ends the turn.
 <!-- src: src/agent/triage_hold.rs::hold; src/triage/request.rs::TRIAGE_ATTEMPTS, TRIAGE_RESTARTS -->
 
-## How this works, precisely
+## Triage details
 
 ### One request per batch
 
@@ -102,7 +108,7 @@ agent with whatever text is kept. Triage reads the output after secret values ar
 <!-- src: src/project.rs::TRIAGE_LINE_CAP; src/agent/results.rs::cap_tool_result; src/agent.rs::MAX_TOOL_RESULT_BYTES; src/daemon/entry_view.rs::MAX_INLINE_RESULT_BYTES; web/src/ui/ToolBlocks.tsx (fetchWhole); src/triage/handles.rs::bypassed, SHAPES; src/agent/step.rs::run_call (Decision::Withheld); src/triage.rs::TRIAGE_MAX_OUTPUT -->
 <!-- TODO: the 256 KiB replacement means "raw is never overwritten" holds only below the cap; raised with jbr 2026-10-19. -->
 
-### Other requests
+### Requests you may notice between turns
 
 Besides one triage per batch, a session makes a few small requests of its own:
 
@@ -122,7 +128,7 @@ triage — waits for you to continue it or compact it, rather than paying to re-
 whole conversation unasked.
 <!-- src: src/daemon/cold.rs::await_warm_or_person -->
 
-### Not to be confused with
+### Triage, permissions, and summaries
 
 - **The permission spotter** judges a tool call *before* it runs, when the project's
   settings don't already allow it ([Permissions](permissions.md)). Triage reads results

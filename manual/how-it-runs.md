@@ -1,14 +1,15 @@
 # How efference runs
 
-## What you need to know
-
-efference's agent sessions run inside a **host**, a process on your machine. The terminal
-interface and the web client are windows onto sessions in a host; neither one is where
-the work happens. Scripts and other agents reach sessions the same way, through the same
-interface.
+You can sit with an agent in the terminal, leave it working while you’re away, or come
+back to it from a browser. The difference is how you run the **host**, the process on your
+machine that holds your sessions. The terminal and web clients are windows onto those
+sessions; scripts and other agents use the same interface.
 <!-- src: src/daemon/host.rs::serve_host; src/client.rs; src/daemon/handler.rs -->
 
-There are two ways to run one.
+## Choose when sessions keep running
+
+Start in standalone mode for work you’ll stay with. Use host mode when you want sessions
+to outlive the terminal interface or be available in the web client.
 
 - **Standalone.** With no host running, `efference` starts one for this terminal alone.
   When you quit the terminal interface, or close the terminal, that host archives its
@@ -22,25 +23,26 @@ There are two ways to run one.
   client ([Remote access](remote-access.md)).
   <!-- src: src/bin/efference/serve.rs::host; src/bin/efference/cli.rs::user_host_socket, host_candidates -->
 
-"Quit" therefore means two things: in standalone mode it ends the session, which you can
-resume later; with a host running it only closes the window onto it. The terminal
-interface says which: its leaving action reads "quit" in standalone mode and "detach" with
-a host.
+You don’t have to remember which mode you’re in when you leave. The terminal interface
+labels the action **quit** when leaving ends the session, and **detach** when the session
+will keep running in a host.
 <!-- src: src/tui/control_strip.rs::strip_live_items -->
 
-A host started in a terminal ends when that terminal does. To keep one running across
-logins, run `efference --host` under your system's service manager (launchd on macOS, a
-systemd user unit on Linux). A service does not see your shell's environment, so keep
-model keys in the keychain rather than in environment variables. A Linux server usually
-has no keychain a service can open; there, name secret commands for efference to keep
-them with instead ([Credentials](credentials.md), "Secret commands"). Sessions the host
-resumes, or creates for the web client, start with the service's environment too, unless
-an `env_hook` names a command that sets up a project's environment
-([Configuration](configuration.md)).
+### Keep a host running across logins
+
+A host started in a terminal ends when that terminal does. To keep it available across
+logins, run `efference --host` under your system’s service manager: launchd on macOS, or a
+systemd user unit on Linux.
+
+A service doesn’t inherit your shell’s environment. For model keys, use the keychain, or
+[secret commands](credentials.md#secret-commands) on a Linux server without an accessible
+keychain. For project tools and variables, an
+[`env_hook`](configuration.md#give-sessions-your-project-environment) can prepare the
+environment for sessions the host resumes or creates for the web client.
 <!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/secrets/commands.rs; src/daemon/host/preparation.rs::establish_environment; src/env_table/launch.rs::run_hook -->
 <!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. The service examples are host-as-a-service (backlog/inbox/host-as-a-service.md). -->
 
-### What leaves your machine
+## Understand what leaves your machine
 
 The efference process itself connects only to:
 
@@ -52,7 +54,8 @@ The efference process itself connects only to:
 - efference.net, to check for a newer version of efference, only if you said yes when
   `efference setup` asked, or when you run `efference update --check`.
 
-It sends no telemetry, analytics, or crash reports. Every connection is listed below.
+There is no telemetry, analytics, or crash reporting. If you want to audit the destinations
+and what each receives, see [Every outbound connection](#every-outbound-connection) below.
 <!-- src: src/http.rs::client (the one outbound client; callers src/api/, src/mcp/http.rs, src/oauth.rs, src/push.rs, src/update_check.rs); src/bin/efference/serve.rs::host (UpdatesConfig::load gates check_for_updates); absence: no telemetry or crash-reporting code in src/ or crates in Cargo.lock -->
 
 The programs efference starts are a different matter: the agent's commands, and the
@@ -61,9 +64,8 @@ lookups such as `op read`). They run as you, with your network access, and effer
 not sandbox them. What it controls is which of the agent's commands run without asking
 you first ([Permissions](permissions.md)).
 <!-- src: src/bash.rs; src/daemon/background.rs; src/mcp/stdio.rs; src/env_table/launch.rs::run_hook; src/env_table/resolve.rs::run_command; src/context.rs::run_exec; src/policy.rs -->
-<!-- TODO: permissions.md is not written yet. -->
 
-## How this works, precisely
+## Host and session details
 
 ### The control channel
 
@@ -89,7 +91,7 @@ everything except the web client's own files and the sign-in request itself
 ([Remote access](remote-access.md)).
 <!-- src: src/daemon/tcp/gate.rs::Surface::anonymous, gate -->
 
-### Where a session's record lives
+### Where your work is saved
 
 Each session keeps an append-only log in the project it runs in, at
 `.efference/<session id>/log.jsonl`, beside a copy of the project's configuration as that
@@ -97,20 +99,21 @@ session sees it. Resuming a session reopens its log. [Credentials](credentials.m
 what is kept out of it.
 <!-- src: src/boot.rs::LOG_NAME, CONFIG_NAME; src/persist.rs::Log; src/boot/resume.rs -->
 
-When `efference --host` starts, it reopens the sessions that were still open when a host
-last stopped, in every project, and leaves them idle: work that was interrupted does not
-continue until you message or continue the session. A reopened session may still make
-small requests of its own — keeping the provider's cache of the conversation warm, or
-reading a notification that arrives.
+### What happens after a restart
+
+Starting `efference --host` reopens sessions that were still open when a host last stopped,
+across all projects. They wait idle: interrupted work doesn’t continue until you message
+or continue the session. An idle session can still make small requests to keep the
+provider’s conversation cache warm or read an incoming notification.
 <!-- src: src/daemon/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/recovery.rs; src/daemon/keepalive.rs; src/daemon/metrics.rs::seed_clocks -->
 
-A standalone host reopens nothing when it starts. When you quit or close its terminal, it
-archives each of its sessions before it stops, the same as archiving a session yourself, so
-no host reopens them later. A session that worked in its own git worktree keeps the worktree
-if it holds changes, and the worktree is removed if it holds none. A session in which
-nothing was said yet is deleted rather than archived. A standalone host that crashes or is
-killed archives nothing: its sessions stay open, and the next `efference --host` reopens
-them, or you resume them from `efference`'s menu.
+Standalone mode starts fresh rather than reopening sessions automatically. On a normal
+quit, it archives its sessions so no host reopens them later. Sessions with nothing said
+yet are deleted instead. If a session used a git worktree, the worktree stays if it has
+changes and is removed if it has none.
+
+A crash or forced kill is different: no archiving happens. Those sessions remain open for
+the next `efference --host` to reopen, or for you to resume from `efference`’s menu.
 <!-- src: src/daemon/host/island_exit.rs::archive_and_shut_down; src/daemon/island.rs::OwnerWatch; src/daemon/host/boot_resume.rs::resume_open_sessions (is_island); src/daemon/host.rs::Host::end; src/worktree.rs::retire; src/discard.rs -->
 
 ### Every outbound connection
