@@ -1,6 +1,6 @@
 [package]
 name = "efference"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2024"
 # dist's GitHub workflow names the repository it runs in (process/releasing.md).
 repository = "https://github.com/jbr/efference"
