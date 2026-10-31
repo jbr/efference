@@ -285,6 +285,24 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
         println!("  no recorded requests.");
         return Ok(());
     }
+    let single = targets.len() == 1;
+    print_origins(&report, tty);
+    println!();
+    print_cold_reads(&report, single);
+    print_attribution(&report);
+    // The live standing, for the single-session read: what the sidebar is showing
+    // right now, in the same units.
+    if single {
+        print_current_streak(&report, tty);
+    }
+    if report.longest_streak >= COLD_STREAK_WARN {
+        print_streak_hint(tty);
+    }
+    Ok(())
+}
+
+/// The read rate per request origin.
+fn print_origins(report: &CacheReport, tty: bool) {
     println!(
         "  {:<10} {:>7} {:>7} {:>6} {:>11} {:>11}",
         "origin", "reqs", "warm", "rate", "read tok", "uncached"
@@ -312,7 +330,12 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
             tally.input
         );
     }
-    println!();
+}
+
+/// The main loop's aborted attempts and cold starts, and the cold reads the prefix does not
+/// explain. `single` is whether the report covers one session, whose longest run needs no
+/// session name beside it.
+fn print_cold_reads(report: &CacheReport, single: bool) {
     let aborted = report
         .by_origin
         .iter()
@@ -339,16 +362,19 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
         "  unexplained cold reads    {:>4}   longest run {}{}",
         report.unexplained,
         report.longest_streak,
-        if report.longest_streak_session.is_empty() || targets.len() == 1 {
+        if report.longest_streak_session.is_empty() || single {
             String::new()
         } else {
             format!(" ({})", report.longest_streak_session)
         }
     );
-    // What the provider itself said moved, when the record carries any
-    // (docs/transport.md). Printed only then: a provider without the feature writes no
-    // such field, and a session whose prefix never moved gets nothing — so the two
-    // lines address the reader who has a cold streak and no cause for it.
+}
+
+/// What the provider itself said moved, when the record carries any
+/// (docs/transport.md). Printed only then: a provider without the feature writes no
+/// such field, and a session whose prefix never moved gets nothing — so the two
+/// lines address the reader who has a cold streak and no cause for it.
+fn print_attribution(report: &CacheReport) {
     if report.attributed.total() > 0 {
         let a = &report.attributed;
         if a.divergences() > 0 {
@@ -371,33 +397,36 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
             );
         }
     }
-    // The live standing, for the single-session read: what the sidebar is showing
-    // right now, in the same units.
-    if targets.len() == 1 {
-        let line = format!(
-            "  current streak            {:>4}   warn at {COLD_STREAK_WARN}",
-            report.final_streak
-        );
-        let code = if report.final_streak >= COLD_STREAK_WARN {
-            RED
-        } else {
-            DIM
-        };
-        println!("{}", paint(&line, code, tty));
-    }
-    if report.longest_streak >= COLD_STREAK_WARN {
-        println!();
-        println!(
-            "{}",
-            paint(
-                "  A run this long means the provider stopped matching the prefix — check\n  \
-                 what moved between requests (a dependency's serialization, a per-session\n  \
-                 field on the wire, a provider-side normalization). `efference dev wire` prints\n  \
-                 the projection the pins cover.",
-                DIM,
-                tty
-            )
-        );
-    }
-    Ok(())
+}
+
+/// The cold-read run in force at the end of the record, against the sidebar's threshold.
+fn print_current_streak(report: &CacheReport, tty: bool) {
+    use efference::protocol::state::COLD_STREAK_WARN;
+
+    let line = format!(
+        "  current streak            {:>4}   warn at {COLD_STREAK_WARN}",
+        report.final_streak
+    );
+    let code = if report.final_streak >= COLD_STREAK_WARN {
+        RED
+    } else {
+        DIM
+    };
+    println!("{}", paint(&line, code, tty));
+}
+
+/// What a run of unexplained cold reads points at.
+fn print_streak_hint(tty: bool) {
+    println!();
+    println!(
+        "{}",
+        paint(
+            "  A run this long means the provider stopped matching the prefix — check\n  \
+             what moved between requests (a dependency's serialization, a per-session\n  \
+             field on the wire, a provider-side normalization). `efference dev wire` prints\n  \
+             the projection the pins cover.",
+            DIM,
+            tty
+        )
+    );
 }

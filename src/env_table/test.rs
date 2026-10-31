@@ -609,6 +609,9 @@ fn glob_matching_is_star_only() {
 /// one is re-serialized without the secret and still parses and pairs, the wire
 /// carries the logged string byte for byte, and a string that does not parse is
 /// scanned as text so the secret never reaches disk either way.
+// A scenario read top to bottom: three calls appended, then the log, the parse and the replay
+// each checked against them.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn a_responses_function_call_is_masked_on_append_and_replayed_as_logged() {
     use crate::api::{PromptCachePolicy, encode_responses};

@@ -88,6 +88,10 @@ impl<'a> Reader<'a> {
 }
 
 /// `view` as `reader` reads it, with durations measured to `now` (Unix millis).
+// One `match` over the condition, read by variant: each arm pushes the lines that
+// condition prints, and the arms share `target` and `out`, which an arm per function
+// would pass back and forth.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
     let id = view.id.as_str();
     let moves = reader.moves;

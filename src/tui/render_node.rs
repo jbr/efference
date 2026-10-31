@@ -1,10 +1,10 @@
-use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
+use ratatui::{buffer::Buffer, style::Modifier};
 
 use super::state::InteractiveState;
 use crate::tui::document::{
-    DiffLineKind, DocumentNode, EntryKind, HeadingLevel, ShowWhen, Span, SpanStyle, TuiAction,
+    DiffLine, DiffLineKind, DocumentNode, HeadingLevel, ListItem, MetadataField, ShowWhen, Span,
+    SpanStyle,
 };
-use crate::tui::render_document::BASELINE_LEFT_MARGIN;
 
 impl<'a> InteractiveState<'a> {
     /// Draw all active blockquote markers at the current row
@@ -25,27 +25,7 @@ impl<'a> InteractiveState<'a> {
     /// Render a single node
     pub(super) fn render_node(&mut self, node: &DocumentNode<'a>, buf: &mut Buffer) {
         match node {
-            // Set the register for the subtree and restore it after: nesting is
-            // possible in principle and saving the prior value keeps it sane,
-            // where an unconditional `= false` would un-dim the rest of an outer
-            // dimmed block.
-            DocumentNode::Dimmed { nodes } => {
-                let outer = self.dim_register;
-                self.dim_register = true;
-                // Children are blocks, separated by a blank row — the same
-                // spacing `Entry` gives its own, so a dimmed subtree reads like
-                // any other block sequence rather than running together.
-                for (idx, child) in nodes.iter().enumerate() {
-                    if idx > 0 {
-                        self.layout.pos.y += 1;
-                    }
-                    let saved_path = self.layout.node_path;
-                    self.layout.node_path.push(idx);
-                    self.render_node(child, buf);
-                    self.layout.node_path = saved_path;
-                }
-                self.dim_register = outer;
-            }
+            DocumentNode::Dimmed { nodes } => self.render_dimmed(nodes, buf),
             DocumentNode::Paragraph { spans } => {
                 // Block element: unconditionally position at indent
                 self.layout.pos.x = self.layout.indent;
@@ -72,141 +52,14 @@ impl<'a> InteractiveState<'a> {
                 }
             }
 
-            DocumentNode::Metadata { fields } => {
-                // Render each field on its own line: bold label + styled value.
-                for field in fields {
-                    self.layout.pos.x = self.layout.indent;
-                    self.draw_blockquote_markers(buf);
+            DocumentNode::Metadata { fields } => self.render_metadata(fields, buf),
 
-                    let label_span = Span::plain(format!("{}: ", field.label));
-                    self.render_span_with_modifier(&label_span, Modifier::BOLD, buf);
-                    for span in &field.value {
-                        self.render_span(span, buf);
-                    }
-                    self.layout.pos.y += 1;
-                }
-            }
+            DocumentNode::Heading { level, spans } => self.render_heading(*level, spans, buf),
 
-            DocumentNode::Heading { level, spans } => {
-                // Block element: unconditionally position at indent
-                self.layout.pos.x = self.layout.indent;
-                // Draw blockquote markers if we're inside a blockquote
-                self.draw_blockquote_markers(buf);
-
-                // Render heading spans (bold)
-                for span in spans {
-                    self.render_span_with_modifier(span, Modifier::BOLD, buf);
-                }
-
-                // New line after heading
-                self.layout.pos.y += 1;
-
-                // Add decorative underline (respecting left margin)
-                let underline_char = match level {
-                    HeadingLevel::Title => '═',
-                    HeadingLevel::Section => '┄',
-                };
-
-                // Draw blockquote markers on underline row
-                self.draw_blockquote_markers(buf);
-
-                if self.row_visible(self.layout.pos.y) {
-                    for c in self.layout.indent..self.layout.area.width {
-                        buf.cell_mut((c, self.layout.pos.y - self.viewport.scroll_offset))
-                            .unwrap()
-                            .set_char(underline_char);
-                    }
-                }
-
-                // Block element: increment y when done
-                self.layout.pos.y += 1;
-            }
-
-            DocumentNode::List { items, start } => {
-                for (item_idx, item) in items.iter().enumerate() {
-                    // Add blank line between list items
-                    if item_idx > 0 {
-                        // Draw blockquote markers on blank line
-                        self.draw_blockquote_markers(buf);
-                        self.layout.pos.y += 1;
-                    }
-
-                    // Block element: unconditionally position at indent
-                    self.layout.pos.x = self.layout.indent;
-                    // Draw blockquote markers before the item marker
-                    self.draw_blockquote_markers(buf);
-
-                    // Ordered lists number from `start`; bulleted lists use a nesting
-                    // glyph. The marker width varies (e.g. "  1. "), so advance by its
-                    // actual width rather than a fixed 4 columns.
-                    let marker = match start {
-                        Some(n) => format!("  {}. ", n + item_idx as u64),
-                        None => format!("  {} ", crate::tui::bullet_for_indent(self.layout.indent)),
-                    };
-                    let marker_width = marker.chars().count() as u16;
-                    let marker_style = self.theme.muted_style;
-                    self.write_text(
-                        buf,
-                        self.layout.pos.y,
-                        self.layout.pos.x,
-                        &marker,
-                        self.layout.area,
-                        marker_style,
-                    );
-                    self.layout.pos.x += marker_width;
-
-                    // Save indent and update for content
-                    let saved_indent = self.layout.indent;
-                    self.layout.indent = self.layout.pos.x;
-
-                    // Render content nodes
-                    // Note: no blank line spacing between blocks in list items - keep them compact
-                    for (content_idx, content_node) in item.content.iter().enumerate() {
-                        // Save path, update it, render, restore
-                        let saved_path = self.layout.node_path;
-                        self.layout.node_path.push(item_idx);
-                        self.layout.node_path.push(content_idx);
-
-                        self.render_node(content_node, buf);
-
-                        self.layout.node_path = saved_path;
-                    }
-
-                    // Restore indent
-                    self.layout.indent = saved_indent;
-                }
-                // Container: children handle their own spacing
-            }
+            DocumentNode::List { items, start } => self.render_list(items, *start, buf),
 
             DocumentNode::Section { title, nodes } => {
-                if let Some(title_spans) = title {
-                    // Block element: unconditionally position at indent
-                    self.layout.pos.x = self.layout.indent;
-
-                    for span in title_spans {
-                        self.render_span_with_modifier(span, Modifier::BOLD, buf);
-                    }
-
-                    // Add blank line after section title
-                    self.layout.pos.y += 1;
-                    self.layout.pos.y += 1;
-                }
-
-                for (idx, child_node) in nodes.iter().enumerate() {
-                    // Add blank line between consecutive blocks
-                    if idx > 0 {
-                        self.layout.pos.y += 1;
-                    }
-
-                    // Save and update path
-                    let saved_path = self.layout.node_path;
-                    self.layout.node_path.push(idx);
-
-                    self.render_node(child_node, buf);
-
-                    self.layout.node_path = saved_path;
-                }
-                // Container: children handle their own spacing
+                self.render_section(title.as_deref(), nodes, buf);
             }
 
             DocumentNode::CodeBlock { lang, code } => {
@@ -257,60 +110,9 @@ impl<'a> InteractiveState<'a> {
                 self.render_image_node(*seq, *idx, media_type, *width, *height, buf);
             }
 
-            DocumentNode::HorizontalRule => {
-                // Block element: unconditionally position at indent
-                self.layout.pos.x = self.layout.indent;
-                // Draw blockquote markers if we're inside a blockquote
-                self.draw_blockquote_markers(buf);
+            DocumentNode::HorizontalRule => self.render_horizontal_rule(buf),
 
-                if self.row_visible(self.layout.pos.y) {
-                    let rule_style = self.theme.muted_style;
-                    // Use a decorative pattern: ─── • ───
-                    let pattern = ['─', '─', '─', ' ', '•', ' '];
-                    for c in 0..self.layout.area.width {
-                        let ch = pattern[(c as usize) % pattern.len()];
-                        if let Some(cell) =
-                            buf.cell_mut((c, self.layout.pos.y - self.viewport.scroll_offset))
-                        {
-                            cell.set_char(ch);
-                            cell.set_style(rule_style);
-                        }
-                    }
-                }
-
-                // Block element: increment y when done
-                self.layout.pos.y += 1;
-            }
-
-            DocumentNode::BlockQuote { nodes } => {
-                // Add this blockquote's marker position to the stack
-                let marker_x = self.layout.indent;
-                self.layout.blockquote_markers.push(marker_x);
-
-                // Update indent to account for marker
-                let saved_indent = self.layout.indent;
-                self.layout.indent += 4; // "  ┃ " takes 4 columns
-
-                for (idx, child_node) in nodes.iter().enumerate() {
-                    // Add blank line between consecutive blocks
-                    if idx > 0 {
-                        // Draw all blockquote markers on the blank line
-                        self.draw_blockquote_markers(buf);
-                        self.layout.pos.y += 1;
-                    }
-
-                    let saved_path = self.layout.node_path;
-                    self.layout.node_path.push(idx);
-                    self.render_node(child_node, buf);
-                    self.layout.node_path = saved_path;
-                }
-
-                // Restore indent and pop marker
-                self.layout.indent = saved_indent;
-                self.layout.blockquote_markers.pop();
-
-                // Container: children handle their own spacing
-            }
+            DocumentNode::BlockQuote { nodes } => self.render_block_quote(nodes, buf),
 
             DocumentNode::Table { header, rows } => {
                 // Block element: unconditionally position at indent
@@ -322,30 +124,7 @@ impl<'a> InteractiveState<'a> {
                 self.layout.pos.y += 1;
             }
 
-            DocumentNode::Diff { lines } => {
-                // One styled line per diff line; the leading ` `/`+`/`-` is kept so
-                // columns align. Added → green, Removed → red, Hunk → muted,
-                // Context → default foreground.
-                for line in lines {
-                    self.layout.pos.x = self.layout.indent;
-                    self.draw_blockquote_markers(buf);
-                    let style = match line.kind {
-                        DiffLineKind::Added => SpanStyle::Added,
-                        DiffLineKind::Removed => SpanStyle::Removed,
-                        DiffLineKind::Hunk => SpanStyle::Comment,
-                        DiffLineKind::Context => SpanStyle::Plain,
-                    };
-                    self.render_span(
-                        &Span {
-                            text: line.text.clone().into(),
-                            style,
-                            action: None,
-                        },
-                        buf,
-                    );
-                    self.layout.pos.y += 1;
-                }
-            }
+            DocumentNode::Diff { lines } => self.render_diff(lines, buf),
 
             DocumentNode::CallItem { .. } => self.render_call_item(node, buf),
 
@@ -354,21 +133,7 @@ impl<'a> InteractiveState<'a> {
             }
 
             DocumentNode::Captioned { caption, nodes } => {
-                self.layout.pos.x = self.layout.indent;
-                self.draw_blockquote_markers(buf);
-                for span in caption {
-                    self.render_span(span, buf);
-                }
-                self.layout.pos.y += 1;
-                for (idx, child) in nodes.iter().enumerate() {
-                    if idx > 0 {
-                        self.layout.pos.y += 1;
-                    }
-                    let saved_path = self.layout.node_path;
-                    self.layout.node_path.push(idx);
-                    self.render_node(child, buf);
-                    self.layout.node_path = saved_path;
-                }
+                self.render_captioned(caption, nodes, buf);
             }
 
             DocumentNode::Signature { view, arriving } => {
@@ -381,202 +146,322 @@ impl<'a> InteractiveState<'a> {
                 header,
                 blocks,
                 key,
-            } => {
-                // First row of this entry and the index its focus action takes —
-                // captured before anything renders, so the focus bar (below) spans the
-                // whole entry and the index matches the keyboard cursor. The action is
-                // pushed *first* so navigation order equals visual order even when a
-                // header span carries a link of its own.
-                let entry_start = self.layout.pos.y;
-                let my_action_index = self.render_cache.actions.len();
-                if kind.is_focusable() {
-                    // The whole first row is the focus/click target. Focus is all it
-                    // is: a folded item carries its own expand target (docs/tui.md,
-                    // "Detail by recency").
-                    let rect = Rect::new(0, entry_start, self.layout.area.width, 1);
-                    self.render_cache
-                        .actions
-                        .push((rect, TuiAction::FocusEntry(self.layout.node_path)));
-                }
-                let is_focused = kind.is_focusable()
-                    && matches!(
-                        self.viewport.keyboard_cursor,
-                        super::state::KeyboardCursor::Focused { action_index }
-                            if action_index == my_action_index
-                    );
-
-                // The header row: the entry's marker glyph, its header spans, and —
-                // when focused — the block menu trailing them.
-                if let Some(header) = header {
-                    self.layout.pos.x = self.layout.indent;
-                    self.draw_blockquote_markers(buf);
-                    let header_row = self.layout.pos.y;
-
-                    if let Some(marker) = marker {
-                        self.render_span(marker, buf);
-                    }
-                    for span in header {
-                        self.render_span(span, buf);
-                    }
-                    // The block menu (docs/tui.md): the focused unit's own verbs,
-                    // trailing its header text — appending clobbers no header
-                    // columns and reflows nothing as focus moves.
-                    if is_focused {
-                        let key = key.as_deref();
-                        let items = super::block_menu::menu_items(
-                            *kind,
-                            key,
-                            self.view.is_flipped(*kind, key),
-                        );
-                        let col = self.layout.pos.x + 2;
-                        self.render_block_menu(buf, &items, header_row, col, self.layout.area);
-                    }
-                    self.layout.pos.y += 1;
-                }
-
-                // Body: every child, whole. A folded item cuts it with a clip from
-                // outside (docs/tui.md, "Detail by recency"); nothing here does.
-                for (idx, child_node) in blocks.iter().enumerate() {
-                    if idx > 0 {
-                        self.layout.pos.y += 1;
-                    }
-                    let saved_path = self.layout.node_path;
-                    self.layout.node_path.push(idx);
-                    self.render_node(child_node, buf);
-                    self.layout.node_path = saved_path;
-                }
-
-                // Focus bar: an obvious glyph marker down the focused unit's full
-                // height (docs/tui.md), painted after the body so it spans every row.
-                // Glyph-based, not reversed-video — the latter is invisible on themes
-                // whose fg/bg are close, and never shows in the no-color snapshot grid.
-                if is_focused {
-                    let style = self.style(SpanStyle::UserAccent);
-                    for row in entry_start..self.layout.pos.y {
-                        if self.row_visible(row) {
-                            self.write_text(buf, row, 0, "▌", self.layout.area, style);
-                        }
-                    }
-                }
-
-                // Authorship is structural: what the operator said carries an accent
-                // gutter down the reserved left margin; the agent's own voice is the
-                // unmarked default. Painted after the body so it spans its rows. A
-                // tool result is `role: user` on the wire but is not the operator
-                // speaking, and is a kind of its own — so it never lands here.
-                if matches!(kind, EntryKind::UserMessage) {
-                    let gutter_col = BASELINE_LEFT_MARGIN.saturating_sub(2);
-                    let style = self.style(SpanStyle::UserAccent);
-                    for row in entry_start..self.layout.pos.y {
-                        if self.row_visible(row) {
-                            self.write_text(buf, row, gutter_col, "┃", self.layout.area, style);
-                        }
-                    }
-                }
-            }
+            } => self.render_entry(
+                *kind,
+                marker.as_ref(),
+                header.as_deref(),
+                blocks,
+                key.as_deref(),
+                buf,
+            ),
 
             DocumentNode::Conditional { show_when, nodes } => {
-                // Transparent container: doesn't add its own newlines
-                // Interactive renderer is always in interactive mode
-                let should_show = match show_when {
-                    ShowWhen::Always | ShowWhen::Interactive => true,
-                    ShowWhen::NonInteractive => false,
-                };
-
-                if should_show {
-                    for (idx, node) in nodes.iter().enumerate() {
-                        // Add blank line between consecutive blocks
-                        if idx > 0 {
-                            self.layout.pos.y += 1;
-                        }
-                        self.render_node(node, buf);
-                    }
-                }
-                // Transparent container: no additional spacing
+                self.render_conditional(*show_when, nodes, buf);
             }
         }
     }
 
-    /// A call's signature at the width it has (docs/tui.md): the prompt, then the rows
-    /// [`layout_signature`](crate::tui::projection::signature::layout_signature) breaks
-    /// it into, continuation rows hung under the first. An argument too long to sit in
-    /// it at this width renders beneath it, under its key, as a plain block.
-    fn render_signature(
-        &mut self,
-        view: &crate::tui::projection::signature::CallView,
-        arriving: bool,
-        buf: &mut Buffer,
-    ) {
-        use crate::tui::projection::signature::{TokenKind, layout_signature};
-        const PROMPT: &str = "› ";
-        let hang = PROMPT.chars().count() as u16;
-        let columns = self
-            .layout
-            .area
-            .width
-            .saturating_sub(self.layout.indent + hang + 1) as usize;
-        let layout = layout_signature(view, Some(columns));
-        let span = |text: &str, style: SpanStyle| Span {
-            text: text.to_string().into(),
-            style,
-            action: None,
-        };
-        let row_count = layout.rows.len();
-        for (i, row) in layout.rows.iter().enumerate() {
+    /// Structured key-value metadata: each field on its own line, a bold label and its
+    /// styled value.
+    fn render_metadata(&mut self, fields: &[MetadataField<'a>], buf: &mut Buffer) {
+        // Render each field on its own line: bold label + styled value.
+        for field in fields {
             self.layout.pos.x = self.layout.indent;
             self.draw_blockquote_markers(buf);
-            if i == 0 {
-                self.render_span(&span(PROMPT, SpanStyle::UserAccent), buf);
-            } else {
-                self.layout.pos.x += hang;
+
+            let label_span = Span::plain(format!("{}: ", field.label));
+            self.render_span_with_modifier(&label_span, Modifier::BOLD, buf);
+            for span in &field.value {
+                self.render_span(span, buf);
             }
-            self.layout.pos.x += row.indent as u16;
-            // A value that runs past the width wraps hung under its own row's start,
-            // the way the web client's indented row wraps, not back at the margin.
-            let outer_indent = std::mem::replace(&mut self.layout.indent, self.layout.pos.x);
-            let last_row = i + 1 == row_count;
-            let token_count = row.tokens.len();
-            for (j, token) in row.tokens.iter().enumerate() {
-                // Still arriving: the ellipsis goes inside the closing paren.
-                if arriving && last_row && !layout.shell && j + 1 == token_count {
-                    let after_open = j > 0 && row.tokens[j - 1].text == "(";
-                    let ellipsis = if after_open { "…" } else { ", …" };
-                    self.render_span(&span(ellipsis, SpanStyle::Comment), buf);
-                }
-                let (text, style) = match token.kind {
-                    TokenKind::Server => (token.text.clone(), SpanStyle::Comment),
-                    TokenKind::Tool => (token.text.clone(), SpanStyle::FunctionName),
-                    TokenKind::Sep => (token.text.clone(), SpanStyle::Punctuation),
-                    TokenKind::Key => (token.text.clone(), SpanStyle::FieldName),
-                    TokenKind::Value | TokenKind::Target => {
-                        (token.text.clone(), SpanStyle::InlineCode)
-                    }
-                    TokenKind::Tag => (format!("  {}", token.text), SpanStyle::Comment),
-                };
-                self.render_span(&span(&text, style), buf);
-            }
-            if arriving && last_row && layout.shell {
-                self.render_span(&span(" …", SpanStyle::Comment), buf);
-            }
-            self.layout.indent = outer_indent;
             self.layout.pos.y += 1;
         }
-        for arg in &layout.pulled {
-            self.layout.pos.y += 1;
-            let text = match &arg.value {
-                serde_json::Value::String(text) => text.clone(),
-                other => crate::tui::projection::signature::flat_value(other),
+    }
+
+    /// A transparent container that shows its children only in the modes `show_when` names.
+    fn render_conditional(
+        &mut self,
+        show_when: ShowWhen,
+        nodes: &[DocumentNode<'a>],
+        buf: &mut Buffer,
+    ) {
+        // Transparent container: doesn't add its own newlines
+        // Interactive renderer is always in interactive mode
+        let should_show = match show_when {
+            ShowWhen::Always | ShowWhen::Interactive => true,
+            ShowWhen::NonInteractive => false,
+        };
+
+        if should_show {
+            for (idx, node) in nodes.iter().enumerate() {
+                // Add blank line between consecutive blocks
+                if idx > 0 {
+                    self.layout.pos.y += 1;
+                }
+                self.render_node(node, buf);
+            }
+        }
+        // Transparent container: no additional spacing
+    }
+
+    /// Render the children in the dimmed register (docs/tui.md).
+    fn render_dimmed(&mut self, nodes: &[DocumentNode<'a>], buf: &mut Buffer) {
+        // Set the register for the subtree and restore it after: nesting is
+        // possible in principle and saving the prior value keeps it sane,
+        // where an unconditional `= false` would un-dim the rest of an outer
+        // dimmed block.
+        let outer = self.dim_register;
+        self.dim_register = true;
+        // Children are blocks, separated by a blank row — the same
+        // spacing `Entry` gives its own, so a dimmed subtree reads like
+        // any other block sequence rather than running together.
+        for (idx, child) in nodes.iter().enumerate() {
+            if idx > 0 {
+                self.layout.pos.y += 1;
+            }
+            let saved_path = self.layout.node_path;
+            self.layout.node_path.push(idx);
+            self.render_node(child, buf);
+            self.layout.node_path = saved_path;
+        }
+        self.dim_register = outer;
+    }
+
+    /// A heading: its spans in bold, then a decorative underline.
+    fn render_heading(&mut self, level: HeadingLevel, spans: &[Span<'a>], buf: &mut Buffer) {
+        // Block element: unconditionally position at indent
+        self.layout.pos.x = self.layout.indent;
+        // Draw blockquote markers if we're inside a blockquote
+        self.draw_blockquote_markers(buf);
+
+        // Render heading spans (bold)
+        for span in spans {
+            self.render_span_with_modifier(span, Modifier::BOLD, buf);
+        }
+
+        // New line after heading
+        self.layout.pos.y += 1;
+
+        // Add decorative underline (respecting left margin)
+        let underline_char = match level {
+            HeadingLevel::Title => '═',
+            HeadingLevel::Section => '┄',
+        };
+
+        // Draw blockquote markers on underline row
+        self.draw_blockquote_markers(buf);
+
+        if self.row_visible(self.layout.pos.y) {
+            for c in self.layout.indent..self.layout.area.width {
+                buf.cell_mut((c, self.layout.pos.y - self.viewport.scroll_offset))
+                    .unwrap()
+                    .set_char(underline_char);
+            }
+        }
+
+        // Block element: increment y when done
+        self.layout.pos.y += 1;
+    }
+
+    /// A list: one marker per item, the item's blocks indented past it.
+    fn render_list(&mut self, items: &[ListItem<'a>], start: Option<u64>, buf: &mut Buffer) {
+        for (item_idx, item) in items.iter().enumerate() {
+            // Add blank line between list items
+            if item_idx > 0 {
+                // Draw blockquote markers on blank line
+                self.draw_blockquote_markers(buf);
+                self.layout.pos.y += 1;
+            }
+
+            // Block element: unconditionally position at indent
+            self.layout.pos.x = self.layout.indent;
+            // Draw blockquote markers before the item marker
+            self.draw_blockquote_markers(buf);
+
+            // Ordered lists number from `start`; bulleted lists use a nesting
+            // glyph. The marker width varies (e.g. "  1. "), so advance by its
+            // actual width rather than a fixed 4 columns.
+            let marker = match start {
+                Some(n) => format!("  {}. ", n + item_idx as u64),
+                None => format!("  {} ", crate::tui::bullet_for_indent(self.layout.indent)),
             };
-            self.render_node(
-                &DocumentNode::Captioned {
-                    caption: vec![span(&arg.key, SpanStyle::Comment)],
-                    nodes: vec![DocumentNode::CodeBlock {
-                        lang: None,
-                        code: text.into(),
-                    }],
+            let marker_width = marker.chars().count() as u16;
+            let marker_style = self.theme.muted_style;
+            self.write_text(
+                buf,
+                self.layout.pos.y,
+                self.layout.pos.x,
+                &marker,
+                self.layout.area,
+                marker_style,
+            );
+            self.layout.pos.x += marker_width;
+
+            // Save indent and update for content
+            let saved_indent = self.layout.indent;
+            self.layout.indent = self.layout.pos.x;
+
+            // Render content nodes
+            // Note: no blank line spacing between blocks in list items - keep them compact
+            for (content_idx, content_node) in item.content.iter().enumerate() {
+                // Save path, update it, render, restore
+                let saved_path = self.layout.node_path;
+                self.layout.node_path.push(item_idx);
+                self.layout.node_path.push(content_idx);
+
+                self.render_node(content_node, buf);
+
+                self.layout.node_path = saved_path;
+            }
+
+            // Restore indent
+            self.layout.indent = saved_indent;
+        }
+        // Container: children handle their own spacing
+    }
+
+    /// A section: an optional bold title, then its blocks a blank row apart.
+    fn render_section(
+        &mut self,
+        title: Option<&[Span<'a>]>,
+        nodes: &[DocumentNode<'a>],
+        buf: &mut Buffer,
+    ) {
+        if let Some(title_spans) = title {
+            // Block element: unconditionally position at indent
+            self.layout.pos.x = self.layout.indent;
+
+            for span in title_spans {
+                self.render_span_with_modifier(span, Modifier::BOLD, buf);
+            }
+
+            // Add blank line after section title
+            self.layout.pos.y += 1;
+            self.layout.pos.y += 1;
+        }
+
+        for (idx, child_node) in nodes.iter().enumerate() {
+            // Add blank line between consecutive blocks
+            if idx > 0 {
+                self.layout.pos.y += 1;
+            }
+
+            // Save and update path
+            let saved_path = self.layout.node_path;
+            self.layout.node_path.push(idx);
+
+            self.render_node(child_node, buf);
+
+            self.layout.node_path = saved_path;
+        }
+        // Container: children handle their own spacing
+    }
+
+    /// A horizontal rule: a repeating pattern across the area's width.
+    fn render_horizontal_rule(&mut self, buf: &mut Buffer) {
+        // Block element: unconditionally position at indent
+        self.layout.pos.x = self.layout.indent;
+        // Draw blockquote markers if we're inside a blockquote
+        self.draw_blockquote_markers(buf);
+
+        if self.row_visible(self.layout.pos.y) {
+            let rule_style = self.theme.muted_style;
+            // Use a decorative pattern: ─── • ───
+            let pattern = ['─', '─', '─', ' ', '•', ' '];
+            for c in 0..self.layout.area.width {
+                let ch = pattern[(c as usize) % pattern.len()];
+                if let Some(cell) =
+                    buf.cell_mut((c, self.layout.pos.y - self.viewport.scroll_offset))
+                {
+                    cell.set_char(ch);
+                    cell.set_style(rule_style);
+                }
+            }
+        }
+
+        // Block element: increment y when done
+        self.layout.pos.y += 1;
+    }
+
+    /// A block quote: its marker joins the stack and the indent moves past it for the
+    /// children.
+    fn render_block_quote(&mut self, nodes: &[DocumentNode<'a>], buf: &mut Buffer) {
+        // Add this blockquote's marker position to the stack
+        let marker_x = self.layout.indent;
+        self.layout.blockquote_markers.push(marker_x);
+
+        // Update indent to account for marker
+        let saved_indent = self.layout.indent;
+        self.layout.indent += 4; // "  ┃ " takes 4 columns
+
+        for (idx, child_node) in nodes.iter().enumerate() {
+            // Add blank line between consecutive blocks
+            if idx > 0 {
+                // Draw all blockquote markers on the blank line
+                self.draw_blockquote_markers(buf);
+                self.layout.pos.y += 1;
+            }
+
+            let saved_path = self.layout.node_path;
+            self.layout.node_path.push(idx);
+            self.render_node(child_node, buf);
+            self.layout.node_path = saved_path;
+        }
+
+        // Restore indent and pop marker
+        self.layout.indent = saved_indent;
+        self.layout.blockquote_markers.pop();
+
+        // Container: children handle their own spacing
+    }
+
+    /// A diff: one styled row per line.
+    fn render_diff(&mut self, lines: &[DiffLine], buf: &mut Buffer) {
+        // One styled line per diff line; the leading ` `/`+`/`-` is kept so
+        // columns align. Added → green, Removed → red, Hunk → muted,
+        // Context → default foreground.
+        for line in lines {
+            self.layout.pos.x = self.layout.indent;
+            self.draw_blockquote_markers(buf);
+            let style = match line.kind {
+                DiffLineKind::Added => SpanStyle::Added,
+                DiffLineKind::Removed => SpanStyle::Removed,
+                DiffLineKind::Hunk => SpanStyle::Comment,
+                DiffLineKind::Context => SpanStyle::Plain,
+            };
+            self.render_span(
+                &Span {
+                    text: line.text.clone().into(),
+                    style,
+                    action: None,
                 },
                 buf,
             );
+            self.layout.pos.y += 1;
+        }
+    }
+
+    /// A block with its caption directly above it.
+    fn render_captioned(
+        &mut self,
+        caption: &[Span<'a>],
+        nodes: &[DocumentNode<'a>],
+        buf: &mut Buffer,
+    ) {
+        self.layout.pos.x = self.layout.indent;
+        self.draw_blockquote_markers(buf);
+        for span in caption {
+            self.render_span(span, buf);
+        }
+        self.layout.pos.y += 1;
+        for (idx, child) in nodes.iter().enumerate() {
+            if idx > 0 {
+                self.layout.pos.y += 1;
+            }
+            let saved_path = self.layout.node_path;
+            self.layout.node_path.push(idx);
+            self.render_node(child, buf);
+            self.layout.node_path = saved_path;
         }
     }
 }

@@ -297,6 +297,11 @@ unused_qualifications = "warn"
 [lints.rustdoc]
 private_intra_doc_links = "allow"
 
+# Considered and not adopted: must_use_candidate, missing_errors_doc, missing_panics_doc and
+# missing_docs, library-API lints that push toward doc comments restating docs/ (efference
+# publishes no library API; process/comments.md); doc_markdown; wildcard_imports, nearly all
+# the tests' `use super::*`; the cast_* family; multiple_crate_versions;
+# missing_debug_implementations.
 [lints.clippy]
 dbg_macro = "warn"
 manual_let_else = "warn"
@@ -308,6 +313,7 @@ redundant_closure_for_method_calls = "warn"
 ref_option = "warn"
 semicolon_if_nothing_returned = "warn"
 struct_excessive_bools = "warn"
+too_many_lines = "warn"
 uninlined_format_args = "warn"
 unnecessary_wraps = "warn"
 unused_async = "warn"

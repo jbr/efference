@@ -32,6 +32,10 @@ const SKETCH_LEVELS: [&str; 5] = [
 /// conditional axes: a question about a list the state does not carry has no
 /// answerable content, and asking it anyway would invite an answer invented from
 /// nothing.
+// The length is the question text: one `insert` per question, each a prompt and the
+// criteria for both answers, read in the order they are asked. Wording is this file's
+// tuning surface (module doc), so it stays in one place.
+#[allow(clippy::too_many_lines)]
 pub(super) fn questions(watch_for: bool, probe: bool) -> BTreeMap<String, Question> {
     let mut questions = BTreeMap::new();
 

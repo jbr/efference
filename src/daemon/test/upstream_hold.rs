@@ -60,6 +60,9 @@ const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","
 /// call — no error result the agent would read — and the session reports a stall
 /// while its loop still runs. The operator's continue runs the triage again, the
 /// verdict lands, and the held attempt's breadcrumb rides the `Triage`.
+// A scenario read top to bottom: the scripted refusal, the hold, the continue, and the log it
+// leaves.
+#[allow(clippy::too_many_lines)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_gate_without_a_verdict_holds_until_continue() {
     let upstream = ScriptedUpstream::new(|n| match n {

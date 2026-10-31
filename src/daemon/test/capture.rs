@@ -155,6 +155,9 @@ async fn triage_is_shown_the_masked_result() {
 /// its own result, which is the shape every session before capture has. This is the
 /// property the cached prefix rests on: what decides a result cannot change what the
 /// model reads, only when it was decided.
+// A scenario read top to bottom: the loop's run, the same conversation logged directly, then
+// the byte comparison between the two.
+#[allow(clippy::too_many_lines)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
     let upstream = ScriptedUpstream::new(|n| match n {

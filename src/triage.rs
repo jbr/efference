@@ -506,37 +506,7 @@ impl Triager {
         // every pending result finds its verdict; labels the model invented simply find
         // no home — the same harness-side guard applied to notification ids and
         // roster names below.
-        let results = pending
-            .iter()
-            .zip(&labels)
-            .map(|(p, label)| match bypassed(p) {
-                // Decided by the shape rule before the fork was consulted
-                // (docs/triage.md) — a `retain` entry for it, had the triage
-                // written one unasked, finds no home.
-                Some(shape) => Some(bypass_verdict(shape)),
-                None => match verdict
-                    .results
-                    .iter()
-                    .find(|v| Some(&v.label) == label.as_ref())
-                {
-                    Some(v) => {
-                        let wire = WireState::Triaged(Triaged {
-                            keep: v.keep.clone(),
-                            note: v.note.clone(),
-                            intent_feedback: v.intent_feedback.clone(),
-                        });
-                        Some(TriageOutcome {
-                            wire,
-                            origin: Origin::Model,
-                            raw_keep: v.raw_keep.clone(),
-                        })
-                    }
-                    // Unreachable in practice (coverage validated); a gap is a
-                    // harness defect, answered like any other triage without a verdict.
-                    None => None,
-                },
-            })
-            .collect::<Option<Vec<_>>>();
+        let results = verdicts_in_call_order(pending, &labels, &verdict.results);
         let Some(results) = results else {
             return Err(HoldFailure::new(
                 TriageFailure::Unusable("a validated verdict left a result unanswered".into()),

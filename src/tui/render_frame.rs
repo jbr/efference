@@ -56,10 +56,84 @@ fn put_cols(
     col
 }
 
+/// Where each part of the frame sits (docs/tui.md).
+struct FrameAreas {
+    header: Rect,
+    /// The transcript, clear of the scrollbar's column.
+    main: Rect,
+    /// The background-process panel; zero rows when none run.
+    proc: Rect,
+    staged: Rect,
+    strip: Rect,
+    input: Rect,
+    status: Rect,
+    /// The session drawer, when open.
+    sidebar: Option<Rect>,
+}
+
 impl<'a> InteractiveState<'a> {
     pub(super) fn render_frame(&mut self, frame: &mut Frame) {
         let full = frame.area();
+        let areas = self.frame_areas(full);
 
+        if matches!(self.ui_mode, UiMode::Help) {
+            // Help covers the entire area (including the composer/status rows).
+            self.render_help_screen(frame.buffer_mut(), full);
+            return;
+        }
+
+        self.paint_document(frame, full, &areas);
+
+        self.render_header(frame.buffer_mut(), areas.header);
+
+        // Live background-process panel, between the transcript and the gate (docs/process-monitor.md).
+        if areas.proc.height > 0 {
+            self.render_processes_panel(frame.buffer_mut(), areas.proc);
+        }
+
+        // Staged attachments, then the control strip directly above the composer.
+        self.render_staged(frame.buffer_mut(), areas.staged);
+        self.render_control_strip(frame.buffer_mut(), areas.strip);
+
+        // Composer — skipped entirely in a read-only view, which reserved it no rows
+        // above (`input_height` is 0 there): an input that cannot send is not chrome
+        // worth drawing.
+        if !self.read_only() {
+            self.render_composer(frame, areas.input);
+        }
+
+        self.render_status_bar(frame.buffer_mut(), areas.status);
+
+        if let Some(layout_cache) = self.viewport.cached_layout {
+            // The scrollbar draws in the column just past the rect it is handed:
+            // the screen's last one, whatever the transcript column's placement.
+            let track = Rect {
+                x: full.x,
+                width: full.width.saturating_sub(1),
+                ..areas.main
+            };
+            self.render_scrollbar(frame.buffer_mut(), track, layout_cache.document_height);
+        }
+
+        if let Some(sb) = areas.sidebar {
+            self.render_sidebar(frame.buffer_mut(), sb);
+        }
+
+        if let UiMode::ThemePicker { selected_index, .. } = self.ui_mode {
+            self.render_theme_picker(frame.buffer_mut(), full, selected_index);
+        }
+        // Cloned rather than borrowed: the paint takes `&mut self` for the
+        // render caches, and the menu is a handful of rows.
+        if let UiMode::Sessions(menu) = &self.ui_mode {
+            let menu = menu.clone();
+            self.render_sessions(frame.buffer_mut(), full, &menu);
+        }
+    }
+
+    /// Where each part of the frame sits for a terminal of area `full`. Records the
+    /// geometry the rest of the UI reads between frames: the composer's and strip's
+    /// heights, the drawer, and the transcript's origin.
+    fn frame_areas(&mut self, full: Rect) -> FrameAreas {
         // Top to bottom: the header row; the transcript; then the bottom chrome —
         // [process panel?] / staged / control strip / composer / status. The composer
         // grows with its content (1 row, up to a cap). The rightmost column of the
@@ -153,11 +227,23 @@ impl<'a> InteractiveState<'a> {
         self.viewport.sidebar_area = sidebar_area;
         self.viewport.doc_origin = Position::new(main_area.x, main_area.y);
 
-        if matches!(self.ui_mode, UiMode::Help) {
-            // Help covers the entire area (including the composer/status rows).
-            self.render_help_screen(frame.buffer_mut(), full);
-            return;
+        FrameAreas {
+            header: Rect::new(full.x, full.y, full.width, header_height),
+            main: main_area,
+            proc: proc_area,
+            staged: staged_area,
+            strip: strip_area,
+            input: input_area,
+            status: status_area,
+            sidebar: sidebar_area,
         }
+    }
+
+    /// Lay out the document in a buffer of its own and copy it into the frame at the
+    /// transcript's area, over the margins' surface.
+    fn paint_document(&mut self, frame: &mut Frame, full: Rect, areas: &FrameAreas) {
+        let main_area = areas.main;
+        let header_height = areas.header.height;
 
         // The margins either side of a centred column are the document's surface
         // too, so the column reads as placed on the page rather than cut out of it.
@@ -220,54 +306,6 @@ impl<'a> InteractiveState<'a> {
                     *dst = src.clone();
                 }
             }
-        }
-
-        self.render_header(
-            frame.buffer_mut(),
-            Rect::new(full.x, full.y, full.width, header_height),
-        );
-
-        // Live background-process panel, between the transcript and the gate (docs/process-monitor.md).
-        if proc_height > 0 {
-            self.render_processes_panel(frame.buffer_mut(), proc_area);
-        }
-
-        // Staged attachments, then the control strip directly above the composer.
-        self.render_staged(frame.buffer_mut(), staged_area);
-        self.render_control_strip(frame.buffer_mut(), strip_area);
-
-        // Composer — skipped entirely in a read-only view, which reserved it no rows
-        // above (`input_height` is 0 there): an input that cannot send is not chrome
-        // worth drawing.
-        if !self.read_only() {
-            self.render_composer(frame, input_area);
-        }
-
-        self.render_status_bar(frame.buffer_mut(), status_area);
-
-        if let Some(layout_cache) = self.viewport.cached_layout {
-            // The scrollbar draws in the column just past the rect it is handed:
-            // the screen's last one, whatever the transcript column's placement.
-            let track = Rect {
-                x: full.x,
-                width: full.width.saturating_sub(1),
-                ..main_area
-            };
-            self.render_scrollbar(frame.buffer_mut(), track, layout_cache.document_height);
-        }
-
-        if let Some(sb) = sidebar_area {
-            self.render_sidebar(frame.buffer_mut(), sb);
-        }
-
-        if let UiMode::ThemePicker { selected_index, .. } = self.ui_mode {
-            self.render_theme_picker(frame.buffer_mut(), full, selected_index);
-        }
-        // Cloned rather than borrowed: the paint takes `&mut self` for the
-        // render caches, and the menu is a handful of rows.
-        if let UiMode::Sessions(menu) = &self.ui_mode {
-            let menu = menu.clone();
-            self.render_sessions(frame.buffer_mut(), full, &menu);
         }
     }
 

@@ -59,88 +59,98 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
     if role.scope.is_none() {
         println!("  note: no `scope` — the spotter judges moves against nothing");
     }
-    // Mount every declared server and report the computed perimeter: what each
-    // one advertises, and whether the file's `tools` clears it. The per-server
-    // tool list is the diff of `definitions()` across that server's own mount —
-    // namespaced `<server>__<tool>` by construction, so attribution is exact.
-    // Stored credentials are reused; the dance is not run (see module docs).
     if !role.mcp_servers.is_empty() {
-        let store: std::sync::Arc<dyn efference::mcp::auth::store::TokenStore> =
-            std::sync::Arc::new(efference::mcp::auth::store::KeychainStore::new(
-                std::sync::Arc::new(efference::secrets::Secrets::for_user()?),
-            ));
-        let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
-        let mut failed: Option<(String, String)> = None;
-        for (name, entry) in &role.mcp_servers {
-            // As at boot, only an HTTP server's grant is read (docs/mcp-auth.md).
-            let credentials = match &entry.transport {
-                efference::config::McpTransport::Http { .. } => {
-                    efference::mcp::auth::stored_credentials(&store, name).await?
-                }
-                efference::config::McpTransport::Stdio { .. } => None,
-            };
-            let before = toolbox.definitions().len();
-            let mount = toolbox
-                .mount_connected(name, &entry.transport, &cwd, credentials)
-                .await;
-            if let Err(e) = mount {
-                let reason = if e
-                    .downcast_ref::<efference::mcp::auth::AuthorizationRequired>()
-                    .is_some()
-                {
-                    "requires authorization — starting a session here opens its sign-in".to_string()
-                } else {
-                    format!("{e:#}")
-                };
-                if entry.optional {
-                    println!("  [mcp:{name}]: did not mount and is optional — {reason}");
-                    continue;
-                }
-                failed = Some((name.clone(), reason));
-                break;
-            }
-            let definitions = toolbox.definitions();
-            let mounted = &definitions[before..];
-            let advertised: Vec<&str> = mounted
-                .iter()
-                .filter_map(|d| d.get("name")?.as_str())
-                .collect();
-            let weights: Vec<usize> = mounted.iter().map(|d| d.to_string().len()).collect();
-            let total: usize = weights.iter().sum();
-            let cleared = advertised
-                .iter()
-                .filter(|tool| efference::policy::tool_granted(&role, tool))
-                .count();
-            println!(
-                "  [mcp:{name}]: {} tool(s), {} granted in `[tools]`; {} bytes of definitions",
-                advertised.len(),
-                cleared,
-                total
-            );
-            for (tool, weight) in advertised.iter().zip(&weights) {
-                println!(
-                    "    {} {} ({} B)",
-                    grant_mark(&role, tool),
-                    efference::mcp::display_name(tool),
-                    weight
-                );
-            }
-            if cleared < advertised.len() {
-                println!(
-                    "    note: {} advertised tool(s) not granted — grant them in `[tools]` (`{name} = {{ granted = true }}` for all), or leave them ungranted deliberately",
-                    advertised.len() - cleared,
-                );
-            }
-        }
-        if let Some((name, reason)) = failed {
-            return Err(format!(
-                "{} validates, but mcp server `{name}` did not mount: {reason}; fix it, or set `optional = true` under [mcp.servers.{name}]",
-                path.display(),
-            )
-            .into());
-        }
+        mount_servers(&role, &cwd, &path).await?;
     }
     Ok(())
+}
+
+/// Mount every declared server and report the computed perimeter: what each
+/// one advertises, and whether the file's `tools` clears it. The per-server
+/// tool list is the diff of `definitions()` across that server's own mount —
+/// namespaced `<server>__<tool>` by construction, so attribution is exact.
+/// Stored credentials are reused; the dance is not run (see module docs).
+async fn mount_servers(role: &efference::config::Config, cwd: &Path, path: &Path) -> CliResult {
+    let store: std::sync::Arc<dyn efference::mcp::auth::store::TokenStore> =
+        std::sync::Arc::new(efference::mcp::auth::store::KeychainStore::new(
+            std::sync::Arc::new(efference::secrets::Secrets::for_user()?),
+        ));
+    let mut toolbox = Toolbox::bash_and_mcps(cwd.to_path_buf(), None)?;
+    let mut failed: Option<(String, String)> = None;
+    for (name, entry) in &role.mcp_servers {
+        // As at boot, only an HTTP server's grant is read (docs/mcp-auth.md).
+        let credentials = match &entry.transport {
+            efference::config::McpTransport::Http { .. } => {
+                efference::mcp::auth::stored_credentials(&store, name).await?
+            }
+            efference::config::McpTransport::Stdio { .. } => None,
+        };
+        let before = toolbox.definitions().len();
+        let mount = toolbox
+            .mount_connected(name, &entry.transport, cwd, credentials)
+            .await;
+        if let Err(e) = mount {
+            let reason = if e
+                .downcast_ref::<efference::mcp::auth::AuthorizationRequired>()
+                .is_some()
+            {
+                "requires authorization — starting a session here opens its sign-in".to_string()
+            } else {
+                format!("{e:#}")
+            };
+            if entry.optional {
+                println!("  [mcp:{name}]: did not mount and is optional — {reason}");
+                continue;
+            }
+            failed = Some((name.clone(), reason));
+            break;
+        }
+        let definitions = toolbox.definitions();
+        print_server(role, name, &definitions[before..]);
+    }
+    if let Some((name, reason)) = failed {
+        return Err(format!(
+            "{} validates, but mcp server `{name}` did not mount: {reason}; fix it, or set `optional = true` under [mcp.servers.{name}]",
+            path.display(),
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// What one mounted server advertises against the file's `[tools]` table: its tool
+/// count, how many the file grants, and a mark per tool.
+fn print_server(role: &efference::config::Config, name: &str, mounted: &[serde_json::Value]) {
+    let advertised: Vec<&str> = mounted
+        .iter()
+        .filter_map(|d| d.get("name")?.as_str())
+        .collect();
+    let weights: Vec<usize> = mounted.iter().map(|d| d.to_string().len()).collect();
+    let total: usize = weights.iter().sum();
+    let cleared = advertised
+        .iter()
+        .filter(|tool| efference::policy::tool_granted(role, tool))
+        .count();
+    println!(
+        "  [mcp:{name}]: {} tool(s), {} granted in `[tools]`; {} bytes of definitions",
+        advertised.len(),
+        cleared,
+        total
+    );
+    for (tool, weight) in advertised.iter().zip(&weights) {
+        println!(
+            "    {} {} ({} B)",
+            grant_mark(role, tool),
+            efference::mcp::display_name(tool),
+            weight
+        );
+    }
+    if cleared < advertised.len() {
+        println!(
+            "    note: {} advertised tool(s) not granted — grant them in `[tools]` (`{name} = {{ granted = true }}` for all), or leave them ungranted deliberately",
+            advertised.len() - cleared,
+        );
+    }
 }
 
 /// The mark printed beside each advertised tool: `x` when `[tools]` leaves it out of the

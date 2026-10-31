@@ -21,6 +21,9 @@ impl Drop for Roots {
     }
 }
 
+// A scenario read top to bottom: a session opened in each root, then every session checked
+// against both roots.
+#[allow(clippy::too_many_lines)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sessions_resolve_policy_config_references_and_children_in_their_own_roots() {
     use crate::policy::{Verdict, bash_tokens, classify, is_config_write, missing_grants};

@@ -26,31 +26,7 @@ pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Resul
         reading,
     };
     match (&entry.payload, handle.call) {
-        (Payload::Assistant { output, .. }, Some(n)) => {
-            let (_, calls) = assistant(output);
-            match calls.len() {
-                // A lone call's handle is the bare seq; `.1` names it as well.
-                1 if n == 1 => out.call(&calls[0], &call_label(entry.seq, 0, 1)),
-                len if n <= len && len > 1 => {
-                    out.call(&calls[n - 1], &call_label(entry.seq, n - 1, len));
-                }
-                0 => return Err(format!("seq {} issued no calls", handle.seq)),
-                1 => {
-                    return Err(format!(
-                        "seq {0} issued one call, whose handle is {0}",
-                        handle.seq
-                    ));
-                }
-                len => {
-                    return Err(format!(
-                        "seq {} issued {}: {}",
-                        handle.seq,
-                        count(len, "call"),
-                        handles(entry.seq, len)
-                    ));
-                }
-            }
-        }
+        (Payload::Assistant { output, .. }, Some(n)) => out.nth_call(entry, output, handle, n)?,
         (_, Some(_)) => {
             return Err(format!(
                 "seq {} is not an assistant turn; seq.n names one of the calls a turn issued",
@@ -96,20 +72,7 @@ pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Resul
                 escalated(escalation, reading.me)
             ));
         }
-        (Payload::ResultVerdict { for_result, wire }, None) => {
-            let mut line = format!("verdict on the result at seq {for_result}");
-            if let Some(result) = out.index.entry(*for_result)
-                && let Payload::ToolResult { call_id, raw, .. } = &result.payload
-            {
-                let _ = write!(
-                    line,
-                    " ({}): {}",
-                    out.handle_of(&call_id.0),
-                    saw(raw, Some(wire), true)
-                );
-            }
-            out.lines.push(line);
-        }
+        (Payload::ResultVerdict { for_result, wire }, None) => out.verdict(*for_result, wire),
         (Payload::Spot(spot), None) => {
             let on = out.handle_of(&spot.call_id.0);
             out.lines.push(format!("the reviewer's verdict on {on}"));
@@ -151,6 +114,56 @@ impl<'a> Zoom<'a, '_> {
             || "a call no entry issued".to_string(),
             |c| c.handle.clone(),
         )
+    }
+
+    /// One of an assistant turn's several calls by its handle `seq.n`. A lone call's
+    /// handle is the bare seq, and `.1` names it as well.
+    fn nth_call(
+        &mut self,
+        entry: &LogEntry,
+        output: &AssistantOutput,
+        handle: Handle,
+        n: usize,
+    ) -> Result<(), String> {
+        let (_, calls) = assistant(output);
+        match calls.len() {
+            1 if n == 1 => self.call(&calls[0], &call_label(entry.seq, 0, 1)),
+            len if n <= len && len > 1 => {
+                self.call(&calls[n - 1], &call_label(entry.seq, n - 1, len));
+            }
+            0 => return Err(format!("seq {} issued no calls", handle.seq)),
+            1 => {
+                return Err(format!(
+                    "seq {0} issued one call, whose handle is {0}",
+                    handle.seq
+                ));
+            }
+            len => {
+                return Err(format!(
+                    "seq {} issued {}: {}",
+                    handle.seq,
+                    count(len, "call"),
+                    handles(entry.seq, len)
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// A result's verdict entry, named against the call whose result it decides.
+    fn verdict(&mut self, for_result: Seq, wire: &WireState) {
+        let mut line = format!("verdict on the result at seq {for_result}");
+        if let Some(result) = self.index.entry(for_result)
+            && let Payload::ToolResult { call_id, raw, .. } = &result.payload
+        {
+            let _ = write!(
+                line,
+                " ({}): {}",
+                self.handle_of(&call_id.0),
+                saw(raw, Some(wire), true)
+            );
+        }
+        self.lines.push(line);
     }
 
     fn user(&mut self, entry: &LogEntry, blocks: &[ContentBlock]) {

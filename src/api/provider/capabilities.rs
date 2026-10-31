@@ -3,6 +3,181 @@
 
 use super::*;
 
+/// `GET /api/v1/models/{author}/{slug}/endpoints` parsed into the model's capabilities
+/// (docs/transport.md), over the endpoints `upstream` pins (all of them when it is
+/// empty or names none).
+fn openrouter_capabilities(body: &str, upstream: &[String]) -> Result<ModelCapabilities, Error> {
+    // `GET /api/v1/models/{author}/{slug}/endpoints`: one entry per
+    // upstream currently serving the model, each with its own
+    // `context_length` / `max_completion_tokens`. The two are
+    // aggregated in opposite directions because they are used in
+    // opposite ways — see the field docs on `ModelCapabilities`.
+    // `architecture.input_modalities` is model-level (one modality
+    // set per slug, not per upstream); per-endpoint pricing is read
+    // for the caching signal below.
+    #[derive(Deserialize)]
+    struct Body {
+        data: Data,
+    }
+    #[derive(Deserialize)]
+    struct Data {
+        endpoints: Vec<ModelEndpoint>,
+        #[serde(default)]
+        architecture: Architecture,
+    }
+    #[derive(Deserialize, Default)]
+    struct Architecture {
+        #[serde(default)]
+        input_modalities: Vec<String>,
+    }
+    #[derive(Deserialize)]
+    struct ModelEndpoint {
+        context_length: Option<u64>,
+        max_completion_tokens: Option<u64>,
+        #[serde(default)]
+        supported_parameters: Vec<String>,
+        /// The endpoint slug `--upstream` names (`google-ai-studio`,
+        /// `google-vertex/global`) — OpenRouter calls it `tag` here
+        /// and reads it back as `provider.order` on a request.
+        #[serde(default)]
+        tag: Option<String>,
+        /// Whether this upstream caches prompts on its own, with no
+        /// marker in the request (Gemini, DeepSeek).
+        #[serde(default)]
+        supports_implicit_caching: bool,
+        #[serde(default)]
+        pricing: Pricing,
+    }
+    #[derive(Deserialize, Default)]
+    struct Pricing {
+        /// Present (as a display string like `"$0.1/M tokens"`) when
+        /// the upstream prices cache reads separately — i.e. when it
+        /// has an explicit prompt cache at all.
+        #[serde(default)]
+        input_cache_read: Option<String>,
+        /// Decimal USD per token, like `input_cache_read` where that is
+        /// a price at all; they feed the keepalive's affordability
+        /// check (`prices::conservative`).
+        #[serde(default)]
+        prompt: Option<String>,
+        #[serde(default)]
+        completion: Option<String>,
+    }
+    let body: Body = serde_json::from_str(body)?;
+    let data = body.data;
+    // The `--upstream` pin narrows the set before anything
+    // aggregates over it (docs/transport.md). A pin naming no
+    // endpoint in the listing leaves the set alone rather than
+    // emptying it: the request would fail loudly on its own, and an
+    // empty set here would fail boot with a message about
+    // `context_length` that names the wrong problem.
+    let pinned: Vec<&ModelEndpoint> = data
+        .endpoints
+        .iter()
+        .filter(|e| {
+            e.tag
+                .as_deref()
+                .is_some_and(|tag| upstream.iter().any(|slug| slug == tag))
+        })
+        .collect();
+    let endpoints: Vec<&ModelEndpoint> = if pinned.is_empty() {
+        data.endpoints.iter().collect()
+    } else {
+        pinned
+    };
+    // Descriptive ceiling: **max**. OpenRouter routes only to
+    // endpoints that fit the request, so a prompt larger than the
+    // smallest endpoint is not an error — it just narrows the
+    // routable set. A min here under-reports by the width of the
+    // narrowest outlier, which for a 1M-token model with one 256k
+    // endpoint means reporting 256k (docs/transport.md).
+    let context_length = endpoints
+        .iter()
+        .filter_map(|e| e.context_length)
+        .max()
+        .ok_or_else(|| -> Error {
+            "OpenRouter model metadata listed no endpoint with a context_length \
+             (is the model currently served?)"
+                .into()
+        })?;
+    // Sent, not merely displayed: this is the cap each request's
+    // `max_tokens` is shrunk from (`api/reservation.rs`), and
+    // OpenRouter routes only to endpoints that support a response
+    // that long. So **min** — a max would pin
+    // routing to the single widest endpoint, changing price and
+    // availability as a side effect of a display value — but the
+    // min over endpoints that clear [`OUTPUT_FLOOR`]: an outlier
+    // below it would otherwise cap every turn of the session at
+    // its number (one of twenty-two
+    // endpoints at 2048 holds a thinking model to 2048 output
+    // tokens per turn, docs/transport.md). Only when no endpoint
+    // clears the floor is the plain min kept.
+    let max_output_tokens =
+        output_ceiling(endpoints.iter().filter_map(|e| e.max_completion_tokens));
+    // Conservative like `max_output_tokens`, and for the same
+    // reason: routing is unpinned and a `thinking` block is not a
+    // routing filter, so it is sent only if *every* endpoint
+    // currently serving the model lists `reasoning`.
+    let adaptive = endpoints
+        .iter()
+        .all(|e| e.supported_parameters.iter().any(|p| p == "reasoning"));
+    // Does a prompt cache exist behind this slug at all — the
+    // question the keepalive is gated on (docs/transport.md). Two
+    // signals, either sufficient: an upstream that caches on its own
+    // (`supports_implicit_caching`), or one that prices cache reads
+    // separately (`pricing.input_cache_read`), which is how the
+    // explicit-`cache_control` upstreams — every Anthropic-compatible
+    // one — report having a cache. **Any**, not all: sticky routing
+    // pins a session to one upstream, so the question is whether a
+    // reachable endpoint caches, and the runtime tripwire
+    // (`daemon/keepalive.rs`) is what stops a ping that turns out to
+    // cost something.
+    let has_implicit_cache = endpoints.iter().any(|e| e.supports_implicit_caching);
+    let has_explicit_cache = endpoints
+        .iter()
+        .any(|e| e.pricing.input_cache_read.is_some());
+    let prompt_cache = PromptCachePolicy::from_support(has_explicit_cache, has_implicit_cache);
+    // The same pinned set, so a pinned session is priced by the
+    // upstreams it can reach.
+    let prices = prices::conservative(endpoints.iter().map(|e| prices::ListedPrices {
+        prompt: e.pricing.prompt.as_deref(),
+        completion: e.pricing.completion.as_deref(),
+        cache_read: e.pricing.input_cache_read.as_deref(),
+    }));
+    Ok(ModelCapabilities {
+        context_length: Some(context_length),
+        max_output_tokens,
+        // How to say thinking off comes from the model entry's
+        // `reasoning.mandatory`, merged in by `fetch_capabilities`;
+        // until then, omission, which asserts nothing.
+        thinking: ThinkingSupport {
+            adaptive,
+            off: ThinkingOff::Omit,
+        },
+        // Model-level, not per-endpoint: one slug has one modality
+        // set whichever upstream serves it. An empty list (a
+        // response with no `architecture`) declares nothing, and
+        // unknown reads as capable: a refusal is recovered from,
+        // a gate left closed gives no signal (docs/transport.md).
+        accepts_temperature: true,
+        supports_image_input: {
+            let modalities = &data.architecture.input_modalities;
+            modalities.is_empty() || modalities.iter().any(|m| m == "image")
+        },
+        prompt_cache,
+        // The endpoints listing carries no effort levels — those
+        // come from the model entry, which `fetch_capabilities`
+        // fetches separately and merges in. Left `None` here so
+        // this parse stays an honest statement of what *this*
+        // response said; the flag follows the merged levels, which
+        // is where a source can affirm them.
+        supported_efforts: None,
+        default_effort: None,
+        validates_efforts: false,
+        prices,
+    })
+}
+
 impl Provider {
     /// Parse this provider's metadata response into [`ModelCapabilities`]. A
     /// response missing the fields we need is an error (the boot step is
@@ -28,180 +203,10 @@ impl Provider {
             }
             Self::TypeSafe => Err("typesafe publishes no inference capabilities".into()),
             Self::Anthropic => anthropic::capabilities(body),
-            Self::OpenRouter => {
-                // `GET /api/v1/models/{author}/{slug}/endpoints`: one entry per
-                // upstream currently serving the model, each with its own
-                // `context_length` / `max_completion_tokens`. The two are
-                // aggregated in opposite directions because they are used in
-                // opposite ways — see the field docs on `ModelCapabilities`.
-                // `architecture.input_modalities` is model-level (one modality
-                // set per slug, not per upstream); per-endpoint pricing is read
-                // for the caching signal below.
-                #[derive(Deserialize)]
-                struct Body {
-                    data: Data,
-                }
-                #[derive(Deserialize)]
-                struct Data {
-                    endpoints: Vec<ModelEndpoint>,
-                    #[serde(default)]
-                    architecture: Architecture,
-                }
-                #[derive(Deserialize, Default)]
-                struct Architecture {
-                    #[serde(default)]
-                    input_modalities: Vec<String>,
-                }
-                #[derive(Deserialize)]
-                struct ModelEndpoint {
-                    context_length: Option<u64>,
-                    max_completion_tokens: Option<u64>,
-                    #[serde(default)]
-                    supported_parameters: Vec<String>,
-                    /// The endpoint slug `--upstream` names (`google-ai-studio`,
-                    /// `google-vertex/global`) — OpenRouter calls it `tag` here
-                    /// and reads it back as `provider.order` on a request.
-                    #[serde(default)]
-                    tag: Option<String>,
-                    /// Whether this upstream caches prompts on its own, with no
-                    /// marker in the request (Gemini, DeepSeek).
-                    #[serde(default)]
-                    supports_implicit_caching: bool,
-                    #[serde(default)]
-                    pricing: Pricing,
-                }
-                #[derive(Deserialize, Default)]
-                struct Pricing {
-                    /// Present (as a display string like `"$0.1/M tokens"`) when
-                    /// the upstream prices cache reads separately — i.e. when it
-                    /// has an explicit prompt cache at all.
-                    #[serde(default)]
-                    input_cache_read: Option<String>,
-                    /// Decimal USD per token, like `input_cache_read` where that is
-                    /// a price at all; they feed the keepalive's affordability
-                    /// check (`prices::conservative`).
-                    #[serde(default)]
-                    prompt: Option<String>,
-                    #[serde(default)]
-                    completion: Option<String>,
-                }
-                let body: Body = serde_json::from_str(body)?;
-                let data = body.data;
-                // The `--upstream` pin narrows the set before anything
-                // aggregates over it (docs/transport.md). A pin naming no
-                // endpoint in the listing leaves the set alone rather than
-                // emptying it: the request would fail loudly on its own, and an
-                // empty set here would fail boot with a message about
-                // `context_length` that names the wrong problem.
-                let pinned: Vec<&ModelEndpoint> = data
-                    .endpoints
-                    .iter()
-                    .filter(|e| {
-                        e.tag
-                            .as_deref()
-                            .is_some_and(|tag| upstream.iter().any(|slug| slug == tag))
-                    })
-                    .collect();
-                let endpoints: Vec<&ModelEndpoint> = if pinned.is_empty() {
-                    data.endpoints.iter().collect()
-                } else {
-                    pinned
-                };
-                // Descriptive ceiling: **max**. OpenRouter routes only to
-                // endpoints that fit the request, so a prompt larger than the
-                // smallest endpoint is not an error — it just narrows the
-                // routable set. A min here under-reports by the width of the
-                // narrowest outlier, which for a 1M-token model with one 256k
-                // endpoint means reporting 256k (docs/transport.md).
-                let context_length = endpoints
-                    .iter()
-                    .filter_map(|e| e.context_length)
-                    .max()
-                    .ok_or_else(|| -> Error {
-                        "OpenRouter model metadata listed no endpoint with a context_length \
-                         (is the model currently served?)"
-                            .into()
-                    })?;
-                // Sent, not merely displayed: this is the cap each request's
-                // `max_tokens` is shrunk from (`api/reservation.rs`), and
-                // OpenRouter routes only to endpoints that support a response
-                // that long. So **min** — a max would pin
-                // routing to the single widest endpoint, changing price and
-                // availability as a side effect of a display value — but the
-                // min over endpoints that clear [`OUTPUT_FLOOR`]: an outlier
-                // below it would otherwise cap every turn of the session at
-                // its number (one of twenty-two
-                // endpoints at 2048 holds a thinking model to 2048 output
-                // tokens per turn, docs/transport.md). Only when no endpoint
-                // clears the floor is the plain min kept.
-                let max_output_tokens =
-                    output_ceiling(endpoints.iter().filter_map(|e| e.max_completion_tokens));
-                // Conservative like `max_output_tokens`, and for the same
-                // reason: routing is unpinned and a `thinking` block is not a
-                // routing filter, so it is sent only if *every* endpoint
-                // currently serving the model lists `reasoning`.
-                let adaptive = endpoints
-                    .iter()
-                    .all(|e| e.supported_parameters.iter().any(|p| p == "reasoning"));
-                // Does a prompt cache exist behind this slug at all — the
-                // question the keepalive is gated on (docs/transport.md). Two
-                // signals, either sufficient: an upstream that caches on its own
-                // (`supports_implicit_caching`), or one that prices cache reads
-                // separately (`pricing.input_cache_read`), which is how the
-                // explicit-`cache_control` upstreams — every Anthropic-compatible
-                // one — report having a cache. **Any**, not all: sticky routing
-                // pins a session to one upstream, so the question is whether a
-                // reachable endpoint caches, and the runtime tripwire
-                // (`daemon/keepalive.rs`) is what stops a ping that turns out to
-                // cost something.
-                let has_implicit_cache = endpoints.iter().any(|e| e.supports_implicit_caching);
-                let has_explicit_cache = endpoints
-                    .iter()
-                    .any(|e| e.pricing.input_cache_read.is_some());
-                let prompt_cache =
-                    PromptCachePolicy::from_support(has_explicit_cache, has_implicit_cache);
-                // The same pinned set, so a pinned session is priced by the
-                // upstreams it can reach.
-                let prices = prices::conservative(endpoints.iter().map(|e| prices::ListedPrices {
-                    prompt: e.pricing.prompt.as_deref(),
-                    completion: e.pricing.completion.as_deref(),
-                    cache_read: e.pricing.input_cache_read.as_deref(),
-                }));
-                Ok(ModelCapabilities {
-                    context_length: Some(context_length),
-                    max_output_tokens,
-                    // How to say thinking off comes from the model entry's
-                    // `reasoning.mandatory`, merged in by `fetch_capabilities`;
-                    // until then, omission, which asserts nothing.
-                    thinking: ThinkingSupport {
-                        adaptive,
-                        off: ThinkingOff::Omit,
-                    },
-                    // Model-level, not per-endpoint: one slug has one modality
-                    // set whichever upstream serves it. An empty list (a
-                    // response with no `architecture`) declares nothing, and
-                    // unknown reads as capable: a refusal is recovered from,
-                    // a gate left closed gives no signal (docs/transport.md).
-                    accepts_temperature: true,
-                    supports_image_input: {
-                        let modalities = &data.architecture.input_modalities;
-                        modalities.is_empty() || modalities.iter().any(|m| m == "image")
-                    },
-                    prompt_cache,
-                    // The endpoints listing carries no effort levels — those
-                    // come from the model entry, which `fetch_capabilities`
-                    // fetches separately and merges in. Left `None` here so
-                    // this parse stays an honest statement of what *this*
-                    // response said; the flag follows the merged levels, which
-                    // is where a source can affirm them.
-                    supported_efforts: None,
-                    default_effort: None,
-                    validates_efforts: false,
-                    prices,
-                })
-            }
+            Self::OpenRouter => openrouter_capabilities(body, upstream),
         }
     }
+
     /// Parse the model-entry response into the effort levels it declares
     /// (docs/transport.md): `reasoning.supported_efforts` and
     /// `reasoning.default_effort`. An absent block, an absent field, or an

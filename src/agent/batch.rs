@@ -165,35 +165,8 @@ async fn run_calls<F: Frontend, S: Spotter>(
                 handoff,
                 reply,
             } => {
-                // The capture (docs/triage.md): the result is durable before
-                // anything judges it, as `Pending` — on the wire it is nothing yet, so
-                // no request built before the triage's verdict can carry a partial batch.
-                let payload = Payload::tool_result(call.id.clone(), result, WireState::Pending);
-                // An `ask`'s result is a submitted turn's words, so its entry names the
-                // submission and the submitter like a `User` entry does
-                // (docs/process-monitor.md).
-                let result_seq = match reply {
-                    Some(reply) => shared.append_submission(
-                        turn,
-                        payload,
-                        reply.submission_id,
-                        reply.source,
-                    )?,
-                    None => shared.append(turn, payload)?,
-                };
+                let (result_seq, raw) = capture(shared, turn, call, result, reply)?;
                 captured.push(result_seq);
-                // Triage reads what the log holds, which is the masked form of the
-                // output (docs/env.md) — the same bytes any later reader of the entry
-                // sees, and the ones a verdict is rendered against. Reading the entry
-                // back rather than carrying `result` forward is what makes that hold.
-                let Some(Payload::ToolResult { raw, .. }) =
-                    shared.entry_at(result_seq).map(|entry| entry.payload)
-                else {
-                    log::error!("the result captured at seq {result_seq} is not in the log");
-                    return Err(Box::new(std::io::Error::other(
-                        "the result captured at this seq is missing from the log",
-                    )));
-                };
                 // What the call cost and how it came out (docs/tools.md), beside the
                 // result it measures. It projects to nothing, so appending it here
                 // rather than after the verdict cannot move the wire, and no reader
@@ -243,6 +216,42 @@ async fn run_calls<F: Frontend, S: Spotter>(
         primer: None,
         tools_end: std::time::Instant::now(),
     })
+}
+
+/// Capture a call's result (docs/triage.md): it is durable before anything judges it, as
+/// `Pending` — on the wire it is nothing yet, so no request built before the triage's
+/// verdict can carry a partial batch. Returns the seq it was captured at and what the log
+/// holds for it.
+fn capture(
+    shared: &Session,
+    turn: Turn,
+    call: &ToolCall,
+    result: RawResult,
+    reply: Option<Box<Reply>>,
+) -> Result<(crate::log::Seq, RawResult), Error> {
+    let payload = Payload::tool_result(call.id.clone(), result, WireState::Pending);
+    // An `ask`'s result is a submitted turn's words, so its entry names the
+    // submission and the submitter like a `User` entry does
+    // (docs/process-monitor.md).
+    let result_seq = match reply {
+        Some(reply) => {
+            shared.append_submission(turn, payload, reply.submission_id, reply.source)?
+        }
+        None => shared.append(turn, payload)?,
+    };
+    // Triage reads what the log holds, which is the masked form of the
+    // output (docs/env.md) — the same bytes any later reader of the entry
+    // sees, and the ones a verdict is rendered against. Reading the entry
+    // back rather than carrying `result` forward is what makes that hold.
+    let Some(Payload::ToolResult { raw, .. }) =
+        shared.entry_at(result_seq).map(|entry| entry.payload)
+    else {
+        log::error!("the result captured at seq {result_seq} is not in the log");
+        return Err(Box::new(std::io::Error::other(
+            "the result captured at this seq is missing from the log",
+        )));
+    };
+    Ok((result_seq, raw))
 }
 
 /// Resolve results that were captured but that no triage will ever see: the batch ended

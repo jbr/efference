@@ -182,6 +182,9 @@ const DIFF_RESULT: &str = "Previewing: replace\n\
     \x20    }";
 
 /// The fixed gallery transcript — one of each transcript element, in order.
+// The length is the table: one fixture entry per transcript element, in the order the
+// gallery draws them.
+#[allow(clippy::too_many_lines)]
 pub(super) fn log() -> Vec<LogEntry> {
     let long_output = (1..=24)
         .map(|n| format!("src/module_{n:02}.rs"))

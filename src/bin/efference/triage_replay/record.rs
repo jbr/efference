@@ -39,6 +39,40 @@ pub(crate) struct Recorded {
     pub(crate) running_processes: usize,
 }
 
+impl Recorded {
+    /// The results this triage was asked to triage, each beside the call that made it.
+    pub(crate) fn pending(&self) -> Vec<efference::triage::Pending<'_>> {
+        self.calls
+            .iter()
+            .zip(&self.raws)
+            .map(|(call, raw)| efference::triage::Pending { call, raw })
+            .collect()
+    }
+}
+
+/// The envelope a replayed request is sent in: the recorded boot preamble as the `system`
+/// (so the replay reads the same cached prefix the session did), the `[context]` block the
+/// triage prompt is re-rendered from, and `tools[]` — the recorded array, else rebuilt from
+/// the current code and cwd, exactly as `wire` does and with the same caveat.
+pub(crate) fn recorded_envelope(
+    entries: &[efference::log::LogEntry],
+) -> Result<(String, Option<String>, Vec<serde_json::Value>), crate::CliError> {
+    let (system, context_block) = entries
+        .iter()
+        .rev()
+        .find_map(|e| match &e.payload {
+            payload @ Payload::Preamble { context, .. } => {
+                Some((payload.preamble_system()?, context.render()))
+            }
+            _ => None,
+        })
+        .ok_or("log predates the boot-preamble snapshot; no recorded system prompt to replay")?;
+    let (tools, _) = efference::agent::recorded_or_rebuilt_tools(entries, || {
+        efference::tools::Toolbox::bash_and_mcps(std::env::current_dir()?, None)
+    })?;
+    Ok((system, context_block, tools))
+}
+
 /// Rebuild every triage in a log, in order.
 ///
 /// A triage is a completion's tool calls plus their results, which is exactly the grouping

@@ -102,6 +102,12 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<MountedSpott
 /// what is written inline is specific to creating: the origin config, the
 /// minted dir and its config snapshot, the log's creation, and the frozen
 /// preamble.
+// One ordered protocol: every step that can refuse (config, references, provider,
+// capabilities) comes before the first thing minted, and each mint is recorded in `minted`
+// as it happens, so a later failure rolls back exactly what this attempt made. The steps a
+// resume shares are functions already; what is inline is the creating-only sequence, whose
+// order would be readable only across pieces if it were cut apart.
+#[allow(clippy::too_many_lines)]
 async fn prepare_minting(
     request: SessionRequest,
     minted: &mut Minted,

@@ -192,7 +192,8 @@ Where a module has grown a directory beside it (`src/api/`, `src/config/`, `src/
 holds the subsystem's vocabulary and public surface and the directory holds one file per
 concern; each module's tests live in its own `test.rs`.
 
-The turn engine that ties it together is `src/agent.rs`; the CLI binary is
+The turn engine that ties it together is `src/agent.rs`, its idle and trajectory phases in
+`src/agent/trajectory.rs` and the model request in `src/agent/request.rs`; the CLI binary is
 `src/bin/efference/`, whose `--host` flag boots the daemon. Its command tree is grouped by
 who each command is for ([operating.md](operating.md)): bare `efference` (the TUI) and the human verbs at the top level, `efference
 control <verb>` for the calls that drive a running session — its agent verbs the

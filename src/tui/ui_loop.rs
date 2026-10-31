@@ -43,131 +43,21 @@ pub(super) fn ui_loop(
             }
         }
     };
-    // Build the render context: interactive TTY, sized to the terminal.
-    let width = crossterm::terminal::size().map_or(80, |(w, _)| w as usize);
-    let mut render_context = RenderContext::new()
-        .with_interactive(true)
-        .with_output_mode(OutputMode::Tty)
-        .with_terminal_width(width);
-    // `resolve_theme` already validated the name; a `.tmTheme` path could still
-    // fail to load, so fall back to the default rather than abort the UI.
-    let theme_name = display.theme.as_deref().unwrap_or(DEFAULT_THEME);
-    if render_context.set_theme_name(theme_name).is_err() {
-        let _ = render_context.set_theme_name(DEFAULT_THEME);
-    }
-    let theme = InteractiveTheme::from_render_context(&render_context);
+    let (render_context, theme) = render_context_for(display);
+    install_panic_hook();
 
-    // Leave immediate mode before a panic prints. Without this the default hook
-    // writes the payload/backtrace straight into the alternate screen while raw
-    // mode is still on — newlines don't return the carriage, so the trace lands
-    // diagonally and is unreadable. We chain the original hook so the panic is
-    // still reported, just onto a restored terminal. (Restored on clean exit by
-    // the teardown at the end of this fn; the process exits right after either
-    // way, so we don't bother re-installing the original hook.)
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        let _ = disable_raw_mode();
-        let _ = execute!(
-            stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            DisableBracketedPaste,
-            DisableFocusChange,
-            PopKeyboardEnhancementFlags,
-            crossterm::cursor::Show
-        );
-        let _ = terminal_title::restore(&mut stdout());
-        default_hook(info);
-    }));
-
-    enable_raw_mode()?;
-    let mut stdout = stdout();
-    // DISAMBIGUATE_ESCAPE_CODES lets kitty-protocol terminals report SUPER and
-    // other unambiguous modifiers. Terminals that do not implement it continue
-    // emitting their ordinary key events. Bracketed paste delivers a paste (⌘V,
-    // a file dragged onto the window) as one event rather than a burst of typed
-    // keys, which is what lets it be routed to an attachment (docs/tui.md).
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableMouseCapture,
-        EnableBracketedPaste,
-        EnableFocusChange,
-        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
-    )?;
-    // The terminal title names the attached session once its identity arrives
-    // (docs/tui.md); the one in place now comes back at teardown.
-    terminal_title::save(&mut stdout)?;
+    let mut terminal = enter_terminal()?;
     let mut title = TerminalTitle::default();
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.clear()?;
-
-    let mut state = InteractiveState::new(events, senders, render_context, theme);
-    state.owns_host = attached.owns_host;
-    if let Some(draft) = &attached.draft {
-        state.composer.set_text(draft);
-    }
-    if let Some(label) = viewing {
-        state.set_viewing(label);
-    }
-    if display.frame_cost {
-        state.frame_cost = Some(Default::default());
-    }
-
-    // Detect the graphics protocol **before** the reader thread spawns: the
-    // query writes escapes and reads their answers off stdin, which the reader
-    // is about to own for the session (docs/tui.md — detection is a startup
-    // act; capability is then a plain parameter of rendering).
-    let picker = build_picker(display.images);
-    if let Some(picker) = &picker {
-        // Name the resolved protocol on the status line at launch — detection
-        // is invisible otherwise, and "which protocol did auto pick" is the
-        // first question when an image renders wrong (docs/tui.md).
-        let font = picker.font_size();
-        state.set_debug_message(format!(
-            "images: {:?} · font {}×{} — ↑ controls",
-            picker.protocol_type(),
-            font.width,
-            font.height,
-        ));
-    }
-    state.staged_images.set_picker(picker.clone());
-    state.images.set_picker(picker);
-    // Aspect-fit padding takes the theme's background so it disappears into
-    // the transcript (iTerm2 renders the default transparent pad as opaque).
-    let background = state.theme.document_bg_style.bg;
-    state.images.set_theme_background(background);
-    state.staged_images.set_theme_background(background);
-
-    // Event reader thread: polls crossterm, forwards to a channel. It polls with a
-    // short timeout rather than blocking in `read`, and is stopped and joined when
-    // the loop ends, because crossterm serializes every stdin read — an event read
-    // and a terminal query's answer alike — behind one lock that a blocked `read`
-    // holds. A reader left blocked from this attach would starve the next one's
-    // startup queries (the cursor-position read times out), which is what a
-    // session switch or a followed hand-off does next (docs/tui.md).
-    let (event_tx, event_rx) = crossbeam_channel::unbounded();
-    let reading = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let reader = {
-        let reading = std::sync::Arc::clone(&reading);
-        thread::spawn(move || {
-            while reading.load(std::sync::atomic::Ordering::Relaxed) {
-                match event::poll(Duration::from_millis(50)) {
-                    Ok(true) => match event::read() {
-                        Ok(evt) => {
-                            if event_tx.send(evt).is_err() {
-                                break;
-                            }
-                        }
-                        Err(_) => break,
-                    },
-                    Ok(false) => {}
-                    Err(_) => break,
-                }
-            }
-        })
-    };
+    let mut state = build_state(
+        events,
+        senders,
+        render_context,
+        theme,
+        display,
+        attached,
+        viewing,
+    );
+    let (event_rx, reader) = spawn_event_reader();
 
     let timer_tick = crossbeam_channel::tick(Duration::from_millis(30));
     // Elapsed-time displays (process running/idle seconds, seconds since the last
@@ -220,64 +110,9 @@ pub(super) fn ui_loop(
                 redraw = state.refresh_clocks();
             }
             recv(event_rx) -> event => match event {
-                // Apply the whole arriving burst, then paint once — the same fold
-                // the daemon arm does above, for the same reason. A wheel notch or a
-                // held key delivers many events between frames; giving each its own
-                // full frame is what makes fast scrolling lag behind the wheel, since
-                // the reader thread keeps queueing while the loop paints.
                 Ok(first) => {
-                    // A key may act on the transcript (expand/scroll), so realise any
-                    // pending reproject before the burst is applied.
-                    state.flush_reproject();
-                    let mut next = Some(first);
-                    while let Some(event) = next.take() {
-                        // Focus and input feed the attention reports (`attention.rs`).
-                        if let Some(attender) = attender.as_mut() {
-                            match &event {
-                                Event::FocusGained => attender.focus(true),
-                                Event::FocusLost => attender.focus(false),
-                                Event::Key(_) | Event::Mouse(_) => {
-                                    attender.input(std::time::Instant::now());
-                                }
-                                _ => {}
-                            }
-                        }
-                        match event {
-                            Event::Key(key) if !key.is_release() => {
-                                exit = state.handle_key_event(key, &mut terminal);
-                                redraw = true;
-                            }
-                            Event::Mouse(mouse_event) => {
-                                state.handle_mouse_event(mouse_event, &terminal);
-                                redraw = true;
-                            }
-                            Event::Paste(text) => {
-                                state.handle_paste(&text);
-                                redraw = true;
-                            }
-                            Event::Resize(_, _) => {
-                                // The terminal changed size: the cached layout (wrap +
-                                // document height) is width-dependent, so drop it and
-                                // repaint now. Without this the resize only takes on the
-                                // *next* unrelated event (a mouse re-enter), which read as
-                                // "resize does nothing until I wiggle the mouse." The
-                                // sidebar dock threshold makes this especially visible.
-                                state.viewport.cached_layout = None;
-                                redraw = true;
-                            }
-                            _ => {}
-                        }
-                        // Stop the fold where an event can't be folded: a quit, or a
-                        // click, which the paint below has to consume before another
-                        // can be recorded in its place.
-                        if exit
-                            || state.ui.quit_requested
-                            || state.viewport.clicked_position.is_some()
-                        {
-                            break;
-                        }
-                        next = event_rx.try_recv().ok();
-                    }
+                    (exit, redraw) =
+                        fold_terminal_events(first, &mut state, &mut terminal, &mut attender, &event_rx);
                 }
                 Err(_) => exit = true,
             },
@@ -318,12 +153,247 @@ pub(super) fn ui_loop(
         state.update_cursor(&mut terminal);
     };
 
-    // Release stdin before anything else touches the terminal: the next attach's
-    // queries need the lock the reader polls under.
-    reading.store(false, std::sync::atomic::Ordering::Relaxed);
-    let _ = reader.join();
+    reader.stop();
+    leave_terminal(&mut terminal, &state)?;
+    result
+}
 
-    // Restore the terminal.
+/// The render context for an interactive TTY sized to the terminal, and the theme drawn
+/// from it.
+fn render_context_for(display: &TuiConfig) -> (RenderContext, InteractiveTheme) {
+    let width = crossterm::terminal::size().map_or(80, |(w, _)| w as usize);
+    let mut render_context = RenderContext::new()
+        .with_interactive(true)
+        .with_output_mode(OutputMode::Tty)
+        .with_terminal_width(width);
+    // `resolve_theme` already validated the name; a `.tmTheme` path could still
+    // fail to load, so fall back to the default rather than abort the UI.
+    let theme_name = display.theme.as_deref().unwrap_or(DEFAULT_THEME);
+    if render_context.set_theme_name(theme_name).is_err() {
+        let _ = render_context.set_theme_name(DEFAULT_THEME);
+    }
+    let theme = InteractiveTheme::from_render_context(&render_context);
+    (render_context, theme)
+}
+
+/// Leave immediate mode before a panic prints. Without this the default hook
+/// writes the payload/backtrace straight into the alternate screen while raw
+/// mode is still on — newlines don't return the carriage, so the trace lands
+/// diagonally and is unreadable. We chain the original hook so the panic is
+/// still reported, just onto a restored terminal. (Restored on clean exit by
+/// [`leave_terminal`]; the process exits right after either way, so we don't
+/// bother re-installing the original hook.)
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            DisableBracketedPaste,
+            DisableFocusChange,
+            PopKeyboardEnhancementFlags,
+            crossterm::cursor::Show
+        );
+        let _ = terminal_title::restore(&mut stdout());
+        default_hook(info);
+    }));
+}
+
+/// Take the terminal over: raw mode, the alternate screen, and the input modes the UI reads.
+fn enter_terminal() -> io::Result<Terminal<CrosstermBackend<io::Stdout>>> {
+    enable_raw_mode()?;
+    let mut stdout = stdout();
+    // DISAMBIGUATE_ESCAPE_CODES lets kitty-protocol terminals report SUPER and
+    // other unambiguous modifiers. Terminals that do not implement it continue
+    // emitting their ordinary key events. Bracketed paste delivers a paste (⌘V,
+    // a file dragged onto the window) as one event rather than a burst of typed
+    // keys, which is what lets it be routed to an attachment (docs/tui.md).
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste,
+        EnableFocusChange,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )?;
+    // The terminal title names the attached session once its identity arrives
+    // (docs/tui.md); the one in place now comes back at teardown.
+    terminal_title::save(&mut stdout)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    terminal.clear()?;
+    Ok(terminal)
+}
+
+/// The interactive state for this run: the connected channels, the viewing mode, and the
+/// graphics capability the images are drawn with.
+fn build_state<'a>(
+    events: Receiver<TuiEvent>,
+    senders: Senders,
+    render_context: RenderContext,
+    theme: InteractiveTheme,
+    display: &TuiConfig,
+    attached: &Attached,
+    viewing: Option<String>,
+) -> InteractiveState<'a> {
+    let mut state = InteractiveState::new(events, senders, render_context, theme);
+    state.owns_host = attached.owns_host;
+    if let Some(draft) = &attached.draft {
+        state.composer.set_text(draft);
+    }
+    if let Some(label) = viewing {
+        state.set_viewing(label);
+    }
+    if display.frame_cost {
+        state.frame_cost = Some(Default::default());
+    }
+
+    // Detect the graphics protocol **before** the reader thread spawns: the
+    // query writes escapes and reads their answers off stdin, which the reader
+    // is about to own for the session (docs/tui.md — detection is a startup
+    // act; capability is then a plain parameter of rendering).
+    let picker = build_picker(display.images);
+    if let Some(picker) = &picker {
+        // Name the resolved protocol on the status line at launch — detection
+        // is invisible otherwise, and "which protocol did auto pick" is the
+        // first question when an image renders wrong (docs/tui.md).
+        let font = picker.font_size();
+        state.set_debug_message(format!(
+            "images: {:?} · font {}×{} — ↑ controls",
+            picker.protocol_type(),
+            font.width,
+            font.height,
+        ));
+    }
+    state.staged_images.set_picker(picker.clone());
+    state.images.set_picker(picker);
+    // Aspect-fit padding takes the theme's background so it disappears into
+    // the transcript (iTerm2 renders the default transparent pad as opaque).
+    let background = state.theme.document_bg_style.bg;
+    state.images.set_theme_background(background);
+    state.staged_images.set_theme_background(background);
+    state
+}
+
+/// The crossterm event-reader thread: polls crossterm and forwards to a channel. It polls
+/// with a short timeout rather than blocking in `read`, and is stopped and joined when
+/// the loop ends, because crossterm serializes every stdin read — an event read
+/// and a terminal query's answer alike — behind one lock that a blocked `read`
+/// holds. A reader left blocked from this attach would starve the next one's
+/// startup queries (the cursor-position read times out), which is what a
+/// session switch or a followed hand-off does next (docs/tui.md).
+struct EventReader {
+    reading: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: thread::JoinHandle<()>,
+}
+
+fn spawn_event_reader() -> (Receiver<Event>, EventReader) {
+    let (event_tx, event_rx) = crossbeam_channel::unbounded();
+    let reading = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let thread = {
+        let reading = std::sync::Arc::clone(&reading);
+        thread::spawn(move || {
+            while reading.load(std::sync::atomic::Ordering::Relaxed) {
+                match event::poll(Duration::from_millis(50)) {
+                    Ok(true) => match event::read() {
+                        Ok(evt) => {
+                            if event_tx.send(evt).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    },
+                    Ok(false) => {}
+                    Err(_) => break,
+                }
+            }
+        })
+    };
+    (event_rx, EventReader { reading, thread })
+}
+
+impl EventReader {
+    /// Release stdin before anything else touches the terminal: the next attach's
+    /// queries need the lock the reader polls under.
+    fn stop(self) {
+        self.reading
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let _ = self.thread.join();
+    }
+}
+
+/// Apply the whole arriving burst of terminal events, then let the caller paint once — the
+/// same fold the daemon arm does, for the same reason. A wheel notch or a held key delivers
+/// many events between frames; giving each its own full frame is what makes fast scrolling
+/// lag behind the wheel, since the reader thread keeps queueing while the loop paints.
+/// Returns whether the operator left, and whether to paint.
+fn fold_terminal_events(
+    first: Event,
+    state: &mut InteractiveState<'_>,
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    attender: &mut Option<attention::Attender>,
+    event_rx: &Receiver<Event>,
+) -> (bool, bool) {
+    let (mut exit, mut redraw) = (false, false);
+    // A key may act on the transcript (expand/scroll), so realise any
+    // pending reproject before the burst is applied.
+    state.flush_reproject();
+    let mut next = Some(first);
+    while let Some(event) = next.take() {
+        // Focus and input feed the attention reports (`attention.rs`).
+        if let Some(attender) = attender.as_mut() {
+            match &event {
+                Event::FocusGained => attender.focus(true),
+                Event::FocusLost => attender.focus(false),
+                Event::Key(_) | Event::Mouse(_) => {
+                    attender.input(std::time::Instant::now());
+                }
+                _ => {}
+            }
+        }
+        match event {
+            Event::Key(key) if !key.is_release() => {
+                exit = state.handle_key_event(key, terminal);
+                redraw = true;
+            }
+            Event::Mouse(mouse_event) => {
+                state.handle_mouse_event(mouse_event, terminal);
+                redraw = true;
+            }
+            Event::Paste(text) => {
+                state.handle_paste(&text);
+                redraw = true;
+            }
+            Event::Resize(_, _) => {
+                // The terminal changed size: the cached layout (wrap +
+                // document height) is width-dependent, so drop it and
+                // repaint now. Without this the resize only takes on the
+                // *next* unrelated event (a mouse re-enter), which read as
+                // "resize does nothing until I wiggle the mouse." The
+                // sidebar dock threshold makes this especially visible.
+                state.viewport.cached_layout = None;
+                redraw = true;
+            }
+            _ => {}
+        }
+        // Stop the fold where an event can't be folded: a quit, or a
+        // click, which the paint below has to consume before another
+        // can be recorded in its place.
+        if exit || state.ui.quit_requested || state.viewport.clicked_position.is_some() {
+            break;
+        }
+        next = event_rx.try_recv().ok();
+    }
+    (exit, redraw)
+}
+
+/// Put the terminal back as it was found.
+fn leave_terminal(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    state: &InteractiveState<'_>,
+) -> io::Result<()> {
     disable_raw_mode()?;
     if state.ui.supports_cursor {
         set_cursor_shape(terminal.backend_mut(), "default");
@@ -344,7 +414,7 @@ pub(super) fn ui_loop(
     if let Some(summary) = state.frame_cost.as_ref().and_then(FrameCost::summary) {
         eprintln!("{summary}");
     }
-    result
+    Ok(())
 }
 
 /// The terminal's graphics capability per the operator's [`ImageMode`]

@@ -48,19 +48,7 @@ pub(super) async fn serve(
                 continue;
             }
             HostCmd::Preview(options) => {
-                let resolved = match origin.as_deref() {
-                    Ok(cwd) => {
-                        let mut request = crate::protocol::sessions::SessionOptionsRequest::new(
-                            cwd.to_path_buf(),
-                        );
-                        request.options = options;
-                        client
-                            .session_options(&request)
-                            .await
-                            .map_err(|e| format!("resolving the draft: {e}"))
-                    }
-                    Err(e) => Err(format!("reading the working directory: {e}")),
-                };
+                let resolved = preview(&client, origin.as_deref(), options).await;
                 if events.send(TuiEvent::Preview(resolved)).is_err() {
                     break;
                 }
@@ -74,20 +62,7 @@ pub(super) async fn serve(
                 continue;
             }
             HostCmd::Archived => {
-                let rows = match origin.as_deref() {
-                    Ok(cwd) => client
-                        .archived_sessions(cwd)
-                        .await
-                        .map(|rows| {
-                            let rows = rows.into_iter().map(|archived| archived.row).collect();
-                            crate::tui::resume_list::ResumeRow::from_inventory(
-                                rows,
-                                crate::tui::resume_list::now_ms(),
-                            )
-                        })
-                        .map_err(|e| format!("listing archived sessions: {e}")),
-                    Err(e) => Err(format!("reading the working directory: {e}")),
-                };
+                let rows = archived_rows(&client, origin.as_deref()).await;
                 if events.send(TuiEvent::Archived(rows)).is_err() {
                     break;
                 }
@@ -96,17 +71,7 @@ pub(super) async fn serve(
             // Reviving takes seconds (environment, MCP mounts); the page shows
             // `resuming…` meanwhile, and the answer is the id to switch to.
             HostCmd::Resume(id) => {
-                let resumed = match origin.as_deref() {
-                    Ok(cwd) => client
-                        .patch_session(
-                            &id,
-                            &crate::protocol::sessions::PatchSession::activate(cwd.to_path_buf()),
-                        )
-                        .await
-                        .map(|_| id.clone())
-                        .map_err(|e| format!("resuming {id}: {e}")),
-                    Err(e) => Err(format!("reading the working directory: {e}")),
-                };
+                let resumed = resume_session(&client, origin.as_deref(), &id).await;
                 if events.send(TuiEvent::Resumed(resumed)).is_err() {
                     break;
                 }
@@ -140,6 +105,57 @@ pub(super) async fn serve(
             break; // UI thread gone.
         }
     }
+}
+
+/// The draft's options as the host resolves them, for the form's preview.
+async fn preview(
+    client: &Client,
+    origin: Result<&std::path::Path, &std::io::Error>,
+    options: crate::inference::SessionOptions,
+) -> Result<crate::inference::ResolvedOptions, String> {
+    let cwd = origin.map_err(|e| format!("reading the working directory: {e}"))?;
+    let mut request = crate::protocol::sessions::SessionOptionsRequest::new(cwd.to_path_buf());
+    request.options = options;
+    client
+        .session_options(&request)
+        .await
+        .map_err(|e| format!("resolving the draft: {e}"))
+}
+
+/// The sessions archived under the working root, as the resume page lists them.
+async fn archived_rows(
+    client: &Client,
+    origin: Result<&std::path::Path, &std::io::Error>,
+) -> Result<Vec<crate::tui::resume_list::ResumeRow>, String> {
+    let cwd = origin.map_err(|e| format!("reading the working directory: {e}"))?;
+    client
+        .archived_sessions(cwd)
+        .await
+        .map(|rows| {
+            let rows = rows.into_iter().map(|archived| archived.row).collect();
+            crate::tui::resume_list::ResumeRow::from_inventory(
+                rows,
+                crate::tui::resume_list::now_ms(),
+            )
+        })
+        .map_err(|e| format!("listing archived sessions: {e}"))
+}
+
+/// Revive the archived session `id` under the working root; the answer is the id to switch to.
+async fn resume_session(
+    client: &Client,
+    origin: Result<&std::path::Path, &std::io::Error>,
+    id: &str,
+) -> Result<String, String> {
+    let cwd = origin.map_err(|e| format!("reading the working directory: {e}"))?;
+    client
+        .patch_session(
+            id,
+            &crate::protocol::sessions::PatchSession::activate(cwd.to_path_buf()),
+        )
+        .await
+        .map(|_| id.to_string())
+        .map_err(|e| format!("resuming {id}: {e}"))
 }
 
 /// The connections whose catalog copy is not fresh: the ones the form reads

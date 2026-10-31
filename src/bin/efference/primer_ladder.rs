@@ -9,7 +9,6 @@
 
 use super::*;
 use crate::dev::PrimerLadderArgs;
-use efference::log::Payload;
 use efference::triage::{Pending, TriageModel, TriageView, Triager};
 use std::io::Write;
 
@@ -106,19 +105,7 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
             .ok_or_else(|| format!("no triages in {}", path.display()))?,
     };
 
-    let (system, context_block) = entries
-        .iter()
-        .rev()
-        .find_map(|e| match &e.payload {
-            payload @ Payload::Preamble { context, .. } => {
-                Some((payload.preamble_system()?, context.render()))
-            }
-            _ => None,
-        })
-        .ok_or("log predates the boot-preamble snapshot; no recorded system prompt to replay")?;
-    let (tools, _) = efference::agent::recorded_or_rebuilt_tools(&entries, || {
-        Toolbox::bash_and_mcps(std::env::current_dir()?, None)
-    })?;
+    let (system, context_block, tools) = triage_replay::recorded_envelope(&entries)?;
 
     // The primer input: the main request's turns through this triage's calls, borrowed
     // the way the live loop borrows them — byte-identical by construction. Through
@@ -135,24 +122,69 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
         .collect();
 
     let mut rows: Vec<String> = Vec::new();
-    let mut emit = |row: String| {
-        println!("{row}");
-        rows.push(row);
-    };
-    emit(format!(
-        "ladder on {label} triage seq {} · {} primer turns · {} result(s)",
-        triage.seq,
-        turns.len(),
-        pending.len()
-    ));
+    emit_row(
+        &mut rows,
+        format!(
+            "ladder on {label} triage seq {} · {} primer turns · {} result(s)",
+            triage.seq,
+            turns.len(),
+            pending.len()
+        ),
+    );
     if dry_run {
-        emit(
+        emit_row(
+            &mut rows,
             "dry run: A auto/auto · B ladder · C auto→triage · D forced→triage · E triage-tools→triage"
                 .into(),
         );
         return Ok(());
     }
 
+    let (triager, client) = ladder_clients(
+        inference,
+        &path,
+        recorded_identity,
+        system,
+        context_block.as_deref(),
+    )
+    .await?;
+    let mut arms = Ladder {
+        triage: &triager,
+        client: &client,
+        turns: &turns,
+        tools: &tools,
+        prefix,
+        pending: &pending,
+        rows: &mut rows,
+    };
+    arms.arm_a().await;
+    arms.arm_b(&gaps).await;
+    arms.arms_c_and_d().await;
+    arms.arm_e().await;
+
+    if let Some(path) = out {
+        let mut sink = std::io::BufWriter::new(std::fs::File::create(path)?);
+        for row in &rows {
+            writeln!(sink, "{row}")?;
+        }
+    }
+    Ok(())
+}
+
+/// Print a report row and keep it for `--out`.
+fn emit_row(rows: &mut Vec<String>, row: String) {
+    println!("{row}");
+    rows.push(row);
+}
+
+/// The own triage the ladder plants on, and the client the measuring triage runs through.
+async fn ladder_clients(
+    inference: Result<efference::inference::SessionInference, efference::api::Error>,
+    path: &Path,
+    recorded_identity: Option<&efference::log::LoggedInference>,
+    system: String,
+    context_block: Option<&str>,
+) -> Result<(Triager, Client), CliError> {
     let inference = inference?;
     let (main_selection, mut endpoint) = inference.main();
     let model = main_selection.model.as_str();
@@ -168,8 +200,7 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
     )?;
     let (_, mut triage_endpoint, t) = triage_selection;
     triage_endpoint.session_id = endpoint.session_id.clone();
-    let triage_system =
-        efference::env::triage_system_prompt(&t.model, &agent_model, context_block.as_deref());
+    let triage_system = efference::env::triage_system_prompt(&t.model, &agent_model, context_block);
     let (triage, _) = Triager::for_triage_model(
         &triage_endpoint,
         t,
@@ -178,109 +209,141 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
     )
     .await?;
     let client = Client::new(endpoint, model, system);
+    Ok((triage, client))
+}
 
-    // Arm A: two auto primers back-to-back — the control. Same shape, no gap for
+/// What the arms plant and measure against, and the rows they report.
+struct Ladder<'a> {
+    triage: &'a Triager,
+    client: &'a Client,
+    turns: &'a [efference::project::WireTurn],
+    tools: &'a [serde_json::Value],
+    prefix: &'a [efference::log::LogEntry],
+    pending: &'a [Pending<'a>],
+    rows: &'a mut Vec<String>,
+}
 
-    // eviction; a miss here kills shape theories outright (no-write or drift).
-    for label in ["A plant(auto)", "A measure(auto)"] {
-        match plant(&triage, &turns, &tools, efference::api::ToolChoice::auto()).await {
-            Some(Ok(usage)) => emit(line(label, &usage)),
-            Some(Err(e)) => emit(format!("{label:<24} ERROR {e}")),
-            None => emit(format!("{label:<24} SKIPPED no implicit lineage")),
-        }
+impl Ladder<'_> {
+    fn emit(&mut self, row: String) {
+        emit_row(self.rows, row);
     }
-    // Arm B: the ladder. Each rung plants fresh, sleeps the gap, then measures —
-    // every rung is self-contained, so order effects only warm the plants.
-    for gap in &gaps {
-        match plant(&triage, &turns, &tools, efference::api::ToolChoice::auto()).await {
-            Some(Ok(usage)) => emit(line("B plant(auto)", &usage)),
-            Some(Err(e)) => emit(format!("B plant(auto)            ERROR {e}")),
-            None => emit("B plant(auto)            SKIPPED no implicit lineage".into()),
-        }
-        if *gap > 0 {
-            eprintln!("sleeping {gap}s …");
-            tokio::time::sleep(std::time::Duration::from_secs(*gap)).await;
-        }
-        match plant(&triage, &turns, &tools, efference::api::ToolChoice::auto()).await {
-            Some(Ok(usage)) => emit(line(&format!("B measure(auto,{gap}s)"), &usage)),
-            Some(Err(e)) => emit(format!("B measure(auto,{gap}s)      ERROR {e}")),
-            None => emit(format!(
-                "B measure(auto,{gap}s)      SKIPPED no implicit lineage"
-            )),
-        }
-    }
-    // Arms C and D: the recorded triage after an auto primer (v1 as shipped) and
-    // after a forced primer (the choice fix). First attempt only — the measurement.
-    for (label, choice) in [
-        ("C auto→triage", efference::api::ToolChoice::auto()),
-        (
-            "D forced→triage",
-            efference::api::ToolChoice::force("retain"),
-        ),
-    ] {
-        match plant(&triage, &turns, &tools, choice).await {
-            Some(Ok(usage)) => emit(line(&format!("{label} plant"), &usage)),
-            Some(Err(e)) => emit(format!("{label} plant            ERROR {e}")),
-            None => emit(format!(
-                "{label} plant            SKIPPED no implicit lineage"
-            )),
-        }
-        match triage
-            .attempt(
-                &client,
-                &tools,
-                TriageView::Transcript,
-                prefix,
-                &pending,
-                &[],
-                &[],
+
+    /// Arm A: two auto primers back-to-back — the control. Same shape, no gap for
+    /// eviction; a miss here kills shape theories outright (no-write or drift).
+    async fn arm_a(&mut self) {
+        for label in ["A plant(auto)", "A measure(auto)"] {
+            match plant(
+                self.triage,
+                self.turns,
+                self.tools,
+                efference::api::ToolChoice::auto(),
             )
             .await
-        {
-            Ok(attempt) => emit(line(&format!("{label} triage"), &attempt.usage)),
-            Err(e) => emit(format!("{label} triage              DEFECT {e}")),
+            {
+                Some(Ok(usage)) => self.emit(line(label, &usage)),
+                Some(Err(e)) => self.emit(format!("{label:<24} ERROR {e}")),
+                None => self.emit(format!("{label:<24} SKIPPED no implicit lineage")),
+            }
         }
     }
-    // Arm E: the recorded triage after a primer sending the triage's own envelope —
-    // triage tools plus forced choice, sharing only the input prefix. If the backend
-    // keys the full envelope, this is the plant the triage resumes.
-    {
+
+    /// Arm B: the ladder. Each rung plants fresh, sleeps the gap, then measures —
+    /// every rung is self-contained, so order effects only warm the plants.
+    async fn arm_b(&mut self, gaps: &[u64]) {
+        for gap in gaps {
+            match plant(
+                self.triage,
+                self.turns,
+                self.tools,
+                efference::api::ToolChoice::auto(),
+            )
+            .await
+            {
+                Some(Ok(usage)) => self.emit(line("B plant(auto)", &usage)),
+                Some(Err(e)) => self.emit(format!("B plant(auto)            ERROR {e}")),
+                None => self.emit("B plant(auto)            SKIPPED no implicit lineage".into()),
+            }
+            if *gap > 0 {
+                eprintln!("sleeping {gap}s …");
+                tokio::time::sleep(std::time::Duration::from_secs(*gap)).await;
+            }
+            match plant(
+                self.triage,
+                self.turns,
+                self.tools,
+                efference::api::ToolChoice::auto(),
+            )
+            .await
+            {
+                Some(Ok(usage)) => self.emit(line(&format!("B measure(auto,{gap}s)"), &usage)),
+                Some(Err(e)) => self.emit(format!("B measure(auto,{gap}s)      ERROR {e}")),
+                None => self.emit(format!(
+                    "B measure(auto,{gap}s)      SKIPPED no implicit lineage"
+                )),
+            }
+        }
+    }
+
+    /// Arms C and D: the recorded triage after an auto primer (v1 as shipped) and
+    /// after a forced primer (the choice fix). First attempt only — the measurement.
+    async fn arms_c_and_d(&mut self) {
+        for (label, choice) in [
+            ("C auto→triage", efference::api::ToolChoice::auto()),
+            (
+                "D forced→triage",
+                efference::api::ToolChoice::force("retain"),
+            ),
+        ] {
+            match plant(self.triage, self.turns, self.tools, choice).await {
+                Some(Ok(usage)) => self.emit(line(&format!("{label} plant"), &usage)),
+                Some(Err(e)) => self.emit(format!("{label} plant            ERROR {e}")),
+                None => self.emit(format!(
+                    "{label} plant            SKIPPED no implicit lineage"
+                )),
+            }
+            match self.measure().await {
+                Ok(attempt) => self.emit(line(&format!("{label} triage"), &attempt.usage)),
+                Err(e) => self.emit(format!("{label} triage              DEFECT {e}")),
+            }
+        }
+    }
+
+    /// Arm E: the recorded triage after a primer sending the triage's own envelope —
+    /// triage tools plus forced choice, sharing only the input prefix. If the backend
+    /// keys the full envelope, this is the plant the triage resumes.
+    async fn arm_e(&mut self) {
         use efference::triage::{retain_tool, triage_tool};
         let triage_tools = vec![retain_tool(), triage_tool()];
         match plant(
-            &triage,
-            &turns,
+            self.triage,
+            self.turns,
             &triage_tools,
             efference::api::ToolChoice::force("retain"),
         )
         .await
         {
-            Some(Ok(usage)) => emit(line("E triage-tools→triage plant", &usage)),
-            Some(Err(e)) => emit(format!("E triage-tools→triage plant   ERROR {e}")),
-            None => emit("E triage-tools→triage plant   SKIPPED no implicit lineage".into()),
+            Some(Ok(usage)) => self.emit(line("E triage-tools→triage plant", &usage)),
+            Some(Err(e)) => self.emit(format!("E triage-tools→triage plant   ERROR {e}")),
+            None => self.emit("E triage-tools→triage plant   SKIPPED no implicit lineage".into()),
         }
-        match triage
+        match self.measure().await {
+            Ok(attempt) => self.emit(line("E triage-tools→triage result", &attempt.usage)),
+            Err(e) => self.emit(format!("E triage-tools→triage result     DEFECT {e}")),
+        }
+    }
+
+    /// The recorded triage's first attempt, on the lineage the last plant wrote.
+    async fn measure(&self) -> Result<efference::triage::TriageAttempt, String> {
+        self.triage
             .attempt(
-                &client,
-                &tools,
+                self.client,
+                self.tools,
                 TriageView::Transcript,
-                prefix,
-                &pending,
+                self.prefix,
+                self.pending,
                 &[],
                 &[],
             )
             .await
-        {
-            Ok(attempt) => emit(line("E triage-tools→triage result", &attempt.usage)),
-            Err(e) => emit(format!("E triage-tools→triage result     DEFECT {e}")),
-        }
     }
-
-    if let Some(path) = out {
-        let mut sink = std::io::BufWriter::new(std::fs::File::create(path)?);
-        for row in &rows {
-            writeln!(sink, "{row}")?;
-        }
-    }
-    Ok(())
 }

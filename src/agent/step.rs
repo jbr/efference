@@ -87,6 +87,43 @@ impl Step {
     }
 }
 
+/// `ask` puts a question to the operator (docs/process-monitor.md): there is nothing in the
+/// world to authorize, so it skips the cascade, and the wait for the reply is the
+/// call. The interrupt's *after* juncture applies as for any call.
+async fn run_ask(
+    shared: &Arc<Session>,
+    call: &ToolCall,
+    ask_at: AskPosition,
+    primer_go: Option<&tokio::sync::watch::Sender<bool>>,
+) -> Decision {
+    // An answered ask lands in the triage, so its triage is certain short of an
+    // interrupt — fire the primer over the operator's deliberation window
+    // (docs/transport.md).
+    if let Some(go) = primer_go {
+        let _ = go.send(true);
+    }
+    let started = std::time::Instant::now();
+    let (result, reply) = ask_result(shared, call, ask_at).await;
+    let result = cap_tool_result(shared, call, result);
+    let telemetry = Box::new(telemetry::observe(
+        call,
+        &result,
+        started.elapsed(),
+        result.is_error,
+        None,
+    ));
+    if shared.take_interrupt() {
+        let interruption = shared.interruption_after(started.elapsed(), &result);
+        return Decision::Withheld(withheld(call, result, interruption));
+    }
+    Decision::Ran {
+        result,
+        telemetry,
+        handoff: None,
+        reply,
+    }
+}
+
 /// Take one call through the permission cascade and, if approved, run it
 /// (docs/permissions.md, docs/tools.md). Appends only the audit entries the cascade
 /// itself owns — the `Spot` verdict and any `ConfigEdit` — never the result, which the
@@ -123,36 +160,8 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     if !callable.contains(&call.name) {
         return Ok(Decision::Direct(vec![unknown_tool(call, &callable)]));
     }
-    // `ask` puts a question to the operator (docs/process-monitor.md): there is nothing in the
-    // world to authorize, so it skips the cascade, and the wait for the reply is the
-    // call. The interrupt's *after* juncture applies as for any call.
     if call.name == crate::log::ASK {
-        // An answered ask lands in the triage, so its triage is certain short of an
-        // interrupt — fire the primer over the operator's deliberation window
-        // (docs/transport.md).
-        if let Some(go) = primer_go {
-            let _ = go.send(true);
-        }
-        let started = std::time::Instant::now();
-        let (result, reply) = ask_result(shared, call, ask_at).await;
-        let result = cap_tool_result(shared, call, result);
-        let telemetry = Box::new(telemetry::observe(
-            call,
-            &result,
-            started.elapsed(),
-            result.is_error,
-            None,
-        ));
-        if shared.take_interrupt() {
-            let interruption = shared.interruption_after(started.elapsed(), &result);
-            return Ok(Decision::Withheld(withheld(call, result, interruption)));
-        }
-        return Ok(Decision::Ran {
-            result,
-            telemetry,
-            handoff: None,
-            reply,
-        });
+        return Ok(run_ask(shared, call, ask_at, primer_go).await);
     }
     // The guide overlay's one closed door (docs/context.md): a call that names an
     // `efference://` path with anything but `read` is answered here, ahead of the cascade.

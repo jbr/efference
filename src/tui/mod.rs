@@ -49,6 +49,7 @@ pub(crate) mod render_code_block;
 pub(crate) mod render_context;
 pub(crate) mod render_detail;
 pub(crate) mod render_document;
+pub(crate) mod render_entry;
 pub(crate) mod render_frame;
 pub(crate) mod render_header;
 pub(crate) mod render_help_screen;
@@ -81,7 +82,7 @@ pub(crate) mod write_text;
 // The render pipeline and input handlers reference these via `super::` (i.e. the
 // `tui` module namespace), mirroring ferritin's `renderer::interactive` layout.
 // Private re-export: visible to the `tui` submodules, not the wider crate.
-use senders::{Receivers, Senders};
+use senders::Senders;
 use state::{InteractiveState, UiMode};
 
 /// Why the loop is parked at its cold check: read from the `cold_parked` loop phase and
@@ -363,6 +364,7 @@ pub(crate) fn bullet_for_indent(indent: u16) -> char {
 mod test;
 
 mod bridge;
+mod dispatchers;
 mod operations;
 mod run;
 mod ui_loop;

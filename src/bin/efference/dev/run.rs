@@ -3,6 +3,9 @@
 use super::*;
 
 /// Run one `dev` verb.
+// One `match` over the verb, read by variant: each arm hands its verb to the instrument that
+// serves it, and the few that carry a body of their own resolve a target and call one.
+#[allow(clippy::too_many_lines)]
 pub(crate) async fn run(command: DevCommand) -> CliResult {
     match command {
         DevCommand::SessionForm { embedded } => {

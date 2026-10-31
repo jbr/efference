@@ -191,84 +191,95 @@ pub fn resolve_with_child_env(
                 continue;
             }
         };
-        let files = resolve_files(paths, base, &entry.exclude)?;
-        // The operator's label is a file's own tag only when the entry resolves to exactly one file;
-        // otherwise the label is a group wrapper and members are named individually.
-        let labeled_single = entry.heading.is_some() && files.len() == 1;
-        let mut items = Vec::new();
-        // Rows parallel to `items`, carrying the columns a `sort` override addresses. Built
-        // unconditionally (they cost one `metadata` call each) so the sort branch below is a pure
-        // reordering of what was already read.
-        let mut rows: Vec<sort::Row> = Vec::new();
-        for (display, full) in &files {
-            let text =
-                std::fs::read_to_string(full).map_err(|e| ResolveError::Io(full.clone(), e))?;
-            let split =
-                split_frontmatter(&text).map_err(|_| ResolveError::Frontmatter(full.clone()))?;
-            let basename = fallback_name(Path::new(display));
-            let name = if labeled_single {
-                entry
-                    .heading
-                    .clone()
-                    .expect("labeled_single implies a heading")
-            } else {
-                split
-                    .frontmatter
-                    .as_ref()
-                    .and_then(|fm| fm.name.clone())
-                    .unwrap_or_else(|| basename.clone())
-            };
-            rows.push(sort::Row {
-                // The sort's `name` column is the file's own name — its frontmatter `name`, else
-                // its basename — never the operator's collapsed label, which is a property of the
-                // entry rather than of the row.
-                name: split
-                    .frontmatter
-                    .as_ref()
-                    .and_then(|fm| fm.name.clone())
-                    .unwrap_or_else(|| basename.clone()),
-                display: display.clone(),
-                modified: std::fs::metadata(full)
-                    .and_then(|m| m.modified())
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs_f64()),
-                fields: split
-                    .frontmatter
-                    .as_ref()
-                    .map_or_default(|fm| fm.fields.clone()),
-            });
-            items.push(match split.mode(&basename) {
-                Mode::Inline => Item::Inline {
-                    name,
-                    path: display.clone(),
-                    body: split.body.to_string(),
-                },
-                Mode::Listed { description, .. } => Item::Listed {
-                    name,
-                    description,
-                    path: display.clone(),
-                },
-            });
+        if let Some(section) = file_section(entry, paths, base)? {
+            sections.push(section);
         }
-        if items.is_empty() {
-            continue;
-        }
-        // The override replaces the default order (`name asc` by display path for a directory
-        // expansion, written order for an explicit list) for this entry only.
-        if let Some(spec) = &entry.sort {
-            let keys = sort::parse(spec).map_err(ResolveError::Sort)?;
-            sort::apply(&mut items, &mut rows, &keys);
-        }
-        let heading =
-            (entry.heading.is_some() && !labeled_single).then(|| entry.heading.clone().unwrap());
-        sections.push(Section {
-            heading,
-            description: entry.description.clone(),
-            items,
-        });
     }
     Ok(Resolved { sections })
+}
+
+/// The section a `Files` entry resolves to: each file read and tagged, ordered by the entry's
+/// `sort` override. `None` when the entry resolves to no file at all.
+fn file_section(
+    entry: &ContextEntry,
+    paths: &[String],
+    base: &Path,
+) -> Result<Option<Section>, ResolveError> {
+    let files = resolve_files(paths, base, &entry.exclude)?;
+    // The operator's label is a file's own tag only when the entry resolves to exactly one file;
+    // otherwise the label is a group wrapper and members are named individually.
+    let labeled_single = entry.heading.is_some() && files.len() == 1;
+    let mut items = Vec::new();
+    // Rows parallel to `items`, carrying the columns a `sort` override addresses. Built
+    // unconditionally (they cost one `metadata` call each) so the sort branch below is a pure
+    // reordering of what was already read.
+    let mut rows: Vec<sort::Row> = Vec::new();
+    for (display, full) in &files {
+        let text = std::fs::read_to_string(full).map_err(|e| ResolveError::Io(full.clone(), e))?;
+        let split =
+            split_frontmatter(&text).map_err(|_| ResolveError::Frontmatter(full.clone()))?;
+        let basename = fallback_name(Path::new(display));
+        let name = if labeled_single {
+            entry
+                .heading
+                .clone()
+                .expect("labeled_single implies a heading")
+        } else {
+            split
+                .frontmatter
+                .as_ref()
+                .and_then(|fm| fm.name.clone())
+                .unwrap_or_else(|| basename.clone())
+        };
+        rows.push(sort::Row {
+            // The sort's `name` column is the file's own name — its frontmatter `name`, else
+            // its basename — never the operator's collapsed label, which is a property of the
+            // entry rather than of the row.
+            name: split
+                .frontmatter
+                .as_ref()
+                .and_then(|fm| fm.name.clone())
+                .unwrap_or_else(|| basename.clone()),
+            display: display.clone(),
+            modified: std::fs::metadata(full)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64()),
+            fields: split
+                .frontmatter
+                .as_ref()
+                .map_or_default(|fm| fm.fields.clone()),
+        });
+        items.push(match split.mode(&basename) {
+            Mode::Inline => Item::Inline {
+                name,
+                path: display.clone(),
+                body: split.body.to_string(),
+            },
+            Mode::Listed { description, .. } => Item::Listed {
+                name,
+                description,
+                path: display.clone(),
+            },
+        });
+    }
+    if items.is_empty() {
+        return Ok(None);
+    }
+    // The override replaces the default order (`name asc` by display path for a directory
+    // expansion, written order for an explicit list) for this entry only.
+    if let Some(spec) = &entry.sort {
+        let keys = sort::parse(spec).map_err(ResolveError::Sort)?;
+        sort::apply(&mut items, &mut rows, &keys);
+    }
+    let heading =
+        (entry.heading.is_some() && !labeled_single).then(|| entry.heading.clone().unwrap());
+    Ok(Some(Section {
+        heading,
+        description: entry.description.clone(),
+        items,
+    }))
 }
 
 /// Resolve one entry's path list into `(display, full)` pairs: `display` is the model-facing path

@@ -49,6 +49,9 @@ fn triage_thinking_joins_thinking_text_only() {
 /// shared pre-fork frontier, nothing in the fork-local raw tail carries one, and the
 /// next canonical request is that same prefix, content for content, followed by the
 /// selection — never the raw output or the triage's ask.
+// A scenario read top to bottom: the triage request, the canonical request that follows it, and
+// the comparison between their prefixes.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_only_the_selection()
 {

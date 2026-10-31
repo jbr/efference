@@ -157,6 +157,108 @@ fn available_tools(toolbox: &Toolbox) -> Vec<String> {
         .collect()
 }
 
+/// The role the tester judges against. `--config` supplies the mission and the server
+/// declarations; the individual flags override it, so a config can be borrowed for its
+/// servers while the perimeter under test is varied from the command line.
+#[cfg(feature = "dev")]
+fn tester_role(
+    config: Option<&Path>,
+    scope: Option<String>,
+    watch_for: Vec<String>,
+    paths: &[String],
+) -> Result<efference::config::Config, CliError> {
+    let base = match config {
+        Some(path) => match efference::config::load(Some(path)) {
+            Ok(loaded) => loaded.role,
+            Err(e) => {
+                e.eprint();
+                return Err("could not load config".into());
+            }
+        },
+        None => efference::config::Config::default(),
+    };
+    Ok(efference::config::Config {
+        scope: scope.or(base.scope),
+        watch_for: if watch_for.is_empty() {
+            base.watch_for
+        } else {
+            watch_for
+        },
+        paths: if paths.is_empty() {
+            base.paths
+        } else {
+            paths.iter().map(|s| dev::parse_path_grant(s)).collect()
+        },
+        mcp_servers: base.mcp_servers,
+        ..Default::default()
+    })
+}
+
+/// The toolbox with the servers `role` declares mounted. Unlike a session boot, a mount
+/// failure is fatal here: the whole point is judging against that server's real
+/// definition, and a skipped mount would silently downgrade the check to a name with no
+/// brief.
+#[cfg(feature = "dev")]
+async fn mount_declared_servers(
+    role: &efference::config::Config,
+    cwd: &Path,
+) -> Result<Toolbox, CliError> {
+    let mut toolbox = Toolbox::bash_and_mcps(cwd.to_path_buf(), None)?;
+    for (name, server) in &role.mcp_servers {
+        toolbox
+            // No stored credentials and no dance: a spotter check must
+            // never open a browser (docs/mcp-auth.md). A server needing
+            // authorization fails here, pointing at a hosted session.
+            .mount_connected(name, &server.transport, cwd, None)
+            .await
+            .map_err(|e| format!("could not mount `{name}`: {e}"))?;
+    }
+    Ok(toolbox)
+}
+
+/// Print what the spotter answered: the stance and reason, the per-axis figures, what the
+/// promotion probe would have done, and the request's usage.
+#[cfg(feature = "dev")]
+fn print_verdict(
+    spotting: &efference::spotter::Spotting,
+    probe: Option<&str>,
+    role: &efference::config::Config,
+) {
+    println!("stance: {:?}", spotting.read.stance);
+    println!("reason: {}", spotting.read.reason);
+    // The decision rung's stance is a fold over per-axis probabilities
+    // (docs/permissions.md), and the synthesized reason names only the deciding
+    // one. Iterating on a question's wording means reading all of them, so the
+    // tester prints the whole vector.
+    if let Some(axes) = &spotting.axes {
+        let line = axes.summary();
+        println!("axes:   {}", line.join(" · "));
+    }
+    if let Some(prefix) = probe {
+        // The probe's answer is the stance: `clear_always` (from a real model verdict) is the safe-vote.
+        let safe = spotting.origin == efference::log::Origin::Model
+            && spotting.read.stance == efference::log::Stance::ClearAlways;
+        let verdict = if !safe {
+            "not a safe-vote (stance wasn't clear_always) — no promotion".to_string()
+        } else if let Some(key) = efference::policy::promotable_command(role, prefix) {
+            format!("safe-vote → would queue `{key}` as a Proposed(Command) at K=1")
+        } else {
+            "safe-vote, but already covered by the allowlist — nothing to queue".to_string()
+        };
+        println!("probe `{prefix}`: {verdict}");
+    }
+    println!("origin: {:?}", spotting.origin);
+    if let Some(u) = &spotting.usage {
+        println!(
+            "usage:  in {} · out {} · cache read {} · cache write {}",
+            u.usage.input_tokens,
+            u.usage.output_tokens,
+            u.usage.cache_read_input_tokens,
+            u.usage.cache_creation_input_tokens
+        );
+    }
+}
+
 /// Dev tool: run the spotter on one move and print the verdict
 /// (docs/permissions.md). No daemon — it builds a config and a [`ToolCall`] and calls
 /// the exact `assess` path a real gate would, so what it prints is what the loop would
@@ -185,34 +287,7 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
         command,
     } = args;
     let command = command.join(" ");
-    // `--config` supplies the mission and the server declarations; the individual flags
-    // override it, so a config can be borrowed for its servers while the perimeter under
-    // test is varied from the command line.
-    let base = match config.as_deref() {
-        Some(path) => match efference::config::load(Some(path)) {
-            Ok(loaded) => loaded.role,
-            Err(e) => {
-                e.eprint();
-                return Err("could not load config".into());
-            }
-        },
-        None => efference::config::Config::default(),
-    };
-    let role = efference::config::Config {
-        scope: scope.or(base.scope),
-        watch_for: if watch_for.is_empty() {
-            base.watch_for
-        } else {
-            watch_for
-        },
-        paths: if paths.is_empty() {
-            base.paths
-        } else {
-            paths.iter().map(|s| dev::parse_path_grant(s)).collect()
-        },
-        mcp_servers: base.mcp_servers,
-        ..Default::default()
-    };
+    let role = tester_role(config.as_deref(), scope, watch_for, &paths)?;
 
     // The tester judges a move as if made from here, so this is the cwd the scope
     // block renders and resolves grants against.
@@ -221,22 +296,7 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
     // A structured move needs the mounted table to have a brief at all, so the toolbox is
     // built only in that mode — a bash check keeps costing nothing and spawning nothing.
     let toolbox = match &tool {
-        Some(_) => {
-            let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None)?;
-            // Unlike a session boot, a mount failure is fatal here: the whole point is judging
-            // against that server's real definition, and a skipped mount would silently
-            // downgrade the check to a name with no brief.
-            for (name, server) in &role.mcp_servers {
-                toolbox
-                    // No stored credentials and no dance: a spotter check must
-                    // never open a browser (docs/mcp-auth.md). A server needing
-                    // authorization fails here, pointing at a hosted session.
-                    .mount_connected(name, &server.transport, &cwd, None)
-                    .await
-                    .map_err(|e| format!("could not mount `{name}`: {e}"))?;
-            }
-            Some(toolbox)
-        }
+        Some(_) => Some(mount_declared_servers(&role, &cwd).await?),
         None => None,
     };
 
@@ -306,39 +366,7 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
     let spotting = spotter
         .assess(&role, &call, sent, &[], probe.as_deref(), &[])
         .await;
-    println!("stance: {:?}", spotting.read.stance);
-    println!("reason: {}", spotting.read.reason);
-    // The decision rung's stance is a fold over per-axis probabilities
-    // (docs/permissions.md), and the synthesized reason names only the deciding
-    // one. Iterating on a question's wording means reading all of them, so the
-    // tester prints the whole vector.
-    if let Some(axes) = &spotting.axes {
-        let line = axes.summary();
-        println!("axes:   {}", line.join(" · "));
-    }
-    if let Some(prefix) = &probe {
-        // The probe's answer is the stance: `clear_always` (from a real model verdict) is the safe-vote.
-        let safe = spotting.origin == efference::log::Origin::Model
-            && spotting.read.stance == efference::log::Stance::ClearAlways;
-        let verdict = if !safe {
-            "not a safe-vote (stance wasn't clear_always) — no promotion".to_string()
-        } else if let Some(key) = efference::policy::promotable_command(&role, prefix) {
-            format!("safe-vote → would queue `{key}` as a Proposed(Command) at K=1")
-        } else {
-            "safe-vote, but already covered by the allowlist — nothing to queue".to_string()
-        };
-        println!("probe `{prefix}`: {verdict}");
-    }
-    println!("origin: {:?}", spotting.origin);
-    if let Some(u) = spotting.usage {
-        println!(
-            "usage:  in {} · out {} · cache read {} · cache write {}",
-            u.usage.input_tokens,
-            u.usage.output_tokens,
-            u.usage.cache_read_input_tokens,
-            u.usage.cache_creation_input_tokens
-        );
-    }
+    print_verdict(&spotting, probe.as_deref(), &role);
     Ok(())
 }
 

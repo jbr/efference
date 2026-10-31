@@ -119,6 +119,8 @@ fn the_side_request_frames_keep_their_bytes() {
 /// One payload of each `Payload` and `Telemetry` variant, with the kind it frames under
 /// (docs/log-and-projection.md). Shared by the two tests below: the bytes one pins what
 /// each kind serializes to, and the topic one checks the set against the state topics.
+// The length is the table: one payload of each kind, in the order the kinds are declared.
+#[allow(clippy::too_many_lines)]
 fn log_kinds() -> Vec<(Payload, &'static str)> {
     let telemetry = |t: Telemetry| Payload::Telemetry(t);
     vec![

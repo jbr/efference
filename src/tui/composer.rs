@@ -234,6 +234,9 @@ impl Composer {
 
     /// Feed one key event. Returns whether it was consumed, ignored (caller should
     /// handle), or a submission.
+    // The keymap: one arm per binding, read top to bottom as the composer's key bindings;
+    // the work before and after the `match` is the same for every one of them.
+    #[allow(clippy::too_many_lines)]
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> ComposerAction {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);

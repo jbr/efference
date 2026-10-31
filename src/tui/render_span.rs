@@ -1,4 +1,8 @@
-use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Modifier, Style},
+};
 
 use super::state::InteractiveState;
 use crate::tui::document::Span;
@@ -16,6 +20,43 @@ impl<'a> InteractiveState<'a> {
         modifier: Modifier,
         buf: &mut Buffer,
     ) {
+        let style = self.span_style(span, modifier);
+
+        let start_col = self.layout.pos.x;
+        let start_row = self.layout.pos.y;
+
+        // Handle newlines in span text
+        for (line_idx, line) in span.text.split('\n').enumerate() {
+            if line_idx > 0 {
+                self.next_row(buf);
+            }
+            self.write_wrapped(line, style, buf);
+        }
+
+        // Track action if present
+        if let Some(action) = &span.action {
+            // Calculate width handling wrapping (pos.x might be less than start_col if we wrapped)
+            let width = if self.layout.pos.y > start_row {
+                // Multi-line span - use full width of first line as clickable area
+                self.layout.area.width.saturating_sub(start_col).max(1)
+            } else {
+                // Single line - use actual span width
+                self.layout.pos.x.saturating_sub(start_col).max(1)
+            };
+
+            let rect = Rect::new(
+                start_col,
+                start_row,
+                width,
+                (self.layout.pos.y - start_row + 1).max(1),
+            );
+            self.render_cache.actions.push((rect, action.clone()));
+        }
+    }
+
+    /// The style a span draws in at the cursor: its own, the extra modifier, and — for a
+    /// clickable span — an underline, reversed while the mouse or the keyboard is on it.
+    fn span_style(&self, span: &Span<'a>, modifier: Modifier) -> Style {
         let mut style = self.style(span.style);
         style = style.add_modifier(modifier);
 
@@ -23,9 +64,6 @@ impl<'a> InteractiveState<'a> {
         if span.action.is_some() {
             style = style.add_modifier(Modifier::UNDERLINED);
         }
-
-        let start_col = self.layout.pos.x;
-        let start_row = self.layout.pos.y;
 
         // Determine if this span should be highlighted (by mouse or keyboard)
         let should_highlight = if span.action.is_some() {
@@ -56,190 +94,127 @@ impl<'a> InteractiveState<'a> {
         if should_highlight {
             style = style.add_modifier(Modifier::REVERSED);
         }
+        style
+    }
 
-        // Handle newlines in span text
-        for (line_idx, line) in span.text.split('\n').enumerate() {
-            if line_idx > 0 {
-                self.layout.pos.y += 1;
-                self.layout.pos.x = self.layout.indent;
-                // Draw blockquote markers on new line
-                self.draw_blockquote_markers(buf);
+    /// Move to the start of the next row, inside the blockquote markers if there are any.
+    fn next_row(&mut self, buf: &mut Buffer) {
+        self.layout.pos.y += 1;
+        self.layout.pos.x = self.layout.indent;
+        // Draw blockquote markers on new line
+        self.draw_blockquote_markers(buf);
+    }
+
+    /// Write `text` at the cursor, clipped to the area.
+    fn write_here(&mut self, buf: &mut Buffer, text: &str, style: Style) {
+        self.write_text(
+            buf,
+            self.layout.pos.y,
+            self.layout.pos.x,
+            text,
+            self.layout.area,
+            style,
+        );
+    }
+
+    /// Write the first `at` bytes of `text` here, start the next row, and return the rest.
+    fn write_to_row_end<'t>(
+        &mut self,
+        text: &'t str,
+        at: usize,
+        style: Style,
+        buf: &mut Buffer,
+    ) -> &'t str {
+        let (chunk, rest) = text.split_at(at);
+        self.write_here(buf, chunk, style);
+        self.next_row(buf);
+        rest
+    }
+
+    /// Write one line of a span from the cursor, wrapping at the area's edge: at a good break
+    /// point when one fits, else after the next whitespace, else hard-cut when the word is
+    /// wider than the whole column.
+    fn write_wrapped(&mut self, line: &str, style: Style, buf: &mut Buffer) {
+        // Word wrap if line is too long
+        let mut remaining = line;
+        while !remaining.is_empty() {
+            // Calculate available width: columns from current to edge (exclusive)
+            // area.width is the total width, so valid columns are 0 to area.width-1
+            let available_width = self.layout.area.width.saturating_sub(self.layout.pos.x);
+
+            if available_width == 0 {
+                // No space left on this line, wrap to next
+                self.next_row(buf);
+                continue;
             }
 
-            // Word wrap if line is too long
-            let mut remaining = line;
-            while !remaining.is_empty() {
-                // Calculate available width: columns from current to edge (exclusive)
-                // area.width is the total width, so valid columns are 0 to area.width-1
-                let available_width = self.layout.area.width.saturating_sub(self.layout.pos.x);
+            // Bounded (see `width_upto`): this loop runs once per row, so
+            // measuring the whole remainder each time makes drawing one long
+            // line quadratic in its length — the same defect `wrap_points` had.
+            if width_upto(remaining, available_width as usize) <= available_width as usize {
+                // Fits on current line
+                self.write_here(buf, remaining, style);
+                self.layout.pos.x += display_width(remaining) as u16;
+                break;
+            }
+            // Need to wrap - find best break point
+            let truncate_at = available_width as usize;
 
-                if available_width == 0 {
-                    // No space left on this line, wrap to next
-                    self.layout.pos.y += 1;
-                    self.layout.pos.x = self.layout.indent;
-                    // Draw blockquote markers on new line
-                    self.draw_blockquote_markers(buf);
-                    continue;
+            // First try to find a good break point (whitespace or after punctuation)
+            let wrap_pos = find_wrap_position(remaining, truncate_at);
+
+            if let Some(wrap_at) = wrap_pos {
+                // Skip leading whitespace on next line
+                remaining = self
+                    .write_to_row_end(remaining, wrap_at, style, buf)
+                    .trim_start();
+            } else if let Some(next_space) = remaining.find(char::is_whitespace) {
+                // No good break point within available width
+                // Look for the next break point beyond the available width
+                // This creates ragged right margins but avoids splitting words
+                // Check if the word will fit on the current line
+                let word_width = display_width(&remaining[..next_space]);
+                if word_width <= available_width as usize {
+                    // Word fits on current line, write it
+                    remaining = self
+                        .write_to_row_end(remaining, next_space, style, buf)
+                        .trim_start();
+                } else if self.layout.pos.x == self.layout.indent {
+                    // Already at the start of a fresh line and the word
+                    // still overflows the full text column — it fits on
+                    // no line. Hard-cut it so we make progress; otherwise
+                    // pos.y increments forever and overflows (a panic).
+                    let cut = hard_cut(remaining, available_width as usize);
+                    remaining = self.write_to_row_end(remaining, cut, style, buf);
+                } else {
+                    // Word doesn't fit here but may on a fresh, full-width
+                    // line — wrap and retry there (next pass hard-cuts if
+                    // it still doesn't fit).
+                    // Don't modify remaining, continue on next line and try again
+                    self.next_row(buf);
                 }
-
-                // Bounded (see `width_upto`): this loop runs once per row, so
-                // measuring the whole remainder each time makes drawing one long
-                // line quadratic in its length — the same defect `wrap_points` had.
+            } else {
+                // No whitespace at all in remaining text
+                // If it fits, write it; otherwise wrap first. Bounded
+                // (see `width_upto`): this is the no-whitespace path, so
+                // an unbroken run reaches it once per row it occupies.
                 if width_upto(remaining, available_width as usize) <= available_width as usize {
-                    // Fits on current line
-                    self.write_text(
-                        buf,
-                        self.layout.pos.y,
-                        self.layout.pos.x,
-                        remaining,
-                        self.layout.area,
-                        style,
-                    );
+                    self.write_here(buf, remaining, style);
                     self.layout.pos.x += display_width(remaining) as u16;
                     break;
+                } else if self.layout.pos.x == self.layout.indent {
+                    // No whitespace and already at line start: the token
+                    // is wider than the whole column. Hard-cut so we
+                    // advance instead of looping pos.y to overflow.
+                    let cut = hard_cut(remaining, available_width as usize);
+                    remaining = self.write_to_row_end(remaining, cut, style, buf);
                 } else {
-                    // Need to wrap - find best break point
-                    let truncate_at = available_width as usize;
-
-                    // First try to find a good break point (whitespace or after punctuation)
-                    let wrap_pos = find_wrap_position(remaining, truncate_at);
-
-                    if let Some(wrap_at) = wrap_pos {
-                        let (chunk, rest) = remaining.split_at(wrap_at);
-                        self.write_text(
-                            buf,
-                            self.layout.pos.y,
-                            self.layout.pos.x,
-                            chunk,
-                            self.layout.area,
-                            style,
-                        );
-                        self.layout.pos.y += 1;
-                        self.layout.pos.x = self.layout.indent;
-                        // Draw blockquote markers on new line
-                        self.draw_blockquote_markers(buf);
-                        remaining = rest.trim_start(); // Skip leading whitespace on next line
-                    } else {
-                        // No good break point within available width
-                        // Look for the next break point beyond the available width
-                        // This creates ragged right margins but avoids splitting words
-                        if let Some(next_space) = remaining.find(char::is_whitespace) {
-                            // Check if the word will fit on the current line
-                            let word_width = display_width(&remaining[..next_space]);
-                            if word_width <= available_width as usize {
-                                // Word fits on current line, write it
-                                let (chunk, rest) = remaining.split_at(next_space);
-                                self.write_text(
-                                    buf,
-                                    self.layout.pos.y,
-                                    self.layout.pos.x,
-                                    chunk,
-                                    self.layout.area,
-                                    style,
-                                );
-                                self.layout.pos.y += 1;
-                                self.layout.pos.x = self.layout.indent;
-                                // Draw blockquote markers on new line
-                                self.draw_blockquote_markers(buf);
-                                remaining = rest.trim_start();
-                            } else if self.layout.pos.x == self.layout.indent {
-                                // Already at the start of a fresh line and the word
-                                // still overflows the full text column — it fits on
-                                // no line. Hard-cut it so we make progress; otherwise
-                                // pos.y increments forever and overflows (a panic).
-                                let cut = hard_cut(remaining, available_width as usize);
-                                let (chunk, rest) = remaining.split_at(cut);
-                                self.write_text(
-                                    buf,
-                                    self.layout.pos.y,
-                                    self.layout.pos.x,
-                                    chunk,
-                                    self.layout.area,
-                                    style,
-                                );
-                                self.layout.pos.y += 1;
-                                self.layout.pos.x = self.layout.indent;
-                                self.draw_blockquote_markers(buf);
-                                remaining = rest;
-                            } else {
-                                // Word doesn't fit here but may on a fresh, full-width
-                                // line — wrap and retry there (next pass hard-cuts if
-                                // it still doesn't fit).
-                                self.layout.pos.y += 1;
-                                self.layout.pos.x = self.layout.indent;
-                                // Draw blockquote markers on new line
-                                self.draw_blockquote_markers(buf);
-                                // Don't modify remaining, continue on next line and try again
-                            }
-                        } else {
-                            // No whitespace at all in remaining text
-                            // If it fits, write it; otherwise wrap first. Bounded
-                            // (see `width_upto`): this is the no-whitespace path, so
-                            // an unbroken run reaches it once per row it occupies.
-                            if width_upto(remaining, available_width as usize)
-                                <= available_width as usize
-                            {
-                                self.write_text(
-                                    buf,
-                                    self.layout.pos.y,
-                                    self.layout.pos.x,
-                                    remaining,
-                                    self.layout.area,
-                                    style,
-                                );
-                                self.layout.pos.x += display_width(remaining) as u16;
-                                break;
-                            } else if self.layout.pos.x == self.layout.indent {
-                                // No whitespace and already at line start: the token
-                                // is wider than the whole column. Hard-cut so we
-                                // advance instead of looping pos.y to overflow.
-                                let cut = hard_cut(remaining, available_width as usize);
-                                let (chunk, rest) = remaining.split_at(cut);
-                                self.write_text(
-                                    buf,
-                                    self.layout.pos.y,
-                                    self.layout.pos.x,
-                                    chunk,
-                                    self.layout.area,
-                                    style,
-                                );
-                                self.layout.pos.y += 1;
-                                self.layout.pos.x = self.layout.indent;
-                                self.draw_blockquote_markers(buf);
-                                remaining = rest;
-                            } else {
-                                // Doesn't fit here, but a fresh full-width line might
-                                // hold it — wrap and retry (hard-cut next pass if not).
-                                self.layout.pos.y += 1;
-                                self.layout.pos.x = self.layout.indent;
-                                // Draw blockquote markers on new line
-                                self.draw_blockquote_markers(buf);
-                                // Continue to try writing on next line
-                            }
-                        }
-                    }
+                    // Doesn't fit here, but a fresh full-width line might
+                    // hold it — wrap and retry (hard-cut next pass if not).
+                    // Continue to try writing on next line
+                    self.next_row(buf);
                 }
             }
-        }
-
-        // Track action if present
-        if let Some(action) = &span.action {
-            // Calculate width handling wrapping (pos.x might be less than start_col if we wrapped)
-            let width = if self.layout.pos.y > start_row {
-                // Multi-line span - use full width of first line as clickable area
-                self.layout.area.width.saturating_sub(start_col).max(1)
-            } else {
-                // Single line - use actual span width
-                self.layout.pos.x.saturating_sub(start_col).max(1)
-            };
-
-            let rect = Rect::new(
-                start_col,
-                start_row,
-                width,
-                (self.layout.pos.y - start_row + 1).max(1),
-            );
-            self.render_cache.actions.push((rect, action.clone()));
         }
     }
 }

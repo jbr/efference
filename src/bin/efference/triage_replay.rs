@@ -12,16 +12,17 @@
 mod compare;
 mod layout;
 mod record;
+mod sweep;
 
 use super::*;
 use crate::dev::TriageArgs;
-use efference::log::Payload;
 use efference::project::Reader;
 use efference::triage::{Pending, TriageModel, TriageView, Triager, triage_request};
 use std::io::Write;
 
 use compare::*;
-pub(crate) use record::{Recorded, recorded_triages, session_model};
+pub(crate) use record::{Recorded, recorded_envelope, recorded_triages, session_model};
+use sweep::{Replay, Sweep};
 
 impl TriageArgs {
     /// The separate-model triage the `--triage-*` flags describe, when `--triage-model`
@@ -68,11 +69,6 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
     // grammar the other reader verbs take.
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
     let entries = efference::persist::load(&path)?;
-    // Replays use the selected connection's projection-shaping choices — image
-    // placement and cache-breakpoint placement — matching what a live session on
-    // that provider projects. If the current config cannot resolve the selection,
-    // the boot identity supplies the historical shapes; a legacy log falls back to
-    // the defaults (docs/log-and-projection.md).
     let inference = inference::resolve(
         Some(model),
         None,
@@ -86,67 +82,13 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
         }),
     );
     let recorded_identity = efference::log::recorded_inference(&entries);
-    let (provider, placement_model) = match inference.as_ref() {
-        Ok(inference) => (Some(inference.main().1.provider), model),
-        Err(_) => (
-            recorded_identity.map(|identity| identity.provider),
-            recorded_identity.map_or(model, |identity| identity.model.as_str()),
-        ),
-    };
-    let placement = provider.map_or_default(|p| p.image_placement(placement_model));
-    let breakpoint = provider.map_or_default(|p| p.breakpoint_placement(placement_model));
+    let (placement, breakpoint) =
+        projection_shapes(inference.as_ref().ok(), recorded_identity, model);
     let all = recorded_triages(&entries);
-    let mut selected: Vec<&Recorded> = match seq.is_empty() {
-        false => all.iter().filter(|g| seq.contains(&g.seq)).collect(),
-        true => all.iter().collect(),
-    };
-    // Evenly spaced, not the first N. Failure rate climbs with session depth, so a prefix
-    // of the triages samples the easy end and flatters the model.
-    if let Some(limit) = limit.filter(|n| *n < selected.len() && *n > 0) {
-        let step = selected.len() as f64 / limit as f64;
-        selected = (0..limit)
-            .map(|i| selected[(i as f64 * step) as usize])
-            .collect();
-    }
-    if selected.is_empty() {
-        return Err(match seq.as_slice() {
-            [] => format!("no triages in {}", path.display()).into(),
-            seqs => format!(
-                "no triage triaging result seq {seqs:?} in {}",
-                path.display()
-            )
-            .into(),
-        });
-    }
+    let selected = select_triages(&all, &seq, limit, &path)?;
+    note_unlogged_background(&selected);
 
-    // Background-process tails are sampled live and never logged, so the replayed
-    // request lacks that rider; say so, or a clean replay reads as a faithful one.
-    let with_processes = selected.iter().filter(|g| g.running_processes > 0).count();
-    if with_processes > 0 {
-        eprintln!(
-            "note: {with_processes} of {} triage(s) had background processes running; their \
-             tails were not logged, so the replayed request omits the background rider",
-            selected.len()
-        );
-    }
-
-    // The envelope a real turn sends. `system` is the recorded boot preamble, so the
-    // replay reads the same cached prefix the session did; `tools[]` is the recorded array,
-    // else rebuilt from the current code and cwd, exactly as `wire` does and with the same
-    // caveat.
-    let (system, context_block) = entries
-        .iter()
-        .rev()
-        .find_map(|e| match &e.payload {
-            payload @ Payload::Preamble { context, .. } => {
-                Some((payload.preamble_system()?, context.render()))
-            }
-            _ => None,
-        })
-        .ok_or("log predates the boot-preamble snapshot; no recorded system prompt to replay")?;
-    let (tools, _) = efference::agent::recorded_or_rebuilt_tools(&entries, || {
-        Toolbox::bash_and_mcps(std::env::current_dir()?, None)
-    })?;
+    let (system, context_block, tools) = recorded_envelope(&entries)?;
 
     // The projection the replayed triage reads: the triage reader's on a separate model,
     // the main one on the shared triage (docs/summary.md).
@@ -154,72 +96,14 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
         Some(_) => Reader::Triage,
         None => Reader::Main,
     };
-    if dry_run && view == TriageView::Text {
-        layout::report(&entries, &selected, reader);
-    }
-
-    // A dry run over the whole session costs nothing and answers the other half of the
-    // question a variant raises: what it costs. The tail is the fresh part of every triage's
-    // request, so its mean size is what a cheaper roster is trying to move — and reading
-    // it here rather than off `usage` keeps it free of cache jitter.
-    if dry_run && seq.is_empty() {
-        let total: usize = selected
-            .iter()
-            .map(|g| {
-                let pending: Vec<Pending<'_>> = g
-                    .calls
-                    .iter()
-                    .zip(&g.raws)
-                    .map(|(call, raw)| Pending { call, raw })
-                    .collect();
-                tail_chars(&triage_request(
-                    &entries[..g.prefix_end],
-                    reader,
-                    view,
-                    &pending,
-                    &g.inbox,
-                    &[],
-                ))
-            })
-            .sum();
-        println!(
-            "{} triages · mean tail {} chars · {} chars per session",
-            selected.len(),
-            total / selected.len(),
-            total
-        );
-        return Ok(());
-    }
     if dry_run {
-        let g = selected[0];
-        let pending: Vec<Pending<'_>> = g
-            .calls
-            .iter()
-            .zip(&g.raws)
-            .map(|(call, raw)| Pending { call, raw })
-            .collect();
-        let messages = triage_request(
-            &entries[..g.prefix_end],
-            reader,
-            view,
-            &pending,
-            &g.inbox,
-            &[],
+        return dry_run_report(
+            &entries,
+            &selected,
+            (reader, view),
+            seq.is_empty(),
+            (placement, breakpoint),
         );
-        eprintln!(
-            "note: triage at seq {} · {} result(s)",
-            g.seq,
-            pending.len()
-        );
-        // The transcript view's prefix is the session's own wire, so only its fork tail
-        // is printed; a text-only view is printed whole.
-        let shown = match view {
-            TriageView::Transcript => &messages[messages.len() - 1..],
-            _ => &messages[..],
-        };
-        let messages = efference::project::encode_messages(shown, placement, breakpoint);
-        println!("{}", efference::api::render_messages_pretty(&messages)?);
-        return Ok(());
     }
 
     let inference = inference?;
@@ -241,14 +125,193 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
         .map(|identity| identity.model.clone())
         .or_else(|| session_model(&system))
         .unwrap_or_else(|| model.to_string());
-    let (triage, model) = match inference.triage() {
+    let (triage, model) = replayed_triager(
+        &inference,
+        endpoint.session_id.as_deref(),
+        &agent_model,
+        context_block.as_deref(),
+        model,
+    )
+    .await?;
+    let client = Client::new(endpoint, model, system);
+    let sink = match &out {
+        Some(path) => Some(std::io::BufWriter::new(std::fs::File::create(path)?)),
+        None => None,
+    };
+
+    eprintln!(
+        "replaying {} triage(s) from {label} × {repeat} on {model} — first attempt only, no retries",
+        selected.len()
+    );
+    let replay = Replay {
+        entries: &entries,
+        selected: &selected,
+        reader,
+        view,
+        repeat,
+    };
+    let mut sweep = Sweep::new(replay, &triage, &client, &tools, sink);
+    sweep.run().await?;
+    sweep.print_summary(model, table, out.as_deref());
+    Ok(())
+}
+
+/// The image and cache-breakpoint placement the replay projects with. Replays use the
+/// selected connection's projection-shaping choices — image placement and cache-breakpoint
+/// placement — matching what a live session on that provider projects. If the current
+/// config cannot resolve the selection, the boot identity supplies the historical shapes; a
+/// legacy log falls back to the defaults (docs/log-and-projection.md).
+fn projection_shapes(
+    inference: Option<&efference::inference::SessionInference>,
+    recorded: Option<&efference::log::LoggedInference>,
+    model: &str,
+) -> (
+    efference::project::ImagePlacement,
+    efference::project::BreakpointPlacement,
+) {
+    let (provider, placement_model) = match inference {
+        Some(inference) => (Some(inference.main().1.provider), model),
+        None => (
+            recorded.map(|identity| identity.provider),
+            recorded.map_or(model, |identity| identity.model.as_str()),
+        ),
+    };
+    (
+        provider.map_or_default(|p| p.image_placement(placement_model)),
+        provider.map_or_default(|p| p.breakpoint_placement(placement_model)),
+    )
+}
+
+/// The triages to replay: those `--seq` names, else all, thinned to `limit` when given.
+fn select_triages<'a>(
+    all: &'a [Recorded],
+    seq: &[u64],
+    limit: Option<usize>,
+    path: &Path,
+) -> Result<Vec<&'a Recorded>, CliError> {
+    let mut selected: Vec<&Recorded> = match seq.is_empty() {
+        false => all.iter().filter(|g| seq.contains(&g.seq)).collect(),
+        true => all.iter().collect(),
+    };
+    // Evenly spaced, not the first N. Failure rate climbs with session depth, so a prefix
+    // of the triages samples the easy end and flatters the model.
+    if let Some(limit) = limit.filter(|n| *n < selected.len() && *n > 0) {
+        let step = selected.len() as f64 / limit as f64;
+        selected = (0..limit)
+            .map(|i| selected[(i as f64 * step) as usize])
+            .collect();
+    }
+    if selected.is_empty() {
+        return Err(match seq {
+            [] => format!("no triages in {}", path.display()).into(),
+            seqs => format!(
+                "no triage triaging result seq {seqs:?} in {}",
+                path.display()
+            )
+            .into(),
+        });
+    }
+    Ok(selected)
+}
+
+/// Background-process tails are sampled live and never logged, so the replayed
+/// request lacks that rider; say so, or a clean replay reads as a faithful one.
+fn note_unlogged_background(selected: &[&Recorded]) {
+    let with_processes = selected.iter().filter(|g| g.running_processes > 0).count();
+    if with_processes > 0 {
+        eprintln!(
+            "note: {with_processes} of {} triage(s) had background processes running; their \
+             tails were not logged, so the replayed request omits the background rider",
+            selected.len()
+        );
+    }
+}
+
+/// A dry run: what the replayed requests would look like, and cost, with no request sent.
+/// `whole_session` is whether no `--seq` narrowed the triages, which prints the session's
+/// tail sizes rather than one request.
+fn dry_run_report(
+    entries: &[efference::log::LogEntry],
+    selected: &[&Recorded],
+    (reader, view): (Reader, TriageView),
+    whole_session: bool,
+    (placement, breakpoint): (
+        efference::project::ImagePlacement,
+        efference::project::BreakpointPlacement,
+    ),
+) -> CliResult {
+    if view == TriageView::Text {
+        layout::report(entries, selected, reader);
+    }
+
+    // A dry run over the whole session costs nothing and answers the other half of the
+    // question a variant raises: what it costs. The tail is the fresh part of every triage's
+    // request, so its mean size is what a cheaper roster is trying to move — and reading
+    // it here rather than off `usage` keeps it free of cache jitter.
+    if whole_session {
+        let total: usize = selected
+            .iter()
+            .map(|g| {
+                tail_chars(&triage_request(
+                    &entries[..g.prefix_end],
+                    reader,
+                    view,
+                    &g.pending(),
+                    &g.inbox,
+                    &[],
+                ))
+            })
+            .sum();
+        println!(
+            "{} triages · mean tail {} chars · {} chars per session",
+            selected.len(),
+            total / selected.len(),
+            total
+        );
+        return Ok(());
+    }
+    let g = selected[0];
+    let pending = g.pending();
+    let messages = triage_request(
+        &entries[..g.prefix_end],
+        reader,
+        view,
+        &pending,
+        &g.inbox,
+        &[],
+    );
+    eprintln!(
+        "note: triage at seq {} · {} result(s)",
+        g.seq,
+        pending.len()
+    );
+    // The transcript view's prefix is the session's own wire, so only its fork tail
+    // is printed; a text-only view is printed whole.
+    let shown = match view {
+        TriageView::Transcript => &messages[messages.len() - 1..],
+        _ => &messages[..],
+    };
+    let messages = efference::project::encode_messages(shown, placement, breakpoint);
+    println!("{}", efference::api::render_messages_pretty(&messages)?);
+    Ok(())
+}
+
+/// The triager the replay asks, and the model it is named by. A separate triage model
+/// replays the exact live shape (docs/triage.md); the shared triage replays on the agent
+/// client, whose model is `model`. `session_id` is the sticky-routing key the main endpoint
+/// carries.
+async fn replayed_triager<'a>(
+    inference: &'a efference::inference::SessionInference,
+    session_id: Option<&str>,
+    agent_model: &str,
+    context_block: Option<&str>,
+    model: &'a str,
+) -> Result<(Triager, &'a str), CliError> {
+    match inference.triage() {
         Some((_, mut triage_endpoint, t)) => {
-            triage_endpoint.session_id = endpoint.session_id.clone();
-            let triage_system = efference::env::triage_system_prompt(
-                &t.model,
-                &agent_model,
-                context_block.as_deref(),
-            );
+            triage_endpoint.session_id = session_id.map(str::to_string);
+            let triage_system =
+                efference::env::triage_system_prompt(&t.model, agent_model, context_block);
             let (triage, caps) = Triager::for_triage_model(
                 &triage_endpoint,
                 t,
@@ -267,266 +330,8 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
                 },
                 if t.auto_choice { "auto" } else { "forced" }
             );
-            (triage, t.model.as_str())
+            Ok((triage, t.model.as_str()))
         }
-        None => (Triager::shared(), model),
-    };
-    let client = Client::new(endpoint, model, system);
-    let mut sink = match &out {
-        Some(path) => Some(std::io::BufWriter::new(std::fs::File::create(path)?)),
-        None => None,
-    };
-    let mut compared: Vec<Compared> = Vec::new();
-
-    eprintln!(
-        "replaying {} triage(s) from {label} × {repeat} on {model} — first attempt only, no retries",
-        selected.len()
-    );
-    let (mut draws, mut compliant, mut cache_read, mut uncached) = (0usize, 0usize, 0u64, 0u64);
-    // Output includes reasoning tokens, which bill as output and vary enormously by model
-    // — the term most likely to make a cost estimate wrong.
-    let (mut out_tokens, mut prompt_tokens) = (0u64, 0u64);
-    // Draws that never produced a parseable response at all — counted as failures, and
-    // reported separately because "the model refused the ask" and "the response didn't
-    // decode" are different defects.
-    let mut transport_errors = 0usize;
-    let mut seconds_total = 0f64;
-    // Triages whose recorded first attempt failed, and whose replays now all pass (and the
-    // reverse) — the discordant pairs, which are what a paired comparison actually rests on.
-    let (mut fixed, mut broke) = (0usize, 0usize);
-    for g in &selected {
-        let pending: Vec<Pending<'_>> = g
-            .calls
-            .iter()
-            .zip(&g.raws)
-            .map(|(call, raw)| Pending { call, raw })
-            .collect();
-        // The fork tail — result blocks, roster, ask — is uncached by construction, so
-        // its size is what a triage costs beyond re-reading the prefix, on every tool result.
-        uncached += tail_chars(&triage_request(
-            &entries[..g.prefix_end],
-            triage.reader(),
-            view,
-            &pending,
-            &g.inbox,
-            &[],
-        )) as u64;
-        if view == TriageView::Text {
-            println!(
-                "seq {:>4} · {}",
-                g.seq,
-                layout::describe(&entries, g, reader)
-            );
-            // The primer the live batch sends first, where the own client plants one
-            // (docs/transport.md): without it a Codex triage model never resumes.
-            if let Some(turns) = triage.primer_turns(&entries[..g.prefix_end], &g.calls)
-                && let Some(primed) = triage.prime(&turns).await
-            {
-                match (&primed.usage, &primed.error) {
-                    (Some(u), _) => println!(
-                        "seq {:>4} · primer · {} prompt · {} cached",
-                        g.seq,
-                        u.usage.input_tokens
-                            + u.usage.cache_read_input_tokens
-                            + u.usage.cache_creation_input_tokens,
-                        u.usage.cache_read_input_tokens
-                    ),
-                    (None, error) => println!(
-                        "seq {:>4} · primer failed: {}",
-                        g.seq,
-                        error.as_deref().unwrap_or("no usage")
-                    ),
-                }
-            }
-        }
-        let mut passes = 0usize;
-        for draw in 1..=repeat {
-            // A transport error is this draw's problem, not the sweep's. Propagating it
-            // threw away 160-odd completed draws when one response came back with
-            // malformed JSON — and a model that sometimes fails to produce a parseable
-            // response *is* part of what a cross-model comparison is measuring, so it is
-            // recorded as a failed draw rather than hidden by aborting.
-            let started = std::time::Instant::now();
-            let attempt = match triage
-                .attempt(
-                    &client,
-                    &tools,
-                    view,
-                    &entries[..g.prefix_end],
-                    &pending,
-                    &g.inbox,
-                    &[],
-                )
-                .await
-            {
-                Ok(attempt) => attempt,
-                Err(e) => {
-                    draws += 1;
-                    transport_errors += 1;
-                    println!(
-                        "seq {:>4} · draw {draw}/{repeat} · {:<24} {e}",
-                        g.seq, "(error)"
-                    );
-                    continue;
-                }
-            };
-            draws += 1;
-            let seconds = started.elapsed().as_secs_f64();
-            seconds_total += seconds;
-            cache_read += attempt.usage.usage.cache_read_input_tokens;
-            out_tokens += attempt.usage.usage.output_tokens;
-            prompt_tokens += attempt.usage.usage.input_tokens
-                + attempt.usage.usage.cache_read_input_tokens
-                + attempt.usage.usage.cache_creation_input_tokens;
-            // NB: not `usage.input_tokens`. That counts everything neither read from nor
-            // written to cache, so a prefix segment that missed cache lands in it too —
-            // it moved the wrong way between two runs whose tails differed by 1 KB. Tail
-            // size is measured off the request we build instead: deterministic, free, and
-            // exactly the thing a cheaper roster is supposed to move.
-            if attempt.compliant() {
-                compliant += 1;
-                passes += 1;
-            }
-            let called = match attempt.called.join(", ").as_str() {
-                "" => "(no tool)".to_string(),
-                s => s.to_string(),
-            };
-            let rows = compare(g, draw, &attempt.verdicts, seconds);
-            let against = rows
-                .iter()
-                .map(|c| {
-                    format!(
-                        " · vs {} (over {}, under {}{})",
-                        c.reference_keep,
-                        pct(c.over, c.shown),
-                        pct(c.under, c.shown),
-                        if c.phantom_none { ", phantom none" } else { "" }
-                    )
-                })
-                .collect::<String>();
-            let usage = &attempt.usage.usage;
-            println!(
-                "seq {:>4} · draw {draw}/{repeat} · {:<24} {}{against} · {} prompt · {} cached · {seconds:.1}s",
-                g.seq,
-                called,
-                outcome(&attempt),
-                usage.input_tokens
-                    + usage.cache_read_input_tokens
-                    + usage.cache_creation_input_tokens,
-                usage.cache_read_input_tokens,
-            );
-            if let Some(sink) = &mut sink {
-                for c in &rows {
-                    writeln!(sink, "{}", serde_json::to_string(c)?)?;
-                }
-            }
-            compared.extend(rows);
-            // A failing draw prints what it reached for and what it said. The tool name
-            // alone says the triage answered with the wrong thing; the arguments and the
-            // prose say whether it was continuing the task, re-reading what it had just
-            // been shown, or never registered the ask at all — which is the diagnosis.
-            if !attempt.compliant() {
-                for (name, input) in attempt.called.iter().zip(&attempt.inputs) {
-                    println!("           ↳ {name}({})", one_line(&input.to_string(), 160));
-                }
-                if !attempt.said.is_empty() {
-                    println!("           ↳ said: {}", one_line(&attempt.said, 300));
-                }
-            }
-        }
-        match (&g.recorded_first_failure, passes == repeat, passes == 0) {
-            (Some(_), true, _) => fixed += 1,
-            (None, _, true) => broke += 1,
-            _ => {}
-        }
+        None => Ok((Triager::shared(), model)),
     }
-
-    let recorded_failures = selected
-        .iter()
-        .filter(|g| g.recorded_first_failure.is_some())
-        .count();
-    println!("\nTRIAGE REPLAY · {model}");
-    // The fork tail is uncached by construction, so this is what a triage costs beyond
-    // re-reading the prefix — paid on every tool result, for the whole session. It is the
-    // number a cheaper roster has to move, and it belongs next to the failure rate because
-    // the two are the trade.
-    println!(
-        "  tail      {} chars per triage, uncached (result + roster + ask)",
-        uncached / selected.len().max(1) as u64
-    );
-    println!(
-        "  recorded  {recorded_failures}/{} triages failed their first attempt  ({:.0}%)",
-        selected.len(),
-        100.0 * recorded_failures as f64 / selected.len() as f64
-    );
-    println!(
-        "  replayed  {}/{draws} draws failed  ({:.0}%)",
-        draws - compliant,
-        100.0 * (draws - compliant) as f64 / draws as f64
-    );
-    // The paired view: an aggregate rate can move without any gate changing behaviour,
-    // so the triages that flipped are reported separately from the totals.
-    println!(
-        "  flipped   {fixed} recorded-failure triages now pass every draw · {broke} recorded-pass triages now fail every draw"
-    );
-    // Output carries reasoning tokens, which differ by an order of magnitude between
-    // models and are the term that makes a borrowed cost estimate wrong. A short
-    // `--limit` probe reports this on the model itself.
-    if transport_errors > 0 {
-        println!(
-            "  errors    {transport_errors} draw(s) returned nothing parseable (counted as failures)"
-        );
-    }
-    println!(
-        "  tokens    {}k prompt · {} output per draw (output includes reasoning)",
-        prompt_tokens / draws.max(1) as u64 / 1000,
-        out_tokens / draws.max(1) as u64
-    );
-    println!(
-        "  cache     {cache_read} tokens read (a cold total means the replay isn't reading the session's prefix)"
-    );
-    // On the critical path of every tool call: a verdict's latency is paid by the
-    // agent's step, so it is reported beside tokens rather than left to the clock.
-    println!(
-        "  latency   {:.1}s per draw, request to verdict",
-        seconds_total / draws.max(1) as f64
-    );
-    if !compared.is_empty() {
-        let n = compared.len();
-        let shown: usize = compared.iter().map(|c| c.shown).sum();
-        let r: usize = compared.iter().map(|c| c.reference_kept).sum();
-        let c: usize = compared.iter().map(|c| c.candidate_kept).sum();
-        let over: usize = compared.iter().map(|c| c.over).sum();
-        let under: usize = compared.iter().map(|c| c.under).sum();
-        let exact = compared
-            .iter()
-            .filter(|c| c.over == 0 && c.under == 0)
-            .count();
-        let phantom = compared.iter().filter(|c| c.phantom_none).count();
-        println!("\nAGAINST THE RECORDED VERDICTS · {n} result-draws");
-        println!(
-            "  kept      reference {} of shown lines · candidate {}",
-            pct(r, shown),
-            pct(c, shown)
-        );
-        println!(
-            "  over      {} of shown lines kept that the reference dropped",
-            pct(over, shown)
-        );
-        println!(
-            "  under     {} of shown lines dropped that the reference kept",
-            pct(under, shown)
-        );
-        println!("  exact     {exact}/{n} result-draws kept the same lines");
-        if phantom > 0 {
-            println!(
-                "  phantom   {phantom} `none` verdict(s) against a reference that kept something"
-            );
-        }
-        print_table(table, &compared);
-        if let Some(path) = &out {
-            println!("\n{n} rows written to {}", path.display());
-        }
-    }
-    Ok(())
 }

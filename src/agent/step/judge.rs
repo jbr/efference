@@ -2,6 +2,7 @@
 //! spotter, and the human gate.
 
 use super::*;
+use crate::spotter::{Read, Spotting};
 
 /// The permission cascade for one call (docs/permissions.md). `bound` is the leaf
 /// action an allowing `agents__decide` authorizes, when the call is one: a granted
@@ -77,90 +78,19 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
                 .await)
         }
         Verdict::Gate => {
-            // Prefix-promotion probe (docs/permissions.md): on a bash move, observe
-            // its recurrence and pick the shortest prefix worth asking the spotter to
-            // vouch for *for all arguments*. The spotter answers via the stance
-            // (`clear_always`), so the probe rides the one spot call. A bound leaf's
-            // command belongs to the child's own ledger, so no probe rides an approval.
-            let probe = if bound.is_none() && judged.name == bash::NAME {
-                judged
-                    .input
-                    .get("command")
-                    .and_then(Value::as_str)
-                    .and_then(|command| policy::bash_tokens(&shared.directories(), &role, command))
-                    .and_then(|tokens| shared.observe_and_pick_probe(&role, &tokens))
-            } else {
-                None
-            };
-            // What the turn's whole `tools[]` knows about this tool — providers
-            // plus the loop-owned family (docs/permissions.md). `None` for bash,
-            // whose command text is its own description. Built from the leaf's name
-            // when bound, so the spotter reads the child's tool.
-            let brief = brief(toolbox, &judged.name);
-            let chain: &[String] = bound.map_or(&[], |b| b.chain.as_slice());
-            // A bound leaf's history is the child's, not this log's, so it has no
-            // precedents here (docs/permissions.md).
-            let precedents = if bound.is_none() {
-                shared.consented_calls()
-            } else {
-                Vec::new()
-            };
-            let spotting = spotter
-                .assess(
-                    &role,
-                    judged,
-                    brief.as_ref(),
-                    chain,
-                    probe.as_deref(),
-                    &precedents,
-                )
-                .await;
-            // What actually answered, read off the response rather than the
-            // configured id (docs/permissions.md). Taken before the usage moves
-            // into the ledger; `None` when no request happened at all.
-            let model = spotting.usage.as_ref().and_then(|u| u.model.clone());
-            if let Some(u) = spotting.usage {
-                shared.record_request(RequestOrigin::Spot, u);
-            }
-            let stance = spotting.read.stance;
-            let reason = spotting.read.reason;
-            let origin = spotting.origin;
-            let axes = spotting.axes;
-            shared.append(
-                turn,
-                Payload::Spot(Spot {
-                    call_id: call.id.clone(),
-                    stance,
-                    reason: reason.clone(),
-                    origin,
-                    model,
-                    probed_prefix: probe.clone(),
-                    axes,
-                }),
-            )?;
-            // The probe's answer *is* the stance: `clear_always` is the safe-vote for
-            // the probed prefix, any other stance is not-safe (a fail-closed fallback
-            // didn't judge, so it casts no vote). When the safe-votes cross the
-            // consensus threshold, file a non-blocking `Proposed(Command)` — inert
-            // until an orchestrator-above commits it. Nothing rides along: the proposal
-            // can't clear anything until committed, and this very call is still decided
-            // below.
-            if let Some(prefix) = &probe
-                && origin == Origin::Model
-                && shared.record_probe_vote(prefix, stance == Stance::ClearAlways)
-                && let Some(command) = policy::promotable_command(&role, prefix)
-            {
-                shared.append(
-                    turn,
-                    Payload::ConfigEdit(
-                        ConfigEdit::new(EditState::Proposed, ConfigChange::Command { command })
-                            .with_note(format!(
-                                "spotter: `{prefix}` judged safe for all arguments — \
-                                 proposed for the allowlist"
-                            )),
-                    ),
-                )?;
-            }
+            let probe = promotion_probe(shared, &role, judged, bound);
+            let spotting = consult_spotter(
+                shared,
+                spotter,
+                toolbox,
+                &role,
+                judged,
+                bound,
+                probe.as_deref(),
+            )
+            .await;
+            let Read { stance, reason } =
+                record_spot(shared, turn, call, &role, spotting, probe.as_deref())?;
             match stance {
                 // Clear (and its promotion refinement) auto-approve the move, no human.
                 Stance::Clear | Stance::ClearAlways => Ok(Approval::Approve),
@@ -198,6 +128,115 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
             }
         }
     }
+}
+
+/// Prefix-promotion probe (docs/permissions.md): on a bash move, observe
+/// its recurrence and pick the shortest prefix worth asking the spotter to
+/// vouch for *for all arguments*. The spotter answers via the stance
+/// (`clear_always`), so the probe rides the one spot call. A bound leaf's
+/// command belongs to the child's own ledger, so no probe rides an approval.
+fn promotion_probe(
+    shared: &Session,
+    role: &crate::config::Config,
+    judged: &ToolCall,
+    bound: Option<&crate::protocol::agents::BoundAction>,
+) -> Option<String> {
+    if bound.is_none() && judged.name == bash::NAME {
+        judged
+            .input
+            .get("command")
+            .and_then(Value::as_str)
+            .and_then(|command| policy::bash_tokens(&shared.directories(), role, command))
+            .and_then(|tokens| shared.observe_and_pick_probe(role, &tokens))
+    } else {
+        None
+    }
+}
+
+/// Ask the spotter about `judged`, with the context its rung weighs.
+async fn consult_spotter<S: Spotter>(
+    shared: &Session,
+    spotter: &S,
+    toolbox: &Toolbox,
+    role: &crate::config::Config,
+    judged: &ToolCall,
+    bound: Option<&crate::protocol::agents::BoundAction>,
+    probe: Option<&str>,
+) -> Spotting {
+    // What the turn's whole `tools[]` knows about this tool — providers
+    // plus the loop-owned family (docs/permissions.md). `None` for bash,
+    // whose command text is its own description. Built from the leaf's name
+    // when bound, so the spotter reads the child's tool.
+    let brief = brief(toolbox, &judged.name);
+    let chain: &[String] = bound.map_or(&[], |b| b.chain.as_slice());
+    // A bound leaf's history is the child's, not this log's, so it has no
+    // precedents here (docs/permissions.md).
+    let precedents = if bound.is_none() {
+        shared.consented_calls()
+    } else {
+        Vec::new()
+    };
+    spotter
+        .assess(role, judged, brief.as_ref(), chain, probe, &precedents)
+        .await
+}
+
+/// Record what the spotter answered: its request's usage and the `Spot` entry, then the
+/// vote the probe casts. Returns the read the move is decided on.
+fn record_spot(
+    shared: &Session,
+    turn: Turn,
+    call: &ToolCall,
+    role: &crate::config::Config,
+    spotting: Spotting,
+    probe: Option<&str>,
+) -> std::io::Result<Read> {
+    // What actually answered, read off the response rather than the
+    // configured id (docs/permissions.md). Taken before the usage moves
+    // into the ledger; `None` when no request happened at all.
+    let model = spotting.usage.as_ref().and_then(|u| u.model.clone());
+    if let Some(u) = spotting.usage {
+        shared.record_request(RequestOrigin::Spot, u);
+    }
+    let Read { stance, reason } = spotting.read;
+    let origin = spotting.origin;
+    shared.append(
+        turn,
+        Payload::Spot(Spot {
+            call_id: call.id.clone(),
+            stance,
+            reason: reason.clone(),
+            origin,
+            model,
+            probed_prefix: probe.map(str::to_string),
+            axes: spotting.axes,
+        }),
+    )?;
+    // The probe's answer *is* the stance: `clear_always` is the safe-vote for
+    // the probed prefix, any other stance is not-safe (a fail-closed fallback
+    // didn't judge, so it casts no vote). When the safe-votes cross the
+    // consensus threshold, file a non-blocking `Proposed(Command)` — inert
+    // until an orchestrator-above commits it. Nothing rides along: the proposal
+    // can't clear anything until committed, and this very call is still decided
+    // by the caller.
+    if let Some(prefix) = probe
+        && origin == Origin::Model
+        && shared.record_probe_vote(prefix, stance == Stance::ClearAlways)
+        && let Some(command) = policy::promotable_command(role, prefix)
+    {
+        shared.append(
+            turn,
+            Payload::ConfigEdit(
+                ConfigEdit::new(EditState::Proposed, ConfigChange::Command { command }).with_note(
+                    format!(
+                        "spotter: `{prefix}` judged safe for all arguments — \
+                         proposed for the allowlist"
+                    ),
+                ),
+            ),
+        )?;
+    }
+    Ok(Read { stance, reason })
 }
 
 /// The grant a gate on `call` offers (docs/permissions.md). A bound gate offers none:

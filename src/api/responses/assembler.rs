@@ -112,6 +112,28 @@ struct WireError {
     message: Option<String>,
 }
 
+/// A function call opening names itself before its arguments stream; any other item opening
+/// has nothing to show yet.
+fn tool_start(body: &Value, index: usize) -> Option<Streamed> {
+    let item = body.get("item");
+    let is_call = item.and_then(|i| i.get("type")).and_then(Value::as_str) == Some("function_call");
+    if is_call {
+        let id = item
+            .and_then(|i| i.get("call_id"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let name = item
+            .and_then(|i| i.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        Some(Streamed::ToolStart { index, id, name })
+    } else {
+        None
+    }
+}
+
 impl ResponsesAssembler {
     pub(crate) fn new() -> Self {
         Self {
@@ -239,26 +261,7 @@ impl ResponsesAssembler {
                 }
                 None
             }
-            "response.output_item.added" => {
-                let item = body.get("item");
-                let is_call = item.and_then(|i| i.get("type")).and_then(Value::as_str)
-                    == Some("function_call");
-                if is_call {
-                    let id = item
-                        .and_then(|i| i.get("call_id"))
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string();
-                    let name = item
-                        .and_then(|i| i.get("name"))
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string();
-                    Some(Streamed::ToolStart { index, id, name })
-                } else {
-                    None
-                }
-            }
+            "response.output_item.added" => tool_start(&body, index),
             "response.output_item.done" => {
                 if let Some(item) = body.get("item") {
                     self.items.insert(index, item_from_wire(item.clone()));

@@ -70,6 +70,9 @@ fn block(out: &mut String, label: &str, tag: &str, body: &str) {
 
 /// The lines one entry renders as. Most entries are one; an assistant turn is one
 /// per text block and per call; some are none.
+// One `match` over the payload, read by variant: each arm renders one kind of entry, and
+// the entries that draw nothing fall to the last arm.
+#[allow(clippy::too_many_lines)]
 pub(super) fn lines(
     entry: &LogEntry,
     siblings: &mut HashMap<CallId, String>,

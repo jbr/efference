@@ -114,25 +114,35 @@ fn read_log(path: &Path) -> std::io::Result<Vec<LogEntry>> {
         .collect())
 }
 
-pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: bool) -> CliResult {
-    use std::io::IsTerminal;
-
+/// The logs to fold: every session's with `--all`, else the named one, else the most
+/// recently written.
+fn stop_targets(
+    session: Option<String>,
+    name: Option<String>,
+    all: bool,
+) -> Result<Vec<(String, PathBuf)>, CliError> {
     // Same resolution order the other reader verbs use: the positional, then the
     // `--name`, then the most recently written session.
-    let targets = if all {
+    if all {
         let found = spot_report::resolve_spotter_logs(None)?;
         if found.is_empty() {
             return Err(format!("no {LOG_NAME} under {SESSION_BASE}/.").into());
         }
-        found
+        Ok(found)
     } else {
         let target = session
             .or(name)
             .or_else(|| session_ids().first().cloned())
             .ok_or_else(|| CliError::from(format!("no {LOG_NAME} under {SESSION_BASE}/.")))?;
         let (path, label) = resolve_session_log(&target)?;
-        vec![(label, path)]
-    };
+        Ok(vec![(label, path)])
+    }
+}
+
+pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: bool) -> CliResult {
+    use std::io::IsTerminal;
+
+    let targets = stop_targets(session, name, all)?;
 
     let mut sessions = Vec::new();
     for (id, path) in &targets {
@@ -149,12 +159,18 @@ pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: b
     } else {
         format!("{} sessions", report.sessions)
     };
+    print_endings(&report, &scope, targets.len() == 1, tty);
+    Ok(())
+}
+
+/// The report as text: the turn endings graded, then the `ask` calls beside them.
+fn print_endings(report: &StopReport, scope: &str, single: bool, tty: bool) {
     println!("{}", paint(&format!("TURN ENDINGS  {scope}"), BOLD, tty));
     let total = report.stops();
     if total == 0 {
         println!("  no turn endings recorded.");
-        print_asks(&report, tty);
-        return Ok(());
+        print_asks(report, tty);
+        return;
     }
     println!(
         "  {:<10} {:>7} {:>6}  what it bought",
@@ -197,7 +213,7 @@ pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: b
     let run = format!(
         "  longest run of barren stops  {:>4}{}",
         report.longest_run,
-        if report.longest_run_session.is_empty() || targets.len() == 1 {
+        if report.longest_run_session.is_empty() || single {
             String::new()
         } else {
             format!("   ({})", report.longest_run_session)
@@ -219,8 +235,7 @@ pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: b
             )
         );
     }
-    print_asks(&report, tty);
-    Ok(())
+    print_asks(report, tty);
 }
 
 /// The `ask` calls beside the turn endings, graded the same way, so a barren ask — a

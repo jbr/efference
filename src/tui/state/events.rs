@@ -13,38 +13,7 @@ impl<'a> InteractiveState<'a> {
     /// (or a fast token stream) from doing O(N²) projection work.
     pub(in crate::tui) fn handle_event(&mut self, event: TuiEvent) -> bool {
         match event {
-            TuiEvent::Entry(entry) => {
-                // A committed entry supersedes whatever was streamed live for it.
-                self.live.commit(&entry);
-                // The peek-vs-full fork belongs to output still arriving; the
-                // committed result renders whole, so the flag has nothing left to
-                // apply to (docs/tui.md).
-                if let Payload::ToolResult { call_id, .. } = &entry.payload {
-                    self.view.forget_live(&call_id.0);
-                }
-                self.resolve_result_images(&entry);
-                // A committed user turn resolves its optimistic pending echo
-                // (docs/tui.md): the entry *is* on the wire now (`project(log)` is exactly what
-                // the request sends), so drop the echo carrying that `submission_id`. Keyed by
-                // id rather than by text — recall hands a queued turn back to be edited and
-                // re-sent, and a content match would then settle the wrong echo.
-                // A reply to an `ask` settles it the same way: the daemon puts it in the
-                // log as the call's result, carrying the submission's id, never as a
-                // `User` entry (docs/tui.md).
-                if matches!(entry.payload, Payload::User(_) | Payload::ToolResult { .. })
-                    && let Some(id) = entry.submission_id.as_deref()
-                {
-                    self.pending_turns.retain(|p| p.submission_id != id);
-                }
-                // Entries can arrive out of order across the durable/replay boundary;
-                // keep the log sorted by seq so the projection is stable.
-                match self.log.binary_search_by_key(&entry.seq, |e| e.seq) {
-                    Ok(idx) => self.log[idx] = entry,
-                    Err(idx) => self.log.insert(idx, entry),
-                }
-                self.loading.pending_request = false;
-                self.mark_reproject();
-            }
+            TuiEvent::Entry(entry) => self.commit_entry(entry),
             TuiEvent::AssistantDelta(text) => {
                 self.live.assistant.push_str(&text);
                 // Prose arriving *is* the progress signal, so it supersedes the
@@ -86,16 +55,7 @@ impl<'a> InteractiveState<'a> {
                 self.mark_reproject();
             }
             TuiEvent::Topic(update) => return self.apply_topic(update),
-            TuiEvent::ProcessOutput { id, chunk } => {
-                // The panel's tail is built *here*, not received: the `processes` topic
-                // carries structure only, so these deltas are the sole source of tail
-                // content (docs/control-api.md). An unknown id (a process the panel
-                // has not seen yet) is ignored — it appears with the next state change.
-                if let Some(row) = self.process_panel.iter_mut().find(|p| p.process.id == id) {
-                    row.push_output(&chunk);
-                    self.dirty = true;
-                }
-            }
+            TuiEvent::ProcessOutput { id, chunk } => self.push_process_output(id, &chunk),
             TuiEvent::Image { seq, idx, image } => {
                 // The reserved footprint was sized from the entry view's metadata,
                 // so landing the pixels repaints without a reproject (docs/tui.md).
@@ -120,30 +80,13 @@ impl<'a> InteractiveState<'a> {
                 self.clipboard_image = found;
                 self.dirty = true;
             }
-            TuiEvent::Thumbnail { key, image } => {
-                // A chip removed before its thumbnail decoded has nowhere to show it.
-                if self.staged.items().iter().any(|s| s.key == key) {
-                    self.staged_images.insert((key, 0), Ok(image));
-                    self.dirty = true;
-                }
-            }
+            TuiEvent::Thumbnail { key, image } => self.stage_thumbnail(key, image),
             TuiEvent::Sessions(listing) => {
                 self.apply_sessions(listing);
                 self.dirty = true;
             }
             #[cfg(feature = "dev")]
-            TuiEvent::SessionFormPrototype => {
-                // The offline gallery has no host to read a context from, so the
-                // form opens against an empty one — the same state the inline
-                // `efference dev session-form` container draws (docs/tui.md).
-                self.ui_mode = UiMode::Sessions(crate::tui::sessions::SessionMenu {
-                    form: Some(Box::new(crate::tui::session_form::Form::new(
-                        crate::tui::session_form::NewSessionContext::default(),
-                    ))),
-                    ..Default::default()
-                });
-                self.dirty = true;
-            }
+            TuiEvent::SessionFormPrototype => self.open_session_form_prototype(),
             TuiEvent::NewSession(context) => {
                 self.open_new_session_form(context);
                 self.dirty = true;
@@ -177,6 +120,76 @@ impl<'a> InteractiveState<'a> {
             }
         }
         false
+    }
+
+    /// Fold a committed entry into the log.
+    fn commit_entry(&mut self, entry: LogEntry) {
+        // A committed entry supersedes whatever was streamed live for it.
+        self.live.commit(&entry);
+        // The peek-vs-full fork belongs to output still arriving; the
+        // committed result renders whole, so the flag has nothing left to
+        // apply to (docs/tui.md).
+        if let Payload::ToolResult { call_id, .. } = &entry.payload {
+            self.view.forget_live(&call_id.0);
+        }
+        self.resolve_result_images(&entry);
+        // A committed user turn resolves its optimistic pending echo
+        // (docs/tui.md): the entry *is* on the wire now (`project(log)` is exactly what
+        // the request sends), so drop the echo carrying that `submission_id`. Keyed by
+        // id rather than by text — recall hands a queued turn back to be edited and
+        // re-sent, and a content match would then settle the wrong echo.
+        // A reply to an `ask` settles it the same way: the daemon puts it in the
+        // log as the call's result, carrying the submission's id, never as a
+        // `User` entry (docs/tui.md).
+        if matches!(entry.payload, Payload::User(_) | Payload::ToolResult { .. })
+            && let Some(id) = entry.submission_id.as_deref()
+        {
+            self.pending_turns.retain(|p| p.submission_id != id);
+        }
+        // Entries can arrive out of order across the durable/replay boundary;
+        // keep the log sorted by seq so the projection is stable.
+        match self.log.binary_search_by_key(&entry.seq, |e| e.seq) {
+            Ok(idx) => self.log[idx] = entry,
+            Err(idx) => self.log.insert(idx, entry),
+        }
+        self.loading.pending_request = false;
+        self.mark_reproject();
+    }
+
+    /// Open the new-session form over an empty context.
+    #[cfg(feature = "dev")]
+    fn open_session_form_prototype(&mut self) {
+        // The offline gallery has no host to read a context from, so the
+        // form opens against an empty one — the same state the inline
+        // `efference dev session-form` container draws (docs/tui.md).
+        self.ui_mode = UiMode::Sessions(crate::tui::sessions::SessionMenu {
+            form: Some(Box::new(crate::tui::session_form::Form::new(
+                crate::tui::session_form::NewSessionContext::default(),
+            ))),
+            ..Default::default()
+        });
+        self.dirty = true;
+    }
+
+    /// Append process output to the panel's row for `id`.
+    fn push_process_output(&mut self, id: u64, chunk: &str) {
+        // The panel's tail is built *here*, not received: the `processes` topic
+        // carries structure only, so these deltas are the sole source of tail
+        // content (docs/control-api.md). An unknown id (a process the panel
+        // has not seen yet) is ignored — it appears with the next state change.
+        if let Some(row) = self.process_panel.iter_mut().find(|p| p.process.id == id) {
+            row.push_output(chunk);
+            self.dirty = true;
+        }
+    }
+
+    /// Show a staged attachment's decoded thumbnail.
+    fn stage_thumbnail(&mut self, key: u64, image: ::image::DynamicImage) {
+        // A chip removed before its thumbnail decoded has nowhere to show it.
+        if self.staged.items().iter().any(|s| s.key == key) {
+            self.staged_images.insert((key, 0), Ok(image));
+            self.dirty = true;
+        }
     }
 
     /// Start resolving a committed entry's result images (docs/tui.md). An image

@@ -14,7 +14,7 @@ use super::{Reader, extract_boundaries, render_triage_failure, render_triaged};
 use crate::log::context::Item;
 use crate::log::{
     AssistantOutput, CallId, ContentBlock, Disposition, LogEntry, Notification, Payload, RawResult,
-    ResultImage, Seq, WireDialect, WireState,
+    ResultImage, Seq, Triage, WireDialect, WireState,
 };
 
 /// One wire turn, before dialect encoding.
@@ -190,6 +190,135 @@ pub struct AskReply<'a> {
     pub source: Option<&'a str>,
 }
 
+/// What the fold resolves by key instead of re-walking the log. Only looked up, never
+/// iterated, so `HashMap` order cannot reach the wire.
+struct Lookups<'a> {
+    /// Each `ask`'s question by call id, so its reply can name it (`render_result`).
+    questions: HashMap<CallId, String>,
+    /// Notification bodies by arrival `seq`, so a `Triage` can emit a block for each
+    /// notification it pinned (docs/inbox.md) without re-walking the log.
+    notifications: HashMap<Seq, &'a Notification>,
+    /// The `[context]` listing by item name — (description, path) for each read-on-demand
+    /// stub — so a `Triage` can re-render a surfaced context item (docs/triage.md)
+    /// at cache-read cost, mirroring the notification body map. Sourced from the last boot
+    /// `Preamble`'s structured snapshot (context.md).
+    listing: HashMap<&'a str, (&'a str, &'a str)>,
+}
+
+impl<'a> Lookups<'a> {
+    fn of(log: &'a [LogEntry]) -> Self {
+        let questions = log
+            .iter()
+            .filter_map(|e| match &e.payload {
+                Payload::Assistant { output, .. } => output.tool_calls().ok(),
+                _ => None,
+            })
+            .flatten()
+            .filter(|call| call.name == crate::log::ASK)
+            .filter_map(|call| {
+                let question = call.input.get("question")?.as_str()?.trim().to_string();
+                Some((call.id, question))
+            })
+            .collect();
+        let notifications = log
+            .iter()
+            .filter_map(|e| match &e.payload {
+                Payload::Ambient(n) => Some((e.seq, n)),
+                _ => None,
+            })
+            .collect();
+        let listing = log
+            .iter()
+            .rev()
+            .find_map(|e| match &e.payload {
+                Payload::Preamble { context, .. } => Some(context),
+                _ => None,
+            })
+            .into_iter()
+            .flat_map(|ctx| ctx.sections.iter().flat_map(|s| &s.items))
+            .filter_map(|item| match item {
+                Item::Listed {
+                    name,
+                    description,
+                    path,
+                } => Some((name.as_str(), (description.as_str(), path.as_str()))),
+                Item::Inline { .. } | Item::Exec { .. } => None,
+            })
+            .collect();
+        Self {
+            questions,
+            notifications,
+            listing,
+        }
+    }
+}
+
+/// A `User` entry's parts. User turns author prose and attachments; the thinking block
+/// forms exist on `ContentBlock` for the legacy fixture shape and never occur in a `User`
+/// entry. An attachment projects as its notice, never its bytes (docs/inbox.md).
+///
+/// A source names who is speaking, when it is not the operator
+/// (docs/control-api.md); it opens the turn's first prose part so the
+/// model reads it as an address, another session's as `<id> (agent)`.
+/// No source renders no prefix, which is what keeps every unsourced
+/// turn's bytes unchanged.
+/// An attachments-only turn has no prose to open, so its source gets a
+/// line of its own: the `⟢` of the harness's note stays at a line start.
+fn user_parts<'a>(
+    entry: &'a LogEntry,
+    blocks: &'a [ContentBlock],
+) -> impl Iterator<Item = UserPart> + 'a {
+    let mut source = entry.source.as_deref();
+    blocks.iter().filter_map(move |block| {
+        let (text, separator) = match block {
+            ContentBlock::Text(text) => (text.clone(), " "),
+            ContentBlock::Attachment(arrival) => (crate::log::attachment::turn_line(arrival), "\n"),
+            ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {
+                return None;
+            }
+        };
+        Some(UserPart::Text(match source.take() {
+            Some(source) => {
+                format!("{}:{separator}{text}", crate::frontend::wire_label(source))
+            }
+            None => text,
+        }))
+    })
+}
+
+/// The text a `Triage` projects at its own position: a block per **pinned** notification and
+/// per **surfaced** context item — notification bodies looked up from the `Ambient` arrival
+/// (docs/inbox.md), surfaced items re-rendered from the boot listing (docs/triage.md). This
+/// tail-ward placement keeps the wire append-only: content acknowledged at a later triage
+/// than its origin never splices behind a breakpoint (docs/log-and-projection.md).
+/// Dismissed / left / already-surfaced dispositions don't project. The verdict is otherwise
+/// audit-only, and `None` when nothing is pinned or surfaced.
+fn triage_text(t: &Triage, lookups: &Lookups) -> Option<String> {
+    let mut blocks: Vec<String> = t
+        .inbox
+        .iter()
+        .filter(|(_, d)| matches!(d, Disposition::Pin))
+        .filter_map(|(seq, _)| {
+            lookups.notifications.get(seq).map(|n| {
+                let source = crate::frontend::wire_label(&n.source);
+                format!("⟢ {source}: {}", n.body)
+            })
+        })
+        .collect();
+    // Surfaced context items — name resolved to its one-line description and
+    // read path off the listing. A name absent from the current listing (a
+    // cross-boot listing change) simply drops: deterministic, never a panic.
+    blocks.extend(t.surfaced.iter().filter_map(|name| {
+        lookups
+            .listing
+            .get(name.as_str())
+            .map(|(description, path)| {
+                format!("⟢ context · {name} may be relevant: {description} — read {path}")
+            })
+    }));
+    (!blocks.is_empty()).then(|| blocks.join("\n"))
+}
+
 /// Fold the append-only log into dialect-neutral turns (docs/log-and-projection.md).
 ///
 /// Deterministic by construction: a pure function of `log`, with no clock, map
@@ -204,52 +333,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
     let skipped = super::skipped_seqs(log);
     let (boundaries, elided) = extract_boundaries(log, &skipped, reader);
     let verdicts = crate::log::result_verdicts(log);
-    // Each `ask`'s question by call id, so its reply can name it (`render_result`).
-    let questions: HashMap<CallId, String> = log
-        .iter()
-        .filter_map(|e| match &e.payload {
-            Payload::Assistant { output, .. } => output.tool_calls().ok(),
-            _ => None,
-        })
-        .flatten()
-        .filter(|call| call.name == crate::log::ASK)
-        .filter_map(|call| {
-            let question = call.input.get("question")?.as_str()?.trim().to_string();
-            Some((call.id, question))
-        })
-        .collect();
-    // Notification bodies by arrival `seq`, so a `Triage` can emit a block for each
-    // notification it pinned (docs/inbox.md) without re-walking the log.
-    let notifications: HashMap<Seq, &Notification> = log
-        .iter()
-        .filter_map(|e| match &e.payload {
-            Payload::Ambient(n) => Some((e.seq, n)),
-            _ => None,
-        })
-        .collect();
-    // The `[context]` listing by item name — (description, path) for each read-on-demand
-    // stub — so a `Triage` can re-render a surfaced context item (docs/triage.md)
-    // at cache-read cost, mirroring the notification body map. Sourced from the last boot
-    // `Preamble`'s structured snapshot (context.md); only looked up by name, so `HashMap`
-    // order can't reach the wire.
-    let listing: HashMap<&str, (&str, &str)> = log
-        .iter()
-        .rev()
-        .find_map(|e| match &e.payload {
-            Payload::Preamble { context, .. } => Some(context),
-            _ => None,
-        })
-        .into_iter()
-        .flat_map(|ctx| ctx.sections.iter().flat_map(|s| &s.items))
-        .filter_map(|item| match item {
-            Item::Listed {
-                name,
-                description,
-                path,
-            } => Some((name.as_str(), (description.as_str(), path.as_str()))),
-            Item::Inline { .. } | Item::Exec { .. } => None,
-        })
-        .collect();
+    let lookups = Lookups::of(log);
     // Cursor into `boundaries` — advance past each one as we emit the first
     // non-elided entry after its `upto`.
     let mut boundary_cursor = 0;
@@ -311,39 +395,9 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
         }
 
         match &entry.payload {
-            Payload::User(blocks) => {
-                // Merge into the pending user turn rather than flushing first (see
-                // `pending` above). User turns author prose and attachments; the
-                // thinking block forms exist on `ContentBlock` for the legacy fixture
-                // shape and never occur in a `User` entry. An attachment projects as
-                // its notice, never its bytes (docs/inbox.md).
-                //
-                // A source names who is speaking, when it is not the operator
-                // (docs/control-api.md); it opens the turn's first prose part so the
-                // model reads it as an address, another session's as `<id> (agent)`.
-                // No source renders no prefix, which is what keeps every unsourced
-                // turn's bytes unchanged.
-                // An attachments-only turn has no prose to open, so its source gets a
-                // line of its own: the `⟢` of the harness's note stays at a line start.
-                let mut source = entry.source.as_deref();
-                pending.extend(blocks.iter().filter_map(|block| {
-                    let (text, separator) = match block {
-                        ContentBlock::Text(text) => (text.clone(), " "),
-                        ContentBlock::Attachment(arrival) => {
-                            (crate::log::attachment::turn_line(arrival), "\n")
-                        }
-                        ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {
-                            return None;
-                        }
-                    };
-                    Some(UserPart::Text(match source.take() {
-                        Some(source) => {
-                            format!("{}:{separator}{text}", crate::frontend::wire_label(source))
-                        }
-                        None => text,
-                    }))
-                }));
-            }
+            // Merge into the pending user turn rather than flushing first (see
+            // `pending` above).
+            Payload::User(blocks) => pending.extend(user_parts(entry, blocks)),
             // A record-only entry (`excluded`, docs/transport.md) falls to the last arm.
             Payload::Assistant {
                 output,
@@ -362,7 +416,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                 let reply = entry
                     .submission_id
                     .as_ref()
-                    .and_then(|_| questions.get(call_id))
+                    .and_then(|_| lookups.questions.get(call_id))
                     .map(|question| AskReply {
                         question,
                         source: entry.source.as_deref(),
@@ -386,37 +440,12 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                     resumed, entry.seq,
                 )));
             }
-            // A triage verdict emits a block per **pinned** notification and per
-            // **surfaced** context item at its own position — notification bodies
-            // looked up from the `Ambient` arrival (docs/inbox.md), surfaced items
-            // re-rendered from the boot listing (docs/triage.md). This
-            // tail-ward placement keeps the wire append-only: content acknowledged
-            // at a later triage than its origin never splices behind a breakpoint
-            // (docs/log-and-projection.md). Dismissed / left / already-surfaced
-            // dispositions don't project. The verdict is otherwise audit-only.
+            // A triage verdict emits its pinned and surfaced blocks at its own position
+            // and is otherwise audit-only.
             Payload::Triage(t) => {
-                let mut blocks: Vec<String> = t
-                    .inbox
-                    .iter()
-                    .filter(|(_, d)| matches!(d, Disposition::Pin))
-                    .filter_map(|(seq, _)| {
-                        notifications.get(seq).map(|n| {
-                            let source = crate::frontend::wire_label(&n.source);
-                            format!("⟢ {source}: {}", n.body)
-                        })
-                    })
-                    .collect();
-                // Surfaced context items — name resolved to its one-line description and
-                // read path off the listing. A name absent from the current listing (a
-                // cross-boot listing change) simply drops: deterministic, never a panic.
-                blocks.extend(t.surfaced.iter().filter_map(|name| {
-                    listing.get(name.as_str()).map(|(description, path)| {
-                        format!("⟢ context · {name} may be relevant: {description} — read {path}")
-                    })
-                }));
-                if !blocks.is_empty() {
+                if let Some(text) = triage_text(t, &lookups) {
                     flush(&mut pending, &mut turns);
-                    turns.push(WireTurn::text(blocks.join("\n")));
+                    turns.push(WireTurn::text(text));
                 }
             }
             // Every other entry projects to nothing at its own position, which is what

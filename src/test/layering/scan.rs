@@ -306,6 +306,8 @@ fn paths(file: &str, text: &str) -> Vec<String> {
 
 /// Each way the tree writes a path to a module of the crate root is read, and the
 /// ways it does not (a comment, a `super` that stays inside its module) are not.
+// The length is the table: one assertion per spelling of a path, read as the scan's grammar.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn the_scan_reads_each_spelling() {
     let none = Vec::<String>::new();

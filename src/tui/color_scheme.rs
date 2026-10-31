@@ -15,6 +15,9 @@ pub struct ColorScheme {
 
 impl ColorScheme {
     /// Create a color scheme from a syntect theme
+    // The length is the table: one `insert` per semantic style, each with the scope chain it
+    // resolves through and, where it has one, its fallback color.
+    #[allow(clippy::too_many_lines)]
     pub fn from_syntect_theme(theme: &Theme) -> Self {
         let highlighter = Highlighter::new(theme);
         let default_style = highlighter.get_default();

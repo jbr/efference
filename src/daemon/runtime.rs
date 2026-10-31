@@ -102,21 +102,7 @@ impl SessionRuntime {
             env_policy,
             ..SessionParts::new(paths.directories(), log)
         });
-        // The kickoff: with a `first-turn` and nothing yet said, the harness submits
-        // the opening turn so the agent speaks first. A resumed log already has its
-        // opening, so the check is on the log rather than on how the session began.
-        if let Some(text) = first_turn {
-            let fresh = !session
-                .snapshot()
-                .iter()
-                .any(|entry| matches!(entry.payload, Payload::User(_)));
-            if fresh {
-                session.submit_turn(
-                    SubmittedTurn::new(text, mint_submission_id())
-                        .sourced(Some(crate::frontend::KICKOFF_SOURCE.to_string())),
-                );
-            }
-        }
+        submit_kickoff(&session, first_turn);
         // The project's storage base, for the in-session `sessions` mount's
         // listing and target scope (docs/tools.md).
         session.set_storage_base(paths.storage());
@@ -131,43 +117,8 @@ impl SessionRuntime {
         // The boot-fetched model capabilities (docs/transport.md) — the caller already
         // treated a failed lookup as fatal, so by here the value always exists.
         session.set_capabilities(capabilities);
-        // What this session is, for a client that has to name it on screen
-        // (docs/control-api.md): the resolved model and the working directory, both
-        // fixed by the time the caller gets here.
-        session.set_identity(SessionIdentity {
-            id: paths.id().to_string(),
-            title: crate::log::latest_title(&session.snapshot()).map(str::to_string),
-            model,
-            cwd: paths.working().to_string_lossy().into_owned(),
-            inference,
-            successor: None,
-        });
-        // Session cost telemetry (docs/transport.md): armed only where the provider
-        // has a per-request accounting surface (OpenRouter's generation endpoint).
-        // Direct Anthropic has none, so the readout stays absent rather than modeled.
-        if client.endpoint().provider == crate::log::Provider::OpenRouter {
-            session.enable_cost_tracking(client.endpoint().clone());
-        }
-        // The per-request usage record (docs/log-and-projection.md) lives beside the
-        // canonical log in the explicitly supplied storage directory.
-        if let Some(at) = cache_lost_at {
-            session.mark_cache_lost(at);
-        }
-        session.attach_usage_log(&paths.usage_log());
-        // The operator's interrupt ends a generation in flight (docs/control-channel.md):
-        // the agent client and the own-triage client both read against it. The
-        // spotter does not — an interrupt during a gate is the tool's kill.
-        client.set_abort(session.interrupt_signal());
-        triager.set_abort(session.interrupt_signal());
-        if let Some(cells) = triager.client_state() {
-            session.set_triage_client(cells);
-        }
-        // Every request any of the session's clients makes reports its stages to
-        // the log (docs/log-and-projection.md): the agent client (turns, the shared
-        // peek, titles, keepalive, compactions), the own-triage client, and the spotter.
-        client.set_stage_sink(session.stage_sink());
-        triager.set_stage_sink(session.stage_sink());
-        spotter.set_stage_sink(session.stage_sink());
+        describe_session(&session, &paths, &client, model, inference, cache_lost_at);
+        wire_requests(&session, &mut client, &mut triager, &mut spotter);
         // Share the client between the loop and the keepalive task. `tools` is computed
         // once here for the ping; `agent::run` recomputes the same (byte-stable,
         // docs/log-and-projection.md) definitions internally, so both send an
@@ -187,80 +138,21 @@ impl SessionRuntime {
         // any change signal and publishes the ones that moved, so N connected clients
         // cost one recomputation instead of N polls.
         tokio::spawn(swansong.interrupt(watch_topics(Arc::clone(&session))));
-
-        // The cache keepalive runs alongside the loop (docs/log-and-projection.md) — a
-        // transport-side timer that never touches the log, so it composes with the
-        // loop without sharing anything but the read-only client and the telemetry
-        // clocks.
-        //
-        // Two gates, either of which keeps it from spawning. **No prompt cache**: the
-        // boot capability lookup found no upstream behind this model that caches
-        // prompts, so a ping would refresh nothing and re-bill the
-        // whole prefix at the input rate every interval — the ping is only free where
-        // there is an entry to read. **Interval zero**: the operator turned it off.
-        // The affordability check inside the loop stays as well; it catches the endpoint
-        // that claims a cache and reasons on the ping anyway (docs/transport.md).
-        // The cold state (backlog: cold-session.md) exists only where there is a cache
-        // to lose; its watcher publishes the moment the belief turns.
-        if cacheable {
-            session.set_cache_ttl(client.endpoint().provider.cache_ttl());
-            tokio::spawn(swansong.interrupt(cold::cold_watch(Arc::clone(&session))));
-        }
-        // The compaction writes on the session's own client (docs/summary.md). It starts
-        // whatever the capabilities say about a prompt cache: a warm `POST /loop/compact`
-        // is accepted without a cold belief, and unknown cache support is not evidence
-        // that none exists.
-        tokio::spawn(swansong.interrupt(compact::compact_loop(
-            Arc::clone(&client),
-            Arc::clone(&session),
-            tools.clone(),
-        )));
-        if cacheable && !ping_at.is_zero() {
-            tokio::spawn(swansong.interrupt(keepalive_loop(
-                KeepaliveSpec {
-                    lineage: CacheLineage::Main,
-                    client: Arc::clone(&client),
-                    tools,
-                    ping_at,
-                    prices,
-                },
-                Arc::clone(&session),
-            )));
-        } else if !cacheable {
-            log::debug!(
-                "keepalive off: {} reports no prompt cache behind this model",
-                client.endpoint().provider.name()
-            );
-        }
-        // The triage lineage's keepalive (docs/transport.md): armed only where the triage
-        // model is the session's own and reports a prompt cache. Interval zero turns it
-        // off, as it does the main loop.
-        if let Some(triage) = KeepaliveSpec::triage(&triager, configured_interval, triage_prices)
-            && !triage.ping_at.is_zero()
-        {
-            tokio::spawn(swansong.interrupt(keepalive_loop(triage, Arc::clone(&session))));
-        }
-
-        // The fs-watch initiator (docs/permissions.md): if the config resolved
-        // from a file, watch it so external edits take effect live as committed
-        // `ConfigEdit`s. The built-in default has no file to watch.
-        if let Some(config_path) = session.config_path().map(std::path::Path::to_path_buf) {
-            tokio::spawn(swansong.interrupt(config_watch_loop(Arc::clone(&session), config_path)));
-        }
-
-        // The attachment store (docs/inbox.md): the same fs-watch affordance, over
-        // `.efference/<id>/attachments/`. A file appearing there — pasted, dragged,
-        // moved in — becomes a notification naming what arrived; the bytes stay on
-        // disk until the model pulls them, so nothing here enters the log.
-        session.set_attachment_store(crate::attachments::Store::new(
-            paths.attachments(),
-            paths.attachment_display(),
-        ));
-        tokio::spawn(swansong.interrupt(attachments_watch_loop(
-            Arc::clone(&session),
-            paths.attachments(),
-            paths.attachment_display(),
-        )));
+        spawn_cache_tasks(
+            &swansong,
+            &session,
+            &client,
+            tools,
+            &triager,
+            CachePolicy {
+                cacheable,
+                ping_at,
+                prices,
+                configured_interval,
+                triage_prices,
+            },
+        );
+        spawn_file_watchers(&swansong, &session, &paths);
 
         // The agent loop, spawned on the current (host) runtime like the watchers
         // above. It shares that runtime's I/O driver with every other session and
@@ -298,23 +190,7 @@ impl SessionRuntime {
                     Ok(())
                 }
             };
-            // Reap any background children before the session is gone so a
-            // stopped session doesn't orphan a process group (docs/process-monitor.md).
-            // Awaited, not merely signalled: the scratch removal below would
-            // otherwise race a child still writing under it, and `shut_down()`
-            // would resolve while the processes were still in the table.
-            loop_session.reap_all_bg().await;
-            // Scratch lifecycle (docs/tools.md): cleaned on session end unless
-            // retained for post-mortem inspection.
-            if let Some(scratch) = scratch {
-                if keep_scratch {
-                    log::debug!("scratch kept: {}", scratch.display());
-                } else if let Err(e) = std::fs::remove_dir_all(&scratch)
-                    && e.kind() != io::ErrorKind::NotFound
-                {
-                    log::warn!("scratch: could not remove {}: {e}", scratch.display());
-                }
-            }
+            tear_down(&loop_session, scratch, keep_scratch).await;
             let _ = done.send(result);
         });
 
@@ -343,6 +219,210 @@ impl SessionRuntime {
         match self.outcome.await {
             Ok(result) => result,
             Err(_) => Err("the session loop thread ended without reporting".into()),
+        }
+    }
+}
+
+/// What decides the cache tasks a session runs (docs/transport.md).
+#[derive(Clone, Copy)]
+struct CachePolicy {
+    /// Whether this model has a prompt cache to keep warm at all.
+    cacheable: bool,
+    /// The main lineage's ping interval.
+    ping_at: Duration,
+    prices: Option<crate::api::TokenPrices>,
+    /// `[transport] keepalive-interval`, which applies to both lineages.
+    configured_interval: Option<Duration>,
+    /// The triage model's prices, for its own lineage's affordability check.
+    triage_prices: Option<crate::api::TokenPrices>,
+}
+
+/// The kickoff: with a `first-turn` and nothing yet said, the harness submits
+/// the opening turn so the agent speaks first. A resumed log already has its
+/// opening, so the check is on the log rather than on how the session began.
+fn submit_kickoff(session: &Session, first_turn: Option<String>) {
+    if let Some(text) = first_turn {
+        let fresh = !session
+            .snapshot()
+            .iter()
+            .any(|entry| matches!(entry.payload, Payload::User(_)));
+        if fresh {
+            session.submit_turn(
+                SubmittedTurn::new(text, mint_submission_id())
+                    .sourced(Some(crate::frontend::KICKOFF_SOURCE.to_string())),
+            );
+        }
+    }
+}
+
+/// What the session reports about itself and where it runs: its identity, its cost tracking
+/// where the provider has one, a cache lost at boot, and its usage record.
+fn describe_session(
+    session: &Session,
+    paths: &SessionPaths,
+    client: &Client,
+    model: String,
+    inference: Option<crate::inference::InferenceIdentity>,
+    cache_lost_at: Option<crate::log::Timestamp>,
+) {
+    // What this session is, for a client that has to name it on screen
+    // (docs/control-api.md): the resolved model and the working directory, both
+    // fixed by the time the caller gets here.
+    session.set_identity(SessionIdentity {
+        id: paths.id().to_string(),
+        title: crate::log::latest_title(&session.snapshot()).map(str::to_string),
+        model,
+        cwd: paths.working().to_string_lossy().into_owned(),
+        inference,
+        successor: None,
+    });
+    // Session cost telemetry (docs/transport.md): armed only where the provider
+    // has a per-request accounting surface (OpenRouter's generation endpoint).
+    // Direct Anthropic has none, so the readout stays absent rather than modeled.
+    if client.endpoint().provider == crate::log::Provider::OpenRouter {
+        session.enable_cost_tracking(client.endpoint().clone());
+    }
+    // The per-request usage record (docs/log-and-projection.md) lives beside the
+    // canonical log in the explicitly supplied storage directory.
+    if let Some(at) = cache_lost_at {
+        session.mark_cache_lost(at);
+    }
+    session.attach_usage_log(&paths.usage_log());
+}
+
+/// Wire the session's clients to it. The operator's interrupt ends a generation in flight
+/// (docs/control-channel.md): the agent client and the own-triage client both read against
+/// it. The spotter does not — an interrupt during a gate is the tool's kill. Every request
+/// any of the session's clients makes reports its stages to the log
+/// (docs/log-and-projection.md): the agent client (turns, the shared peek, titles,
+/// keepalive, compactions), the own-triage client, and the spotter.
+fn wire_requests<S: Spotter>(
+    session: &Arc<Session>,
+    client: &mut Client,
+    triager: &mut Triager,
+    spotter: &mut S,
+) {
+    client.set_abort(session.interrupt_signal());
+    triager.set_abort(session.interrupt_signal());
+    if let Some(cells) = triager.client_state() {
+        session.set_triage_client(cells);
+    }
+    client.set_stage_sink(session.stage_sink());
+    triager.set_stage_sink(session.stage_sink());
+    spotter.set_stage_sink(session.stage_sink());
+}
+
+/// The tasks that watch the session's files: the config file and the attachment store.
+fn spawn_file_watchers(swansong: &Swansong, session: &Arc<Session>, paths: &SessionPaths) {
+    // The fs-watch initiator (docs/permissions.md): if the config resolved
+    // from a file, watch it so external edits take effect live as committed
+    // `ConfigEdit`s. The built-in default has no file to watch.
+    if let Some(config_path) = session.config_path().map(std::path::Path::to_path_buf) {
+        tokio::spawn(swansong.interrupt(config_watch_loop(Arc::clone(session), config_path)));
+    }
+
+    // The attachment store (docs/inbox.md): the same fs-watch affordance, over
+    // `.efference/<id>/attachments/`. A file appearing there — pasted, dragged,
+    // moved in — becomes a notification naming what arrived; the bytes stay on
+    // disk until the model pulls them, so nothing here enters the log.
+    session.set_attachment_store(crate::attachments::Store::new(
+        paths.attachments(),
+        paths.attachment_display(),
+    ));
+    tokio::spawn(swansong.interrupt(attachments_watch_loop(
+        Arc::clone(session),
+        paths.attachments(),
+        paths.attachment_display(),
+    )));
+}
+
+/// The tasks that keep the session's prompt caches: the cold-state watcher, the
+/// compaction loop, and a keepalive per armed lineage.
+fn spawn_cache_tasks(
+    swansong: &Swansong,
+    session: &Arc<Session>,
+    client: &Arc<Client>,
+    tools: Vec<Value>,
+    triager: &Triager,
+    policy: CachePolicy,
+) {
+    let CachePolicy {
+        cacheable,
+        ping_at,
+        prices,
+        configured_interval,
+        triage_prices,
+    } = policy;
+    // The cache keepalive runs alongside the loop (docs/log-and-projection.md) — a
+    // transport-side timer that never touches the log, so it composes with the
+    // loop without sharing anything but the read-only client and the telemetry
+    // clocks.
+    //
+    // Two gates, either of which keeps it from spawning. **No prompt cache**: the
+    // boot capability lookup found no upstream behind this model that caches
+    // prompts, so a ping would refresh nothing and re-bill the
+    // whole prefix at the input rate every interval — the ping is only free where
+    // there is an entry to read. **Interval zero**: the operator turned it off.
+    // The affordability check inside the loop stays as well; it catches the endpoint
+    // that claims a cache and reasons on the ping anyway (docs/transport.md).
+    // The cold state (backlog: cold-session.md) exists only where there is a cache
+    // to lose; its watcher publishes the moment the belief turns.
+    if cacheable {
+        session.set_cache_ttl(client.endpoint().provider.cache_ttl());
+        tokio::spawn(swansong.interrupt(cold::cold_watch(Arc::clone(session))));
+    }
+    // The compaction writes on the session's own client (docs/summary.md). It starts
+    // whatever the capabilities say about a prompt cache: a warm `POST /loop/compact`
+    // is accepted without a cold belief, and unknown cache support is not evidence
+    // that none exists.
+    tokio::spawn(swansong.interrupt(compact::compact_loop(
+        Arc::clone(client),
+        Arc::clone(session),
+        tools.clone(),
+    )));
+    if cacheable && !ping_at.is_zero() {
+        tokio::spawn(swansong.interrupt(keepalive_loop(
+            KeepaliveSpec {
+                lineage: CacheLineage::Main,
+                client: Arc::clone(client),
+                tools,
+                ping_at,
+                prices,
+            },
+            Arc::clone(session),
+        )));
+    } else if !cacheable {
+        log::debug!(
+            "keepalive off: {} reports no prompt cache behind this model",
+            client.endpoint().provider.name()
+        );
+    }
+    // The triage lineage's keepalive (docs/transport.md): armed only where the triage
+    // model is the session's own and reports a prompt cache. Interval zero turns it
+    // off, as it does the main loop.
+    if let Some(triage) = KeepaliveSpec::triage(triager, configured_interval, triage_prices)
+        && !triage.ping_at.is_zero()
+    {
+        tokio::spawn(swansong.interrupt(keepalive_loop(triage, Arc::clone(session))));
+    }
+}
+
+/// The session's teardown once its loop has returned. Reaps any background children
+/// before the session is gone so a stopped session doesn't orphan a process group
+/// (docs/process-monitor.md). Awaited, not merely signalled: the scratch removal below
+/// would otherwise race a child still writing under it, and `shut_down()` would resolve
+/// while the processes were still in the table.
+async fn tear_down(session: &Session, scratch: Option<PathBuf>, keep_scratch: bool) {
+    session.reap_all_bg().await;
+    // Scratch lifecycle (docs/tools.md): cleaned on session end unless
+    // retained for post-mortem inspection.
+    if let Some(scratch) = scratch {
+        if keep_scratch {
+            log::debug!("scratch kept: {}", scratch.display());
+        } else if let Err(e) = std::fs::remove_dir_all(&scratch)
+            && e.kind() != io::ErrorKind::NotFound
+        {
+            log::warn!("scratch: could not remove {}: {e}", scratch.display());
         }
     }
 }

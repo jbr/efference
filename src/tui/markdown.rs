@@ -1,4 +1,6 @@
-use crate::tui::document::{DocumentNode, HeadingLevel, ListItem, Span, SpanStyle, TuiAction};
+use crate::tui::document::{
+    DocumentNode, HeadingLevel, ListItem, Span, SpanStyle, TableCell, TuiAction,
+};
 use pulldown_cmark::{BrokenLink, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 /// Stack item for building the document tree
@@ -31,280 +33,303 @@ impl MarkdownRenderer {
         options.insert(Options::ENABLE_STRIKETHROUGH);
         let parser = Parser::new_with_broken_link_callback(markdown, options, Some(&callback));
 
-        let mut root: Vec<DocumentNode<'a>> = Vec::new();
-        let mut stack: Vec<StackItem<'a>> = Vec::new();
-        let mut current_spans: Vec<Span<'a>> = Vec::new();
-
-        // Inline style state (doesn't nest structurally)
-        let mut in_code_block = false;
-        let mut code_block_lang: Option<String> = None;
-        let mut code_block_content = String::new();
-        let mut in_strong = false;
-        let mut in_emphasis = false;
-        let mut in_strikethrough = false;
-        let mut in_heading = false;
-        let mut heading_level: Option<HeadingLevel> = None;
-        let mut current_link_action: Option<TuiAction<'a>> = None;
-
-        // Table state
-        let mut in_table_head = false;
-        let mut table_header: Option<Vec<crate::tui::document::TableCell<'a>>> = None;
-        let mut table_rows: Vec<Vec<crate::tui::document::TableCell<'a>>> = Vec::new();
-        let mut current_row: Vec<crate::tui::document::TableCell<'a>> = Vec::new();
-
+        let mut tree = Tree::default();
         for event in parser {
-            match event {
-                Event::Start(tag) => match tag {
-                    Tag::CodeBlock(kind) => {
-                        in_code_block = true;
-                        code_block_lang = Some(match kind {
-                            CodeBlockKind::Fenced(lang) => {
-                                match lang.split(',').next().unwrap_or(&*lang) {
-                                    "no_run" | "should_panic" | "ignore" | "compile_fail"
-                                    | "edition2015" | "edition2018" | "edition2021"
-                                    | "edition2024" | "rust" | "" => "rust".to_string(),
-                                    other => other.to_string(),
-                                }
-                            }
-                            CodeBlockKind::Indented => "rust".to_string(),
-                        });
-                        code_block_content.clear();
-                    }
-                    Tag::Emphasis => {
-                        in_emphasis = true;
-                    }
-                    Tag::Strong => {
-                        in_strong = true;
-                    }
-                    Tag::Strikethrough => {
-                        in_strikethrough = true;
-                    }
-                    Tag::Link { dest_url, .. } => {
-                        current_link_action = Some(TuiAction::OpenUrl(dest_url.to_string().into()));
-                    }
-                    Tag::Heading { level, .. } => {
-                        in_heading = true;
-                        // Map pulldown_cmark HeadingLevel to our HeadingLevel
-                        heading_level = Some(match level {
-                            pulldown_cmark::HeadingLevel::H1 => HeadingLevel::Title,
-                            _ => HeadingLevel::Section,
-                        });
-                    }
-                    Tag::List(start) => {
-                        // Flush any accumulated spans before starting a list
-                        if !current_spans.is_empty() {
-                            let para = DocumentNode::Paragraph {
-                                spans: std::mem::take(&mut current_spans),
-                            };
-                            Self::push_to_parent(&mut stack, &mut root, StackItem::Node(para));
-                        }
-                        // `start` is `Some(n)` for an ordered list (numbered from n),
-                        // `None` for a bulleted one — carried through so the renderer
-                        // can number ordered items instead of bulleting them.
-                        stack.push(StackItem::Node(DocumentNode::List {
-                            items: vec![],
-                            start,
-                        }));
-                    }
-                    Tag::Item => {
-                        stack.push(StackItem::Item(ListItem::new(vec![])));
-                    }
-                    Tag::BlockQuote(_) => {
-                        // Flush any accumulated spans before starting a blockquote
-                        if !current_spans.is_empty() {
-                            let para = DocumentNode::Paragraph {
-                                spans: std::mem::take(&mut current_spans),
-                            };
-                            Self::push_to_parent(&mut stack, &mut root, StackItem::Node(para));
-                        }
-                        stack.push(StackItem::Node(DocumentNode::BlockQuote { nodes: vec![] }));
-                    }
-                    Tag::Table(_) => {
-                        table_header = None;
-                        table_rows.clear();
-                    }
-                    Tag::TableHead => {
-                        in_table_head = true;
-                        current_row.clear();
-                    }
-                    Tag::TableRow => {
-                        current_row.clear();
-                    }
-                    // A cell's content rides `current_spans`, and a paragraph is built
-                    // at its `TagEnd`; neither has start-time work, as no other tag does.
-                    _ => {}
-                },
-                Event::End(tag_end) => match tag_end {
-                    TagEnd::Paragraph => {
-                        // Create a paragraph node from collected spans
-                        let paragraph_spans = std::mem::take(&mut current_spans);
-                        if !paragraph_spans.is_empty() {
-                            let para = DocumentNode::Paragraph {
-                                spans: paragraph_spans,
-                            };
-                            Self::push_to_parent(&mut stack, &mut root, StackItem::Node(para));
-                        }
-                    }
-                    TagEnd::Heading(_level) if in_heading => {
-                        if let Some(level) = heading_level {
-                            let heading = DocumentNode::Heading {
-                                level,
-                                spans: std::mem::take(&mut current_spans),
-                            };
-                            Self::push_to_parent(&mut stack, &mut root, StackItem::Node(heading));
-                        }
-                        in_heading = false;
-                        heading_level = None;
-                    }
-                    TagEnd::CodeBlock if in_code_block => {
-                        // Strip hidden lines for Rust code
-                        let code = if matches!(code_block_lang.as_deref(), Some("rust") | None) {
-                            Self::strip_hidden_lines(&code_block_content)
-                        } else {
-                            code_block_content.clone()
-                        };
+            tree.event(event);
+        }
+        tree.finish()
+    }
 
-                        let code_block = DocumentNode::code_block(code_block_lang.take(), code);
-                        Self::push_to_parent(&mut stack, &mut root, StackItem::Node(code_block));
-                        in_code_block = false;
-                    }
-                    TagEnd::Emphasis => {
-                        in_emphasis = false;
-                    }
-                    TagEnd::Strong => {
-                        in_strong = false;
-                    }
-                    TagEnd::Strikethrough => {
-                        in_strikethrough = false;
-                    }
-                    TagEnd::Link => {
-                        // Just clear the link action - spans have already been created with it
-                        current_link_action = None;
-                    }
-                    TagEnd::BlockQuote(_) => {
-                        // Flush any remaining spans as a paragraph before closing the blockquote
-                        if !current_spans.is_empty() {
-                            let para = DocumentNode::Paragraph {
-                                spans: std::mem::take(&mut current_spans),
-                            };
-                            Self::push_to_parent(&mut stack, &mut root, StackItem::Node(para));
-                        }
+    /// Strip hidden lines from Rust code examples
+    /// Lines starting with `# ` (hash followed by space) are hidden from display
+    /// but included in doctests for completeness
+    /// Skip lines that start with "# " (hash followed by space)
+    /// Also skip lines that are just "#"
+    /// But keep lines like "#[derive(...)]" or "#![feature(...)]"
+    fn strip_hidden_lines(code: &str) -> String {
+        code.lines()
+            .filter(|line| {
+                let trimmed_start = line.trim_start();
+                trimmed_start != "#" && !trimmed_start.starts_with("# ")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
 
-                        // Pop the blockquote and push to parent
-                        if let Some(StackItem::Node(blockquote)) = stack.pop() {
-                            Self::push_to_parent(
-                                &mut stack,
-                                &mut root,
-                                StackItem::Node(blockquote),
-                            );
-                        }
-                    }
-                    TagEnd::List(_) => {
-                        // Pop the list and push to parent
-                        if let Some(StackItem::Node(list)) = stack.pop() {
-                            Self::push_to_parent(&mut stack, &mut root, StackItem::Node(list));
-                        }
-                    }
-                    TagEnd::Item => {
-                        // Flush any remaining spans as a paragraph before closing the item
-                        if !current_spans.is_empty() {
-                            let para = DocumentNode::Paragraph {
-                                spans: std::mem::take(&mut current_spans),
-                            };
-                            Self::push_to_parent(&mut stack, &mut root, StackItem::Node(para));
-                        }
+/// Which inline styles are open.
+#[derive(Default)]
+struct InlineStyle {
+    strong: bool,
+    emphasis: bool,
+    strikethrough: bool,
+}
 
-                        // Pop the item and push to parent list
-                        if let Some(StackItem::Item(item)) = stack.pop() {
-                            Self::push_to_parent(&mut stack, &mut root, StackItem::Item(item));
-                        }
-                    }
-                    TagEnd::TableCell => {
-                        // Create a table cell from collected spans
-                        let cell = crate::tui::document::TableCell::new(std::mem::take(
-                            &mut current_spans,
-                        ));
-                        current_row.push(cell);
-                    }
-                    TagEnd::TableHead => {
-                        table_header = Some(std::mem::take(&mut current_row));
-                        in_table_head = false;
-                    }
-                    TagEnd::TableRow if !in_table_head => {
-                        table_rows.push(std::mem::take(&mut current_row));
-                    }
-                    TagEnd::Table => {
-                        let table = DocumentNode::Table {
-                            header: table_header.take(),
-                            rows: std::mem::take(&mut table_rows),
-                        };
-                        Self::push_to_parent(&mut stack, &mut root, StackItem::Node(table));
-                    }
-                    _ => {}
-                },
-                Event::Text(text) => {
-                    if in_code_block {
-                        code_block_content.push_str(&text);
+/// The document tree under construction as the parser's events arrive.
+#[derive(Default)]
+struct Tree<'a> {
+    root: Vec<DocumentNode<'a>>,
+    stack: Vec<StackItem<'a>>,
+    current_spans: Vec<Span<'a>>,
+
+    // Inline style state (doesn't nest structurally)
+    in_code_block: bool,
+    code_block_lang: Option<String>,
+    code_block_content: String,
+    inline: InlineStyle,
+    in_heading: bool,
+    heading_level: Option<HeadingLevel>,
+    current_link_action: Option<TuiAction<'a>>,
+
+    // Table state
+    in_table_head: bool,
+    table_header: Option<Vec<TableCell<'a>>>,
+    table_rows: Vec<Vec<TableCell<'a>>>,
+    current_row: Vec<TableCell<'a>>,
+}
+
+impl<'a> Tree<'a> {
+    fn event(&mut self, event: Event<'_>) {
+        match event {
+            Event::Start(tag) => self.start(tag),
+            Event::End(tag_end) => self.end(tag_end),
+            Event::Text(text) => {
+                if self.in_code_block {
+                    self.code_block_content.push_str(&text);
+                } else {
+                    let style = if self.inline.strong {
+                        SpanStyle::Strong
+                    } else if self.inline.emphasis {
+                        SpanStyle::Emphasis
+                    } else if self.inline.strikethrough {
+                        SpanStyle::Strikethrough
                     } else {
-                        let style = if in_strong {
-                            SpanStyle::Strong
-                        } else if in_emphasis {
-                            SpanStyle::Emphasis
-                        } else if in_strikethrough {
-                            SpanStyle::Strikethrough
-                        } else {
-                            SpanStyle::Plain
-                        };
+                        SpanStyle::Plain
+                    };
 
-                        let span = Span {
-                            text: text.to_string().into(),
-                            style,
-                            action: current_link_action.clone(),
-                        };
-                        current_spans.push(span);
-                    }
+                    let span = Span {
+                        text: text.to_string().into(),
+                        style,
+                        action: self.current_link_action.clone(),
+                    };
+                    self.current_spans.push(span);
                 }
-                Event::Code(code) => {
-                    let mut span = Span::inline_code(code.to_string());
-                    span.action = current_link_action.clone();
-                    current_spans.push(span);
-                }
-                Event::SoftBreak => {
-                    let mut span = Span::plain(" ");
-                    span.action = current_link_action.clone();
-                    current_spans.push(span);
-                }
-                Event::HardBreak => {
-                    let mut span = Span::plain("\n");
-                    span.action = current_link_action.clone();
-                    current_spans.push(span);
-                }
-                Event::Rule => {
-                    Self::push_to_parent(
-                        &mut stack,
-                        &mut root,
-                        StackItem::Node(DocumentNode::HorizontalRule),
-                    );
-                }
-                _ => {}
             }
+            Event::Code(code) => {
+                let mut span = Span::inline_code(code.to_string());
+                span.action = self.current_link_action.clone();
+                self.current_spans.push(span);
+            }
+            Event::SoftBreak => {
+                let mut span = Span::plain(" ");
+                span.action = self.current_link_action.clone();
+                self.current_spans.push(span);
+            }
+            Event::HardBreak => {
+                let mut span = Span::plain("\n");
+                span.action = self.current_link_action.clone();
+                self.current_spans.push(span);
+            }
+            Event::Rule => {
+                self.push_to_parent(StackItem::Node(DocumentNode::HorizontalRule));
+            }
+            _ => {}
         }
+    }
 
+    fn start(&mut self, tag: Tag<'_>) {
+        match tag {
+            Tag::CodeBlock(kind) => {
+                self.in_code_block = true;
+                self.code_block_lang = Some(match kind {
+                    CodeBlockKind::Fenced(lang) => match lang.split(',').next().unwrap_or(&*lang) {
+                        "no_run" | "should_panic" | "ignore" | "compile_fail" | "edition2015"
+                        | "edition2018" | "edition2021" | "edition2024" | "rust" | "" => {
+                            "rust".to_string()
+                        }
+                        other => other.to_string(),
+                    },
+                    CodeBlockKind::Indented => "rust".to_string(),
+                });
+                self.code_block_content.clear();
+            }
+            Tag::Emphasis => {
+                self.inline.emphasis = true;
+            }
+            Tag::Strong => {
+                self.inline.strong = true;
+            }
+            Tag::Strikethrough => {
+                self.inline.strikethrough = true;
+            }
+            Tag::Link { dest_url, .. } => {
+                self.current_link_action = Some(TuiAction::OpenUrl(dest_url.to_string().into()));
+            }
+            Tag::Heading { level, .. } => {
+                self.in_heading = true;
+                // Map pulldown_cmark HeadingLevel to our HeadingLevel
+                self.heading_level = Some(match level {
+                    pulldown_cmark::HeadingLevel::H1 => HeadingLevel::Title,
+                    _ => HeadingLevel::Section,
+                });
+            }
+            Tag::List(start) => {
+                // Flush any accumulated spans before starting a list
+                self.flush_paragraph();
+                // `start` is `Some(n)` for an ordered list (numbered from n),
+                // `None` for a bulleted one — carried through so the renderer
+                // can number ordered items instead of bulleting them.
+                self.stack.push(StackItem::Node(DocumentNode::List {
+                    items: vec![],
+                    start,
+                }));
+            }
+            Tag::Item => {
+                self.stack.push(StackItem::Item(ListItem::new(vec![])));
+            }
+            Tag::BlockQuote(_) => {
+                // Flush any accumulated spans before starting a blockquote
+                self.flush_paragraph();
+                self.stack
+                    .push(StackItem::Node(DocumentNode::BlockQuote { nodes: vec![] }));
+            }
+            Tag::Table(_) => {
+                self.table_header = None;
+                self.table_rows.clear();
+            }
+            Tag::TableHead => {
+                self.in_table_head = true;
+                self.current_row.clear();
+            }
+            Tag::TableRow => {
+                self.current_row.clear();
+            }
+            // A cell's content rides `current_spans`, and a paragraph is built
+            // at its `TagEnd`; neither has start-time work, as no other tag does.
+            _ => {}
+        }
+    }
+
+    fn end(&mut self, tag_end: TagEnd) {
+        match tag_end {
+            TagEnd::Paragraph => {
+                // Create a paragraph node from collected spans
+                let paragraph_spans = std::mem::take(&mut self.current_spans);
+                if !paragraph_spans.is_empty() {
+                    let para = DocumentNode::Paragraph {
+                        spans: paragraph_spans,
+                    };
+                    self.push_to_parent(StackItem::Node(para));
+                }
+            }
+            TagEnd::Heading(_level) if self.in_heading => {
+                if let Some(level) = self.heading_level {
+                    let heading = DocumentNode::Heading {
+                        level,
+                        spans: std::mem::take(&mut self.current_spans),
+                    };
+                    self.push_to_parent(StackItem::Node(heading));
+                }
+                self.in_heading = false;
+                self.heading_level = None;
+            }
+            TagEnd::CodeBlock if self.in_code_block => {
+                // Strip hidden lines for Rust code
+                let code = if matches!(self.code_block_lang.as_deref(), Some("rust") | None) {
+                    MarkdownRenderer::strip_hidden_lines(&self.code_block_content)
+                } else {
+                    self.code_block_content.clone()
+                };
+
+                let code_block = DocumentNode::code_block(self.code_block_lang.take(), code);
+                self.push_to_parent(StackItem::Node(code_block));
+                self.in_code_block = false;
+            }
+            TagEnd::Emphasis => {
+                self.inline.emphasis = false;
+            }
+            TagEnd::Strong => {
+                self.inline.strong = false;
+            }
+            TagEnd::Strikethrough => {
+                self.inline.strikethrough = false;
+            }
+            TagEnd::Link => {
+                // Just clear the link action - spans have already been created with it
+                self.current_link_action = None;
+            }
+            TagEnd::BlockQuote(_) => {
+                // Flush any remaining spans as a paragraph before closing the blockquote
+                self.flush_paragraph();
+
+                // Pop the blockquote and push to parent
+                if let Some(StackItem::Node(blockquote)) = self.stack.pop() {
+                    self.push_to_parent(StackItem::Node(blockquote));
+                }
+            }
+            TagEnd::List(_) => {
+                // Pop the list and push to parent
+                if let Some(StackItem::Node(list)) = self.stack.pop() {
+                    self.push_to_parent(StackItem::Node(list));
+                }
+            }
+            TagEnd::Item => {
+                // Flush any remaining spans as a paragraph before closing the item
+                self.flush_paragraph();
+
+                // Pop the item and push to parent list
+                if let Some(StackItem::Item(item)) = self.stack.pop() {
+                    self.push_to_parent(StackItem::Item(item));
+                }
+            }
+            TagEnd::TableCell => {
+                // Create a table cell from collected spans
+                let cell = TableCell::new(std::mem::take(&mut self.current_spans));
+                self.current_row.push(cell);
+            }
+            TagEnd::TableHead => {
+                self.table_header = Some(std::mem::take(&mut self.current_row));
+                self.in_table_head = false;
+            }
+            TagEnd::TableRow if !self.in_table_head => {
+                self.table_rows.push(std::mem::take(&mut self.current_row));
+            }
+            TagEnd::Table => {
+                let table = DocumentNode::Table {
+                    header: self.table_header.take(),
+                    rows: std::mem::take(&mut self.table_rows),
+                };
+                self.push_to_parent(StackItem::Node(table));
+            }
+            _ => {}
+        }
+    }
+
+    /// Close the paragraph the accumulated spans make, if there are any.
+    fn flush_paragraph(&mut self) {
+        if !self.current_spans.is_empty() {
+            let para = DocumentNode::Paragraph {
+                spans: std::mem::take(&mut self.current_spans),
+            };
+            self.push_to_parent(StackItem::Node(para));
+        }
+    }
+
+    /// The tree, with any spans still accumulated closed as a last paragraph.
+    fn finish(mut self) -> Vec<DocumentNode<'a>> {
         // Flush any remaining spans as a paragraph
-        if !current_spans.is_empty() {
-            root.push(DocumentNode::paragraph(std::mem::take(&mut current_spans)));
+        if !self.current_spans.is_empty() {
+            self.root.push(DocumentNode::paragraph(std::mem::take(
+                &mut self.current_spans,
+            )));
         }
 
-        root
+        self.root
     }
 
     /// Push a completed StackItem to its parent container
-    fn push_to_parent<'a>(
-        stack: &mut Vec<StackItem<'a>>,
-        root: &mut Vec<DocumentNode<'a>>,
-        item: StackItem<'a>,
-    ) {
-        match stack.last_mut() {
+    fn push_to_parent(&mut self, item: StackItem<'a>) {
+        match self.stack.last_mut() {
             Some(StackItem::Item(list_item)) => {
                 // Push DocumentNode to ListItem's content
                 match item {
@@ -341,7 +366,7 @@ impl MarkdownRenderer {
             None => {
                 // Push to root
                 match item {
-                    StackItem::Node(node) => root.push(node),
+                    StackItem::Node(node) => self.root.push(node),
                     StackItem::Item(_) => {
                         panic!("Cannot push ListItem to root - must be inside a List")
                     }
@@ -351,22 +376,6 @@ impl MarkdownRenderer {
                 panic!("Unexpected parent type on stack")
             }
         }
-    }
-
-    /// Strip hidden lines from Rust code examples
-    /// Lines starting with `# ` (hash followed by space) are hidden from display
-    /// but included in doctests for completeness
-    /// Skip lines that start with "# " (hash followed by space)
-    /// Also skip lines that are just "#"
-    /// But keep lines like "#[derive(...)]" or "#![feature(...)]"
-    fn strip_hidden_lines(code: &str) -> String {
-        code.lines()
-            .filter(|line| {
-                let trimmed_start = line.trim_start();
-                trimmed_start != "#" && !trimmed_start.starts_with("# ")
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
     }
 }
 

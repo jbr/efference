@@ -136,6 +136,41 @@ pub(super) fn bypass_verdict(shape: &str) -> TriageOutcome {
     }
 }
 
+/// The verdicts for `pending` in call order, or `None` when a result finds no verdict.
+/// A bypassed result takes the shape rule's decision, made before the fork was consulted
+/// (docs/triage.md) — a `retain` entry for it, had the triage written one unasked, finds
+/// no home. Any other takes the entry carrying its label.
+pub(super) fn verdicts_in_call_order(
+    pending: &[Pending<'_>],
+    labels: &[Option<String>],
+    results: &[ResultVerdict],
+) -> Option<Vec<TriageOutcome>> {
+    pending
+        .iter()
+        .zip(labels)
+        .map(|(p, label)| match bypassed(p) {
+            Some(shape) => Some(bypass_verdict(shape)),
+            None => match results.iter().find(|v| Some(&v.label) == label.as_ref()) {
+                Some(v) => {
+                    let wire = WireState::Triaged(Triaged {
+                        keep: v.keep.clone(),
+                        note: v.note.clone(),
+                        intent_feedback: v.intent_feedback.clone(),
+                    });
+                    Some(TriageOutcome {
+                        wire,
+                        origin: Origin::Model,
+                        raw_keep: v.raw_keep.clone(),
+                    })
+                }
+                // Unreachable in practice (coverage validated); a gap is a
+                // harness defect, answered like any other triage without a verdict.
+                None => None,
+            },
+        })
+        .collect()
+}
+
 /// The whole triage's outcome when the shape rule bypassed **every** result: decided
 /// without a request at all, since there is nothing left to ask about — a skipped
 /// verdict is also a skipped round-trip. `None` means at least one result is still

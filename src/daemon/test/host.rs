@@ -271,6 +271,9 @@ fn failure_reason(state: &Value) -> String {
 /// selection on a foreign dialect is refused before anything is minted, and the
 /// host's credentials reach neither the log, the state, nor a tool child's
 /// environment (docs/transport.md, docs/env.md).
+// A scenario read top to bottom: one host registry, the sessions created against it, then
+// the canary checks that follow from them.
+#[allow(clippy::too_many_lines)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hosted_sessions_select_roles_from_the_host_registry() {
     let roots = Roots::new();

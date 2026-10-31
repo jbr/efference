@@ -12,6 +12,9 @@ impl<'a> InteractiveState<'a> {
     /// [`Senders`](crate::tui::senders::Senders), which is what keeps adding an
     /// intent to one field on each half rather than a parameter on every entry
     /// point (docs/tui.md).
+    // The length is the `InteractiveState` literal: one initializer per field, the starting
+    // state of each group, read against the struct definition.
+    #[allow(clippy::too_many_lines)]
     pub(in crate::tui) fn new(
         events: Receiver<TuiEvent>,
         senders: crate::tui::senders::Senders,

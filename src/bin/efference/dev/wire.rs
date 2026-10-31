@@ -86,6 +86,17 @@ pub(crate) async fn wire(
     turns.push(efference::project::WireTurn::Breakpoint);
     let messages = efference::project::encode_messages(&turns, placement, breakpoint);
 
+    let model = wire_model(identity.as_ref());
+    let rendering = Rendering {
+        view_dialect,
+        dialect,
+        format,
+        turns: &turns,
+        messages: &messages,
+        model: &model,
+        cache,
+    };
+
     // `--messages` returns the projected array before touching config, system, or
     // tools. Both the lean and full views use the log's dialect and placements.
     if messages_only {
@@ -94,23 +105,9 @@ pub(crate) async fn wire(
             entries.len(),
             messages.len()
         );
-        let rendered = match (view_dialect, dialect, format) {
-            (Some(ViewDialect::Completions), _, _) => {
-                let model = wire_model(identity.as_ref());
-                serde_json::to_string_pretty(&efference::api::translate_completions(
-                    &turns, "", &model,
-                )?)?
-            }
-            (None, efference::log::WireDialect::Responses, _) => {
-                serde_json::to_string_pretty(&efference::api::encode_responses(&turns, "", cache))?
-            }
-            (None, _, WireFormat::Json) => efference::api::render_messages_pretty(&messages)?,
-            (None, _, WireFormat::Yaml) => efference::api::render_messages_yaml(&messages)?,
-        };
-        return Ok(rendered);
+        return rendering.messages_only();
     }
 
-    let model = wire_model(identity.as_ref());
     // The `system` a session sent is recorded in the log as the boot preamble snapshot
     // (docs/context.md) — prefer it (the last one wins on a multi-boot log) so
     // the view shows exactly what the model saw, not a re-resolve of files that may have
@@ -134,53 +131,14 @@ pub(crate) async fn wire(
         );
         system
     } else {
-        // No snapshot (a pre-snapshot log) — rebuild the envelope the same way boot does
-        // (current cwd seeds both the env block and the MCP servers' session roots; the role
-        // config folds its brief into the preamble).
-        let loaded = match efference::config::load(config.as_deref()) {
-            Ok(l) => l,
-            Err(e) => {
-                e.eprint();
-                return Err("could not load role config".into());
-            }
-        };
-        let role_section = loaded.role.preamble_section();
-        // Best-effort for the dev view: if the [context] files don't resolve from the current cwd
-        // (e.g. inspecting a session recorded elsewhere), note it and omit the block rather than fail.
-        let context_block = match efference::context::resolve(&loaded.role.context, &cwd) {
-            Ok(resolved) => resolved.render(),
-            Err(e) => {
-                eprintln!("note: [context] not resolved ({e}); omitting from the rebuilt envelope");
-                None
-            }
-        };
-        eprintln!(
-            "note: {} log entries → {} wire messages. This log predates the boot-preamble \
-             snapshot: `system`/`tools[]` are rebuilt from the current code and cwd, not the \
-             recorded session.",
+        rebuilt_system(
+            config.as_deref(),
+            &path,
+            &model,
+            &cwd,
             entries.len(),
-            messages.len()
-        );
-        // No unmounted-servers section: this offline view mounts no connected
-        // providers at all (see the note below), so it has nothing to report
-        // about which of them failed.
-        // The session's id is its dir's name — the log sits at
-        // `.efference/<id>/log.jsonl`, so the rebuilt identity line can name the
-        // session this log belongs to (docs/context.md).
-        let session_id = path
-            .parent()
-            .and_then(|dir| dir.file_name())
-            .map_or_default(|name| name.to_string_lossy().into_owned());
-        // No creator: `created_by` is host control state, never logged
-        // (docs/tools.md), so an offline rebuild from a log cannot recover it —
-        // a child's rebuilt preamble is missing the creator sentence its live
-        // one carried. Sessions logged since the boot-preamble snapshot read
-        // back the recorded `system` instead and are unaffected.
-        efference::env::system_prompt(
-            efference::env::PromptInputs::new(&model, &session_id)
-                .with_context_block(context_block.as_deref())
-                .with_role_section(role_section.as_deref()),
-        )
+            messages.len(),
+        )?
     };
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/process-monitor.md and docs/inbox.md tools) — so the dev view matches.
@@ -193,24 +151,116 @@ pub(crate) async fn wire(
         Toolbox::bash_and_mcps(cwd, None)
     })?;
 
-    let choice = efference::api::ToolChoice::auto();
-    let rendered = match (view_dialect, dialect, format) {
-        (Some(ViewDialect::Completions), _, _) => {
-            efference::api::render_completions_request_pretty(
-                &model, &system, &tools, choice, &turns,
-            )?
-        }
-        (None, efference::log::WireDialect::Responses, _) => {
-            efference::api::render_responses_request_pretty(
-                &model, &system, &tools, choice, &turns, cache,
-            )?
-        }
-        (None, _, WireFormat::Json) => {
-            efference::api::render_request_pretty(&model, &system, &tools, choice, &messages)?
-        }
-        (None, _, WireFormat::Yaml) => {
-            efference::api::render_request_yaml(&model, &system, &tools, choice, &messages)
+    rendering.request(&system, &tools)
+}
+
+/// The `system` for a log that predates the boot-preamble snapshot, rebuilt from the
+/// current code and `cwd`. `entries` and `messages` are the counts the note reports.
+fn rebuilt_system(
+    config: Option<&Path>,
+    path: &Path,
+    model: &str,
+    cwd: &Path,
+    entries: usize,
+    messages: usize,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // No snapshot (a pre-snapshot log) — rebuild the envelope the same way boot does
+    // (current cwd seeds both the env block and the MCP servers' session roots; the role
+    // config folds its brief into the preamble).
+    let loaded = match efference::config::load(config) {
+        Ok(l) => l,
+        Err(e) => {
+            e.eprint();
+            return Err("could not load role config".into());
         }
     };
-    Ok(rendered)
+    let role_section = loaded.role.preamble_section();
+    // Best-effort for the dev view: if the [context] files don't resolve from the current cwd
+    // (e.g. inspecting a session recorded elsewhere), note it and omit the block rather than fail.
+    let context_block = match efference::context::resolve(&loaded.role.context, cwd) {
+        Ok(resolved) => resolved.render(),
+        Err(e) => {
+            eprintln!("note: [context] not resolved ({e}); omitting from the rebuilt envelope");
+            None
+        }
+    };
+    eprintln!(
+        "note: {entries} log entries → {messages} wire messages. This log predates the \
+         boot-preamble snapshot: `system`/`tools[]` are rebuilt from the current code and \
+         cwd, not the recorded session."
+    );
+    // No unmounted-servers section: this offline view mounts no connected
+    // providers at all (see the note below), so it has nothing to report
+    // about which of them failed.
+    // The session's id is its dir's name — the log sits at
+    // `.efference/<id>/log.jsonl`, so the rebuilt identity line can name the
+    // session this log belongs to (docs/context.md).
+    let session_id = path
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .map_or_default(|name| name.to_string_lossy().into_owned());
+    // No creator: `created_by` is host control state, never logged
+    // (docs/tools.md), so an offline rebuild from a log cannot recover it —
+    // a child's rebuilt preamble is missing the creator sentence its live
+    // one carried. Sessions logged since the boot-preamble snapshot read
+    // back the recorded `system` instead and are unaffected.
+    Ok(efference::env::system_prompt(
+        efference::env::PromptInputs::new(model, &session_id)
+            .with_context_block(context_block.as_deref())
+            .with_role_section(role_section.as_deref()),
+    ))
+}
+
+/// How a recorded session's wire is rendered: the view's dialect and format, and what it
+/// renders from.
+struct Rendering<'a> {
+    view_dialect: Option<ViewDialect>,
+    dialect: efference::log::WireDialect,
+    format: WireFormat,
+    turns: &'a [efference::project::WireTurn],
+    messages: &'a [efference::project::ApiMessage],
+    model: &'a str,
+    cache: efference::api::PromptCachePolicy,
+}
+
+impl Rendering<'_> {
+    /// The projected `messages` array alone.
+    fn messages_only(&self) -> WireResult {
+        let rendered = match (self.view_dialect, self.dialect, self.format) {
+            (Some(ViewDialect::Completions), _, _) => serde_json::to_string_pretty(
+                &efference::api::translate_completions(self.turns, "", self.model)?,
+            )?,
+            (None, efference::log::WireDialect::Responses, _) => serde_json::to_string_pretty(
+                &efference::api::encode_responses(self.turns, "", self.cache),
+            )?,
+            (None, _, WireFormat::Json) => efference::api::render_messages_pretty(self.messages)?,
+            (None, _, WireFormat::Yaml) => efference::api::render_messages_yaml(self.messages)?,
+        };
+        Ok(rendered)
+    }
+
+    /// The request envelope around the messages.
+    fn request(&self, system: &str, tools: &[serde_json::Value]) -> WireResult {
+        let choice = efference::api::ToolChoice::auto();
+        let (model, turns, messages) = (self.model, self.turns, self.messages);
+        let rendered = match (self.view_dialect, self.dialect, self.format) {
+            (Some(ViewDialect::Completions), _, _) => {
+                efference::api::render_completions_request_pretty(
+                    model, system, tools, choice, turns,
+                )?
+            }
+            (None, efference::log::WireDialect::Responses, _) => {
+                efference::api::render_responses_request_pretty(
+                    model, system, tools, choice, turns, self.cache,
+                )?
+            }
+            (None, _, WireFormat::Json) => {
+                efference::api::render_request_pretty(model, system, tools, choice, messages)?
+            }
+            (None, _, WireFormat::Yaml) => {
+                efference::api::render_request_yaml(model, system, tools, choice, messages)
+            }
+        };
+        Ok(rendered)
+    }
 }

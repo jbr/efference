@@ -144,6 +144,10 @@ impl Session {
     }
 
     /// The full constructor.
+    // The length is the `Session` literal: one initializer per field, each a fresh cell or a
+    // value from `parts`, read against the field list; the few statements before it derive
+    // the values the literal takes.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn full(parts: SessionParts) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         let SessionParts {
             directories,

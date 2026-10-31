@@ -72,6 +72,12 @@ pub async fn resume(
     Ok(boot)
 }
 
+// One ordered protocol: every step before the reopen only reads, so a refusal leaves the
+// session directory as it was found, and the reopen is the one step that writes; `minted`
+// holds only the scratch this attempt makes. The steps a create shares are functions already,
+// and what is inline is the resuming-only sequence, whose order would be readable only across
+// pieces if it were cut apart.
+#[allow(clippy::too_many_lines)]
 async fn resume_minting(
     request: ResumeRequest<'_>,
     minted: &mut Minted,

@@ -58,6 +58,8 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
 /// anonymous list inverted, so this is where a route's cost is settled: a path
 /// `Surface::anonymous` does not name costs a device token, which is what keeps a
 /// route added later from being readable to anyone who can reach the bind.
+// The length is the table: one case per route, read as the gate's price list.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn the_anonymous_surface_is_named() {
     let anonymous = true;
