@@ -1,17 +1,19 @@
 //! The telemetry family of log payloads (docs/log-and-projection.md): facts about how a
 //! session ran rather than what it said. Each one projects to nothing, carries no prose a
 //! reader is shown, and is skipped by every reader that renders a session, so a new kind
-//! of event is a variant here and the readers' one `Payload::Telemetry(_)` arm covers it.
-//! A reader that does look inside — masking, the operations topic, the web inspector —
-//! matches the variant it wants.
+//! of event is a variant here: those readers' wildcard arms skip it, and its frame's
+//! `kind` comes from its name. A reader that does look inside — masking, the operations
+//! topic, the web inspector — matches the variant it wants.
 
 use serde::{Deserialize, Serialize};
 
 use super::{Approval, CallId, ColdEvent, PushRecord, RequestStage, ToolTelemetry};
 
 /// One telemetry fact, recorded as `{"Telemetry": {"<Variant>": …}}`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, strum::IntoStaticStr)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
+// The variant's name is its log frame's `kind` (`Telemetry::kind`).
+#[strum(serialize_all = "snake_case", prefix = "telemetry.")]
 pub enum Telemetry {
     /// Per-call tool telemetry (docs/tools.md) — how long one call took, how it
     /// came out, and how big its result was, appended right after the
@@ -204,25 +206,10 @@ impl Escalation {
 }
 
 impl Telemetry {
-    /// The wire name of the variant — the `kind` of its log frame, under the
-    /// `telemetry.` prefix so no kind collides with a state topic's name.
+    /// The wire name of the variant — the `kind` of its log frame: the variant's name
+    /// in snake case under the `telemetry.` prefix, so no kind collides with a state
+    /// topic's name. Derived from the name, so a new variant brings its own.
     pub fn kind(&self) -> &'static str {
-        match self {
-            Telemetry::Tool(_) => "telemetry.tool",
-            Telemetry::CallStarted { .. } => "telemetry.call_started",
-            Telemetry::RequestStage(_) => "telemetry.request_stage",
-            Telemetry::Push(_) => "telemetry.push",
-            Telemetry::Cold(_) => "telemetry.cold",
-            Telemetry::CompactionRequested { .. } => "telemetry.compaction_requested",
-            Telemetry::CompactionFailed { .. } => "telemetry.compaction_failed",
-            Telemetry::InboxExpired { .. } => "telemetry.inbox_expired",
-            Telemetry::SupervisorSet { .. } => "telemetry.supervisor_set",
-            Telemetry::Interrupt(_) => "telemetry.interrupt",
-            Telemetry::Continue(_) => "telemetry.continue",
-            Telemetry::GateDecision(_) => "telemetry.gate_decision",
-            Telemetry::Escalation(_) => "telemetry.escalation",
-            Telemetry::Consolidation { .. } => "telemetry.consolidation",
-            Telemetry::Tools { .. } => "telemetry.tools",
-        }
+        self.into()
     }
 }

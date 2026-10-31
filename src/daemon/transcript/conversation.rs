@@ -164,19 +164,9 @@ impl<'a, 'r> Out<'a, 'r> {
             }
             Payload::Archived { .. } => self.push(entry.seq, "archived"),
             Payload::Resumed(_) => self.push(entry.seq, "resumed after its host restarted"),
-            // On their call's line.
-            Payload::ToolResult { .. }
-            | Payload::Telemetry(Telemetry::GateDecision(_) | Telemetry::Escalation(_)) => {}
-            // The mechanism.
-            Payload::Telemetry(_)
-            | Payload::Preamble { .. }
-            | Payload::Title(_)
-            | Payload::Spot(_)
-            | Payload::Triage(_)
-            | Payload::ConfigEdit(_)
-            | Payload::ProcessEvent(_)
-            | Payload::Worktree(_)
-            | Payload::ImagesRefused { .. } => {}
+            // On its call's line (a result, a decision, an escalation whose call is in
+            // the window), or the mechanism.
+            _ => {}
         }
     }
 

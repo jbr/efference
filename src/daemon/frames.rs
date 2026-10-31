@@ -353,27 +353,12 @@ impl Frame {
     }
 }
 
-/// The wire name of a log payload's variant — the `kind` of a [`Class::Log`] frame.
+/// The wire name of a log payload's variant — the `kind` of a [`Class::Log`] frame: the
+/// variant's name in snake case, and a telemetry entry's
+/// [`Telemetry::kind`](crate::log::Telemetry::kind). Derived on the log types from the
+/// names (docs/log-and-projection.md), so a new variant brings its own.
 pub(crate) fn payload_kind(payload: &Payload) -> &'static str {
-    match payload {
-        Payload::User(_) => "user",
-        Payload::Assistant { .. } => "assistant",
-        Payload::ToolResult { .. } => "tool_result",
-        Payload::ResultVerdict { .. } => "result_verdict",
-        Payload::Summary(_) => "summary",
-        Payload::Triage(_) => "triage",
-        Payload::Ambient(_) => "ambient",
-        Payload::Spot(_) => "spot",
-        Payload::Telemetry(telemetry) => telemetry.kind(),
-        Payload::Resumed(_) => "resumed",
-        Payload::Archived { .. } => "archived",
-        Payload::ProcessEvent(_) => "process_event",
-        Payload::Worktree(_) => "worktree",
-        Payload::ImagesRefused { .. } => "images_refused",
-        Payload::ConfigEdit(_) => "config_edit",
-        Payload::Preamble { .. } => "preamble",
-        Payload::Title(_) => "title",
-    }
+    payload.into()
 }
 
 #[cfg(test)]

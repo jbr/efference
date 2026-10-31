@@ -162,8 +162,11 @@ pub struct LogEntry {
 
 /// The content of a log entry. Immutable once appended; curation never mutates
 /// a payload's `raw`, only flips a [`WireState`] (docs/README.md).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, strum::IntoStaticStr)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
+// The `kind` of the log frame an entry rides in is its variant's name, a telemetry
+// entry's that of its `Telemetry` variant (docs/log-and-projection.md).
+#[strum(serialize_all = "snake_case")]
 pub enum Payload {
     /// Prose (and, later, richer blocks) authored by the user / operator.
     User(Vec<ContentBlock>),
@@ -205,6 +208,7 @@ pub enum Payload {
     /// A fact about how the session ran rather than what it said (the
     /// [`Telemetry`] family): projects to nothing, and every reader that renders a
     /// session skips it (docs/log-and-projection.md).
+    #[strum(transparent)]
     Telemetry(Telemetry),
     /// The session was reopened from its log by a later host process
     /// (docs/log-and-projection.md). Projects the restart notice at its position: how

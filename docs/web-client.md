@@ -665,10 +665,11 @@ following it.
 
 `ToolTelemetry` ([tools.md](tools.md)) joins by `call_id` exactly as `Spot` does,
 and for the same reason: it is a fact *about* a call, not an entry to read. The
-default for a payload the tree does not recognise is a leaf rendered as `unknown
-entry`, which is the right default — a new variant is visible rather than
-silently dropped — but it means every additive log variant needs a decision here.
-`ToolTelemetry` shipped without one and put a raw JSON block after every call.
+tree draws a payload as a session-level leaf only when `LEAVES` names it; any other
+draws nothing, so a new record-only variant needs no decision here. A new variant
+that should be read stays invisible until it is named; the tree's tests pin the
+kinds that exist. (Under the previous default, an unrecognised payload drew an
+`unknown entry` leaf, and `ToolTelemetry` put a raw JSON block after every call.)
 
 A result captured before its triage decides (`wire: "Pending"`,
 [triage.md](triage.md) "Capture, then verdict") renders its raw

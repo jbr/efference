@@ -191,11 +191,6 @@ pub(super) fn lines(
             }
             vec![line("spot", body)]
         }
-        // Telemetry (docs/log-and-projection.md) is how the session ran, not
-        // something it said or did.
-        Payload::Telemetry(_) | Payload::Worktree(_) => {
-            vec![]
-        }
         Payload::ImagesRefused { refusal } => vec![line(
             "images",
             format!("withheld from here on: the endpoint refused them ({refusal})"),
@@ -251,6 +246,10 @@ pub(super) fn lines(
             "result_verdict",
             format!("triage resolved result #{for_result}"),
         )],
+        // Every other entry — telemetry and the worktree's events among them — is how
+        // the session ran rather than something it said or did
+        // (docs/log-and-projection.md).
+        _ => vec![],
     }
 }
 

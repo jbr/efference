@@ -344,15 +344,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                     }))
                 }));
             }
-            // A record-only partial (docs/transport.md): the stream that produced this
-            // entry died before finalizing, so the provider has no record of it and the
-            // content must not enter the trajectory — a thinking-only partial projects
-            // as a dangling thinking block. Skipped entirely, like `Ambient`: the retry
-            // that follows re-projects to the same bytes, which is what lets it ride
-            // the cached prefix.
-            Payload::Assistant {
-                excluded: Some(_), ..
-            } => {}
+            // A record-only entry (`excluded`, docs/transport.md) falls to the last arm.
             Payload::Assistant {
                 output,
                 excluded: None,
@@ -379,22 +371,6 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                 emitted.insert(call_id.clone());
                 release(&mut held_notices, &emitted, &mut pending);
             }
-            // A summary entry is in the elided set (extract_boundaries inserts every
-            // summary's own seq), so this arm projects nothing.
-            Payload::Summary(_) => {}
-            // An `Ambient` arrival is audit-only on the wire (docs/inbox.md) — it never
-            // itself projects; a *pinned* one is emitted by its `Triage` (below).
-            Payload::Ambient(_) => {}
-            // A spotter verdict (docs/permissions.md) is audit-only — the permission
-            // decision lives in the log, never on the canonical wire.
-            Payload::Spot(_) => {}
-            // Telemetry is log metadata in the same sense timestamps are: it
-            // measures or marks what the wire already carries, and adds nothing the
-            // model reads. It projects to nothing, which is what lets it be appended
-            // at every call and request stage without moving the cached prefix
-            // (docs/log-and-projection.md).
-            Payload::Telemetry(_) => {}
-            Payload::ResultVerdict { .. } => {}
             // The restart notice (docs/log-and-projection.md): one harness text block at
             // the entry's own position, so it appends to the wire like any later turn.
             Payload::Resumed(resumed) if !resumed.pending_calls.is_empty() => {
@@ -410,32 +386,6 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                     resumed, entry.seq,
                 )));
             }
-            // A process lifecycle record (docs/process-monitor.md) is audit metadata
-            // beside events the wire already carries in prose — the backgrounding
-            // result and the exit notification. It projects to nothing, so a
-            // spawn or an exit mid-session cannot move the cached prefix
-            // (docs/log-and-projection.md).
-            Payload::ProcessEvent(_) => {}
-            // The worktree's creation record (docs/control-channel.md) is audit only.
-            Payload::Worktree(_) => {}
-            // The client withholds images in its encoding (docs/transport.md);
-            // the entry itself is the audit record.
-            Payload::ImagesRefused { .. } => {}
-            // The lifecycle record (docs/resumption.md) is audit only.
-            Payload::Archived { .. } => {}
-            // A grant (docs/permissions.md) is audit-only too — its *effect* reaches
-            // the model through the classifier (the policy fold), never the
-            // transcript. So it projects to nothing, and appending one cannot perturb
-            // the cached prefix (docs/log-and-projection.md).
-            Payload::ConfigEdit(_) => {}
-            // The boot preamble snapshot (docs/context.md) is replay/audit data:
-            // the system prompt rides the request's preamble slot, never the turn
-            // list, so the snapshot projects to nothing.
-            Payload::Preamble { .. } => {}
-            // The session title (docs/session-title.md) is presentation for the
-            // clients, never for the model: it projects to nothing, so a title
-            // written mid-session cannot move the cached prefix.
-            Payload::Title(_) => {}
             // A triage verdict emits a block per **pinned** notification and per
             // **surfaced** context item at its own position — notification bodies
             // looked up from the `Ambient` arrival (docs/inbox.md), surfaced items
@@ -469,6 +419,22 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                     turns.push(WireTurn::text(blocks.join("\n")));
                 }
             }
+            // Every other entry projects to nothing at its own position, which is what
+            // lets one be appended mid-session without moving the cached prefix
+            // (docs/log-and-projection.md):
+            // - a record-only assistant entry (docs/transport.md): the loop asks again
+            //   past it, and the retry re-projects to the same bytes;
+            // - a summary, which is in the elided set and is injected at its boundary
+            //   above; a result's verdict, read where its result projects; an `Ambient`
+            //   arrival, which reaches the wire only when a `Triage` pins it
+            //   (docs/inbox.md);
+            // - the session's audit record, which the model never reads: spotter
+            //   verdicts, telemetry, process and worktree records, a grant (its effect
+            //   reaches the model through the classifier), the boot preamble (the
+            //   system prompt rides the request's own slot), the title, the archive
+            //   record, and an image refusal (the client withholds images in its own
+            //   encoding, docs/transport.md).
+            _ => {}
         }
     }
 

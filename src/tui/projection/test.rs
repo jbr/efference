@@ -652,6 +652,37 @@ fn a_resumed_notice_carries_one_glyph() {
     );
 }
 
+/// A summary whose range ends before the first entry this log holds has no entry to be
+/// drawn after (see `CallIndex`), so it is drawn at its own position: the rule naming
+/// its range, then its text.
+#[test]
+fn a_summary_with_no_entry_to_follow_is_drawn_in_place() {
+    let log = [
+        entry(5, Payload::user("carry on")),
+        entry(
+            6,
+            Payload::Summary(Summary::consolidation(1, 3, "Account of the survey.")),
+        ),
+    ];
+    let doc = project(
+        &log,
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    let text = collect_text(&doc.nodes);
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle:?} missing:\n{text}"))
+    };
+    assert!(
+        at("carry on") < at("⊙ consolidated #1–#3 · 0 entries")
+            && at("⊙ consolidated #1–#3") < at("Account of the survey."),
+        "the summary follows the turn before it, its rule and then its text:\n{text}"
+    );
+}
+
 /// fs-mcp spells the size field `BYTES:`; logs written before that say `LENGTH:`.
 /// Both leave the path field, and a windowed read's trailing `LINES:`, out of it.
 #[test]

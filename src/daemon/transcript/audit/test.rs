@@ -331,3 +331,81 @@ fn an_ask_reads_as_a_question_and_its_reply() {
          \x20     7 result    not answered\n"
     );
 }
+
+/// Each mechanism entry is one line under its own tag: a reply kept record-only with
+/// why, a summary with its extent and text, a spotter verdict with its stance, the
+/// endpoint's image refusal, a process's mint and exit, the system prompt's size, a
+/// captured result's verdict, a restart notice, and a deliberate archive.
+#[test]
+fn each_mechanism_entry_has_its_line() {
+    use crate::log::{
+        ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn, Resumed, Spot,
+        Summary, WireDialect,
+    };
+    let process = |kind| Payload::ProcessEvent(ProcessEvent { id: 2, kind });
+    let log = [
+        entry(
+            1,
+            Payload::record_only(
+                AssistantOutput::empty(WireDialect::Messages),
+                crate::log::Exclusion::Empty,
+            ),
+        ),
+        entry(
+            2,
+            Payload::Summary(Summary::consolidation(0, 1, "the opening")),
+        ),
+        entry(
+            3,
+            Payload::Spot(
+                Spot::new("toolu_1", Stance::Watch, "outside the scope")
+                    .with_probed_prefix(Some("cargo".into())),
+            ),
+        ),
+        entry(
+            4,
+            Payload::ImagesRefused {
+                refusal: "image input is not supported".into(),
+            },
+        ),
+        entry(
+            5,
+            process(ProcessEventKind::Spawned(ProcessSpawn {
+                command: "cargo watch".into(),
+                call_id: None,
+                pid: None,
+                at: Timestamp(0),
+            })),
+        ),
+        entry(
+            6,
+            process(ProcessEventKind::Exited(ProcessExit {
+                outcome: ExitOutcome::Code(1),
+                duration_ms: 1200,
+                at: Timestamp(0),
+            })),
+        ),
+        entry(
+            7,
+            Payload::preamble("You are m.", " Be brief.", Default::default(), None),
+        ),
+        entry(8, Payload::result_verdict(5, WireState::Raw)),
+        entry(9, Payload::Resumed(Resumed::new(60_000))),
+        entry(10, Payload::archived(None)),
+    ];
+    assert_eq!(
+        render(&log),
+        "      1 assistant (record-only, never projected: the model finalized with neither \
+         prose nor a call)\n\
+         \x20     2 summary   consolidated through #1: the opening\n\
+         \x20     3 spot      watch: outside the scope (probed `cargo`)\n\
+         \x20     4 images    withheld from here on: the endpoint refused them (image input is \
+         not supported)\n\
+         \x20     5 process   p#2 spawned: cargo watch\n\
+         \x20     6 process   p#2 exited Code(1) after 1200 ms\n\
+         \x20     7 preamble  20 B of system prompt\n\
+         \x20     8 result_verdict triage resolved result #5\n\
+         \x20     9 resumed   ⟢ session resumed after 1m: the host process restarted.\n\
+         \x20    10 archived  archived on purpose\n"
+    );
+}

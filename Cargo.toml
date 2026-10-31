@@ -8,6 +8,10 @@ repository = "https://github.com/jbr/efference"
 [dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+# The `kind` a log frame carries is its payload variant's name, derived rather than
+# written per variant (docs/log-and-projection.md). Already compiled in-tree, derive
+# included, under ratatui and semantic-edit-mcp; this promotes it to direct.
+strum = { version = "0.28", features = ["derive"] }
 # In-process MCP tool servers consumed as lib crates (DESIGN §5), not subprocesses.
 fs-mcp = "0.2"
 semantic-edit-mcp = "0.4"
@@ -26,9 +30,10 @@ mcplease = { version = "0.5.0", features = [
 # `efference mcp` drives mcplease's stdio transport over tokio's stdio.
 async-compat = "0.2"
 # JSON Schema derive for the control tools' arguments — what an MCP client reads
-# out of `tools/list` — and for the config files' published schemas
-# (assets/schemas). Same major as mcplease's own, so there is one schemars.
-# `indexmap2` for `[context]`, an `IndexMap`.
+# out of `tools/list` — for the config files' published schemas (assets/schemas),
+# and, under `cfg(test)` only, for the control channel's types: a test writes the
+# schema the web client's TypeScript is generated from. Same major as mcplease's
+# own, so there is one schemars. `indexmap2` for `[context]`, an `IndexMap`.
 schemars = { version = "1.2.3", features = ["indexmap2"] }
 anyhow = "1"
 # Lightweight logging facade + env-driven backend. The daemon emits request sizes,

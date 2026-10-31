@@ -1,6 +1,7 @@
-//! The bytes each `output` frame serializes to (docs/control-api.md), one pin per kind.
-//! The clients parse these, so a change to them is a change to the control channel and
-//! fails here first, as the state topics' bytes do (`topic_bytes.rs`).
+//! The bytes each `output` frame serializes to (docs/control-api.md), one pin per kind,
+//! and the `kind` every log frame carries. The clients parse these, so a change to them
+//! is a change to the control channel and fails here first, as the state topics' bytes
+//! do (`topic_bytes.rs`).
 //!
 //! The comparison is of whole strings, key order included: the frame's own keys
 //! (`class`, `kind`, `data`) in the order the envelope declares them, and the keys of
@@ -9,6 +10,13 @@
 //! keys.
 
 use super::*;
+use crate::log::{
+    AssistantOutput, ColdEvent, ConfigChange, ConfigEdit, ContinueOrigin, Escalation, ExitOutcome,
+    GateDecision, InterruptOrigin, MomentKind, Notification, ProcessEvent, ProcessEventKind,
+    ProcessExit, PushEvent, PushRecord, ReleasedBy, RequestStage, RequestStageKind, Resumed, Spot,
+    Stance, Summary, Telemetry, Timestamp, Title, TitleAuthor, ToolOutcome, ToolTelemetry, Triage,
+    WireDialect, WireState,
+};
 use crate::protocol::stream::StreamDelta;
 
 fn frame(delta: &StreamDelta) -> String {
@@ -106,4 +114,189 @@ fn the_side_request_frames_keep_their_bytes() {
         }),
         r#"{"class":"output","kind":"triage_thinking_delta","data":{"call_ids":[],"text":"idle"}}"#
     );
+}
+
+/// The `kind` of the log frame each payload rides in, which is also its SSE `event:`
+/// (docs/control-api.md): the payload variant's name, and for the telemetry family the
+/// telemetry variant's under a `telemetry.` prefix (docs/log-and-projection.md). Pinned
+/// as the frame carries it, ahead of `seq` and `data`.
+#[test]
+fn the_log_frame_kinds_keep_their_bytes() {
+    let telemetry = |t: Telemetry| Payload::Telemetry(t);
+    let kinds = [
+        (Payload::user("hi"), "user"),
+        (
+            Payload::assistant(AssistantOutput::empty(WireDialect::Messages)),
+            "assistant",
+        ),
+        (
+            Payload::tool_result("toolu_1", RawResult::text("ok"), WireState::Raw),
+            "tool_result",
+        ),
+        (Payload::result_verdict(2, WireState::Raw), "result_verdict"),
+        (
+            Payload::Summary(Summary::consolidation(0, 3, "the account")),
+            "summary",
+        ),
+        (Payload::Triage(Triage::new(Some(2), "all")), "triage"),
+        (
+            Payload::Ambient(Notification::new("web", "a note", None)),
+            "ambient",
+        ),
+        (
+            Payload::Spot(Spot::new("toolu_1", Stance::Clear, "in scope")),
+            "spot",
+        ),
+        (Payload::Resumed(Resumed::new(1_000)), "resumed"),
+        (Payload::archived(None), "archived"),
+        (
+            Payload::ProcessEvent(ProcessEvent {
+                id: 1,
+                kind: ProcessEventKind::Exited(ProcessExit {
+                    outcome: ExitOutcome::Code(0),
+                    duration_ms: 10,
+                    at: Timestamp(0),
+                }),
+            }),
+            "process_event",
+        ),
+        (
+            Payload::Worktree(
+                crate::worktree::Retired::Removed {
+                    branch_deleted: true,
+                }
+                .into_event(std::path::Path::new("/p"), "quiet-fox")
+                .expect("a removal is recorded"),
+            ),
+            "worktree",
+        ),
+        (
+            Payload::ImagesRefused {
+                refusal: "no images".into(),
+            },
+            "images_refused",
+        ),
+        (
+            Payload::ConfigEdit(ConfigEdit::new(
+                EditState::Committed,
+                ConfigChange::Command {
+                    command: "ls".into(),
+                },
+            )),
+            "config_edit",
+        ),
+        (
+            Payload::preamble("You are m.", " …", Default::default(), None),
+            "preamble",
+        ),
+        (
+            Payload::Title(Title::new("a title", TitleAuthor::Operator)),
+            "title",
+        ),
+        (
+            telemetry(Telemetry::Tool(ToolTelemetry {
+                call_id: "toolu_1".into(),
+                tool: "read".into(),
+                duration_ms: 1,
+                outcome: ToolOutcome::Applied,
+                result_bytes: 2,
+                images: 0,
+                bash: None,
+                edit: None,
+            })),
+            "telemetry.tool",
+        ),
+        (
+            telemetry(Telemetry::call_started("toolu_1")),
+            "telemetry.call_started",
+        ),
+        (
+            telemetry(Telemetry::RequestStage(RequestStage::new(
+                0,
+                RequestOrigin::Turn,
+                RequestStageKind::Sent,
+            ))),
+            "telemetry.request_stage",
+        ),
+        (
+            telemetry(Telemetry::Push(PushRecord {
+                moment: 1,
+                kind: MomentKind::Gate,
+                event: PushEvent::Sent,
+            })),
+            "telemetry.push",
+        ),
+        (
+            telemetry(Telemetry::Cold(ColdEvent::Released {
+                by: ReleasedBy::Turn,
+            })),
+            "telemetry.cold",
+        ),
+        (
+            telemetry(Telemetry::CompactionRequested { warm: true, cut: 3 }),
+            "telemetry.compaction_requested",
+        ),
+        (
+            telemetry(Telemetry::CompactionFailed {
+                error: "superseded".into(),
+            }),
+            "telemetry.compaction_failed",
+        ),
+        (
+            telemetry(Telemetry::InboxExpired { seq: 4, shows: 2 }),
+            "telemetry.inbox_expired",
+        ),
+        (
+            telemetry(Telemetry::SupervisorSet { supervisor: None }),
+            "telemetry.supervisor_set",
+        ),
+        (
+            telemetry(Telemetry::Interrupt(InterruptOrigin::default())),
+            "telemetry.interrupt",
+        ),
+        (
+            telemetry(Telemetry::Continue(ContinueOrigin::default())),
+            "telemetry.continue",
+        ),
+        (
+            telemetry(Telemetry::GateDecision(GateDecision::new(
+                "toolu_1",
+                Approval::Approve,
+                None,
+            ))),
+            "telemetry.gate_decision",
+        ),
+        (
+            telemetry(Telemetry::Escalation(Escalation::new(
+                "toolu_1", None, None, None,
+            ))),
+            "telemetry.escalation",
+        ),
+        (
+            telemetry(Telemetry::Consolidation {
+                from: 1,
+                upto: 3,
+                context: 4,
+                tool_bytes: 100,
+                outcome: "checking".into(),
+                account_bytes: 0,
+            }),
+            "telemetry.consolidation",
+        ),
+        (
+            telemetry(Telemetry::Tools { tools: Vec::new() }),
+            "telemetry.tools",
+        ),
+    ];
+    for (seq, (payload, kind)) in (0u64..).zip(kinds) {
+        let frame = Frame::log(&LogEntry::new(seq, payload), None, None);
+        let json = frame.to_json();
+        let head = format!(r#"{{"class":"log","kind":"{kind}","seq":{seq},"data":"#);
+        assert!(json.starts_with(&head), "{kind}: {json}");
+        assert_eq!(
+            stream::FrameEvent::from(frame).event_type(),
+            Some(kind),
+            "the SSE event names the frame's kind"
+        );
+    }
 }

@@ -410,14 +410,11 @@ pub(crate) fn entry_nodes(
                     ));
                 }
             }
-            // Emitted as its call's result entry above.
-            Payload::ToolResult { .. } => {}
             // Drawn after the entry its range ends in (see `CallIndex`); in place
             // only when that entry is not in this log.
             Payload::Summary(summary) if index.summary_host(idx).is_none() => {
                 push_summary(&mut nodes, summary, replaced(log, summary));
             }
-            Payload::Summary(_) => {}
             // An ambient notification (docs/inbox.md), rendered as a marked line so the
             // human sees the out-of-band event in the stream. The transcript shows the
             // whole record — every *shown* notification renders here, where the wire
@@ -441,17 +438,6 @@ pub(crate) fn entry_nodes(
                     nodes.push(annotation_line("⚠ triage retry · ", why));
                 }
             }
-            // A spotter permission verdict (docs/permissions.md) renders beside the call
-            // it judged, not at its own log position — it is indexed by `call_id` above
-            // and emitted beside that call, so nothing is drawn here.
-            Payload::Spot(_) => {}
-            // A grant (docs/permissions.md) — audit-only on the transcript, so it
-            // draws nothing here.
-            Payload::ConfigEdit(_) => {}
-            // Telemetry (docs/log-and-projection.md) — per-call measurements,
-            // request stages, push and cold-check steps — reaches the reader through
-            // the state topics it feeds, if at all; it draws nothing here.
-            Payload::Telemetry(_) => {}
             Payload::Resumed(resumed) => {
                 // `render_resumed` is the wire notice and carries its own leading
                 // `⟢`, so the annotation marker is empty here — supplying one
@@ -462,27 +448,21 @@ pub(crate) fn entry_nodes(
                     &crate::project::render_resumed(resumed, entry.seq),
                 ));
             }
-            // A process lifecycle record (docs/process-monitor.md) — the durable half
-            // of what the transcript already shows in prose (the backgrounding
-            // result, the exit notification), kept for readers with no daemon.
-            // It draws nothing here.
-            Payload::ProcessEvent(_) => {}
             // A session's worktree life (docs/worktrees.md): one muted notice line
             // per event, the shape a `Resumed` entry uses. The entry carries no
             // wire block, so it draws only here.
             Payload::Worktree(event) => nodes.push(worktree_notice(event)),
-            // Read through the transcript view; the placeholder in each result
-            // already says what was withheld.
-            Payload::ImagesRefused { .. } => {}
-            // Lifecycle record (docs/resumption.md); the session is gone from the TUI.
-            Payload::Archived { .. } => {}
-            // The boot preamble snapshot (docs/context.md) — session boot record,
-            // not conversation; the human inspects it via `efference dev wire`, not the transcript.
-            Payload::Preamble { .. } => {}
-            // The session title (docs/session-title.md) is sidebar state, carried by
-            // the `session_identity` topic — it draws nothing in the transcript.
-            Payload::Title(_) => {}
-            Payload::ResultVerdict { .. } => {}
+            // Every other entry draws nothing at its own position. A result, its verdict
+            // and the spotter's verdict on its call are drawn beside that call, and a
+            // summary after the entry its range ends in (both through `CallIndex`). The
+            // rest is the session's record rather than its conversation: telemetry and
+            // the title reach the reader through the state topics and the sidebar, a
+            // process record backs prose the transcript already shows (the
+            // backgrounding result, the exit notification), the placeholder in each
+            // result says what an image refusal withheld, `efference dev wire` shows the
+            // preamble, a grant is audit only, and an archived session is gone from the
+            // TUI.
+            _ => {}
         }
     }
     for &at in index.summaries_after.get(&idx).into_iter().flatten() {

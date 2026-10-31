@@ -93,16 +93,23 @@ enum Telemetry {
 }
 ```
 
-A telemetry entry serializes as `{"Telemetry": {"<Variant>": …}}`, and its log frame's
-`kind` is `telemetry.<variant>` (`telemetry.tool`, `telemetry.cold`, …), so no frame kind
-shares a name with a state topic. The family is the payloads every reader that renders a
-session skips: the wire projection, the agent and TUI transcripts, and the web tree each
-have one `Telemetry(_)` arm, so a new event of this kind is one variant. A reader that uses
-a variant's contents matches it by name — the `[env]` masker (a failed request's reason),
-the `current_operations` fold (which also folds the compaction's entries), the web client
-attaching `Tool` to its call. Payloads that
-project to nothing but are rendered somewhere (`ProcessEvent`, `Worktree`, `Title`,
-`ImagesRefused`) stay top-level.
+A telemetry entry serializes as `{"Telemetry": {"<Variant>": …}}`. A log frame's `kind`
+is its payload variant's name in snake case (`tool_result`, `images_refused`), and a
+telemetry entry's is `telemetry.<variant>` (`telemetry.tool`, `telemetry.cold`, …), so no
+frame kind shares a name with a state topic. Both derive from the variant names on the log
+types, so a new variant brings its kind with it (pinned by
+`the_log_frame_kinds_keep_their_bytes`).
+
+The readers that render a session — the wire projection, the `GET /transcript` grains, the
+TUI, and the web tree — each match the payloads they draw and skip the rest with one
+wildcard arm, so a new payload that draws nowhere, telemetry or top-level, touches none of
+them. A new payload that should draw is skipped until each reader names it; each reader's
+tests cover every payload it draws. A reader that uses a variant's contents matches it by
+name — the `[env]` masker (a failed request's reason), the `current_operations` fold (which
+also folds the compaction's entries), the conversation grain's line for a decision whose
+call is out of view, the web client attaching `Tool` to its call. Payloads that project to
+nothing but are rendered somewhere (`ProcessEvent`, `Worktree`, `Title`, `ImagesRefused`)
+stay top-level.
 
 A `User` entry's blocks are prose and, after it, the files its composer
 attached: `ContentBlock::Attachment` records a file's store name, path, and

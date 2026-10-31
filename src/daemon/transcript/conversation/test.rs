@@ -3,6 +3,7 @@ use super::*;
 use crate::log::{Approval, Keep, Notification, Stance, Summary, Triaged};
 
 mod escalation;
+mod lifecycle;
 
 fn child<'a>(me: Option<&'a str>) -> Reading<'a> {
     Reading {

@@ -368,6 +368,66 @@ describe("the transcript tree", () => {
     expect(nodes.map((n) => n.kind)).toEqual(["leaf", "leaf"]);
   });
 
+  it("draws each session-level entry as a leaf, and the bookkeeping as nothing", () => {
+    const nodes = buildTree([
+      entry(1, { User: [{ Text: "hi" }] }),
+      entry(2, { Ambient: { source: "web", body: "a note", slot: null } }),
+      entry(3, {
+        ConfigEdit: {
+          state: "committed",
+          change: { command: { command: "ls" } },
+          note: "",
+          resolves: null,
+        },
+      }),
+      entry(4, { Title: { text: "a title", author: "operator" } }),
+      entry(5, { Resumed: { gap_ms: 1000 } }),
+      entry(6, {
+        Worktree: {
+          path: "/p/.efference/worktrees/quiet-fox",
+          branch: "efference/quiet-fox",
+          kind: { event: "removed", branch_deleted: true },
+        },
+      }),
+      entry(7, { Archived: {} }),
+      entry(8, { ImagesRefused: { refusal: "image input is not supported" } }),
+      entry(9, {
+        Preamble: {
+          identity: "You are m.",
+          body: " …",
+          context: { sections: [] },
+        },
+      }),
+      entry(10, {
+        Triage: {
+          for_result: null,
+          origin: "Model",
+          raw_keep: "all",
+          inbox: [],
+          surfaced: [],
+          retries: [],
+          thinking: [],
+        },
+      }),
+      entry(11, {
+        ProcessEvent: {
+          id: 1,
+          kind: {
+            Exited: {
+              outcome: { code: 0 },
+              duration_ms: 10,
+              at: 1754300000000,
+            },
+          },
+        },
+      }),
+      entry(12, { Telemetry: { Cold: { event: "released", by: "turn" } } }),
+    ]);
+    expect(nodes.map((n) => [n.kind, n.key])).toEqual(
+      ["1", "2", "3", "4", "5", "6", "7", "8"].map((key) => ["leaf", key]),
+    );
+  });
+
   it("drops a result whose call is not in the window", () => {
     // A tail window can begin after the call that a result names. Rendering it
     // loose would show output with nothing to attribute it to.

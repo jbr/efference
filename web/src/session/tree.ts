@@ -5,7 +5,7 @@
 // so it can be tested as data.
 //
 //   session
-//   ├─ user text / thinking / agent text / mark / ambient / config-edit / preamble
+//   ├─ user text / thinking / agent text / mark / ambient / config-edit / title / notice
 //   └─ batch                    the calls issued in one step
 //      └─ call                  one call, whole
 //         ├─ args, intent       (rendered from the call itself)
@@ -146,6 +146,22 @@ export interface SummaryPreviewNode {
 }
 
 export type TranscriptNode = LeafNode | BatchNode | SummaryPreviewNode;
+
+/** The payloads drawn as a session-level leaf of their own, past the branches
+ * of `buildTree` that draw an assistant turn, place a summary, and attach what
+ * names a call. Any other kind of entry draws nothing. `Archived` and
+ * `ImagesRefused` have no renderer and draw as an unknown entry
+ * (ui/Transcript.tsx). */
+const LEAVES = [
+  "User",
+  "Ambient",
+  "ConfigEdit",
+  "Title",
+  "Resumed",
+  "Worktree",
+  "Archived",
+  "ImagesRefused",
+] as const;
 
 /**
  * Project the committed log into the tree. Pure, and a function of the entries
@@ -367,26 +383,6 @@ export function buildTree(
       continue;
     }
 
-    // `Triage` is not rendered: it is per-result bookkeeping whose one visible
-    // fact — how much of the output survived — the result header already
-    // states as `kept N of M lines`. Rendering it as its own block put a
-    // `keep: all` line after every result, which said nothing the reader did
-    // not already have. Its genuinely batch-scoped fields (`inbox`, `retries`)
-    // have no surface yet; when they get one it is the batch node's, not a
-    // leaf's (docs/web-client.md).
-    if ("Triage" in p) continue;
-
-    // A process lifecycle record (docs/process-monitor.md) is not rendered either:
-    // the transcript already carries both of its events in prose — the
-    // backgrounding result and the exit notification — and this is the durable
-    // record behind them, read by `GET /processes/:id`, not a block to show.
-    if ("ProcessEvent" in p) continue;
-
-    // The system prompt is audit data, not conversation: it is what the model
-    // was told before the operator said anything, and a new session whose only
-    // entry it is should read as empty rather than as a collapsed block.
-    if ("Preamble" in p) continue;
-
     // A title entry is appended even when the peek kept the previous text
     // (docs/session-title.md); only a change is something to read.
     if ("Title" in p) {
@@ -394,7 +390,18 @@ export function buildTree(
       title = p.Title.text;
     }
 
-    nodes.push({ kind: "leaf", key: `${entry.seq}`, entry });
+    if (LEAVES.some((kind) => kind in p)) {
+      nodes.push({ kind: "leaf", key: `${entry.seq}`, entry });
+    }
+    // Every other entry draws nothing. A triage verdict is per-result
+    // bookkeeping whose one visible fact — how much of the output survived — the
+    // result header states as `kept N of M lines`; its batch-scoped fields
+    // (`inbox`, `retries`) would be the batch node's to show, not a leaf's. A
+    // process lifecycle record is the durable record behind prose the transcript
+    // carries (the backgrounding result and the exit notification), read by
+    // `GET /processes/:id`. The system prompt is what the model was told before
+    // the operator said anything, so a new session whose only entry it is reads
+    // as empty (docs/web-client.md).
   }
 
   if (previous !== null) endOf.set(previous, nodes.length);
