@@ -17,9 +17,8 @@ fn the_header_is_line_one_and_takes_no_seq() {
     let raw = std::fs::read_to_string(&path).unwrap();
     let mut lines = raw.lines();
     let first = lines.next().unwrap();
-    let header: LogHeader = serde_json::from_str(first).expect("line 1 is a header");
-    assert_eq!(header.format(), LogHeader::FORMAT);
-    assert_eq!(header.version(), LogHeader::VERSION);
+    // A strict parse: a header with any other format or version is refused.
+    let _: LogHeader = serde_json::from_str(first).expect("line 1 is a header");
     assert_eq!(
         lines.count(),
         3,

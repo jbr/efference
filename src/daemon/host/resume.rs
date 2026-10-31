@@ -83,6 +83,9 @@ pub struct PatchSession {
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
+    // Absent leaves the supervisor alone and `null` clears it: the outer `Option` is the
+    // key's presence in the control channel's JSON.
+    #[allow(clippy::option_option)]
     pub supervisor: Option<Option<String>>,
     /// Who is asking, spelled as a turn's `source` is (`web`, `mcp[<name>]`,
     /// `session[<id>]`); recorded on the `Archived` entry of an `archived` patch and

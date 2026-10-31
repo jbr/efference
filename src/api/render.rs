@@ -72,7 +72,7 @@ pub fn render_request_yaml(
     tools: &[Value],
     tool_choice: ToolChoice,
     messages: &[ApiMessage],
-) -> Result<String, Error> {
+) -> String {
     let value = request_value(model, system, tools, tool_choice, messages);
     let obj = value
         .as_object()
@@ -92,7 +92,7 @@ pub fn render_request_yaml(
             lines.extend(crate::pretty::keyed(key, v));
         }
     }
-    Ok(crate::pretty::join(&lines))
+    crate::pretty::join(&lines)
 }
 
 /// Render just the projected `messages` array — the `wire --messages` view: what

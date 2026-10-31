@@ -213,7 +213,7 @@ pub(crate) async fn wire(
             efference::api::render_request_pretty(&model, &system, &tools, choice, &messages)?
         }
         (None, _, WireFormat::Yaml) => {
-            efference::api::render_request_yaml(&model, &system, &tools, choice, &messages)?
+            efference::api::render_request_yaml(&model, &system, &tools, choice, &messages)
         }
     };
     Ok(rendered)

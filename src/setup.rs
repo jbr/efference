@@ -218,6 +218,8 @@ impl Draft {
     /// recorded for it, or `None` where the run left the role alone. `Some(None)`
     /// is a role this run *cleared*, which is not the same as one it never
     /// touched.
+    // `None` (left alone) and `Some(None)` (cleared) are the distinction this answers.
+    #[allow(clippy::option_option)]
     pub fn decided_default(&self, role: DefaultRole) -> Option<Option<&str>> {
         self.edits.iter().rev().find_map(|edit| match edit {
             Change::SetDefaultRole {

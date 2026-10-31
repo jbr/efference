@@ -9,3 +9,7 @@ disallowed-methods = [
     { path = "tokio::process::Command::output", reason = "spawn through crate::spawn (src/spawn.rs)" },
     { path = "tokio::process::Command::status", reason = "spawn through crate::spawn (src/spawn.rs)" },
 ]
+
+# efference publishes no library API: its `pub` items have one consumer, the binary,
+# so the lints that spare exported signatures apply to them too.
+avoid-breaking-exported-api = false

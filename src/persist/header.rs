@@ -156,14 +156,6 @@ impl LogHeader {
         Self { metadata }
     }
 
-    pub fn format(&self) -> &'static str {
-        Self::FORMAT
-    }
-
-    pub fn version(&self) -> u32 {
-        Self::VERSION
-    }
-
     /// What boot recorded, when this file carries it.
     pub fn metadata(&self) -> Option<&SessionMetadata> {
         self.metadata.as_ref()
