@@ -58,7 +58,6 @@ impl Provider {
         }
     }
 
-    /// The auth header **name** this provider reads.
     /// Whether this provider's decisions route accepts a `session_id` for
     /// grouping. OpenRouter documents it alongside `user` and `trace`; the
     /// first-party API documents `state`, `model`, and `questions` only, and
@@ -67,6 +66,7 @@ impl Provider {
         matches!(self, Self::OpenRouter)
     }
 
+    /// The auth header **name** this provider reads.
     pub(in crate::api) fn auth_header(&self) -> &'static str {
         match self {
             Self::Anthropic => "x-api-key",

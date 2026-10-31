@@ -237,16 +237,7 @@ impl Endpoint {
             }
             _ => {}
         }
-        let mut endpoint = Self {
-            provider,
-            url: provider.messages_url(base.as_deref()),
-            auth_header: provider.auth_header().to_string(),
-            auth_value: AuthValue::from(provider.auth_header_value(token)),
-            session_id: None,
-            extra_headers: Vec::new(),
-            base,
-            request: RequestOptions::default(),
-        };
+        let mut endpoint = Self::derive(provider, token, base);
         match (provider, account_id) {
             (Provider::OpenAICodex, Some(account)) => endpoint
                 .extra_headers
@@ -266,13 +257,24 @@ impl Endpoint {
     /// line, such as a local server (docs/operating.md).
     pub fn without_credential(provider: Provider, base: String) -> Self {
         Self {
-            provider,
-            url: provider.messages_url(Some(&base)),
             auth_header: String::new(),
             auth_value: AuthValue::from(String::new()),
+            ..Self::derive(provider, "", Some(base))
+        }
+    }
+
+    /// The endpoint `provider` derives for the secret `token`, before what one provider
+    /// adds beyond it (the Codex account header): the routes and the header's name and
+    /// scheme come from the provider, and `base` only from a custom connection.
+    fn derive(provider: Provider, token: &str, base: Option<String>) -> Self {
+        Self {
+            provider,
+            url: provider.messages_url(base.as_deref()),
+            auth_header: provider.auth_header().to_string(),
+            auth_value: AuthValue::from(provider.auth_header_value(token)),
             session_id: None,
             extra_headers: Vec::new(),
-            base: Some(base),
+            base,
             request: RequestOptions::default(),
         }
     }
@@ -321,5 +323,38 @@ impl Endpoint {
                 .map(|id| format!("{id}{TRIAGE_SUFFIX}")),
             ..self.clone()
         }
+    }
+}
+
+#[cfg(test)]
+impl Endpoint {
+    /// An endpoint for `provider` whose turns go to `url`, a test's own server in place of
+    /// the provider's address, sending the secret `k` in the provider's header and scheme
+    /// (docs/transport.md). Each `with_*` method sets the field it names to the value
+    /// given.
+    pub(crate) fn at(provider: Provider, url: impl Into<String>) -> Self {
+        Self {
+            url: Some(url.into()),
+            ..Self::derive(provider, "k", None)
+        }
+    }
+
+    /// An endpoint for `provider` with no turns URL, so a client built on it panics at its
+    /// first request: how a test asserts that a call sends nothing.
+    pub(crate) fn without_url(provider: Provider) -> Self {
+        Self {
+            url: None,
+            ..Self::derive(provider, "k", None)
+        }
+    }
+
+    pub(crate) fn with_auth_value(mut self, auth_value: AuthValue) -> Self {
+        self.auth_value = auth_value;
+        self
+    }
+
+    pub(crate) fn with_extra_headers(mut self, extra_headers: Vec<(String, String)>) -> Self {
+        self.extra_headers = extra_headers;
+        self
     }
 }

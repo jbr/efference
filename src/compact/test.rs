@@ -1,5 +1,5 @@
 use super::*;
-use crate::api::{Completion, FailureClass, Usage};
+use crate::api::Completion;
 use crate::log::{
     AssistantOutput, ContentBlock, Keep, LoggedInference, Payload, RawResult, Summary, Timestamp,
     ToolCall, Triaged, WireState,
@@ -8,41 +8,36 @@ use crate::project::UserPart;
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(1_700_000_000_000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(1_700_000_000_000 + seq))
 }
 
-fn assistant(text: &str, calls: Vec<ToolCall>) -> Payload {
+fn output(text: &str, calls: Vec<ToolCall>) -> AssistantOutput {
     let text = if text.is_empty() {
         vec![]
     } else {
         vec![ContentBlock::Text(text.into())]
     };
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(vec![], text, calls),
-        excluded: None,
-    }
+    AssistantOutput::from_legacy_messages(vec![], text, calls)
+}
+
+fn assistant(text: &str, calls: Vec<ToolCall>) -> Payload {
+    Payload::assistant(output(text, calls))
 }
 
 /// Operator ask, one read, a reply, then a second read: seqs 1–6.
 fn log() -> Vec<LogEntry> {
     let read = |id: &str| ToolCall::new("read", id, json!({"paths": ["src/a.rs"]}));
-    let result = |id: &str| Payload::ToolResult {
-        call_id: id.into(),
-        raw: RawResult::text("body"),
-        wire: WireState::Triaged(Triaged::new(Keep::All).with_note("read it")),
+    let result = |id: &str| {
+        Payload::tool_result(
+            id,
+            RawResult::text("body"),
+            WireState::Triaged(Triaged::new(Keep::All).with_note("read it")),
+        )
     };
     vec![
-        entry(
-            1,
-            Payload::User(vec![ContentBlock::Text("find the enum".into())]),
-        ),
+        entry(1, Payload::user("find the enum")),
         entry(2, assistant("", vec![read("c1")])),
         entry(3, result("c1")),
         entry(4, assistant("", vec![read("c2")])),
@@ -88,16 +83,7 @@ fn a_cut_between_a_call_and_its_result_is_refused() {
 }
 
 fn completion(text: &str, calls: Vec<ToolCall>, finish: Option<&str>) -> Completion {
-    Completion {
-        receipt: Default::default(),
-        assistant: assistant(text, calls),
-        id: None,
-        model: "test".into(),
-        finish: finish.map(crate::api::Finish::messages),
-        usage: Usage::default(),
-        cache_miss: None,
-        failure_class: FailureClass::Transient,
-    }
+    Completion::new(output(text, calls)).with_finish(finish.map(crate::api::Finish::messages))
 }
 
 #[test]

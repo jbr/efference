@@ -11,10 +11,7 @@ use crate::daemon::keepalive::CacheLineage;
 #[test]
 fn keepalive_advances_touch_clock_not_cap_clock() {
     let log_path = temp_file("keepalive-test.jsonl");
-    let (shared, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::create(&log_path, None).expect("create log"),
-    );
+    let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
 
     // Nothing to keep warm yet → both clocks absent.
     assert_eq!(shared.keepalive_clocks(CacheLineage::Main), (None, None));
@@ -45,10 +42,7 @@ fn keepalive_advances_touch_clock_not_cap_clock() {
 fn recorded_requests_land_in_the_usage_record() {
     let log_path = temp_file("usage-record-test.jsonl");
     let usage_path = temp_file("usage-record-test-usage.jsonl");
-    let (shared, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::create(&log_path, None).expect("create log"),
-    );
+    let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     shared.attach_usage_log(&usage_path);
 
     let usage = Usage {
@@ -205,10 +199,7 @@ fn aborted_attempts_do_not_count_as_cold_prefix_evidence() {
 #[test]
 fn recorded_requests_move_the_published_cold_streak() {
     let log_path = temp_file("cold-streak-test.jsonl");
-    let (shared, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::create(&log_path, None).expect("create log"),
-    );
+    let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let turn = |read| {
         RequestUsage::new(Usage {
             input_tokens: 1,
@@ -234,10 +225,7 @@ fn recorded_requests_move_the_published_cold_streak() {
 #[test]
 fn only_main_prefix_requests_stamp_the_touch_clock() {
     let log_path = temp_file("touch-origin-test.jsonl");
-    let (shared, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::create(&log_path, None).expect("create log"),
-    );
+    let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let request = || RequestUsage::new(Usage::default());
     shared.record_request(RequestOrigin::Spot, request());
     shared.record_request(RequestOrigin::Triage, request());
@@ -268,10 +256,7 @@ fn attaching_the_usage_record_seeds_the_clocks() {
         .chain(std::iter::once("not json\n".to_string()))
         .collect();
     std::fs::write(&usage_path, record).unwrap();
-    let (shared, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::create(&log_path, None).expect("create log"),
-    );
+    let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     shared.attach_usage_log(&usage_path);
 
     let (touch, turn) = shared.keepalive_clocks(CacheLineage::Main);
@@ -291,7 +276,7 @@ fn attaching_the_usage_record_seeds_the_clocks() {
 fn a_shared_triage_line_seeds_the_touch_clock() {
     let usage_path = temp_file("seed-triage-test-usage.jsonl");
     let request = || RequestUsage::new(Usage::default());
-    let new_session = || Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0;
+    let new_session = || Session::in_memory().0;
     let first = new_session();
     first.attach_usage_log(&usage_path);
     first.record_triage(false, request());
@@ -390,10 +375,7 @@ fn primer_neither_counts_nor_touches_the_main_prefix() {
 fn primer_requests_land_in_the_usage_record_as_triage_primer() {
     let log_path = temp_file("usage-primer-test.jsonl");
     let usage_path = temp_file("usage-primer-test-usage.jsonl");
-    let (shared, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::create(&log_path, None).expect("create log"),
-    );
+    let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     shared.attach_usage_log(&usage_path);
 
     shared.record_request(
@@ -426,20 +408,17 @@ fn primer_requests_land_in_the_usage_record_as_triage_primer() {
 fn inline_cost_prices_a_request_and_is_recorded() {
     use crate::api::{InlineCost, Receipt};
     let usage_path = temp_file("inline-cost-test-usage.jsonl");
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared.attach_usage_log(&usage_path);
     // Armed, so the request without an inline cost would be queued for the lookup
     // (not run here: no runtime). The first two must reach the total by themselves.
-    shared.enable_cost_tracking(crate::api::Endpoint {
-        provider: crate::log::Provider::OpenRouter,
-        url: Some("http://127.0.0.1:9/api/v1/messages".into()),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer test".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    });
+    shared.enable_cost_tracking(
+        crate::api::Endpoint::at(
+            crate::log::Provider::OpenRouter,
+            "http://127.0.0.1:9/api/v1/messages",
+        )
+        .with_auth_value("Bearer test".into()),
+    );
     let request = |cost: Option<f64>| {
         RequestUsage::new(Usage::default())
             .with_id("gen-1")

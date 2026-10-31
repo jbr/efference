@@ -9,8 +9,15 @@ mod read;
 
 /// Line 1 as a reader accepts it carrying no metadata — the header a fixture
 /// persists. Built by hand rather than by a writer so a test can vary one
-/// field of it and leave the rest alone.
-const HEADER: &str = r#"{"format":"efference-session-log","version":7,"metadata":null}"#;
+/// field of it and leave the rest alone; the format and version are the
+/// reader's own, so a format bump leaves it current.
+fn bare_header() -> String {
+    format!(
+        r#"{{"format":"{}","version":{},"metadata":null}}"#,
+        LogHeader::FORMAT,
+        LogHeader::VERSION
+    )
+}
 
 /// One entry line at `seq`, holding the payload a `User` turn writes.
 fn user_entry(seq: u64) -> String {
@@ -54,22 +61,18 @@ fn load_error(path: &Path) -> LoadError {
 }
 
 fn sample(log: &mut Log) {
-    log.append(0, Payload::User(vec![ContentBlock::Text("hello".into())]))
-        .unwrap();
+    log.append(0, Payload::user("hello")).unwrap();
     log.append(
         1,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![ContentBlock::Text("let me check".into())],
-                vec![ToolCall::new(
-                    "bash",
-                    "toolu_1",
-                    json!({ "command": "ls", "timeout": 5 }),
-                )],
-            ),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text("let me check".into())],
+            vec![ToolCall::new(
+                "bash",
+                "toolu_1",
+                json!({ "command": "ls", "timeout": 5 }),
+            )],
+        )),
     )
     .unwrap();
     log.append(
@@ -201,15 +204,9 @@ fn submission_id_round_trips_and_is_skipped_when_absent() {
     let path = temp_path("submission");
 
     let mut log = Log::create(&path, None).unwrap();
-    log.append_submission(
-        0,
-        Payload::User(vec![ContentBlock::Text("hi".into())]),
-        Some("sub-abc".into()),
-        None,
-    )
-    .unwrap();
-    log.append(0, Payload::User(vec![ContentBlock::Text("note".into())]))
+    log.append_submission(0, Payload::user("hi"), Some("sub-abc".into()), None)
         .unwrap();
+    log.append(0, Payload::user("note")).unwrap();
     drop(log);
 
     let lines = entry_lines(&path);
@@ -234,13 +231,12 @@ fn source_round_trips_and_is_skipped_when_absent() {
     let mut log = Log::create(&path, None).unwrap();
     log.append_submission(
         0,
-        Payload::User(vec![ContentBlock::Text("hi".into())]),
+        Payload::user("hi"),
         None,
         Some("mcp[claude-code]".into()),
     )
     .unwrap();
-    log.append(0, Payload::User(vec![ContentBlock::Text("note".into())]))
-        .unwrap();
+    log.append(0, Payload::user("note")).unwrap();
     drop(log);
 
     let lines = entry_lines(&path);
@@ -259,17 +255,10 @@ fn source_round_trips_and_is_skipped_when_absent() {
 #[test]
 fn submission_id_never_reaches_the_projection() {
     let mut with = Log::in_memory();
-    with.append_submission(
-        0,
-        Payload::User(vec![ContentBlock::Text("hello".into())]),
-        Some("sub-xyz".into()),
-        None,
-    )
-    .unwrap();
-    let mut without = Log::in_memory();
-    without
-        .append(0, Payload::User(vec![ContentBlock::Text("hello".into())]))
+    with.append_submission(0, Payload::user("hello"), Some("sub-xyz".into()), None)
         .unwrap();
+    let mut without = Log::in_memory();
+    without.append(0, Payload::user("hello")).unwrap();
     assert_eq!(
         serde_json::to_string(&project(with.entries())).unwrap(),
         serde_json::to_string(&project(without.entries())).unwrap(),

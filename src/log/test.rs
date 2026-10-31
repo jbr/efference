@@ -5,23 +5,13 @@ use super::*;
 /// log written before the field existed load unchanged.
 #[test]
 fn log_entry_source_is_optional_and_round_trips() {
-    let unsourced = LogEntry {
-        seq: 0,
-        turn: 0,
-        at: Timestamp::now(),
-        submission_id: None,
-        source: None,
-        payload: Payload::User(vec![ContentBlock::Text("hi".into())]),
-    };
+    let unsourced = LogEntry::new(0, Payload::user("hi")).with_at(Timestamp::now());
     let json = serde_json::to_string(&unsourced).unwrap();
     assert!(!json.contains("source"), "{json}");
     let back: LogEntry = serde_json::from_str(&json).unwrap();
     assert_eq!(back.source, None);
 
-    let sourced = LogEntry {
-        source: Some("web".into()),
-        ..unsourced
-    };
+    let sourced = unsourced.with_source(Some("web".into()));
     let json = serde_json::to_string(&sourced).unwrap();
     assert!(json.contains(r#""source":"web""#), "{json}");
     let back: LogEntry = serde_json::from_str(&json).unwrap();
@@ -52,18 +42,15 @@ fn a_worktree_entry_round_trips() {
         },
     ];
     for kind in kinds {
-        let entry = LogEntry {
-            seq: 1,
-            turn: 0,
-            at: Timestamp::now(),
-            submission_id: None,
-            source: None,
-            payload: Payload::Worktree(WorktreeEvent {
+        let entry = LogEntry::new(
+            1,
+            Payload::Worktree(WorktreeEvent {
                 path: "/p/.efference/worktrees/quiet-fox".into(),
                 branch: "efference/quiet-fox".into(),
                 kind,
             }),
-        };
+        )
+        .with_at(Timestamp::now());
         let json = serde_json::to_string(&entry).unwrap();
         let back: LogEntry = serde_json::from_str(&json).unwrap();
         assert!(
@@ -78,13 +65,12 @@ fn a_worktree_entry_round_trips() {
 
 #[test]
 fn recorded_inference_comes_from_the_latest_boot_preamble() {
-    let entry = |seq, inference: Option<LoggedInference>| LogEntry {
-        seq,
-        turn: 0,
-        at: Timestamp::now(),
-        submission_id: None,
-        source: None,
-        payload: Payload::preamble("", "sys", Default::default(), inference),
+    let entry = |seq, inference: Option<LoggedInference>| {
+        LogEntry::new(
+            seq,
+            Payload::preamble("", "sys", Default::default(), inference),
+        )
+        .with_at(Timestamp::now())
     };
     let first = LoggedInference::new("first", Provider::Anthropic, "claude");
     let second = LoggedInference::new("second", Provider::OpenRouter, "google/gemini");
@@ -124,28 +110,22 @@ fn latest_title_empty_log_returns_none() {
 #[test]
 fn latest_title_latest_entry_wins() {
     let entries = vec![
-        LogEntry {
-            seq: 1,
-            turn: 0,
-            at: Timestamp::now(),
-            submission_id: None,
-            source: None,
-            payload: Payload::Title(Title {
+        LogEntry::new(
+            1,
+            Payload::Title(Title {
                 text: "First Title".to_string(),
                 author: TitleAuthor::Triage,
             }),
-        },
-        LogEntry {
-            seq: 2,
-            turn: 0,
-            at: Timestamp::now(),
-            submission_id: None,
-            source: None,
-            payload: Payload::Title(Title {
+        )
+        .with_at(Timestamp::now()),
+        LogEntry::new(
+            2,
+            Payload::Title(Title {
                 text: "Second Title".to_string(),
                 author: TitleAuthor::Triage,
             }),
-        },
+        )
+        .with_at(Timestamp::now()),
     ];
     assert_eq!(latest_title(&entries), Some("Second Title"));
 }
@@ -203,14 +183,9 @@ fn telemetry_nests_under_one_key() {
 /// serialized form of an `Archived` entry is pinned here.
 #[test]
 fn an_archived_entry_has_a_stable_json_shape() {
-    let entry = LogEntry {
-        seq: 8,
-        turn: 2,
-        at: Timestamp(1_782_260_379_694),
-        submission_id: None,
-        source: None,
-        payload: Payload::Archived { source: None },
-    };
+    let entry = LogEntry::new(8, Payload::archived(None))
+        .with_turn(2)
+        .with_at(Timestamp(1_782_260_379_694));
     assert_eq!(
         serde_json::to_string(&entry).unwrap(),
         r#"{"seq":8,"turn":2,"at":1782260379694,"payload":{"Archived":{}}}"#
@@ -221,14 +196,9 @@ fn an_archived_entry_has_a_stable_json_shape() {
 /// back; the entries written before the field existed read with none.
 #[test]
 fn an_archived_entry_round_trips_its_source() {
-    let entry = LogEntry {
-        seq: 8,
-        turn: 2,
-        at: Timestamp(1_782_260_379_694),
-        submission_id: None,
-        source: None,
-        payload: Payload::archived(Some("mcp[claude-code]".into())),
-    };
+    let entry = LogEntry::new(8, Payload::archived(Some("mcp[claude-code]".into())))
+        .with_turn(2)
+        .with_at(Timestamp(1_782_260_379_694));
     let line = serde_json::to_string(&entry).unwrap();
     assert_eq!(
         line,

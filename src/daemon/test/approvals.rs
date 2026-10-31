@@ -1,13 +1,14 @@
 //! Tests for `approvals.rs`.
 
 use super::*;
+use crate::config::testing::ConfigFixture;
 
 /// A gate surfaces the spotter's reason on `/state` (docs/permissions.md): the spotter logs
 /// its verdict as a `Spot` *before* routing to the human, so `register_pending` reads the
 /// reason from the log — no side channel. The client renders it inline at the gate.
 #[test]
 fn the_gate_carries_the_spotter_reason() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let call = bash_call("rm -rf build");
     shared
         .append(
@@ -37,7 +38,7 @@ fn the_gate_carries_the_spotter_reason() {
 /// and the session chain, so a client renders the move rather than the approval's id.
 #[test]
 fn the_gate_carries_the_bound_leaf_action() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let approve = ToolCall::new(
         crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_parent",
@@ -70,8 +71,8 @@ async fn the_gate_carries_its_grant_and_takes_it_back_verbatim() {
         std::env::current_dir().unwrap(),
         Log::in_memory(),
         LoadedConfig {
-            role: crate::config::Config::from_toml("[tools]\nefference = { enabled = true }\n\"efference.read\" = { granted = true }\n").unwrap(),
-            source: ConfigSource::Default,
+            role: ConfigFixture::new().with_tool("read").build(),
+            ..LoadedConfig::default()
         },
     );
     let call = ToolCall::new(
@@ -118,7 +119,7 @@ fn decisions(session: &Session) -> Vec<crate::log::GateDecision> {
 /// call that is not the pending gate records nothing.
 #[tokio::test]
 async fn a_decision_over_http_is_recorded_with_its_decider() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let server = test_server(&shared).await;
 
     let _gate = shared.register_pending(&bash_call("ls"), None, None);
@@ -166,19 +167,16 @@ async fn a_decision_over_http_is_recorded_with_its_decider() {
 /// operator's own decision reads "operator", the reader's own reads "you".
 #[tokio::test]
 async fn the_transcript_names_who_decided() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let call = bash_call("ls").with_intent("look around");
     shared
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call.clone()],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         )
         .unwrap();
     let server = test_server(&shared).await;
@@ -208,7 +206,7 @@ async fn the_transcript_names_who_decided() {
 /// and records nothing (docs/control-api.md).
 #[tokio::test]
 async fn an_escalation_over_http_keeps_the_gate_and_is_recorded() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let server = test_server(&shared).await;
 
     let mut gate = shared.register_pending(&bash_call("curl -sI x"), None, None);

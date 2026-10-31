@@ -113,10 +113,7 @@ fn appends_after_open_continue_the_sequence() {
         3,
         "the entries read are in memory"
     );
-    let seq = opened
-        .log
-        .append(1, Payload::User(vec![ContentBlock::Text("after".into())]))
-        .unwrap();
+    let seq = opened.log.append(1, Payload::user("after")).unwrap();
     assert_eq!(seq, 3, "the next append is the next seq, not a restart");
     drop(opened);
 
@@ -140,14 +137,14 @@ fn appends_after_open_continue_the_sequence() {
 #[test]
 fn a_missing_newline_is_terminated() {
     let path = temp_path("repair-newline");
-    let clean = format!("{HEADER}\n{}\n", user_entry(0));
-    std::fs::write(&path, format!("{HEADER}\n{}", user_entry(0))).unwrap();
+    let clean = format!("{}\n{}\n", bare_header(), user_entry(0));
+    std::fs::write(&path, format!("{}\n{}", bare_header(), user_entry(0))).unwrap();
 
     let opened = Log::open(&path).unwrap();
     assert_eq!(
         opened.repaired,
         Some(Repair::MissingNewline {
-            byte_offset: (HEADER.len() + 1) as u64,
+            byte_offset: (bare_header().len() + 1) as u64,
         })
     );
     drop(opened);
@@ -169,11 +166,15 @@ fn a_missing_newline_is_terminated() {
 fn an_unfinished_append_is_truncated_with_its_bytes_kept_beside() {
     let path = temp_path("repair-torn");
     let torn = r#"{"seq":1,"turn":0,"at":1,"pay"#;
-    let clean = format!("{HEADER}\n{}\n", user_entry(0));
-    let offset = (HEADER.len() + 1 + user_entry(0).len() + 1) as u64;
+    let clean = format!("{}\n{}\n", bare_header(), user_entry(0));
+    let offset = (bare_header().len() + 1 + user_entry(0).len() + 1) as u64;
     let fragment = fragment_path(&path, offset);
     let _ = std::fs::remove_file(&fragment);
-    std::fs::write(&path, format!("{HEADER}\n{}\n{torn}", user_entry(0))).unwrap();
+    std::fs::write(
+        &path,
+        format!("{}\n{}\n{torn}", bare_header(), user_entry(0)),
+    )
+    .unwrap();
 
     let opened = Log::open(&path).unwrap();
     let saved_to = match &opened.repaired {
@@ -238,8 +239,8 @@ fn an_unfinished_append_is_truncated_with_its_bytes_kept_beside() {
 fn a_fragment_file_from_earlier_is_not_overwritten() {
     let path = temp_path("refuse-fragment");
     let torn = r#"{"seq":1,"turn":0,"at":1,"pay"#;
-    let bytes = format!("{HEADER}\n{}\n{torn}", user_entry(0));
-    let offset = (HEADER.len() + 1 + user_entry(0).len() + 1) as u64;
+    let bytes = format!("{}\n{}\n{torn}", bare_header(), user_entry(0));
+    let offset = (bare_header().len() + 1 + user_entry(0).len() + 1) as u64;
     let fragment = fragment_path(&path, offset);
     std::fs::write(&path, &bytes).unwrap();
     let earlier = b"a fragment an earlier repair kept";
@@ -272,10 +273,14 @@ fn a_fragment_file_from_earlier_is_not_overwritten() {
 fn a_repair_interrupted_after_keeping_its_bytes_is_finished_not_refused() {
     let path = temp_path("finish-fragment");
     let torn = r#"{"seq":1,"turn":0,"at":1,"pay"#;
-    let clean = format!("{HEADER}\n{}\n", user_entry(0));
-    let offset = (HEADER.len() + 1 + user_entry(0).len() + 1) as u64;
+    let clean = format!("{}\n{}\n", bare_header(), user_entry(0));
+    let offset = (bare_header().len() + 1 + user_entry(0).len() + 1) as u64;
     let fragment = fragment_path(&path, offset);
-    std::fs::write(&path, format!("{HEADER}\n{}\n{torn}", user_entry(0))).unwrap();
+    std::fs::write(
+        &path,
+        format!("{}\n{}\n{torn}", bare_header(), user_entry(0)),
+    )
+    .unwrap();
     std::fs::write(&fragment, torn).unwrap();
 
     let opened =
@@ -304,17 +309,18 @@ fn an_unreadable_log_is_refused_with_its_bytes_untouched() {
         (
             "future",
             format!(
-                "{{\"format\":\"{}\",\"version\":8,\"metadata\":null}}\n",
-                LogHeader::FORMAT
+                "{{\"format\":\"{}\",\"version\":{},\"metadata\":null}}\n",
+                LogHeader::FORMAT,
+                LogHeader::VERSION + 1
             ),
         ),
         (
             "corrupt",
-            format!("{HEADER}\n{}\nnonsense\n", user_entry(0)),
+            format!("{}\n{}\nnonsense\n", bare_header(), user_entry(0)),
         ),
         (
             "sequence",
-            format!("{HEADER}\n{}\n{}\n", user_entry(0), user_entry(0)),
+            format!("{}\n{}\n{}\n", bare_header(), user_entry(0), user_entry(0)),
         ),
         ("blank-header", format!("\n{}\n", user_entry(0))),
     ];
@@ -346,8 +352,7 @@ fn an_unreadable_log_is_refused_with_its_bytes_untouched() {
 fn appends_after_open_are_masked_like_any_other() {
     let path = temp_path("masked");
     let mut log = Log::create(&path, None).unwrap();
-    log.append(0, Payload::User(vec![ContentBlock::Text("first".into())]))
-        .unwrap();
+    log.append(0, Payload::user("first")).unwrap();
     drop(log);
 
     let mut opened = Log::open(&path).unwrap();
@@ -356,10 +361,7 @@ fn appends_after_open_are_masked_like_any_other() {
     opened.log.set_masker(masker);
     opened
         .log
-        .append(
-            0,
-            Payload::User(vec![ContentBlock::Text("t0ken-value-here".into())]),
-        )
+        .append(0, Payload::user("t0ken-value-here"))
         .unwrap();
     drop(opened);
 

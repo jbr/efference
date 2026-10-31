@@ -7,7 +7,7 @@ use super::*;
 /// → busy after the gate resolves → settled again when the loop parks.
 #[test]
 fn settle_predicate_tracks_the_loop_lifecycle() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     assert!(shared.is_settled(), "a fresh daemon is idle");
 
     // Submitted but not yet dequeued — busy (the submit-race guard via the queued count).
@@ -45,7 +45,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
 /// `enable()`-before-check ordering means a `going_idle()` racing the registration isn't lost.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn await_settled_returns_when_the_loop_parks() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.submit_turn(SubmittedTurn::new("hi", "sub-test"));
     shared.claim_turn("sub-test", true); // busy, mid-turn
 
@@ -76,7 +76,7 @@ async fn await_settled_returns_when_the_loop_parks() {
 /// forever. Without the counter balance the last assertion fails.
 #[test]
 fn drain_queued_turns_delivers_queued_turns_and_balances_settle() {
-    let (shared, turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, turns_rx) = Session::in_memory();
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
         turns: turns_rx,
@@ -111,7 +111,7 @@ fn drain_queued_turns_delivers_queued_turns_and_balances_settle() {
 /// underneath (resume returns to the retained speed, never zero), and `/state` reports both.
 #[test]
 fn set_pace_moves_the_dials_and_retains_speed_under_a_hold() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     // Default: fast, not held.
     assert_eq!(shared.pace_snapshot(), (Duration::ZERO, false));
 
@@ -130,7 +130,7 @@ fn set_pace_moves_the_dials_and_retains_speed_under_a_hold() {
 /// Default pace never blocks the juncture (fast path: no hold, zero speed).
 #[tokio::test]
 async fn pace_at_juncture_is_a_noop_by_default() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     tokio::time::timeout(Duration::from_millis(200), shared.pace_at_juncture())
         .await
         .expect("default pace does not block the juncture");
@@ -139,7 +139,7 @@ async fn pace_at_juncture_is_a_noop_by_default() {
 /// A hold blocks the juncture indefinitely; a **release** ends it immediately (the resume trigger).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hold_blocks_the_juncture_until_released() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_pace(None, Some(true)); // hold
 
     // While held, the juncture does not return.
@@ -164,7 +164,7 @@ async fn hold_blocks_the_juncture_until_released() {
 /// The operator's submit resumes: it drops the hold, and its queued turn ends the juncture wait.
 #[tokio::test]
 async fn a_submit_resumes_and_skips_the_juncture() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_pace(None, Some(true));
     assert!(shared.pace_snapshot().1, "held before submit");
 
@@ -183,7 +183,7 @@ async fn a_submit_resumes_and_skips_the_juncture() {
 /// and both reach the loop in submission order.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_agents_turn_waits_behind_the_operators_hold() {
-    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, mut turns_rx) = Session::in_memory();
     shared.set_pace(None, Some(true));
     let from_parent =
         SubmittedTurn::new("from the parent", "a1").sourced(Some("session[parent]".into()));
@@ -225,7 +225,7 @@ async fn an_agents_turn_waits_behind_the_operators_hold() {
 /// `pace` releasing the hold sends the agent turns it held back.
 #[tokio::test]
 async fn releasing_the_hold_sends_what_it_held_back() {
-    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, mut turns_rx) = Session::in_memory();
     shared.set_pace(None, Some(true));
     let from_mount =
         SubmittedTurn::new("from claude code", "m1").sourced(Some("mcp[claude-code]".into()));
@@ -241,7 +241,7 @@ async fn releasing_the_hold_sends_what_it_held_back() {
 /// input at the juncture.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_hold_outranks_a_turn_queued_before_it() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let from_parent = SubmittedTurn::new("next", "a1").sourced(Some("session[parent]".into()));
     assert_ne!(
         shared.submit_named_turn(from_parent, None),
@@ -260,7 +260,7 @@ async fn the_hold_outranks_a_turn_queued_before_it() {
 /// loop then waits at its next juncture.
 #[tokio::test]
 async fn an_agents_answer_leaves_the_hold() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let mut wait = shared.begin_ask("toolu_q", "Proceed?".into(), 1, 1);
     shared.set_pace(None, Some(true));
     let answer = SubmittedTurn::new("yes", "a1").sourced(Some("mcp[claude-code]".into()));
@@ -276,7 +276,7 @@ async fn an_agents_answer_leaves_the_hold() {
 /// making the operator's steer wait out the remaining pace.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_submit_interrupts_a_finite_paced_sleep() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_pace(Some(Duration::from_secs(30)), None); // slow, not held
 
     let s2 = Arc::clone(&shared);
@@ -297,7 +297,7 @@ async fn a_submit_interrupts_a_finite_paced_sleep() {
 /// press stops one call and not the turn after it.
 #[test]
 fn an_interrupt_latches_and_is_consumed_exactly_once() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     assert!(!shared.take_interrupt(), "nothing latched at rest");
 
     shared.interrupt(Default::default()); // no waiter registered — the notify half reaches nobody
@@ -318,7 +318,7 @@ fn an_interrupt_latches_and_is_consumed_exactly_once() {
 /// everything after it, in submission order, and leaves what came before untouched.
 #[test]
 fn withdraw_pops_the_suffix_from_the_named_turn() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     for (text, id) in [("one", "s1"), ("two", "s2"), ("three", "s3")] {
         shared.submit_turn(SubmittedTurn::new(text, id));
     }
@@ -346,7 +346,7 @@ fn withdraw_pops_the_suffix_from_the_named_turn() {
 /// nothing rather than handing back text the model is already being sent.
 #[test]
 fn withdraw_pops_nothing_once_the_loop_has_claimed_the_turn() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.submit_turn(SubmittedTurn::new("sent", "s1"));
     assert!(shared.claim_turn("s1", true));
     assert!(shared.withdraw_turns("s1").is_empty());
@@ -356,7 +356,7 @@ fn withdraw_pops_nothing_once_the_loop_has_claimed_the_turn() {
 /// it unappended — the pending queue, not the channel, is the authority.
 #[tokio::test]
 async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
-    let (shared, turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, turns_rx) = Session::in_memory();
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
         turns: turns_rx,
@@ -382,7 +382,7 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
 /// is queued behind it). With nothing queued, the push goes out.
 #[test]
 fn a_turn_ending_with_a_turn_queued_sends_no_settle_push() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let settle_pushes = |shared: &Session| {
         shared
             .snapshot()

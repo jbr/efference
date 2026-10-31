@@ -44,16 +44,10 @@ async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_n
         heads
     });
 
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some(format!("http://{addr}/backend-api/codex/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenAICodex,
+        format!("http://{addr}/backend-api/codex/responses"),
+    );
     let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
     assert_eq!(client.turn_routing_token(), None);
     client
@@ -109,16 +103,7 @@ async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_n
 /// backend sends.
 #[test]
 fn a_client_without_turn_routing_holds_no_token() {
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some("http://127.0.0.1:1/x".into()),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::OpenAICodex, "http://127.0.0.1:1/x");
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None).without_turn_routing();
     client.begin_turn();
     assert_eq!(client.turn_routing_token(), None);
@@ -177,16 +162,10 @@ async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent
         }
     });
 
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some(format!("http://{addr}/backend-api/codex/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenAICodex,
+        format!("http://{addr}/backend-api/codex/responses"),
+    );
     let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
     let plan = client.plan_state();
     assert!(plan.lock().unwrap().is_none());
@@ -270,16 +249,10 @@ async fn plan_windows_are_ignored_off_the_codex_backend() {
         )
         .unwrap();
     });
-    let endpoint = Endpoint {
-        provider: Provider::OpenRouter,
-        url: Some(format!("http://{addr}/api/v1/messages")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenRouter,
+        format!("http://{addr}/api/v1/messages"),
+    );
     let client = Client::new(endpoint, "m", "sys", None);
     let _ = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
     server.join().unwrap();
@@ -314,16 +287,12 @@ async fn a_codex_request_carries_its_headers_and_no_anthropic_version() {
         .unwrap();
         head
     });
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some(format!("http://{addr}/backend-api/codex/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer tok".into(),
-        session_id: None,
-        extra_headers: vec![("ChatGPT-Account-ID".into(), "acct-1".into())],
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenAICodex,
+        format!("http://{addr}/backend-api/codex/responses"),
+    )
+    .with_auth_value("Bearer tok".into())
+    .with_extra_headers(vec![("ChatGPT-Account-ID".into(), "acct-1".into())]);
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
     client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -390,16 +359,10 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
         requests
     });
 
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some(format!("http://{addr}/backend-api/codex/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenAICodex,
+        format!("http://{addr}/backend-api/codex/responses"),
+    );
     let client = Client::new(endpoint, "gpt-6.1-sol", "sys", None);
     client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -478,16 +441,10 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
         requests
     });
 
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some(format!("http://{addr}/backend-api/codex/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenAICodex,
+        format!("http://{addr}/backend-api/codex/responses"),
+    );
     let client = Client::new(endpoint, "gpt-6.1-sol", "sys", None)
         .with_prompt_cache(PromptCachePolicy::Implicit);
     let turns = vec![crate::project::WireTurn::text("hello")];
@@ -545,16 +502,7 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
 #[tokio::test]
 async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
     let messages = Client::new(
-        Endpoint {
-            provider: Provider::Anthropic,
-            url: None,
-            auth_header: "x".into(),
-            auth_value: "y".into(),
-            session_id: None,
-            extra_headers: Vec::new(),
-            request: Default::default(),
-            base: None,
-        },
+        Endpoint::without_url(Provider::Anthropic),
         "claude-haiku-4-5",
         "sys",
         None,
@@ -565,16 +513,7 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
     );
 
     let explicit = Client::new(
-        Endpoint {
-            provider: Provider::OpenAICodex,
-            url: None,
-            auth_header: "x".into(),
-            auth_value: "y".into(),
-            session_id: None,
-            extra_headers: Vec::new(),
-            request: Default::default(),
-            base: None,
-        },
+        Endpoint::without_url(Provider::OpenAICodex),
         "gpt-6.1-sol",
         "sys",
         None,
@@ -634,16 +573,10 @@ async fn primer_plants_despite_truncated_output() {
         sock.flush().unwrap();
     });
 
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some(format!("http://{addr}/backend-api/codex/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenAICodex,
+        format!("http://{addr}/backend-api/codex/responses"),
+    );
     let client = Client::new(endpoint, "gpt-6-luna", "sys", None)
         .with_prompt_cache(PromptCachePolicy::Implicit);
     let turns = vec![crate::project::WireTurn::text("hello")];

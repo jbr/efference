@@ -144,10 +144,10 @@ fn record_absorbed_attempts(
         *turn += 1;
         shared.append(
             *turn,
-            Payload::Assistant {
-                output: AssistantOutput::empty(client.dialect()),
-                excluded: Some(Exclusion::Upstream(failure.record_text().into())),
-            },
+            Payload::record_only(
+                AssistantOutput::empty(client.dialect()),
+                Exclusion::Upstream(failure.record_text().into()),
+            ),
         )?;
     }
     Ok(())
@@ -456,10 +456,10 @@ pub async fn run<F: Frontend, S: Spotter>(
                         turn += 1;
                         shared.append(
                             turn,
-                            Payload::Assistant {
-                                output: AssistantOutput::empty(client.dialect()),
-                                excluded: Some(Exclusion::Upstream(error.to_string().into())),
-                            },
+                            Payload::record_only(
+                                AssistantOutput::empty(client.dialect()),
+                                Exclusion::Upstream(error.to_string().into()),
+                            ),
                         )?;
                         let terminal = (crate::api::error_class(&error)
                             != crate::api::FailureClass::Transient)

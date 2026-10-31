@@ -8,7 +8,7 @@ use super::*;
 /// output seeds a cold reader (no cursor) then advances a cursor.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn processes_listing_and_output_read() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared
         .spawn_background("echo seeded; sleep 5".into(), None)
         .expect("spawn");
@@ -74,7 +74,7 @@ async fn processes_listing_and_output_read() {
 /// is what a recorded session and a restarted daemon are.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_minted_handle_resolves_after_the_exit_and_after_the_daemon() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared
         .spawn_background("true".into(), Some("toolu_abc".into()))
         .expect("spawn");
@@ -107,10 +107,7 @@ async fn a_minted_handle_resolves_after_the_exit_and_after_the_daemon() {
             .any(|e| matches!(&e.payload, Payload::ProcessEvent(p) if p.id == 1)),
         "the lifecycle records reached the log"
     );
-    let (replay, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::in_memory_with(entries),
-    );
+    let (replay, _turns_rx) = Session::from_log(Log::in_memory_with(entries));
     let app = test_server(&replay).await;
     let v: Value = serde_json::from_str(app.get("/v1/processes/1").await.body()).unwrap();
     assert_eq!(v["id"], 1);
@@ -130,7 +127,7 @@ async fn a_minted_handle_resolves_after_the_exit_and_after_the_daemon() {
 /// representation; the process stays running and listed (flagged, not filtered).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn patch_mutes_and_unmutes() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared
         .spawn_background("sleep 5".into(), None)
         .expect("spawn");
@@ -165,7 +162,7 @@ async fn patch_mutes_and_unmutes() {
 /// the loop. On an already-background process it is an idempotent 200 no-op.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn patch_background_requests_the_handoff() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let fg = shared.register_foreground("cargo build".into(), Some(1234), None);
     let app = test_server(&shared).await;
 
@@ -205,7 +202,7 @@ async fn patch_background_requests_the_handoff() {
 /// handoff to ride, and an unknown id is 404.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn patch_rejections() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared
         .spawn_background("sleep 5".into(), None)
         .expect("spawn");
@@ -236,7 +233,7 @@ async fn patch_rejections() {
 /// exit notification fires like any other exit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delete_kills_a_running_process() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared
         .spawn_background("sleep 30".into(), None)
         .expect("spawn");
@@ -264,7 +261,7 @@ async fn delete_kills_a_running_process() {
 /// patches it — and is a clean no-op when nothing is mid-tool.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn client_background_resolves_the_foreground_process() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let client = test_client(&shared).await;
 
     assert_eq!(
@@ -287,7 +284,7 @@ async fn client_background_resolves_the_foreground_process() {
 /// backgrounded command, and a client holding the process row can jump to the entry.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_process_carries_the_call_that_spawned_it() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared
         .spawn_background("sleep 5".into(), Some("toolu_abc".into()))
         .expect("spawn");
@@ -312,7 +309,7 @@ async fn a_process_carries_the_call_that_spawned_it() {
 /// process's exit notification on the `p#<n>` slot.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_watch_hit_reaches_the_inbox_as_a_notification() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared
         .spawn_background("sleep 0.2; echo ready to serve; sleep 5".into(), None)
         .expect("spawn");

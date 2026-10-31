@@ -31,8 +31,7 @@ use super::render_context::{OutputMode, RenderContext};
 use super::state::InteractiveState;
 use super::theme::InteractiveTheme;
 use crate::log::{
-    Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, Timestamp, ToolCall,
-    WireState,
+    Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, ToolCall, WireState,
 };
 use serde_json::{Value, json};
 

@@ -28,36 +28,12 @@ fn retain_completion(name: &str, input: Value) -> Completion {
 
 /// A `Completion` whose assistant turn made every call in `calls`, in parallel.
 fn calls_completion(calls: Vec<ToolCall>) -> Completion {
-    Completion {
-        receipt: Default::default(),
-        assistant: Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(vec![], vec![], calls),
-            excluded: None,
-        },
-        id: None,
-        model: "test".into(),
-        finish: None,
-        usage: Usage {
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-        },
-        cache_miss: None,
-        failure_class: crate::api::FailureClass::Transient,
-    }
+    Completion::new(AssistantOutput::from_legacy_messages(vec![], vec![], calls))
 }
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
     use crate::log::Timestamp;
-    LogEntry {
-        seq,
-        turn: 0,
-        at: Timestamp(1000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload).with_at(Timestamp(1000 + seq))
 }
 
 mod ask;

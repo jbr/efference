@@ -8,43 +8,31 @@ use crate::log::{
 use serde_json::json;
 
 fn entry(seq: u64, turn: u32, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn,
-        at: Timestamp(1000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(turn)
+        .with_at(Timestamp(1000 + seq))
 }
 
 /// A small log exercising the three core payloads: a user turn, an assistant
 /// turn with prose + a tool call, and that call's raw result.
 fn sample_log() -> Vec<LogEntry> {
     vec![
-        entry(
-            0,
-            0,
-            Payload::User(vec![ContentBlock::Text("hello".into())]),
-        ),
+        entry(0, 0, Payload::user("hello")),
         entry(
             1,
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text("let me check".into())],
-                    // Insertion order == sorted order, so the expected-bytes
-                    // assertion is robust whether serde_json is BTreeMap- or
-                    // (under `preserve_order`) IndexMap-backed.
-                    vec![ToolCall::new(
-                        "bash",
-                        "toolu_1",
-                        json!({ "command": "ls", "timeout": 5 }),
-                    )],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("let me check".into())],
+                // Insertion order == sorted order, so the expected-bytes
+                // assertion is robust whether serde_json is BTreeMap- or
+                // (under `preserve_order`) IndexMap-backed.
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_1",
+                    json!({ "command": "ls", "timeout": 5 }),
+                )],
+            )),
         ),
         entry(
             2,
@@ -457,8 +445,8 @@ fn record_only_partial_projects_to_nothing() {
     log.push(entry(
         3,
         2,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
+        Payload::record_only(
+            AssistantOutput::from_legacy_messages(
                 vec![ContentBlock::Thinking {
                     text: "eleven thousand characters of thinking".into(),
                     signature: "".into(),
@@ -466,21 +454,19 @@ fn record_only_partial_projects_to_nothing() {
                 vec![],
                 vec![],
             ),
-            excluded: Some(crate::log::Exclusion::Upstream(
+            crate::log::Exclusion::Upstream(
                 "stream ended before finalizing (no message_stop)".into(),
-            )),
-        },
+            ),
+        ),
     ));
     // An empty one too — the durable record of a pre-stream request failure.
     log.push(entry(
         4,
         3,
-        Payload::Assistant {
-            output: AssistantOutput::Messages(vec![]),
-            excluded: Some(crate::log::Exclusion::Upstream(
-                "upstream API returned 429: rate limited".into(),
-            )),
-        },
+        Payload::record_only(
+            AssistantOutput::Messages(vec![]),
+            crate::log::Exclusion::Upstream("upstream API returned 429: rate limited".into()),
+        ),
     ));
     let with_partials = serde_json::to_string(&project(&log)).unwrap();
     assert_eq!(clean, with_partials);
@@ -503,12 +489,10 @@ fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
     let appended = entry(
         3,
         2,
-        Payload::Assistant {
-            output: AssistantOutput::Messages(vec![]),
-            excluded: Some(crate::log::Exclusion::Upstream(
-                failure.record_text().into(),
-            )),
-        },
+        Payload::record_only(
+            AssistantOutput::Messages(vec![]),
+            crate::log::Exclusion::Upstream(failure.record_text().into()),
+        ),
     );
 
     let line = serde_json::to_string(&appended).unwrap();
@@ -537,26 +521,23 @@ fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
 #[test]
 fn thinking_turn_matches_expected_wire_bytes() {
     let log = vec![
-        entry(0, 1, Payload::User(vec![ContentBlock::Text("go".into())])),
+        entry(0, 1, Payload::user("go")),
         entry(
             1,
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![
-                        ContentBlock::Thinking {
-                            text: "let me weigh it".into(),
-                            signature: "SiG==".into(),
-                        },
-                        ContentBlock::RedactedThinking {
-                            data: "ENC==".into(),
-                        },
-                    ],
-                    vec![ContentBlock::Text("running it".into())],
-                    vec![ToolCall::new("bash", "toolu_1", json!({ "command": "ls" }))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![
+                    ContentBlock::Thinking {
+                        text: "let me weigh it".into(),
+                        signature: "SiG==".into(),
+                    },
+                    ContentBlock::RedactedThinking {
+                        data: "ENC==".into(),
+                    },
+                ],
+                vec![ContentBlock::Text("running it".into())],
+                vec![ToolCall::new("bash", "toolu_1", json!({ "command": "ls" }))],
+            )),
         ),
     ];
     let wire = serde_json::to_string(&project(&log)).unwrap();
@@ -663,18 +644,15 @@ fn resumed_projects_a_notice_after_the_prefix() {
 fn a_pending_batch_notice_follows_its_results() {
     let call = |id: &str| ToolCall::new("bash", id, json!({ "command": "ls" }));
     let mut log = vec![
-        entry(0, 1, Payload::User(vec![ContentBlock::Text("go".into())])),
+        entry(0, 1, Payload::user("go")),
         entry(
             1,
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call("a"), call("b")],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call("a"), call("b")],
+            )),
         ),
         entry(
             2,
@@ -723,11 +701,7 @@ fn a_pending_batch_notice_follows_its_results() {
 #[test]
 fn a_rolled_back_range_is_not_projected() {
     let mut log = sample_log();
-    log.push(entry(
-        3,
-        2,
-        Payload::User(vec![ContentBlock::Text("next".into())]),
-    ));
+    log.push(entry(3, 2, Payload::user("next")));
     let before = project(&log);
     let before_bytes = serde_json::to_string(&before).unwrap();
     let before_turns = project_semantic(&log);
@@ -736,18 +710,15 @@ fn a_rolled_back_range_is_not_projected() {
     log.push(entry(
         4,
         2,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![ToolCall::new(
-                    "bash",
-                    "toolu_2",
-                    json!({ "command": "rm x" }),
-                )],
-            ),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![],
+            vec![ToolCall::new(
+                "bash",
+                "toolu_2",
+                json!({ "command": "rm x" }),
+            )],
+        )),
     ));
     log.push(entry(
         5,
@@ -792,11 +763,7 @@ fn a_rolled_back_range_is_not_projected() {
 
     // A later range skips independently of the first, and a rolled-back mark does not
     // fold anything.
-    log.push(entry(
-        7,
-        2,
-        Payload::User(vec![ContentBlock::Text("again".into())]),
-    ));
+    log.push(entry(7, 2, Payload::user("again")));
     log.push(entry(
         8,
         3,

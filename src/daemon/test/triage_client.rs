@@ -11,16 +11,10 @@ use std::sync::atomic::AtomicUsize;
 use trillium_tokio::Swansong;
 
 fn endpoint(addr: std::net::SocketAddr) -> crate::api::Endpoint {
-    crate::api::Endpoint {
-        provider: crate::log::Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    }
+    crate::api::Endpoint::at(
+        crate::log::Provider::Anthropic,
+        format!("http://{addr}/v1/messages"),
+    )
 }
 
 fn state(session: &Session) -> Value {
@@ -94,7 +88,7 @@ async fn a_separate_triage_clients_429_shows_on_its_own_topic() {
 /// zero or a copy of the agent's.
 #[test]
 fn a_shared_triage_publishes_no_triage_readings() {
-    let (session, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (session, _rx) = Session::in_memory();
     session.record_triage(true, read_of(0));
     let v = state(&session);
     assert!(v["triage_upstream_failure"].is_null());
@@ -108,7 +102,7 @@ fn a_shared_triage_publishes_no_triage_readings() {
 /// not move.
 #[test]
 fn the_triage_lineage_has_its_own_cold_streak() {
-    let (session, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (session, _rx) = Session::in_memory();
     session.set_triage_client((upstream_failure_state(), crate::api::plan_state()));
     let streak = |session: &Session| state(session)["usage"]["triage_cold_streak"].clone();
     assert_eq!(streak(&session), 0);

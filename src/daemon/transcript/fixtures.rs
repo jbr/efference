@@ -21,7 +21,7 @@ impl Fixture {
 
     /// A user turn as a submission from `source` (`None`: the operator).
     pub(super) fn user(&mut self, text: &str, source: Option<&str>) -> Seq {
-        self.submitted(Payload::User(vec![ContentBlock::Text(text.into())]), source)
+        self.submitted(Payload::user(text), source)
     }
 
     /// `payload` as a submission from `source`: a user turn or an `ask`'s reply.
@@ -38,7 +38,7 @@ impl Fixture {
         self.0
             .append_submission(
                 1,
-                Payload::User(vec![ContentBlock::Text(text.into())]),
+                Payload::user(text),
                 Some(submission_id.to_string()),
                 source.map(str::to_string),
             )
@@ -49,12 +49,7 @@ impl Fixture {
     /// `source` (`agent/landing.rs`).
     pub(super) fn steer(&mut self, text: &str, source: Option<&str>) -> Seq {
         self.0
-            .append_submission(
-                1,
-                Payload::User(vec![ContentBlock::Text(text.into())]),
-                None,
-                source.map(str::to_string),
-            )
+            .append_submission(1, Payload::user(text), None, source.map(str::to_string))
             .unwrap()
     }
 
@@ -68,10 +63,7 @@ pub(super) fn turn(text: &str, calls: Vec<ToolCall>) -> Payload {
         "" => vec![],
         text => vec![ContentBlock::Text(text.into())],
     };
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(vec![], text, calls),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(vec![], text, calls))
 }
 
 pub(super) fn bash(id: &str, command: &str, intent: &str) -> ToolCall {

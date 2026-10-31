@@ -1,38 +1,15 @@
 use super::*;
-use crate::api::{Completion, Usage};
+use crate::api::Completion;
 use crate::config::Config;
-use crate::log::Payload;
+use crate::config::testing::ConfigFixture;
 use std::path::Path;
 
-/// Parse a config from TOML for a test that needs one as an *input* — the operator's own
-/// vocabulary, checked by the real parser.
-fn role(toml: &str) -> Config {
-    Config::from_toml(toml).expect("valid config")
-}
-
 fn spot_completion(name: &str, input: Value) -> Completion {
-    Completion {
-        receipt: Default::default(),
-        assistant: Payload::Assistant {
-            output: crate::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![ToolCall::new(name, "s", input)],
-            ),
-            excluded: None,
-        },
-        id: None,
-        model: "test".into(),
-        finish: None,
-        usage: Usage {
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-        },
-        cache_miss: None,
-        failure_class: crate::api::FailureClass::Transient,
-    }
+    Completion::new(crate::log::AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![],
+        vec![ToolCall::new(name, "s", input)],
+    ))
 }
 
 #[test]
@@ -249,16 +226,12 @@ fn an_oversized_description_and_schema_are_clipped_at_a_char_boundary() {
 
 #[test]
 fn render_context_includes_scope_and_watch_for() {
-    let role = role(
-        r#"
-        scope = "Fix the build."
-        watch-for = ["Don't touch the deploy keys."]
-
-        [paths]
-        "." = true
-        "/refs" = { read = true }
-        "#,
-    );
+    let role = ConfigFixture::new()
+        .with_scope("Fix the build.")
+        .with_watch_for("Don't touch the deploy keys.")
+        .with_path(".", true, true)
+        .with_path("/refs", true, false)
+        .build();
     let ctx = render_context(
         &role,
         Some(&crate::policy::Directories::at(Path::new("/work/repo"))),
@@ -302,7 +275,10 @@ fn render_context_states_relative_path_resolution() {
 /// worktree: the real path sits under the denied `.efference/` (docs/worktrees.md).
 #[test]
 fn a_worktree_session_is_reviewed_as_its_project_counterpart() {
-    let role = Config::from_toml("[paths]\n\".\" = true\n\".efference\" = false\n").unwrap();
+    let role = ConfigFixture::new()
+        .with_path(".", true, true)
+        .with_path(".efference", false, false)
+        .build();
     let dirs = crate::policy::Directories::new(
         "/work/proj".into(),
         "/work/proj/.efference/worktrees/w".into(),
@@ -327,12 +303,9 @@ fn a_worktree_session_is_reviewed_as_its_project_counterpart() {
 /// grant (`../fs-mcp`) arrives in.
 #[test]
 fn render_context_resolves_parent_relative_grants() {
-    let role = role(
-        r#"
-        [paths]
-        "../sibling" = true
-        "#,
-    );
+    let role = ConfigFixture::new()
+        .with_path("../sibling", true, true)
+        .build();
     let ctx = render_context(
         &role,
         Some(&crate::policy::Directories::at(Path::new("/work/repo"))),
@@ -382,12 +355,7 @@ fn render_context_names_the_scratch_alias() {
 /// resolves elsewhere and the move reads as leaving the perimeter.
 #[test]
 fn render_context_resolves_grants_against_the_given_cwd_not_the_process() {
-    let role = role(
-        r#"
-        [paths]
-        "." = true
-        "#,
-    );
+    let role = ConfigFixture::new().with_path(".", true, true).build();
     let theirs = render_context(
         &role,
         Some(&crate::policy::Directories::at(Path::new(
@@ -452,12 +420,7 @@ fn persona_says_autonomous_mode_does_not_skip_the_spotter() {
 /// directory the caller never named.
 #[test]
 fn render_context_without_a_cwd_names_no_directory() {
-    let role = role(
-        r#"
-        [paths]
-        "." = true
-        "#,
-    );
+    let role = ConfigFixture::new().with_path(".", true, true).build();
     let ctx = render_context(&role, None, None);
     assert!(ctx.contains("- working directory: unknown\n"), "{ctx}");
     assert!(ctx.contains("  - . (read, write)\n"), "{ctx}");
@@ -516,13 +479,10 @@ fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
 #[test]
 fn a_bash_move_states_where_its_paths_resolve() {
     let cwd = Path::new("/work/proj");
-    let role = role(
-        r#"
-[paths]
-"." = true
-".efference" = false
-"#,
-    );
+    let role = ConfigFixture::new()
+        .with_path(".", true, true)
+        .with_path(".efference", false, false)
+        .build();
     let call = ToolCall::new(
         bash::NAME,
         "c1",

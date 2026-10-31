@@ -57,6 +57,20 @@ impl Session {
         Self::with_role(cwd, log, LoadedConfig::default())
     }
 
+    /// [`Session::new`] over an empty in-memory log, rooted at the test process's working
+    /// directory: for a test whose subject is neither the session's directory nor its log.
+    #[cfg(test)]
+    pub(crate) fn in_memory() -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        Self::from_log(Log::in_memory())
+    }
+
+    /// [`Session::new`] over `log`, rooted at the test process's working directory: a
+    /// session whose log a test filled or opened first.
+    #[cfg(test)]
+    pub(crate) fn from_log(log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        Self::new(std::env::current_dir().expect("a working directory"), log)
+    }
+
     /// Build the shared state under a resolved role and hand back the turn-inbox
     /// receiver for the loop.
     pub fn with_role(

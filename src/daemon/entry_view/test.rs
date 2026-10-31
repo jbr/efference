@@ -4,14 +4,10 @@ use super::*;
 use crate::log::{ContentBlock, ContentElision, Timestamp, Triaged, WireState};
 
 fn entry(seq: u64, submission_id: Option<&str>, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(1_700_000_000_000),
-        submission_id: submission_id.map(String::from),
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(1_700_000_000_000))
+        .with_submission_id(submission_id.map(String::from))
 }
 
 fn result_with_images(images: Vec<ResultImage>) -> Payload {
@@ -30,34 +26,23 @@ fn result_with_images(images: Vec<ResultImage>) -> Payload {
 fn view_of_an_image_free_entry_is_the_derived_bytes() {
     // Every optional `LogEntry` field set somewhere below: an unset one serializes
     // to nothing on both paths, so a case without it cannot catch its omission.
-    let mut sourced = entry(
-        4,
-        Some("sub-4"),
-        Payload::User(vec![ContentBlock::Text("from a script".into())]),
-    );
+    let mut sourced = entry(4, Some("sub-4"), Payload::user("from a script"));
     sourced.source = Some("agent[abc]".into());
     let cases = [
-        entry(
-            0,
-            None,
-            Payload::User(vec![ContentBlock::Text("hi".into())]),
-        ),
+        entry(0, None, Payload::user("hi")),
         sourced,
         entry(
             1,
             Some("sub-1"),
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text("ok".into())],
-                    vec![ToolCall::new(
-                        "bash",
-                        "toolu_1",
-                        serde_json::json!({ "command": "ls" }),
-                    )],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("ok".into())],
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_1",
+                    serde_json::json!({ "command": "ls" }),
+                )],
+            )),
         ),
         entry(2, None, result_with_images(Vec::new())),
         entry(

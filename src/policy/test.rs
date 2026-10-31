@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::testing::ConfigFixture;
 
 /// The review-level dial (docs/permissions.md) round-trips through its
 /// `u8` ordinal (atomic storage) and its wire token (`/state`, `/review-level`, CLI), and both
@@ -44,8 +45,8 @@ fn review_level_round_trips_and_fails_safe() {
     assert_eq!(ReviewLevel::parse("nonsense"), None);
 }
 
-/// Parse a config from TOML for a test that needs one as an *input* — the operator's own
-/// vocabulary, checked by the real parser rather than assembled field by field.
+/// Parse a config from TOML, for an input holding entries [`ConfigFixture`] does not
+/// write (a `[context]` listing).
 fn role(toml: &str) -> Config {
     Config::from_toml(toml).expect("valid config")
 }
@@ -54,15 +55,12 @@ fn role(toml: &str) -> Config {
 /// recoverable programs (`cargo`, `rg`), sub-verb for the irreversible frontier
 /// (`git diff`/`status`, never `git push`).
 fn sample_role() -> Config {
-    role(
-        r#"
-        [commands]
-        cargo = true
-        rg = true
-        "git diff" = true
-        "git status" = true
-        "#,
-    )
+    ConfigFixture::new()
+        .with_command("cargo", CommandStance::Clear)
+        .with_command("rg", CommandStance::Clear)
+        .with_command("git diff", CommandStance::Clear)
+        .with_command("git status", CommandStance::Clear)
+        .build()
 }
 
 fn bash_call(command: &str) -> ToolCall {
@@ -112,23 +110,17 @@ mod tools;
 /// no sub-deny, so a read-only grant can only restrict where the writable cwd grant
 /// doesn't already reach (see [`path_granted`]).
 fn fs_role() -> Config {
-    role(
-        r#"
-        [tools]
-        efference = { enabled = true }
-        "efference.read" = { granted = true }
-        "efference.list" = { granted = true }
-        "efference.search" = { granted = true }
-        "efference.write" = { granted = true }
-        "efference.edit" = { granted = true }
-        "efference.undo_edit" = { granted = true }
-        "efference.kill_process" = { granted = true }
-
-        [paths]
-        "." = true
-        "/refs" = { read = true }
-        "#,
-    )
+    ConfigFixture::new()
+        .with_tool("read")
+        .with_tool("list")
+        .with_tool("search")
+        .with_tool("write")
+        .with_tool("edit")
+        .with_tool("undo_edit")
+        .with_tool("kill_process")
+        .with_path(".", true, true)
+        .with_path("/refs", true, false)
+        .build()
 }
 
 fn structured(role: &Config, c: &ToolCall) -> Verdict {
@@ -172,15 +164,10 @@ fn worktree_session() -> Directories {
 /// clears it (docs/permissions.md).
 #[test]
 fn a_worktree_write_clears_under_the_project_grant() {
-    let role = role(
-        r#"
-        [tools]
-        efference = { enabled = true }
-        "efference.write" = { granted = true }
-        [paths]
-        "." = { write = true }
-        "#,
-    );
+    let role = ConfigFixture::new()
+        .with_tool("write")
+        .with_path(".", false, true)
+        .build();
     let call = path_call("write", "src/x.rs");
     assert_eq!(classify(&worktree_session(), &role, &call), Verdict::Clear);
 }
@@ -188,16 +175,11 @@ fn a_worktree_write_clears_under_the_project_grant() {
 /// A narrower project-level deny governs the same subtree seen from the worktree.
 #[test]
 fn a_project_deny_holds_inside_a_worktree() {
-    let role = role(
-        r#"
-        [tools]
-        efference = { enabled = true }
-        "efference.write" = { granted = true }
-        [paths]
-        "." = { write = true }
-        "secrets" = false
-        "#,
-    );
+    let role = ConfigFixture::new()
+        .with_tool("write")
+        .with_path(".", false, true)
+        .with_path("secrets", false, false)
+        .build();
     let denied = path_call("write", "secrets/k");
     let allowed = path_call("write", "src/k");
     assert_eq!(classify(&worktree_session(), &role, &denied), Verdict::Gate);
@@ -211,15 +193,10 @@ fn a_project_deny_holds_inside_a_worktree() {
 /// worktree is judged as the project path.
 #[test]
 fn a_plain_session_reaches_any_worktree() {
-    let role = role(
-        r#"
-        [tools]
-        efference = { enabled = true }
-        "efference.write" = { granted = true }
-        [paths]
-        "." = { write = true }
-        "#,
-    );
+    let role = ConfigFixture::new()
+        .with_tool("write")
+        .with_path(".", false, true)
+        .build();
     let call = path_call("write", "/p/.efference/worktrees/other/src/x.rs");
     assert_eq!(
         classify(&Directories::at(Path::new("/p")), &role, &call),
@@ -230,15 +207,10 @@ fn a_plain_session_reaches_any_worktree() {
 /// A grant key resolves against the project, not the working directory.
 #[test]
 fn a_grant_key_resolves_against_the_project() {
-    let role = role(
-        r#"
-        [tools]
-        efference = { enabled = true }
-        "efference.list" = { granted = true }
-        [paths]
-        "../sib" = { read = true }
-        "#,
-    );
+    let role = ConfigFixture::new()
+        .with_tool("list")
+        .with_path("../sib", true, false)
+        .build();
     let call = path_call("list", "/sib/a");
     assert_eq!(classify(&worktree_session(), &role, &call), Verdict::Clear);
 }

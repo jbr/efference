@@ -132,7 +132,7 @@ fn unset_metadata_fields_are_skipped() {
     let header: LogHeader = serde_json::from_str(&line).unwrap();
     assert_eq!(header.metadata(), Some(&metadata));
     assert_eq!(
-        serde_json::from_str::<LogHeader>(HEADER)
+        serde_json::from_str::<LogHeader>(&bare_header())
             .unwrap()
             .metadata(),
         None
@@ -220,22 +220,29 @@ fn rejects_a_first_line_that_is_not_an_object() {
 #[test]
 fn rejects_an_unknown_future_version() {
     let path = temp_path("future");
+    let future = u64::from(LogHeader::VERSION) + 1;
     std::fs::write(
         &path,
         format!(
-            "{{\"format\":\"{}\",\"version\":8,\"metadata\":null}}\n",
+            "{{\"format\":\"{}\",\"version\":{future},\"metadata\":null}}\n",
             LogHeader::FORMAT
         ),
     )
     .unwrap();
 
     match load_error(&path) {
-        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, 8),
+        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, future),
         other => panic!("expected an unsupported version, got {other:?}"),
     }
     let message = load_error(&path).to_string();
-    assert!(message.contains("unsupported log version 8"), "{message}");
-    assert!(message.contains("reads version 7"), "{message}");
+    assert!(
+        message.contains(&format!("unsupported log version {future}")),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("reads version {}", LogHeader::VERSION)),
+        "{message}"
+    );
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -246,10 +253,11 @@ fn rejects_an_unknown_future_version() {
 #[test]
 fn an_unsupported_version_outranks_its_metadata() {
     let path = temp_path("future-metadata");
+    let future = u64::from(LogHeader::VERSION) + 2;
     std::fs::write(
         &path,
         format!(
-            "{{\"format\":\"{}\",\"version\":9,\"metadata\":{{\"id\":7,\"unknown\":true}}}}\n",
+            "{{\"format\":\"{}\",\"version\":{future},\"metadata\":{{\"id\":7,\"unknown\":true}}}}\n",
             LogHeader::FORMAT
         ),
     )
@@ -257,7 +265,7 @@ fn an_unsupported_version_outranks_its_metadata() {
 
     let error = load_error(&path);
     assert!(
-        matches!(error, LoadError::UnsupportedVersion { version: 9, .. }),
+        matches!(error, LoadError::UnsupportedVersion { version, .. } if version == future),
         "the version is the reason to stop: {error:?}"
     );
 
@@ -332,7 +340,7 @@ fn create_flushes_the_header_before_returning() {
 
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
-        format!("{HEADER}\n"),
+        format!("{}\n", bare_header()),
         "the header line is on disk while the log is still open"
     );
     assert!(load(&path).unwrap().is_empty());

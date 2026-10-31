@@ -10,14 +10,7 @@ impl Screenplay<'_> {
     pub(crate) fn commit(&mut self, payload: Payload) -> &mut Self {
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.event(TuiEvent::Entry(LogEntry {
-            seq,
-            turn: 1,
-            at: Timestamp(0),
-            submission_id: None,
-            source: None,
-            payload,
-        }))
+        self.event(TuiEvent::Entry(LogEntry::new(seq, payload).with_turn(1)))
     }
 
     /// Replay recorded log entries through the production event handler — the
@@ -46,7 +39,7 @@ impl Screenplay<'_> {
     /// A committed user turn (markdown prose), carrying no submission id — the shape of a turn
     /// submitted by some other client.
     pub(crate) fn user(&mut self, text: &str) -> &mut Self {
-        self.commit(Payload::User(vec![ContentBlock::Text(text.into())]))
+        self.commit(Payload::user(text))
     }
 
     /// The daemon committing the **oldest pending echo**: a `User` entry carrying that
@@ -62,14 +55,12 @@ impl Screenplay<'_> {
             .expect("a pending turn to commit");
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.event(TuiEvent::Entry(LogEntry {
-            seq,
-            turn: 1,
-            at: Timestamp(0),
-            submission_id: Some(pending.submission_id),
-            source: pending.source,
-            payload: Payload::User(vec![ContentBlock::Text(pending.text)]),
-        }))
+        self.event(TuiEvent::Entry(
+            LogEntry::new(seq, Payload::user(pending.text))
+                .with_turn(1)
+                .with_submission_id(Some(pending.submission_id))
+                .with_source(pending.source),
+        ))
     }
 
     /// The daemon delivering the **oldest pending echo** as the reply to an `ask`: a
@@ -84,32 +75,32 @@ impl Screenplay<'_> {
             .expect("a pending turn to deliver");
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.event(TuiEvent::Entry(LogEntry {
-            seq,
-            turn: 1,
-            at: Timestamp(0),
-            submission_id: Some(pending.submission_id),
-            source: source.map(str::to_string),
-            payload: Payload::tool_result(call_id, RawResult::text(pending.text), WireState::Raw),
-        }))
+        self.event(TuiEvent::Entry(
+            LogEntry::new(
+                seq,
+                Payload::tool_result(call_id, RawResult::text(pending.text), WireState::Raw),
+            )
+            .with_turn(1)
+            .with_submission_id(Some(pending.submission_id))
+            .with_source(source.map(str::to_string)),
+        ))
     }
 
     /// A committed assistant turn: markdown prose plus zero or more tool calls.
     pub(crate) fn assistant(&mut self, text: &str, calls: Vec<ToolCall>) -> &mut Self {
-        self.commit(Payload::Assistant {
-            output: crate::log::AssistantOutput::from_legacy_messages(
+        self.commit(Payload::assistant(
+            crate::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![ContentBlock::Text(text.into())],
                 calls,
             ),
-            excluded: None,
-        })
+        ))
     }
 
     /// A committed assistant turn that did extended thinking first.
     pub(crate) fn assistant_thinking(&mut self, thinking: &str, text: &str) -> &mut Self {
-        self.commit(Payload::Assistant {
-            output: crate::log::AssistantOutput::from_legacy_messages(
+        self.commit(Payload::assistant(
+            crate::log::AssistantOutput::from_legacy_messages(
                 vec![ContentBlock::Thinking {
                     text: thinking.into(),
                     signature: String::new(),
@@ -117,8 +108,7 @@ impl Screenplay<'_> {
                 vec![ContentBlock::Text(text.into())],
                 vec![],
             ),
-            excluded: None,
-        })
+        ))
     }
 
     /// A committed tool exchange in one line: the assistant's `bash`-shaped call
@@ -158,18 +148,15 @@ impl Screenplay<'_> {
         name: &str,
         arguments: &str,
     ) -> &mut Self {
-        self.commit(Payload::Assistant {
-            output: crate::log::AssistantOutput::Responses(vec![
-                crate::log::ResponsesOutputItem::FunctionCall {
-                    id: Some(format!("fc_{call_id}")),
-                    call_id: CallId(call_id.into()),
-                    name: name.into(),
-                    arguments: arguments.into(),
-                    status: Some("completed".into()),
-                },
-            ]),
-            excluded: None,
-        });
+        self.commit(Payload::assistant(crate::log::AssistantOutput::Responses(
+            vec![crate::log::ResponsesOutputItem::FunctionCall {
+                id: Some(format!("fc_{call_id}")),
+                call_id: CallId(call_id.into()),
+                name: name.into(),
+                arguments: arguments.into(),
+                status: Some("completed".into()),
+            }],
+        )));
         self.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting))
     }
 

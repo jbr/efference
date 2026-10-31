@@ -625,6 +625,8 @@ mod request_options;
 mod reservation;
 pub(crate) mod responses;
 mod stages;
+#[cfg(test)]
+mod testing;
 mod thinking;
 mod truncation;
 

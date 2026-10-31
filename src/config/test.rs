@@ -19,5 +19,6 @@ fn parse_str(text: &str) -> Config {
 
 mod diff;
 mod file;
+mod fixture;
 mod parse;
 mod preamble;

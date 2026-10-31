@@ -3,18 +3,13 @@ use crate::log::{AssistantOutput, Keep, RawResult, Resumed, Summary, Timestamp, 
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(1_700_000_000_000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(1_700_000_000_000 + seq))
 }
 
 fn user(seq: u64, text: &str) -> LogEntry {
-    entry(seq, Payload::User(vec![ContentBlock::Text(text.into())]))
+    entry(seq, Payload::user(text))
 }
 
 fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
@@ -25,21 +20,18 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     };
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(vec![], text, calls),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(vec![], text, calls)),
     )
 }
 
 fn triaged(seq: u64, call: &str, raw: RawResult, note: &str) -> LogEntry {
     entry(
         seq,
-        Payload::ToolResult {
-            call_id: call.into(),
+        Payload::tool_result(
+            call,
             raw,
-            wire: WireState::Triaged(Triaged::new(Keep::All).with_note(note)),
-        },
+            WireState::Triaged(Triaged::new(Keep::All).with_note(note)),
+        ),
     )
 }
 
@@ -101,11 +93,7 @@ fn a_verdict_resolves_a_pending_result_and_resumption_skips_are_omitted() {
         assistant(1, "", vec![read_call("c1")]),
         entry(
             2,
-            Payload::ToolResult {
-                call_id: "c1".into(),
-                raw: RawResult::text("x"),
-                wire: WireState::Pending,
-            },
+            Payload::tool_result("c1", RawResult::text("x"), WireState::Pending),
         ),
         entry(
             3,
@@ -141,7 +129,7 @@ fn a_triage_mark_renders_only_in_a_triage_digest() {
     use crate::log::Audience;
     use crate::project::Reader;
     let log = vec![
-        entry(0, Payload::User(vec![ContentBlock::Text("first".into())])),
+        entry(0, Payload::user("first")),
         entry(
             1,
             Payload::Summary(
@@ -167,11 +155,7 @@ fn a_triage_mark_renders_only_in_a_triage_digest() {
 fn ask_reply(seq: u64, call: &str, text: &str, answered: bool) -> LogEntry {
     let mut e = entry(
         seq,
-        Payload::ToolResult {
-            call_id: call.into(),
-            raw: RawResult::text(text),
-            wire: WireState::Raw,
-        },
+        Payload::tool_result(call, RawResult::text(text), WireState::Raw),
     );
     if answered {
         e.submission_id = Some("s1".into());
@@ -290,13 +274,13 @@ fn verbatim_renders_each_call_in_full_with_its_kept_lines() {
         assistant(2, "Looking.", vec![read_call("c1")]),
         entry(
             3,
-            Payload::ToolResult {
-                call_id: "c1".into(),
-                raw: RawResult::text("pub enum E {\n    A,\n}\n\nfn other() {}"),
-                wire: WireState::Triaged(
+            Payload::tool_result(
+                "c1",
+                RawResult::text("pub enum E {\n    A,\n}\n\nfn other() {}"),
+                WireState::Triaged(
                     Triaged::new(Keep::Ranges(vec![(1, 3)])).with_note("Defined in a.rs."),
                 ),
-            },
+            ),
         ),
         assistant(
             4,

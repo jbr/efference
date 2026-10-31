@@ -387,10 +387,10 @@ pub const DEFAULT_PATH: &str = "efference.toml";
 
 impl Config {
     /// Parse a config from TOML text — decode, then validate — labelling diagnostics
-    /// with a stand-in path. The same path a file takes through `load`, exposed so a
-    /// config used as an *input* (a policy or spotter test, a scripted scenario) is
-    /// written in the vocabulary an operator writes and checked by the parser that
-    /// reads theirs, rather than assembled field by field around it.
+    /// with a stand-in path. The same path a file takes through `load`, for text that
+    /// is not in a file: the test fixture builder (`config::testing`) reads the document
+    /// it assembles through it, and a test whose subject is how a file is spelled passes
+    /// its TOML here directly.
     pub fn from_toml(text: &str) -> Result<Self, LoadError> {
         parse(Path::new("<inline>"), text)
     }
@@ -428,6 +428,8 @@ pub(crate) fn try_parse_text(text: &str) -> Result<Config, LoadError> {
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+pub(crate) mod testing;
 
 mod edit;
 mod file;

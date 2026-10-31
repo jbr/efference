@@ -301,9 +301,9 @@ pub(super) async fn land(
         turn += 1;
         shared.append(
             turn,
-            Payload::User(vec![ContentBlock::Text(format!(
+            Payload::user(format!(
                 "[on backgrounding the command, the user says:] {note}"
-            ))]),
+            )),
         )?;
     }
     *turn_at = turn;
@@ -329,11 +329,7 @@ pub(super) fn after_landing(
         // decider's messages do (docs/permissions.md). The trajectory goes on:
         // re-project and let the model respond.
         *turn += 1;
-        shared.append_sourced(
-            *turn,
-            Payload::User(vec![ContentBlock::Text(message)]),
-            source,
-        )?;
+        shared.append_sourced(*turn, Payload::user(message), source)?;
     }
     // The juncture after the triage (docs/control-channel.md): an interrupt
     // pressed during the triage or a held triage ended it with the latch still

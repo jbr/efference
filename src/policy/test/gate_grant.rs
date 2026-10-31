@@ -94,17 +94,11 @@ fn a_batched_read_offers_one_directory_or_none() {
 /// A target under a no-access grant offers nothing: the deny is an answer already given.
 #[test]
 fn a_denied_path_offers_nothing() {
-    let role = role(
-        r#"
-        [tools]
-        efference = { enabled = true }
-        "efference.read" = { granted = true }
-
-        [paths]
-        "." = true
-        ".efference" = false
-        "#,
-    );
+    let role = ConfigFixture::new()
+        .with_tool("read")
+        .with_path(".", true, true)
+        .with_path(".efference", false, false)
+        .build();
     assert_eq!(
         offered(
             &role,
@@ -137,7 +131,7 @@ fn a_structured_tool_hold_offers_the_tool() {
 /// change clears it.
 #[test]
 fn a_tool_and_a_path_together_offer_nothing() {
-    let role = role("[paths]\n\".\" = true\n");
+    let role = ConfigFixture::new().with_path(".", true, true).build();
     assert_eq!(
         offered(
             &role,
@@ -152,7 +146,9 @@ fn a_tool_and_a_path_together_offer_nothing() {
 /// clear grant replaces; the shorter `git` would leave the more specific key governing.
 #[test]
 fn a_commands_gate_offers_the_prefix_that_clears() {
-    let role = role("[commands]\n\"git push\" = \"gate\"\n");
+    let role = ConfigFixture::new()
+        .with_command("git push", CommandStance::Gate)
+        .build();
     let grant = offered(
         &role,
         &ProbeLedger::default(),
@@ -195,12 +191,14 @@ fn a_bash_hold_offers_the_shortest_prefix_the_evidence_supports() {
 #[test]
 fn a_deny_and_an_unclearable_command_offer_nothing() {
     let ledger = ProbeLedger::default();
-    let deny = role("[commands]\n\"git push\" = \"deny\"\n");
+    let deny = ConfigFixture::new()
+        .with_command("git push", CommandStance::Deny)
+        .build();
     assert_eq!(
         offered(&deny, &ledger, &bash_call("git push origin main")),
         None
     );
-    let role = role("[paths]\n\".\" = true\n");
+    let role = ConfigFixture::new().with_path(".", true, true).build();
     for command in ["cd /elsewhere/codex && rg -n foo", "rg -n foo | head -20"] {
         assert_eq!(
             offered(&role, &ledger, &bash_call(command)),

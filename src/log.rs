@@ -17,6 +17,7 @@ pub mod attachment;
 mod cold;
 mod completions;
 mod config_edit;
+mod construct;
 pub mod context;
 mod exclusion;
 mod names;
@@ -412,23 +413,6 @@ pub fn latest_title(entries: &[LogEntry]) -> Option<&str> {
         Payload::Title(t) => Some(t.text.as_str()),
         _ => None,
     })
-}
-
-impl Payload {
-    /// The record of a deliberate archive, by `source` when the caller named one.
-    pub fn archived(source: Option<String>) -> Self {
-        Self::Archived { source }
-    }
-
-    /// A tool result payload for `call_id`. The one construction site in production
-    /// and in tests, so a field added to the result shape lands in one place.
-    pub fn tool_result(call_id: impl Into<CallId>, raw: RawResult, wire: WireState) -> Self {
-        Self::ToolResult {
-            call_id: call_id.into(),
-            raw,
-            wire,
-        }
-    }
 }
 
 /// A content block authored by the model or user. `Thinking` / `RedactedThinking`

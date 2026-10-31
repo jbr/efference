@@ -43,7 +43,11 @@ fn loading_never_changes_the_bytes() {
     assert_eq!(std::fs::read(&path).unwrap(), before);
 
     // And a file this reader refuses is refused without being repaired.
-    std::fs::write(&path, format!("{HEADER}\n{}\nnonsense\n", user_entry(0))).unwrap();
+    std::fs::write(
+        &path,
+        format!("{}\n{}\nnonsense\n", bare_header(), user_entry(0)),
+    )
+    .unwrap();
     let corrupt = std::fs::read(&path).unwrap();
     assert!(load(&path).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), corrupt);
@@ -56,7 +60,7 @@ fn loading_never_changes_the_bytes() {
 #[test]
 fn a_blank_line_is_refused() {
     let path = temp_path("blank");
-    std::fs::write(&path, format!("{HEADER}\n{}\n\n", user_entry(0))).unwrap();
+    std::fs::write(&path, format!("{}\n{}\n\n", bare_header(), user_entry(0))).unwrap();
 
     let error = load_error(&path);
     assert!(
@@ -75,7 +79,11 @@ fn a_malformed_interior_line_is_refused() {
     let path = temp_path("malformed");
     std::fs::write(
         &path,
-        format!("{HEADER}\n{}\n{{\"seq\":1,\"turn\":0\n", user_entry(0)),
+        format!(
+            "{}\n{}\n{{\"seq\":1,\"turn\":0\n",
+            bare_header(),
+            user_entry(0)
+        ),
     )
     .unwrap();
 
@@ -98,7 +106,7 @@ fn a_duplicated_seq_is_refused() {
     let path = temp_path("duplicate-seq");
     std::fs::write(
         &path,
-        format!("{HEADER}\n{}\n{}\n", user_entry(0), user_entry(0)),
+        format!("{}\n{}\n{}\n", bare_header(), user_entry(0), user_entry(0)),
     )
     .unwrap();
 
@@ -122,7 +130,7 @@ fn a_gapped_seq_is_refused() {
     let path = temp_path("gapped-seq");
     std::fs::write(
         &path,
-        format!("{HEADER}\n{}\n{}\n", user_entry(0), user_entry(2)),
+        format!("{}\n{}\n{}\n", bare_header(), user_entry(0), user_entry(2)),
     )
     .unwrap();
 
@@ -154,7 +162,7 @@ fn a_missing_file_is_an_io_error() {
 #[test]
 fn a_complete_final_entry_without_its_newline_is_an_entry() {
     let path = temp_path("missing-newline");
-    std::fs::write(&path, format!("{HEADER}\n{}", user_entry(0))).unwrap();
+    std::fs::write(&path, format!("{}\n{}", bare_header(), user_entry(0))).unwrap();
 
     let recording = load_recording(&path).unwrap();
     assert_eq!(recording.entries.len(), 1);
@@ -162,7 +170,7 @@ fn a_complete_final_entry_without_its_newline_is_an_entry() {
     assert_eq!(
         recording.trailing,
         Some(Trailing::MissingNewline {
-            byte_offset: HEADER.len() as u64 + 1,
+            byte_offset: bare_header().len() as u64 + 1,
         }),
         "the entry is usable and the absent newline is reported"
     );
@@ -178,7 +186,11 @@ fn a_complete_final_entry_without_its_newline_is_an_entry() {
 fn an_unfinished_final_entry_is_reported_as_trailing_bytes() {
     let path = temp_path("partial");
     let torn = r#"{"seq":1,"turn":0,"at":1,"pay"#;
-    std::fs::write(&path, format!("{HEADER}\n{}\n{torn}", user_entry(0))).unwrap();
+    std::fs::write(
+        &path,
+        format!("{}\n{}\n{torn}", bare_header(), user_entry(0)),
+    )
+    .unwrap();
     let before = std::fs::read(&path).unwrap();
 
     let recording = load_recording(&path).unwrap();
@@ -186,7 +198,7 @@ fn an_unfinished_final_entry_is_reported_as_trailing_bytes() {
     assert_eq!(
         recording.trailing,
         Some(Trailing::PartialEntry {
-            byte_offset: (HEADER.len() + 1 + user_entry(0).len() + 1) as u64,
+            byte_offset: (bare_header().len() + 1 + user_entry(0).len() + 1) as u64,
             bytes: torn.as_bytes().to_vec(),
         })
     );
@@ -206,7 +218,7 @@ fn an_unfinished_final_entry_is_reported_as_trailing_bytes() {
 fn a_complete_object_that_is_not_an_entry_is_damage_even_unterminated() {
     let path = temp_path("not-an-entry");
     let not_an_entry = r#"{"seq":0,"turn":0,"at":1,"payload":{"NoSuchPayload":[]}}"#;
-    std::fs::write(&path, format!("{HEADER}\n{not_an_entry}")).unwrap();
+    std::fs::write(&path, format!("{}\n{not_an_entry}", bare_header())).unwrap();
 
     assert!(matches!(
         load_error(&path),
@@ -218,8 +230,9 @@ fn a_complete_object_that_is_not_an_entry_is_damage_even_unterminated() {
     std::fs::write(
         &path,
         format!(
-            r#"{HEADER}
-{{"seq":0,"turn":0,"payload":{{"User":[{{"Text":"hi"}}]}}}}"#
+            r#"{}
+{{"seq":0,"turn":0,"payload":{{"User":[{{"Text":"hi"}}]}}}}"#,
+            bare_header()
         ),
     )
     .unwrap();
@@ -236,7 +249,7 @@ fn a_complete_object_that_is_not_an_entry_is_damage_even_unterminated() {
 #[test]
 fn a_tail_cut_through_a_codepoint_is_reported_not_fatal() {
     let path = temp_path("codepoint");
-    let mut bytes = format!("{HEADER}\n{}\n", user_entry(0)).into_bytes();
+    let mut bytes = format!("{}\n{}\n", bare_header(), user_entry(0)).into_bytes();
     let start = bytes.len();
     bytes.extend_from_slice(&[0xe2, 0x98]); // the first two bytes of "☃"
     std::fs::write(&path, &bytes).unwrap();
@@ -261,7 +274,11 @@ fn load_drops_the_tail_that_load_recording_reports() {
     let path = temp_path("dropped-tail");
     std::fs::write(
         &path,
-        format!("{HEADER}\n{}\n{{\"seq\":1,\"turn\":", user_entry(0)),
+        format!(
+            "{}\n{}\n{{\"seq\":1,\"turn\":",
+            bare_header(),
+            user_entry(0)
+        ),
     )
     .unwrap();
 

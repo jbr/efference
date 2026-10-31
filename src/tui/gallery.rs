@@ -12,27 +12,24 @@
 pub mod stream;
 
 use crate::log::{
-    AssistantOutput, ContentBlock, Keep, LogEntry, MessagesOutputBlock, Payload, RawResult,
-    Summary, Timestamp, ToolCall, Triaged, WireState,
+    AssistantOutput, Keep, LogEntry, MessagesOutputBlock, Payload, RawResult, Summary, ToolCall,
+    Triaged, WireState,
 };
 
 /// A committed user turn carrying markdown prose.
 fn user(seq: u64, text: &str) -> LogEntry {
-    entry(seq, Payload::User(vec![ContentBlock::Text(text.into())]))
+    entry(seq, Payload::user(text))
 }
 
 /// A committed assistant turn: markdown prose plus zero or more tool calls.
 fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::Messages(
-                std::iter::once(MessagesOutputBlock::Text(text.into()))
-                    .chain(calls.into_iter().map(MessagesOutputBlock::ToolUse))
-                    .collect(),
-            ),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::Messages(
+            std::iter::once(MessagesOutputBlock::Text(text.into()))
+                .chain(calls.into_iter().map(MessagesOutputBlock::ToolUse))
+                .collect(),
+        )),
     )
 }
 
@@ -43,16 +40,13 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
 fn assistant_thinking(seq: u64, thinking: &str, text: &str) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::Messages(vec![
-                MessagesOutputBlock::Thinking {
-                    text: thinking.into(),
-                    signature: String::new(),
-                },
-                MessagesOutputBlock::Text(text.into()),
-            ]),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::Messages(vec![
+            MessagesOutputBlock::Thinking {
+                text: thinking.into(),
+                signature: String::new(),
+            },
+            MessagesOutputBlock::Text(text.into()),
+        ])),
     )
 }
 
@@ -139,14 +133,7 @@ fn test_card() -> crate::log::ResultImage {
 }
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload).with_turn(1)
 }
 
 /// Markdown prose exercising every block the renderer supports, in one turn.

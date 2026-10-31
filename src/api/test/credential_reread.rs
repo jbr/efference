@@ -71,23 +71,15 @@ async fn run(script: Vec<Reply>, source: &'static str) -> Run {
     });
     let reads = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&reads);
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: AuthValue::reloadable(
+    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"))
+        .with_auth_value(AuthValue::reloadable(
             Provider::Anthropic,
             "stale".into(),
             sync_reload(move || {
                 counted.fetch_add(1, Ordering::SeqCst);
                 Ok(source.into())
             }),
-        ),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+        ));
     let client = Client::new(endpoint, "m", "sys", None);
     let result = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})

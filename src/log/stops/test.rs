@@ -5,45 +5,32 @@ use super::*;
 use crate::log::{AssistantOutput, ContentBlock, Payload, ToolCall};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq: seq as crate::log::Seq,
-        turn: seq as crate::log::Turn,
-        at: crate::log::Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq as crate::log::Seq, payload).with_turn(seq as crate::log::Turn)
 }
 
 fn said(text: &str) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            Vec::new(),
-            vec![ContentBlock::Text(text.to_string())],
-            Vec::new(),
-        ),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        Vec::new(),
+        vec![ContentBlock::Text(text.to_string())],
+        Vec::new(),
+    ))
 }
 
 /// A turn that called a tool: the loop keeps going, so it is not an ending.
 fn called(text: &str) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            Vec::new(),
-            vec![ContentBlock::Text(text.to_string())],
-            vec![ToolCall::new(
-                "bash",
-                "call_1",
-                serde_json::json!({"command": "ls"}),
-            )],
-        ),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        Vec::new(),
+        vec![ContentBlock::Text(text.to_string())],
+        vec![ToolCall::new(
+            "bash",
+            "call_1",
+            serde_json::json!({"command": "ls"}),
+        )],
+    ))
 }
 
 fn replied(text: &str) -> Payload {
-    Payload::User(vec![ContentBlock::Text(text.to_string())])
+    Payload::user(text.to_string())
 }
 
 fn classify_pairs(pairs: &[Payload]) -> Vec<Stop> {
@@ -192,12 +179,10 @@ fn the_recorded_stall_reads_as_a_run_of_barren_stops() {
 /// exhausted quota, answered on every retry, reads as a run of barren stops.
 #[test]
 fn an_upstream_failure_is_not_a_stop() {
-    let failed = Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(Vec::new(), Vec::new(), Vec::new()),
-        excluded: Some(crate::log::Exclusion::Upstream(
-            "upstream API returned 429 Too Many Requests".into(),
-        )),
-    };
+    let failed = Payload::record_only(
+        AssistantOutput::from_legacy_messages(Vec::new(), Vec::new(), Vec::new()),
+        crate::log::Exclusion::Upstream("upstream API returned 429 Too Many Requests".into()),
+    );
     assert_eq!(
         classify_pairs(&[called("Writing DONE.md."), failed, replied("sounds good!")]),
         []
@@ -206,18 +191,15 @@ fn an_upstream_failure_is_not_a_stop() {
 
 /// An assistant turn that put a question through `ask`, and the result that answered it.
 fn asked(question: &str, id: &str) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            Vec::new(),
-            Vec::new(),
-            vec![ToolCall::new(
-                ASK,
-                id,
-                serde_json::json!({ "question": question }),
-            )],
-        ),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        Vec::new(),
+        Vec::new(),
+        vec![ToolCall::new(
+            ASK,
+            id,
+            serde_json::json!({ "question": question }),
+        )],
+    ))
 }
 
 fn answer(id: &str, text: &str) -> Payload {
@@ -294,8 +276,8 @@ fn only_completed_ask_calls_are_counted() {
         entry(1, answer("call_1", "ok")),
         entry(
             2,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
+            Payload::record_only(
+                AssistantOutput::from_legacy_messages(
                     Vec::new(),
                     Vec::new(),
                     vec![ToolCall::new(
@@ -304,8 +286,8 @@ fn only_completed_ask_calls_are_counted() {
                         serde_json::json!({ "question": "?" }),
                     )],
                 ),
-                excluded: Some(crate::log::Exclusion::Upstream("boom".into())),
-            },
+                crate::log::Exclusion::Upstream("boom".into()),
+            ),
         ),
     ];
     assert!(classify_asks(&entries).is_empty());
