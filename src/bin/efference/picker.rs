@@ -17,8 +17,8 @@
 //! theme the new-session form draws (`app.rs`, docs/tui.md).
 
 use super::*;
-use efference::client::ListedSession;
 use efference::inventory::InventoryRow;
+use efference::protocol::sessions::{ListedSession, PatchSession};
 use efference::tui::inline;
 use efference::tui::resume_list::{ResumeRow, now_ms};
 
@@ -203,7 +203,7 @@ pub(crate) async fn resume_on(client: &ControlClient, id: &str) -> Result<(), Cl
     if status {
         eprint!("resuming {id}…");
     }
-    let request = daemon::PatchSession::activate(std::env::current_dir()?);
+    let request = PatchSession::activate(std::env::current_dir()?);
     let patched = client.patch_session(id, &request).await;
     if status {
         eprint!("\r\x1b[2K");

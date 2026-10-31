@@ -3,6 +3,7 @@
 use super::*;
 use crate::daemon::Host;
 use crate::log::Approval;
+use crate::protocol::turns::Landing;
 use std::path::Path;
 
 struct Fixture {

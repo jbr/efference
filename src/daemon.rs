@@ -38,84 +38,21 @@ use crate::api::{
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::frontend::{Frontend, Interrupt, SubmittedTurn};
-use crate::log::{Approval, CallId, EditState, LogEntry, Payload, RawResult, Seq, ToolCall, Turn};
+use crate::log::{
+    Approval, CallId, EditState, LogEntry, Payload, RawResult, RequestOrigin, Seq, ToolCall, Turn,
+};
 use crate::persist::Log;
 use crate::process_monitor::{BgView, ProcessMonitor};
 use crate::project::{
     ApiMessage, ImagePlacement, Retention, WireTurn, project_semantic, project_with,
 };
+use crate::protocol::state::{
+    BlockedReason, ConfigRepair, LoopPhase, PendingProposal, SessionIdentity, Stall, StallReason,
+};
+use crate::protocol::stream::StreamDelta;
+use crate::protocol::turns::mint_submission_id;
 use crate::spotter::Spotter;
 use crate::tools::Toolbox;
-
-/// A live, pre-commit output fragment streamed to clients as the control stream's
-/// `output` class (docs/control-api.md). **Ephemeral and transport-only**:
-/// never appended to the log, never projected, and droppable for a slow consumer.
-/// The authoritative text always lands as a committed [`LogEntry`] on `/events`, so
-/// the stream is a live convenience with the durable log as its backstop — which is
-/// exactly why it can ride a lossy `broadcast` where `/events` must tail the log.
-/// Every model-stream variant carries the content-block `index` it belongs to, and
-/// `ToolCallStart` additionally the `tool_use` id: a fragment is partial delivery *of a
-/// specific item*, and a client that cannot tell which holds one slot per kind and loses the
-/// first tool call's arriving input the moment a second opens. [`ToolOutput`](Self::ToolOutput)
-/// and [`ProcessOutput`](Self::ProcessOutput) key on their own ids for the same reason
-/// (docs/control-api.md).
-#[derive(Clone)]
-pub enum StreamDelta {
-    /// A fragment of assistant prose as the model streams it from the upstream SSE.
-    AssistantText { index: usize, text: String },
-    /// A fragment of extended-thinking text as the model streams it. A separate variant from
-    /// [`AssistantText`](Self::AssistantText) because it is *not* the assistant's answer — a client
-    /// must render it as thinking or not at all, never as prose.
-    ThinkingText { index: usize, text: String },
-    /// The model began emitting a tool call, named before its arguments stream. Together with
-    /// [`ThinkingText`](Self::ThinkingText) these are the output kinds that make a turn visible at all:
-    /// without them only prose reaches the stream, so a turn spent thinking or emitting a large
-    /// tool input publishes nothing and reads as a hung harness (docs/transport.md).
-    ToolCallStart {
-        index: usize,
-        call_id: String,
-        name: String,
-    },
-    /// A fragment of a tool call's JSON input, verbatim. The bytes are passed through rather than
-    /// summarized as a count: they are a partial slice of a JSON document, so a client must not
-    /// *parse* them as if complete — but showing what actually arrived claims no structure, and
-    /// `{"command":"cargo test` tells an operator far more than a byte count does. (Rendering a
-    /// partial document *structurally* is a real option — `jiter`'s partial mode, `actson`'s push
-    /// parser — and is filed as its own design question.)
-    ToolCallInput { index: usize, fragment: String },
-    /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
-    ToolOutput { call_id: String, chunk: String },
-    /// A chunk of a running background process's output, tagged by the process's
-    /// spawn-minted id — rendered `p#<n>` in prose, bare here (docs/process-monitor.md).
-    /// Demuxed by id exactly like
-    /// [`ToolOutput`](Self::ToolOutput) is by `call_id`. Lossy: a cold-opened client
-    /// seeds its tail from the process resource and layers these on top.
-    ProcessOutput { id: u64, chunk: String },
-    /// A fragment of the summary a compaction is writing (docs/summary.md).
-    /// Not the main loop's response: it belongs to no content block of one, and the
-    /// committed `Assistant` entry that retires the block variants does not retire it.
-    /// The finished text lands as the compaction's `Summary`; these are lossy and never
-    /// logged.
-    CompactionText { text: String },
-    /// A fragment of the compaction's extended thinking, the counterpart of
-    /// [`CompactionText`](Self::CompactionText).
-    CompactionThinking { text: String },
-    /// A fragment of a detached consolidation account (docs/consolidate.md).
-    /// Its frozen range and settlement are recorded by consolidation telemetry;
-    /// it is not a main-response block and is never logged.
-    ConsolidationText { text: String },
-    /// Extended thinking from the same detached consolidation request.
-    ConsolidationThinking { text: String },
-    /// A fragment of the text a triage request is writing (docs/triage.md), whichever
-    /// shape runs it. Not the main loop's response, so it carries no block `index` and a
-    /// committed `Assistant` entry does not retire it. `call_ids` are the `tool_use` ids
-    /// of the results being triaged; empty for the idle triage, which has none. Lossy and
-    /// never logged: the verdict lands as the `Triage` entries.
-    TriageText { call_ids: Vec<String>, text: String },
-    /// A fragment of the triage request's extended thinking, the counterpart of
-    /// [`TriageText`](Self::TriageText).
-    TriageThinking { call_ids: Vec<String>, text: String },
-}
 
 /// The prefix session-scoped log lines carry, the shape the lifecycle
 /// announcements use (docs/control-channel.md). Empty when there is no id —
@@ -232,7 +169,7 @@ pub struct Session {
     /// The host's update-check answer, handed over at adopt (`newer_version.rs`,
     /// docs/update-check.md). Unset for a session outside a host, which publishes
     /// `newer_version: null`.
-    newer_version: std::sync::OnceLock<Arc<newer_version::NewerVersion>>,
+    newer_version: std::sync::OnceLock<Arc<newer_version::NewerVersionCell>>,
     /// The push waiting out [`delayed_push::PUSH_DELAY`] because a client was
     /// attending when its moment fired (`delayed_push.rs`, docs/web-push.md). At most
     /// one; resolution and sightings of the moment empty it.
@@ -722,34 +659,25 @@ mod watch;
 /// exercise a real request/response cycle without binding anything.
 pub use handler::{App, Transport, handler};
 
-pub(crate) use named_turns::Landing;
 pub(crate) use person::PersonAction;
 pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
 
-pub use crate::log::RequestOrigin;
-use config_edits::{PendingProposal, session_visible_notice};
+use config_edits::session_visible_notice;
 pub(crate) use construct::SessionParts;
 use entry_view::{EntryView, result_raw};
 use errors::{ErrorBody, ErrorCode, fail, respond};
 use frames::{Frame, Topic};
-pub use identity::SessionIdentity;
-pub use metrics::{
-    COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, USAGE_NAME, UsageLine, last_turn_usage,
-};
+pub use metrics::{CacheRead, ColdStart, ColdStreak, USAGE_NAME, UsageLine, last_turn_usage};
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;
-pub use phase::{BlockedReason, LoopPhase};
-pub use stall::{ConfigRepair, Stall, StallReason};
 use stream::{Include, control_stream};
 use topics::{StateUpdate, watch_topics};
 
 use attachments::attachments_watch_loop;
 use http::LogSelect;
-pub(crate) use http::SETTLED_HEADER;
-pub use http::mint_submission_id;
 use keepalive::{CacheLineage, KeepaliveSpec, keepalive_loop};
 pub use keepalive::{believed_cold_since, keepalive_interval};
 use watch::config_watch_loop;
@@ -768,10 +696,7 @@ mod review;
 mod runtime;
 pub mod slug;
 mod starting;
-pub use host::{
-    ArchivedSession, CreateSession, DormantSession, Host, ListedSession, PatchSession,
-    SessionOptionsRequest, SessionState, serve_host,
-};
+pub use host::{Host, serve_host};
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};
 

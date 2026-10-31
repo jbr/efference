@@ -85,7 +85,7 @@ impl<'a> InteractiveState<'a> {
             segments.push((note.to_string(), muted));
         }
         if let Some(u) = &self.usage {
-            if u.cold_streak >= crate::daemon::COLD_STREAK_WARN {
+            if u.cold_streak >= crate::protocol::state::COLD_STREAK_WARN {
                 segments.push((
                     format!("⚠ cache misses ×{}", u.cold_streak),
                     bg.fg(self.theme.status_style.fg.unwrap_or_default())

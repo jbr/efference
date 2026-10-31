@@ -4,6 +4,14 @@ use super::*;
 use crate::log::Telemetry;
 use crate::log::{AssistantOutput, RawResult, Resumed, ToolCall, WireState};
 use crate::persist::Log;
+use serde_json::json;
+
+impl Operations {
+    /// The topic as the channel carries it, for comparing with a `json!` value.
+    fn json(&self) -> Value {
+        serde_json::to_value(self.view()).unwrap()
+    }
+}
 
 fn entry(seq: u64, at: u64, payload: Payload) -> LogEntry {
     LogEntry::new(seq, payload)

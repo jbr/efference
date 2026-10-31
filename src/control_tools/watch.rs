@@ -22,7 +22,7 @@ use tokio::sync::Notify;
 use tokio::task::AbortHandle;
 
 use crate::client::Client;
-use crate::daemon::status::{Block, Condition, Footer, Park, Reviewer, StatusView};
+use crate::protocol::status::{Block, Condition, Footer, Park, Reviewer, StatusView};
 
 /// The first pause before a dropped stream is reopened; each failed reopen doubles it,
 /// up to [`RETRY_CEILING`].

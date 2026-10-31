@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::log::{Notification, Seq};
+use crate::protocol::state::PendingNotification;
 
 /// Notifications that wait in memory: those bound to a `slot`, which a later one on the
 /// same slot supersedes, so none of them is logged until a triage first shows it
@@ -9,25 +10,6 @@ use crate::log::{Notification, Seq};
 #[derive(Default)]
 pub(super) struct Inbox {
     pub(super) pending: Vec<Notification>,
-}
-
-/// One pending ambient notification, as `GET /state` surfaces it (docs/inbox.md): an
-/// arrived notification not yet shown by a triage, or a slot notification still queued.
-#[derive(Clone, Debug, Serialize)]
-pub(super) struct PendingNotification {
-    /// The arrival entry's `seq`, the handle a triage's verdict addresses. Absent for a
-    /// slot notification, which has no entry until it is shown.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) seq: Option<Seq>,
-    pub(super) source: String,
-    pub(super) body: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) slot: Option<String>,
-    /// Must-wake (docs/inbox.md): the loop pins this at its first show whatever the
-    /// triage decides, so an idle agent gets a turn to act on it. Set by the
-    /// harness for a delegated child's status, never by a client.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub(super) wake: bool,
 }
 
 impl Session {

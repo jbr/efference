@@ -655,8 +655,9 @@ fn state_is_last_seq_plus_exactly_the_topics() {
 
     assert_eq!(keys, expected, "snapshot keys are last_seq + every topic");
 
-    // And each topic's value is reachable under its own name — i.e. `topic_json` is what
-    // the composite is built from, not a parallel implementation that happens to agree.
+    // And each topic's value is reachable under its own name, equal to its frame: the
+    // composite's fields and `topic_json` are built by the same per-topic functions, so a
+    // field built any other way fails here.
     for topic in Topic::ALL {
         assert_eq!(
             v[topic.as_str()],

@@ -15,7 +15,7 @@
 //! background processes is confirmed; an idle one with nothing running is not.
 
 use super::*;
-use crate::client::ListedSession;
+use crate::protocol::sessions::ListedSession;
 
 /// The switcher's state while it is open.
 #[derive(Debug, Clone, Default, PartialEq)]

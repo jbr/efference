@@ -19,17 +19,10 @@ use super::*;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 
-/// Which part of preparation is running (docs/control-api.md).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Stage {
-    /// Establishing the session's environment: the user-wide `env_hook` (docs/env.md).
-    #[default]
-    Environment,
-    /// `boot::prepare` or `boot::resume`: the config, the provider lookup, the MCP
-    /// mounts, the preamble.
-    Preparing,
-}
+use super::views::channel_value;
+use crate::protocol::state::{Stage, StartFailure, StartingView, VerbAnswer, Verbs};
+use crate::protocol::status::{Condition, Footer, StatusView};
+use crate::protocol::turns::{Landing, QueuedTurn};
 
 /// Why preparation ended without a session, and what it hands back.
 #[derive(Clone, Debug)]
@@ -299,62 +292,59 @@ impl Starting {
         }
     }
 
-    /// The `starting` topic (docs/control-api.md): `null` once started.
-    pub(crate) fn starting_json(&self) -> Value {
+    /// The `starting` topic (docs/control-api.md): `None` once started.
+    pub(crate) fn starting_view(&self) -> Option<StartingView> {
         let inner = self.inner.lock().unwrap();
-        if let Some(Outcome::Started(_)) = inner.outcome {
-            return Value::Null;
-        }
         let failure = match &inner.outcome {
-            Some(Outcome::Failed(failure)) => serde_json::json!({
-                "reason": failure.reason,
-                "at": failure.at,
-                "withdrawn": failure.withdrawn.iter().map(SubmittedTurn::pending_json).collect::<Vec<_>>(),
+            Some(Outcome::Started(_)) => return None,
+            Some(Outcome::Failed(failure)) => Some(StartFailure {
+                reason: failure.reason.clone(),
+                at: failure.at,
+                withdrawn: failure.withdrawn.iter().map(QueuedTurn::from).collect(),
             }),
-            _ => Value::Null,
+            Some(Outcome::Cancelled(_)) | None => None,
         };
-        serde_json::json!({
-            "id": self.id,
-            "cwd": self.project,
-            "since": self.since,
-            "resume": self.resume,
-            "stage": inner.stage,
-            "authorizing": inner.authorizing,
-            "failure": failure,
+        Some(StartingView {
+            id: self.id.clone(),
+            cwd: self.project.clone(),
+            since: self.since,
+            resume: self.resume,
+            stage: inner.stage,
+            authorizing: inner.authorizing.clone(),
+            failure,
         })
     }
 
     /// The `verbs` topic while starting: a turn is queued, the rest are refused with
     /// the route's own message, and after a failure the turn is refused too.
-    fn verbs_json(&self) -> Value {
+    fn verbs(&self) -> Verbs {
         let inner = self.inner.lock().unwrap();
-        let refused = serde_json::json!({ "accepted": false, "message": self.refusal_in(&inner) });
+        let refused = VerbAnswer::refused(self.refusal_in(&inner));
         let turn = match inner.outcome {
-            None | Some(Outcome::Started(_)) => {
-                serde_json::json!({ "accepted": true, "delivery": "queued" })
-            }
+            None | Some(Outcome::Started(_)) => VerbAnswer::delivered(Landing::Queued),
             _ => refused.clone(),
         };
-        serde_json::json!({ "turn": turn, "continue": refused, "compact": refused })
+        Verbs {
+            turn,
+            continue_verb: refused.clone(),
+            compact: refused,
+        }
     }
 
-    fn queued_json(&self) -> Value {
-        Value::Array(
-            self.inner
-                .lock()
-                .unwrap()
-                .queue
-                .iter()
-                .map(SubmittedTurn::pending_json)
-                .collect(),
-        )
+    fn queued(&self) -> Vec<QueuedTurn> {
+        self.inner
+            .lock()
+            .unwrap()
+            .queue
+            .iter()
+            .map(QueuedTurn::from)
+            .collect()
     }
 
     /// The `status` topic while starting (docs/control-api.md): the preparation, its
     /// failure, or a cancellation, which reads as an end; `null` once started, when the
     /// session's own topic takes over.
-    pub(crate) fn status_view(&self) -> Option<status::StatusView> {
-        use super::status::{Condition, Footer, StatusView};
+    pub(crate) fn status_view(&self) -> Option<StatusView> {
         let inner = self.inner.lock().unwrap();
         let condition = match &inner.outcome {
             None => Condition::Starting {
@@ -383,10 +373,10 @@ impl Starting {
 
     fn topic_json(&self, topic: Topic) -> Value {
         match topic {
-            Topic::Verbs => self.verbs_json(),
-            Topic::Queued => self.queued_json(),
-            Topic::Status => serde_json::to_value(self.status_view()).unwrap_or(Value::Null),
-            _ => self.starting_json(),
+            Topic::Verbs => channel_value(self.verbs()),
+            Topic::Queued => channel_value(self.queued()),
+            Topic::Status => channel_value(self.status_view()),
+            _ => channel_value(self.starting_view()),
         }
     }
 
@@ -490,3 +480,6 @@ pub(crate) fn starting_stream(
         }
     }))
 }
+
+#[cfg(test)]
+mod test;

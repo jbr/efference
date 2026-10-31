@@ -201,7 +201,9 @@ fn the_operation_text_follows_the_topic_while_running() {
     assert!(!s.handle_event(TuiEvent::Operations(view)));
     assert_eq!(s.operation_text, None, "not shown while the loop is idle");
 
-    assert!(!s.handle_event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting)));
+    assert!(!s.handle_event(TuiEvent::Phase(
+        crate::protocol::state::LoopPhase::Requesting
+    )));
     assert_eq!(
         s.operation_text.as_deref(),
         Some("waiting on the model · 0s")
@@ -221,7 +223,7 @@ fn a_pending_gate_or_ask_leads_the_operation_text() {
         "requests": [{"request": 0, "origin": "title", "stage": "sent", "since": now}],
         "tools": [],
     });
-    s.handle_event(TuiEvent::Phase(crate::daemon::LoopPhase::Gated));
+    s.handle_event(TuiEvent::Phase(crate::protocol::state::LoopPhase::Gated));
     s.handle_event(TuiEvent::Operations(
         crate::tui::operations::parse_current_operations(&topic),
     ));
@@ -232,7 +234,9 @@ fn a_pending_gate_or_ask_leads_the_operation_text() {
     );
 
     s.pending_gate = None;
-    s.handle_event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
+    s.handle_event(TuiEvent::Phase(
+        crate::protocol::state::LoopPhase::Requesting,
+    ));
     assert_eq!(
         s.status_operation_text().as_deref(),
         Some("writing a title · 0s")

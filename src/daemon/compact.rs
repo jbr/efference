@@ -10,6 +10,7 @@
 use super::operations::CompactionState;
 use super::*;
 use crate::log::{Audience, LogEntry, Seq, Summary, Telemetry, Timestamp};
+use crate::protocol::state::CompactionFailure;
 
 /// Roughly how many tokens of the most recent history a compaction keeps verbatim. Estimated
 /// from each entry's recorded size, which overstates a result its verdict trimmed, so
@@ -117,14 +118,12 @@ impl Session {
         self.operations.lock().unwrap().compaction().cloned()
     }
 
-    /// The `compaction_failure` topic: `{error, at}` after a compaction failed, until a
-    /// turn's request goes out or another compaction is asked for (docs/summary.md).
-    pub(super) fn compaction_failure_json(&self) -> Value {
-        match self.compaction_state() {
-            Some(CompactionState::Failed { error, at }) => {
-                serde_json::json!({"error": error, "at": at})
-            }
-            _ => Value::Null,
+    /// The `compaction_failure` topic: how the last compaction failed, until a turn's
+    /// request goes out or another compaction is asked for (docs/summary.md).
+    pub(super) fn compaction_failure(&self) -> Option<CompactionFailure> {
+        match self.compaction_state()? {
+            CompactionState::Failed { error, at } => Some(CompactionFailure { error, at }),
+            _ => None,
         }
     }
 

@@ -1,7 +1,8 @@
 use super::args::reader_name;
 use super::executor::{state_of, status_in};
 use super::{Control, Executor, HostExecutor};
-use crate::daemon::status::{Condition, Moves, Reader, Relation, Reviewer, StatusView, answers};
+use crate::daemon::status::{Moves, Reader, Relation, answers};
+use crate::protocol::status::{Condition, Reviewer, StatusView};
 use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},

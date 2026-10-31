@@ -4,6 +4,7 @@ mod session;
 
 use super::*;
 use crate::api::{SentRequest, TokenPrices};
+use crate::protocol::state::{KeepaliveSkip, KeepaliveSkipReason};
 use crate::triage::Triager;
 
 /// How long the cached prefix may go untouched before the keepalive pings it,
@@ -130,54 +131,6 @@ const PREFIX_TOKENS_PER_DISCARDED_TOKEN: u64 = 100;
 /// lapsed. Requiring the cost to fit in half the premium keeps a ping that is
 /// right about as often as it is wrong from being a net loss.
 const PREMIUM_MARGIN: f64 = 2.0;
-
-/// What the keepalive is doing other than pinging normally, published as
-/// `usage.keepalive_skipped` (docs/control-api.md). Absent from the state while pings
-/// go out on schedule, or when the keepalive was never armed (no prompt cache,
-/// interval zero): it records a decision the loop made, not a configuration.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct KeepaliveSkip {
-    /// When the loop reached this stance, absolute Unix millis.
-    pub(crate) at: crate::log::Timestamp,
-    #[serde(flatten)]
-    pub(crate) why: KeepaliveSkipReason,
-}
-
-/// The two reasons the loop does not ping.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "reason", rename_all = "snake_case")]
-pub(crate) enum KeepaliveSkipReason {
-    /// The last ping discarded output that the refresh would not repay against the
-    /// current prefix (docs/transport.md). Re-evaluated every tick: the stance ends
-    /// when the prefix grows past break-even.
-    Discard {
-        /// Output tokens the last ping generated.
-        output_tokens: u64,
-        /// That ping's completion cost in USD, when the endpoint billed it inline or
-        /// the session's prices could compute it; `null` on the token-ratio rule.
-        completion_usd: Option<f64>,
-        /// The prompt tokens the next ping would read: the main prefix as it stands.
-        prefix_tokens: u64,
-        /// What a cold read of that prefix would cost beyond a warm one, in USD;
-        /// `null` on the token-ratio rule.
-        premium_usd: Option<f64>,
-    },
-    /// The upstream refused the ping request itself, which would be refused
-    /// identically next tick. The one stance that does not end: the loop stops.
-    Rejected {
-        /// The upstream's refusal.
-        detail: String,
-    },
-    /// The upstream answered with a limit that holds until it resets (a plan's usage
-    /// limit). Pinging resumes after the next real turn, which is the first request
-    /// that can learn the limit has passed.
-    Exhausted {
-        /// The upstream's refusal.
-        detail: String,
-        /// When the limit resets, epoch milliseconds, where the refusal says.
-        resets_at: Option<u64>,
-    },
-}
 
 /// What the most recent ping discarded: the estimate of what the next one will, on
 /// this endpoint. The loop's only memory between ticks.

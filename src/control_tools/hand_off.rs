@@ -50,7 +50,7 @@ impl Tool<Control> for HandOff {
                 // child environment as its base — the same as `create` — and
                 // resolves the project's config afresh, which is the point.
                 let caller = state.caller_session()?;
-                let request = crate::daemon::CreateSession {
+                let request = crate::protocol::sessions::CreateSession {
                     name: None,
                     cwd: caller.cwd().to_path_buf(),
                     config: None,

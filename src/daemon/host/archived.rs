@@ -10,45 +10,9 @@
 //! and the usage record learns; the listing reads neither.
 
 use super::*;
-use crate::inference::ResumeSwitch;
 use crate::inventory::{InventoryRow, sort_rows};
 use crate::session_dir::SESSION_BASE;
 use std::collections::HashSet;
-
-/// One archived session as `GET /sessions?state=archived` lists it: the
-/// inventory's row, with `state` saying which collection it is from.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ArchivedSession {
-    #[serde(flatten)]
-    pub row: InventoryRow,
-    pub state: SessionState,
-    /// Why this host's last attempt to resume the session failed, until one
-    /// succeeds (`preparation.rs`). Unlike the row's `problem`, the session is still
-    /// resumable: this is what the last try met, not what the directory is.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resume_failure: Option<String>,
-}
-
-/// One dormant session as `GET /sessions/:session` answers it: the listing's row,
-/// and what a client offering the model switches at resume reads
-/// (docs/resumption.md). A field the session's files cannot answer is left out.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DormantSession {
-    #[serde(flatten)]
-    pub archived: ArchivedSession,
-    /// The main, spotter and triage selections the session last ran on, in the
-    /// shapes an `active` patch takes, read as a resume reads them
-    /// ([`crate::boot::recorded_selections`]). Absent when the log cannot be read or
-    /// records none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selections: Option<ResumeSwitch>,
-    /// The prompt tokens of the session's last main-loop request: what reading the
-    /// context uncached would cost, the number the `cold` topic reports as
-    /// `context_tokens` for a hosted session. Absent when the usage record holds no
-    /// `turn` line.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_tokens: Option<u64>,
-}
 
 impl DormantSession {
     /// `archived`, with what its log and usage record say. Blocking: reads the log

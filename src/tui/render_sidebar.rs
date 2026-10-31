@@ -219,7 +219,7 @@ impl<'a> InteractiveState<'a> {
             // provider still matches it, and a moved prefix is otherwise silent —
             // every turn simply costs full price. Absent below the threshold, and it
             // clears the moment a warm read arrives (the daemon resets the count).
-            if u.cold_streak >= crate::daemon::COLD_STREAK_WARN {
+            if u.cold_streak >= crate::protocol::state::COLD_STREAK_WARN {
                 rows.push(("", format!("⚠ cache misses ×{}", u.cold_streak), header));
             }
             // The keepalive's stance (docs/transport.md): stated only while it is not

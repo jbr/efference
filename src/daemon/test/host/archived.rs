@@ -7,6 +7,7 @@
 use super::*;
 use crate::log::{Payload, Title, TitleAuthor};
 use crate::persist::Log;
+use crate::protocol::sessions::{DormantSession, SessionState};
 
 /// A resumable titled log for session `id` under `root`.
 pub(super) fn write_session(root: &Path, id: &str, title: &str) {

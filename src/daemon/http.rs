@@ -1,6 +1,7 @@
 //! The control API surface: request bodies, the route table, and its query helpers (docs/control-channel.md). The routes themselves are the `http/` submodules.
 
 use super::*;
+use crate::protocol::state::SETTLED_HEADER;
 
 #[derive(Deserialize)]
 pub(crate) struct TurnBody {
@@ -42,18 +43,6 @@ pub(crate) struct CompactBody {
 /// Cap on a client-minted submission id: long enough for any uuid-ish scheme,
 /// short enough that the log can't be bloated through the field.
 const SUBMISSION_ID_MAX: usize = 128;
-
-/// Mint a submission id for a `POST /v1/turns` whose body didn't carry one, so
-/// every submitted turn is identified in the log regardless of client
-/// (docs/control-api.md). Public because a client that wants its submission
-/// addressable — for the delivery echo, or to recall it — mints its own with
-/// the same scheme rather than inventing a second one (docs/tui.md).
-pub fn mint_submission_id() -> String {
-    use rand::Rng;
-    let mut bytes = [0u8; 16];
-    rand::rng().fill_bytes(&mut bytes);
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 
 /// Body of `PATCH /processes/:id` (docs/process-monitor.md, docs/control-api.md): the
 /// settable properties of a process resource. `background: true` on the foreground
@@ -314,7 +303,7 @@ pub(crate) struct TranscriptQuery {
     /// The reader, as a `source` or a session id (`transcript.rs`).
     pub(crate) me: Option<String>,
     /// The entry to zoom into, in place of a window.
-    pub(crate) seq: Option<transcript::Handle>,
+    pub(crate) seq: Option<crate::protocol::transcript::Handle>,
 }
 
 impl TranscriptQuery {
@@ -322,7 +311,8 @@ impl TranscriptQuery {
     /// one entry, so a window bound or the audit grain beside `seq` has no reading and
     /// is refused rather than ignored.
     pub(crate) fn parse(query: &str) -> Result<Self, String> {
-        use super::transcript::{Grain, Handle};
+        use super::transcript::Grain;
+        use crate::protocol::transcript::Handle;
         let select = LogSelect::parse(query)?;
         let grain = match query_value(query, "grain").as_deref() {
             None | Some("conversation") => Grain::Conversation,
@@ -396,10 +386,6 @@ pub(crate) fn wants_wait(query: &str) -> bool {
         .split('&')
         .any(|kv| matches!(kv, "wait" | "wait=1" | "wait=true"))
 }
-
-/// The response header that says how a settle wait ended: `true` when the session settled,
-/// `false` when the cap expired and the body is only where it was then (docs/control-api.md).
-pub(crate) const SETTLED_HEADER: &str = "efference-settled";
 
 /// Block until the daemon settles (capped by [`SETTLE_TIMEOUT`]), then answer with the `/state`
 /// snapshot — the shared tail of `GET /state?wait=settled` and the write routes' `?wait`. The

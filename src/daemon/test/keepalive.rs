@@ -4,11 +4,12 @@ use super::*;
 use crate::api::KeepaliveError;
 use crate::api::{RequestUsage, TokenPrices};
 use crate::daemon::keepalive::{
-    CacheLineage, KeepaliveSkipReason, KeepaliveSpec, PingCost, discard_is_affordable,
-    lop_trailing_model_turns, prefix_tokens, skip_reason,
+    CacheLineage, KeepaliveSpec, PingCost, discard_is_affordable, lop_trailing_model_turns,
+    prefix_tokens, skip_reason,
 };
 use crate::log::{AssistantOutput, MessagesOutputBlock};
 use crate::project::{Role, WireTurn};
+use crate::protocol::state::KeepaliveSkipReason;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 fn message(role: Role, text: &str) -> WireTurn {

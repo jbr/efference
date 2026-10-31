@@ -18,13 +18,16 @@ use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
 pub use crate::catalog::{CatalogModel, ConnectionCatalog, ModelRole, Status as CatalogStatus};
-use crate::daemon::{
-    ArchivedSession, CreateSession, PatchSession, SessionOptionsRequest, SessionState,
-};
 use crate::frontend::SubmittedTurn;
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 use crate::log::Approval;
 use crate::log::attachment::Arrival;
+use crate::protocol::sessions::{
+    ArchivedSession, CreateSession, ListedSession, PatchSession, SessionOptionsRequest,
+    SessionState,
+};
+use crate::protocol::transcript::TranscriptRead;
+use crate::protocol::turns::Landing;
 
 mod host;
 mod transport;
@@ -135,7 +138,7 @@ impl Client {
         &self,
         turn: &SubmittedTurn,
         answers: Option<&str>,
-    ) -> Result<std::result::Result<crate::daemon::Landing, String>> {
+    ) -> Result<std::result::Result<Landing, String>> {
         let options = TurnOptions {
             source: turn.source.as_deref(),
         };
@@ -161,8 +164,7 @@ impl Client {
         {
             Ok(answer) => {
                 let delivery = json_field(&answer, "delivery").unwrap_or_default();
-                Ok(Ok(crate::daemon::Landing::parse(&delivery)
-                    .unwrap_or(crate::daemon::Landing::Queued)))
+                Ok(Ok(Landing::parse(&delivery).unwrap_or(Landing::Queued)))
             }
             Err(declined) => Ok(Err(declined)),
         }
@@ -566,11 +568,6 @@ impl Client {
     }
 }
 
-/// One entry of `GET /sessions` (docs/control-api.md). The host defines the row
-/// and both readings of the resource serve it, so there is one type on the wire
-/// rather than a client copy that can drift.
-pub use crate::daemon::ListedSession;
-
 /// One turn a `DELETE /turns/:submission_id` actually popped (docs/control-api.md) — the text a
 /// client splices back into its composer, with the id it was submitted under, and the uploads it
 /// carried, still in the store to be staged again.
@@ -617,24 +614,6 @@ pub struct TurnOptions<'a> {
     /// label (`web`, `mcp[<name>]`, `session[<id>]`). `None` submits as the
     /// operator, who renders no prefix.
     pub source: Option<&'a str>,
-}
-
-/// Which `GET /transcript` read to make (docs/control-api.md).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct TranscriptRead<'a> {
-    /// Only entries with `seq >= since`.
-    pub since: Option<u64>,
-    /// Only entries with `seq < before`.
-    pub before: Option<u64>,
-    /// Only the last `tail` entries.
-    pub tail: Option<u64>,
-    /// One entry in full by its handle (`8`, `8.2`), in place of a window.
-    pub seq: Option<&'a str>,
-    /// The entry-by-entry audit render (`grain=audit`) instead of the conversation.
-    pub audit: bool,
-    /// The reader, as a `source` (`mcp[<name>]`, `session[<id>]`) or a session id: a
-    /// sender or decider by that name reads "you".
-    pub me: Option<&'a str>,
 }
 
 impl TranscriptRead<'_> {

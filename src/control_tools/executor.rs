@@ -14,7 +14,7 @@ use serde_json::Value;
 use super::stream::Streams;
 use super::watch::Watch;
 use crate::client::{Client, Waited};
-use crate::daemon::status::StatusView;
+use crate::protocol::status::StatusView;
 
 /// The HTTP-over-control-channel executor used by the CLI and MCP mounts. An operator
 /// client: it drives every session the host holds (docs/tools.md).

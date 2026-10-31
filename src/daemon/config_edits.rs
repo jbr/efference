@@ -2,23 +2,6 @@
 
 use super::*;
 
-/// One async config edit awaiting an orchestrator decision
-/// (docs/permissions.md). Filed by a `Proposed` [`ConfigEdit`](crate::log::ConfigEdit) append (the
-/// session's `propose_scope`, the spotter's prefix-promotion); the orchestrator-above commits or
-/// cancels it, which drops it from the queue. Unlike
-/// [`PendingNotification`](super::notifications::PendingNotification), the proposal
-/// **already has a durable `seq`** (the `Proposed` entry's), so that *is* its id — no
-/// queue-local counter.
-#[derive(Clone, Debug, Serialize)]
-pub(super) struct PendingProposal {
-    /// The `seq` of the `Proposed` log entry — the proposal's id, which the orchestrator's
-    /// commit/cancel references.
-    pub(super) seq: Seq,
-    /// The change being proposed; the committing entry copies it self-contained so the fold stays a
-    /// pure per-entry filter (docs/permissions.md).
-    pub(super) change: crate::log::ConfigChange,
-}
-
 /// The notification a **session-visible** config edit raises (docs/permissions.md),
 /// as `(body, slot)`, or `None` for an edit the session need not hear about. `scope` and `paths`
 /// are the perimeter the acting session should learn moved; `commands`/`tools` are classifier-only.

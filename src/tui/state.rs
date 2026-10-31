@@ -607,7 +607,7 @@ pub(super) struct InteractiveState<'a> {
     /// reads it (via [`is_loop_active`](Self::is_loop_active)) to choose pause-vs-swallow —
     /// reliable through a *silent* long tool, where streaming (`pending_request`) reads
     /// false.
-    pub loop_phase: crate::daemon::LoopPhase,
+    pub loop_phase: crate::protocol::state::LoopPhase,
     /// What the loop routes would answer now, from the `verbs` topic; `None` until the
     /// connect snapshot lands.
     pub verbs: Option<super::VerbsView>,

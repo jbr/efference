@@ -11,7 +11,8 @@
 use super::*;
 
 use efference::api::{CacheMiss, CacheMissReason};
-use efference::daemon::{CacheRead, ColdStart, ColdStreak, RequestOrigin, USAGE_NAME, UsageLine};
+use efference::daemon::{CacheRead, ColdStart, ColdStreak, USAGE_NAME, UsageLine};
+use efference::log::RequestOrigin;
 
 /// Per-origin counts for the table: how many requests of this shape, how many of
 /// them read a cached prefix, and what they cost.
@@ -257,7 +258,7 @@ pub(crate) fn resolve_usage_targets(
 /// Print the report (docs/operating.md): a read-rate row per origin, then the cold
 /// main-loop reads split by whether the prefix has to explain them.
 pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) -> CliResult {
-    use efference::daemon::COLD_STREAK_WARN;
+    use efference::protocol::state::COLD_STREAK_WARN;
     use std::io::IsTerminal;
 
     // The positional wins, then `--name` (as `view` reads it), then the

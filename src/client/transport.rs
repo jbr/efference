@@ -80,7 +80,7 @@ impl Client {
         let conn = self.exchange(method, &path, body).await?;
         let settled = conn
             .response_headers()
-            .get_str(crate::daemon::SETTLED_HEADER)
+            .get_str(crate::protocol::state::SETTLED_HEADER)
             .is_none_or(|value| value != "false");
         let body = read_2xx(conn, method, &path).await?;
         Ok(Waited { body, settled })

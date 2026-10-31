@@ -2,20 +2,21 @@
 //! (docs/update-check.md), and the `newer_version` topic every hosted session publishes
 //! it on.
 //!
-//! Host state: one [`NewerVersion`] lives on `Host` and is handed to each session the
+//! Host state: one [`NewerVersionCell`] lives on `Host` and is handed to each session the
 //! host adopts ([`Session::set_newer_version`]), the way the attention table is. It is
 //! carried as a session topic because a session's `/events` stream is what both clients
 //! already follow; neither follows anything host-wide that a status line could read
 //! (docs/control-api.md). A session outside a host has none and publishes `null`.
 
 use super::*;
+use crate::protocol::state::NewerVersion;
 use crate::update_check::{INSTALL_COMMAND, Release};
 
 /// What the host's update check last found newer than the host, or nothing.
 #[derive(Default, Debug)]
-pub(crate) struct NewerVersion(Mutex<Option<Release>>);
+pub(crate) struct NewerVersionCell(Mutex<Option<Release>>);
 
-impl NewerVersion {
+impl NewerVersionCell {
     /// The release, while one newer than the host is known.
     pub(crate) fn get(&self) -> Option<Release> {
         self.0.lock().unwrap().clone()
@@ -32,22 +33,20 @@ impl NewerVersion {
 }
 
 impl Session {
-    /// Hand the session the host's [`NewerVersion`]. Called once, by the host's adopt.
-    pub(crate) fn set_newer_version(&self, newer: Arc<NewerVersion>) {
+    /// Hand the session the host's [`NewerVersionCell`]. Called once, by the host's adopt.
+    pub(crate) fn set_newer_version(&self, newer: Arc<NewerVersionCell>) {
         let _ = self.newer_version.set(newer);
     }
 
     /// The `newer_version` topic: the release and the command that installs it, or
-    /// `null` while none newer than the host is known.
-    pub(super) fn newer_version_json(&self) -> Value {
-        match self.newer_version.get().and_then(|newer| newer.get()) {
-            Some(release) => serde_json::json!({
-                "version": release.version,
-                "tag": release.tag,
-                "url": release.url,
-                "update_command": INSTALL_COMMAND,
-            }),
-            None => Value::Null,
-        }
+    /// `None` while none newer than the host is known.
+    pub(super) fn newer_version(&self) -> Option<NewerVersion> {
+        let release = self.newer_version.get()?.get()?;
+        Some(NewerVersion {
+            version: release.version,
+            tag: release.tag,
+            url: release.url,
+            update_command: INSTALL_COMMAND.to_string(),
+        })
     }
 }

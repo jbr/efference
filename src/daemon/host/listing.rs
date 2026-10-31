@@ -20,36 +20,6 @@
 use super::super::status::SessionStatus;
 use super::*;
 
-/// One row of `GET /sessions` (docs/control-api.md). Also the shape the
-/// `sessions` tool answers with, hence the schema derive (docs/tools.md).
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, schemars::JsonSchema)]
-pub struct ListedSession {
-    pub id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    /// The session's project directory, so a client can keep to its own
-    /// project's sessions on a host that serves several
-    /// (docs/control-channel.md).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    /// The session's working directory, when it is not the project: a session in
-    /// a git worktree (docs/worktrees.md).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub working: Option<String>,
-    /// The session that commissioned this one, when a session did
-    /// (docs/tools.md). Absent for a human root.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created_by: Option<String>,
-    /// What the session is doing, as a single word: `starting` while it is
-    /// prepared, then `running`, `idle`, `gated`, `asking`, `stalled`, `parked`, or
-    /// `blocked`.
-    pub status: String,
-    /// Live background processes the session holds (docs/process-monitor.md). Ending
-    /// it reaps them, which is why a listing carries the count.
-    #[serde(default)]
-    pub processes: usize,
-}
-
 /// The one word a row's `status` carries.
 fn status_word(status: &SessionStatus) -> &'static str {
     match status {

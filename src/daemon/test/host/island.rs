@@ -5,10 +5,10 @@
 //! request is held open, so nothing reaches a provider.
 
 use super::*;
-use crate::daemon::LoopPhase;
 use crate::daemon::island::OwnerWatch;
 use crate::frontend::SubmittedTurn;
 use crate::log::{Payload, Provider, WorktreeEventKind};
+use crate::protocol::state::LoopPhase;
 use crate::session_ids::SessionIds;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 

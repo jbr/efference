@@ -1,8 +1,8 @@
 //! Opportunistic consolidation at complete conversational junctures (docs/consolidate.md).
 use super::*;
 use crate::api::{FinishReason, Streamed};
-use crate::daemon::StreamDelta;
 use crate::log::Telemetry;
+use crate::protocol::stream::StreamDelta;
 
 /// The owned request surface a detached consolidation check carries, like the
 /// title ask's (docs/session-title.md): a clone of the agent's client that does

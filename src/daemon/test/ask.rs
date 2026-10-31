@@ -141,7 +141,7 @@ async fn an_ask_sends_a_push_carrying_the_question() {
     let shared = session();
     let attention = Arc::new(attention::Attention::default());
     attention.report_at(
-        &attention::AttentionReport {
+        &crate::protocol::attention::AttentionReport {
             client: "c1".into(),
             session: None,
             active: true,

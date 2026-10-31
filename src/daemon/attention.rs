@@ -13,6 +13,7 @@
 
 use super::*;
 use crate::log::{AttentiveClient, PushCancel};
+use crate::protocol::attention::AttentionReport;
 
 /// How long after its last report a client still counts. The web client
 /// heartbeats about every 20 seconds while active, so two missed beats lapse it:
@@ -29,22 +30,9 @@ const MAX_ID_LEN: usize = 128;
 /// The most attentive clients a push record names.
 const MAX_NAMED: usize = 8;
 
-/// One client's report, as `POST /attention` receives it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AttentionReport {
-    /// A per-page-load (web) or per-process (TUI) id the client generated.
-    pub(crate) client: String,
-    /// The session the client has open, or `None` (null or absent) on a page
-    /// that shows none (the session list).
-    pub(crate) session: Option<String>,
-    /// Whether the person is attending: the page is visible, focused, and has
-    /// seen recent input.
-    pub(crate) active: bool,
-}
-
 impl AttentionReport {
-    /// Parse a request body, or say what was wrong with it.
+    /// Parse a `POST /attention` body, or say what was wrong with it: the host's checks
+    /// on a report, beyond its shape.
     pub(crate) fn parse(body: &str) -> Result<Self, String> {
         let report: Self =
             serde_json::from_str(body).map_err(|e| format!("bad attention report: {e}"))?;

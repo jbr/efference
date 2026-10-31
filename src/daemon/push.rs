@@ -131,9 +131,12 @@ impl Session {
     pub(super) fn gate_rerouted(&self) {
         let read = {
             let pending = self.pending.lock().unwrap();
-            pending
-                .as_ref()
-                .map(|pending| (pending.call_id.clone(), pending.escalations.clone()))
+            pending.as_ref().map(|pending| {
+                (
+                    pending.gate.call_id.clone(),
+                    pending.gate.escalations.clone(),
+                )
+            })
         };
         let Some((call_id, escalations)) = read else {
             return;
@@ -143,8 +146,8 @@ impl Session {
         let body = {
             let mut pending = self.pending.lock().unwrap();
             let Some(pending) = pending.as_mut().filter(|pending| {
-                pending.call_id == call_id
-                    && pending.escalations == escalations
+                pending.gate.call_id == call_id
+                    && pending.gate.escalations == escalations
                     && pending.moment_to != reviewer
             }) else {
                 return;

@@ -18,10 +18,7 @@ mod view;
 
 pub(crate) use moves::Moves;
 pub(crate) use render::{Reader, Relation, render};
-pub(crate) use view::{
-    Activity, Block, Condition, Escalated, Footer, HeldCall, Park, Returned, Reviewer, StatusView,
-    held_because,
-};
+pub(crate) use view::held_because;
 
 /// One session's condition at a decision point, as read off its control state.
 /// `Ended` and `Failed` are the host's to report once the runtime has returned;
@@ -112,15 +109,16 @@ impl Session {
         let pending = self.pending.lock().unwrap();
         let pending = pending.as_ref()?;
         let intent = pending
+            .gate
             .input
             .get(crate::log::INTENT)
             .and_then(Value::as_str)
             .map(str::to_string);
         Some(SessionStatus::Gated {
-            call_id: pending.call_id.clone(),
-            name: pending.name.clone(),
+            call_id: pending.gate.call_id.clone(),
+            name: pending.gate.name.clone(),
             intent,
-            reason: pending.reason.clone(),
+            reason: pending.gate.reason.clone(),
         })
     }
 

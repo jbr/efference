@@ -4,7 +4,7 @@
 //! it cannot run.
 
 use super::*;
-use crate::daemon::status::StatusView;
+use crate::protocol::status::StatusView;
 
 /// The most model ids an offer names per connection.
 const OFFERED_MODELS: usize = 8;

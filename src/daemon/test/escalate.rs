@@ -5,10 +5,10 @@
 use super::*;
 use crate::control_tools::{Control, Decide, Executor, Status};
 use crate::daemon::Host;
-use crate::daemon::status::{Condition, Escalated, Reviewer};
 use crate::log::{Approval, Telemetry};
 use crate::policy::ReviewLevel;
 use crate::protocol::agents::Decision;
+use crate::protocol::status::{Condition, Escalated, Reviewer};
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
@@ -119,7 +119,7 @@ fn decide(agent: &str, seq: &str, decision: Decision, message: Option<&str>) -> 
     }
 }
 
-fn held(session: &Session, id: &str) -> crate::daemon::status::HeldCall {
+fn held(session: &Session, id: &str) -> crate::protocol::status::HeldCall {
     match session.status_view(id, &session.status()).condition {
         Condition::Gated(held) => held,
         other => panic!("{id} holds no call: {other:?}"),

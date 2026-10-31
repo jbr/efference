@@ -5,45 +5,10 @@
 //! never read as its answer.
 
 use super::transcript::reference::{Referenced, call_id_at, referenced};
-use super::transcript::{Handle, sender};
+use super::transcript::sender;
 use super::*;
-
-/// Where a named turn went.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Landing {
-    /// It answered the question it named.
-    Answered,
-    /// The loop takes it at once ([`Session::turn_delivery`]).
-    Now,
-    /// It waits in the queue for the loop's next juncture.
-    Queued,
-    /// An agent's turn, queued behind the operator's pace hold until it is released
-    /// (docs/control-channel.md).
-    Held,
-}
-
-impl Landing {
-    /// The `delivery` a `POST /turns` answer carries (docs/control-api.md).
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Answered => "answered",
-            Self::Now => "now",
-            Self::Queued => "queued",
-            Self::Held => "held",
-        }
-    }
-
-    /// The landing a `delivery` string names.
-    pub(crate) fn parse(delivery: &str) -> Option<Self> {
-        match delivery {
-            "answered" => Some(Self::Answered),
-            "now" => Some(Self::Now),
-            "queued" => Some(Self::Queued),
-            "held" => Some(Self::Held),
-            _ => None,
-        }
-    }
-}
+use crate::protocol::transcript::Handle;
+use crate::protocol::turns::Landing;
 
 /// Why a named turn was not delivered. Each renders as the refusal its sender reads
 /// ([`NotDelivered::message`]).
@@ -173,10 +138,7 @@ impl Session {
                 Err(self.not_pending(reference, id.as_deref()))
             }
             (None, None) => {
-                let landing = match self.turn_delivery() {
-                    "now" => Landing::Now,
-                    _ => Landing::Queued,
-                };
+                let landing = self.turn_delivery();
                 self.person_acted(PersonAction::NamedTurn { answers: false });
                 Ok(match self.queue_turn(ask, turn) {
                     true => Landing::Held,

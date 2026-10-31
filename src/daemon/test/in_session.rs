@@ -4,6 +4,7 @@
 use super::*;
 use crate::control_tools::{Archive, Control, Create, Executor, Interrupt, Message, Status};
 use crate::daemon::Host;
+use crate::protocol::sessions::CreateSession;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 use std::path::Path;

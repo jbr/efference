@@ -2,6 +2,7 @@
 //! establishing an environment (docs/control-api.md).
 
 use super::*;
+use crate::protocol::sessions::SessionOptionsRequest;
 
 /// `QUERY /sessions` (docs/control-api.md): the host's preview of a proposed
 /// session — the effective selections, where each came from, and the issues that

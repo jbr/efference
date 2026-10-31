@@ -1,36 +1,17 @@
 //! In-flight tool-call approvals awaiting a decision (docs/permissions.md).
 
 use super::*;
+use crate::protocol::state::Gate;
+use crate::protocol::status::Escalated;
 
-/// An in-flight approval surfaced to clients via `GET /state` (the ephemeral
-/// control state the log doesn't record — it stores only the *result*).
-#[derive(Clone, Serialize)]
+/// The gate held now: the [`Gate`] the `gate` topic publishes, and whom its latest push
+/// moment went to.
+#[derive(Clone)]
 pub(super) struct Pending {
-    pub(super) call_id: String,
-    pub(super) name: String,
-    pub(super) input: Value,
-    /// The spotter's one-line reason for routing this call to the human, if it gated via the
-    /// spotter (docs/permissions.md) — read from the `Spot` audit entry the spotter logs *before*
-    /// the gate. Lets the client show *why* a call is held without a new side channel. `None` when
-    /// no spotter verdict preceded the gate.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) reason: Option<String>,
-    /// The leaf action this approval authorizes, when the held call is a bound
-    /// `agents__decide` (docs/permissions.md). `None` for an ordinary gate.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) acting_on: Option<crate::protocol::agents::BoundAction>,
-    /// The one grant this gate offers, decided at the rung that held the call
-    /// (docs/permissions.md). `None` when no single change is confidently the one.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) grant: Option<crate::policy::GateGrant>,
-    /// Each time the call was passed up undecided, in order (`decide` with `escalate`,
-    /// docs/permissions.md); the last names whom it is routed to now.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(super) escalations: Vec<status::Escalated>,
+    pub(super) gate: Gate,
     /// Whom the gate's latest push moment went to: the session that answers it, or
     /// `None` for the operator (docs/web-push.md). A routing change that moves the
     /// gate's reviewer away from this is a moment of its own (`Session::gate_rerouted`).
-    #[serde(skip)]
     pub(super) moment_to: Option<String>,
 }
 
@@ -38,14 +19,15 @@ impl Pending {
     /// What a push about this gate says (docs/web-push.md): the gate's own body, marked
     /// with its last escalation's escalator and note when it was escalated.
     pub(super) fn push_body(&self) -> String {
-        let call = ToolCall::new(&self.name, self.call_id.as_str(), self.input.clone());
+        let held = &self.gate;
+        let call = ToolCall::new(&held.name, held.call_id.as_str(), held.input.clone());
         let gate = push::gate_body(
-            &self.name,
+            &held.name,
             call.intent(),
-            self.reason.as_deref(),
-            self.acting_on.as_ref(),
+            held.reason.as_deref(),
+            held.acting_on.as_ref(),
         );
-        match self.escalations.last() {
+        match held.escalations.last() {
             Some(last) => push::escalated_body(last.source.as_deref(), last.note.as_deref(), &gate),
             None => gate,
         }
@@ -94,9 +76,9 @@ impl Session {
             let pending = self.pending.lock().unwrap();
             let pending = pending.as_ref()?;
             ToolCall::new(
-                pending.name.clone(),
-                pending.call_id.clone(),
-                pending.input.clone(),
+                pending.gate.name.clone(),
+                pending.gate.call_id.clone(),
+                pending.gate.input.clone(),
             )
         };
         Some(PendingGate {
@@ -123,13 +105,15 @@ impl Session {
         // the gate's routing against this, so a gate that has not moved is no new moment.
         let reviewer = self.gate_reviewer(&[]);
         let pending = Pending {
-            call_id: call.id.0.clone(),
-            name: call.name.clone(),
-            input: call.input.clone(),
-            reason,
-            acting_on: bound.cloned(),
-            grant,
-            escalations: Vec::new(),
+            gate: Gate {
+                call_id: call.id.0.clone(),
+                name: call.name.clone(),
+                input: call.input.clone(),
+                reason,
+                acting_on: bound.cloned(),
+                grant,
+                escalations: Vec::new(),
+            },
             moment_to: reviewer.clone(),
         };
         let push_body = pending.push_body();
@@ -162,10 +146,13 @@ impl Session {
     ) -> bool {
         let push_body = {
             let mut pending = self.pending.lock().unwrap();
-            let Some(pending) = pending.as_mut().filter(|pending| pending.call_id == id.0) else {
+            let Some(pending) = pending
+                .as_mut()
+                .filter(|pending| pending.gate.call_id == id.0)
+            else {
                 return false;
             };
-            pending.escalations.push(status::Escalated {
+            pending.gate.escalations.push(Escalated {
                 source: source.clone(),
                 to: to.clone(),
                 note: note.clone(),
@@ -197,8 +184,8 @@ impl Session {
             let pending = self.pending.lock().unwrap();
             let pending = pending.as_ref()?;
             (
-                pending.call_id.clone(),
-                pending.escalations.last()?.to.clone()?,
+                pending.gate.call_id.clone(),
+                pending.gate.escalations.last()?.to.clone()?,
             )
         };
         Some((to, self.handle_of(&call_id)))
@@ -276,7 +263,7 @@ impl Session {
         });
         {
             let mut pending = self.pending.lock().unwrap();
-            if pending.as_ref().is_some_and(|p| p.call_id == id.0) {
+            if pending.as_ref().is_some_and(|p| p.gate.call_id == id.0) {
                 *pending = None;
             }
         }

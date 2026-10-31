@@ -1,6 +1,7 @@
 //! Per-session cache/usage telemetry and the keepalive clocks (docs/log-and-projection.md).
 
 use super::*;
+use crate::protocol::state::{KeepaliveSkip, LastCacheMiss};
 
 mod usage_line;
 pub use usage_line::{USAGE_NAME, UsageLine, last_turn_usage};
@@ -64,7 +65,7 @@ pub(super) struct Metrics {
     /// staleness from its own absolute stamp.
     pub(super) last_cache_miss: Option<LastCacheMiss>,
     /// Set while the keepalive loop is skipping pings or ended on a rejection (`usage.keepalive_skipped`).
-    pub(super) keepalive_skipped: Option<keepalive::KeepaliveSkip>,
+    pub(super) keepalive_skipped: Option<KeepaliveSkip>,
     /// The triage lineage's touch clock (docs/transport.md): stamped by a primer, a
     /// keepalive ping, and a result triage on the own client. Idle triage runs on the
     /// agent's client and does not stamp it. The triage keepalive reads it the way the main
@@ -77,7 +78,7 @@ pub(super) struct Metrics {
     pub(super) triage_request: Option<keepalive::StoredRequest>,
     /// Set while the triage keepalive is skipping pings or ended on a rejection
     /// (`usage.triage_keepalive_skipped`).
-    pub(super) triage_keepalive_skipped: Option<keepalive::KeepaliveSkip>,
+    pub(super) triage_keepalive_skipped: Option<KeepaliveSkip>,
 }
 
 /// Session cost telemetry (docs/transport.md): the endpoint whose accounting
@@ -98,18 +99,6 @@ pub(super) struct CostCell {
 /// while a session idles, so a gap this long means the pings also stopped (the cap)
 /// or never ran.
 const CACHE_TTL: Duration = Duration::from_secs(300);
-
-/// How many consecutive unexplained cold main-loop requests before the streak is
-/// worth surfacing (docs/log-and-projection.md). Four, from a fold over this repo's
-/// own corpus (77 `usage.jsonl` files, 44 with turns, 1371 `turn` requests):
-/// 155 of those turns read nothing from the cache, and this
-/// classifier explains 54 of them (38 session boot, 9 idle past the TTL, 7 a model
-/// change). The remaining 101 fall into 28 runs — 24 of length 1, two of length 3,
-/// and two of length 28 and 43, each of which was a whole session that never once
-/// read the cache. So runs of 1–3 are what normal operation produces (a retry that
-/// re-sent a prefix, an eviction this heuristic misses), and the defect signal is an
-/// order of magnitude longer; 4 sits in the empty band between them.
-pub const COLD_STREAK_WARN: u32 = 4;
 
 /// Seconds to wait before each attempt at pricing a generation
 /// (`Session::spawn_cost_fetch`, docs/transport.md). The record's arrival lag
@@ -285,25 +274,6 @@ impl ColdStreak {
     pub fn streak(&self) -> u32 {
         self.streak
     }
-}
-
-/// The most recent cache miss the provider attributed, as `GET /state` publishes it
-/// (docs/control-api.md). The reason is the provider's own spelling, and two of the six
-/// values — `previous_message_not_found` and `unavailable` — mean no comparison was
-/// produced rather than naming a divergence, so a client that renders this as a
-/// *cause* has to say so for those two.
-///
-/// `at` is absolute wall-clock millis, like `last_request_at` and for the same reason
-/// (docs/control-api.md): an elapsed-time field changes on every read, which under
-/// level-triggered emission means the topic never goes quiet.
-#[derive(Clone, Debug, Serialize)]
-pub struct LastCacheMiss {
-    pub reason: crate::api::CacheMissReason,
-    /// The provider's byte-derived estimate of the prefix that fell after the
-    /// divergence. Absent on the reasons that carry none.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_missed_input_tokens: Option<u64>,
-    pub at: crate::log::Timestamp,
 }
 
 /// Now, as Unix millis — the stamp on a usage line and the input to the
@@ -615,7 +585,7 @@ impl Session {
 
     /// Consecutive unexplained cold main-loop reads (docs/log-and-projection.md) —
     /// what `GET /state` publishes as `usage.cold_streak` and the TUI sidebar warns
-    /// on past [`COLD_STREAK_WARN`].
+    /// on past [`COLD_STREAK_WARN`](crate::protocol::state::COLD_STREAK_WARN).
     pub fn cold_streak(&self) -> u32 {
         self.metrics.lock().unwrap().cold_streak.streak()
     }

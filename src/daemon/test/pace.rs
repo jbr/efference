@@ -1,6 +1,7 @@
 //! Tests for `pace.rs`.
 
 use super::*;
+use crate::protocol::turns::Landing;
 
 /// The `/settle` predicate (docs/permissions.md) tracks the loop's
 /// lifecycle: idle → busy on submit (even before dequeue) → busy mid-turn → *settled* at a gate

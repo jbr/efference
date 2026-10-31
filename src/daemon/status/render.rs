@@ -7,10 +7,10 @@
 //! printed; instants become durations against the caller's clock; a cut says how much
 //! it left out and which call reads the rest; senders are plain names.
 
-use super::super::starting::Stage;
 use super::super::transcript::code_span;
 use super::moves::{Moves, Target};
-use super::view::*;
+use crate::protocol::state::Stage;
+use crate::protocol::status::*;
 use std::fmt::Write as _;
 
 /// How the reader stands to the session (docs/tools.md).

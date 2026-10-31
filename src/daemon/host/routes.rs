@@ -76,7 +76,7 @@ async fn report_attention(mut conn: Conn) -> Conn {
         return missing_host(conn);
     };
     let body = conn.request_body_string().await.unwrap_or_default();
-    match attention::AttentionReport::parse(&body) {
+    match crate::protocol::attention::AttentionReport::parse(&body) {
         Ok(report) => {
             host.report_attention(&report);
             conn.with_status(204).halt()

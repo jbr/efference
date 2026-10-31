@@ -236,6 +236,7 @@ mod status;
 mod subscriptions;
 mod supervise;
 mod tools;
+mod topic_bytes;
 mod triage_client;
 mod triage_keepalive;
 mod triage_stream;

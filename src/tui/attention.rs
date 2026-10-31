@@ -9,7 +9,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::daemon::attention::AttentionReport;
+use crate::protocol::attention::AttentionReport;
 
 /// How recent an input event must be for the person to count as attending. A
 /// person reading output without touching anything for longer lapses to the

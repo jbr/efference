@@ -201,7 +201,7 @@ pub(crate) fn same_dir(a: &Path, b: &Path) -> bool {
 /// a host that serves several (docs/control-channel.md). A listing without a
 /// cwd (a host older than the field) is kept, since it cannot be placed.
 pub(crate) fn hosted_here(
-    listings: &[efference::client::ListedSession],
+    listings: &[efference::protocol::sessions::ListedSession],
     here: &Path,
 ) -> Vec<String> {
     listings

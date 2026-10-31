@@ -233,7 +233,7 @@ impl Client {
     /// attention table, so the caller stops reporting.
     pub(crate) async fn report_attention(
         &self,
-        report: &crate::daemon::attention::AttentionReport,
+        report: &crate::protocol::attention::AttentionReport,
     ) -> Result<bool> {
         let path = "/attention";
         let body = serde_json::to_string(report)?;
@@ -339,7 +339,7 @@ pub enum SessionRead {
     /// The host is running it.
     Hosted(ListedSession),
     /// It is on disk and nothing is running it.
-    Dormant(Box<crate::daemon::DormantSession>),
+    Dormant(Box<crate::protocol::sessions::DormantSession>),
     /// The host holds no such session and finds none on disk.
     Unknown,
 }

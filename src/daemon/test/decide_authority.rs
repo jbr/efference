@@ -5,10 +5,10 @@
 use super::*;
 use crate::control_tools::{Control, Decide, Executor, Message, Status};
 use crate::daemon::Host;
-use crate::daemon::status::{Condition, Reviewer};
 use crate::log::{Approval, Telemetry};
 use crate::policy::ReviewLevel;
 use crate::protocol::agents::Decision;
+use crate::protocol::status::{Condition, Reviewer};
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 

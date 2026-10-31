@@ -2,7 +2,7 @@
 //! approval gate (docs/control-api.md, docs/permissions.md).
 
 use super::*;
-use crate::daemon::Landing;
+use crate::protocol::turns::{Landing, QueuedTurn};
 
 /// Enqueue a user turn (also seeds turn 1). 202 — watch the stream for the
 /// response; submission is decoupled from inference. A session still starting queues
@@ -170,7 +170,7 @@ pub(super) async fn withdraw_turns(conn: Conn) -> Conn {
         (None, Some(starting)) => starting.withdraw(&id),
         (None, None) => return missing_state(conn),
     };
-    let withdrawn: Vec<Value> = popped.into_iter().map(|t| t.pending_json()).collect();
+    let withdrawn: Vec<QueuedTurn> = popped.iter().map(QueuedTurn::from).collect();
     let body = serde_json::json!({ "withdrawn": withdrawn });
     conn.with_status(200).with_body(body.to_string()).halt()
 }

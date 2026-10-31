@@ -25,14 +25,11 @@ use std::fmt::Write as _;
 
 pub(crate) mod audit;
 pub(crate) mod conversation;
-pub(crate) mod cursor;
 #[cfg(test)]
 mod fixtures;
 mod index;
 pub(crate) mod reference;
 pub(crate) mod zoom;
-
-pub(crate) use zoom::Handle;
 
 /// Which render a window read answers with (docs/control-api.md).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

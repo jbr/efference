@@ -79,20 +79,13 @@ const TABLE: &[Row] = &[
 ];
 
 /// The imports of an outer module that a module outside the set still makes: the turn
-/// loop reads the session, its phase types and its streamed deltas from `daemon`, and
-/// the toolbox mounts the session-control tools over the `daemon::Host` that owns
-/// them. They stay until the session's state leaves `daemon` and the toolbox reaches
-/// the host through a trait; each is deleted from here when its import goes.
+/// loop reads the session from `daemon` and refreshes its config through it, and the
+/// toolbox mounts the session-control tools over the `daemon::Host` that owns them. They
+/// stay until the session's state leaves `daemon` and the toolbox reaches the host
+/// through a trait; each is deleted from here when its import goes.
 const OPEN_EDGES: &[(&str, &str)] = &[
-    ("agent.rs", "daemon::BlockedReason"),
-    ("agent.rs", "daemon::LoopPhase"),
-    ("agent.rs", "daemon::RequestOrigin"),
     ("agent.rs", "daemon::Session"),
-    ("agent.rs", "daemon::Stall"),
-    ("agent.rs", "daemon::StallReason"),
-    ("agent.rs", "daemon::StreamDelta"),
     ("agent/config_edit.rs", "daemon::refresh_and_emit"),
-    ("agent/consolidation.rs", "daemon::StreamDelta"),
     ("tools.rs", "control_tools::Control"),
     ("tools.rs", "control_tools::in_session::Tools"),
     ("tools/toolbox.rs", "control_tools::Control::new"),

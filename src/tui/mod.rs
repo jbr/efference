@@ -197,7 +197,7 @@ pub(crate) enum TuiEvent {
     /// Where the loop is (the `loop_phase` topic, docs/control-api.md). The "is
     /// something happening" signal graduated Esc reads to choose pause-vs-swallow
     /// (docs/tui.md) — reliable through a silent tool, unlike streaming deltas.
-    Phase(crate::daemon::LoopPhase),
+    Phase(crate::protocol::state::LoopPhase),
     /// What the loop routes would answer now (the `verbs` topic, docs/control-api.md).
     Verbs(VerbsView),
     /// A retry in flight changed (the `upstream_retry` topic, docs/transport.md).
@@ -273,7 +273,7 @@ pub(crate) enum TuiEvent {
     /// The host's session listing came back, or said why it could not
     /// (docs/tui.md). One whole listing per event: the switcher holds the latest
     /// and nothing is reconciled.
-    Sessions(Result<Vec<crate::client::ListedSession>, String>),
+    Sessions(Result<Vec<crate::protocol::sessions::ListedSession>, String>),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
     /// Open the offline form experiment against an empty context (docs/tui.md).
@@ -495,7 +495,7 @@ pub(crate) struct UsageStats {
     /// Consecutive main-loop requests that read nothing from the cache with no
     /// legitimate reason (not boot, not a model change, not idle past the TTL), from
     /// `usage.cold_streak` (docs/log-and-projection.md). Past
-    /// `daemon::COLD_STREAK_WARN` the sidebar says so; a warm read resets it to 0,
+    /// `protocol::state::COLD_STREAK_WARN` the sidebar says so; a warm read resets it to 0,
     /// which clears the line.
     pub cold_streak: u32,
     /// One line stating the keepalive's stance, from `usage.keepalive_skipped`

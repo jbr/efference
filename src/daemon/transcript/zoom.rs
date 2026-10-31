@@ -6,40 +6,7 @@
 use super::index::Index;
 use super::*;
 use crate::log::{ContentBlock, Seq, Spot, Telemetry};
-
-/// A transcript handle: an entry's `seq`, or `seq.n` for the n-th call (1-based) of
-/// an entry that issued several (`call_label`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Handle {
-    pub(crate) seq: Seq,
-    pub(crate) call: Option<usize>,
-}
-
-impl Handle {
-    /// `8` or `8.2`, or what was wrong with it.
-    pub(crate) fn parse(text: &str) -> Result<Self, String> {
-        let bad =
-            || format!("seq must be an entry's seq or a call's seq.n, like 8 or 8.2; got {text:?}");
-        let (seq, call) = match text.split_once('.') {
-            Some((seq, n)) => (seq, Some(n)),
-            None => (text, None),
-        };
-        let seq = seq.parse().map_err(|_| bad())?;
-        let call = call
-            .map(|n| n.parse::<usize>().ok().filter(|n| *n >= 1).ok_or_else(bad))
-            .transpose()?;
-        Ok(Self { seq, call })
-    }
-}
-
-impl std::fmt::Display for Handle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.call {
-            Some(n) => write!(f, "{}.{n}", self.seq),
-            None => write!(f, "{}", self.seq),
-        }
-    }
-}
+use crate::protocol::transcript::Handle;
 
 /// The entry `handle` names, in full, or why there is none.
 pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Result<String, String> {

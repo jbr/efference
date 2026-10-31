@@ -18,6 +18,11 @@ fn review_level_round_trips_and_fails_safe() {
             Some(level),
             "token round-trip"
         );
+        assert_eq!(
+            serde_json::to_value(level).unwrap(),
+            Value::from(level.as_str()),
+            "serde spells the token"
+        );
     }
     // The gear order, pinned: ordered by how much a position costs a human, which an
     // supervising agent reduces without eliminating.

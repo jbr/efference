@@ -142,7 +142,7 @@ impl<'a> InteractiveState<'a> {
             sidebar_verb_focus: 0,
             sidebar_hits: Vec::new(),
             sidebar_verb_hits: Vec::new(),
-            loop_phase: crate::daemon::LoopPhase::Idle,
+            loop_phase: crate::protocol::state::LoopPhase::Idle,
             verbs: None,
             pace: None,
             processes: Vec::new(),
@@ -198,13 +198,13 @@ impl<'a> InteractiveState<'a> {
 
     /// Whether the daemon's loop is anywhere but idle.
     pub(in crate::tui) fn loop_running(&self) -> bool {
-        self.loop_phase != crate::daemon::LoopPhase::Idle
+        self.loop_phase != crate::protocol::state::LoopPhase::Idle
     }
 
     /// Why the loop is parked at its cold check, or `None` when it is not: the `cold`
     /// topic still set is an expired cache, cleared is a compaction that ended it.
     pub(in crate::tui) fn park(&self) -> Option<ParkReason> {
-        (self.loop_phase == crate::daemon::LoopPhase::ColdParked).then(|| {
+        (self.loop_phase == crate::protocol::state::LoopPhase::ColdParked).then(|| {
             if self.cold.is_some() {
                 ParkReason::Expired
             } else {

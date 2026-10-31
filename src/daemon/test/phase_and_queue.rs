@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::daemon::continuation::NotContinuable;
+use crate::protocol::turns::Landing;
 use std::sync::atomic::AtomicBool;
 
 /// Arm the next `phase_and_queue` to run `writer` between its read of the phase and its read
@@ -105,7 +106,7 @@ fn a_claim_between_the_reads_leaves_the_next_turn_queued() {
         reached.load(Ordering::SeqCst),
         "the point between the reads was reached"
     );
-    assert_eq!(delivery, "queued");
+    assert_eq!(delivery, Landing::Queued);
 }
 
 /// A continue asked for while the loop claims a turn is declined as busy: accepted, it would

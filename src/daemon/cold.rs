@@ -10,6 +10,7 @@
 use super::*;
 use crate::log::Telemetry;
 use crate::log::{ColdEvent, ColdReason, ReleasedBy, Timestamp, UnparkCause};
+use crate::protocol::state::Cold;
 
 /// Why the loop is stopped at its cold check mid-turn (the `cold_parked` loop phase,
 /// docs/control-api.md): what a status subscriber is told.
@@ -84,17 +85,15 @@ impl Session {
         Some(since)
     }
 
-    /// The `cold` topic: `{since, context_tokens}`, or `null`. `context_tokens` is
+    /// The `cold` topic, or `None` while the cache is believed warm. `context_tokens` is
     /// the last turn's prompt — what reading the context unfolded would cost, in tokens.
     /// Whether the loop is stopped at its cold check is the `cold_parked` loop phase.
     /// A compaction in flight is in `current_operations`.
-    pub(super) fn cold_json(&self) -> Value {
-        let Some(since) = self.cold_since() else {
-            return Value::Null;
-        };
-        serde_json::json!({
-            "since": since,
-            "context_tokens": self.cold_context_tokens(),
+    pub(super) fn cold(&self) -> Option<Cold> {
+        let since = self.cold_since()?;
+        Some(Cold {
+            since,
+            context_tokens: self.cold_context_tokens(),
         })
     }
 

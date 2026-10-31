@@ -19,19 +19,19 @@ use crate::api::{Client, Error, RetrySurface, Streamed, ToolChoice, UpstreamRetr
 use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
-use crate::daemon::{
-    BlockedReason, LoopPhase, RequestOrigin, Session, Stall, StallReason, StreamDelta,
-};
+use crate::daemon::Session;
 use crate::frontend::{Frontend, SubmittedTurn};
 use crate::inbox::ShownNotification;
 use crate::log::{
     Approval, AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState,
-    Exclusion, Notification, Origin, Payload, RawResult, Spot, Stance, Summary, ToolCall, Triage,
-    Turn, WireState,
+    Exclusion, Notification, Origin, Payload, RawResult, RequestOrigin, Spot, Stance, Summary,
+    ToolCall, Triage, Turn, WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
 use crate::process_monitor;
 use crate::project::WireTurn;
+use crate::protocol::state::{BlockedReason, LoopPhase, Stall, StallReason};
+use crate::protocol::stream::StreamDelta;
 use crate::spotter::Spotter;
 use crate::tools::Toolbox;
 use crate::triage::{

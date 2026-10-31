@@ -2,6 +2,9 @@
 //! and is blocked on. The next submitted turn resolves it instead of opening a user turn.
 
 use super::*;
+use crate::protocol::state::AskView;
+use crate::protocol::status::Returned;
+use crate::protocol::turns::QueuedTurn;
 
 /// The `ask` awaiting a reply. The sender is consumed by the turn that resolves it.
 pub(super) struct AskState {
@@ -15,19 +18,6 @@ pub(super) struct AskState {
     /// `DELETE /turns/:submission_id` withdraws them.
     recalled: Vec<SubmittedTurn>,
     reply: oneshot::Sender<SubmittedTurn>,
-}
-
-/// What `GET /state` and a status body say about the pending ask.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct AskView {
-    pub call_id: String,
-    pub question: String,
-    pub n: usize,
-    pub of: usize,
-    /// The turns recalled when this ask started, in the shape the recall route returns
-    /// ([`SubmittedTurn::pending_json`]), for the submitting client to put back in its
-    /// composer.
-    pub recalled: Vec<Value>,
 }
 
 /// The loop's claim on a pending ask. Dropping it ends the ask — on a reply, an
@@ -114,11 +104,11 @@ impl Session {
 
     /// The queued turns the pending ask returned undelivered, each with its sender
     /// (docs/process-monitor.md).
-    pub(crate) fn returned_by_ask(&self) -> Vec<status::Returned> {
+    pub(crate) fn returned_by_ask(&self) -> Vec<Returned> {
         self.ask.lock().unwrap().as_ref().map_or_default(|ask| {
             ask.recalled
                 .iter()
-                .map(|turn| status::Returned {
+                .map(|turn| Returned {
                     source: turn.source.clone(),
                     text: turn.text.clone(),
                 })
@@ -133,7 +123,7 @@ impl Session {
             question: a.question.clone(),
             n: a.n,
             of: a.of,
-            recalled: a.recalled.iter().map(SubmittedTurn::pending_json).collect(),
+            recalled: a.recalled.iter().map(QueuedTurn::from).collect(),
         })
     }
 

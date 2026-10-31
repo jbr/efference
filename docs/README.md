@@ -159,13 +159,14 @@ Read top-down; open the subsystem doc you need.
 | Trajectory digest (one line per call, the summarization substrate) | [digest.md](digest.md) | `src/digest.rs` |
 | Summaries (the record that replaces a range of the transcript) and compaction (the harness writing one from the digest) | [summary.md](summary.md) | `src/log/summary.rs`, `src/compact.rs`, `src/daemon/compact.rs`, `src/project.rs`, `assets/prompts/` |
 | Ambient notifications — the inbox (enqueue then triage), and the attachment store | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs`, `src/attachments.rs`, `src/daemon/attachments.rs` |
-| Session status — the one view of where a session stands (the `status` topic), its plaintext rendering, and the subscriptions that post it | [tools.md](tools.md), [control-api.md](control-api.md) | `src/daemon/status.rs` (+ `src/daemon/status/`), `src/daemon/subscriptions.rs` |
+| Session status — the one view of where a session stands (the `status` topic), its plaintext rendering, and the subscriptions that post it | [tools.md](tools.md), [control-api.md](control-api.md) | `src/protocol/status.rs`, `src/daemon/status.rs` (+ `src/daemon/status/`), `src/daemon/subscriptions.rs` |
 | Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/triage/title.rs` |
 | Starting sessions — the host's entry for a session while its environment and MCP servers are prepared, and how a failure or an archive ends it | [control-api.md](control-api.md) | `src/daemon/starting.rs`, `src/daemon/host/entries.rs`, `src/daemon/host/preparation.rs` |
 | Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |
 | Worktree sessions — a session's own git checkout, and the project/working directory pair | [worktrees.md](worktrees.md) | `src/worktree.rs`, `src/policy/directories.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | Background processes — the process monitor | [process-monitor.md](process-monitor.md) | `src/process_monitor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
+| The control channel's contract — the session collection's bodies and rows, a turn's submission id and where it landed, `GET /state` (`StateTopics`) and a type per state topic, the status view, the `output` class's deltas, transcript reads and the read cursor, and the attention report | [control-api.md](control-api.md) | `src/protocol.rs`, `src/protocol/sessions.rs`, `src/protocol/turns.rs`, `src/protocol/state.rs` (+ `src/protocol/state/`), `src/protocol/status.rs`, `src/protocol/stream.rs`, `src/protocol/transcript.rs`, `src/protocol/attention.rs` |
 | The session directory — the base session dirs live under, the log's file name, which ids may name a session, and the owner-only modes it and its files are created with | [control-channel.md](control-channel.md), [state-store.md](state-store.md) | `src/session_dir.rs`, `src/daemon/permissions.rs` |
 | The `agents__*` tool contract — the namespace, the wire names the loop treats specially, the `decide` argument, and the `BoundAction` a decision binds | [tools.md](tools.md), [permissions.md](permissions.md) | `src/protocol.rs`, `src/protocol/agents.rs`, `src/control_tools.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |
@@ -228,8 +229,8 @@ import that runs the other way. Two rules hold:
   the control channel or the tool wire).
 
 The imports that still run against the second rule are named in the test, each by the
-file that makes it and the path it imports: the turn loop (`agent`) reads the session,
-its phase types and its streamed deltas from `daemon`, and the toolbox (`tools`) mounts
+file that makes it and the path it imports: the turn loop (`agent`) holds the `Session`
+and refreshes the config through `daemon`, and the toolbox (`tools`) mounts
 the session-control tools over `daemon::Host` and `control_tools`. A new import of that
 kind fails the test, and so does a named one that has gone, until its line is deleted.
 

@@ -16,24 +16,23 @@ use super::permissions;
 use super::runtime::SessionRuntime;
 use super::*;
 use crate::inference::SessionOptions;
+use crate::protocol::sessions::{
+    ArchivedSession, CreateSession, DormantSession, ListedSession, PatchSession, SessionState,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use trillium_tokio::Swansong;
 
 mod create;
-pub use create::CreateSession;
 use create::create_session;
 
 mod options;
-pub use options::SessionOptionsRequest;
 use options::preview_session;
 
 mod resume;
 use resume::patch_session;
-pub use resume::{PatchSession, SessionState};
 
 mod archived;
-pub use archived::{ArchivedSession, DormantSession};
 use archived::{archived_listing, read_session};
 
 mod catalog;
@@ -43,7 +42,6 @@ mod projects;
 use projects::{forget_project, list_projects};
 
 mod listing;
-pub use listing::ListedSession;
 use listing::listing_stream;
 
 mod supervise;
@@ -130,7 +128,7 @@ pub struct Host {
     /// What the update check last found newer than this host (`update_check.rs`,
     /// docs/update-check.md). Shared with each adopted session, which publishes it as
     /// its `newer_version` topic; empty on a host that does not check.
-    newer_version: Arc<newer_version::NewerVersion>,
+    newer_version: Arc<newer_version::NewerVersionCell>,
     /// The artifact-only loopback listener's origin (docs/artifacts.md): started by
     /// the first adopt, under this host's `Swansong`; `None` once its bind failed, so
     /// the bind is tried once.

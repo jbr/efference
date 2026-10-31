@@ -8,10 +8,11 @@ use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 use super::args;
-use crate::daemon::transcript::Handle;
 use crate::daemon::{Host, Session};
 use crate::log::ToolCall;
 use crate::protocol::agents::{ARCHIVE_WIRE_NAME, BoundAction, DECIDE_WIRE_NAME, allows};
+use crate::protocol::sessions::CreateSession;
+use crate::protocol::transcript::Handle;
 
 /// The in-process executor (docs/tools.md): the calling session's toolbox reaches
 /// the host directly — the same `Session` methods the HTTP handlers call, never a
@@ -344,10 +345,7 @@ impl HostExecutor {
     /// `create` in-session: the child records the caller as its creator, and this
     /// waits out the preparation, so the calling agent reads a failure as this call's
     /// error rather than finding the child gone later (docs/tools.md).
-    pub(super) async fn create(
-        &self,
-        body: crate::daemon::CreateSession,
-    ) -> Result<(Arc<Session>, String)> {
+    pub(super) async fn create(&self, body: CreateSession) -> Result<(Arc<Session>, String)> {
         let host = self.host()?;
         let lineage = crate::env::Lineage {
             created_by: Some(self.caller.clone()),
@@ -365,11 +363,7 @@ impl HostExecutor {
 
     /// `hand_off` in-session: the caller's work goes to a new session in its own
     /// directory, which it then succeeds (docs/tools.md).
-    pub(super) async fn hand_off(
-        &self,
-        body: crate::daemon::CreateSession,
-        brief: String,
-    ) -> Result<String> {
+    pub(super) async fn hand_off(&self, body: CreateSession, brief: String) -> Result<String> {
         let host = self.host()?;
         let handed = host.hand_off(&self.caller, body, brief).await;
         handed.map_err(|reason| anyhow!("{reason}"))

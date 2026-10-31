@@ -7,7 +7,8 @@
 //! again by the route.
 
 use super::*;
-use serde_json::json;
+use crate::protocol::state::{VerbAnswer, Verbs};
+use crate::protocol::turns::Landing;
 
 impl Session {
     /// Whether a turn submitted now is delivered at once — to the idle loop, as the
@@ -15,7 +16,7 @@ impl Session {
     /// delay it ends — or waits in the queue for the loop's next juncture. The phase and the
     /// queue come from one [`phase_and_queue`](Self::phase_and_queue), so a turn the loop is
     /// claiming reads as one the new turn waits behind.
-    pub(crate) fn turn_delivery(&self) -> &'static str {
+    pub(crate) fn turn_delivery(&self) -> Landing {
         let now = self.phase_and_queue();
         let at_once = match now.phase {
             LoopPhase::Idle => !now.queued,
@@ -28,31 +29,34 @@ impl Session {
             LoopPhase::Delayed { .. } => !now.retry_pause,
             _ => false,
         };
-        if at_once { "now" } else { "queued" }
+        if at_once {
+            Landing::Now
+        } else {
+            Landing::Queued
+        }
     }
 
-    /// The `verbs` topic: `turn`, `continue`, and `compact`, each `{accepted: true, …}` or
-    /// `{accepted: false, message}` with the refusal the route would give.
-    pub(super) fn verbs_json(&self) -> Value {
-        let refused = |message: &str| json!({ "accepted": false, "message": message });
+    /// The `verbs` topic: `turn`, `continue`, and `compact`, each accepted with what it
+    /// would do, or refused with the message the route would give.
+    pub(super) fn verbs(&self) -> Verbs {
         let continue_verb = match self.continue_verdict() {
-            Ok(_) => json!({ "accepted": true }),
-            Err(why) => refused(why.message()),
+            Ok(_) => VerbAnswer::accepted(),
+            Err(why) => VerbAnswer::refused(why.message()),
         };
         // `warm` names the body the route accepts: `true` when the cache is believed
         // live, so only a request that says `warm: true` compacts.
-        let compact_verb = match self.compaction_verdict(false) {
-            Ok(_) => json!({ "accepted": true, "warm": false }),
+        let compact = match self.compaction_verdict(false) {
+            Ok(_) => VerbAnswer::compacts(false),
             Err(compact::NotCompactable::NotCold) => match self.compaction_verdict(true) {
-                Ok(_) => json!({ "accepted": true, "warm": true }),
-                Err(why) => refused(why.message()),
+                Ok(_) => VerbAnswer::compacts(true),
+                Err(why) => VerbAnswer::refused(why.message()),
             },
-            Err(why) => refused(why.message()),
+            Err(why) => VerbAnswer::refused(why.message()),
         };
-        json!({
-            "turn": { "accepted": true, "delivery": self.turn_delivery() },
-            "continue": continue_verb,
-            "compact": compact_verb,
-        })
+        Verbs {
+            turn: VerbAnswer::delivered(self.turn_delivery()),
+            continue_verb,
+            compact,
+        }
     }
 }

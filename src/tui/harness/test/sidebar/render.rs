@@ -146,7 +146,9 @@ fn sidebar_warns_on_a_cold_cache_streak() {
 
     let mut play = Screenplay::new(110, 16);
     play.user("go");
-    play.event(TuiEvent::Usage(stats(crate::daemon::COLD_STREAK_WARN - 1)));
+    play.event(TuiEvent::Usage(stats(
+        crate::protocol::state::COLD_STREAK_WARN - 1,
+    )));
     let below = play.sidebar_grid();
     assert!(
         !below.contains("cache misses"),
@@ -447,7 +449,7 @@ fn background_process_panel() {
 /// and gone when the topic clears. The park is the `cold_parked` loop phase.
 #[test]
 fn header_states_an_expired_cache() {
-    use crate::daemon::LoopPhase;
+    use crate::protocol::state::LoopPhase;
     use crate::tui::TuiEvent;
     use crate::tui::operations::OperationsView;
     let compacting = |open: bool| {

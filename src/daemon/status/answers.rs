@@ -5,9 +5,9 @@
 //! describes from wherever it can.
 
 use super::render::{Reader, Relation, activity_text, duration, render};
-use super::view::*;
-use crate::daemon::Landing;
 use crate::daemon::transcript::code_span;
+use crate::protocol::status::*;
+use crate::protocol::turns::Landing;
 
 /// The first line of `view`, as `reader` reads it.
 pub(crate) fn first_line(view: &StatusView, reader: &Reader, now: u64) -> String {

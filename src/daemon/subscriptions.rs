@@ -10,8 +10,9 @@
 //! at every control-state change and posts it to the subscribers when it moves.
 
 use super::host::Host;
-use super::status::{Condition, Reader, Relation, Reviewer, SessionStatus, render, status_slot};
+use super::status::{Reader, Relation, SessionStatus, render, status_slot};
 use super::*;
+use crate::protocol::status::{Condition, Reviewer};
 
 /// One subscriber's terms: whether the status must wake it (docs/inbox.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -310,7 +311,7 @@ impl Session {
             .lock()
             .unwrap()
             .as_ref()
-            .map_or_default(|pending| pending.escalations.clone());
+            .map_or_default(|pending| pending.gate.escalations.clone());
         match escalations.is_empty() {
             true => Routing::Dial(self.resolved_review_level(), self.supervisor()),
             false => Routing::Escalated {

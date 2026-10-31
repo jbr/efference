@@ -57,7 +57,11 @@ pub enum Verdict {
 /// The order is by how much a position costs a human, which a supervising agent reduces without
 /// eliminating: a `Supervisor` gate is answered by another session, but that session's own dial
 /// still terminates at the operator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Spelled on the control channel by [`as_str`](Self::as_str)'s token, which is also
+/// its serde form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ReviewLevel {
     /// No synchronous human: a spotter `Watch`/`Gate` redirects the model to its config
     /// (`agent::autonomous_gate_message`) instead of blocking on an absent gate.

@@ -110,13 +110,13 @@ async fn turns_queued_before_the_ask_are_recalled_and_published() {
 
     let task = start(&shared, ask_call("ask_1", "Which one?"), ONE).await;
     assert!(queued(&shared).is_empty(), "the queue was withdrawn");
-    let recalled = shared.asking().unwrap().recalled;
+    let recalled = serde_json::to_value(shared.asking().unwrap().recalled).unwrap();
     assert_eq!(
         recalled,
-        vec![
-            serde_json::json!({"submission_id": "early-1", "text": "earlier thought"}),
-            serde_json::json!({"submission_id": "early-2", "text": "another"}),
-        ]
+        serde_json::json!([
+            {"submission_id": "early-1", "text": "earlier thought"},
+            {"submission_id": "early-2", "text": "another"},
+        ])
     );
 
     shared.submit_turn(SubmittedTurn::new("the second", "answer"));

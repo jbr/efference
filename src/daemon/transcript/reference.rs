@@ -4,6 +4,7 @@
 
 use super::index::Index;
 use super::*;
+use crate::protocol::transcript::Handle;
 
 /// The call a reference resolves to.
 #[derive(Clone, Debug, PartialEq, Eq)]

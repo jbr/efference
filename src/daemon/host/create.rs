@@ -9,10 +9,9 @@
 
 use super::preparation::authorization_for;
 use super::*;
-use crate::daemon::starting::{Stage, Starting, StartingParts};
+use crate::daemon::starting::{Starting, StartingParts};
+use crate::protocol::state::Stage;
 use crate::session_dir::{SESSION_BASE, plain_id};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 impl Host {
     /// Create a session on this host: the path behind `POST /sessions`
@@ -277,88 +276,6 @@ struct CreationPlan {
     pick: Option<crate::history::Pick>,
     triage_pick: Option<crate::history::TriagePick>,
     launch: crate::remembered::Project,
-}
-
-/// Body of `POST /sessions` (docs/control-api.md): a `SessionRequest` as a
-/// client spells it. One type on both ends — the control client serializes it,
-/// the host deserializes it — so a new session knob is one field here. `env` is
-/// the session's complete base environment (docs/env.md); it is applied and
-/// dropped, never logged or echoed, which is why the type has no Debug.
-///
-/// `env` is optional because an omitted one is a *different request* from an
-/// empty one. Supplied, it is the base and nothing runs; omitted, the base is
-/// established for the session's directory from the user-wide `env_hook`, or
-/// from the host's own environment when none is configured (docs/env.md). An
-/// empty map is an explicit empty environment, so `{}` and omitted are different
-/// requests.
-#[derive(Serialize, Deserialize)]
-// The control channel's JSON body: each flag is its own optional key, and a client sends
-// any subset of them.
-#[allow(clippy::struct_excessive_bools)]
-pub struct CreateSession {
-    /// The session id; a minted adjective-noun pair when absent
-    /// (docs/session-title.md). A single plain path segment, as the gate's
-    /// `plain_id` requires.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    /// The directory the session works in. Absolute, always sent. The session's
-    /// project is this directory, or the project whose worktree it is inside
-    /// (docs/worktrees.md).
-    pub cwd: PathBuf,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config: Option<PathBuf>,
-    /// The editable selections, spelled exactly as `QUERY /sessions` accepts
-    /// them and resolved by the same flow (docs/control-api.md). Flattened, so
-    /// the two routes cannot drift and a new option is one field in one place.
-    #[serde(flatten)]
-    pub options: SessionOptions,
-    #[serde(default)]
-    pub upstream: Vec<String>,
-    #[serde(default)]
-    pub autonomous: bool,
-    #[serde(default)]
-    pub reauth: Vec<String>,
-    /// Fail the mount of an MCP server that asks for authorization, naming why, instead
-    /// of starting the authorization dance on the host (docs/mcp-auth.md): for a
-    /// preparation nobody may be at the host to finish.
-    #[serde(default)]
-    pub refuse_authorization: bool,
-    #[serde(default)]
-    pub keep_scratch: bool,
-    /// Give the session its own git worktree and start it there
-    /// (docs/worktrees.md).
-    #[serde(default)]
-    pub worktree: bool,
-    /// Outlive the session that creates this one (docs/tools.md). Meaningful only
-    /// for a session-driven `create`: a human root has no creator to end with.
-    #[serde(default)]
-    pub detached: bool,
-    /// The session's complete base environment, when the caller supplies one
-    /// (docs/env.md). `None` asks the host to establish it for `cwd`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub env: Option<BTreeMap<String, String>>,
-}
-
-impl CreateSession {
-    /// A creation in `cwd` with every other field at its default: a minted name, the
-    /// probed config, the host's defaults for every role, the environment established
-    /// by the host.
-    pub fn new(cwd: PathBuf) -> Self {
-        Self {
-            name: None,
-            cwd,
-            config: None,
-            options: SessionOptions::default(),
-            upstream: Vec::new(),
-            autonomous: false,
-            reauth: Vec::new(),
-            refuse_authorization: false,
-            keep_scratch: false,
-            worktree: false,
-            detached: false,
-            env: None,
-        }
-    }
 }
 
 /// `POST /sessions`: reserve a session from the body and prepare it in the

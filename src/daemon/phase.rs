@@ -12,59 +12,6 @@
 
 use super::*;
 
-/// Where the loop is now. Exclusive: what is in flight beside it — open requests,
-/// running tools, a compaction — is the `current_operations` topic.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "phase", rename_all = "snake_case")]
-pub enum LoopPhase {
-    /// Waiting for a turn, a continue, or an inbox wake.
-    #[default]
-    Idle,
-    /// A model request is in flight: a turn's, or a triage's (the idle triage included).
-    Requesting,
-    /// Tool calls are running, the spotter's judgement inside a batch included.
-    Executing,
-    /// A wait that ends on a timer: a finite pace delay, or the pause between upstream
-    /// attempts. `until` is absolute Unix millis.
-    Delayed { until: u64 },
-    /// Waiting on a decision from outside the loop at an approval gate. An autonomous
-    /// decline is decided inside the loop and never enters it.
-    Gated,
-    /// Waiting on the operator's answer to an `ask`.
-    Asking,
-    /// Stopped at the cold check, waiting for a person before an uncached read.
-    ColdParked,
-    /// Stopped until someone outside acts, for a reason that is not a gate, an ask,
-    /// or a cold park.
-    Blocked { reason: BlockedReason },
-}
-
-/// Why the loop is [`LoopPhase::Blocked`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BlockedReason {
-    /// A triage could not reach its model; the results are held (docs/triage.md).
-    TriageUnavailable,
-    /// A triage never produced a usable verdict; the results are held (docs/triage.md).
-    TriageDefect,
-    /// The config file does not parse and could not be restored (docs/permissions.md).
-    ConfigRepair,
-    /// The operator's pace dial is held (docs/control-channel.md).
-    PaceHeld,
-}
-
-impl LoopPhase {
-    /// Whether `settle` returns at this phase: the loop is waiting on someone outside
-    /// it, or on nothing (docs/control-api.md). Idle also needs an empty queue, which
-    /// [`Session::is_settled`] checks.
-    pub fn settles(self) -> bool {
-        matches!(
-            self,
-            Self::Idle | Self::Gated | Self::Asking | Self::ColdParked | Self::Blocked { .. }
-        )
-    }
-}
-
 /// A wait the loop is in, named as the phase while it lasts. Dropping it ends the
 /// wait into the phase the loop moves to next, unless a decision from outside already
 /// ended it.
@@ -131,10 +78,5 @@ impl Session {
         drop(phase);
         self.settle_changed.notify_waiters();
         self.touch_state();
-    }
-
-    /// The `loop_phase` topic.
-    pub(super) fn loop_phase_json(&self) -> Value {
-        serde_json::to_value(self.loop_phase()).unwrap_or(Value::Null)
     }
 }

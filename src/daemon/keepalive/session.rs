@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::api::SentRequest;
+use crate::protocol::state::{KeepaliveSkip, KeepaliveSkipReason};
 
 impl Session {
     /// `(since the lineage's last cache-touch, since the last real turn)` — the keepalive

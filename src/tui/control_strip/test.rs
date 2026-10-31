@@ -142,7 +142,9 @@ fn strip_interrupt_on_a_non_bash_tool_fires_the_interrupt() {
 fn strip_while_generating_offers_the_interrupt_and_the_hold() {
     let mut play = Screenplay::new(80, 12);
     play.user("think about it");
-    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
+    play.event(TuiEvent::Phase(
+        crate::protocol::state::LoopPhase::Requesting,
+    ));
     assert_eq!(
         labels(&play),
         vec![
@@ -172,7 +174,7 @@ fn strip_hold_reads_resume_and_survives_into_idle() {
     assert!(labels(&play).contains(&"resume"), "held renames the verb");
     assert!(!labels(&play).contains(&"pause"));
 
-    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Idle));
+    play.event(TuiEvent::Phase(crate::protocol::state::LoopPhase::Idle));
     assert_eq!(
         labels(&play),
         vec!["resume", "pace", "sessions", "theme", "help", "detach"],
@@ -249,7 +251,9 @@ fn strip_focus_marker_moves_without_shifting_text() {
 fn strip_enter_fires_the_focused_verb() {
     let mut play = Screenplay::new(80, 12);
     play.user("go");
-    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
+    play.event(TuiEvent::Phase(
+        crate::protocol::state::LoopPhase::Requesting,
+    ));
     play.route_key(KeyCode::Up, NONE); // → strip, on `interrupt` (generating: the interrupt leads)
     play.route_key(KeyCode::Right, NONE); // → `pause`
     play.route_key(KeyCode::Enter, NONE);
@@ -381,7 +385,9 @@ fn strip_focus_holds_the_verb_the_state_change_used_to_swap() {
 
     // The loop starts between the focus landing and the ⏎. Under an index this put
     // `interrupt` at position 0.
-    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
+    play.event(TuiEvent::Phase(
+        crate::protocol::state::LoopPhase::Requesting,
+    ));
     assert_eq!(
         play.state.strip_focus,
         Some(StripVerb::PaceWidget),
@@ -433,7 +439,7 @@ fn strip_freezes_while_engaged_and_greys_what_stops_applying() {
 
     // The command finishes. The verbs that only applied while it ran stop applying.
     play.tool_result("toolu_b", "ok", false, crate::log::WireState::Raw);
-    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Idle));
+    play.event(TuiEvent::Phase(crate::protocol::state::LoopPhase::Idle));
     assert_eq!(
         labels(&play),
         vec![
@@ -505,7 +511,7 @@ fn hovering_the_strip_pins_it_and_leaving_releases_it() {
     play.render();
 
     play.tool_result("toolu_b", "ok", false, crate::log::WireState::Raw);
-    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Idle));
+    play.event(TuiEvent::Phase(crate::protocol::state::LoopPhase::Idle));
     assert!(
         labels(&play).contains(&"kill"),
         "the row is pinned under the cursor even with no keyboard focus"

@@ -374,8 +374,8 @@ impl<'a> InteractiveState<'a> {
     /// reads as the operator being waited on, ahead of whatever request or tool is open (docs/tui.md).
     pub(crate) fn status_operation_text(&self) -> Option<String> {
         let pending = crate::tui::operations::pending_text(
-            self.loop_phase == crate::daemon::LoopPhase::Gated,
-            self.loop_phase == crate::daemon::LoopPhase::Asking,
+            self.loop_phase == crate::protocol::state::LoopPhase::Gated,
+            self.loop_phase == crate::protocol::state::LoopPhase::Asking,
         );
         pending
             .map(str::to_string)

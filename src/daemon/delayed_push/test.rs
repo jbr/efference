@@ -4,10 +4,11 @@
 //! gone out, and an empty slot after the delay is one that fired.
 
 use super::*;
-use crate::daemon::attention::{Attention, AttentionReport};
+use crate::daemon::attention::Attention;
 use crate::log::Telemetry;
 use crate::log::{Approval, MomentKind};
 use crate::log::{CallId, ToolCall};
+use crate::protocol::attention::AttentionReport;
 
 fn session() -> Arc<Session> {
     Session::in_memory().0

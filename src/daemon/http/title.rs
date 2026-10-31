@@ -39,7 +39,7 @@ pub(super) async fn put_title(mut conn: Conn) -> Conn {
     match shared.set_title(title) {
         Ok(Some(_)) => conn
             .with_status(200)
-            .with_body(shared.session_identity_json().to_string())
+            .with_body(views::channel_value(shared.identity()).to_string())
             .halt(),
         Ok(None) => fail(
             conn,

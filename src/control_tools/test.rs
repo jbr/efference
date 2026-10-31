@@ -16,7 +16,7 @@ use std::time::Duration;
 /// root.
 async fn session_over(log: Log) -> (Arc<crate::daemon::Session>, Client) {
     let (shared, _turns) = crate::daemon::Session::from_log(log);
-    shared.set_identity(crate::daemon::SessionIdentity {
+    shared.set_identity(crate::protocol::state::SessionIdentity {
         id: "child".into(),
         title: None,
         model: "m".into(),

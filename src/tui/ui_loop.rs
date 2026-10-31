@@ -37,7 +37,7 @@ pub(super) fn ui_loop(
     mut attender: Option<attention::Attender>,
 ) -> io::Result<Exit> {
     let attention_tx = senders.attention.clone();
-    let send_report = |report: Option<crate::daemon::attention::AttentionReport>,
+    let send_report = |report: Option<crate::protocol::attention::AttentionReport>,
                        attender: &mut Option<attention::Attender>| {
         if let Some(report) = report
             && attention_tx.send(report).is_err()

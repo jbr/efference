@@ -11,31 +11,7 @@
 
 use super::*;
 use crate::inference::{Issue, IssueCode, SessionOptions};
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-
-/// The body of `QUERY /sessions` (docs/control-api.md): where the proposed
-/// session would run, plus the same editable selections creation accepts.
-#[derive(Serialize, Deserialize)]
-pub struct SessionOptionsRequest {
-    /// The proposed session's project root. Absolute, as creation's is: it is
-    /// what a relative `config` resolves against.
-    pub cwd: PathBuf,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config: Option<PathBuf>,
-    #[serde(flatten)]
-    pub options: SessionOptions,
-}
-
-impl SessionOptionsRequest {
-    pub fn new(cwd: PathBuf) -> Self {
-        Self {
-            cwd,
-            config: None,
-            options: SessionOptions::default(),
-        }
-    }
-}
 
 /// A preview body decoded field by field. Preview is deliberately lenient where
 /// creation is strict: one ill-typed value must not stop the other fields from

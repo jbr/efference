@@ -20,6 +20,7 @@
 
 use crate::log::{Approval, ContentBlock, ToolCall};
 use crate::protocol::agents::BoundAction;
+use crate::protocol::turns::QueuedTurn;
 
 /// The `source` of the kickoff turn a `first-turn` config submits (docs/context.md).
 /// Reserved: the clients read it to leave the turn out of the transcript, since it
@@ -157,20 +158,6 @@ impl SubmittedTurn {
         self.text.trim().is_empty() && self.attachments.is_empty()
     }
 
-    /// A pending turn as the `queued` topic and a recall present it
-    /// (docs/control-api.md): `attachments` only when there are any, so a
-    /// text-only turn reads as it always has.
-    pub fn pending_json(&self) -> serde_json::Value {
-        let mut json = serde_json::json!({
-            "submission_id": self.submission_id,
-            "text": self.text,
-        });
-        if !self.attachments.is_empty() {
-            json["attachments"] = serde_json::to_value(&self.attachments).unwrap_or_default();
-        }
-        json
-    }
-
     /// The `User` entry's content: the text when there is any, then each attachment.
     pub fn blocks(&self) -> Vec<ContentBlock> {
         let text = (!self.text.trim().is_empty()).then(|| ContentBlock::Text(self.text.clone()));
@@ -201,6 +188,18 @@ impl SubmittedTurn {
             )
             .collect::<Vec<_>>()
             .join("\n")
+    }
+}
+
+/// A pending turn as the `queued` topic, a recall and a withdrawal present it
+/// (docs/control-api.md).
+impl From<&SubmittedTurn> for QueuedTurn {
+    fn from(turn: &SubmittedTurn) -> Self {
+        QueuedTurn {
+            submission_id: turn.submission_id.clone(),
+            text: turn.text.clone(),
+            attachments: turn.attachments.clone(),
+        }
     }
 }
 

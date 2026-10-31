@@ -3,9 +3,11 @@ use super::executor::{state_of, status_in};
 use super::host_executor::names_held;
 use super::status::{operator_relation, session_relation};
 use super::{Control, Executor};
-use crate::daemon::status::{Condition, HeldCall, Moves, Reader, Reviewer, StatusView, answers};
+use crate::daemon::status::{Moves, Reader, answers};
 use crate::log::Approval;
 use crate::protocol::agents::Decision;
+use crate::protocol::status::{Condition, HeldCall, Reviewer, StatusView};
+use crate::protocol::turns::mint_submission_id;
 use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -81,7 +83,7 @@ impl Decide {
     /// The submission id of the turn that will carry an allow's note, minted before
     /// the decision so the decision's record can name it.
     fn note_submission(&self) -> Option<String> {
-        (self.allow() && self.note().is_some()).then(crate::daemon::mint_submission_id)
+        (self.allow() && self.note().is_some()).then(mint_submission_id)
     }
 }
 

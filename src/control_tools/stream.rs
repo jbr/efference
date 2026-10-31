@@ -31,7 +31,8 @@ use trillium_websockets::{Message, WebSocket, WebSocketConfig, WebSocketConn};
 use super::status::operator_reader;
 use super::watch::{Followed, Mark, ended, follow, mark};
 use crate::client::Client;
-use crate::daemon::status::{StatusView, render};
+use crate::daemon::status::render;
+use crate::protocol::status::StatusView;
 
 /// A token's random bytes: 256 bits, 43 characters of URL-safe base64.
 const TOKEN_BYTES: usize = 32;

@@ -165,17 +165,17 @@ async fn output_json_is_the_status_view() {
         .execute(control.clone(), RequestContext::default())
         .await
         .unwrap();
-    let view: crate::daemon::status::StatusView = serde_json::from_str(&one).unwrap();
+    let view: crate::protocol::status::StatusView = serde_json::from_str(&one).unwrap();
     assert_eq!(view.id, "child");
     assert_eq!(
         view.condition,
-        crate::daemon::status::Condition::Idle { closing: None }
+        crate::protocol::status::Condition::Idle { closing: None }
     );
     let all = read(&[])
         .execute(control, RequestContext::default())
         .await
         .unwrap();
-    let views: Vec<crate::daemon::status::StatusView> = serde_json::from_str(&all).unwrap();
+    let views: Vec<crate::protocol::status::StatusView> = serde_json::from_str(&all).unwrap();
     assert_eq!(
         views
             .iter()

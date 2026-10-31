@@ -4,9 +4,9 @@
 
 use super::*;
 use crate::daemon::Host;
-use crate::daemon::LoopPhase;
 use crate::log::{Approval, MomentKind, PushEvent, PushRecord, Telemetry};
 use crate::policy::ReviewLevel;
+use crate::protocol::state::LoopPhase;
 
 struct Fixture {
     root: PathBuf,

@@ -474,7 +474,9 @@ fn empty_enter_is_inert_while_the_loop_runs() {
     use crate::tui::TuiEvent;
     use crate::tui::harness::Screenplay;
     let mut play = Screenplay::new(80, 12);
-    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
+    play.event(TuiEvent::Phase(
+        crate::protocol::state::LoopPhase::Requesting,
+    ));
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(!play.took_continue(), "nothing fired mid-turn");
     assert_eq!(play.took_turn(), None);
@@ -485,7 +487,7 @@ fn empty_enter_is_inert_while_the_loop_runs() {
 /// mid-trajectory — a wait on the upstream it retries now — fires.
 #[test]
 fn empty_enter_follows_the_published_continue() {
-    use crate::daemon::LoopPhase;
+    use crate::protocol::state::LoopPhase;
     use crate::tui::harness::Screenplay;
     use crate::tui::{TuiEvent, VerbsView};
     let mut play = Screenplay::new(80, 12);

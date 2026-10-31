@@ -50,8 +50,9 @@ pub(super) async fn serve(
             HostCmd::Preview(options) => {
                 let resolved = match origin.as_deref() {
                     Ok(cwd) => {
-                        let mut request =
-                            crate::daemon::SessionOptionsRequest::new(cwd.to_path_buf());
+                        let mut request = crate::protocol::sessions::SessionOptionsRequest::new(
+                            cwd.to_path_buf(),
+                        );
                         request.options = options;
                         client
                             .session_options(&request)
@@ -99,7 +100,7 @@ pub(super) async fn serve(
                     Ok(cwd) => client
                         .patch_session(
                             &id,
-                            &crate::daemon::PatchSession::activate(cwd.to_path_buf()),
+                            &crate::protocol::sessions::PatchSession::activate(cwd.to_path_buf()),
                         )
                         .await
                         .map(|_| id.clone())
@@ -225,7 +226,7 @@ async fn create_session(
     let env = crate::env_table::EnvSnapshot::capture()
         .map_err(|e| format!("capturing the environment: {e}"))?
         .into_entries();
-    let request = crate::daemon::CreateSession {
+    let request = crate::protocol::sessions::CreateSession {
         name: None,
         cwd,
         config: None,

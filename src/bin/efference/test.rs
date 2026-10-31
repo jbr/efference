@@ -116,7 +116,7 @@ fn bare_efference_is_the_tui_and_host_is_a_flag() {
 /// not candidates, and a listing with no cwd (an older host) is kept.
 #[test]
 fn a_hosts_listing_is_scoped_to_this_directory() {
-    use efference::client::ListedSession;
+    use efference::protocol::sessions::ListedSession;
     let scratch = tempfile::TempDir::with_prefix("efference-hosted-here-").unwrap();
     let dir = scratch.path();
     std::fs::create_dir_all(dir.join("sub")).unwrap();
@@ -254,7 +254,7 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
         let request = usage(10, 20, cache_read).with_model("claude-haiku-4-5");
         UsageLine::new(origin, at_ms, false, &request)
     };
-    use efference::daemon::RequestOrigin::{Keepalive, Spot, Turn};
+    use efference::log::RequestOrigin::{Keepalive, Spot, Turn};
     let t = 1_800_000_000_000u128;
     let lines = vec![
         line(Turn, t, 0),               // boot — explained
@@ -298,8 +298,8 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
 #[test]
 fn cache_report_counts_the_provider_attribution_by_reason() {
     use efference::api::{CacheMiss, CacheMissReason};
-    use efference::daemon::RequestOrigin::Turn;
     use efference::daemon::UsageLine;
+    use efference::log::RequestOrigin::Turn;
 
     let line = |at_ms, cache_read, miss: Option<(CacheMissReason, u64)>| {
         let request = usage(10, 20, cache_read);
@@ -351,8 +351,8 @@ fn cache_report_counts_the_provider_attribution_by_reason() {
 #[cfg(feature = "dev")]
 #[test]
 fn cache_report_does_not_join_streaks_across_sessions() {
-    use efference::daemon::RequestOrigin::Turn;
     use efference::daemon::UsageLine;
+    use efference::log::RequestOrigin::Turn;
     let cold = |at_ms| UsageLine::new(Turn, at_ms, false, &usage(1, 1, 0));
     let t = 1_800_000_000_000u128;
     let report = cache_report::fold_sessions(&[

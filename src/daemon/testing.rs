@@ -94,12 +94,10 @@ impl Session {
             .iter()
             .map(|turn| turn.text.clone())
             .collect();
-        let gate = self
-            .pending
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|pending| format!("{} ({}) {}", pending.name, pending.call_id, pending.input));
+        let gate = self.pending.lock().unwrap().as_ref().map(|pending| {
+            let gate = &pending.gate;
+            format!("{} ({}) {}", gate.name, gate.call_id, gate.input)
+        });
         let entries = self.snapshot();
         let tail: Vec<String> = entries[entries.len().saturating_sub(TAIL)..]
             .iter()

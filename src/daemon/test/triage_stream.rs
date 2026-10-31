@@ -4,9 +4,9 @@
 
 use super::runtime::{boot, started, workdir};
 use super::*;
-use crate::daemon::StreamDelta;
 use crate::frontend::SubmittedTurn;
 use crate::log::Provider;
+use crate::protocol::stream::StreamDelta;
 use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, events, tool_call};
 use crate::triage::Triager;
 use trillium_tokio::Swansong;

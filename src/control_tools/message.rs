@@ -2,6 +2,7 @@ use super::args::{optional_handle, turn_source};
 use super::executor::{state_of, status_in};
 use super::{Control, Executor};
 use crate::daemon::status::answers;
+use crate::protocol::turns::mint_submission_id;
 use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -93,8 +94,7 @@ impl Tool<Control> for Message {
                 }
                 let source = turn_source(&context);
                 let turn =
-                    crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
-                        .sourced(source);
+                    crate::frontend::SubmittedTurn::new(text, mint_submission_id()).sourced(source);
                 let sent = client.submit(&turn, self.reply_to.as_deref()).await?;
                 match sent {
                     Ok(landing) => Ok(answers::sent(&id, landing, view.as_ref(), now)),
@@ -125,9 +125,8 @@ impl Tool<Control> for Message {
                 }
                 let view = target.status_view(&id, &target.status());
                 let source = state.source_for(&target);
-                let turn =
-                    crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
-                        .sourced(Some(source.clone()));
+                let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id())
+                    .sourced(Some(source.clone()));
                 match target.submit_named_turn(turn, self.reply_to.as_deref()) {
                     Ok(landing) => Ok(answers::sent(&id, landing, Some(&view), now)),
                     Err(refusal) => Err(anyhow!(refusal.message(&id, Some(state.caller())))),

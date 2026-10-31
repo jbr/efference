@@ -1,8 +1,7 @@
 use super::args::{optional_handle, turn_source};
 use super::executor::state_of;
 use super::{Control, Executor};
-use crate::daemon::transcript::Handle;
-use crate::daemon::transcript::cursor::ReadPlan;
+use crate::protocol::transcript::{Handle, ReadPlan, TranscriptRead};
 use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -99,7 +98,7 @@ impl Tool<Control> for Transcript {
                 let me = turn_source(&context);
                 // A zoom sends the handle as given; `zoom` has checked it parses.
                 if zoom.is_some() {
-                    let read = crate::client::TranscriptRead {
+                    let read = TranscriptRead {
                         seq: self.seq.as_deref(),
                         me: me.as_deref(),
                         ..Default::default()
@@ -107,7 +106,7 @@ impl Tool<Control> for Transcript {
                     return client.transcript(read).await;
                 }
                 if self.audit {
-                    let read = crate::client::TranscriptRead {
+                    let read = TranscriptRead {
                         since: self.since,
                         tail: self.tail,
                         audit: true,
@@ -126,7 +125,7 @@ impl Tool<Control> for Transcript {
                 let last = state_now["last_seq"].as_u64();
                 let cursor = state.cursor(&id);
                 let plan = ReadPlan::new(cursor, self.since, self.tail, last);
-                let read = crate::client::TranscriptRead {
+                let read = TranscriptRead {
                     since: plan.since,
                     before: plan.before,
                     tail: plan.tail,

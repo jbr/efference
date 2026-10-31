@@ -28,47 +28,19 @@ use crate::log::Telemetry;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::Session;
-use super::status::Activity;
 use crate::api::{StageRecorder, StageSink};
 use crate::log::{
     CallId, LogEntry, MadeBy, Payload, RequestOrigin, RequestStage, RequestStageKind, Seq, Summary,
     Timestamp,
 };
 use crate::persist::Log;
-
-/// A request that has been sent and not closed.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct OpenRequest {
-    request: u64,
-    origin: RequestOrigin,
-    stage: OpenStage,
-    /// When this stage began (the stage entry's `at`).
-    since: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum OpenStage {
-    /// Handed to the transport; no stream event yet.
-    Sent,
-    /// An attempt was refused and the transport is trying again.
-    Retrying { attempt: u32, status: u16 },
-    /// The first stream event arrived.
-    Streaming,
-}
-
-/// A call dispatched and not yet resulted.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct RunningTool {
-    call_id: CallId,
-    tool: String,
-    intent: Option<String>,
-    /// The shell command, for a `bash` call; `None` for any other tool.
-    command: Option<String>,
-    since: u64,
-}
+use crate::protocol::state::{
+    CurrentOperations, OpenCompaction, OpenRequest, OpenStage, RunningTool,
+};
+use crate::protocol::status::Activity;
 
 /// What the assistant entry said about one issued call.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,7 +69,9 @@ impl CompactionState {
     }
 }
 
-/// The open requests and running tools, as of the last entry observed.
+/// The open requests and running tools, as of the last entry observed: the
+/// `current_operations` topic's [`OpenRequest`]s and [`RunningTool`]s, kept as they are
+/// published.
 #[derive(Debug, Default)]
 pub(crate) struct Operations {
     requests: Vec<OpenRequest>,
@@ -259,60 +233,26 @@ impl Operations {
         }
     }
 
-    /// The topic's value: `null` when nothing is open, else `{requests, tools,
-    /// compaction}`, `compaction` being `null` unless one is waiting or writing.
-    pub(crate) fn json(&self) -> Value {
-        let compaction = match &self.compaction {
+    /// The topic's value: `None` when nothing is open, else the requests, the tools, and
+    /// the compaction, `compaction` being `None` unless one is waiting or writing.
+    pub(crate) fn view(&self) -> Option<CurrentOperations> {
+        let compaction = match self.compaction {
             Some(CompactionState::Waiting { warm, cut, since }) => {
-                json!({"state": "waiting", "warm": warm, "cut": cut, "since": since})
+                Some(OpenCompaction::Waiting { warm, cut, since })
             }
             Some(CompactionState::Writing { warm, cut, since }) => {
-                json!({"state": "writing", "warm": warm, "cut": cut, "since": since})
+                Some(OpenCompaction::Writing { warm, cut, since })
             }
-            Some(CompactionState::Failed { .. }) | None => Value::Null,
+            Some(CompactionState::Failed { .. }) | None => None,
         };
-        if self.requests.is_empty() && self.tools.is_empty() && compaction.is_null() {
-            return Value::Null;
+        if self.requests.is_empty() && self.tools.is_empty() && compaction.is_none() {
+            return None;
         }
-        let requests: Vec<Value> = self
-            .requests
-            .iter()
-            .map(|open| {
-                let mut value = json!({
-                    "request": open.request,
-                    "origin": open.origin,
-                    "since": open.since,
-                });
-                let stage = match &open.stage {
-                    OpenStage::Sent => "sent",
-                    OpenStage::Streaming => "streaming",
-                    OpenStage::Retrying { attempt, status } => {
-                        value["attempt"] = json!(attempt);
-                        value["status"] = json!(status);
-                        "retrying"
-                    }
-                };
-                value["stage"] = json!(stage);
-                value
-            })
-            .collect();
-        let tools: Vec<Value> = self
-            .tools
-            .iter()
-            .map(|tool| {
-                let mut value = json!({
-                    "call_id": tool.call_id,
-                    "tool": tool.tool,
-                    "intent": tool.intent,
-                    "since": tool.since,
-                });
-                if let Some(command) = &tool.command {
-                    value["command"] = json!(command);
-                }
-                value
-            })
-            .collect();
-        json!({ "requests": requests, "tools": tools, "compaction": compaction })
+        Some(CurrentOperations {
+            requests: self.requests.clone(),
+            tools: self.tools.clone(),
+            compaction,
+        })
     }
 }
 
@@ -366,8 +306,8 @@ impl Session {
     }
 
     /// The `current_operations` topic (docs/control-api.md).
-    pub(super) fn current_operations_json(&self) -> Value {
-        self.operations.lock().unwrap().json()
+    pub(super) fn current_operations(&self) -> Option<CurrentOperations> {
+        self.operations.lock().unwrap().view()
     }
 
     /// The sink a client reports its request stages to: ids minted from this
