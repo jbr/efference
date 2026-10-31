@@ -8,7 +8,7 @@ use crate::log::{Payload, WorktreeEventKind};
 use serde_json::Value;
 
 /// Host a session named `id` whose working directory is a worktree it made.
-fn hosting_worktree(roots: &Roots, host: &Arc<Host>, id: &str) -> PathBuf {
+async fn hosting_worktree(roots: &Roots, host: &Arc<Host>, id: &str) -> PathBuf {
     let env = crate::env_table::ChildEnv::default();
     let added = crate::worktree::add(&roots.0, id, &roots.0, &env).unwrap();
     let mut boot = runtime::boot(&roots.0.join("one"));
@@ -17,7 +17,7 @@ fn hosting_worktree(roots: &Roots, host: &Arc<Host>, id: &str) -> PathBuf {
         roots.0.join(".efference").join(id),
     )
     .unwrap();
-    host.adopt(id.into(), SessionRuntime::start(boot, host.swansong()))
+    host.adopt(id.into(), runtime::started(boot, host.swansong()).await)
         .expect("the id is free in this test");
     added.path
 }
@@ -41,7 +41,7 @@ async fn deleting_a_session_removes_its_clean_worktree() {
     crate::worktree::testing::repository(&roots.0);
     let host = Host::new(one_connection_registry(), baseline_env());
     let server = host_server(&host).await;
-    let path = hosting_worktree(&roots, &host, "wt-fox");
+    let path = hosting_worktree(&roots, &host, "wt-fox").await;
     let session = host.session("wt-fox").unwrap();
     // A session with a turn is archived; an empty one is discarded instead.
     session.append(1, Payload::User(vec![])).unwrap();
@@ -77,7 +77,7 @@ async fn archiving_a_dirty_worktree_keeps_it() {
     crate::worktree::testing::repository(&roots.0);
     let host = Host::new(one_connection_registry(), baseline_env());
     let server = host_server(&host).await;
-    let path = hosting_worktree(&roots, &host, "wt-fox");
+    let path = hosting_worktree(&roots, &host, "wt-fox").await;
     std::fs::write(path.join("notes.txt"), "work").unwrap();
 
     let body = server
@@ -101,7 +101,7 @@ async fn a_session_without_a_worktree_answers_without_the_field() {
     let host = Host::new(one_connection_registry(), baseline_env());
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
+        runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await,
     )
     .expect("the id is free in this test");
     let server = host_server(&host).await;
@@ -122,7 +122,7 @@ async fn a_worktree_session_lists_under_its_project() {
     let roots = Roots::new();
     crate::worktree::testing::repository(&roots.0);
     let host = Host::new(one_connection_registry(), baseline_env());
-    let path = hosting_worktree(&roots, &host, "wt-lister");
+    let path = hosting_worktree(&roots, &host, "wt-lister").await;
 
     let row = host
         .listing()

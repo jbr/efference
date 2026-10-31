@@ -17,7 +17,7 @@ fn json(body: &str) -> Value {
 /// the page's cleaned label; the token is the credential the gate takes.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_browser_signs_in_by_approval_at_the_host() {
-    let auth = armed("sign-in-by-approval");
+    let (auth, _state) = armed("sign-in-by-approval");
     let (server, _guard) = tcp_server(&auth).await;
     let socket = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
 
@@ -125,7 +125,7 @@ async fn a_browser_signs_in_by_approval_at_the_host() {
 /// link's claim collects nothing after.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_link_claims_once_as_a_link() {
-    let auth = armed("link-claims");
+    let (auth, _state) = armed("link-claims");
     let (server, _guard) = tcp_server(&auth).await;
     let socket = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
 
@@ -192,7 +192,7 @@ async fn the_link_claims_once_as_a_link() {
 /// a sign-in through the operator's browser nor collect one, and nothing is recorded.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_sign_in_routes_take_the_gates_checks() {
-    let auth = armed("sign-in-gate-checks");
+    let (auth, _state) = armed("sign-in-gate-checks");
     let (server, _guard) = tcp_server(&auth).await;
     for path in ["/pair", "/pair/claim"] {
         // Refused before any body is read, so these carry none: one still being
@@ -239,7 +239,7 @@ async fn the_sign_in_routes_take_the_gates_checks() {
 /// A request that sends no label is a sign-in called `browser`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_request_without_a_label_is_called_browser() {
-    let auth = armed("unlabelled-request");
+    let (auth, _state) = armed("unlabelled-request");
     let (server, _guard) = tcp_server(&auth).await;
     server
         .post("/pair")
@@ -257,7 +257,7 @@ async fn a_request_without_a_label_is_called_browser() {
 /// what is not a code at all is a `400`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn what_names_no_pending_sign_in_is_refused() {
-    let auth = armed("names-nothing");
+    let (auth, _state) = armed("names-nothing");
     let (server, _guard) = tcp_server(&auth).await;
     let socket = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
 
@@ -295,7 +295,7 @@ async fn what_names_no_pending_sign_in_is_refused() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_host_routes_answer_only_when_a_bind_is_armed() {
-    let auth = armed("host-routes");
+    let (auth, _state) = armed("host-routes");
     let armed_server = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
     armed_server
         .get("/auth/link")
@@ -334,7 +334,7 @@ async fn the_host_routes_answer_only_when_a_bind_is_armed() {
 /// token on the next request (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_script_enrolled_at_the_socket_authenticates_until_revoked() {
-    let auth = armed("script-enrolls");
+    let (auth, _state) = armed("script-enrolls");
     let socket = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
     let (server, _guard) = tcp_server(&auth).await;
 
@@ -401,7 +401,7 @@ async fn a_script_enrolled_at_the_socket_authenticates_until_revoked() {
 /// minted, no code approved, no device added or revoked.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_enrollment_routes_are_absent_from_tcp() {
-    let auth = armed("enrollment-socket-only");
+    let (auth, _state) = armed("enrollment-socket-only");
     let (server, _guard) = tcp_server(&auth).await;
     let bearer = enrolled(&auth);
     let id = auth.devices.list().unwrap()[0].id;
@@ -460,7 +460,7 @@ async fn the_enrollment_routes_are_absent_from_tcp() {
 /// on either listener, and without one, the TCP gate prices them like any other path.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_totp_routes_answer_404() {
-    let auth = armed("totp-gone");
+    let (auth, _state) = armed("totp-gone");
     let (server, _guard) = tcp_server(&auth).await;
     let socket = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
     let bearer = enrolled(&auth);

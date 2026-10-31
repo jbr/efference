@@ -17,7 +17,7 @@ use super::*;
 /// daemon runs on the multi-thread runtime).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn events_replays_then_tails_live() {
-    let log_path = temp_file("sse-test.jsonl");
+    let (log_path, _log_path_dir) = temp_file("sse-test.jsonl");
 
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     // Two entries present before any client connects (the replay set).
@@ -46,8 +46,6 @@ async fn events_replays_then_tails_live() {
     let (id, _, data) = next_event(&mut events).await;
     assert_eq!(id.as_deref(), Some("2"));
     assert!(data.contains("third"));
-
-    let _ = std::fs::remove_file(&log_path);
 }
 
 /// An idle `/events` stream is never entirely silent: whenever the heartbeat interval
@@ -117,7 +115,7 @@ async fn an_idle_stream_heartbeats_with_comments() {
 /// `events()` resolves can't race ahead of the subscription.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_output_class_carries_ephemeral_deltas() {
-    let log_path = temp_file("stream-test.jsonl");
+    let (log_path, _log_path_dir) = temp_file("stream-test.jsonl");
 
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let client = test_client(&shared).await;
@@ -164,6 +162,4 @@ async fn the_output_class_carries_ephemeral_deltas() {
     let v: Value = serde_json::from_str(&data).unwrap();
     assert_eq!(v["data"]["id"], 1);
     assert_eq!(v["data"]["chunk"], "tick 3\n");
-
-    let _ = std::fs::remove_file(&log_path);
 }

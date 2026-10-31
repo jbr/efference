@@ -2,7 +2,7 @@
 //! stores, and what its ping sends — the stored request, as sent.
 
 use super::keepalive::{pinged_session, record_turn, serve_recording};
-use super::upstream_hold::{Answer, end_turn, recording, tool_call, wait_until};
+use super::upstream_hold::{Answer, end_turn, recording, tool_call};
 use super::*;
 use crate::api::{Client, Endpoint, PromptCachePolicy, RequestUsage, SentRequest};
 use crate::daemon::SessionRuntime;
@@ -64,7 +64,9 @@ async fn a_triage_ping_sends_the_stored_request() {
         prices: None,
     };
     let task = tokio::spawn(keepalive_loop(spec, Arc::clone(&shared)));
-    wait_until("the ping", || count.load(Ordering::SeqCst) == 1).await;
+    shared
+        .poll_until("the ping", || count.load(Ordering::SeqCst) == 1)
+        .await;
     task.abort();
 
     let body: Value = serde_json::from_str(&bodies.lock().unwrap()[0]).unwrap();
@@ -252,19 +254,21 @@ async fn triage_then_ping(script: fn(usize) -> Answer) -> (Value, Value, Duratio
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the triage's verdict", || {
-        triage_bodies(&bodies).iter().any(|b| !is_ping(b))
-            && session
-                .snapshot()
-                .iter()
-                .any(|e| matches!(e.payload, Payload::Triage(_)))
-    })
-    .await;
+    session
+        .poll_until("the triage's verdict", || {
+            triage_bodies(&bodies).iter().any(|b| !is_ping(b))
+                && session
+                    .snapshot()
+                    .iter()
+                    .any(|e| matches!(e.payload, Payload::Triage(_)))
+        })
+        .await;
     let triaged = Instant::now();
-    wait_until("the triage ping", || {
-        triage_bodies(&bodies).iter().any(is_ping)
-    })
-    .await;
+    session
+        .poll_until("the triage ping", || {
+            triage_bodies(&bodies).iter().any(is_ping)
+        })
+        .await;
     let waited = triaged.elapsed();
     let sent = triage_bodies(&bodies);
     let request = sent.iter().rfind(|b| !is_ping(b)).unwrap().clone();

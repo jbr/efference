@@ -11,7 +11,7 @@ async fn hosting_two(roots: &Roots) -> (Arc<Host>, TestServer<impl trillium::Han
         std::fs::create_dir_all(&session_dir).expect("the session dir exists");
         host.adopt(
             id.into(),
-            SessionRuntime::start(runtime::boot_in(&roots.0, &session_dir), host.swansong()),
+            runtime::started(runtime::boot_in(&roots.0, &session_dir), host.swansong()).await,
         )
         .expect("the id is free in this test");
     }

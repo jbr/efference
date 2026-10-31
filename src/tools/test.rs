@@ -554,10 +554,11 @@ fn mounted_toolbox_advertises_unique_tool_names() {
 /// model retries the same call.
 #[tokio::test]
 async fn read_image_refuses_when_the_model_takes_no_images() {
-    let dir = std::env::temp_dir().join("efference-test-image-gate");
-    std::fs::create_dir_all(&dir).unwrap();
-    let box_ = Toolbox::new(vec![Provider::ReadImage(ReadImage { cwd: dir.clone() })])
-        .with_image_input(false);
+    let dir = crate::testing::temp_dir("image-gate");
+    let box_ = Toolbox::new(vec![Provider::ReadImage(ReadImage {
+        cwd: dir.path().to_path_buf(),
+    })])
+    .with_image_input(false);
     let result = done(
         box_.run(
             // A path that does not exist: reaching the filesystem at all would be
@@ -582,7 +583,6 @@ async fn read_image_refuses_when_the_model_takes_no_images() {
         "the file was never read: {:?}",
         result.content
     );
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// The same gate applied to a result that merely *carries* images: an MCP tool

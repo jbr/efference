@@ -177,7 +177,7 @@ fn state_reports_the_session_identity() {
 /// log is untouched, so this never perturbs projection or byte-stability.
 #[test]
 fn state_reports_cache_telemetry() {
-    let log_path = temp_file("usage-test.jsonl");
+    let (log_path, _log_path_dir) = temp_file("usage-test.jsonl");
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
 
     // No request yet: no `last`, no stamp, and nothing the provider has attributed.
@@ -723,7 +723,7 @@ fn state_reports_plan_windows_under_usage() {
 /// from `usage.jsonl`.
 #[test]
 fn cold_topic_reports_an_expired_cache() {
-    let usage_path = temp_file("cold-topic-test-usage.jsonl");
+    let (usage_path, _usage_path_dir) = temp_file("cold-topic-test-usage.jsonl");
     let at = crate::log::Timestamp::now().0 - 10 * 60_000;
     std::fs::write(
         &usage_path,

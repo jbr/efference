@@ -7,7 +7,7 @@ use trillium_testing::TestServer;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_web_client_is_anonymous_and_the_api_is_not() {
-    let auth = armed("page-vs-api");
+    let (auth, _state) = armed("page-vs-api");
     let (server, _guard) = tcp_server(&auth).await;
 
     // The SPA shell (docs/web-client.md): served without a credential, since the
@@ -241,7 +241,7 @@ fn artifact_routes_are_anonymous_only_on_their_exact_get_shapes() {
 /// answers revalidate rather than being reused from a store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn files_takes_a_token() {
-    let auth = armed("files-token");
+    let (auth, _state) = armed("files-token");
     let (server, _guard) = tcp_server(&auth).await;
 
     server
@@ -269,7 +269,7 @@ async fn files_takes_a_token() {
 /// behind the gate are a stub; only the gate's answer is under test.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn files_takes_a_token_on_both_surfaces() {
-    let auth = armed("files-both-surfaces");
+    let (auth, _state) = armed("files-both-surfaces");
     let bearer = enrolled(&auth);
     for (surface, files, open) in [
         (Surface::Session, "/files/notes.md", "/v1/state"),
@@ -302,7 +302,7 @@ async fn files_takes_a_token_on_both_surfaces() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unsafe_methods_enforce_origin_and_content_type() {
-    let auth = armed("csrf-hardening");
+    let (auth, _state) = armed("csrf-hardening");
     let (server, _guard) = tcp_server(&auth).await;
     let bearer = enrolled(&auth);
 
@@ -358,7 +358,7 @@ async fn unsafe_methods_enforce_origin_and_content_type() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_foreign_host_is_rejected() {
-    let auth = armed("host-allowlist");
+    let (auth, _state) = armed("host-allowlist");
     let (server, _guard) = tcp_server(&auth).await;
 
     server
@@ -376,7 +376,7 @@ async fn a_foreign_host_is_rejected() {
 /// the pseudo-header is set directly on the inner conn.
 #[test]
 fn an_h2_authority_satisfies_the_host_check() {
-    let auth = armed("h2-authority");
+    let (auth, _state) = armed("h2-authority");
     let gate = gate(Arc::clone(&auth), Surface::Session);
 
     let mut conn = trillium_testing::TestConn::build(Method::Get, "/", ());

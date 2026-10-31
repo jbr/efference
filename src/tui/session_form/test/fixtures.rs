@@ -61,15 +61,8 @@ pub(in crate::tui::session_form) fn connections() -> Vec<ConnectionInventory> {
 /// resolves (as `History`) rather than refusing.
 pub(in crate::tui::session_form) fn resolve(options: &SessionOptions) -> ResolvedOptions {
     let registry = registry();
-    let dir = std::env::temp_dir().join(format!(
-        "efference-session-form-test-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_nanos())
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let store = crate::history::History::at(dir.join("state.db"));
+    let dir = crate::testing::temp_dir("session-form");
+    let store = crate::history::History::at(dir.path().join("state.db"));
     let scope = crate::history::Scope {
         cwd: PathBuf::from("/code/example"),
         config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),

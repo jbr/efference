@@ -2,7 +2,7 @@
 //! `triage_upstream_failure`, `usage.triage_plan`, and `usage.triage_cold_streak`.
 
 use super::runtime::boot;
-use super::upstream_hold::{Answer, end_turn, scripted, tool_call, wait_until};
+use super::upstream_hold::{Answer, end_turn, scripted, tool_call};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
@@ -70,10 +70,11 @@ async fn a_separate_triage_clients_429_shows_on_its_own_topic() {
     assert_eq!(before["usage"]["triage_cold_streak"], 0);
 
     session.submit_turn(SubmittedTurn::new("go", "s1"));
-    wait_until("the triage client reports its 429", || {
-        !state(&session)["triage_upstream_failure"].is_null()
-    })
-    .await;
+    session
+        .poll_until("the triage client reports its 429", || {
+            !state(&session)["triage_upstream_failure"].is_null()
+        })
+        .await;
     let after = state(&session);
     assert_eq!(after["triage_upstream_failure"]["status"], 429);
     assert!(

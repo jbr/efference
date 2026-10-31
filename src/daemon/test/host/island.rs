@@ -24,7 +24,7 @@ fn host_and_register(roots: &Roots) -> (Arc<Host>, SessionIds) {
 /// Host `id` over a file log at `<roots>/.efference/<id>/`, working in `working`, made
 /// by `created_by` (not detached) when named, and with one operator turn when
 /// `talked`. Returns the log's path.
-fn adopt_logged(
+async fn adopt_logged(
     host: &Arc<Host>,
     register: &SessionIds,
     roots: &Roots,
@@ -46,7 +46,7 @@ fn adopt_logged(
     register.reserve(id, &roots.0).unwrap();
     host.adopt_with(
         id.into(),
-        SessionRuntime::start(boot, host.swansong()),
+        runtime::started(boot, host.swansong()).await,
         created_by.map(String::from),
         false,
     )
@@ -104,8 +104,8 @@ async fn an_islands_exit_archives_each_session_before_it_shuts_down() {
     crate::worktree::testing::repository(&roots.0);
     let (host, register) = host_and_register(&roots);
     let one = roots.0.join("one");
-    let talked = adopt_logged(&host, &register, &roots, "talked", &one, None, true);
-    let parent = adopt_logged(&host, &register, &roots, "parent", &one, None, true);
+    let talked = adopt_logged(&host, &register, &roots, "talked", &one, None, true).await;
+    let parent = adopt_logged(&host, &register, &roots, "parent", &one, None, true).await;
     let child = adopt_logged(
         &host,
         &register,
@@ -114,13 +114,14 @@ async fn an_islands_exit_archives_each_session_before_it_shuts_down() {
         &one,
         Some("parent"),
         true,
-    );
-    let empty = adopt_logged(&host, &register, &roots, "empty", &one, None, false);
+    )
+    .await;
+    let empty = adopt_logged(&host, &register, &roots, "empty", &one, None, false).await;
     let env = crate::env_table::ChildEnv::default();
     let worktree = crate::worktree::add(&roots.0, "wt-fox", &roots.0, &env)
         .unwrap()
         .path;
-    let in_worktree = adopt_logged(&host, &register, &roots, "wt-fox", &worktree, None, true);
+    let in_worktree = adopt_logged(&host, &register, &roots, "wt-fox", &worktree, None, true).await;
     let owner = island(&host);
 
     drop(owner);

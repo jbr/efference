@@ -113,7 +113,7 @@ async fn query_sessions_refuses_a_non_object_body() {
 async fn a_network_host_previews_and_creates_the_same_way() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
-    let (server, bearer) = network_host_server(&host).await;
+    let (server, bearer, _state) = network_host_server(&host).await;
     let response = server
         .build(trillium::Method::Query, "/sessions")
         .with_request_header(KnownHeaderName::Authorization, bearer.clone())

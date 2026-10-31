@@ -4,7 +4,7 @@
 
 use super::capture::verdict;
 use super::runtime::boot;
-use super::upstream_hold::{Answer, end_turn, recording, wait_until};
+use super::upstream_hold::{Answer, end_turn, recording};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
@@ -109,14 +109,17 @@ fn two_verdicts_then_done(n: usize) -> Answer {
 
 /// Ask for the continue until the parked loop takes it.
 async fn continue_when_parked(session: &Session) {
-    wait_until("the loop parks and accepts a continue", || {
-        session.request_continue(Default::default()).is_ok()
-    })
-    .await;
+    session
+        .wait_until("the loop parks and accepts a continue", || {
+            session.request_continue(Default::default()).is_ok()
+        })
+        .await;
 }
 
 async fn approve_the_gate(session: &Session, id: &str) {
-    wait_until("the gate reappears", || session.pending_gate().is_some()).await;
+    session
+        .wait_until("the gate reappears", || session.pending_gate().is_some())
+        .await;
     assert!(session.resolve_approval(&CallId(id.into()), Approval::Approve, None, None));
 }
 
@@ -151,10 +154,11 @@ async fn a_continue_replays_the_batch_through_the_gate() {
 
     continue_when_parked(&session).await;
     approve_the_gate(&session, "c2").await;
-    wait_until("the turn finishes", || {
-        requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .poll_until("the turn finishes", || {
+            requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     host.shut_down().await;
 
     let log = session.snapshot();
@@ -204,10 +208,11 @@ async fn a_captured_result_is_triaged_without_running_again() {
     let session = Arc::clone(runtime.session());
 
     continue_when_parked(&session).await;
-    wait_until("the turn finishes", || {
-        requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .poll_until("the turn finishes", || {
+            requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     host.shut_down().await;
 
     let log = session.snapshot();
@@ -247,14 +252,17 @@ async fn a_submitted_turn_is_delivered_after_the_batch() {
     let (requests, bodies, addr) = requests_script(two_verdicts_then_done);
     let (host, runtime) = start(addr, log);
     let session = Arc::clone(runtime.session());
-    wait_until("the loop parks", || session.is_settled()).await;
+    session
+        .wait_until("the loop parks", || session.is_settled())
+        .await;
 
     session.submit_turn(SubmittedTurn::new("carry on", "s1"));
     approve_the_gate(&session, "c2").await;
-    wait_until("the turn finishes", || {
-        requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .poll_until("the turn finishes", || {
+            requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     host.shut_down().await;
 
     let log = session.snapshot();
@@ -290,7 +298,9 @@ async fn an_event_wake_leaves_the_batch_alone() {
     let (requests, _bodies, addr) = requests_script(|_| Answer::Stream(end_turn()));
     let (host, runtime) = start(addr, log);
     let session = Arc::clone(runtime.session());
-    wait_until("the loop parks", || session.is_settled()).await;
+    session
+        .wait_until("the loop parks", || session.is_settled())
+        .await;
 
     session.notify("watcher".into(), "something happened".into(), None);
     tokio::time::sleep(Duration::from_millis(800)).await;

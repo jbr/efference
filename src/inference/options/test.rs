@@ -48,29 +48,24 @@ fn main_options() -> SessionOptions {
 }
 
 /// A registry with a history store in a temporary directory, so resolution
-/// tests can seed past picks. The scope keys on the same directory.
+/// tests can seed past picks. The scope keys on the same directory, which stays
+/// until the returned guard drops.
 fn historied(
     toml: &str,
 ) -> (
     InferenceRegistry,
     crate::history::History,
     crate::history::Scope,
+    tempfile::TempDir,
 ) {
-    let dir = std::env::temp_dir().join(format!(
-        "efference-resolve-test-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_nanos())
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let store = crate::history::History::at(dir.join("state.db"));
+    let dir = crate::testing::temp_dir("resolve");
+    let store = crate::history::History::at(dir.path().join("state.db"));
     let registry = registry(toml);
     let scope = crate::history::Scope {
-        cwd: dir,
+        cwd: dir.path().to_path_buf(),
         config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
     };
-    (registry, store, scope)
+    (registry, store, scope, dir)
 }
 
 fn options(json: serde_json::Value) -> SessionOptions {
@@ -197,7 +192,7 @@ fn an_unresolvable_role_leaves_every_other_field_resolved() {
 /// project has no mass of its own, and reports the history branch.
 #[test]
 fn an_omitted_model_defaults_to_the_history_aggregate() {
-    let (registry, store, scope) = historied(
+    let (registry, store, scope, _dir) = historied(
         r#"
 [connections.main]
 provider = "anthropic"
@@ -227,7 +222,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 /// Project mass elects the project mode over a heavier aggregate.
 #[test]
 fn project_mass_elects_the_project_mode_in_resolution() {
-    let (registry, store, scope) = historied(
+    let (registry, store, scope, _dir) = historied(
         r#"
 [connections.main]
 provider = "anthropic"
@@ -275,7 +270,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 /// issue, just the ordinary omitted-model one.
 #[test]
 fn a_stale_history_pick_falls_through_to_the_refusal() {
-    let (registry, store, scope) = historied(
+    let (registry, store, scope, _dir) = historied(
         r#"
 [connections.main]
 provider = "anthropic"

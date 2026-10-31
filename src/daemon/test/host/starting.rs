@@ -104,10 +104,11 @@ async fn a_turn_sent_while_starting_is_the_first_turn_the_session_runs() {
         .assert_status(409);
 
     // Adopted as a preparation adopts.
-    let runtime = SessionRuntime::start(
+    let runtime = runtime::started(
         runtime::boot_in(&cwd, &cwd.join(".efference/early")),
         host.swansong(),
-    );
+    )
+    .await;
     let session = Arc::clone(runtime.session());
     host.adopt_prepared("early".into(), runtime, None, false, Some(&starting))
         .expect("the starting entry gives way to the session");

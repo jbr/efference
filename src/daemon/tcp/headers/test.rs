@@ -12,7 +12,7 @@ use trillium_testing::TestServer;
 /// (docs/web-client.md).
 #[tokio::test]
 async fn every_response_carries_the_security_headers() {
-    let auth = armed("root");
+    let (auth, _state) = armed("root");
     let (server, _turns) = tcp_server(&auth).await;
     for path in ["/", "/v1/state", "/nonexistent"] {
         let conn = server.get(path).await;
@@ -129,7 +129,7 @@ async fn hsts_rides_only_when_the_layer_is_tls() {
 #[cfg(not(feature = "dev-proxy"))]
 #[tokio::test]
 async fn the_shipped_policy_admits_no_unsafe_escape() {
-    let auth = armed("root");
+    let (auth, _state) = armed("root");
     let (server, _turns) = tcp_server(&auth).await;
     let conn = server.get("/").await;
     let csp = conn
@@ -151,7 +151,7 @@ async fn the_shipped_policy_admits_no_unsafe_escape() {
 #[cfg(not(feature = "dev-proxy"))]
 #[tokio::test]
 async fn the_shipped_policy_names_no_other_origin() {
-    let auth = armed("root");
+    let (auth, _state) = armed("root");
     let (server, _turns) = tcp_server(&auth).await;
     let conn = server.get("/").await;
     let csp = conn
@@ -177,7 +177,7 @@ async fn the_shipped_policy_names_no_other_origin() {
 /// and the `dev-proxy` policy carry the directive (docs/web-client.md).
 #[tokio::test]
 async fn the_policy_admits_object_url_images_and_no_data_images() {
-    let auth = armed("root");
+    let (auth, _state) = armed("root");
     let (server, _turns) = tcp_server(&auth).await;
     let conn = server.get("/").await;
     let csp = conn

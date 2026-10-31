@@ -1,7 +1,7 @@
 //! A redirect names who decided it (docs/permissions.md): the stub the model reads, the
 //! user turn carrying the message, and the gate decision on the log.
 
-use super::upstream_hold::{Answer, end_turn, scripted, start_with, tool_call, wait_until};
+use super::upstream_hold::{Answer, end_turn, scripted, start_with, tool_call};
 use super::*;
 use crate::frontend::SubmittedTurn;
 use crate::log::{Approval, ContentBlock, Stance, Telemetry};
@@ -45,17 +45,20 @@ async fn a_supervisors_deny_names_the_supervisor() {
     });
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
-    wait_until("the call is held", || session.pending_gate().is_some()).await;
+    session
+        .wait_until("the call is held", || session.pending_gate().is_some())
+        .await;
     assert!(session.resolve_approval(
         &CallId("toolu_1".into()),
         Approval::Redirect("use trash instead".into()),
         Some("session[parent]".into()),
         None,
     ));
-    wait_until("the redirect has landed", || {
-        stub_and_steer(&session).is_some()
-    })
-    .await;
+    session
+        .wait_until("the redirect has landed", || {
+            stub_and_steer(&session).is_some()
+        })
+        .await;
 
     let (stub, source, text) = stub_and_steer(&session).unwrap();
     assert_eq!(
@@ -81,10 +84,11 @@ async fn the_autonomous_redirect_is_the_reviews() {
     });
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
-    wait_until("the redirect has landed", || {
-        stub_and_steer(&session).is_some()
-    })
-    .await;
+    session
+        .wait_until("the redirect has landed", || {
+            stub_and_steer(&session).is_some()
+        })
+        .await;
 
     let (stub, source, _) = stub_and_steer(&session).unwrap();
     assert_eq!(

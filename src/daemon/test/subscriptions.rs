@@ -53,16 +53,6 @@ impl Fixture {
     }
 }
 
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
-}
-
 /// `create` subscribes the creator with `wake`; any other subscription is ambient;
 /// `unsubscribe` drops either. The subscriber's own `wait` source count follows.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -124,6 +114,28 @@ fn heard(session: &Session, matches: impl Fn(&str, &str, Option<&str>) -> bool) 
     })
 }
 
+/// Every notification `session` has been told, in arrival order: the ones its loop has
+/// drained are `Ambient` entries in its log, with the slot and the wake they arrived
+/// with, and a slot notification still queued is held in memory only.
+fn told(session: &Session) -> Vec<crate::log::Notification> {
+    let logged = session
+        .snapshot()
+        .into_iter()
+        .filter_map(|e| match e.payload {
+            Payload::Ambient(n) => Some(n),
+            _ => None,
+        });
+    let queued = session
+        .pending_notifications()
+        .into_iter()
+        .filter(|n| n.seq.is_none())
+        .map(|n| {
+            let note = crate::log::Notification::new(n.source, n.body, n.slot);
+            if n.wake { note.waking() } else { note }
+        });
+    logged.chain(queued).collect()
+}
+
 /// Whether the parent's log holds a `Triage` that pinned `seq`.
 fn pinned(session: &Session, seq: Seq) -> bool {
     session.snapshot().iter().any(|e| match &e.payload {
@@ -159,40 +171,43 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
             && body.contains("intent: locating siblings")
             && body.contains("decide: agents__decide(agent: \"child\"")
     };
-    wait_until("the gate reached the parent", || {
-        heard(&parent, is_gate).is_some()
-    })
-    .await;
+    parent
+        .wait_until("the gate reached the parent", || {
+            heard(&parent, is_gate).is_some()
+        })
+        .await;
     assert!(fixture.session("peer").pending_notifications().is_empty());
 
     // The wake is declared, not judged: the triage fails outright here, and the
     // loop pins the status regardless (docs/inbox.md).
-    wait_until("the parent's idle triage pinned the triage", || {
-        parent
-            .snapshot()
-            .iter()
-            .find_map(|e| match &e.payload {
-                Payload::Ambient(n) if is_gate(&n.source, &n.body, n.slot.as_deref()) => {
-                    Some(e.seq)
-                }
-                _ => None,
-            })
-            .is_some_and(|seq| pinned(&parent, seq))
-    })
-    .await;
+    parent
+        .wait_until("the parent's idle triage pinned the triage", || {
+            parent
+                .snapshot()
+                .iter()
+                .find_map(|e| match &e.payload {
+                    Payload::Ambient(n) if is_gate(&n.source, &n.body, n.slot.as_deref()) => {
+                        Some(e.seq)
+                    }
+                    _ => None,
+                })
+                .is_some_and(|seq| pinned(&parent, seq))
+        })
+        .await;
 
     assert!(child.resolve_approval(&CallId("toolu_leaf".into()), Approval::Abort, None, None));
     // The abort unwinds the turn, and the trajectory ends.
     child.going_idle();
-    wait_until("the idle reached the parent", || {
-        heard(&parent, |source, body, slot| {
-            source == "child"
-                && slot == Some("session:child")
-                && body.starts_with("idle, its turn is done")
+    parent
+        .wait_until("the idle reached the parent", || {
+            heard(&parent, |source, body, slot| {
+                source == "child"
+                    && slot == Some("session:child")
+                    && body.starts_with("idle, its turn is done")
+            })
+            .is_some()
         })
-        .is_some()
-    })
-    .await;
+        .await;
 
     fixture.host.swansong().shut_down().await;
 }
@@ -260,13 +275,14 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
          \"escalate\", message?) — leaves it held and passes it to whoever decides above you, \
          with your message as a note to them"
     );
-    wait_until("the gate reached the parent as its reviewer", || {
-        heard(&parent, |source, body, slot| {
-            source == "child" && slot == Some("session:child") && body == gate
+    parent
+        .wait_until("the gate reached the parent as its reviewer", || {
+            heard(&parent, |source, body, slot| {
+                source == "child" && slot == Some("session:child") && body == gate
+            })
+            .is_some()
         })
-        .is_some()
-    })
-    .await;
+        .await;
 
     assert!(child.resolve_approval(&curl.id, Approval::Approve, None, None));
     let report = format!(
@@ -290,10 +306,11 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
          \"child\") ends it",
         report.trim()
     );
-    wait_until("the idle reached the parent with the whole message", || {
-        heard(&parent, |source, body, _| source == "child" && body == idle).is_some()
-    })
-    .await;
+    parent
+        .wait_until("the idle reached the parent with the whole message", || {
+            heard(&parent, |source, body, _| source == "child" && body == idle).is_some()
+        })
+        .await;
 
     fixture.host.swansong().shut_down().await;
 }
@@ -309,17 +326,18 @@ async fn a_childs_question_wakes_the_parent() {
     assert!(fixture.session("peer").pending_notifications().is_empty());
 
     let mut wait = child.begin_ask("ask_1", "Which branch?".into(), 1, 1);
-    wait_until("the question reached the parent", || {
-        heard(&parent, |source, body, slot| {
-            source == "child"
-                && slot == Some("session:child")
-                && body.starts_with("asking a question")
-                && body.contains("Which branch?")
-                && body.contains("agents__message(agent: \"child\", text: \"<answer>\"")
+    parent
+        .wait_until("the question reached the parent", || {
+            heard(&parent, |source, body, slot| {
+                source == "child"
+                    && slot == Some("session:child")
+                    && body.starts_with("asking a question")
+                    && body.contains("Which branch?")
+                    && body.contains("agents__message(agent: \"child\", text: \"<answer>\"")
+            })
+            .is_some()
         })
-        .is_some()
-    })
-    .await;
+        .await;
     assert!(fixture.session("peer").pending_notifications().is_empty());
 
     // Take the reply as the loop does: dropping an unread reply resubmits it as a
@@ -329,15 +347,16 @@ async fn a_childs_question_wakes_the_parent() {
     drop(wait);
     // The loop takes the reply as the call's result and its trajectory ends.
     child.going_idle();
-    wait_until("the parent heard the child move on", || {
-        heard(&parent, |source, body, slot| {
-            source == "child"
-                && slot == Some("session:child")
-                && body.starts_with("idle, its turn is done")
+    parent
+        .wait_until("the parent heard the child move on", || {
+            heard(&parent, |source, body, slot| {
+                source == "child"
+                    && slot == Some("session:child")
+                    && body.starts_with("idle, its turn is done")
+            })
+            .is_some()
         })
-        .is_some()
-    })
-    .await;
+        .await;
 
     fixture.host.swansong().shut_down().await;
 }
@@ -361,25 +380,27 @@ async fn a_question_tells_a_driver_its_message_came_back() {
         Ok(Landing::Held)
     );
     let _wait = grandchild.begin_ask("ask_1", "Which branch?".into(), 1, 1);
-    wait_until("the parent heard its message came back", || {
-        heard(&parent, |source, body, _| {
-            source == "grandchild"
-                && body.contains(
-                    "returned: your message \"try the other branch\" was returned undelivered",
-                )
+    parent
+        .wait_until("the parent heard its message came back", || {
+            heard(&parent, |source, body, _| {
+                source == "grandchild"
+                    && body.contains(
+                        "returned: your message \"try the other branch\" was returned undelivered",
+                    )
+            })
+            .is_some()
         })
-        .is_some()
-    })
-    .await;
-    wait_until("the subscribed child heard the question", || {
-        heard(&child, |source, body, _| {
-            source == "grandchild"
-                && body.starts_with("asking a question")
-                && !body.contains("returned:")
+        .await;
+    child
+        .wait_until("the subscribed child heard the question", || {
+            heard(&child, |source, body, _| {
+                source == "grandchild"
+                    && body.starts_with("asking a question")
+                    && !body.contains("returned:")
+            })
+            .is_some()
         })
-        .is_some()
-    })
-    .await;
+        .await;
     fixture.host.swansong().shut_down().await;
 }
 
@@ -394,25 +415,31 @@ async fn an_end_is_posted_and_cascades_to_non_detached_children() {
     assert!(peer.has_subscriptions());
 
     fixture.host.end("child").unwrap().await;
-    wait_until("child gone from the host", || {
-        fixture.host.session("child").is_none()
-    })
-    .await;
-    wait_until("grandchild ended with its creator", || {
-        fixture.host.session("grandchild").is_none()
-    })
-    .await;
-    wait_until("the parent heard the end", || {
-        parent
-            .pending_notifications()
-            .iter()
-            .any(|n| n.body.starts_with("ended"))
-    })
-    .await;
-    let pending = parent.pending_notifications();
-    assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].slot.as_deref(), Some("session:child"));
-    assert!(pending[0].wake);
+    fixture
+        .host
+        .wait_until("child gone from the host", || {
+            fixture.host.session("child").is_none()
+        })
+        .await;
+    fixture
+        .host
+        .wait_until("grandchild ended with its creator", || {
+            fixture.host.session("grandchild").is_none()
+        })
+        .await;
+    // The end is in the parent's queue or, once its live loop has drained the inbox after
+    // the idle debounce, an `Ambient` entry: `told` reads both. The assertions below use
+    // what the wait read, since a later read could meet the drain mid-way.
+    let mut heard_by_then = Vec::new();
+    parent
+        .wait_until("the parent heard the end", || {
+            heard_by_then = told(&parent);
+            heard_by_then.iter().any(|n| n.body.starts_with("ended"))
+        })
+        .await;
+    assert_eq!(heard_by_then.len(), 1);
+    assert_eq!(heard_by_then[0].slot.as_deref(), Some("session:child"));
+    assert!(heard_by_then[0].wake);
     // The ended session can wake nobody: its subscribers' `wait` sources drop.
     assert!(!peer.has_subscriptions());
     assert!(parent.has_subscriptions(), "loner is still the parent's");
@@ -422,7 +449,10 @@ async fn an_end_is_posted_and_cascades_to_non_detached_children() {
     );
 
     fixture.host.end("parent").unwrap().await;
-    wait_until("parent gone", || fixture.host.session("parent").is_none()).await;
+    fixture
+        .host
+        .wait_until("parent gone", || fixture.host.session("parent").is_none())
+        .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(
         fixture.host.session("loner").is_some(),

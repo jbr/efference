@@ -57,16 +57,6 @@ impl Fixture {
     }
 }
 
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
-}
-
 /// What `session` sends from here on, in place of the push services.
 fn capture(session: &Session) -> Arc<Mutex<Vec<crate::push::Message>>> {
     let sent = Arc::new(Mutex::new(Vec::new()));
@@ -136,7 +126,7 @@ async fn a_supervised_sessions_moments_push_nothing() {
     let sent = capture(&kid);
 
     let _gate = kid.register_pending(&curl("toolu_1"), None, None);
-    wait_until("the gate reached boss", || {
+    boss.wait_until("the gate reached boss", || {
         heard(&boss, "kid", |body| {
             body.starts_with("waiting for your decision")
         })
@@ -145,14 +135,14 @@ async fn a_supervised_sessions_moments_push_nothing() {
     assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, None, None));
 
     let wait = kid.begin_ask("ask_1", "Which branch?".into(), 1, 1);
-    wait_until("the question reached boss", || {
+    boss.wait_until("the question reached boss", || {
         heard(&boss, "kid", |body| body.starts_with("asking a question"))
     })
     .await;
     drop(wait);
 
     settle(&kid);
-    wait_until("the idle reached boss", || {
+    boss.wait_until("the idle reached boss", || {
         heard(&boss, "kid", |body| {
             body.starts_with("idle, its turn is done")
         })
@@ -183,7 +173,8 @@ async fn the_operators_dial_pushes_gates_but_not_settles() {
 
     let _gate = kid.register_pending(&curl("toolu_1"), None, None);
     kid.set_review_level(ReviewLevel::SpotterHuman);
-    wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1).await;
+    kid.wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1)
+        .await;
     assert_eq!(
         sent.lock().unwrap()[0].body,
         "bash — fetch only the response headers"
@@ -205,7 +196,8 @@ async fn the_operators_dial_pushes_gates_but_not_settles() {
             not_sent(MomentKind::Settle, "boss"),
         ]
     );
-    wait_until("both gates sent", || sent.lock().unwrap().len() == 2).await;
+    kid.wait_until("both gates sent", || sent.lock().unwrap().len() == 2)
+        .await;
     assert!(
         sent.lock()
             .unwrap()
@@ -236,7 +228,8 @@ async fn a_session_with_no_supervisor_pushes_every_moment() {
             (MomentKind::Settle, PushEvent::Sent),
         ]
     );
-    wait_until("three pushes", || sent.lock().unwrap().len() == 3).await;
+    solo.wait_until("three pushes", || sent.lock().unwrap().len() == 3)
+        .await;
 
     fixture.host.swansong().shut_down().await;
 }
@@ -252,7 +245,8 @@ async fn clearing_the_pointer_pushes_the_held_gate_and_resumes_pushes() {
     settle(&kid);
     let _gate = kid.register_pending(&curl("toolu_1"), None, None);
     fixture.host.set_supervisor("kid", None).unwrap();
-    wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1).await;
+    kid.wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1)
+        .await;
     assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, None, None));
     settle(&kid);
 
@@ -279,7 +273,9 @@ async fn a_supervisor_ending_pushes_its_childs_held_gate() {
 
     let _gate = stray.register_pending(&curl("toolu_1"), None, None);
     fixture.host.end("boss").unwrap().await;
-    wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1).await;
+    stray
+        .wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1)
+        .await;
 
     assert_eq!(
         decisions(&stray),
@@ -309,7 +305,8 @@ async fn a_gate_escalated_to_a_session_that_ends_pushes_the_operator() {
         Some("out of my depth".into()),
     ));
     fixture.host.end("boss").unwrap().await;
-    wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1).await;
+    leaf.wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1)
+        .await;
 
     assert_eq!(
         sent.lock().unwrap()[0].body,

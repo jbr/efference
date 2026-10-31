@@ -2,7 +2,7 @@
 //! (docs/control-api.md): `settle` returns at the phases that wait on someone outside
 //! the loop and at idle, and at no step in between.
 
-use super::upstream_hold::{Answer, end_turn, scripted, start, start_with, tool_call, wait_until};
+use super::upstream_hold::{Answer, end_turn, scripted, start, start_with, tool_call};
 use super::*;
 use crate::daemon::{BlockedReason, LoopPhase};
 use crate::frontend::SubmittedTurn;
@@ -61,10 +61,11 @@ async fn settle_waits_through_a_results_triage() {
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     let waiter = settle(&session);
 
-    wait_until("the triage is in flight", || {
-        requests.load(Ordering::SeqCst) >= 2
-    })
-    .await;
+    session
+        .poll_until("the triage is in flight", || {
+            requests.load(Ordering::SeqCst) >= 2
+        })
+        .await;
     assert!(
         session
             .snapshot()
@@ -104,10 +105,11 @@ async fn settle_waits_through_an_autonomous_decline() {
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     let waiter = settle(&session);
 
-    wait_until("the decline is logged and the next request sent", || {
-        requests.load(Ordering::SeqCst) >= 2
-    })
-    .await;
+    session
+        .poll_until("the decline is logged and the next request sent", || {
+            requests.load(Ordering::SeqCst) >= 2
+        })
+        .await;
     assert!(
         session.snapshot().iter().any(
             |e| matches!(&e.payload, Payload::ToolResult { call_id, .. } if call_id.0 == "toolu_1")
@@ -149,10 +151,11 @@ async fn settle_returns_on_a_held_pace() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     // A submit releases a hold, so the hold is set once the turn is under way.
-    wait_until("the first request is out", || {
-        requests.load(Ordering::SeqCst) >= 1
-    })
-    .await;
+    session
+        .poll_until("the first request is out", || {
+            requests.load(Ordering::SeqCst) >= 1
+        })
+        .await;
     session.set_pace(None, Some(true));
     FIRST.open();
     let state = settle(&session).await.unwrap();
@@ -169,10 +172,11 @@ async fn settle_returns_on_a_held_pace() {
         },
         "the release ends the hold before the loop wakes"
     );
-    wait_until("the turn finishes", || {
-        session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     host.shut_down().await;
 }
 
@@ -191,10 +195,11 @@ async fn settle_waits_through_a_pace_delay() {
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     let waiter = settle(&session);
 
-    wait_until("the loop is delayed at its juncture", || {
-        matches!(session.loop_phase(), LoopPhase::Delayed { .. })
-    })
-    .await;
+    session
+        .wait_until("the loop is delayed at its juncture", || {
+            matches!(session.loop_phase(), LoopPhase::Delayed { .. })
+        })
+        .await;
     assert!(!session.is_settled());
     assert!(
         !waiter.is_finished(),
@@ -220,10 +225,11 @@ async fn settle_waits_through_a_retry_pause() {
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     let waiter = settle(&session);
 
-    wait_until("the loop pauses between attempts", || {
-        matches!(session.loop_phase(), LoopPhase::Delayed { .. })
-    })
-    .await;
+    session
+        .wait_until("the loop pauses between attempts", || {
+            matches!(session.loop_phase(), LoopPhase::Delayed { .. })
+        })
+        .await;
     let LoopPhase::Delayed { until } = session.loop_phase() else {
         unreachable!()
     };
@@ -275,10 +281,11 @@ async fn settle_returns_on_a_config_repair_park() {
     );
 
     session.clear_config_repair();
-    wait_until("the turn finishes", || {
-        session.loop_phase() == LoopPhase::Idle && requests.load(Ordering::SeqCst) == 1
-    })
-    .await;
+    session
+        .poll_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle && requests.load(Ordering::SeqCst) == 1
+        })
+        .await;
     host.shut_down().await;
 }
 
@@ -296,15 +303,17 @@ async fn an_idle_triage_reads_requesting_and_settle_waits_through_it() {
     let session = Arc::clone(runtime.session());
     session.notify("ci".into(), "the build finished".into(), None);
 
-    wait_until("the idle triage is in flight", || {
-        session.loop_phase() == LoopPhase::Requesting
-    })
-    .await;
+    session
+        .wait_until("the idle triage is in flight", || {
+            session.loop_phase() == LoopPhase::Requesting
+        })
+        .await;
     let waiter = settle(&session);
-    wait_until("the idle triage's request is out", || {
-        requests.load(Ordering::SeqCst) >= 1
-    })
-    .await;
+    session
+        .poll_until("the idle triage's request is out", || {
+            requests.load(Ordering::SeqCst) >= 1
+        })
+        .await;
     assert!(
         !waiter.is_finished(),
         "settle waits through the idle triage"

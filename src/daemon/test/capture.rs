@@ -4,7 +4,7 @@
 //! captured first or logged with their verdicts.
 
 use super::runtime::boot;
-use super::upstream_hold::{Answer, end_turn, recording, tool_call, wait_until};
+use super::upstream_hold::{Answer, end_turn, recording, tool_call};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
@@ -132,11 +132,14 @@ async fn triage_is_shown_the_masked_result() {
 
     // The loop is idle until the submission reaches it, so the turn is waited for by
     // what it did rather than by the phase, which is idle in both states.
-    wait_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3).await;
-    wait_until("the turn finishes", || {
-        session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .poll_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3)
+        .await;
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     host.shut_down().await;
 
     let triage = bodies.lock().unwrap()[1].clone();
@@ -189,11 +192,14 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3).await;
-    wait_until("the turn finishes", || {
-        session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .poll_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3)
+        .await;
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     let through_the_loop = session.project_messages();
     host.shut_down().await;
 

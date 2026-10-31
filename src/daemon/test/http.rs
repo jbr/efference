@@ -7,7 +7,7 @@ use super::*;
 /// is left untouched.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn review_level_over_the_router() {
-    let log_path = temp_file("review-level.jsonl");
+    let (log_path, _log_path_dir) = temp_file("review-level.jsonl");
 
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let client = test_client(&shared).await;
@@ -36,8 +36,6 @@ async fn review_level_over_the_router() {
     assert!(err.contains(r#""message":"#), "human half: {err}");
     let state: Value = serde_json::from_str(&client.state().await.unwrap()).unwrap();
     assert_eq!(state["review_level"], "human_only", "unchanged after a 400");
-
-    let _ = std::fs::remove_file(&log_path);
 }
 
 /// `POST /turns` submission ids (docs/control-api.md): a client-minted id is

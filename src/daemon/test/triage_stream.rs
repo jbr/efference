@@ -3,7 +3,7 @@
 //! shared triage and the separate-model triage alike, and never in the log.
 
 use super::runtime::boot;
-use super::upstream_hold::{Answer, end_turn, events, scripted, tool_call, wait_until};
+use super::upstream_hold::{Answer, end_turn, events, scripted, tool_call};
 use super::*;
 use crate::daemon::{SessionRuntime, StreamDelta};
 use crate::frontend::SubmittedTurn;
@@ -78,11 +78,12 @@ async fn run(own: bool) -> (Vec<(&'static str, Vec<String>, String)>, Arc<Sessio
     let session = Arc::clone(runtime.session());
     let mut rx = session.subscribe_stream();
     session.submit_turn(SubmittedTurn::new("go", "s1"));
-    wait_until("the turn finishes", || {
-        main_requests.load(Ordering::SeqCst) >= if own { 2 } else { 3 }
-            && session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .poll_until("the turn finishes", || {
+            main_requests.load(Ordering::SeqCst) >= if own { 2 } else { 3 }
+                && session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     host.shut_down().await;
 
     let mut seen = Vec::new();

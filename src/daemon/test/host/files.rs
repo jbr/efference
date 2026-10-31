@@ -24,7 +24,7 @@ fn hosted_files(host: &Arc<Host>) -> impl trillium::Handler {
 async fn a_hosted_sessions_files_are_served_under_its_prefix() {
     let roots = Roots::new();
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
+    let runtime = runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await;
     host.adopt("one".into(), runtime)
         .expect("the id is free in this test");
     let server = TestServer::new(hosted_files(&host)).await;
@@ -74,7 +74,7 @@ async fn a_hosted_sessions_directory_stream_delivers_its_pokes() {
     let session_dir = cwd.join(".efference").join("one");
     std::fs::create_dir_all(&session_dir).expect("the session dir exists");
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-    let runtime = SessionRuntime::start(runtime::boot_in(&cwd, &session_dir), host.swansong());
+    let runtime = runtime::started(runtime::boot_in(&cwd, &session_dir), host.swansong()).await;
     host.adopt("one".into(), runtime)
         .expect("the id is free in this test");
     let mut handler = hosted_files(&host);

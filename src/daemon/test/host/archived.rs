@@ -80,7 +80,7 @@ async fn a_hosted_session_is_not_archived() {
     write_session(&roots.0.join("two"), "one", "Same name, other root");
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&live_cwd), host.swansong()),
+        runtime::started(runtime::boot(&live_cwd), host.swansong()).await,
     )
     .unwrap();
     let server = host_server(&host).await;
@@ -154,7 +154,7 @@ async fn the_plain_listing_is_unchanged() {
     write_session(&live_cwd, "dormant", "Asleep");
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&live_cwd), host.swansong()),
+        runtime::started(runtime::boot(&live_cwd), host.swansong()).await,
     )
     .unwrap();
     let server = host_server(&host).await;
@@ -195,7 +195,7 @@ async fn one_session_reads_as_its_hosted_or_dormant_row() {
     write_session(&root, "dormant", "Asleep");
     host.adopt(
         "live".into(),
-        SessionRuntime::start(runtime::boot(&root), host.swansong()),
+        runtime::started(runtime::boot(&root), host.swansong()).await,
     )
     .unwrap();
     let server = host_server(&host).await;
@@ -404,12 +404,12 @@ async fn a_dormant_row_without_a_turn_or_recorded_roles_leaves_them_out() {
 
 /// Host `id` over a file log under `root`'s `.efference/<id>/`, with one user turn so
 /// the archive records rather than discards the session.
-fn adopt_in_root(host: &Arc<Host>, root: &Path, id: &str) {
+async fn adopt_in_root(host: &Arc<Host>, root: &Path, id: &str) {
     let dir = root.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
     let mut boot = runtime::boot(root);
     boot.log = Log::create(dir.join("log.jsonl"), None).expect("a fresh log");
-    host.adopt(id.into(), SessionRuntime::start(boot, host.swansong()))
+    host.adopt(id.into(), runtime::started(boot, host.swansong()).await)
         .expect("the id is free in this test");
     host.session(id)
         .unwrap()
@@ -438,9 +438,9 @@ async fn an_archive_records_who_asked_and_the_tui_can_read_it_back() {
         config_key: "k".into(),
         config: None,
     });
-    adopt_in_root(&host, &root, "hold-probe");
-    adopt_in_root(&host, &root, "anonymous");
-    adopt_in_root(&host, &root, "patched");
+    adopt_in_root(&host, &root, "hold-probe").await;
+    adopt_in_root(&host, &root, "anonymous").await;
+    adopt_in_root(&host, &root, "patched").await;
     let client = host_client(&host, "hold-probe").await;
 
     client

@@ -51,7 +51,7 @@ async fn only_an_active_report_viewing_the_session_cancels_its_delayed_push() {
         .unwrap();
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     let boot = runtime::boot_in(&root, &root.join(".efference/one"));
-    host.adopt("one".into(), SessionRuntime::start(boot, host.swansong()))
+    host.adopt("one".into(), runtime::started(boot, host.swansong()).await)
         .unwrap();
     let session = host.session("one").unwrap();
     let server = host_server(&host).await;

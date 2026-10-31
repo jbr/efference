@@ -1,7 +1,7 @@
 //! A completion with neither prose nor a call is asked again (docs/transport.md): kept
 //! record-only as an empty completion, and the next request re-sends the same bytes.
 
-use super::upstream_hold::{Answer, end_turn, events, is_title_ask, recording, start, wait_until};
+use super::upstream_hold::{Answer, end_turn, events, is_title_ask, recording, start};
 use super::*;
 use crate::frontend::SubmittedTurn;
 use crate::log::Exclusion;
@@ -41,7 +41,9 @@ async fn a_thinking_only_completion_is_asked_again() {
                 if output.text() == ["ok"])
         })
     };
-    wait_until("the turn closes with prose", || closed(&session)).await;
+    session
+        .wait_until("the turn closes with prose", || closed(&session))
+        .await;
 
     let excluded: Vec<_> = session
         .snapshot()

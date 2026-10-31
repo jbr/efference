@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::control_tools::{Archive, Control, Create, Executor, Interrupt, Message, Status};
-use crate::daemon::{Host, SessionRuntime};
+use crate::daemon::Host;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 use std::path::Path;
@@ -28,7 +28,7 @@ impl Fixture {
     /// A host with five sessions over two projects. `parent`, `peer`, `child`, and
     /// `grandchild` share one `.efference/` base (`child` commissioned by `parent`,
     /// `grandchild` by `child`); `stranger` sits in another project.
-    fn new() -> Self {
+    async fn new() -> Self {
         use std::hash::{BuildHasher, Hasher, RandomState};
         let nonce = RandomState::new().build_hasher().finish();
         let root = std::env::temp_dir().join(format!("efference-in-session-{nonce:016x}"));
@@ -41,21 +41,21 @@ impl Fixture {
             }
         }
         let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-        let adopt = |id: &str, cwd: &Path, created_by: Option<String>| {
+        let adopt = async |id: &str, cwd: &Path, created_by: Option<String>| {
             let boot = runtime::boot_in(cwd, &cwd.join(".efference").join(id));
             host.adopt_with(
                 id.to_string(),
-                SessionRuntime::start(boot, host.swansong()),
+                runtime::started(boot, host.swansong()).await,
                 created_by,
                 false,
             )
             .expect("the id is free in this test");
         };
-        adopt("parent", &projects[0], None);
-        adopt("peer", &projects[0], None);
-        adopt("child", &projects[0], Some("parent".into()));
-        adopt("grandchild", &projects[0], Some("child".into()));
-        adopt("stranger", &projects[1], None);
+        adopt("parent", &projects[0], None).await;
+        adopt("peer", &projects[0], None).await;
+        adopt("child", &projects[0], Some("parent".into())).await;
+        adopt("grandchild", &projects[0], Some("child".into())).await;
+        adopt("stranger", &projects[1], None).await;
         Self { root, host }
     }
 
@@ -105,20 +105,10 @@ fn message(agent: &str, text: &str, reply_to: Option<&str>) -> Message {
     }
 }
 
-async fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
-    for _ in 0..250 {
-        if done() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    panic!("timed out waiting for {what}");
-}
-
 /// Rule 1: a session is never a target of itself, on any verb.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn self_target_is_refused() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let control = fixture.control("parent");
     let err = Interrupt {
         agent: "parent".into(),
@@ -146,7 +136,7 @@ async fn self_target_is_refused() {
 /// stays the caller's project, and an id the host does not hold is not found.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_session_in_another_project_is_reached_by_its_id() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let control = fixture.control("parent");
     let read = Status {
         agent: Some("stranger".into()),
@@ -173,17 +163,18 @@ async fn a_session_in_another_project_is_reached_by_its_id() {
     let place = crate::home::tilde(&fixture.root.join("a"));
     let source = format!("session[parent in {place}]");
     let stranger = fixture.session("stranger");
-    wait_for("the note reached stranger", || {
-        stranger
-            .pending_notifications()
-            .iter()
-            .any(|n| n.source == source)
-            || stranger
-                .snapshot()
+    stranger
+        .wait_until("the note reached stranger", || {
+            stranger
+                .pending_notifications()
                 .iter()
-                .any(|e| matches!(&e.payload, Payload::Ambient(n) if n.source == source))
-    })
-    .await;
+                .any(|n| n.source == source)
+                || stranger
+                    .snapshot()
+                    .iter()
+                    .any(|e| matches!(&e.payload, Payload::Ambient(n) if n.source == source))
+        })
+        .await;
 
     fixture
         .host
@@ -193,13 +184,14 @@ async fn a_session_in_another_project_is_reached_by_its_id() {
         .execute(control.clone(), RequestContext::default())
         .await
         .expect("parent supervises stranger");
-    wait_for("stranger logged the turn", || {
-        stranger
-            .snapshot()
-            .iter()
-            .any(|entry| entry.source.as_deref() == Some(source.as_str()))
-    })
-    .await;
+    stranger
+        .wait_until("stranger logged the turn", || {
+            stranger
+                .snapshot()
+                .iter()
+                .any(|entry| entry.source.as_deref() == Some(source.as_str()))
+        })
+        .await;
     let wire = serde_json::to_string(&crate::project::project(&stranger.snapshot())).unwrap();
     assert!(
         wire.contains(&format!("parent (agent in {place}): pick it up")),
@@ -226,7 +218,7 @@ async fn a_session_in_another_project_is_reached_by_its_id() {
 /// that says what the host offers.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_create_outside_the_project_is_refused() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let control = fixture.control("parent");
     let create = |cwd: &str| Create {
         cwd: Some(cwd.into()),
@@ -285,7 +277,7 @@ async fn a_create_outside_the_project_is_refused() {
 /// follow, and the successor — which drives its predecessor — may archive it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     fixture
         .host
         .record_succession("parent", "peer", "carry on".into());
@@ -296,7 +288,7 @@ async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {
         Some("peer".to_string())
     );
     let peer = fixture.session("peer");
-    wait_for("the brief", || {
+    peer.wait_until("the brief", || {
         peer.snapshot().iter().any(|entry| {
             entry.source.as_deref() == Some("handoff[parent]")
                 && matches!(&entry.payload, Payload::User(_))
@@ -328,10 +320,12 @@ async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {
         said,
         "archived parent and the 2 sessions it created (child, grandchild); logs stay on disk"
     );
-    wait_for("the predecessor to leave", || {
-        fixture.host.session("parent").is_none()
-    })
-    .await;
+    fixture
+        .host
+        .wait_until("the predecessor to leave", || {
+            fixture.host.session("parent").is_none()
+        })
+        .await;
 
     fixture.host.swansong().shut_down().await;
 }
@@ -341,7 +335,7 @@ async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {
 /// naming a sibling or a descendant, or from a session that is not the successor, does not.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn only_a_successors_archive_of_its_predecessor_completes_the_hand_off() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     fixture
         .host
         .record_succession("parent", "peer", "carry on".into());
@@ -385,7 +379,7 @@ async fn only_a_successors_archive_of_its_predecessor_completes_the_hand_off() {
 /// refusal names the one the predecessor was created with.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_successor_is_created_with_its_predecessors_options() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     fixture.host.record_options(
         "parent",
         crate::inference::SessionOptions {

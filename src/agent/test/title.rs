@@ -139,11 +139,9 @@ async fn the_title_ask_compresses_an_over_budget_title() {
     let client = mock_client("Fix title cadence");
     let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
-    assert!(
-        eventually(|| titles(&shared).len() > 1).await,
-        "the title ask never landed: {:?}",
-        titles(&shared)
-    );
+    shared
+        .wait_until("the title ask landed", || titles(&shared).len() > 1)
+        .await;
     assert_eq!(titles(&shared)[1], "Fix title cadence");
 }
 
@@ -168,19 +166,6 @@ async fn the_title_ask_stays_silent_while_the_title_answers_the_check() {
     );
 }
 
-/// Wait for `done`, polling every 25 ms. The bound is generous on purpose: a passing
-/// test returns at the first true poll, so only a real failure waits it out, while a
-/// tight bound failed these tests on a loaded machine (module runtime 2–8 s).
-async fn eventually(done: impl Fn() -> bool) -> bool {
-    for _ in 0..1200 {
-        if done() {
-            return true;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
-    done()
-}
-
 fn user_turn(shared: &Session, text: &str) {
     shared
         .append_submission(1, Payload::user(text), "sub".into(), None)
@@ -200,10 +185,16 @@ async fn title_checks_during_an_ask_in_flight_spend_one_peek() {
     let (client, requests) = mock("Fix title cadence", Some(hold));
     let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
-    assert!(eventually(|| requests.load(Ordering::SeqCst) == 1).await);
+    shared
+        .poll_until("the ask reached the mock", || {
+            requests.load(Ordering::SeqCst) == 1
+        })
+        .await;
     solicit_title_detached(&shared, &ask);
     release.send(()).unwrap();
-    assert!(eventually(|| titles(&shared).len() == 1).await);
+    shared
+        .wait_until("the title landed", || titles(&shared).len() == 1)
+        .await;
     for _ in 0..20 {
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
@@ -223,11 +214,21 @@ async fn a_user_turn_during_the_peek_is_asked_about_again() {
     let (client, requests) = mock("Fix title cadence", Some(hold));
     let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
-    assert!(eventually(|| requests.load(Ordering::SeqCst) == 1).await);
+    shared
+        .poll_until("the ask reached the mock", || {
+            requests.load(Ordering::SeqCst) == 1
+        })
+        .await;
     user_turn(&shared, "new scope");
     solicit_title_detached(&shared, &ask);
     release.send(()).unwrap();
-    assert!(eventually(|| requests.load(Ordering::SeqCst) == 2).await);
+    shared
+        .poll_until("the second ask reached the mock", || {
+            requests.load(Ordering::SeqCst) == 2
+        })
+        .await;
     release.send(()).unwrap();
-    assert!(eventually(|| titles(&shared).len() == 2).await);
+    shared
+        .wait_until("the second title landed", || titles(&shared).len() == 2)
+        .await;
 }

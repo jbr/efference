@@ -167,16 +167,6 @@ fn serve(
     addr
 }
 
-pub(super) async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(20), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
-}
-
 pub(super) fn start(addr: SocketAddr) -> (Swansong, SessionRuntime) {
     start_with(addr, |_| {})
 }
@@ -227,7 +217,9 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     let held = LoopPhase::Blocked {
         reason: BlockedReason::TriageUnavailable,
     };
-    wait_until("the triage is held", || session.loop_phase() == held).await;
+    session
+        .wait_until("the triage is held", || session.loop_phase() == held)
+        .await;
     let stall = session.stall().unwrap();
     assert_eq!(stall.reason, StallReason::TriageUnavailable);
     assert!(session.is_settled(), "a held triage is a decision point");
@@ -265,10 +257,11 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
         Ok(()),
         "continue retries the hold"
     );
-    wait_until("the turn finishes", || {
-        session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     assert!(
         session.stall().is_none(),
         "the recovered hold is not a stall"
@@ -344,7 +337,9 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("zebra history to compact away", "s1"));
 
-    wait_until("the triage is held", || session.stall().is_some()).await;
+    session
+        .wait_until("the triage is held", || session.stall().is_some())
+        .await;
     let upto = session
         .snapshot()
         .iter()
@@ -361,10 +356,11 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
         )
         .unwrap();
     assert_eq!(session.request_continue(Default::default()), Ok(()));
-    wait_until("the turn finishes", || {
-        session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
 
     let bodies = bodies.lock().unwrap().clone();
     let held = &bodies[1];
@@ -396,10 +392,11 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the loop is waiting to retry", || {
-        session.upstream_retry.get().is_some()
-    })
-    .await;
+    session
+        .wait_until("the loop is waiting to retry", || {
+            session.upstream_retry.get().is_some()
+        })
+        .await;
     assert!(
         session.stall().is_none(),
         "a transient failure does not stall"
@@ -409,10 +406,11 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
         Ok(()),
         "continue retries now"
     );
-    wait_until("the turn finishes", || {
-        session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     assert!(session.stall().is_none());
     assert!(session.upstream_retry.get().is_none());
     assert!(
@@ -445,7 +443,9 @@ async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the triage is held", || session.stall().is_some()).await;
+    session
+        .wait_until("the triage is held", || session.stall().is_some())
+        .await;
     assert_eq!(session.stall().unwrap().reason, StallReason::TriageDefect);
     // The tool call, then three attempts in each fork.
     assert_eq!(requests.load(Ordering::SeqCst), 1 + 3 * TRIAGE_RESTARTS);

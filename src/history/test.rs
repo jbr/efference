@@ -5,21 +5,13 @@
 use super::*;
 use std::collections::HashMap;
 
-fn dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "efference-history-test-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_nanos())
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn dir() -> tempfile::TempDir {
+    crate::testing::temp_dir("history")
 }
 
-fn history() -> (History, PathBuf) {
+fn history() -> (History, tempfile::TempDir) {
     let dir = dir();
-    let store = History::at(dir.join("state.db"));
+    let store = History::at(dir.path().join("state.db"));
     (store, dir)
 }
 
@@ -71,7 +63,7 @@ fn empty_store_has_no_default() {
 #[test]
 fn single_pick_is_the_aggregate_default() {
     let (store, dir) = history();
-    let scope = scope(&dir);
+    let scope = scope(dir.path());
     let now = 1_800_000_000;
     store.record(&pick(now, &scope, "meta", "muse-spark"));
     let candidate = store
@@ -86,7 +78,7 @@ fn single_pick_is_the_aggregate_default() {
 #[test]
 fn project_mass_beats_heavier_aggregate() {
     let (store, dir) = history();
-    let project = scope(&dir);
+    let project = scope(dir.path());
     let elsewhere = Scope {
         cwd: PathBuf::from("/code/other"),
         config_key: BUILTIN_CONFIG_KEY.to_string(),
@@ -107,7 +99,7 @@ fn project_mass_beats_heavier_aggregate() {
 #[test]
 fn project_mode_picks_the_project_top() {
     let (store, dir) = history();
-    let scope = scope(&dir);
+    let scope = scope(dir.path());
     let now = 1_800_000_000;
     for _ in 0..4 {
         store.record(&pick(now, &scope, "meta", "muse-spark"));
@@ -125,7 +117,7 @@ fn project_mode_picks_the_project_top() {
 #[test]
 fn decayed_project_mass_falls_back() {
     let (store, dir) = history();
-    let scope = scope(&dir);
+    let scope = scope(dir.path());
     let now = 1_800_000_000;
     let old = now - 2 * (HALF_LIFE_DAYS * 86_400.0) as i64;
     for _ in 0..6 {
@@ -140,7 +132,7 @@ fn decayed_project_mass_falls_back() {
 #[test]
 fn recent_scopes_to_connection_by_weight() {
     let (store, dir) = history();
-    let scope = scope(&dir);
+    let scope = scope(dir.path());
     let now = 1_800_000_000;
     let old = now - (HALF_LIFE_DAYS * 86_400.0) as i64;
     store.record(&pick(old, &scope, "meta", "stale-model"));
@@ -158,7 +150,7 @@ fn recent_scopes_to_connection_by_weight() {
 #[test]
 fn recent_respects_limit() {
     let (store, dir) = history();
-    let scope = scope(&dir);
+    let scope = scope(dir.path());
     let now = 1_800_000_000;
     for index in 0..5 {
         store.record(&pick(now, &scope, "meta", &format!("model-{index}")));
@@ -172,7 +164,7 @@ fn recent_respects_limit() {
 #[test]
 fn recent_all_lists_every_connection_project_first() {
     let (store, dir) = history();
-    let scope = scope(&dir);
+    let scope = scope(dir.path());
     let elsewhere = Scope {
         cwd: PathBuf::from("/code/other"),
         config_key: BUILTIN_CONFIG_KEY.to_string(),
@@ -211,7 +203,7 @@ fn disabled_store_is_empty() {
 fn config_key_separates_patterns() {
     let (store, dir) = history();
     let now = 1_800_000_000;
-    let cwd = canonicalize(&dir);
+    let cwd = canonicalize(dir.path());
     let checkout = Scope {
         cwd: cwd.clone(),
         config_key: cwd
@@ -259,17 +251,21 @@ fn config_key_separates_patterns() {
 #[test]
 fn scope_for_request_mirrors_load_probe() {
     let dir = dir();
-    let cwd = canonicalize(&dir);
-    let unprobed = Scope::for_request(&dir, None);
+    let cwd = canonicalize(dir.path());
+    let unprobed = Scope::for_request(dir.path(), None);
     assert_eq!(unprobed.cwd, cwd);
     assert_eq!(unprobed.config_key, BUILTIN_CONFIG_KEY);
-    std::fs::write(dir.join(crate::config::DEFAULT_PATH), "scope = \"x\"\n").unwrap();
-    let probed = Scope::for_request(&dir, None);
+    std::fs::write(
+        dir.path().join(crate::config::DEFAULT_PATH),
+        "scope = \"x\"\n",
+    )
+    .unwrap();
+    let probed = Scope::for_request(dir.path(), None);
     assert_eq!(
         probed.config_key,
-        canonicalize(&dir.join(crate::config::DEFAULT_PATH)).to_string_lossy()
+        canonicalize(&dir.path().join(crate::config::DEFAULT_PATH)).to_string_lossy()
     );
-    let explicit = Scope::for_request(&dir, Some(Path::new("custom.toml")));
+    let explicit = Scope::for_request(dir.path(), Some(Path::new("custom.toml")));
     assert_eq!(
         explicit.config_key,
         cwd.join("custom.toml").to_string_lossy()
@@ -289,7 +285,7 @@ fn selection(connection: &str, model: &str) -> crate::inference::ModelSelection 
 #[test]
 fn only_an_explicit_separate_triage_is_recorded() {
     let (store, dir) = history();
-    let scope = scope(&dir);
+    let scope = scope(dir.path());
     let main = selection("meta", "muse-spark");
     let triage = selection("openai", "small");
     let at = 1_800_000_000;

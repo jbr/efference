@@ -37,7 +37,7 @@ async fn an_adopted_sessions_artifact_links_resolve_until_it_ends() {
     let host = Host::new(one_connection_registry(), baseline_env());
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
+        runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await,
     )
     .unwrap();
     let session = host.session("one").unwrap();
@@ -99,7 +99,7 @@ async fn an_adopted_sessions_artifact_links_resolve_until_it_ends() {
     );
 
     // The gated web stack serves it with no credential, as a sandboxed frame asks.
-    let (web, _bearer) = network_host_server(&host).await;
+    let (web, _bearer, _state) = network_host_server(&host).await;
     let anonymous = web.get(&url).await;
     anonymous.assert_status(200);
     assert!(anonymous.body().contains("<main>second</main>"));

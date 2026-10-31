@@ -256,7 +256,7 @@ async fn the_client_reads_a_compaction_refusal_as_a_decline() {
 /// (docs/summary.md), never as the main loop's response.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_compaction_streams_its_writers_deltas() {
-    use super::upstream_hold::{Answer, events, scripted, wait_until};
+    use super::upstream_hold::{Answer, events, scripted};
     let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let addr = scripted(Arc::clone(&requests), |_| {
         Answer::Stream(events(&[
@@ -289,7 +289,9 @@ async fn a_compaction_streams_its_writers_deltas() {
     let mut deltas = session.subscribe_stream();
 
     assert_eq!(session.request_compaction(true), Ok(()));
-    wait_until("the compaction finishes", || !session.compacting()).await;
+    session
+        .wait_until("the compaction finishes", || !session.compacting())
+        .await;
 
     let mut seen = Vec::new();
     while let Ok(delta) = deltas.try_recv() {
@@ -311,12 +313,14 @@ async fn a_compaction_streams_its_writers_deltas() {
 /// machinery (the cache lifetime the cold watcher reads, the keepalive) stays off.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
-    use super::upstream_hold::{Answer, end_turn, scripted, start, wait_until};
+    use super::upstream_hold::{Answer, end_turn, scripted, start};
     let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let addr = scripted(Arc::clone(&requests), |_| Answer::Stream(end_turn()));
     let (host, runtime) = start(addr);
     let session = Arc::clone(runtime.session());
-    wait_until("the loop went idle", || session.loop_idled()).await;
+    session
+        .wait_until("the loop went idle", || session.loop_idled())
+        .await;
     assert!(
         !crate::api::ModelCapabilities::unknown()
             .prompt_cache
@@ -351,7 +355,9 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
     );
     assert_eq!(session.request_compaction(true), Ok(()));
 
-    wait_until("the compaction finishes", || !session.compacting()).await;
+    session
+        .wait_until("the compaction finishes", || !session.compacting())
+        .await;
     let entries = session.snapshot();
     let summaries: Vec<&Summary> = entries
         .iter()

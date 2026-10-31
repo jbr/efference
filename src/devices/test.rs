@@ -4,12 +4,10 @@
 use super::*;
 use std::time::Duration;
 
-/// A throwaway store under the OS temp dir (the scratch idiom the other state tests
-/// use; no tempfile dependency).
-fn scratch() -> Store {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let n = RandomState::new().build_hasher().finish();
-    Store::new(std::env::temp_dir().join(format!("efference-devices-test-{n:016x}/state.db")))
+/// A throwaway store in a directory of its own, which goes when the returned guard drops.
+fn scratch() -> (Store, tempfile::TempDir) {
+    let dir = crate::testing::temp_dir("devices");
+    (Store::new(dir.path().join("state.db")), dir)
 }
 
 fn at(secs: u64) -> SystemTime {
@@ -27,7 +25,7 @@ fn last_seen(store: &Store, id: &DeviceId) -> Option<i64> {
 
 #[test]
 fn an_enrolled_device_lists_with_what_it_was_given() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let browser = store
         .insert(Kind::Browser, "Safari on macOS", Joined::Code, at(1_000))
         .unwrap();
@@ -62,7 +60,7 @@ fn an_enrolled_device_lists_with_what_it_was_given() {
 /// The row's existence is the answer, and a revoked row is gone for good.
 #[test]
 fn seen_answers_whether_the_row_exists() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     assert!(!store.seen(&DeviceId::random(), at(1_000)).unwrap());
     let device = store
         .insert(Kind::Script, "ci", Joined::Add, at(1_000))
@@ -80,7 +78,7 @@ fn seen_answers_whether_the_row_exists() {
 /// a burst of requests is reads.
 #[test]
 fn last_seen_is_written_once_an_hour_at_most() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let device = store
         .insert(Kind::Browser, "", Joined::Code, at(10_000))
         .unwrap();
@@ -104,7 +102,7 @@ fn last_seen_is_written_once_an_hour_at_most() {
 /// What rotation does beside replacing the root: every row goes.
 #[test]
 fn clear_empties_the_table() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let kept = store
         .insert(Kind::Browser, "phone", Joined::Code, at(1))
         .unwrap();
@@ -122,7 +120,7 @@ fn clear_empties_the_table() {
 /// other would hide a row whose token still works.
 #[test]
 fn a_file_that_is_not_a_database_is_an_error() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     std::fs::create_dir_all(store.path.parent().unwrap()).unwrap();
     std::fs::write(&store.path, "{ not a database").unwrap();
     assert!(store.seen(&DeviceId::random(), at(1)).is_err());
@@ -137,7 +135,7 @@ fn a_file_that_is_not_a_database_is_an_error() {
 /// A row this build does not name fails the listing rather than dropping out of it.
 #[test]
 fn an_unrecognized_row_fails_the_listing() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let device = store
         .insert(Kind::Browser, "phone", Joined::Code, at(1))
         .unwrap();
@@ -193,7 +191,7 @@ fn labels_are_cleaned_on_the_way_in() {
         "a".repeat(LABEL_MAX_CHARS - 1)
     );
 
-    let store = scratch();
+    let (store, _dir) = scratch();
     let device = store
         .insert(Kind::Browser, "\u{1b}[31mred", Joined::Code, at(1))
         .unwrap();

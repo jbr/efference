@@ -65,16 +65,6 @@ impl Fixture {
     }
 }
 
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
-}
-
 /// Whether `session` has heard a notification from `source` whose body matches —
 /// pending, or already logged as an `Ambient` by its live loop's first show.
 fn heard(session: &Session, source: &str, matches: impl Fn(&str) -> bool) -> bool {
@@ -183,14 +173,14 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
         subscribers[0].1.wake,
         "subscribed as a creator is, with wake"
     );
-    wait_until("b was told it supervises a", || {
+    b.wait_until("b was told it supervises a", || {
         heard(&b, "a", |body| body.starts_with("You now supervise a"))
     })
     .await;
 
     let seq = issue(&a);
     let gate = a.register_pending(&leaf(), None, None);
-    wait_until("the gate reached b", || {
+    b.wait_until("the gate reached b", || {
         heard(&b, "a", |body| {
             body.contains("waiting for your decision") && body.contains(&format!("seq: \"{seq}\""))
         })
@@ -223,7 +213,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
     // The loop runs the approved call and its trajectory ends.
     a.going_idle();
 
-    wait_until("a's idle reached b", || {
+    b.wait_until("a's idle reached b", || {
         heard(&b, "a", |body| body.starts_with("idle, its turn is done"))
     })
     .await;
@@ -245,7 +235,7 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
         .await
         .expect("the supervisor may send a turn");
     let a = fixture.session("a");
-    wait_until("the turn landed with b's provenance", || {
+    a.wait_until("the turn landed with b's provenance", || {
         a.snapshot()
             .iter()
             .any(|entry| entry.source.as_deref() == Some("session[b]"))
@@ -350,16 +340,18 @@ async fn clearing_or_moving_the_pointer_reroutes_a_held_call() {
     let c = fixture.session("c");
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
     let _gate = a.register_pending(&leaf(), None, None);
-    wait_until("the gate reached b", || {
-        heard(&fixture.session("b"), "a", |body| {
-            body.contains("waiting for your decision")
+    fixture
+        .session("b")
+        .wait_until("the gate reached b", || {
+            heard(&fixture.session("b"), "a", |body| {
+                body.contains("waiting for your decision")
+            })
         })
-    })
-    .await;
+        .await;
 
     // Moved: the same held call goes to the new supervisor.
     fixture.host.set_supervisor("a", Some("c".into())).unwrap();
-    wait_until("the held call was re-routed to c", || {
+    c.wait_until("the held call was re-routed to c", || {
         heard(&c, "a", |body| {
             body.contains("waiting for your decision") && body.contains("fs.list")
         })
@@ -403,7 +395,10 @@ async fn a_set_supervisor_ending_hands_the_gate_to_the_operator() {
     let _gate = a.register_pending(&leaf(), None, None);
 
     fixture.host.end("b").unwrap().await;
-    wait_until("b left the host", || fixture.host.session("b").is_none()).await;
+    fixture
+        .host
+        .wait_until("b left the host", || fixture.host.session("b").is_none())
+        .await;
     assert_eq!(a.supervisor(), None);
     assert_eq!(a.resolved_review_level(), ReviewLevel::SpotterHuman);
     assert!(a.pending_gate().is_some());
@@ -424,12 +419,14 @@ async fn a_child_with_no_setting_answers_to_its_creator() {
 
     let seq = issue(&kid);
     let gate = kid.register_pending(&leaf(), None, None);
-    wait_until("the gate reached the creator", || {
-        heard(&fixture.session("a"), "kid", |body| {
-            body.contains("waiting for your decision")
+    fixture
+        .session("a")
+        .wait_until("the gate reached the creator", || {
+            heard(&fixture.session("a"), "kid", |body| {
+                body.contains("waiting for your decision")
+            })
         })
-    })
-    .await;
+        .await;
     allow("kid", &seq)
         .execute(fixture.control("a"), RequestContext::default())
         .await

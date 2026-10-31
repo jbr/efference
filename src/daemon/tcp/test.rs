@@ -8,11 +8,11 @@ use crate::daemon::{App, Transport, handler};
 use trillium::Method;
 use trillium_testing::TestServer;
 
-/// A throwaway state database path, so tests never write the real user-scoped file.
-pub(super) fn scratch_state() -> PathBuf {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let n = RandomState::new().build_hasher().finish();
-    std::env::temp_dir().join(format!("efference-tcp-test-{n:016x}/state.db"))
+/// A throwaway state database path in a directory of its own, so tests never write the
+/// real user-scoped file; the directory goes when the returned guard drops.
+pub(super) fn scratch_state() -> (PathBuf, tempfile::TempDir) {
+    let dir = crate::testing::temp_dir("tcp");
+    (dir.path().join("state.db"), dir)
 }
 
 /// An armed plaintext-loopback bind under a per-test root, over `state` (a distinct
@@ -31,9 +31,11 @@ pub(super) fn armed_over(root: &str, state: PathBuf) -> Arc<TcpAuth> {
     auth
 }
 
-/// [`armed_over`] a scratch state database of its own.
-pub(super) fn armed(root: &str) -> Arc<TcpAuth> {
-    armed_over(root, scratch_state())
+/// [`armed_over`] a scratch state database of its own, which stays until the returned
+/// guard drops.
+pub(super) fn armed(root: &str) -> (Arc<TcpAuth>, tempfile::TempDir) {
+    let (state, dir) = scratch_state();
+    (armed_over(root, state), dir)
 }
 
 /// An `Authorization` value for a script enrolled at `auth`, through the same
@@ -93,7 +95,7 @@ pub(super) fn link_claim(auth: &TcpAuth) -> String {
 /// (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn only_the_authorization_header_carries_a_token() {
-    let auth = armed("token-authenticates");
+    let (auth, _state) = armed("token-authenticates");
     let (server, _guard) = tcp_server(&auth).await;
     let bearer = enrolled(&auth);
     let token = bearer.strip_prefix("Bearer ").unwrap().to_string();
@@ -133,7 +135,7 @@ async fn only_the_authorization_header_carries_a_token() {
 /// and nothing else on the stack writes one (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn no_answer_sets_a_cookie() {
-    let auth = armed("no-set-cookie");
+    let (auth, _state) = armed("no-set-cookie");
     let (server, _guard) = tcp_server(&auth).await;
     let bearer = enrolled(&auth);
     let answers = [
@@ -175,7 +177,7 @@ async fn no_answer_sets_a_cookie() {
 /// an answer nor send the header a token rides (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn no_answer_grants_another_origin() {
-    let auth = armed("no-cors");
+    let (auth, _state) = armed("no-cors");
     let (server, _guard) = tcp_server(&auth).await;
     let bearer = enrolled(&auth);
     let answers = [
@@ -241,6 +243,7 @@ fn host_and_origin_parsing() {
 /// reads (docs/web-bind.md); a plaintext loopback bind is not TLS.
 #[test]
 fn only_a_tls_arm_is_tls() {
+    let (state, _state_dir) = scratch_state();
     let (tls, _listener) = arm_with_state(
         TcpBind {
             addr: "0.0.0.0:0".into(),
@@ -252,16 +255,17 @@ fn only_a_tls_arm_is_tls() {
             root: Root::new("tls-arm"),
             open: false,
         },
-        scratch_state(),
+        state,
     );
     assert!(tls.is_tls());
-    assert!(!armed("plain-arm").is_tls());
+    assert!(!armed("plain-arm").0.is_tls());
 }
 
 /// A bind to port 0 mints links naming the port it actually bound; a configured
 /// public URL with its own port is left as given.
 #[test]
 fn a_port_zero_bind_mints_links_on_its_bound_port() {
+    let (state, _state_dir) = scratch_state();
     let (auth, _listener) = arm_with_state(
         TcpBind {
             addr: "127.0.0.1:0".into(),
@@ -270,7 +274,7 @@ fn a_port_zero_bind_mints_links_on_its_bound_port() {
             root: Root::new("port-zero"),
             open: false,
         },
-        scratch_state(),
+        state,
     );
     auth.bound_port(51234);
     assert_eq!(auth.public_base(), "http://localhost:51234");
@@ -279,7 +283,7 @@ fn a_port_zero_bind_mints_links_on_its_bound_port() {
             .unwrap()
             .starts_with("http://localhost:51234/#claim=")
     );
-    let configured = armed("configured-port");
+    let (configured, _configured_state) = armed("configured-port");
     configured.bound_port(51234);
     assert_eq!(configured.public_base(), "http://localhost:7777");
 }
@@ -288,7 +292,7 @@ fn a_port_zero_bind_mints_links_on_its_bound_port() {
 /// and each collects one token.
 #[test]
 fn every_link_carries_a_fresh_claim() {
-    let auth = armed("link-per-mint");
+    let (auth, _state) = armed("link-per-mint");
     let first = link_claim(&auth);
     let second = link_claim(&auth);
     assert_ne!(first, second);
@@ -309,7 +313,7 @@ fn every_link_carries_a_fresh_claim() {
 /// once its row is deleted, on the very next request (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_token_without_a_row_is_refused() {
-    let auth = armed("row-is-the-answer");
+    let (auth, _state) = armed("row-is-the-answer");
     let (server, _guard) = tcp_server(&auth).await;
 
     let rowless = auth.tokens.token(&devices::DeviceId::random());
@@ -342,8 +346,7 @@ async fn a_token_without_a_row_is_refused() {
 /// is what makes its answer the same whatever state the table is in.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unreadable_table_refuses_without_discarding_the_token() {
-    let state = scratch_state();
-    std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+    let (state, _state_dir) = scratch_state();
     std::fs::write(&state, "{ not a database").unwrap();
     let auth = armed_over("unreadable-table", state);
     let (server, _guard) = tcp_server(&auth).await;

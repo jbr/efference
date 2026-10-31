@@ -7,13 +7,12 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 use trillium_testing::TestServer;
 
-/// A temp file for one test, named for this process and cleared of what an earlier
-/// process with the same id left. A fixed name is shared by every process running the
-/// suite, so a concurrent run (another worktree's) would write over it mid-test.
-fn temp_file(name: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("efference-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_file(&path);
-    path
+/// A path for a file of one test's, in a directory of its own that goes when the returned
+/// guard drops: a name that is neither shared with another process running the suite (a
+/// concurrent run in another worktree) nor with another test.
+fn temp_file(name: &str) -> (PathBuf, tempfile::TempDir) {
+    let dir = crate::testing::temp_dir("daemon");
+    (dir.path().join(name), dir)
 }
 
 fn user(text: &str) -> Payload {
@@ -210,6 +209,7 @@ mod triage_stream;
 mod upstream_hold;
 mod verbs;
 mod views;
+mod wait;
 
 mod host;
 mod roots;

@@ -65,6 +65,9 @@ mod agents;
 
 mod update_check;
 
+#[cfg(test)]
+mod testing;
+
 mod routes;
 pub(crate) use routes::host_routes;
 use routes::{host_of, missing_host, no_such_session};

@@ -60,16 +60,6 @@ impl Fixture {
     }
 }
 
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
-}
-
 /// The must-wake flag of the notification from `c` whose body matches, pending or
 /// already logged as an `Ambient` by the live loop's first show; `None` when `session`
 /// has heard none.
@@ -168,7 +158,7 @@ async fn the_supervisor_may_decide_a_gate_routed_to_the_operator_and_is_not_woke
     );
     let wake = {
         let mut wake = None;
-        wait_until("the gate reached p's inbox", || {
+        p.wait_until("the gate reached p's inbox", || {
             wake = heard_from_c(&p, |body| body.starts_with(&first));
             wake.is_some()
         })

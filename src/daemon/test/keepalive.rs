@@ -380,17 +380,12 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
         None,
     ));
     let sent = |n| count.load(Ordering::SeqCst) == n;
-    let wait_for = async |what: &dyn Fn() -> bool| {
-        for _ in 0..80 {
-            if what() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        panic!("timed out");
-    };
     // The first ping goes out unjudged; the following ticks skip.
-    wait_for(&|| sent(1) && skipped(&shared).is_object()).await;
+    shared
+        .poll_until("the first ping went out and the next tick skipped", || {
+            sent(1) && skipped(&shared).is_object()
+        })
+        .await;
     let stance = skipped(&shared);
     assert_eq!(stance["reason"], "discard");
     assert_eq!(stance["output_tokens"], 10_000);
@@ -400,8 +395,12 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
 
     // The prefix grows past break-even: 10k discarded tokens need over 1M prefix.
     record_turn(&shared, 2_000_000);
-    wait_for(&|| !sent(1)).await;
-    wait_for(&|| skipped(&shared).is_null()).await;
+    shared
+        .poll_until("the next ping went out", || !sent(1))
+        .await;
+    shared
+        .poll_until("the skip stance cleared", || skipped(&shared).is_null())
+        .await;
     task.abort();
 }
 
@@ -447,16 +446,11 @@ async fn an_exhausted_limit_pauses_until_the_next_turn() {
         None,
     ));
     let sent = |n| count.load(Ordering::SeqCst) == n;
-    let wait_for = async |what: &dyn Fn() -> bool| {
-        for _ in 0..80 {
-            if what() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        panic!("timed out");
-    };
-    wait_for(&|| sent(1) && skipped(&shared).is_object()).await;
+    shared
+        .poll_until("the first ping went out and the next tick skipped", || {
+            sent(1) && skipped(&shared).is_object()
+        })
+        .await;
     let stance = skipped(&shared);
     assert_eq!(stance["reason"], "exhausted");
     assert_eq!(stance["resets_at"], 1_791_623_333_000u64);
@@ -464,7 +458,11 @@ async fn an_exhausted_limit_pauses_until_the_next_turn() {
     assert!(sent(1), "paused ticks send nothing");
 
     record_turn(&shared, 5_000);
-    wait_for(&|| !sent(1)).await;
-    wait_for(&|| skipped(&shared).is_null()).await;
+    shared
+        .poll_until("the next ping went out", || !sent(1))
+        .await;
+    shared
+        .poll_until("the skip stance cleared", || skipped(&shared).is_null())
+        .await;
     task.abort();
 }

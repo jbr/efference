@@ -135,20 +135,21 @@ async fn a_supplied_environment_never_runs_the_hook() {
 async fn a_name_already_hosted_is_refused_rather_than_replaced() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
-    let runtime_for = |dir: &str| {
+    let runtime_for = async |dir: &str| {
         let cwd = roots.0.join(dir);
-        SessionRuntime::start(
+        runtime::started(
             runtime::boot_in(&cwd, &cwd.join(".efference").join("fresh")),
             host.swansong(),
         )
+        .await
     };
 
-    let winner = runtime_for("one");
+    let winner = runtime_for("one").await;
     let winning_cwd = Arc::clone(winner.session()).cwd().to_path_buf();
     host.adopt_with("fresh".to_string(), winner, None, false)
         .expect("the first adopt takes a free name");
 
-    let loser = runtime_for("two");
+    let loser = runtime_for("two").await;
     let error = host
         .adopt_with("fresh".to_string(), loser, None, false)
         .expect_err("the second adopt finds the name taken");
@@ -286,7 +287,7 @@ async fn creation_validates_its_body_on_every_listener() {
     let host = Host::new(one_connection_registry(), baseline_env());
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
+        runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await,
     )
     .expect("the id is free in this test");
     let server = host_server(&host).await;
@@ -319,7 +320,7 @@ async fn creation_validates_its_body_on_every_listener() {
     assert_eq!(host.ids(), ["one"]);
 
     // The same rejections on a network listener: same status, same reasons.
-    let (network, bearer) = network_host_server(&host).await;
+    let (network, bearer, _state) = network_host_server(&host).await;
     for (body, reason) in &cases {
         network
             .post("/sessions")

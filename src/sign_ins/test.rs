@@ -4,12 +4,10 @@
 use super::*;
 use std::time::Duration;
 
-/// A throwaway store under the OS temp dir (the scratch idiom the other state tests
-/// use; no tempfile dependency).
-fn scratch() -> Store {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let n = RandomState::new().build_hasher().finish();
-    Store::new(std::env::temp_dir().join(format!("efference-sign-ins-test-{n:016x}/state.db")))
+/// A throwaway store in a directory of its own, which goes when the returned guard drops.
+fn scratch() -> (Store, tempfile::TempDir) {
+    let dir = crate::testing::temp_dir("sign-ins");
+    (Store::new(dir.path().join("state.db")), dir)
 }
 
 fn at(secs: u64) -> SystemTime {
@@ -40,7 +38,7 @@ fn rows(store: &Store) -> Vec<(String, String, String, bool)> {
 /// nothing to collect or approve from then on.
 #[test]
 fn a_request_waits_for_approval_and_is_claimed_once() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let requested = store.request("Safari on macOS", at(1_000)).unwrap();
     assert_eq!(
         store.claim(&requested.claim, at(1_001)).unwrap(),
@@ -89,7 +87,7 @@ fn a_request_waits_for_approval_and_is_claimed_once() {
 /// `approve` of the same line says so rather than reporting a second success.
 #[test]
 fn a_code_is_approved_once() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let requested = store.request("phone", at(1_000)).unwrap();
     assert!(store.approve(&requested.code, at(1_001)).unwrap().is_some());
     assert_eq!(store.approve(&requested.code, at(1_002)).unwrap(), None);
@@ -99,7 +97,7 @@ fn a_code_is_approved_once() {
 /// waiting.
 #[test]
 fn a_code_naming_no_live_sign_in_is_refused() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let requested = store.request("phone", at(1_000)).unwrap();
     let other = (0..)
         .map(|_| ShortCode::random())
@@ -121,7 +119,7 @@ fn a_code_naming_no_live_sign_in_is_refused() {
 /// past it does not.
 #[test]
 fn the_ttl_bounds_approval() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let late = store.request("late", at(1_000)).unwrap();
     let inside = store.request("inside", at(1_000)).unwrap();
     let expiry = 1_000 + TTL_SECS as u64;
@@ -142,7 +140,7 @@ fn the_ttl_bounds_approval() {
 /// gone after it.
 #[test]
 fn the_ttl_bounds_the_claim() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let inside = store.request("inside", at(1_000)).unwrap();
     let late = store.request("late", at(1_000)).unwrap();
     store.approve(&inside.code, at(1_010)).unwrap().unwrap();
@@ -170,7 +168,7 @@ fn the_ttl_bounds_the_claim() {
 /// claimable for at least [`CLAIM_GRACE_SECS`] after it was approved.
 #[test]
 fn an_approval_in_the_last_second_can_still_be_claimed() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let request = store.request("late", at(1_000)).unwrap();
     let expiry = 1_000 + TTL_SECS as u64;
     store
@@ -198,7 +196,7 @@ fn an_approval_in_the_last_second_can_still_be_claimed() {
 /// after it wait on.
 #[test]
 fn the_ninth_request_evicts_the_oldest() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let requests: Vec<Requested> = (0..WAITING_CAP as u64 + 1)
         .map(|n| store.request(&format!("tab {n}"), at(1_000 + n)).unwrap())
         .collect();
@@ -233,7 +231,7 @@ fn the_ninth_request_evicts_the_oldest() {
 /// against the cap nor is evicted by it.
 #[test]
 fn requests_never_evict_an_approved_sign_in() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let link = store.approved_link(at(1_000)).unwrap();
     let approved = store.request("approved", at(1_000)).unwrap();
     store.approve(&approved.code, at(1_001)).unwrap().unwrap();
@@ -264,7 +262,7 @@ fn requests_never_evict_an_approved_sign_in() {
 /// once.
 #[test]
 fn a_link_is_a_sign_in_approved_in_advance() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let link = store.approved_link(at(1_000)).unwrap();
     assert!(
         store.waiting(at(1_000)).unwrap().is_empty(),
@@ -284,7 +282,7 @@ fn a_link_is_a_sign_in_approved_in_advance() {
 /// drawn again.
 #[test]
 fn a_colliding_code_is_drawn_again() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let first = store
         .insert("first", Joined::Code, at(1_000), || code("KQ7-M4X"))
         .unwrap();
@@ -349,7 +347,7 @@ fn codes_are_normalized() {
 /// approving side types the code the browser shows, never picks it from a list.
 #[test]
 fn the_waiting_list_never_carries_a_code() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let requested = store.request("Firefox on Linux", at(1_000)).unwrap();
     let listed = serde_json::to_string(&store.waiting(at(1_001)).unwrap()).unwrap();
     assert_eq!(
@@ -367,7 +365,7 @@ fn the_waiting_list_never_carries_a_code() {
 /// reading the database collects no token.
 #[test]
 fn the_claim_secret_is_stored_as_its_digest() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let requested = store.request("phone", at(1_000)).unwrap();
     let db = store.connect().unwrap();
     let stored: Vec<u8> = db
@@ -413,7 +411,7 @@ fn a_claim_secret_has_one_spelling() {
 /// Expired rows go at every write, so the table does not keep what nothing can use.
 #[test]
 fn expired_rows_are_pruned_by_every_write() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     store.request("old", at(1_000)).unwrap();
     store.approved_link(at(1_000)).unwrap();
     let past = 1_000 + TTL_SECS as u64;
@@ -443,7 +441,7 @@ fn expired_rows_are_pruned_by_every_write() {
 /// the way in as a device's are; an empty one is `browser`.
 #[test]
 fn labels_are_cleaned_on_the_way_in() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     store
         .request("\u{1b}[2JSafari\u{202E} on\nmacOS", at(1_000))
         .unwrap();
@@ -460,7 +458,7 @@ fn labels_are_cleaned_on_the_way_in() {
 /// Rotation's half: every pending sign-in goes, approved or not.
 #[test]
 fn clear_empties_the_table() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     let link = store.approved_link(at(1_000)).unwrap();
     store.request("phone", at(1_000)).unwrap();
     assert_eq!(store.clear().unwrap(), 2);
@@ -472,7 +470,7 @@ fn clear_empties_the_table() {
 /// opening again with it gone is no error.
 #[test]
 fn opening_drops_the_totp_burns_table() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     crate::state::open(
         &store.path,
         "CREATE TABLE IF NOT EXISTS totp_burns (step INTEGER PRIMARY KEY);
@@ -496,7 +494,7 @@ fn opening_drops_the_totp_burns_table() {
 /// a claim must not read as unknown, nor a request as recorded.
 #[test]
 fn a_file_that_is_not_a_database_is_an_error() {
-    let store = scratch();
+    let (store, _dir) = scratch();
     std::fs::create_dir_all(store.path.parent().unwrap()).unwrap();
     std::fs::write(&store.path, "{ not a database").unwrap();
     assert!(store.request("phone", at(1)).is_err());

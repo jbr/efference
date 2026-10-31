@@ -5,7 +5,7 @@
 
 use super::loop_phase::Latch;
 use super::resumed_batch::{requests_script, start};
-use super::upstream_hold::{Answer, end_turn, start_with, tool_call, wait_until};
+use super::upstream_hold::{Answer, end_turn, start_with, tool_call};
 use super::*;
 use crate::log::{AssistantOutput, ContentBlock, Disposition, Notification, Seq, Triage};
 use std::sync::atomic::Ordering;
@@ -73,7 +73,9 @@ async fn a_resume_over_two_unshown_messages_waits_and_then_offers_both_with_the_
     let third = session
         .notify("agent:peer".into(), "new notice".into(), None)
         .unwrap();
-    wait_until("the idle triage ran", || !triages(&session).is_empty()).await;
+    session
+        .wait_until("the idle triage ran", || !triages(&session).is_empty())
+        .await;
     let body = bodies.lock().unwrap()[0].clone();
     assert!(body.contains("please review the diff"), "{body}");
     assert!(body.contains("build 42 failed"), "{body}");
@@ -107,16 +109,19 @@ async fn an_arrival_during_a_triage_request_is_shown_by_the_next_one() {
     let opening = session
         .notify("agent:peer".into(), "opening notice".into(), None)
         .unwrap();
-    wait_until("the first triage request is open", || {
-        requests.load(Ordering::SeqCst) >= 1
-    })
-    .await;
+    session
+        .poll_until("the first triage request is open", || {
+            requests.load(Ordering::SeqCst) >= 1
+        })
+        .await;
     let late = session
         .notify("agent:peer".into(), "late notice".into(), None)
         .unwrap();
     REQUEST.open();
 
-    wait_until("the second triage ran", || triages(&session).len() >= 2).await;
+    session
+        .wait_until("the second triage ran", || triages(&session).len() >= 2)
+        .await;
     let bodies = bodies.lock().unwrap().clone();
     assert!(bodies[0].contains("early notice") && bodies[0].contains("opening notice"));
     assert!(!bodies[0].contains("late notice"));
@@ -152,10 +157,11 @@ async fn a_must_wake_message_still_pins_after_a_restart() {
     );
     session.notify("ci".into(), "unrelated".into(), None);
 
-    wait_until("the pin woke a turn", || {
-        requests.load(Ordering::SeqCst) >= 2
-    })
-    .await;
+    session
+        .poll_until("the pin woke a turn", || {
+            requests.load(Ordering::SeqCst) >= 2
+        })
+        .await;
     assert!(
         triages(&session)[0]
             .inbox
@@ -191,29 +197,32 @@ async fn a_result_triage_marks_what_its_rider_held() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go again", "s1"));
 
-    wait_until("the model request is open", || {
-        requests.load(Ordering::SeqCst) >= 1
-    })
-    .await;
+    session
+        .poll_until("the model request is open", || {
+            requests.load(Ordering::SeqCst) >= 1
+        })
+        .await;
     let early = session
         .notify("ci".into(), "early notice".into(), None)
         .unwrap();
     MODEL.open();
-    wait_until("the result triage request is open", || {
-        requests.load(Ordering::SeqCst) >= 2
-    })
-    .await;
+    session
+        .poll_until("the result triage request is open", || {
+            requests.load(Ordering::SeqCst) >= 2
+        })
+        .await;
     let late = session
         .notify("agent:peer".into(), "late notice".into(), None)
         .unwrap();
     TRIAGE.open();
 
-    wait_until("the idle triage over the late one ran", || {
-        triages(&session)
-            .iter()
-            .any(|t| t.shown_through == Some(late))
-    })
-    .await;
+    session
+        .wait_until("the idle triage over the late one ran", || {
+            triages(&session)
+                .iter()
+                .any(|t| t.shown_through == Some(late))
+        })
+        .await;
     let bodies = bodies.lock().unwrap().clone();
     assert!(bodies[1].contains("early notice") && !bodies[1].contains("late notice"));
     let result_triage = triages(&session)

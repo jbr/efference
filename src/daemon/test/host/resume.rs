@@ -35,7 +35,7 @@ async fn hosting_one(roots: &Roots) -> (Arc<Host>, TestServer<impl trillium::Han
     let host = Host::new(one_connection_registry(), baseline_env());
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
+        runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await,
     )
     .expect("the id is free in this test");
     let server = host_server(&host).await;
@@ -114,7 +114,7 @@ async fn a_patch_validates_its_body_on_every_listener() {
     );
 
     // The same rejections on a network listener: same status, same reasons.
-    let (network, bearer) = network_host_server(&host).await;
+    let (network, bearer, _state) = network_host_server(&host).await;
     for (id, body, reason) in &cases {
         network
             .patch(&format!("/sessions/{id}"))
@@ -280,7 +280,7 @@ async fn an_archive_releases_the_log_while_a_stream_holds_the_session() {
     let mut boot = runtime::boot(&cwd);
     boot.log = Log::create(&path, None).expect("a fresh log");
     let host = Host::new(one_connection_registry(), baseline_env());
-    host.adopt("one".into(), SessionRuntime::start(boot, host.swansong()))
+    host.adopt("one".into(), runtime::started(boot, host.swansong()).await)
         .expect("the id is free in this test");
     let session = host.session("one").expect("hosted");
     let mut stream = control_stream(Arc::clone(&session), Include::default(), 0);
@@ -359,10 +359,11 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
     // Adopted as the resume does, the detached child outlives its creator.
     host.adopt_with(
         "kept".into(),
-        SessionRuntime::start(
+        runtime::started(
             runtime::boot_in(&roots.0.join("one"), &roots.0.join("one/scratch")),
             host.swansong(),
-        ),
+        )
+        .await,
         Some("one".into()),
         host.recorded_lineage(&kept).detached,
     )
@@ -375,7 +376,12 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
 }
 
 /// A session hosted over a fresh file log at `<roots>/<name>/log.jsonl`.
-fn adopt_logged(host: &Arc<Host>, roots: &Roots, name: &str, created_by: Option<&str>) -> PathBuf {
+async fn adopt_logged(
+    host: &Arc<Host>,
+    roots: &Roots,
+    name: &str,
+    created_by: Option<&str>,
+) -> PathBuf {
     let cwd = roots.0.join(name);
     std::fs::create_dir_all(&cwd).unwrap();
     let path = cwd.join("log.jsonl");
@@ -383,7 +389,7 @@ fn adopt_logged(host: &Arc<Host>, roots: &Roots, name: &str, created_by: Option<
     boot.log = Log::create(&path, None).expect("a fresh log");
     host.adopt_with(
         name.into(),
-        SessionRuntime::start(boot, host.swansong()),
+        runtime::started(boot, host.swansong()).await,
         created_by.map(String::from),
         false,
     )
@@ -402,8 +408,8 @@ fn last_payload(path: &Path) -> Payload {
 async fn an_archive_and_a_cascaded_child_end_log_archived() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
-    let creator = adopt_logged(&host, &roots, "creator", None);
-    let child = adopt_logged(&host, &roots, "child", Some("creator"));
+    let creator = adopt_logged(&host, &roots, "creator", None).await;
+    let child = adopt_logged(&host, &roots, "child", Some("creator")).await;
     host.session("creator")
         .unwrap()
         .append(3, Payload::User(vec![]))
@@ -438,7 +444,7 @@ async fn an_archive_and_a_cascaded_child_end_log_archived() {
 async fn a_host_shutdown_does_not_log_archived() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
-    let path = adopt_logged(&host, &roots, "open", None);
+    let path = adopt_logged(&host, &roots, "open", None).await;
     host.session("open")
         .unwrap()
         .append(0, Payload::User(vec![]))

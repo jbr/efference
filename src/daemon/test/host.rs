@@ -136,22 +136,25 @@ async fn host_server(host: &Arc<Host>) -> TestServer<impl trillium::Handler> {
 /// its authenticator, so what differs from `host_server` is the transport rather
 /// than which routes exist (docs/control-channel.md, docs/web-bind.md). No socket
 /// is bound — the transport is in memory, as in the TCP tests.
-async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Handler>, String) {
+async fn network_host_server(
+    host: &Arc<Host>,
+) -> (
+    TestServer<impl trillium::Handler>,
+    String,
+    tempfile::TempDir,
+) {
     use crate::auth::Root;
     use crate::devices::{Joined, Kind};
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let nonce = RandomState::new().build_hasher().finish();
-    let root = std::env::temp_dir().join(format!("efference-net-host-{nonce:016x}"));
-    std::fs::create_dir_all(&root).expect("scratch root");
+    let scratch = crate::testing::temp_dir("net-host");
     let (auth, _listener) = tcp::arm_with_state(
         TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,
             public_url: "http://localhost:7777".into(),
-            root: Root::new(root.to_string_lossy().as_ref()),
+            root: Root::new(scratch.path().to_string_lossy().as_ref()),
             open: false,
         },
-        root.join("state.db"),
+        scratch.path().join("state.db"),
     );
     let host = Arc::clone(host);
     let server = TestServer::new((
@@ -173,7 +176,7 @@ async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Han
     let enrolled = auth
         .enroll(Kind::Script, "test", Joined::Add)
         .expect("a scratch database takes a row");
-    (server, format!("Bearer {}", enrolled.token))
+    (server, format!("Bearer {}", enrolled.token), scratch)
 }
 
 /// A hosted session's control answers under its prefix, over the web transport:
@@ -184,10 +187,10 @@ async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Han
 async fn a_hosted_sessions_control_answers_are_never_stored() {
     let roots = Roots::new();
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
+    let runtime = runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await;
     host.adopt("one".into(), runtime)
         .expect("the id is free in this test");
-    let (server, bearer) = network_host_server(&host).await;
+    let (server, bearer, _state) = network_host_server(&host).await;
 
     let conn = server
         .get("/sessions/one/v1/state")
@@ -618,7 +621,7 @@ disabled = true
 async fn a_process_id_survives_the_session_prefix() {
     let roots = Roots::new();
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
+    let runtime = runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await;
     let session = Arc::clone(runtime.session());
     host.adopt("one".into(), runtime)
         .expect("the id is free in this test");
@@ -714,7 +717,7 @@ async fn the_session_listing_streams_its_current_value() {
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
+        runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await,
     )
     .expect("the id is free in this test");
     // A root-based client: the listing is the *listener's* surface, not a
@@ -740,7 +743,7 @@ async fn the_session_listing_streams_its_current_value() {
     // both rows rather than a delta naming the arrival.
     host.adopt(
         "two".into(),
-        SessionRuntime::start(runtime::boot(&roots.0.join("two")), host.swansong()),
+        runtime::started(runtime::boot(&roots.0.join("two")), host.swansong()).await,
     )
     .expect("the id is free in this test");
     let (_, _, data) = next_event(&mut events).await;
@@ -763,7 +766,7 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
     let roots = Roots::new();
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     for label in ["one", "two"] {
-        let runtime = SessionRuntime::start(runtime::boot(&roots.0.join(label)), host.swansong());
+        let runtime = runtime::started(runtime::boot(&roots.0.join(label)), host.swansong()).await;
         let session = Arc::clone(runtime.session());
         host.adopt(label.into(), runtime)
             .expect("the id is free in this test");
@@ -843,7 +846,7 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
 async fn a_prefixed_client_streams_its_sessions_events() {
     let roots = Roots::new();
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
+    let runtime = runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await;
     let session = Arc::clone(runtime.session());
     host.adopt("one".into(), runtime)
         .expect("the id is free in this test");

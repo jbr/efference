@@ -8,7 +8,7 @@ use super::*;
 /// its cwd, and the chain.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_bound_decide_resolves_the_childs_held_move() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let leaf = ToolCall::new(
         "bash",
@@ -42,7 +42,7 @@ async fn a_bound_decide_resolves_the_childs_held_move() {
 /// chain of participating sessions.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_decide_of_a_decide_carries_a_two_hop_chain() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let grandchild = fixture.session("grandchild");
     let leaf = ToolCall::new(
         "bash",
@@ -88,7 +88,7 @@ async fn a_decide_of_a_decide_carries_a_two_hop_chain() {
 /// way, and a decision naming no seq is refused for want of one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_stale_absent_or_unnamed_gate_is_refused() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let real = ToolCall::new("bash", "toolu_real", serde_json::json!({ "command": "ls" }));
     let seq = issue(&child, vec![real.clone()]);
@@ -135,7 +135,7 @@ async fn a_stale_absent_or_unnamed_gate_is_refused() {
 /// a chain must be supervised by the session before it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_target_rules_apply_to_a_bound_decide() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let control = fixture.control("parent");
     let decide = |agent: &str, seq: &str| {
         ToolCall::new(

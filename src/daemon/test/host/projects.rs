@@ -205,7 +205,7 @@ async fn forgetting_deletes_the_entry_and_nothing_else() {
     let store = store(&roots);
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
+        runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await,
     )
     .expect("the id is free in this test");
 

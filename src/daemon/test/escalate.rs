@@ -63,16 +63,6 @@ impl Fixture {
     }
 }
 
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
-}
-
 /// The must-wake flag of the latest notification from `source` whose body matches,
 /// pending or already logged as an `Ambient`; `None` when `session` has heard none.
 fn heard(session: &Session, source: &str, matches: impl Fn(&str) -> bool) -> Option<bool> {
@@ -200,7 +190,7 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
         held(&c, "c").reviewer,
         Reviewer::Supervisor { id: "p".into() }
     );
-    wait_until("the gate reached p as its reviewer", || {
+    p.wait_until("the gate reached p as its reviewer", || {
         heard(&p, "c", |body| {
             body.starts_with("waiting for your decision")
         }) == Some(true)
@@ -241,11 +231,11 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
         "waiting for your decision on bash `curl -sI https://example.com` (seq \
          {seq})\nescalated: by p to you: \"{NOTE}\"\nintent: fetch only the response headers"
     );
-    wait_until("the escalated gate reached g as its reviewer", || {
+    g.wait_until("the escalated gate reached g as its reviewer", || {
         heard(&g, "c", |body| body.starts_with(&reviewer)) == Some(true)
     })
     .await;
-    wait_until("p heard the gate went to g", || {
+    p.wait_until("p heard the gate went to g", || {
         heard(&p, "c", |body| {
             body.starts_with("waiting for a decision from g or you on bash")
                 && body.contains(&format!("\nescalated: by you to g: \"{NOTE}\""))
@@ -378,7 +368,7 @@ async fn a_one_level_chain_reaches_the_operator_with_a_push() {
         k.topic_json(Topic::Gate)["escalations"],
         serde_json::json!([{ "source": "session[q]", "to": null, "note": NOTE }])
     );
-    wait_until("the escalation's push went out", || {
+    k.wait_until("the escalation's push went out", || {
         sent.lock().unwrap().len() == 1
     })
     .await;
@@ -390,7 +380,7 @@ async fn a_one_level_chain_reaches_the_operator_with_a_push() {
     assert!(push.title.starts_with("Gate"), "{}", push.title);
 
     // `q` escalated it, so the operator is asked and `q` is not woken by it.
-    wait_until("q heard the gate went to the operator", || {
+    q.wait_until("q heard the gate went to the operator", || {
         heard(&q, "k", |body| {
             body.contains("\nescalated: by you to the operator")
         }) == Some(false)
@@ -427,7 +417,7 @@ async fn the_dial_does_not_route_an_escalated_gate_back() {
         .execute(fixture.control("p"), RequestContext::default())
         .await
         .unwrap();
-    wait_until("the escalated gate reached g", || {
+    g.wait_until("the escalated gate reached g", || {
         heard(&g, "c", |body| {
             body.starts_with("waiting for your decision")
         }) == Some(true)

@@ -3,23 +3,14 @@
 //! a temporary directory, so the SQL and the filter are tested together.
 
 use super::*;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-fn dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "efference-remembered-test-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_nanos())
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn dir() -> tempfile::TempDir {
+    crate::testing::temp_dir("remembered")
 }
 
-fn store() -> (Projects, PathBuf) {
+fn store() -> (Projects, tempfile::TempDir) {
     let dir = dir();
-    (Projects::at(dir.join("state.db")), dir)
+    (Projects::at(dir.path().join("state.db")), dir)
 }
 
 /// A row as a launch in `cwd` records it: no named configuration, so the
@@ -54,7 +45,7 @@ fn project_dir(dir: &Path, name: &str) -> PathBuf {
 #[test]
 fn one_identity_is_one_row_and_a_relaunch_refreshes_it() {
     let (projects, dir) = store();
-    let cwd = project_dir(&dir, "one");
+    let cwd = project_dir(dir.path(), "one");
 
     projects.record(&launch(&cwd, 100));
     projects.record(&launch(&cwd, 200));
@@ -70,7 +61,7 @@ fn one_identity_is_one_row_and_a_relaunch_refreshes_it() {
 #[test]
 fn two_configurations_in_one_directory_are_two_entries() {
     let (projects, dir) = store();
-    let cwd = project_dir(&dir, "one");
+    let cwd = project_dir(dir.path(), "one");
     std::fs::write(cwd.join("a.toml"), "").unwrap();
     std::fs::write(cwd.join("b.toml"), "").unwrap();
 
@@ -91,7 +82,7 @@ fn two_configurations_in_one_directory_are_two_entries() {
 fn entries_read_back_most_recently_used_first() {
     let (projects, dir) = store();
     for (name, at) in [("one", 300), ("two", 100), ("three", 200)] {
-        let cwd = project_dir(&dir, name);
+        let cwd = project_dir(dir.path(), name);
         // Stamped out of write order on purpose: recency is the column.
         projects.record(&launch(&cwd, at));
     }
@@ -103,7 +94,7 @@ fn entries_read_back_most_recently_used_first() {
 fn the_index_is_capped_and_keeps_the_newest() {
     let (projects, dir) = store();
     for index in 0..INDEX_LIMIT + 5 {
-        let cwd = project_dir(&dir, &format!("dir-{index}"));
+        let cwd = project_dir(dir.path(), &format!("dir-{index}"));
         projects.record(&launch(&cwd, index as i64));
     }
     let rows = projects.recent();
@@ -118,7 +109,7 @@ fn the_index_is_capped_and_keeps_the_newest() {
 #[test]
 fn the_configuration_recorded_is_the_template_not_a_session_copy() {
     let (projects, dir) = store();
-    let cwd = project_dir(&dir, "one");
+    let cwd = project_dir(dir.path(), "one");
     let template = Path::new("eff.toml");
     std::fs::write(cwd.join(template), "").unwrap();
 
@@ -139,7 +130,7 @@ fn the_configuration_recorded_is_the_template_not_a_session_copy() {
 #[test]
 fn the_identity_is_the_scope_creation_computed() {
     let dir = dir();
-    let cwd = project_dir(&dir, "one");
+    let cwd = project_dir(dir.path(), "one");
     let unnamed = crate::history::Scope::for_request(&cwd, None);
     assert_eq!(unnamed.config_key, crate::history::BUILTIN_CONFIG_KEY);
 
@@ -164,11 +155,11 @@ fn the_identity_is_the_scope_creation_computed() {
 #[test]
 fn availability_follows_the_configuration_probe() {
     let dir = dir();
-    let present = project_dir(&dir, "present");
-    let unconfigured = project_dir(&dir, "unconfigured");
-    let misconfigured = project_dir(&dir, "misconfigured");
+    let present = project_dir(dir.path(), "present");
+    let unconfigured = project_dir(dir.path(), "unconfigured");
+    let misconfigured = project_dir(dir.path(), "misconfigured");
     std::fs::write(misconfigured.join("eff.toml"), "").unwrap();
-    let absent = dir.join("absent");
+    let absent = dir.path().join("absent");
 
     let rows = [
         launch(&present, 100),
@@ -214,7 +205,7 @@ fn a_label_is_the_directory_basename() {
 #[test]
 fn a_filtered_entry_is_still_stored() {
     let (projects, dir) = store();
-    let cwd = project_dir(&dir, "volume");
+    let cwd = project_dir(dir.path(), "volume");
     let row = launch(&cwd, 100);
     projects.record(&row);
     assert!(row.available());
@@ -235,7 +226,7 @@ fn a_filtered_entry_is_still_stored() {
 #[test]
 fn forgetting_deletes_the_entry_and_nothing_on_disk() {
     let (projects, dir) = store();
-    let cwd = project_dir(&dir, "one");
+    let cwd = project_dir(dir.path(), "one");
     let file = cwd.join("notes.md");
     std::fs::write(&file, "kept").unwrap();
     let row = launch(&cwd, 100);
@@ -268,14 +259,14 @@ fn forgetting_deletes_the_entry_and_nothing_on_disk() {
 #[test]
 fn an_unusable_database_reads_empty() {
     let dir = dir();
-    let unusable = dir.join("not-a-database");
+    let unusable = dir.path().join("not-a-database");
     std::fs::create_dir_all(&unusable).unwrap();
     let projects = Projects::at(unusable);
-    let row = launch(&dir, 100);
+    let row = launch(dir.path(), 100);
     projects.record(&row);
     assert!(projects.recent().is_empty());
-    assert!(!projects.contains(&dir, &row.config_key));
-    assert!(!projects.forget(&dir, &row.config_key));
+    assert!(!projects.contains(dir.path(), &row.config_key));
+    assert!(!projects.forget(dir.path(), &row.config_key));
 }
 
 #[test]

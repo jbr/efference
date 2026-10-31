@@ -247,6 +247,10 @@ regex = "1.13"
 # delay is advanced, not slept.
 tokio = { version = "1.54.1", features = ["test-util"] }
 
+# Scratch directories for the tests that need a real filesystem: a name that cannot repeat
+# and a directory removed when its guard drops (`crate::testing::temp_dir`).
+tempfile = "3"
+
 # Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").
 # File snapshots land in src/tui/snapshots/*.snap — committed, diffable, and
 # readable without running anything. `cargo insta review` / `accept` to update.

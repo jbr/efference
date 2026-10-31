@@ -155,16 +155,6 @@ fn scripted_upstream(
     addr
 }
 
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
-}
-
 /// **An interrupt during the triage ends the turn there.** The press ends the triage's
 /// read and the results are withheld with a line saying they were interrupted before
 /// they were read (nothing blaming triage); the loop then consumes the latch after
@@ -195,18 +185,20 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the triage is open", || {
-        requests.load(Ordering::SeqCst) == 2
-    })
-    .await;
+    session
+        .poll_until("the triage is open", || {
+            requests.load(Ordering::SeqCst) == 2
+        })
+        .await;
     session.interrupt(crate::log::InterruptOrigin {
         source: Some("web".into()),
         control: Some("stop-button".into()),
     });
-    wait_until("the loop is idle", || {
-        session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .wait_until("the loop is idle", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     // Room for a request the loop should not make.
     tokio::time::sleep(Duration::from_millis(300)).await;
     release.store(true, Ordering::SeqCst);
@@ -301,16 +293,18 @@ async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the triage request reached the upstream", || {
-        requests.load(Ordering::SeqCst) == 2
-    })
-    .await;
+    session
+        .poll_until("the triage request reached the upstream", || {
+            requests.load(Ordering::SeqCst) == 2
+        })
+        .await;
     session.interrupt(Default::default());
     open.store(true, Ordering::SeqCst);
-    wait_until("the loop is idle", || {
-        session.loop_phase() == LoopPhase::Idle
-    })
-    .await;
+    session
+        .wait_until("the loop is idle", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
     release.store(true, Ordering::SeqCst);
     assert_eq!(
         requests.load(Ordering::SeqCst),

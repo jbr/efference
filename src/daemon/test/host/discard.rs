@@ -17,11 +17,11 @@ fn host_and_register(roots: &Roots) -> (Arc<Host>, SessionIds) {
 
 /// Host a session named `id` whose directory is `<roots>/.efference/<id>`, over a
 /// file log with no entries, with its id reserved.
-fn adopt_stored(host: &Arc<Host>, register: &SessionIds, roots: &Roots, id: &str) -> PathBuf {
-    adopt_child(host, register, roots, id, None)
+async fn adopt_stored(host: &Arc<Host>, register: &SessionIds, roots: &Roots, id: &str) -> PathBuf {
+    adopt_child(host, register, roots, id, None).await
 }
 
-fn adopt_child(
+async fn adopt_child(
     host: &Arc<Host>,
     register: &SessionIds,
     roots: &Roots,
@@ -41,7 +41,7 @@ fn adopt_child(
     register.reserve(id, &roots.0).unwrap();
     host.adopt_with(
         id.into(),
-        SessionRuntime::start(boot, host.swansong()),
+        runtime::started(boot, host.swansong()).await,
         created_by.map(String::from),
         false,
     )
@@ -50,7 +50,7 @@ fn adopt_child(
 }
 
 /// Host `id` working in a worktree it made, with a log and storage directory.
-fn adopt_worktree(
+async fn adopt_worktree(
     host: &Arc<Host>,
     register: &SessionIds,
     roots: &Roots,
@@ -68,7 +68,7 @@ fn adopt_worktree(
     .unwrap();
     boot.log = Log::create(dir.join(crate::session_dir::LOG_NAME), None).unwrap();
     register.reserve(id, &roots.0).unwrap();
-    host.adopt(id.into(), SessionRuntime::start(boot, host.swansong()))
+    host.adopt(id.into(), runtime::started(boot, host.swansong()).await)
         .unwrap();
     (added.path, dir)
 }
@@ -82,8 +82,8 @@ async fn archiving_an_empty_session_removes_it_and_frees_its_id() {
     let roots = Roots::new();
     let (host, register) = host_and_register(&roots);
     let server = host_server(&host).await;
-    let path = adopt_stored(&host, &register, &roots, "empty-one");
-    adopt_stored(&host, &register, &roots, "empty-two");
+    let path = adopt_stored(&host, &register, &roots, "empty-one").await;
+    adopt_stored(&host, &register, &roots, "empty-two").await;
     assert!(register.holder("empty-one").is_some());
 
     let body = server
@@ -119,7 +119,7 @@ async fn archiving_a_session_with_a_turn_keeps_it() {
     let roots = Roots::new();
     let (host, register) = host_and_register(&roots);
     let server = host_server(&host).await;
-    let path = adopt_stored(&host, &register, &roots, "talked");
+    let path = adopt_stored(&host, &register, &roots, "talked").await;
     host.session("talked")
         .unwrap()
         .append(1, Payload::User(vec![]))
@@ -146,20 +146,19 @@ async fn archiving_a_session_with_a_turn_keeps_it() {
 async fn an_empty_child_is_discarded_with_its_creator() {
     let roots = Roots::new();
     let (host, register) = host_and_register(&roots);
-    adopt_stored(&host, &register, &roots, "parent");
+    adopt_stored(&host, &register, &roots, "parent").await;
     host.session("parent")
         .unwrap()
         .append(1, Payload::User(vec![]))
         .unwrap();
-    let child = adopt_child(&host, &register, &roots, "child", Some("parent"));
+    let child = adopt_child(&host, &register, &roots, "child", Some("parent")).await;
 
     host.end("parent").expect("hosted").await;
-    for _ in 0..100 {
-        if !child.parent().unwrap().exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    // The discard removes the directory and then releases the id, so both are waited for.
+    host.poll_until("the child was discarded", || {
+        !child.parent().unwrap().exists() && register.holder("child").is_none()
+    })
+    .await;
     assert!(!child.parent().unwrap().exists());
     assert_eq!(register.holder("child"), None);
     host.swansong().shut_down().await;
@@ -172,7 +171,7 @@ async fn an_empty_session_with_a_dirty_worktree_is_archived() {
     crate::worktree::testing::repository(&roots.0);
     let (host, register) = host_and_register(&roots);
     let server = host_server(&host).await;
-    let (worktree, dir) = adopt_worktree(&host, &register, &roots, "wt-fox");
+    let (worktree, dir) = adopt_worktree(&host, &register, &roots, "wt-fox").await;
     std::fs::write(worktree.join("notes.txt"), "work").unwrap();
 
     let body = server
@@ -195,7 +194,7 @@ async fn an_empty_session_with_a_clean_worktree_is_discarded_with_it() {
     crate::worktree::testing::repository(&roots.0);
     let (host, register) = host_and_register(&roots);
     let server = host_server(&host).await;
-    let (worktree, dir) = adopt_worktree(&host, &register, &roots, "wt-fox");
+    let (worktree, dir) = adopt_worktree(&host, &register, &roots, "wt-fox").await;
 
     let body = server
         .delete("/sessions/wt-fox")

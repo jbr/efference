@@ -10,7 +10,7 @@ use crate::daemon::keepalive::CacheLineage;
 /// the cap clock has been ticking strictly longer than the touch clock.
 #[test]
 fn keepalive_advances_touch_clock_not_cap_clock() {
-    let log_path = temp_file("keepalive-test.jsonl");
+    let (log_path, _log_path_dir) = temp_file("keepalive-test.jsonl");
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
 
     // Nothing to keep warm yet → both clocks absent.
@@ -40,8 +40,8 @@ fn keepalive_advances_touch_clock_not_cap_clock() {
 /// file (tests, offline verbs) recording is a no-op, which the other tests exercise.
 #[test]
 fn recorded_requests_land_in_the_usage_record() {
-    let log_path = temp_file("usage-record-test.jsonl");
-    let usage_path = temp_file("usage-record-test-usage.jsonl");
+    let (log_path, _log_path_dir) = temp_file("usage-record-test.jsonl");
+    let (usage_path, _usage_path_dir) = temp_file("usage-record-test-usage.jsonl");
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     shared.attach_usage_log(&usage_path);
 
@@ -198,7 +198,7 @@ fn aborted_attempts_do_not_count_as_cold_prefix_evidence() {
 /// reads (docs/control-api.md), folded as each request is recorded.
 #[test]
 fn recorded_requests_move_the_published_cold_streak() {
-    let log_path = temp_file("cold-streak-test.jsonl");
+    let (log_path, _log_path_dir) = temp_file("cold-streak-test.jsonl");
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let turn = |read| {
         RequestUsage::new(Usage {
@@ -224,7 +224,7 @@ fn recorded_requests_move_the_published_cold_streak() {
 /// cache looking warm after it expired.
 #[test]
 fn only_main_prefix_requests_stamp_the_touch_clock() {
-    let log_path = temp_file("touch-origin-test.jsonl");
+    let (log_path, _log_path_dir) = temp_file("touch-origin-test.jsonl");
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let request = || RequestUsage::new(Usage::default());
     shared.record_request(RequestOrigin::Spot, request());
@@ -240,8 +240,8 @@ fn only_main_prefix_requests_stamp_the_touch_clock() {
 /// last turn or ping, the real-turn clock from the last request that was not a ping.
 #[test]
 fn attaching_the_usage_record_seeds_the_clocks() {
-    let log_path = temp_file("seed-clocks-test.jsonl");
-    let usage_path = temp_file("seed-clocks-test-usage.jsonl");
+    let (log_path, _log_path_dir) = temp_file("seed-clocks-test.jsonl");
+    let (usage_path, _usage_path_dir) = temp_file("seed-clocks-test-usage.jsonl");
     let now = crate::log::Timestamp::now().0 as u128;
     let minutes_ago = |m: u128| now - m * 60_000;
     let lines = [
@@ -274,7 +274,7 @@ fn attaching_the_usage_record_seeds_the_clocks() {
 /// lines, leave the clock on the earlier turn.
 #[test]
 fn a_shared_triage_line_seeds_the_touch_clock() {
-    let usage_path = temp_file("seed-triage-test-usage.jsonl");
+    let (usage_path, _usage_path_dir) = temp_file("seed-triage-test-usage.jsonl");
     let request = || RequestUsage::new(Usage::default());
     let new_session = || Session::in_memory().0;
     let first = new_session();
@@ -373,8 +373,8 @@ fn primer_neither_counts_nor_touches_the_main_prefix() {
 /// the warmup separately from the triages it warms.
 #[test]
 fn primer_requests_land_in_the_usage_record_as_triage_primer() {
-    let log_path = temp_file("usage-primer-test.jsonl");
-    let usage_path = temp_file("usage-primer-test-usage.jsonl");
+    let (log_path, _log_path_dir) = temp_file("usage-primer-test.jsonl");
+    let (usage_path, _usage_path_dir) = temp_file("usage-primer-test-usage.jsonl");
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     shared.attach_usage_log(&usage_path);
 
@@ -407,7 +407,7 @@ fn primer_requests_land_in_the_usage_record_as_triage_primer() {
 #[test]
 fn inline_cost_prices_a_request_and_is_recorded() {
     use crate::api::{InlineCost, Receipt};
-    let usage_path = temp_file("inline-cost-test-usage.jsonl");
+    let (usage_path, _usage_path_dir) = temp_file("inline-cost-test-usage.jsonl");
     let (shared, _turns_rx) = Session::in_memory();
     shared.attach_usage_log(&usage_path);
     // Armed, so the request without an inline cost would be queued for the lookup

@@ -756,6 +756,8 @@ use watch::config_watch_loop;
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod testing;
 
 mod frontend;
 mod host;

@@ -45,7 +45,7 @@ async fn the_terminal_title_counts_sessions_until_shutdown() {
 
     host.adopt(
         "one".into(),
-        SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
+        runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await,
     )
     .expect("the id is free in this test");
     terminal.shows("efference · 1 session").await;

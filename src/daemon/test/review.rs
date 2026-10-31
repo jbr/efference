@@ -59,16 +59,6 @@ impl Fixture {
     }
 }
 
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
-}
-
 /// Whether `session` has heard a notification whose body matches — pending, or
 /// already logged as an `Ambient` by its live loop's first show.
 fn heard(session: &Session, matches: impl Fn(&str) -> bool) -> bool {
@@ -139,7 +129,7 @@ async fn supervisor_resolves_when_a_call_is_routed_not_when_the_session_is_creat
     assert_eq!(state["supervisor"], "root", "the topic names the creator");
 
     let _gate = outliver.register_pending(&leaf(), None, None);
-    wait_until("the gate reached its supervisor", || {
+    root.wait_until("the gate reached its supervisor", || {
         heard(&root, |body| body.contains("waiting for your decision"))
     })
     .await;
@@ -148,10 +138,12 @@ async fn supervisor_resolves_when_a_call_is_routed_not_when_the_session_is_creat
     // The creator ends. `outliver` is detached, so it keeps running — and keeps
     // holding the call.
     fixture.host.end("root").unwrap().await;
-    wait_until("the creator left the host", || {
-        fixture.host.session("root").is_none()
-    })
-    .await;
+    fixture
+        .host
+        .wait_until("the creator left the host", || {
+            fixture.host.session("root").is_none()
+        })
+        .await;
 
     assert_eq!(
         outliver.review_level(),
@@ -192,7 +184,7 @@ async fn a_level_change_reroutes_a_pending_gate() {
     // supervisor, which may decide the gate — is not its reviewer.
     child.set_review_level(ReviewLevel::SpotterHuman);
     let _gate = child.register_pending(&leaf(), None, None);
-    wait_until("the creator observed the gate", || {
+    root.wait_until("the creator observed the gate", || {
         heard(&root, |body| {
             body.starts_with("waiting for a decision from the operator or you on fs.list")
         })
@@ -202,7 +194,7 @@ async fn a_level_change_reroutes_a_pending_gate() {
     // The operator's dial moves toward the creator with the call still held.
     child.set_review_level(ReviewLevel::Supervisor);
 
-    wait_until("the held call was re-routed to the creator", || {
+    root.wait_until("the held call was re-routed to the creator", || {
         heard(&root, |body| {
             body.contains("waiting for your decision") && body.contains("fs.list")
         })
@@ -240,7 +232,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_decide() {
         )
         .unwrap();
     let gate = child.register_pending(&leaf(), None, None);
-    wait_until("the gate reached its reviewer", || {
+    root.wait_until("the gate reached its reviewer", || {
         heard(&root, |body| body.contains("waiting for your decision"))
     })
     .await;
@@ -275,7 +267,7 @@ async fn an_unsubscribed_creator_still_receives_the_gate_it_reviews() {
     assert!(fixture.host.subscribers("child").is_empty());
 
     let _gate = child.register_pending(&leaf(), None, None);
-    wait_until("the gate reached its reviewer regardless", || {
+    root.wait_until("the gate reached its reviewer regardless", || {
         heard(&root, |body| body.contains("waiting for your decision"))
     })
     .await;

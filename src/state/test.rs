@@ -2,7 +2,7 @@
 //! others', and a file that is not a database is an error the caller can see.
 
 use super::*;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 /// Two scratch tables standing in for the real ones, which is the property the
 /// shared open exists for: they take turns creating the same file, and neither
@@ -10,21 +10,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const PICKS: &str = "CREATE TABLE IF NOT EXISTS picks (connection TEXT PRIMARY KEY);";
 const COUNTS: &str = "CREATE TABLE IF NOT EXISTS counts (n INTEGER PRIMARY KEY);";
 
-fn dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "efference-state-test-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_nanos())
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn dir() -> tempfile::TempDir {
+    crate::testing::temp_dir("state")
 }
 
 #[test]
 fn each_tables_schema_lands_in_the_one_file() {
-    let path = dir().join("nested/state.db");
+    let dir = dir();
+    let path = dir.path().join("nested/state.db");
 
     open(&path, PICKS)
         .unwrap()
@@ -54,7 +47,8 @@ fn each_tables_schema_lands_in_the_one_file() {
 
 #[test]
 fn the_parent_directory_is_created() {
-    let path = dir().join("made/on/demand/state.db");
+    let dir = dir();
+    let path = dir.path().join("made/on/demand/state.db");
     open(&path, PICKS).unwrap();
     assert!(path.exists());
 }
@@ -65,7 +59,8 @@ fn the_parent_directory_is_created() {
 /// than on stand-in tables.
 #[test]
 fn the_real_stores_coexist_in_one_user_scoped_file() {
-    let path = dir().join("state.db");
+    let dir = dir();
+    let path = dir.path().join("state.db");
     let store = crate::push::Store::new(path.clone());
     let sign_ins = crate::sign_ins::Store::new(path.clone());
     let devices = crate::devices::Store::new(path.clone());
@@ -105,7 +100,8 @@ fn a_file_that_is_not_a_database_is_an_error() {
     // A best-effort caller folds this away and reads as empty; the web bind's
     // tables report it and refuse the request. Either way it must be an error
     // rather than a connection that silently reports no tables.
-    let path = dir().join("state.db");
+    let dir = dir();
+    let path = dir.path().join("state.db");
     std::fs::write(&path, "{ not a database").unwrap();
     assert!(matches!(open(&path, PICKS), Err(Error::Sqlite(_))));
 }

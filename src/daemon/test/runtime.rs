@@ -75,21 +75,16 @@ pub(super) fn boot_in(cwd: &Path, session_dir: &Path) -> SessionBoot<StaticSpott
 
 /// [`SessionRuntime::start`], returned once the loop has gone idle. A test that stands in
 /// for the loop afterwards — setting a phase, holding a gate — would otherwise race the
-/// loop's first idle, which writes the phase over whatever the test set.
+/// loop's first idle, which writes the phase over whatever the test set. This is how a
+/// fixture gets a runtime it hosts and then drives; a test whose subject is the runtime's
+/// own start, or the live loop against a scripted upstream, calls `start` itself.
 pub(super) async fn started(boot: SessionBoot<StaticSpotter>, parent: &Swansong) -> SessionRuntime {
     let runtime = SessionRuntime::start(boot, parent);
-    wait_until("the loop went idle", || runtime.session().loop_idled()).await;
     runtime
-}
-
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while !ready() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
+        .session()
+        .wait_until("the loop went idle", || runtime.session().loop_idled())
+        .await;
+    runtime
 }
 
 /// Two runtimes under one parent: ending one reaps its background children and
@@ -134,16 +129,17 @@ async fn one_runtime_stops_without_touching_its_sibling() {
     two.session()
         .spawn_background("sleep 30".into(), None)
         .unwrap();
-    wait_until("second child registered", || {
-        two.session()
-            .process_monitor
-            .lock()
-            .unwrap()
-            .running_pgids()
-            .len()
-            == 2
-    })
-    .await;
+    two.session()
+        .wait_until("second child registered", || {
+            two.session()
+                .process_monitor
+                .lock()
+                .unwrap()
+                .running_pgids()
+                .len()
+                == 2
+        })
+        .await;
 
     host.shut_down().await;
     assert!(
@@ -164,13 +160,14 @@ async fn a_first_turn_is_submitted_into_an_empty_log() {
     boot.role.role.first_turn = Some("say hello".into());
     let runtime = SessionRuntime::start(boot, &host);
     let session = Arc::clone(runtime.session());
-    wait_until("the kickoff is recorded", || {
-        session.snapshot().iter().any(|entry| {
-            matches!(entry.payload, Payload::User(_))
-                && entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE)
+    session
+        .wait_until("the kickoff is recorded", || {
+            session.snapshot().iter().any(|entry| {
+                matches!(entry.payload, Payload::User(_))
+                    && entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE)
+            })
         })
-    })
-    .await;
+        .await;
     host.shut_down().await;
     runtime.finished().await.unwrap();
 }

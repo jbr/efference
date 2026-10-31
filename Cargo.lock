@@ -1481,6 +1481,7 @@ dependencies = [
  "sha2 0.11.1",
  "structural-lsp",
  "syntect",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "toml_edit",

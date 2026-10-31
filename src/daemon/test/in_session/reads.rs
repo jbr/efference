@@ -15,7 +15,7 @@ fn status(agent: Option<&str>) -> Status {
 /// names who decides; a session that does not drive it reads no move at all.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_status_reads_as_the_callers_relation() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let seq = issue(&child, vec![curl()]);
     let _gate = child.register_pending(&curl(), None, None);
@@ -67,7 +67,7 @@ async fn a_status_reads_as_the_callers_relation() {
 /// and the sessions it drives marked.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_overview_marks_the_sessions_you_drive() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let overview = status(None)
         .execute(fixture.control("parent"), RequestContext::default())
         .await
@@ -87,7 +87,7 @@ async fn the_overview_marks_the_sessions_you_drive() {
 /// refusal sends the reader to a doc.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_empty_overview_and_a_refusal_name_what_works() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let overview = status(None)
         .execute(fixture.control("stranger"), RequestContext::default())
         .await
@@ -126,7 +126,7 @@ fn read(seq: Option<&str>) -> Transcript {
 /// starts from its own first read.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn each_reader_has_its_own_cursor() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     child.append(1, Payload::user("first")).unwrap();
     let parent = fixture.control("parent");
@@ -171,7 +171,7 @@ async fn each_reader_has_its_own_cursor() {
 /// `interrupt` says what it stopped, and at an idle session signals nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn interrupt_says_what_it_stopped() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let interrupt = || Interrupt {
         agent: "child".into(),
@@ -209,7 +209,7 @@ async fn interrupt_says_what_it_stopped() {
 /// `archive` names the sessions that ended with it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn archive_names_what_ended_with_it() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let said = Archive {
         agent: "child".into(),
     }
@@ -220,10 +220,12 @@ async fn archive_names_what_ended_with_it() {
         said,
         "archived child and the session it created (grandchild); logs stay on disk"
     );
-    wait_for("the cascade", || {
-        fixture.host.session("grandchild").is_none()
-    })
-    .await;
+    fixture
+        .host
+        .wait_until("the cascade", || {
+            fixture.host.session("grandchild").is_none()
+        })
+        .await;
 
     fixture.host.swansong().shut_down().await;
 }
@@ -235,7 +237,7 @@ async fn archive_names_what_ended_with_it() {
 async fn archive_records_the_calling_session() {
     use crate::log::Payload;
 
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.host.session("child").unwrap();
     let grandchild = fixture.host.session("grandchild").unwrap();
     for session in [&child, &grandchild] {
@@ -247,10 +249,16 @@ async fn archive_records_the_calling_session() {
     .execute(fixture.control("parent"), RequestContext::default())
     .await
     .unwrap();
-    wait_for("the cascade", || {
-        fixture.host.session("grandchild").is_none()
-    })
-    .await;
+    // The cascade appends `Archived` after the session leaves the host's map, so the
+    // entry is what is waited for rather than the departure.
+    grandchild
+        .wait_until("the cascade archived grandchild", || {
+            matches!(
+                grandchild.snapshot().last().map(|entry| &entry.payload),
+                Some(Payload::Archived { .. })
+            )
+        })
+        .await;
 
     let archived = |session: &Arc<Session>| match session.snapshot().last().unwrap().payload {
         Payload::Archived { ref source } => source.clone(),

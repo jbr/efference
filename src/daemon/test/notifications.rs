@@ -123,7 +123,7 @@ async fn inbox_wake_fires_on_unshown_not_on_shown() {
 /// supersession and `GET /state` exposure run over the real router + control client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn notify_and_supersede_over_the_router() {
-    let log_path = temp_file("notify-test.jsonl");
+    let (log_path, _log_path_dir) = temp_file("notify-test.jsonl");
 
     let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let client = test_client(&shared).await;
@@ -150,8 +150,6 @@ async fn notify_and_supersede_over_the_router() {
     assert_eq!(notes[0]["source"], "reviewer");
     assert_eq!(notes[1]["body"], "finished, 0 failures");
     assert_eq!(notes[1].get("seq"), None, "{notes:?}");
-
-    let _ = std::fs::remove_file(&log_path);
 }
 
 /// What a restart keeps (docs/inbox.md, docs/resumption.md): notifications without a slot
@@ -159,7 +157,7 @@ async fn notify_and_supersede_over_the_router() {
 /// slot notification was only ever in memory and does not.
 #[test]
 fn arrived_notifications_survive_a_reload_and_slot_ones_do_not() {
-    let path = temp_file("durable-inbox-test.jsonl");
+    let (path, _path_dir) = temp_file("durable-inbox-test.jsonl");
     let kept = {
         let (shared, _turns_rx) = Session::from_log(Log::create(&path, None).expect("create log"));
         let kept = shared
@@ -181,7 +179,6 @@ fn arrived_notifications_survive_a_reload_and_slot_ones_do_not() {
     assert!(pending[1].wake, "must-wake survives the restart");
     assert!(reloaded.has_pending_notifications());
     reloaded.close_log();
-    let _ = std::fs::remove_file(&path);
 }
 
 /// The idle loop's wake ignores a notification the log restored: a resumed session starts

@@ -6,7 +6,7 @@ use crate::daemon::frames::Topic;
 use crate::update_check::Release;
 use crate::update_check::fixtures::{NEWER, NEWER_SIG, check};
 
-fn hosted(label: &str) -> (Arc<Host>, Arc<Session>, PathBuf) {
+async fn hosted(label: &str) -> (Arc<Host>, Arc<Session>, PathBuf) {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
     let root = std::env::temp_dir().join(format!("efference-update-check-{label}-{nonce:016x}"));
@@ -15,7 +15,7 @@ fn hosted(label: &str) -> (Arc<Host>, Arc<Session>, PathBuf) {
         .unwrap();
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     let boot = runtime::boot_in(&root, &root.join(".efference/one"));
-    host.adopt("one".into(), SessionRuntime::start(boot, host.swansong()))
+    host.adopt("one".into(), runtime::started(boot, host.swansong()).await)
         .unwrap();
     let session = host.session("one").unwrap();
     (host, session, root)
@@ -25,7 +25,7 @@ fn hosted(label: &str) -> (Arc<Host>, Arc<Session>, PathBuf) {
 /// with the command that installs it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_newer_release_reaches_the_sessions_topic() {
-    let (host, session, root) = hosted("newer");
+    let (host, session, root) = hosted("newer").await;
     assert_eq!(session.topic_json(Topic::NewerVersion), Value::Null);
     let mut updates = session.subscribe_state();
 
@@ -64,7 +64,7 @@ async fn a_newer_release_reaches_the_sessions_topic() {
 /// A failed check publishes nothing: the topic stays as it was.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_check_publishes_nothing() {
-    let (host, session, root) = hosted("failed");
+    let (host, session, root) = hosted("failed").await;
     host.check_for_updates(check(&[("/releases/latest.json", NEWER)]).installed("0.1.0"));
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(session.topic_json(Topic::NewerVersion), Value::Null);
@@ -76,7 +76,7 @@ async fn a_failed_check_publishes_nothing() {
 /// it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_answer_is_the_hosts_and_clears() {
-    let (host, session, root) = hosted("clears");
+    let (host, session, root) = hosted("clears").await;
     let release = Release {
         version: "9.0.0".into(),
         tag: "v9.0.0".into(),

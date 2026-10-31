@@ -3,7 +3,7 @@ use super::*;
 #[tokio::test]
 async fn missing_session_pages_reach_the_shell_but_content_stays_missing() {
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-    let (server, bearer) = network_host_server(&host).await;
+    let (server, bearer, _state) = network_host_server(&host).await;
     for path in ["/sessions/gone/", "/sessions/gone/tree"] {
         server
             .get(path)

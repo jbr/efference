@@ -8,7 +8,7 @@ use crate::log::{RawResult, WireState};
 /// `session[<id>]` provenance, which opens the turn as `parent (agent):` on the wire.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_drivers_message_lands_as_a_turn_from_it() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let said = message("child", "do the thing", None)
         .execute(fixture.control("parent"), RequestContext::default())
         .await
@@ -16,13 +16,14 @@ async fn a_drivers_message_lands_as_a_turn_from_it() {
     assert_eq!(said, "delivered: child is working on it");
 
     let child = fixture.session("child");
-    wait_for("the child logged the turn", || {
-        child
-            .snapshot()
-            .iter()
-            .any(|entry| entry.source.as_deref() == Some("session[parent]"))
-    })
-    .await;
+    child
+        .wait_until("the child logged the turn", || {
+            child
+                .snapshot()
+                .iter()
+                .any(|entry| entry.source.as_deref() == Some("session[parent]"))
+        })
+        .await;
     let wire = serde_json::to_string(&crate::project::project(&child.snapshot())).unwrap();
     assert!(wire.contains("parent (agent): do the thing"), "{wire}");
 
@@ -33,7 +34,7 @@ async fn a_drivers_message_lands_as_a_turn_from_it() {
 /// inbox under the sender's id, and the answer says so.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_peers_message_is_a_notification() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let said = message("peer", "the build is green", None)
         .execute(fixture.control("parent"), RequestContext::default())
         .await
@@ -52,7 +53,7 @@ async fn a_peers_message_is_a_notification() {
                 .iter()
                 .any(|e| matches!(&e.payload, Payload::Ambient(n) if n.source == "parent"))
     };
-    wait_for("the note reached the peer", heard).await;
+    peer.wait_until("the note reached the peer", heard).await;
     assert!(
         !peer
             .snapshot()
@@ -85,7 +86,7 @@ async fn a_peers_message_is_a_notification() {
 /// at a completed turn it is the continue route's refusal.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_empty_message_continues_or_says_why_not() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     child.append(1, Payload::user("go")).unwrap();
     child.set_stall(Stall {
@@ -130,7 +131,7 @@ async fn an_empty_message_continues_or_says_why_not() {
 /// decision it waits behind; it never resolves the gate.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_message_queues_behind_a_gate() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let seq = issue(&child, vec![curl()]);
     let _gate = child.register_pending(&curl(), None, None);
@@ -155,7 +156,7 @@ async fn a_message_queues_behind_a_gate() {
 /// saying who answered and how.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn questions_are_answered_by_naming_them() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let ask = ToolCall::new(
         crate::log::ASK,
@@ -230,7 +231,7 @@ async fn questions_are_answered_by_naming_them() {
 /// A successor drives its predecessor: its message is a turn, not a note.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_successors_message_to_its_predecessor_is_a_turn() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     fixture
         .host
         .record_succession("parent", "peer", "carry on".into());
@@ -240,13 +241,14 @@ async fn a_successors_message_to_its_predecessor_is_a_turn() {
         .unwrap();
     assert_eq!(said, "delivered: parent is working on it");
     let parent = fixture.session("parent");
-    wait_for("the predecessor logged the turn", || {
-        parent
-            .snapshot()
-            .iter()
-            .any(|entry| entry.source.as_deref() == Some("session[peer]"))
-    })
-    .await;
+    parent
+        .wait_until("the predecessor logged the turn", || {
+            parent
+                .snapshot()
+                .iter()
+                .any(|entry| entry.source.as_deref() == Some("session[peer]"))
+        })
+        .await;
 
     fixture.host.swansong().shut_down().await;
 }

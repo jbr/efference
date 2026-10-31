@@ -1,5 +1,5 @@
 use super::*;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::time::Duration;
 
 /// A host with no connections and no state database: enough to adopt, and to
@@ -23,24 +23,33 @@ fn pipe() -> (std::io::PipeReader, std::io::PipeWriter) {
     std::io::pipe().unwrap()
 }
 
-fn wait_for(what: &str, done: impl Fn() -> bool) {
-    for _ in 0..200 {
-        if done() {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    panic!("timed out waiting for {what}");
+/// The early exit an [`OwnerWatch`] runs on its own thread when the owner goes before the
+/// host exists, and the channel that hears it run.
+fn early_exit() -> (impl FnOnce() + Send + 'static, mpsc::Receiver<()>) {
+    let (ran, heard) = mpsc::channel();
+    (
+        move || {
+            let _ = ran.send(());
+        },
+        heard,
+    )
+}
+
+/// Block until the early exit has run. The wake is the exit's own send; the minute is a
+/// guard against one that never runs.
+fn exited(heard: &mpsc::Receiver<()>) {
+    heard
+        .recv_timeout(Duration::from_secs(60))
+        .expect("the early exit ran");
 }
 
 #[test]
 fn owner_closing_before_the_host_exists_runs_the_early_exit() {
     let (reader, writer) = pipe();
-    let exited = Arc::new(AtomicBool::new(false));
-    let flag = Arc::clone(&exited);
-    let _watch = OwnerWatch::spawn(reader, move || flag.store(true, Ordering::SeqCst));
+    let (early, heard) = early_exit();
+    let _watch = OwnerWatch::spawn(reader, early);
     drop(writer);
-    wait_for("the early exit", || exited.load(Ordering::SeqCst));
+    exited(&heard);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -71,11 +80,10 @@ async fn bytes_from_the_owner_do_not_end_the_host() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn adopting_after_the_owner_went_shuts_down_at_once() {
     let (reader, writer) = pipe();
-    let returned = Arc::new(AtomicBool::new(false));
-    let flag = Arc::clone(&returned);
-    let watch = OwnerWatch::spawn(reader, move || flag.store(true, Ordering::SeqCst));
+    let (early, heard) = early_exit();
+    let watch = OwnerWatch::spawn(reader, early);
     drop(writer);
-    wait_for("the early exit", || returned.load(Ordering::SeqCst));
+    exited(&heard);
     let host = bare_host();
     watch.adopt(&host);
     shuts_down(&host).await;

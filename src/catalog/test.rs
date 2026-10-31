@@ -1,16 +1,8 @@
 use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-fn dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "efference-catalog-test-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_nanos())
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn dir() -> tempfile::TempDir {
+    crate::testing::temp_dir("catalog")
 }
 
 fn rows(ids: &[&str]) -> Vec<ListedModel> {
@@ -83,7 +75,7 @@ async fn a_failed_read_with_nothing_stored_records_the_error() {
 #[tokio::test]
 async fn a_failed_refresh_keeps_the_old_copy_beside_the_error() {
     let dir = dir();
-    let path = dir.join("state.db");
+    let path = dir.path().join("state.db");
     let long_ago = crate::history::now() - 3 * DAY.as_secs() as i64;
     store::save(
         &path,
@@ -112,7 +104,7 @@ async fn a_failed_refresh_keeps_the_old_copy_beside_the_error() {
 #[tokio::test]
 async fn a_stored_copy_survives_a_new_handle() {
     let dir = dir();
-    let path = dir.join("state.db");
+    let path = dir.path().join("state.db");
     Catalog::new(Some(path.clone()))
         .refresh_with("c", Provider::Anthropic, DAY, || async { Ok(rows(&["a"])) })
         .await;
@@ -125,7 +117,7 @@ async fn a_stored_copy_survives_a_new_handle() {
 #[test]
 fn a_copy_from_another_provider_is_discarded() {
     let dir = dir();
-    let path = dir.join("state.db");
+    let path = dir.path().join("state.db");
     store::save(
         &path,
         "c",
@@ -218,7 +210,7 @@ fn recent_ranks_fold_onto_rows_and_unlisted_picks_become_bare_rows() {
 #[tokio::test]
 async fn descriptions_survive_storage_and_are_flattened_into_route_rows() {
     let dir = dir();
-    let path = dir.join("state.db");
+    let path = dir.path().join("state.db");
     let row = ListedModel::new("a").described(Some("Provider prose."));
     Catalog::new(Some(path.clone()))
         .refresh_with("c", Provider::OpenRouter, DAY, || async { Ok(vec![row]) })
@@ -229,7 +221,6 @@ async fn descriptions_survive_storage_and_are_flattened_into_route_rows() {
     let json = serde_json::to_value(&entry).unwrap();
     assert_eq!(json["models"][0]["description"], "Provider prose.");
     assert_eq!(json["models"][0]["connection"], "c");
-    std::fs::remove_dir_all(dir).unwrap();
 }
 
 /// The rule for which models a role may be offered: turn roles take text rows

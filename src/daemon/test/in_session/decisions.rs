@@ -37,7 +37,7 @@ fn held(child: &Session) -> (String, oneshot::Receiver<Approval>) {
 /// the parent as its decider.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn allow_runs_the_call_and_records_the_decider() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let (seq, gate) = held(&child);
     let said = decide(&seq, Decision::Allow, None)
@@ -65,7 +65,7 @@ async fn allow_runs_the_call_and_records_the_decider() {
 /// child reads with the call's result.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn allow_with_a_note_sends_the_note_after_the_result() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let (seq, gate) = held(&child);
     let said = decide(&seq, Decision::Allow, Some("use read for this next time"))
@@ -95,7 +95,7 @@ async fn allow_with_a_note_sends_the_note_after_the_result() {
                 && e.source.as_deref() == Some("session[parent]")
         })
     };
-    wait_for("the note reached the child", noted).await;
+    child.wait_until("the note reached the child", noted).await;
 
     fixture.host.swansong().shut_down().await;
 }
@@ -103,7 +103,7 @@ async fn allow_with_a_note_sends_the_note_after_the_result() {
 /// Deny with a message refuses the call and steers the turn; a bare deny ends it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deny_redirects_with_a_message_and_aborts_without_one() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let (seq, gate) = held(&child);
     let said = decide(&seq, Decision::Deny, Some("use the cached copy"))
@@ -131,7 +131,7 @@ async fn deny_redirects_with_a_message_and_aborts_without_one() {
 /// session holding nothing says what it is doing instead; neither resolves anything.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_moved_gate_is_refused_with_what_it_holds_now() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let err = decide("4", Decision::Allow, None)
         .execute(fixture.control("parent"), RequestContext::default())
@@ -167,7 +167,7 @@ async fn a_moved_gate_is_refused_with_what_it_holds_now() {
 /// child from it, and the gate stays held.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_peer_cannot_decide() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let (seq, _gate) = held(&child);
     let err = decide(&seq, Decision::Allow, None)
@@ -191,7 +191,7 @@ async fn a_peer_cannot_decide() {
 /// drive relation is otherwise unchanged: the same caller still interrupts it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_driver_that_does_not_supervise_cannot_decide() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let grandchild = fixture.session("grandchild");
     let seq = issue(&grandchild, vec![curl()]).to_string();
     let _gate = grandchild.register_pending(&curl(), None, None);

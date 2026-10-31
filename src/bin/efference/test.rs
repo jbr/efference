@@ -117,7 +117,8 @@ fn bare_efference_is_the_tui_and_host_is_a_flag() {
 #[test]
 fn a_hosts_listing_is_scoped_to_this_directory() {
     use efference::client::ListedSession;
-    let dir = std::env::temp_dir().join("efference-hosted-here");
+    let scratch = tempfile::TempDir::with_prefix("efference-hosted-here-").unwrap();
+    let dir = scratch.path();
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     let listing = |id: &str, cwd: Option<&str>| ListedSession {
         id: id.into(),
@@ -134,9 +135,8 @@ fn a_hosts_listing_is_scoped_to_this_directory() {
         listing("elsewhere", Some(dir.join("sub").to_str().unwrap())),
         listing("unplaced", None),
     ];
-    let got = hosted_here(&listings, &dir);
+    let got = hosted_here(&listings, dir);
     assert_eq!(got, ["here", "dotted", "unplaced"]);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// The candidate order is this project's host, then the user's.

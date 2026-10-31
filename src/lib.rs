@@ -65,3 +65,5 @@ pub mod www_authenticate;
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod testing;
