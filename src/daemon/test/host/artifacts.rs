@@ -35,6 +35,7 @@ async fn loopback_get(url: &str) -> String {
 async fn an_adopted_sessions_artifact_links_resolve_until_it_ends() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
+    host.set_artifact_listener(crate::daemon::artifacts::spawn_listener);
     host.adopt(
         "one".into(),
         runtime::started(runtime::boot(&roots.0.join("one")), host.swansong()).await,

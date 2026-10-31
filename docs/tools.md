@@ -282,7 +282,14 @@ command line keeps `settle`, which waits on one agent per call ([operating.md](o
 
 A session created on a host mounts the in-session set as `Provider::Sessions`, wrapping
 `control_tools::in_session::Tools` in the in-process `McpServer`, when its `[tools]` table
-enables `agents` (or one of its verbs). The session's model reaches its project's other
+enables `agents` (or one of its verbs). The toolbox takes the set through a trait of its
+own, `SessionControl` (`src/tools/session_control.rs`): the verbs to mount, and the two
+answers the permission path takes from the host before it classifies one of their calls,
+a hand-off's completion and a decision's bound action ([permissions.md](permissions.md)).
+`control_tools::Control` implements it with the in-session set as its verbs, and boot
+mounts `Control::in_session`, so `tools` names neither the verbs nor the host; the
+toolbox holds the server over them as a `ControlServer` trait object, the one provider
+whose calls go through a boxed future. The session's model reaches its project's other
 sessions by tool call, under namespaced wire names (`agents__message`, `agents__status`,
 `agents__create`). None is granted by default, so the spotter judges each call. Acting verbs never block: an in-session caller hears its
 children through its inbox (below) rather than through a waiting call. What a supervising

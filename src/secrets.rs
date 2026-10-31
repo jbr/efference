@@ -7,7 +7,8 @@
 //! for MCP grants — beside the web bind's `root`, so a listing in the OS's own
 //! UI reads, and none can shadow another.
 //!
-//! The backend is chosen once per process by [`Secrets::configured`]:
+//! The backend is chosen once per process by [`Secrets::configured`], from the user
+//! configuration's `[secrets]` table, which its caller reads:
 //!
 //! - **`[secrets]` commands**: when the user configuration has the table, the `get`,
 //!   `set` and `delete` commands it names ([`commands`]), and no platform store.
@@ -29,7 +30,6 @@
 //! drives its own async runtime, which cannot be entered from a tokio worker.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::sync::Mutex;
 
 mod commands;
@@ -115,24 +115,10 @@ impl std::fmt::Debug for Secrets {
 }
 
 impl Secrets {
-    /// The store the user configuration under `home` names: its `[secrets]`
-    /// commands when it has the table, and otherwise the platform's store. An
-    /// unreadable or unparsable configuration is an error naming its path; a
-    /// missing one names no commands.
-    pub fn configured(home: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let config = crate::user_config::InferenceConfig::read_user(home)?;
-        Ok(Self::from_table(config.and_then(|config| config.secrets)))
-    }
-
-    /// [`configured`](Self::configured) under this process's home directory.
-    pub fn for_user() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let home = std::env::home_dir()
-            .ok_or("no home directory to read ~/.efference/config.toml under")?;
-        Self::configured(&home)
-    }
-
-    /// The `[secrets]` commands when there are some, else the platform's store.
-    pub(crate) fn from_table(table: Option<SecretCommands>) -> Self {
+    /// The store the user configuration's `[secrets]` table names: its commands when
+    /// there is a table, and otherwise the platform's store. The caller reads the table
+    /// (`InferenceConfig::secret_commands`).
+    pub fn configured(table: Option<SecretCommands>) -> Self {
         match table {
             Some(commands) => Self {
                 backend: Backend::Commands(commands),

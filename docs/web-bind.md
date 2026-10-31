@@ -341,7 +341,10 @@ The `401`/`403` codes are `ErrorCode` variants in the standard error envelope
 ## `/files` — the operator's read surface over the working directory
 
 `src/daemon/files.rs`, mounted on a web transport only, after the routes and before
-the web client's frontend handler. It is a router over one `/files/*` route rather
+the web client's frontend handler. What it reads for a session — the canonical root,
+the watcher, and the ignore set below — is a `Files` value (`src/daemon/files_view.rs`),
+which the host keeps on each session's entry from its adopt and a session bind builds
+for itself. It is a router over one `/files/*` route rather
 than a handler that strips its own prefix, so the mount point is a route spelling
 like every other and the path below it arrives as the router's wildcard. Every
 answer is built from that capture alone — nothing reads the request path, and
@@ -438,7 +441,7 @@ prefix-only validation together, which is a different design.
 
 ### The discovery ignore set
 
-`files::ignores`, over the `ignore` crate: what git hides here is what discovery
+`files_view::ignores`, over the `ignore` crate: what git hides here is what discovery
 hides. One set governs all three **discovery** surfaces — the flat listing, the
 recursive listing, and the directory-scope change streams — while the read route
 and single-file streams consult it not at all: **naming a path is the

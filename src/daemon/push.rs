@@ -13,8 +13,8 @@
 use super::*;
 use crate::log::Telemetry;
 use crate::log::{
-    AssistantOutput, DeviceDelivery, LogEntry, MomentKind, Payload, PushCancel, PushEvent,
-    PushRecord,
+    AssistantOutput, DeliveryOutcome, DeviceDelivery, LogEntry, MomentKind, Payload, PushCancel,
+    PushEvent, PushRecord,
 };
 use std::future::Future;
 use std::sync::Weak;
@@ -197,7 +197,11 @@ impl Session {
                     };
                     Box::pin(async move {
                         let store = crate::push::Store::machine_scoped();
-                        crate::push::send(&store, &root.vapid_key(), message).await
+                        crate::push::send(&store, &root.vapid_key(), message)
+                            .await
+                            .into_iter()
+                            .map(recorded)
+                            .collect()
                     })
                 }
             };
@@ -214,6 +218,21 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn set_push_transport(&self, transport: PushTransport) {
         let _ = self.pushes.transport.set(transport);
+    }
+}
+
+/// One device's answer to a push as the log records it (docs/web-push.md).
+fn recorded(device: crate::push::DeviceAnswer) -> DeviceDelivery {
+    use crate::push::ServiceAnswer;
+    let outcome = match device.answer {
+        ServiceAnswer::Delivered { status } => DeliveryOutcome::Delivered { status },
+        ServiceAnswer::Gone { status } => DeliveryOutcome::Gone { status },
+        ServiceAnswer::Failed { status, reason } => DeliveryOutcome::Failed { status, reason },
+    };
+    DeviceDelivery {
+        host: device.host,
+        device: device.device,
+        outcome,
     }
 }
 

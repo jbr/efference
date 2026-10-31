@@ -555,11 +555,11 @@ impl Session {
     /// `agent::tool_definitions`: the toolbox's mounted tools *and* the
     /// harness's own loop-owned family (`consolidate`, the process-monitor/inbox
     /// tools, the two triage tools), the same union `tools[]` advertises.
-    /// Called once by the runtime, before `toolbox` moves into the loop — the
-    /// same "only a served session has this" reason as
+    /// Called once by the runtime, which builds the catalog before `toolbox` moves
+    /// into the loop — the same "only a served session has this" reason as
     /// [`Self::set_capabilities`]/[`Self::set_identity`], which it sits beside.
-    pub fn set_tool_catalog(&self, toolbox: &Toolbox) {
-        *self.tools.lock().unwrap() = agent::tool_catalog(toolbox);
+    pub fn set_tool_catalog(&self, catalog: HashMap<String, crate::tools::ToolEntry>) {
+        *self.tools.lock().unwrap() = catalog;
     }
 
     /// One tool's full definition, addressed by its wire name — the answer to
@@ -629,8 +629,11 @@ mod stall;
 pub(crate) mod errors;
 // The file viewer's read surface (docs/web-bind.md), mounted on the TCP spawn only.
 pub(crate) mod files;
+// What that surface reads for a session: its root, watcher and ignore set
+// (docs/web-bind.md).
+mod files_view;
 // Fenced HTML artifacts' signed links and routes (docs/artifacts.md).
-pub(crate) mod artifacts;
+pub mod artifacts;
 // The control-stream frame envelope (docs/control-api.md). `dead_code` covers
 // `Frame::with_render` and `Frame::state`, which the emitter does not reach:
 // nothing annotates a frame with a render yet, and the state path builds from

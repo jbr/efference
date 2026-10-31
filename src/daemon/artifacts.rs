@@ -9,7 +9,9 @@
 //! with it, so its URLs stop resolving with nothing to clean up.
 //!
 //! The same routes are served at the web origin's root and on the artifact-only
-//! loopback listener ([`spawn_listener`]), which the host starts under its `Swansong`.
+//! loopback listener ([`spawn_listener`]), which the host starts under its `Swansong`
+//! at its first adopt, once the process serving it has installed the starter
+//! (`Host::set_artifact_listener`).
 
 use std::io;
 use std::sync::Arc;
@@ -358,8 +360,9 @@ fn not_found(conn: Conn) -> Conn {
 
 /// Bind the artifact-only loopback listener and serve [`routes`] on it under `host`'s
 /// `Swansong`, with the host as its state, so host shutdown ends it with everything
-/// else. Answers the listener's origin.
-pub(crate) fn spawn_listener(host: &Arc<Host>) -> io::Result<String> {
+/// else. Answers the listener's origin. The starter a serving process installs on its
+/// host (`Host::set_artifact_listener`).
+pub fn spawn_listener(host: &Arc<Host>) -> io::Result<String> {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
     let port = listener.local_addr()?.port();
     listener.set_nonblocking(true)?;

@@ -43,7 +43,7 @@ pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
             (
                 move |conn: Conn| async move { resolve_session(conn, files) },
                 control_routes(),
-                files.then(Files::route),
+                files.then(files::route),
             ),
         );
     router.post("/sessions", create_session)
@@ -137,7 +137,7 @@ fn resolve_session(conn: Conn, web: bool) -> Conn {
     match entry {
         Some(Entry::Hosted(hosted)) => conn
             .with_state(hosted.session)
-            // The view `Files::route` serves, one route for every session.
+            // The view `files::route` serves, one route for every session.
             .with_state(hosted.files),
         Some(Entry::Starting(starting)) => conn.with_state(starting),
         // The router has stripped the session prefix. These exact routes carry

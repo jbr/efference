@@ -110,6 +110,18 @@ impl Host {
     }
 }
 
+/// What an adopted session's review reads through its link to this host
+/// (`review.rs`, docs/permissions.md).
+impl review::SupervisorPointers for Host {
+    fn supervisor_of(&self, id: &str) -> Option<String> {
+        Host::supervisor_of(self, id)
+    }
+
+    fn holds(&self, id: &str) -> bool {
+        self.session(id).is_some()
+    }
+}
+
 /// The chain `id → next → … → id` that pointing `id` at `next` would close, when it
 /// would: `next`'s supervisor pointers are followed until they reach `id`, end, or
 /// leave the host. A pre-existing loop that does not pass through `id` ends the walk

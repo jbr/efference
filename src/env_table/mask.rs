@@ -534,6 +534,14 @@ impl Masker {
     }
 }
 
+/// The log's mask (docs/env.md): every payload appended to a session's log passes
+/// through [`Masker::mask_payload`].
+impl crate::persist::PayloadMask for Masker {
+    fn mask_payload(&self, payload: &mut Payload) {
+        Masker::mask_payload(self, payload);
+    }
+}
+
 /// Every needle one value contributes.
 ///
 /// A secret rarely reaches a tool result verbatim, so the raw value alone

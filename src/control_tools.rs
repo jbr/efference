@@ -142,11 +142,23 @@ impl Control {
         Self { executor, cli }
     }
 
+    /// The state a hosted session's own toolbox mounts (docs/tools.md): the session
+    /// `caller` driving its host's sessions through the in-process executor.
+    pub fn in_session(host: &std::sync::Arc<crate::daemon::Host>, caller: String) -> Self {
+        Self::new(Executor::host(host, caller), false)
+    }
+}
+
+/// The in-session set, mounted in a session's toolbox as `Provider::Sessions`
+/// (docs/tools.md).
+impl crate::tools::SessionControl for Control {
+    type Verbs = in_session::Tools;
+
     /// Whether `call` is this session archiving its own predecessor — the session whose
     /// recorded succession names the caller (docs/permissions.md). Only the in-process
     /// [`Executor::Host`] knows the caller; the host wrote the link at `hand_off`, so the
     /// agent cannot assert it.
-    pub(crate) fn completes_hand_off(&self, call: &ToolCall) -> bool {
+    fn completes_hand_off(&self, call: &ToolCall) -> bool {
         match &self.executor {
             Executor::Host(state) => state.completes_hand_off(call),
             Executor::Client(_) => false,
@@ -157,7 +169,7 @@ impl Control {
     /// (docs/permissions.md). Only the in-process [`Executor::Host`] can: it knows
     /// the caller and can read the target's pending gate. The HTTP executor never
     /// sees this call — the binding happens inside the target's own daemon.
-    pub(crate) fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
+    fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
         match &self.executor {
             Executor::Host(state) => state.resolve_bound_action(call),
             Executor::Client(_) => Err(anyhow!(

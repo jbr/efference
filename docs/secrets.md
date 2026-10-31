@@ -31,8 +31,9 @@ another client.
 
 ## Backends
 
-`Secrets::configured` picks one per process from the user configuration
-(`~/.efference/config.toml`), and contacts none of them:
+`Secrets::configured` picks one per process from the user configuration's `[secrets]`
+table (`~/.efference/config.toml`), which its caller reads and hands it
+(`InferenceConfig::secret_commands`), and contacts none of them:
 
 - **`[secrets]` commands** — when the configuration has the table, and then the
   platform store is never opened. Described below.

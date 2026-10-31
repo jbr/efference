@@ -132,12 +132,12 @@ fn a_device_label_hides_the_endpoint_path() {
 
 #[test]
 fn statuses_classify_as_delivered_gone_or_failed() {
-    assert_eq!(classify(201), DeliveryOutcome::Delivered { status: 201 });
-    assert_eq!(classify(404), DeliveryOutcome::Gone { status: 404 });
-    assert_eq!(classify(410), DeliveryOutcome::Gone { status: 410 });
+    assert_eq!(classify(201), ServiceAnswer::Delivered { status: 201 });
+    assert_eq!(classify(404), ServiceAnswer::Gone { status: 404 });
+    assert_eq!(classify(410), ServiceAnswer::Gone { status: 410 });
     assert_eq!(
         classify(429),
-        DeliveryOutcome::Failed {
+        ServiceAnswer::Failed {
             status: Some(429),
             reason: "status 429".into()
         }

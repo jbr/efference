@@ -9,6 +9,7 @@ use crate::log::{Approval, Telemetry};
 use crate::policy::ReviewLevel;
 use crate::protocol::agents::Decision;
 use crate::protocol::status::{Condition, Reviewer};
+use crate::tools::SessionControl as _;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 

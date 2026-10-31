@@ -9,7 +9,9 @@
 //! boxed `async` trait object: dispatch stays static (no `async-trait` crate, no
 //! boxing), it matches the enum-centric style of the rest of the codebase, and a
 //! new backend is a single variant. The docs/tools.md "in-process `Tool` trait" is realized
-//! as this enum boundary — the loop knows only `Toolbox`, never a concrete tool.
+//! as this enum boundary — the loop knows only `Toolbox`, never a concrete tool. One
+//! variant holds a trait object: the session-control verbs are defined above this module,
+//! so `Provider::Sessions` holds them as a [`ControlServer`] (`session_control.rs`).
 //!
 //! The mounted set is fixed for the session (chosen once in `main`), so the
 //! request's `tools[]` is byte-stable and never perturbs the tools cache tier
@@ -127,9 +129,7 @@ pub enum Provider {
     /// The session-control verbs (docs/tools.md): `agents__*`, driving the
     /// host in-process with the calling session's identity. Mounted only for a
     /// session created on a host.
-    Sessions(
-        Box<McpServer<crate::control_tools::Control, crate::control_tools::in_session::Tools>>,
-    ),
+    Sessions(Box<dyn ControlServer>),
     /// The `lsp` built-ins (docs/tools.md): `lsp__*`, structural-lsp's tools over
     /// the host's shared language servers. Mounted only for a session created on a
     /// host whose config enables them.
@@ -342,17 +342,6 @@ pub fn unknown_tool_message(name: &str, available: &[String]) -> String {
     message
 }
 
-impl McpServer<crate::control_tools::Control, crate::control_tools::in_session::Tools> {
-    /// Resolve an allowing `agents__decide` call to the leaf action its target holds
-    /// (docs/permissions.md), through the sessions provider's in-process host.
-    fn resolve_bound_action(
-        &self,
-        call: &ToolCall,
-    ) -> anyhow::Result<crate::protocol::agents::BoundAction> {
-        self.state.resolve_bound_action(call)
-    }
-}
-
 /// The mounted set of tool backends. The loop asks it for the wire `tools[]` and
 /// routes each `tool_use` to the backend that handles it.
 pub struct Toolbox {
@@ -382,6 +371,8 @@ pub mod lsp;
 mod mcp_server;
 mod provider;
 pub mod read_image;
+mod session_control;
+pub use session_control::{ControlServer, SessionControl};
 mod toolbox;
 #[cfg(test)]
 use toolbox::strip_unreadable_images;

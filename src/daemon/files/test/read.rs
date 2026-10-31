@@ -14,8 +14,8 @@ async fn session_apps_keep_independent_file_roots() {
     let App::Session { files: second } = App::session(two.path()) else {
         panic!("session app");
     };
-    let first = TestServer::new(first.handler()).await;
-    let second = TestServer::new(second.handler()).await;
+    let first = TestServer::new(handler(first)).await;
+    let second = TestServer::new(handler(second)).await;
     first
         .get("/files/identity.txt")
         .await

@@ -7,7 +7,7 @@ use super::*;
 /// ends.
 async fn raw_client(scratch: &Scratch) -> trillium_client::Client {
     let mut handler = (
-        Files::rooted_at(scratch.path()).handler(),
+        handler(Files::rooted_at(scratch.path())),
         |conn: Conn| async move { conn.with_status(FELL_THROUGH).halt() },
     );
     let context = trillium_testing::init(&mut handler).await;
@@ -229,7 +229,7 @@ async fn a_closed_stream_releases_its_watch() {
     scratch.write("sub/held.txt", "h");
     let files = Files::rooted_at(scratch.path());
     let watch = files.watch.clone().expect("watcher");
-    let mut handler = (files.handler(), |conn: Conn| async move {
+    let mut handler = (handler(files), |conn: Conn| async move {
         conn.with_status(FELL_THROUGH).halt()
     });
     let context = trillium_testing::init(&mut handler).await;

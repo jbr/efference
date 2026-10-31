@@ -90,18 +90,12 @@ const TABLE: &[Row] = &[
 ];
 
 /// The imports of an outer module that a module outside the set still makes: the turn
-/// loop reads the session from `daemon` and refreshes its config through it, and the
-/// toolbox mounts the session-control tools over the `daemon::Host` that owns them. They
-/// stay until the session's state leaves `daemon` and the toolbox reaches the host
-/// through a trait; each is deleted from here when its import goes.
+/// loop reads the session from `daemon` and refreshes its config through it. They stay
+/// until the session's state leaves `daemon`; each is deleted from here when its import
+/// goes.
 const OPEN_EDGES: &[(&str, &str)] = &[
     ("agent.rs", "daemon::Session"),
     ("agent/config_edit.rs", "daemon::refresh_and_emit"),
-    ("tools.rs", "control_tools::Control"),
-    ("tools.rs", "control_tools::in_session::Tools"),
-    ("tools/toolbox.rs", "control_tools::Control::new"),
-    ("tools/toolbox.rs", "control_tools::Executor::host"),
-    ("tools/toolbox.rs", "daemon::Host"),
 ];
 
 /// The row that forbids `importer` importing from `imported`, if one does.

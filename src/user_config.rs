@@ -95,6 +95,25 @@ impl InferenceConfig {
             .map_err(|error| format!("{}: {error}", path.display()).into())
     }
 
+    /// The `[secrets]` table of the user configuration under `home`, which names the
+    /// secret store (docs/secrets.md); `None` when there is no file or no table. An
+    /// unreadable or unparsable file is an error naming its path.
+    pub fn secret_commands(
+        home: &Path,
+    ) -> Result<Option<crate::secrets::SecretCommands>, Box<dyn std::error::Error + Send + Sync>>
+    {
+        Ok(Self::read_user(home)?.and_then(|config| config.secrets))
+    }
+
+    /// [`secret_commands`](Self::secret_commands) under this process's home directory.
+    pub fn user_secret_commands()
+    -> Result<Option<crate::secrets::SecretCommands>, Box<dyn std::error::Error + Send + Sync>>
+    {
+        let home = std::env::home_dir()
+            .ok_or("no home directory to read ~/.efference/config.toml under")?;
+        Self::secret_commands(&home)
+    }
+
     /// The `[tui]` table as written, before `~/` expansion.
     pub fn tui(&self) -> &TuiConfig {
         &self.tui

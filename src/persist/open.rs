@@ -23,7 +23,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use super::error::OpenError;
 use super::header::LogHeader;
@@ -109,7 +108,7 @@ impl Log {
                 entries: recording.entries,
                 sink: Some(BufWriter::new(file)),
                 closed: false,
-                masker: Arc::default(),
+                masker: None,
             },
             header: recording.header,
             repaired,

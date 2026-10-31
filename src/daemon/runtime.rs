@@ -132,7 +132,7 @@ impl SessionRuntime {
         let tools = agent::tool_definitions(&toolbox);
         // Snapshot the mounted tool catalog for `GET /v1/tools/:name`
         // (docs/control-api.md), before `toolbox` moves into the loop below.
-        session.set_tool_catalog(&toolbox);
+        session.set_tool_catalog(agent::tool_catalog(&toolbox));
 
         // The one state-topic differ (docs/control-api.md): recomputes the topics on
         // any change signal and publishes the ones that moved, so N connected clients

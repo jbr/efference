@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use super::Secrets;
+use super::{SecretCommands, Secrets};
 
 /// A scratch HOME whose user configuration's `[secrets]` table runs the scripts.
 pub(crate) struct ScriptStore {
@@ -65,9 +65,18 @@ impl ScriptStore {
         )
     }
 
-    /// The store the configuration names, by the path a process takes to it.
+    /// The store the configuration's `[secrets]` table names: the table read from the
+    /// file and checked as the user configuration's parse checks it, then handed to
+    /// [`Secrets::configured`] as a process hands it.
     pub(crate) fn secrets(&self) -> Secrets {
-        Secrets::configured(&self.root).unwrap()
+        #[derive(serde::Deserialize)]
+        struct File {
+            secrets: SecretCommands,
+        }
+        let text = std::fs::read_to_string(self.root.join(".efference/config.toml")).unwrap();
+        let file: File = toml_edit::de::from_str(&text).unwrap();
+        file.secrets.validate().unwrap();
+        Secrets::configured(Some(file.secrets))
     }
 
     /// The directory holding one file per item.

@@ -50,7 +50,7 @@ const FELL_THROUGH: u16 = 418;
 /// which is mounted after it on the real stack.
 async fn server(scratch: &Scratch) -> TestServer<impl trillium::Handler> {
     TestServer::new((
-        Files::rooted_at(scratch.path()).handler(),
+        handler(Files::rooted_at(scratch.path())),
         |conn: Conn| async move { conn.with_status(FELL_THROUGH).halt() },
     ))
     .await

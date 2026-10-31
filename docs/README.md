@@ -233,11 +233,12 @@ import that runs the other way. Three rules hold:
   (where a session lives on disk) and `src/protocol.rs` (the names and shapes that cross
   the control channel or the tool wire).
 
-The imports that still run against the second rule are named in the test, each by the
+The imports that still run against the third rule are named in the test, each by the
 file that makes it and the path it imports: the turn loop (`agent`) holds the `Session`
-and refreshes the config through `daemon`, and the toolbox (`tools`) mounts
-the session-control tools over `daemon::Host` and `control_tools`. A new import of that
-kind fails the test, and so does a named one that has gone, until its line is deleted.
+and refreshes the config through `daemon`. A new import of that kind fails the test, and
+so does a named one that has gone, until its line is deleted. The toolbox (`tools`)
+reaches the session-control tools through a trait it defines, `SessionControl`, which
+`control_tools` implements and boot mounts ([tools.md](tools.md)).
 
 ## Repository layout
 

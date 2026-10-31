@@ -16,7 +16,7 @@
 //! Symlinked directories are listed but never descended: the walk would not
 //! terminate, and a link's target is one request away by its own path.
 
-use super::ignores::Scope;
+use crate::daemon::files_view::ignores::Scope;
 use crate::log::Timestamp;
 use crate::protocol::files::{DirEntry, DirEntryKind, DirListing};
 use std::path::Path;

@@ -410,7 +410,9 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     // to re-read its credential from when one expires (docs/transport.md). Every
     // host reads `[secrets]`, an island included: it names where this user's
     // secrets are, not the machine's bind.
-    let secrets = std::sync::Arc::new(efference::secrets::Secrets::configured(Path::new(&home))?);
+    let secrets = std::sync::Arc::new(efference::secrets::Secrets::configured(
+        efference::user_config::InferenceConfig::secret_commands(Path::new(&home))?,
+    ));
     let bind = resolve_bind(bind_flags, &secrets)?;
     if let Some(dir) = socket.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)?;
@@ -437,6 +439,9 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     // The snapshot the registry read is also the baseline a session created without an
     // environment of its own inherits (docs/env.md).
     let host = daemon::Host::new(inference, host_env);
+    // The artifact-only loopback listener, which the first adopt starts (docs/artifacts.md):
+    // installed before anything below can adopt a session.
+    host.set_artifact_listener(daemon::artifacts::spawn_listener);
     // Only with the user's answer: a configuration without one never checks
     // (docs/update-check.md). An island is a host like any other here.
     if efference::user_config::UpdatesConfig::load(Path::new(&home))?.check {

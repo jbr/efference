@@ -7,7 +7,7 @@
 //! runs as a pass-through when `None` — so the layering is structural, fixed at
 //! bind time, and never a per-conn guess about which listener a request arrived on.
 
-use super::files::Files;
+use super::files_view::Files;
 use super::host::host_routes;
 use super::http::control_routes;
 use super::tcp::{
@@ -105,7 +105,9 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         // The operator's read surface over the working directory (docs/web-bind.md),
         // mounted only behind a gate so the socket never serves it. A router over
         // `/files/**`, so every other path passes through to the routes below.
-        web.then_some(files).flatten().map(Files::handler),
+        web.then_some(files)
+            .flatten()
+            .map(crate::daemon::files::handler),
         // Last: any GET the routes did not claim is the web client's surface
         // (docs/web-client.md) — an asset, or the SPA index.
         web.then(|| frontend(surface)),

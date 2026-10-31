@@ -122,17 +122,13 @@ impl Toolbox {
     }
 
     /// Mount the session-control provider (docs/tools.md): the session reaches
-    /// its project's other sessions through `host`, in-process, under the
-    /// `agents__<verb>` wire names. `caller` is the session's own id. The in-session
-    /// set is its own enum (`control_tools::in_session`), so nothing is hidden here.
-    pub fn mount_sessions(&mut self, host: &std::sync::Arc<crate::daemon::Host>, caller: String) {
-        let state = crate::control_tools::Control::new(
-            crate::control_tools::Executor::host(host, caller),
-            false,
-        );
-        self.providers.push(Provider::Sessions(Box::new(
-            McpServer::from_state_namespaced(state, &[], crate::names::tools::AGENTS_NAMESPACE),
-        )));
+    /// its project's other sessions through the host `control` holds, in-process,
+    /// under the `agents__<verb>` wire names. The verb set is `control`'s own
+    /// ([`SessionControl::Verbs`]), so nothing is hidden here.
+    pub fn mount_sessions<Control: SessionControl>(&mut self, control: Control) {
+        let server: McpServer<Control, Control::Verbs> =
+            McpServer::from_state_namespaced(control, &[], crate::names::tools::AGENTS_NAMESPACE);
+        self.providers.push(Provider::Sessions(Box::new(server)));
     }
 
     /// Mount the `lsp` built-ins (docs/tools.md) over a session's binding. Mounted before
@@ -166,7 +162,7 @@ impl Toolbox {
     /// the hand-off (docs/permissions.md). False when no sessions provider is mounted.
     pub fn completes_hand_off(&self, call: &ToolCall) -> bool {
         self.providers.iter().any(|p| match p {
-            Provider::Sessions(s) => s.state.completes_hand_off(call),
+            Provider::Sessions(s) => s.completes_hand_off(call),
             _ => false,
         })
     }

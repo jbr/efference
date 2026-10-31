@@ -11,7 +11,6 @@
 //! and where it is kept), `encrypt` (RFC 8291 payload encryption), and `vapid`
 //! (RFC 8292 self-identification). [`send`] is the RFC 8030 request that carries them.
 
-use crate::log::{DeliveryOutcome, DeviceDelivery};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use serde::{Deserialize, Serialize};
@@ -200,6 +199,30 @@ pub fn device_label(endpoint: &str) -> (String, String) {
     (host, hash)
 }
 
+/// What a push service said to one push (RFC 8030 §7.3). The session records it in its
+/// log as a `DeliveryOutcome` (docs/web-push.md).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ServiceAnswer {
+    /// A 2xx.
+    Delivered { status: u16 },
+    /// 404 or 410: the subscription no longer exists and was pruned.
+    Gone { status: u16 },
+    /// Any other status (`status` set) or a failure before an answer.
+    Failed { status: Option<u16>, reason: String },
+}
+
+/// One subscription's answer to one push.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeviceAnswer {
+    /// The endpoint's host (`web.push.apple.com`), which names the browser vendor.
+    pub host: String,
+    /// A short stable hash of the endpoint, so two profiles on one vendor differ
+    /// without the log holding the endpoint's secret path.
+    pub device: String,
+    /// What its push service said.
+    pub answer: ServiceAnswer,
+}
+
 /// The most characters of a failure reason the log keeps.
 const REASON_MAX_CHARS: usize = 120;
 
@@ -210,8 +233,8 @@ fn log_reason(reason: &str, endpoint: &str) -> String {
     reason.chars().take(REASON_MAX_CHARS).collect()
 }
 
-fn failed(reason: impl AsRef<str>, endpoint: &str) -> DeliveryOutcome {
-    DeliveryOutcome::Failed {
+fn failed(reason: impl AsRef<str>, endpoint: &str) -> ServiceAnswer {
+    ServiceAnswer::Failed {
         status: None,
         reason: log_reason(reason.as_ref(), endpoint),
     }
@@ -222,11 +245,11 @@ fn failed(reason: impl AsRef<str>, endpoint: &str) -> DeliveryOutcome {
 /// own next page open), anything else a failure that is logged and dropped — a
 /// push is a courtesy, and no retry schedule would make it more timely than the
 /// next event.
-fn classify(status: u16) -> DeliveryOutcome {
+fn classify(status: u16) -> ServiceAnswer {
     match status {
-        200..300 => DeliveryOutcome::Delivered { status },
-        404 | 410 => DeliveryOutcome::Gone { status },
-        _ => DeliveryOutcome::Failed {
+        200..300 => ServiceAnswer::Delivered { status },
+        404 | 410 => ServiceAnswer::Gone { status },
+        _ => ServiceAnswer::Failed {
             status: Some(status),
             reason: format!("status {status}"),
         },
@@ -240,7 +263,7 @@ async fn send_one(
     subscription: &Subscription,
     message: &Message,
     now: u64,
-) -> DeliveryOutcome {
+) -> ServiceAnswer {
     let endpoint = subscription.endpoint.as_str();
     let Some(audience) = vapid::audience(endpoint) else {
         return failed("endpoint is not a URL", endpoint);
@@ -283,25 +306,25 @@ async fn send_one(
 /// subscribed). Never fails: the caller is a spawned task beside the turn loop,
 /// and a push that does not go out is not a session failure. The caller records
 /// the answers in the session log (docs/web-push.md).
-pub async fn send(store: &Store, key: &p256::SecretKey, message: Message) -> Vec<DeviceDelivery> {
+pub async fn send(store: &Store, key: &p256::SecretKey, message: Message) -> Vec<DeviceAnswer> {
     let subscriptions = store.load();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let mut devices = Vec::with_capacity(subscriptions.len());
     for subscription in subscriptions {
-        let outcome = send_one(key, &subscription, &message, now).await;
+        let answer = send_one(key, &subscription, &message, now).await;
         let (host, device) = device_label(&subscription.endpoint);
-        log::debug!("push to {host} ({device}): {outcome:?}");
-        if matches!(outcome, DeliveryOutcome::Gone { .. })
+        log::debug!("push to {host} ({device}): {answer:?}");
+        if matches!(answer, ServiceAnswer::Gone { .. })
             && let Err(e) = store.remove(&subscription.endpoint)
         {
             log::warn!("could not prune a gone push subscription: {e}");
         }
-        devices.push(DeviceDelivery {
+        devices.push(DeviceAnswer {
             host,
             device,
-            outcome,
+            answer,
         });
     }
     if devices.is_empty() {

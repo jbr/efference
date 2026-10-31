@@ -73,7 +73,9 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
 async fn mount_servers(role: &efference::config::Config, cwd: &Path, path: &Path) -> CliResult {
     let store: std::sync::Arc<dyn efference::mcp::auth::store::TokenStore> =
         std::sync::Arc::new(efference::mcp::auth::store::KeychainStore::new(
-            std::sync::Arc::new(efference::secrets::Secrets::for_user()?),
+            std::sync::Arc::new(efference::secrets::Secrets::configured(
+                efference::user_config::InferenceConfig::user_secret_commands()?,
+            )),
         ));
     let mut toolbox = Toolbox::bash_and_mcps(cwd.to_path_buf(), None)?;
     let mut failed: Option<(String, String)> = None;

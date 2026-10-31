@@ -201,6 +201,9 @@ paths funnel through. That single point covers tool results, the boot
 `Ambient` notifications, user paste, and harness-written error text, and because
 every downstream surface reads the log, one choke point secures all of them: the
 wire, the jsonl on disk, the TUI, and the `control transcript`/`entries` reads.
+The log holds the mask as a `PayloadMask`, a one-method trait `src/persist.rs` defines
+and `Masker` (`src/env_table/mask.rs`) implements, so the log imports nothing from the
+`[env]` table; a log with none installed masks nothing.
 
 The payload paths it filters, exhaustively: `User` text blocks; `Assistant` text
 blocks, tool-call `input` strings, and an upstream `excluded` mark (its `why` and, when

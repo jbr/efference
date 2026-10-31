@@ -11,7 +11,7 @@ impl Provider {
             Provider::ReadImage(_) => vec![ReadImage::definition()],
             Provider::Fs(s) => s.definitions.clone(),
             Provider::SemanticEdit(s) => s.definitions.clone(),
-            Provider::Sessions(s) => s.definitions.clone(),
+            Provider::Sessions(s) => s.definitions().to_vec(),
             Provider::Lsp(l) => l.server.definitions.clone(),
             Provider::Connected(c) => c.definitions(),
         }

@@ -142,7 +142,7 @@ impl LiveProbe {
             // where keeping one can work, and says why not otherwise.
             secrets: crate::user_config::InferenceConfig::from_toml(config_text)
                 .map_err(|error| error.to_string())
-                .map(|config| Secrets::from_table(config.secrets))
+                .map(|config| Secrets::configured(config.secrets))
                 .and_then(|secrets| secrets.open().map(|()| secrets)),
         })
     }

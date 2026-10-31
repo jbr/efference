@@ -48,10 +48,11 @@
 //! not there, and the same bearer already reaches `/v1`, where the agent can be made
 //! to read any file into the transcript.
 
+use super::files_view::Files;
+use super::files_view::ignores::Scope;
 use super::*;
 use crate::fswatch::{FsChange, FsWatch, WatchGuard};
 use crate::log::Timestamp;
-use ignores::{Ignores, Scope};
 use list::{Options, listing, modified_at};
 use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};
@@ -61,7 +62,6 @@ use tokio::sync::broadcast::error::RecvError;
 use trillium::{KnownHeaderName, Method};
 use trillium_sse::{SseHandler, sse};
 
-pub(crate) mod ignores;
 mod list;
 
 /// The largest file served. Chosen against real source files rather than a round
@@ -72,32 +72,7 @@ mod list;
 /// the viewer is expected to meet.
 pub(crate) const MAX_BYTES: u64 = 500 * 1024;
 
-/// The viewer's read surface, rooted at one canonical directory. A root that could
-/// not be canonicalized at boot serves nothing rather than falling back to a wider
-/// one.
-#[derive(Debug, Clone)]
-pub struct Files {
-    root: Option<Arc<PathBuf>>,
-    /// The core watcher behind the change streams (`crate::fswatch`). `None` if
-    /// the watcher could not start, in which case streams are refused while
-    /// reads keep working.
-    watch: Option<Arc<FsWatch>>,
-    /// The discovery ignore set (`ignores`): listings and directory streams
-    /// consult it, the read route and single-file streams never do.
-    ignores: Option<Arc<Ignores>>,
-}
-
 impl Files {
-    /// Rooted at the supplied session directory.
-    pub(crate) fn rooted_at(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref().canonicalize().ok().map(Arc::new);
-        Self {
-            ignores: root.as_ref().map(|root| Arc::new(Ignores::at(&***root))),
-            root,
-            watch: FsWatch::new().ok(),
-        }
-    }
-
     /// The ignore chain governing one directory. Discovery surfaces only —
     /// see `ignores`.
     fn scope(&self, dir: &Path) -> Scope {
@@ -442,115 +417,113 @@ impl SseHandler for Connect {
     }
 }
 
-impl Files {
-    /// The `/files` surface as one route — `.all`, so a write meets this
-    /// surface's own refusal rather than the router's `405` — over three stages
-    /// in a tuple.
-    ///
-    /// 1. **Validate** — refuses non-GET and a missing root, and for a request
-    ///    negotiating a stream prepares the watch, refusing here so the `Sse`
-    ///    stage never sees a request it cannot serve.
-    /// 2. **Stream** — the `Sse` handler over that prepared target. It
-    ///    negotiates on `Accept` alone, which is sound because the route bounds
-    ///    it: the same `Accept` that makes it answer is the one the stage above
-    ///    prepares or refuses for.
-    /// 3. **Read** — the body: a file's bytes, or a directory's listing.
-    ///
-    /// Trillium's `Sse` drives the stream through the handler's upgrade hook,
-    /// which the server looks up on the whole stack after `run` returns, so it
-    /// is mounted as a handler of its own rather than called from inside one —
-    /// delegating `run` alone would leave the stream undriven.
-    pub(crate) fn handler(self) -> impl trillium::Handler {
-        (
-            move |conn: Conn| {
-                let files = self.clone();
-                async move { conn.with_state(files) }
-            },
-            Self::route(),
-        )
-    }
+/// The `/files` surface over `files` as one route — `.all`, so a write meets this
+/// surface's own refusal rather than the router's `405` — over three stages
+/// in a tuple.
+///
+/// 1. **Validate** — refuses non-GET and a missing root, and for a request
+///    negotiating a stream prepares the watch, refusing here so the `Sse`
+///    stage never sees a request it cannot serve.
+/// 2. **Stream** — the `Sse` handler over that prepared target. It
+///    negotiates on `Accept` alone, which is sound because the route bounds
+///    it: the same `Accept` that makes it answer is the one the stage above
+///    prepares or refuses for.
+/// 3. **Read** — the body: a file's bytes, or a directory's listing.
+///
+/// Trillium's `Sse` drives the stream through the handler's upgrade hook,
+/// which the server looks up on the whole stack after `run` returns, so it
+/// is mounted as a handler of its own rather than called from inside one —
+/// delegating `run` alone would leave the stream undriven.
+pub(crate) fn handler(files: Files) -> impl trillium::Handler {
+    (
+        move |conn: Conn| {
+            let files = files.clone();
+            async move { conn.with_state(files) }
+        },
+        route(),
+    )
+}
 
-    /// The route over whichever `Files` an earlier stage put in conn state —
-    /// [`Files::handler`]'s own, or a hosted session's, which the host's
-    /// session stage resolves per request. One route for every session keeps
-    /// the `Sse` stage on the stack where the upgrade hook finds it.
-    pub(crate) fn route() -> impl trillium::Handler {
-        Router::new().all(
-            "/files/*",
-            (
-                |conn: Conn| async move {
-                    // The path below the mount, as the router captured it:
-                    // no leading slash, and no trailing one either, since
-                    // routefinder trims it before matching. Nothing here
-                    // reads a trailing slash, so the trimming costs nothing.
-                    let rest = conn.path().to_string();
-                    if conn.method() != Method::Get {
-                        return fail(
-                            conn,
-                            ErrorCode::BadRequest,
-                            "/files is read-only; GET a path or a directory",
-                        );
-                    }
-                    let Some(files) = conn.state::<Files>().filter(|f| f.root.is_some()).cloned()
-                    else {
-                        return fail(
-                            conn,
-                            ErrorCode::Internal,
-                            "no working directory to serve files from",
-                        );
+/// The route over whichever `Files` an earlier stage put in conn state —
+/// [`handler()`]'s own, or a hosted session's, which the host's
+/// session stage resolves per request. One route for every session keeps
+/// the `Sse` stage on the stack where the upgrade hook finds it.
+pub(crate) fn route() -> impl trillium::Handler {
+    Router::new().all(
+        "/files/*",
+        (
+            |conn: Conn| async move {
+                // The path below the mount, as the router captured it:
+                // no leading slash, and no trailing one either, since
+                // routefinder trims it before matching. Nothing here
+                // reads a trailing slash, so the trimming costs nothing.
+                let rest = conn.path().to_string();
+                if conn.method() != Method::Get {
+                    return fail(
+                        conn,
+                        ErrorCode::BadRequest,
+                        "/files is read-only; GET a path or a directory",
+                    );
+                }
+                let Some(files) = conn.state::<Files>().filter(|f| f.root.is_some()).cloned()
+                else {
+                    return fail(
+                        conn,
+                        ErrorCode::Internal,
+                        "no working directory to serve files from",
+                    );
+                };
+                // Content negotiation (docs/web-bind.md): a request whose Accept
+                // *explicitly* names `text/event-stream` gets a stream of change pokes
+                // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
+                // the file, so only a client that asked to stream ever streams. The
+                // `Sse` stage applies the same rule to the same header.
+                let streams = conn
+                    .request_headers()
+                    .get_str(KnownHeaderName::Accept)
+                    .is_some_and(|accept| accept.contains("text/event-stream"));
+                if !streams {
+                    return conn;
+                }
+                match files.prepare_stream(&rest).await {
+                    Ok(target) => conn.with_state(target),
+                    Err((code, message)) => fail(conn, code, message),
+                }
+            },
+            sse(Connect).with_heartbeat(HEARTBEAT),
+            |conn: Conn| async move {
+                // The validating stage refused a request without one.
+                let Some(files) = conn.state::<Files>().cloned() else {
+                    return conn;
+                };
+                let Some(path) = files.resolve(conn.path()) else {
+                    return fail(
+                        conn,
+                        ErrorCode::NotFound,
+                        "no such path under the working directory",
+                    );
+                };
+                let Ok(meta) = tokio::fs::metadata(&path).await else {
+                    return fail(conn, ErrorCode::NotFound, "no such path");
+                };
+                if meta.is_dir() {
+                    let options = Options::from_query(conn.querystring());
+                    let scope = files.scope(&path);
+                    let root = files.root.as_ref().expect("root checked").clone();
+                    let Some(listing) = listing(&path, &root, scope, options).await else {
+                        return fail(conn, ErrorCode::NotFound, "cannot list this directory");
                     };
-                    // Content negotiation (docs/web-bind.md): a request whose Accept
-                    // *explicitly* names `text/event-stream` gets a stream of change pokes
-                    // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
-                    // the file, so only a client that asked to stream ever streams. The
-                    // `Sse` stage applies the same rule to the same header.
-                    let streams = conn
-                        .request_headers()
-                        .get_str(KnownHeaderName::Accept)
-                        .is_some_and(|accept| accept.contains("text/event-stream"));
-                    if !streams {
-                        return conn;
-                    }
-                    match files.prepare_stream(&rest).await {
-                        Ok(target) => conn.with_state(target),
-                        Err((code, message)) => fail(conn, code, message),
-                    }
-                },
-                sse(Connect).with_heartbeat(HEARTBEAT),
-                |conn: Conn| async move {
-                    // The validating stage refused a request without one.
-                    let Some(files) = conn.state::<Files>().cloned() else {
-                        return conn;
-                    };
-                    let Some(path) = files.resolve(conn.path()) else {
-                        return fail(
-                            conn,
-                            ErrorCode::NotFound,
-                            "no such path under the working directory",
-                        );
-                    };
-                    let Ok(meta) = tokio::fs::metadata(&path).await else {
-                        return fail(conn, ErrorCode::NotFound, "no such path");
-                    };
-                    if meta.is_dir() {
-                        let options = Options::from_query(conn.querystring());
-                        let scope = files.scope(&path);
-                        let root = files.root.as_ref().expect("root checked").clone();
-                        let Some(listing) = listing(&path, &root, scope, options).await else {
-                            return fail(conn, ErrorCode::NotFound, "cannot list this directory");
-                        };
-                        return conn
-                            .with_status(200)
-                            .with_response_header(KnownHeaderName::ContentType, "application/json")
-                            .with_response_header(KnownHeaderName::CacheControl, CACHE_CONTROL)
-                            .with_body(serde_json::to_string(&listing).unwrap_or_default())
-                            .halt();
-                    }
-                    read(conn, &path, &meta).await
-                },
-            ),
-        )
-    }
+                    return conn
+                        .with_status(200)
+                        .with_response_header(KnownHeaderName::ContentType, "application/json")
+                        .with_response_header(KnownHeaderName::CacheControl, CACHE_CONTROL)
+                        .with_body(serde_json::to_string(&listing).unwrap_or_default())
+                        .halt();
+                }
+                read(conn, &path, &meta).await
+            },
+        ),
+    )
 }
 
 /// `cache-control` on the file answers (docs/web-bind.md): `private` because

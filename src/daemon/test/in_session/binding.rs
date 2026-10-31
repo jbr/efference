@@ -2,6 +2,7 @@
 //! the binding obeys (docs/permissions.md, docs/tools.md).
 
 use super::*;
+use crate::tools::SessionControl as _;
 
 /// A parent's allowing `agents__decide` binds to the target's held move
 /// (docs/permissions.md): the leaf tool, its input as the child wrote it, its intent,

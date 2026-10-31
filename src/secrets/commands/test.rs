@@ -13,7 +13,7 @@ fn the_table_selects_the_commands() {
     assert_eq!(secrets.open(), Ok(()));
 
     let empty = std::env::temp_dir().join(format!("efference-no-config-{}", std::process::id()));
-    let platform = Secrets::configured(&empty).unwrap();
+    let platform = Secrets::configured(InferenceConfig::secret_commands(&empty).unwrap());
     assert!(!platform.runs_commands());
 }
 

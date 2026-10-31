@@ -99,7 +99,9 @@ fn rotate() -> CliResult {
         )
         .into());
     }
-    let secrets = efference::secrets::Secrets::for_user()?;
+    let secrets = efference::secrets::Secrets::configured(
+        efference::user_config::InferenceConfig::user_secret_commands()?,
+    );
     efference::auth::Root::rotate(&secrets)?;
     // The root goes first: no token verifies under the new one, so a table that
     // cannot be cleared leaves rows that sign nothing in, never a token that does.

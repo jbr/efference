@@ -60,7 +60,7 @@ fn the_in_session_tools_array_is_pinned() {
             .expect("an empty environment is valid"),
     );
     let mut toolbox = crate::tools::Toolbox::new(Vec::new());
-    toolbox.mount_sessions(&host, "caller".into());
+    toolbox.mount_sessions(Control::in_session(&host, "caller".into()));
     pinned(
         "in_session_wire.jsonl",
         &Value::Array(toolbox.definitions()),

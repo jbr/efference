@@ -40,7 +40,6 @@ use std::path::Path;
 
 use std::sync::Arc;
 
-use crate::env_table::Masker;
 use crate::log::{LogEntry, Payload, Seq, Timestamp, Turn};
 
 mod error;
@@ -90,10 +89,16 @@ pub struct Log {
     closed: bool,
     /// The `[env]` mask (docs/env.md). Every payload passes through it on the way
     /// in, which is what makes append the one choke point securing every
-    /// downstream surface — the wire, the jsonl, the TUI, `control transcript` and `entries`. An empty
-    /// masker (the default, and every test that does not install one) is the
-    /// identity.
-    masker: Arc<Masker>,
+    /// downstream surface — the wire, the jsonl, the TUI, `control transcript` and `entries`. None
+    /// (the default, and every test that does not install one) masks nothing.
+    masker: Option<Arc<dyn PayloadMask>>,
+}
+
+/// What every payload passes through on its way into the log: the session's `[env]`
+/// mask (docs/env.md), which `env_table`'s `Masker` implements.
+pub trait PayloadMask: Send + Sync {
+    /// Replace each masked value the payload's text carries with its marker, in place.
+    fn mask_payload(&self, payload: &mut Payload);
 }
 
 impl Log {
@@ -147,7 +152,7 @@ impl Log {
             entries: Vec::new(),
             sink: Some(sink),
             closed: false,
-            masker: Arc::default(),
+            masker: None,
         })
     }
 
@@ -157,7 +162,7 @@ impl Log {
             entries: Vec::new(),
             sink: None,
             closed: false,
-            masker: Arc::default(),
+            masker: None,
         }
     }
 
@@ -171,15 +176,15 @@ impl Log {
             entries,
             sink: None,
             closed: false,
-            masker: Arc::default(),
+            masker: None,
         }
     }
 
     /// Install the session's `[env]` mask (docs/env.md). Set before the first
     /// append: masking is irreversible filtering *upstream* of the log, so an
     /// entry already written was written with whatever masker was in force.
-    pub fn set_masker(&mut self, masker: Arc<Masker>) {
-        self.masker = masker;
+    pub fn set_masker(&mut self, masker: Arc<dyn PayloadMask>) {
+        self.masker = Some(masker);
     }
 
     /// The entries so far — what [`crate::project::project`] folds into the wire.
@@ -218,7 +223,9 @@ impl Log {
             return Err(io::Error::other("the log is closed: its session has ended"));
         }
         let mut payload = payload;
-        self.masker.mask_payload(&mut payload);
+        if let Some(masker) = &self.masker {
+            masker.mask_payload(&mut payload);
+        }
         let seq = self.entries.len() as Seq;
         let entry = LogEntry {
             seq,
