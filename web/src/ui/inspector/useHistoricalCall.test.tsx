@@ -7,23 +7,23 @@ import { fetchCallSeq, fetchLogRange } from "../../api/http.ts";
 import { messagesAssistant } from "../../session/assistant.ts";
 import { buildTree, type CallNode } from "../../session/tree.ts";
 import type { LogEntry } from "../../api/entry.ts";
+import type { ToolCall } from "../../api/types.ts";
 vi.mock("../../api/http.ts", () => ({
   fetchCallSeq: vi.fn(),
   fetchLogRange: vi.fn(),
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 afterEach(() => vi.resetAllMocks());
+const issuedCall: ToolCall = {
+  id: "old-call",
+  name: "bash",
+  input: { command: "sleep 10" },
+};
 const issued: LogEntry = {
   seq: 2,
   turn: 1,
   at: 0,
-  payload: {
-    Assistant: messagesAssistant(
-      [],
-      [],
-      [{ id: "old-call", name: "bash", input: { command: "sleep 10" } }],
-    ),
-  },
+  payload: { Assistant: messagesAssistant([], [], [issuedCall]) },
 };
 const current: LogEntry[] = [
   {
@@ -34,7 +34,7 @@ const current: LogEntry[] = [
   },
 ];
 test("off-window task call loads inspector-only history using pinned base", async () => {
-  vi.mocked(fetchCallSeq).mockResolvedValue({ seq: 2 });
+  vi.mocked(fetchCallSeq).mockResolvedValue({ seq: 2, call: issuedCall });
   vi.mocked(fetchLogRange).mockResolvedValue([issued]);
   const root = createRoot(document.createElement("div"));
   let value: ReturnType<typeof useHistoricalCall> | undefined;

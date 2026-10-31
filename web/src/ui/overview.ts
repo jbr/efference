@@ -7,7 +7,7 @@
 // and a supervisor's card names what it supervises. Working with a subagent
 // should be no further away than working with the session that created it.
 
-import type { SessionEntry } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 import type {
   ArchivedSession,
   BlockedReason,
@@ -31,7 +31,7 @@ export interface CardModel {
   id: string;
   title: string | null;
   cwd: string;
-  status: SessionEntry["status"];
+  status: ListedSession["status"];
   attention: Attention;
   processes: number;
   supervisor: string | null;
@@ -150,8 +150,8 @@ export function parkDetail(contextTokens: number | null): string {
 }
 
 export function cardModel(
-  entry: SessionEntry,
-  all: SessionEntry[],
+  entry: ListedSession,
+  all: ListedSession[],
   state: StateSnapshot | null,
   recent: Recent = {},
 ): CardModel {

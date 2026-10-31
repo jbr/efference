@@ -13,6 +13,7 @@
 use super::transcript::{Grain, Reading};
 use super::*;
 use crate::api::UpstreamFailure;
+use crate::protocol::answers::LocatedToolCall;
 use crate::protocol::state::{
     ContextWindow, Cost, Gate, LoopResource, PaceView, RoleView, StateTopics, UsageView,
 };
@@ -26,6 +27,15 @@ use crate::protocol::turns::QueuedTurn;
 /// value that cannot be serialized is `null`.
 pub(super) fn channel_value(value: impl Serialize) -> Value {
     serde_json::to_value(value).unwrap_or(Value::Null)
+}
+
+/// Answer `conn` with `body` as the channel carries it ([`channel_value`]): the status,
+/// the body's JSON with its keys sorted, and the conn halted so a handler mounted later
+/// does not overwrite it.
+pub(super) fn answer(conn: Conn, status: u16, body: impl Serialize) -> Conn {
+    conn.with_status(status)
+        .with_body(channel_value(body).to_string())
+        .halt()
 }
 
 impl Session {
@@ -448,7 +458,7 @@ impl Session {
             let call = calls.into_iter().find(|c| c.id.0 == call_id)?;
             Some((entry.seq, call))
         })?;
-        serde_json::to_string(&serde_json::json!({ "seq": seq, "call": call })).ok()
+        Some(channel_value(LocatedToolCall { seq, call }).to_string())
     }
 }
 

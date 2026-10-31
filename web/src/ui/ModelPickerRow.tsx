@@ -101,7 +101,7 @@ function ModelDetails({
     {
       label: "Context window",
       value:
-        context !== undefined && context > 0
+        context != null && context > 0
           ? `${context.toLocaleString()} tokens`
           : null,
     },
@@ -117,16 +117,11 @@ function ModelDetails({
     {
       label: "Reasoning",
       value:
-        reasoning === undefined
-          ? null
-          : reasoning
-            ? "Supported"
-            : "Not supported",
+        reasoning == null ? null : reasoning ? "Supported" : "Not supported",
     },
     {
       label: "Image input",
-      value:
-        images === undefined ? null : images ? "Supported" : "Not supported",
+      value: images == null ? null : images ? "Supported" : "Not supported",
     },
     { label: "Recent pick", value: row.recent ? "Yes" : null },
   ].filter((fact) => fact.value !== null);

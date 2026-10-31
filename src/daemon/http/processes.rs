@@ -1,6 +1,7 @@
 //! `/processes`: the tool-spawned process resource (docs/process-monitor.md, docs/control-api.md).
 
 use super::*;
+use crate::protocol::answers::{ProcessOutputRead, StatusBody, StatusWord};
 
 /// The process resource (docs/process-monitor.md, docs/control-api.md): every
 /// running tool-spawned process — foreground and background share the one
@@ -48,16 +49,17 @@ pub(super) async fn read_process_output(conn: Conn) -> Conn {
         Err(message) => return fail(conn, ErrorCode::BadRequest, message),
     };
     match shared.process_output_read(id, since) {
-        Some(read) => {
-            let body = serde_json::json!({
-                "id": id,
-                "output": read.content,
-                "cursor": read.cursor,
-                "lost": read.lost,
-                "running": read.running,
-            });
-            conn.with_status(200).with_body(body.to_string()).halt()
-        }
+        Some(read) => views::answer(
+            conn,
+            200,
+            ProcessOutputRead {
+                id,
+                output: read.content,
+                cursor: read.cursor,
+                lost: read.lost,
+                running: read.running,
+            },
+        ),
         None => fail(conn, ErrorCode::NotFound, "no process with that id"),
     }
 }
@@ -133,9 +135,7 @@ pub(super) async fn kill_process(conn: Conn) -> Conn {
         return fail(conn, ErrorCode::BadRequest, "process id must be an integer");
     };
     if shared.kill_process(id) {
-        conn.with_status(200)
-            .with_body(r#"{"status":"killed"}"#)
-            .halt()
+        views::answer(conn, 200, StatusBody::new(StatusWord::Killed))
     } else {
         fail(conn, ErrorCode::NotFound, "no running process with that id")
     }

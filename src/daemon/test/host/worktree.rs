@@ -52,6 +52,11 @@ async fn deleting_a_session_removes_its_clean_worktree() {
         .assert_status(200)
         .body()
         .to_string();
+    assert_eq!(
+        body,
+        r#"{"id":"wt-fox","state":"archived","worktree":{"branch_deleted":true,"removed":true}}"#,
+        "the answer's bytes"
+    );
     let body: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(body["state"], "archived");
     assert_eq!(
@@ -87,9 +92,18 @@ async fn archiving_a_dirty_worktree_keeps_it() {
         .assert_status(200)
         .body()
         .to_string();
+    let raw = body.clone();
     let body: Value = serde_json::from_str(&body).unwrap();
     let kept = body["worktree"]["kept"].as_str().unwrap();
     assert!(kept.contains("notes.txt"), "{kept}");
+    assert_eq!(
+        raw,
+        format!(
+            r#"{{"id":"wt-fox","resumed":false,"state":"archived","worktree":{{"kept":{}}}}}"#,
+            serde_json::to_string(kept).unwrap()
+        ),
+        "a patch to archived answers `resumed: false` beside the worktree"
+    );
     assert!(path.join("notes.txt").is_file());
     host.swansong().shut_down().await;
 }

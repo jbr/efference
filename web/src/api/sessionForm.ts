@@ -13,149 +13,52 @@
 // would turn every inherited default into an explicit override.
 
 import { requestAt } from "./http.ts";
-import type { ModelSelection } from "./types.ts";
-
-/** One remembered launch location. `cwd` and `config` are exactly what
- * `POST /sessions` takes back, so an entry replays a launch verbatim;
- * `config` null asks creation to probe, which is what a launch that named none
- * did. `config_key` is the identity the index stored it under and what
- * `DELETE /projects` takes — reported rather than recomputed, because
- * recomputing re-probes the filesystem. */
-export interface ProjectEntry {
-  label: string;
-  cwd: string;
-  config: string | null;
-  config_key: string;
-  /** Unix seconds. The index is most-recently-used first, which is the order
-   * the form shows it in. */
-  last_used_at: number;
-}
+import type {
+  ConnectionCatalog,
+  CatalogList,
+  CreatedSession,
+  ForgottenProject,
+  ModelRole,
+  ProjectEntry,
+  ProjectList,
+  ResolvedOptions,
+} from "./types.ts";
 
 /** The remembered locations, most recently used first. An entry whose
  * directory or named configuration is gone is left out of the answer rather
  * than deleted, so it returns when the volume does. */
-export const fetchProjects = () =>
-  requestAt<{ projects: ProjectEntry[] }>("GET", "/projects");
+export const fetchProjects = () => requestAt<ProjectList>("GET", "/projects");
 
 /** Forget one entry. `404` means it is already gone, which is the state the
  * caller asked for; the caller drops the row either way. Deletes the
  * remembered entry alone — no file, no directory, no session that ran there. */
 export const forgetProject = (entry: ProjectEntry) =>
-  requestAt<{ forgotten: { cwd: string; config_key: string } }>(
+  requestAt<ForgottenProject>(
     "DELETE",
     `/projects?cwd=${encodeURIComponent(entry.cwd)}` +
       `&config_key=${encodeURIComponent(entry.config_key)}`,
   );
 
-/** One effective field: what a session would actually get, and the precedence
- * branch that supplied it. `source: null` marks a field whose resolution
- * failed — the paired issue says why — while `value: null` with a source is an
- * ordinary omission. The two are different answers. */
-export interface Effective<T> {
-  value: T | null;
-  source: SelectionSource | null;
-}
-
-/** Which branch supplied a value. Closed, because a client renders each
- * differently: an inherited value is editable in place, a requested one is the
- * edit. */
-export type SelectionSource =
-  | "request"
-  | "history"
-  | "user_default"
-  | "main_provider"
-  | "decision_connection"
-  | "project_config"
-  | "provider_default"
-  | "shared_main";
-
-/** Triage resolves to sharing main or to a flattened separate selection, so an
- * inherited default previews as the separate client creation would build. */
-export type EffectiveTriage =
-  | { mode: "shared" }
-  | ({ mode: "separate" } & ModelSelection & { effort?: string });
-
-/** What a proposed session would resolve to. A preview, not a reservation: the
- * host retains nothing here and resolves again at creation. */
-export interface SessionPreview {
-  effective: {
-    main: Effective<ModelSelection>;
-    spotter: Effective<ModelSelection>;
-    triage: Effective<EffectiveTriage>;
-    effort: Effective<string>;
-    temperature: Effective<number>;
-  };
-  issues: PreviewIssue[];
-}
-
-/** One field-level problem, resolved independently: a field with an issue has
- * no value *and* no source, and the other fields still answer. `field` names
- * the request field, so a client attaches the message to the control being
- * edited. */
-export interface PreviewIssue {
-  field: string;
-  code: string;
-  message: string;
-}
-
 /** Resolve a draft without minting a directory or preparing anything. Only a
  * malformed body is an error here — every field-level problem is an issue
  * inside a `200`. */
 export const previewSession = (body: unknown) =>
-  requestAt<SessionPreview>("QUERY", "/sessions", body);
-
-/** One connection's entry in the catalog (docs/model-catalog.md). `status` is
- * `fresh`, `stale`, `missing`, `failed`, or `unavailable` (no usable credential,
- * or disabled: nothing is read and `error` says why). `age` is seconds since the
- * stored copy was fetched. */
-export interface CatalogEntry {
-  connection: string;
-  provider: string;
-  status: "fresh" | "stale" | "missing" | "failed" | "unavailable";
-  age?: number;
-  error?: string;
-  models: CatalogModel[];
-}
-
-/** One model row: `model` is the provider-native id a draft carries, and a
- * field the source did not declare is absent. */
-export interface CatalogModel {
-  model: string;
-  group?: string;
-  name?: string;
-  /** Provider text, when supplied. */
-  description?: string;
-  /** Unix seconds. */
-  created?: number;
-  /** Tokens. */
-  context?: number;
-  price?: { input: number; output: number };
-  reasoning?: boolean;
-  images?: boolean;
-  /** Absent for a text model. A `decisions` model answers typed questions about
-   * a state and produces no turn, so only the spotter can use it. */
-  kind?: "decisions";
-  /** Rank of the matching recent pick, 1 first, counted across connections. */
-  recent?: number;
-}
-
-/** The role a model is being chosen for. The host narrows the catalog to what
- * the role may use: no decision models, and no connection that serves none, for
- * `main` or `triage`; everything for `spotter`. */
-export type ModelRole = "main" | "triage" | "spotter";
+  requestAt<ResolvedOptions>("QUERY", "/sessions", body);
 
 /** Every configured connection's stored listing, most recent picks folded in.
  *
  * Never waits on a provider: a `missing` or `stale` connection starts a
  * background refresh and is served as stored, and a `failed` one keeps its old
  * copy. `cwd` (+ optional `config`) names the project scope whose recent picks
- * count; without one no row has a `recent`. */
+ * count; without one no row has a `recent`. `role` narrows the answer to what
+ * that role may choose: no decision models, and no connection that serves none,
+ * for `main` or `triage`; everything for `spotter`. */
 export const fetchCatalog = (
   cwd: string,
   config: string | null,
   role: ModelRole,
 ) =>
-  requestAt<{ connections: CatalogEntry[] }>(
+  requestAt<CatalogList>(
     "GET",
     `/inference/catalog?cwd=${encodeURIComponent(cwd)}` +
       (config === null ? "" : `&config=${encodeURIComponent(config)}`) +
@@ -172,7 +75,7 @@ export const fetchConnection = (
   role: ModelRole,
   maxAge?: number,
 ) =>
-  requestAt<CatalogEntry>(
+  requestAt<ConnectionCatalog>(
     "GET",
     `/inference/catalog/${encodeURIComponent(connection)}` +
       `?cwd=${encodeURIComponent(cwd)}` +
@@ -187,4 +90,4 @@ export const fetchConnection = (
  * its own, when none is configured), so this client sends no `env` — that is
  * the whole of what creating from a browser changes. */
 export const createSession = (body: unknown) =>
-  requestAt<{ id: string }>("POST", "/sessions", body);
+  requestAt<CreatedSession>("POST", "/sessions", body);

@@ -21,11 +21,8 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  type CatalogEntry,
-  fetchCatalog,
-  fetchConnection,
-} from "../api/sessionForm.ts";
+import { fetchCatalog, fetchConnection } from "../api/sessionForm.ts";
+import type { ConnectionCatalog } from "../api/types.ts";
 import type { Chip } from "./matcher.ts";
 import {
   type Role,
@@ -70,7 +67,7 @@ export function ModelPicker({
   onPick: (selection: { connection: string; model: string }) => void;
   onClose: () => void;
 }) {
-  const [entries, setEntries] = useState<CatalogEntry[] | null>(null);
+  const [entries, setEntries] = useState<ConnectionCatalog[] | null>(null);
   const [query, setQuery] = useState(initialBrowse?.query ?? "");
   const [chips, setChips] = useState<Chip[]>(initialBrowse?.chips ?? []);
   const [selected, setSelected] = useState(initialBrowse?.selected ?? 0);
@@ -107,13 +104,16 @@ export function ModelPicker({
   // twice does not ask the provider twice.
   const refreshed = useRef(new Set<string>());
 
-  const replace = useCallback((connection: string, entry: CatalogEntry) => {
-    setEntries((current) =>
-      current === null
-        ? current
-        : current.map((one) => (one.connection === connection ? entry : one)),
-    );
-  }, []);
+  const replace = useCallback(
+    (connection: string, entry: ConnectionCatalog) => {
+      setEntries((current) =>
+        current === null
+          ? current
+          : current.map((one) => (one.connection === connection ? entry : one)),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     let live = true;

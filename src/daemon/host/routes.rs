@@ -2,6 +2,7 @@
 //! conn state for the session's control routes (docs/control-api.md).
 
 use super::*;
+use crate::protocol::answers::InventoryList;
 
 /// The host's routes (docs/control-api.md). `POST /sessions` is mounted on every
 /// host listener, socket and network alike: creation's environment is
@@ -60,10 +61,13 @@ pub(super) fn missing_host(conn: Conn) -> Conn {
 /// loaded once at host startup, so this never reads config or credentials per request.
 async fn inference_inventory(conn: Conn) -> Conn {
     match host_of(&conn) {
-        Some(host) => conn
-            .with_status(200)
-            .with_body(serde_json::json!({ "connections": host.inference.inventory() }).to_string())
-            .halt(),
+        Some(host) => views::answer(
+            conn,
+            200,
+            InventoryList {
+                connections: host.inference.inventory(),
+            },
+        ),
         None => missing_host(conn),
     }
 }
@@ -203,14 +207,9 @@ pub struct ArchiveOrigin {
 /// The `200` an archive answers with, carrying `worktree` when the session had its own
 /// and `ended_with` when sessions it created end with it (docs/control-api.md).
 fn archived(conn: Conn, id: &str, ended: Ended, ending_with: &[String]) -> Conn {
-    let mut body = serde_json::json!({ "id": id, "state": ended.state() });
-    if let Some(worktree) = ended.retired.and_then(|retired| retired.response()) {
-        body["worktree"] = worktree;
-    }
-    if !ending_with.is_empty() {
-        body["ended_with"] = serde_json::json!(ending_with);
-    }
-    conn.with_status(200).with_body(body.to_string()).halt()
+    let mut answer = ended.answer(id);
+    answer.ended_with = ending_with.to_vec();
+    views::answer(conn, 200, answer)
 }
 
 pub(super) fn no_such_session(conn: Conn, id: &str) -> Conn {

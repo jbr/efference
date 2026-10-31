@@ -1,6 +1,7 @@
 //! `/loop`: the turn engine's operator dials and its two verbs (docs/control-channel.md).
 
 use super::*;
+use crate::protocol::answers::{StatusBody, StatusWord};
 
 /// Signal the running tool (docs/control-channel.md). A verb-route on the
 /// loop resource because it *is* a verb — it signals, it doesn't delete
@@ -27,9 +28,7 @@ pub(super) async fn interrupt(mut conn: Conn) -> Conn {
         }
     };
     shared.interrupt(origin);
-    conn.with_status(200)
-        .with_body(r#"{"status":"interrupted"}"#)
-        .halt()
+    views::answer(conn, 200, StatusBody::new(StatusWord::Interrupted))
 }
 
 /// Hand control back with no input (docs/control-api.md): the idle loop takes
@@ -60,10 +59,7 @@ pub(super) async fn continue_loop(mut conn: Conn) -> Conn {
         }
     };
     match shared.request_continue(origin) {
-        Ok(()) => conn
-            .with_status(202)
-            .with_body(r#"{"status":"continuing"}"#)
-            .halt(),
+        Ok(()) => views::answer(conn, 202, StatusBody::new(StatusWord::Continuing)),
         Err(why) => fail(conn, ErrorCode::NotContinuable, why.message()),
     }
 }
@@ -97,10 +93,7 @@ pub(super) async fn compaction(mut conn: Conn) -> Conn {
             let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_compaction()).await;
             conn.with_status(200).with_body(shared.state_json()).halt()
         }
-        Ok(()) => conn
-            .with_status(202)
-            .with_body(r#"{"status":"compacting"}"#)
-            .halt(),
+        Ok(()) => views::answer(conn, 202, StatusBody::new(StatusWord::Compacting)),
         Err(why) => fail(conn, ErrorCode::NotCompactable, why.message()),
     }
 }

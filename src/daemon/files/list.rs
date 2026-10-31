@@ -18,7 +18,7 @@
 
 use super::ignores::Scope;
 use crate::log::Timestamp;
-use serde::Serialize;
+use crate::protocol::files::{DirEntry, DirEntryKind, DirListing};
 use std::path::Path;
 
 /// The deepest a recursive listing walks. A finder wants the project's path
@@ -28,45 +28,6 @@ pub(crate) const MAX_DEPTH: usize = 8;
 
 /// The most entries one listing reports. Past this the walk stops and says so.
 pub(crate) const MAX_ENTRIES: usize = 10_000;
-
-/// One entry of a directory listing. `kind` follows symlinks (a link to a
-/// directory lists as a directory) while `symlink` records that the entry itself
-/// is one, so a client can show the indirection without a second request.
-#[derive(Serialize, Debug, PartialEq, Eq)]
-pub(crate) struct Entry {
-    /// Bare in a flat listing; relative to the listed directory in a recursive
-    /// one.
-    name: String,
-    kind: Kind,
-    /// Bytes on disk. Reported for directories too, where it is the directory's
-    /// own size and means nothing to a reader — kept only because omitting it
-    /// per-kind would make the shape conditional.
-    size: u64,
-    modified_at: Option<Timestamp>,
-    symlink: bool,
-}
-
-#[derive(Serialize, Debug, PartialEq, Eq, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Kind {
-    File,
-    Dir,
-    /// A device, socket, fifo — or a symlink whose target does not resolve.
-    Other,
-}
-
-/// A directory's listing. `path` is the directory's own path relative to the
-/// root, empty at the root itself, so a client can render a breadcrumb without
-/// reconstructing it from the URL.
-#[derive(Serialize, Debug)]
-pub(crate) struct Listing {
-    path: String,
-    /// Whether entry names are paths (recursive) or bare names (flat).
-    recursive: bool,
-    /// A cap was hit: the set is a prefix of what is there, not the whole of it.
-    truncated: bool,
-    entries: Vec<Entry>,
-}
 
 /// What the query string asked for, clamped to what this route will do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,7 +73,7 @@ pub(crate) async fn listing(
     root: &Path,
     scope: Scope,
     options: Options,
-) -> Option<Listing> {
+) -> Option<DirListing> {
     let depth = if options.recursive { options.depth } else { 1 };
     let mut queue = vec![(dir.to_path_buf(), scope, 0usize, String::new())];
     let mut entries = Vec::new();
@@ -136,22 +97,22 @@ pub(crate) async fn listing(
             // which is how an entry can be both a symlink and a dir.
             let symlink = item.file_type().await.is_ok_and(|t| t.is_symlink());
             let (kind, size, modified) = match tokio::fs::metadata(&path).await {
-                Ok(meta) if meta.is_dir() => (Kind::Dir, meta.len(), modified_at(&meta)),
-                Ok(meta) if meta.is_file() => (Kind::File, meta.len(), modified_at(&meta)),
-                Ok(meta) => (Kind::Other, meta.len(), modified_at(&meta)),
+                Ok(meta) if meta.is_dir() => (DirEntryKind::Dir, meta.len(), modified_at(&meta)),
+                Ok(meta) if meta.is_file() => (DirEntryKind::File, meta.len(), modified_at(&meta)),
+                Ok(meta) => (DirEntryKind::Other, meta.len(), modified_at(&meta)),
                 // A dangling symlink: listed, since hiding it would misreport
                 // the directory, but nothing can be said about its target.
-                Err(_) => (Kind::Other, 0, None),
+                Err(_) => (DirEntryKind::Other, 0, None),
             };
-            if scope.is_ignored(&path, kind == Kind::Dir) {
+            if scope.is_ignored(&path, kind == DirEntryKind::Dir) {
                 continue;
             }
             let rel = format!("{prefix}{name}");
-            if kind == Kind::Dir && !symlink && level + 1 < depth {
+            if kind == DirEntryKind::Dir && !symlink && level + 1 < depth {
                 let child = scope.descend(&path);
                 queue.push((path, child, level + 1, format!("{rel}/")));
             }
-            entries.push(Entry {
+            entries.push(DirEntry {
                 name: rel,
                 kind,
                 size,
@@ -173,7 +134,7 @@ pub(crate) async fn listing(
     // order; in a recursive listing that also groups each directory with its
     // own contents, since the names are paths.
     entries.sort_by(|a, b| a.name.cmp(&b.name));
-    Some(Listing {
+    Some(DirListing {
         path: dir
             .strip_prefix(root)
             .unwrap_or(Path::new(""))

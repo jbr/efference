@@ -323,14 +323,9 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
         // not-hosted one rather than a bad request.
         SessionState::Archived => match host.end_by(&id, body.source) {
             Some(completion) => {
-                let ended = completion.await;
-                let mut body = serde_json::json!({
-                    "id": id, "state": ended.state(), "resumed": false,
-                });
-                if let Some(worktree) = ended.retired.and_then(|retired| retired.response()) {
-                    body["worktree"] = worktree;
-                }
-                conn.with_status(200).with_body(body.to_string()).halt()
+                let mut answer = completion.await.answer(&id);
+                answer.resumed = Some(false);
+                views::answer(conn, 200, answer)
             }
             None => no_such_session(conn, &id),
         },
@@ -342,15 +337,15 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
 /// hosted, `400` naming why the change was refused.
 fn supervise(conn: Conn, host: &Host, id: &str, supervisor: Option<String>) -> Conn {
     match host.set_supervisor(id, supervisor) {
-        Ok(supervisor) => conn
-            .with_status(200)
-            .with_body(
-                serde_json::json!({
-                    "id": id, "state": SessionState::Active, "supervisor": supervisor,
-                })
-                .to_string(),
-            )
-            .halt(),
+        Ok(supervisor) => views::answer(
+            conn,
+            200,
+            SessionSupervised {
+                id: id.to_string(),
+                state: SessionState::Active,
+                supervisor,
+            },
+        ),
         Err(SupervisorRefused::NotHosted(_)) => no_such_session(conn, id),
         Err(SupervisorRefused::Refused(reason)) => fail(conn, ErrorCode::BadRequest, reason),
     }
@@ -359,12 +354,13 @@ fn supervise(conn: Conn, host: &Host, id: &str, supervisor: Option<String>) -> C
 /// The `200` an `active` patch answers with, saying whether this call is what
 /// made the session live.
 fn active(conn: Conn, id: &str, resumed: bool) -> Conn {
-    conn.with_status(200)
-        .with_body(
-            serde_json::json!({
-                "id": id, "state": SessionState::Active, "resumed": resumed,
-            })
-            .to_string(),
-        )
-        .halt()
+    views::answer(
+        conn,
+        200,
+        SessionResumed {
+            id: id.to_string(),
+            state: SessionState::Active,
+            resumed,
+        },
+    )
 }

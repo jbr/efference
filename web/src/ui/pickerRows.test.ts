@@ -4,7 +4,7 @@
 // covers.
 
 import { expect, test } from "vitest";
-import type { CatalogEntry } from "../api/sessionForm.ts";
+import type { CatalogModel, ConnectionCatalog } from "../api/types.ts";
 import {
   ageFact,
   catalogNodes,
@@ -14,13 +14,22 @@ import {
   typedIdRow,
 } from "./pickerRows.ts";
 
-const entry = (over: Partial<CatalogEntry> = {}): CatalogEntry => ({
-  connection: "router",
-  provider: "openrouter",
-  status: "fresh",
-  models: [],
-  ...over,
-});
+/** A row as a test writes it: the host's `connection` is the entry's, so it is
+ * filled in rather than repeated on every row. */
+type Row = Partial<CatalogModel> & { model: string };
+
+const entry = (
+  over: Partial<Omit<ConnectionCatalog, "models">> & { models?: Row[] } = {},
+): ConnectionCatalog => {
+  const connection = over.connection ?? "router";
+  return {
+    connection,
+    provider: "openrouter",
+    status: "fresh",
+    ...over,
+    models: (over.models ?? []).map((row) => ({ connection, ...row })),
+  };
+};
 
 const router = entry({
   models: [
@@ -135,6 +144,7 @@ test("a typed id under a group chip carries the group", () => {
 
 test("model age uses whole units and omits undeclared timestamps", () => {
   const model = {
+    connection: "router",
     model: "m",
     created: 1_700_000_000,
   };
@@ -147,13 +157,14 @@ test("model age uses whole units and omits undeclared timestamps", () => {
   expect(ageFact(model, model.created + 2 * 365 * 86_400)).toBe("2y");
   expect(ageFact(model, model.created - 100)).toBe("0d");
   // Undeclared is absent, not zero.
-  expect(ageFact({ model: "m" }, now)).toBe(null);
+  expect(ageFact({ connection: "router", model: "m" }, now)).toBe(null);
 });
 
 test("placeholder creation timestamps have no displayed age", () => {
   const now = 1_790_000_000;
-  expect(ageFact({ model: "unknown", created: 0 }, now)).toBeNull();
-  expect(ageFact({ model: "unknown", created: -1 }, now)).toBeNull();
+  const unknown = { connection: "router", model: "unknown" };
+  expect(ageFact({ ...unknown, created: 0 }, now)).toBeNull();
+  expect(ageFact({ ...unknown, created: -1 }, now)).toBeNull();
 });
 
 test("typed ids and catalog rows sharing a slug have distinct render identities", () => {
@@ -169,7 +180,13 @@ test("typed ids and catalog rows sharing a slug have distinct render identities"
 
 test("connection browsing retains ungrouped models but not author descendants", () => {
   const mixed = [
-    { ...router, models: [...router.models, { model: "local-model" }] },
+    {
+      ...router,
+      models: [
+        ...router.models,
+        { connection: "router", model: "local-model" },
+      ],
+    },
   ];
   const index = catalogNodes(mixed);
   expect(slugs(rows(index, mixed, ["router"], "", "main"))).toEqual([

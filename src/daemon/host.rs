@@ -17,7 +17,8 @@ use super::runtime::SessionRuntime;
 use super::*;
 use crate::inference::SessionOptions;
 use crate::protocol::sessions::{
-    ArchivedSession, CreateSession, DormantSession, ListedSession, PatchSession, SessionState,
+    ArchiveOutcome, ArchivedSession, CreateSession, CreatedSession, DormantSession, ListedSession,
+    ListedStatus, PatchSession, SessionArchived, SessionResumed, SessionState, SessionSupervised,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

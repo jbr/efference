@@ -3,10 +3,10 @@
 
 import type { ArchivedSession } from "../api/types.ts";
 import { expect, test } from "vitest";
-import type { SessionEntry } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 import type { LogEntry, Payload } from "../api/entry.ts";
 import type { StateSnapshot } from "../api/frames.ts";
-import { samples } from "../api/samples.ts";
+import { topics } from "../api/samples/topics.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import {
   cardModel,
@@ -18,7 +18,7 @@ import {
   workspaces,
 } from "./overview.ts";
 
-const entry = (over: Partial<SessionEntry> = {}): SessionEntry => ({
+const entry = (over: Partial<ListedSession> = {}): ListedSession => ({
   id: "alpha",
   cwd: "/Users/x/p",
   status: "idle",
@@ -28,7 +28,7 @@ const entry = (over: Partial<SessionEntry> = {}): SessionEntry => ({
 
 const asked: StateSnapshot = {
   last_seq: 3,
-  usage: { ...samples.state[0].usage, last_request_at: 1000 },
+  usage: { ...topics.state[0].usage, last_request_at: 1000 },
 };
 
 test("idle is the operator's turn once a turn has run, and new before", () => {

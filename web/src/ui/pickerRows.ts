@@ -2,7 +2,7 @@
 // Browsing exposes direct children, with main-role recents allowed to lead.
 // Query ranking is matcher.ts, pinned to the terminal match fixture.
 
-import type { CatalogEntry, CatalogModel } from "../api/sessionForm.ts";
+import type { CatalogModel, ConnectionCatalog } from "../api/types.ts";
 import { type Chip, type Node, id, isInterior, rank } from "./matcher.ts";
 
 /** Which role is choosing. Only main's picks are recorded, so only main's list
@@ -15,7 +15,7 @@ const RECENTS = 5;
 /** One row of the picker: a connection or group to descend into, a model to
  * pick, or the typed-id row. */
 export type Row =
-  | { kind: "connection"; node: Node; entry: CatalogEntry }
+  | { kind: "connection"; node: Node; entry: ConnectionCatalog }
   | { kind: "group"; node: Node; count: number }
   | { kind: "model"; node: Node; model: CatalogModel; recent: boolean }
   | { kind: "typed"; connection: string; model: string };
@@ -23,13 +23,13 @@ export type Row =
 /** The catalog as the picker's flat node list: a connection per entry, a group
  * per author its models carry, and the models themselves. `recent` is the rank
  * the host already folded in, so the ranking and the rows cannot disagree. */
-export function catalogNodes(entries: CatalogEntry[]): Node[] {
+export function catalogNodes(entries: ConnectionCatalog[]): Node[] {
   const nodes: Node[] = [];
   for (const entry of entries) {
     nodes.push({ kind: "connection", connection: entry.connection });
     const groups = new Set(
       entry.models.flatMap((model) =>
-        model.group === undefined ? [] : [model.group],
+        model.group == null ? [] : [model.group],
       ),
     );
     for (const group of [...groups].sort()) {
@@ -39,10 +39,10 @@ export function catalogNodes(entries: CatalogEntry[]): Node[] {
       nodes.push({
         kind: "model",
         connection: entry.connection,
-        ...(model.group === undefined ? {} : { group: model.group }),
+        ...(model.group == null ? {} : { group: model.group }),
         model: model.model,
-        ...(model.name === undefined ? {} : { name: model.name }),
-        ...(model.recent === undefined ? {} : { recent: model.recent }),
+        ...(model.name == null ? {} : { name: model.name }),
+        ...(model.recent == null ? {} : { recent: model.recent }),
       });
     }
   }
@@ -56,7 +56,7 @@ export function catalogNodes(entries: CatalogEntry[]): Node[] {
  * once — the list is the index's, not a union. */
 export function rows(
   nodes: Node[],
-  entries: CatalogEntry[],
+  entries: ConnectionCatalog[],
   chips: Chip[],
   query: string,
   role: Role,
@@ -125,7 +125,7 @@ export function typedIdRow(chips: Chip[], query: string): Row[] {
 
 const notNull = <T>(row: T | null): row is T => row !== null;
 
-function rowFor(node: Node, entries: CatalogEntry[]): Row | null {
+function rowFor(node: Node, entries: ConnectionCatalog[]): Row | null {
   if (node.kind === "connection") {
     const entry = entries.find((one) => one.connection === node.connection);
     return entry === undefined ? null : { kind: "connection", node, entry };
@@ -146,14 +146,14 @@ function rowFor(node: Node, entries: CatalogEntry[]): Row | null {
 }
 
 const modelsIn = (
-  entries: CatalogEntry[],
+  entries: ConnectionCatalog[],
   connection: string,
   group: string | undefined,
 ): CatalogModel[] =>
   entries
     .filter((entry) => entry.connection === connection)
     .flatMap((entry) => entry.models)
-    .filter((model) => model.group === group);
+    .filter((model) => (model.group ?? undefined) === group);
 
 /** The row's id as the picker shows it. */
 export const rowSlug = (row: Row): string =>
@@ -170,7 +170,7 @@ export const descends = (row: Row): boolean =>
  * declared none. A `created` in the future reads as today rather than as a
  * negative age. */
 export function ageFact(model: CatalogModel, now: number): string | null {
-  if (model.created === undefined || model.created <= 0) return null;
+  if (model.created == null || model.created <= 0) return null;
   const days = Math.max(0, Math.floor((now - model.created) / 86_400));
   if (days < 7) return `${days}d`;
   if (days < 60) return `${Math.floor(days / 7)}w`;

@@ -5,6 +5,8 @@
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output};
 
+use crate::protocol::sessions::RetiredWorktree;
+
 /// The directory under the session base that holds every session's worktree.
 const WORKTREES: &str = "worktrees";
 
@@ -109,13 +111,18 @@ impl Retired {
 
     /// The `worktree` field of an archive response (docs/control-api.md); `None` when
     /// there was no worktree directory.
-    pub fn response(&self) -> Option<serde_json::Value> {
+    pub fn response(&self) -> Option<RetiredWorktree> {
         match self {
-            Retired::Removed { branch_deleted } => {
-                Some(serde_json::json!({ "removed": true, "branch_deleted": branch_deleted }))
-            }
-            Retired::Kept { reason } => Some(serde_json::json!({ "kept": reason })),
-            Retired::Failed(error) => Some(serde_json::json!({ "failed": error })),
+            Retired::Removed { branch_deleted } => Some(RetiredWorktree::Removed {
+                removed: true,
+                branch_deleted: *branch_deleted,
+            }),
+            Retired::Kept { reason } => Some(RetiredWorktree::Kept {
+                kept: reason.clone(),
+            }),
+            Retired::Failed(error) => Some(RetiredWorktree::Failed {
+                failed: error.clone(),
+            }),
             Retired::Absent => None,
         }
     }

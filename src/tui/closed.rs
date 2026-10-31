@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::client::{Client, SessionRead};
+use crate::protocol::sessions::ListedStatus;
 
 /// What the host said about the session whose stream ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +24,7 @@ pub(crate) enum Closure {
     /// On disk and not running, with no `Archived` entry last: the host stopped it.
     Stopped { id: String, log: PathBuf },
     /// The host still runs it, so the stream ended for another reason.
-    StillHosted { id: String, status: String },
+    StillHosted { id: String, status: ListedStatus },
     /// The host holds no such session and finds none on disk (a session that never had
     /// a turn is discarded rather than archived).
     Unknown { id: String },

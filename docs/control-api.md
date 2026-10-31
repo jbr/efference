@@ -451,6 +451,25 @@ sorts object keys at every depth, so a struct's field order never reaches the
 bytes. Each topic's bytes are pinned by `src/daemon/test/topic_bytes.rs`: a
 change to a carried type fails there first.
 
+The bodies the routes answer with are types as well, and the host builds none of
+them with `json!`: the `{status}` word and the other small answers (`answers`),
+the turn answers (`turns`), the session answers (`sessions`), the remembered
+locations (`projects`), a directory listing (`files`), and the sign-in and
+enrollment answers (`sign_in`). A shape written in another module's vocabulary
+stays there and is a schema root in place: the preview (`ResolvedOptions`), the
+model catalog (`ConnectionCatalog`, `CatalogModel`), `ProcessRecord`, `ToolEntry`,
+`ErrorBody`. A body built from values goes out through `daemon::views::answer`
+(the credential answers, through `channel_value` directly), so its keys sort; a
+body serialized straight from its type (the session listing, the preview, a
+directory listing, one catalog entry) keeps the type's field order. Each body's
+bytes are pinned beside the route that serves it (`src/daemon/test/route_bytes.rs`,
+`src/daemon/test/host/bodies.rs`, and the tests of the projects, the preview, the
+worktree answers, the directory listing and the sign-in routes). A listing's
+`status` is one of the words `ListedStatus` names; a Rust client reads any other
+word into the variant `Other`, keeping the word, so a listing from a host newer
+than the client still decodes, and the schema and the generated types leave
+`Other` out.
+
 A JSON Schema of the contract is committed at
 `web/src/api/protocol.schema.json` (draft-07, under schemars' `Serialize`
 contract) and pinned by `src/daemon/test/schema.rs`: a change to a carried type
@@ -458,12 +477,12 @@ moves the schema and fails there. Regenerate with
 `EFFERENCE_WRITE_SCHEMAS=1 cargo test schema`. `web/src/api/types.ts` is
 generated from that schema by `json-schema-to-typescript` (`pnpm run types`);
 `pnpm run check` fails on drift (`types:check`), and
-`web/src/api/samples.ts` holds pinned values the generated types must still
-accept, so a type that stops describing the wire fails `typecheck`. Beside the
-generated file are hand-written modules: `entry.ts` (the entry view's
-additions — `selection`, `artifacts`, and the image-data omission),
-`frames.ts` (the frame envelope over the generated topic types),
-`decision.ts` (the approval body, which the host reads by hand), and
+`web/src/api/samples/` holds the pinned topics, frames and route bodies as
+values the generated types must still accept, so a type that stops describing the
+wire fails `typecheck`. Beside the generated file are hand-written modules:
+`entry.ts` (the entry view's additions — `selection`, `artifacts`, and the
+image-data omission), `frames.ts` (the frame envelope over the generated topic
+types), `decision.ts` (the approval body, which the host reads by hand), and
 `source.ts`.
 
 ## Connection lifecycle (how a client catches up and stays live)

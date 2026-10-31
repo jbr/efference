@@ -3,20 +3,26 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, test, vi } from "vitest";
 import { ModelPicker, type PickerBrowseState } from "./ModelPicker.tsx";
-import { fetchConnection, type CatalogEntry } from "../api/sessionForm.ts";
+import { fetchConnection } from "../api/sessionForm.ts";
+import type { ConnectionCatalog } from "../api/types.ts";
 
 vi.hoisted(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 });
 
-const catalog: CatalogEntry[] = [
+const catalog: ConnectionCatalog[] = [
   {
     connection: "openrouter",
     provider: "openrouter",
     status: "fresh",
     models: [
-      { model: "acme/alpha-new", group: "acme", recent: 1 },
-      { model: "acme/alpha-old", group: "acme" },
+      {
+        connection: "openrouter",
+        model: "acme/alpha-new",
+        group: "acme",
+        recent: 1,
+      },
+      { connection: "openrouter", model: "acme/alpha-old", group: "acme" },
     ],
   },
 ];
@@ -429,7 +435,9 @@ test("matching names across connections have distinct root badges", async () => 
     connection: "direct",
     provider: "custom-responses",
     status: "fresh",
-    models: [{ model: "alpha", name: "Alpha New", recent: 2 }],
+    models: [
+      { connection: "direct", model: "alpha", name: "Alpha New", recent: 2 },
+    ],
   });
   try {
     await render();

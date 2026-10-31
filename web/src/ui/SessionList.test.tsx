@@ -5,11 +5,11 @@
 
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { SessionEntry } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 import { SessionList } from "./SessionList.tsx";
 import { archiveWarning } from "./sessionRow.ts";
 
-const row = (over: Partial<SessionEntry> = {}): SessionEntry => ({
+const row = (over: Partial<ListedSession> = {}): ListedSession => ({
   id: "alpha",
   title: "alpha's work",
   status: "idle",

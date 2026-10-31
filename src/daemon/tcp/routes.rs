@@ -6,7 +6,12 @@
 
 use super::gate::Surface;
 use super::*;
+use crate::daemon::views::{answer, channel_value};
 use crate::devices::DeviceId;
+use crate::protocol::answers::{StatusBody, StatusWord};
+use crate::protocol::sign_in::{
+    DeviceList, PendingSignInList, RemovedDevice, SignInClaim, SignInLink, SignInRequest,
+};
 use crate::sign_ins::{Claim, ClaimSecret, ShortCode, TTL_SECS};
 use trillium::KnownHeaderName;
 
@@ -64,11 +69,11 @@ async fn request_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
         Ok(requested) => credential_answer(
             conn,
             200,
-            &serde_json::json!({
-                "claim": requested.claim.encoded(),
-                "code": requested.code.to_string(),
-                "expires_in": TTL_SECS,
-            }),
+            SignInRequest {
+                claim: requested.claim.encoded(),
+                code: requested.code.to_string(),
+                expires_in: TTL_SECS,
+            },
         ),
         Err(e) => {
             log::error!("could not record a sign-in request: {e}");
@@ -105,18 +110,24 @@ async fn claim_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
         return fail(conn, ErrorCode::NotFound, UNKNOWN_CLAIM);
     };
     match auth.sign_ins.claim(&claim, SystemTime::now()) {
-        Ok(Claim::Waiting) => {
-            credential_answer(conn, 202, &serde_json::json!({ "status": "pending" }))
-        }
+        Ok(Claim::Waiting) => credential_answer(
+            conn,
+            202,
+            SignInClaim::Waiting(StatusBody::new(StatusWord::Pending)),
+        ),
         Ok(Claim::Approved { label, joined }) => {
             let label = match joined {
                 Joined::Link => body.label.as_deref().unwrap_or(&label),
                 Joined::Code | Joined::Add => &label,
             };
             match auth.enroll(Kind::Browser, label, joined) {
-                Ok(enrolled) => {
-                    credential_answer(conn, 200, &serde_json::json!({ "token": enrolled.token }))
-                }
+                Ok(enrolled) => credential_answer(
+                    conn,
+                    200,
+                    SignInClaim::Approved {
+                        token: enrolled.token,
+                    },
+                ),
                 // The claim is spent either way: its row went before the insert, and a
                 // claim that could enroll twice is the replay the delete exists to stop.
                 Err(e) => {
@@ -145,11 +156,11 @@ const UNKNOWN_CLAIM: &str = "no pending sign-in answers to that claim: it was cl
 /// An answer carrying a credential, which is never stored for reuse — the
 /// token-endpoint rule (RFC 6749 §5.1). `/auth` and `/pair` sit outside the `/v1`
 /// prefix that `SecurityHeaders` covers, so each such answer says so itself.
-fn credential_answer(conn: Conn, status: u16, body: &Value) -> Conn {
+fn credential_answer(conn: Conn, status: u16, body: impl Serialize) -> Conn {
     conn.with_status(status)
         .with_response_header(KnownHeaderName::ContentType, "application/json")
         .with_response_header(KnownHeaderName::CacheControl, "no-store")
-        .with_body(body.to_string())
+        .with_body(channel_value(body).to_string())
         .halt()
 }
 
@@ -174,7 +185,7 @@ pub(crate) fn enrollment_routes(auth: Option<Arc<TcpAuth>>) -> Router {
 /// a credential.
 async fn auth_link(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
     match auth.mint_link() {
-        Ok(url) => credential_answer(conn, 200, &serde_json::json!({ "url": url })),
+        Ok(url) => credential_answer(conn, 200, SignInLink { url }),
         Err(e) => fail(
             conn,
             ErrorCode::Internal,
@@ -188,10 +199,7 @@ async fn auth_link(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
 /// choosing from a list, which would let a hurried operator pick another browser's row.
 async fn list_pending(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
     match auth.sign_ins.waiting(SystemTime::now()) {
-        Ok(pending) => conn
-            .with_status(200)
-            .with_body(serde_json::json!({ "pending": pending }).to_string())
-            .halt(),
+        Ok(pending) => answer(conn, 200, PendingSignInList { pending }),
         Err(e) => fail(
             conn,
             ErrorCode::Internal,
@@ -228,10 +236,7 @@ async fn approve_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
         );
     };
     match auth.sign_ins.approve(&code, SystemTime::now()) {
-        Ok(Some(pending)) => conn
-            .with_status(200)
-            .with_body(serde_json::json!(pending).to_string())
-            .halt(),
+        Ok(Some(pending)) => answer(conn, 200, pending),
         Ok(None) => fail(
             conn,
             ErrorCode::NotFound,
@@ -251,10 +256,7 @@ async fn approve_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
 /// The enrolled devices, oldest first, as `{"devices": […]}`.
 async fn list_devices(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
     match auth.devices.list() {
-        Ok(devices) => conn
-            .with_status(200)
-            .with_body(serde_json::json!({ "devices": devices }).to_string())
-            .halt(),
+        Ok(devices) => answer(conn, 200, DeviceList { devices }),
         Err(e) => fail(
             conn,
             ErrorCode::Internal,
@@ -282,11 +284,7 @@ async fn add_device(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
         }
     };
     match auth.enroll(Kind::Script, &label, Joined::Add) {
-        Ok(enrolled) => credential_answer(
-            conn,
-            201,
-            &serde_json::to_value(enrolled).unwrap_or_default(),
-        ),
+        Ok(enrolled) => credential_answer(conn, 201, enrolled),
         Err(e) => fail(
             conn,
             ErrorCode::Internal,
@@ -306,10 +304,7 @@ async fn remove_device(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
         );
     };
     match auth.devices.remove(&id) {
-        Ok(true) => conn
-            .with_status(200)
-            .with_body(serde_json::json!({ "removed": id }).to_string())
-            .halt(),
+        Ok(true) => answer(conn, 200, RemovedDevice { removed: id }),
         Ok(false) => fail(
             conn,
             ErrorCode::NotFound,

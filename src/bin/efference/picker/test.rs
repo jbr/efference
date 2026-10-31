@@ -42,6 +42,20 @@ fn rows_are_this_directorys_sessions_and_the_rest_is_a_count() {
     assert_eq!(menu.elsewhere, 1);
 }
 
+/// A status word this build does not name, from a host newer than the picker, is shown as
+/// the host sent it.
+#[test]
+fn a_status_this_build_does_not_name_is_shown_as_it_came() {
+    let menu = menu(
+        &listings(&[
+            r#"{"id": "odd", "cwd": "/tmp/efference-picker/project", "status": "hibernating"}"#,
+        ]),
+        &here(),
+    );
+    assert_eq!(menu.rows.len(), 1);
+    assert_eq!(menu.rows[0].status, "hibernating");
+}
+
 /// A listing with no cwd cannot be placed, so it is kept rather than counted
 /// away — the same rule `hosted_here` applies.
 #[test]

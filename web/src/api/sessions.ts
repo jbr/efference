@@ -13,16 +13,17 @@
 // plain backoff rather than a resume handshake.
 
 import { readEventStream } from "./sse.ts";
-import { apiFetch, type SessionEntry } from "./http.ts";
+import { apiFetch } from "./http.ts";
 import type { Frame, StateSnapshot } from "./frames.ts";
 import type { LogEntry, Seq } from "./entry.ts";
+import type { ListedSession } from "./types.ts";
 
 export interface SessionsHandle {
   close(): void;
 }
 
 interface SessionsReader {
-  onSessions: (sessions: SessionEntry[]) => void;
+  onSessions: (sessions: ListedSession[]) => void;
   onError?: (error: unknown) => void;
 }
 
@@ -40,7 +41,7 @@ let following: (() => void) | null = null;
  * it had rather than blanking the page.
  */
 export function openSessions(
-  onSessions: (sessions: SessionEntry[]) => void,
+  onSessions: (sessions: ListedSession[]) => void,
   onError?: (error: unknown) => void,
 ): SessionsHandle {
   const reader: SessionsReader = { onSessions, onError };
@@ -62,7 +63,7 @@ function followSessions(): () => void {
   const stream = readEventStream({
     url: () => "/sessions",
     onEvent(data) {
-      const listing = JSON.parse(data) as SessionEntry[];
+      const listing = JSON.parse(data) as ListedSession[];
       for (const reader of readers) reader.onSessions(listing);
     },
     onDisconnect(error) {

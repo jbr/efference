@@ -1,6 +1,7 @@
 //! `/push`: the browser's Web Push key and subscription store (docs/web-push.md).
 
 use super::*;
+use crate::protocol::answers::{PushKey, StatusBody, StatusWord};
 
 /// What a browser needs before it can subscribe (docs/web-push.md): the
 /// machine's VAPID public key, which is `applicationServerKey` verbatim.
@@ -10,8 +11,8 @@ pub(super) async fn read_push_key(conn: Conn) -> Conn {
     let Some(root) = crate::auth::Root::installed() else {
         return fail(conn, ErrorCode::Internal, NO_ROOT);
     };
-    let body = serde_json::json!({ "key": crate::push::public_key(&root.vapid_key()) });
-    conn.with_status(200).with_body(body.to_string()).halt()
+    let key = crate::push::public_key(&root.vapid_key());
+    views::answer(conn, 200, PushKey { key })
 }
 
 /// Record a browser subscription, in the shape `PushSubscription.toJSON()`
@@ -31,10 +32,7 @@ pub(super) async fn subscribe(mut conn: Conn) -> Conn {
         }
     };
     match crate::push::Store::machine_scoped().upsert(&subscription) {
-        Ok(()) => conn
-            .with_status(201)
-            .with_body(r#"{"status":"subscribed"}"#)
-            .halt(),
+        Ok(()) => views::answer(conn, 201, StatusBody::new(StatusWord::Subscribed)),
         Err(e) => fail(
             conn,
             ErrorCode::Internal,
@@ -56,10 +54,7 @@ pub(super) async fn unsubscribe(mut conn: Conn) -> Conn {
         }
     };
     match crate::push::Store::machine_scoped().remove(&endpoint) {
-        Ok(()) => conn
-            .with_status(200)
-            .with_body(r#"{"status":"unsubscribed"}"#)
-            .halt(),
+        Ok(()) => views::answer(conn, 200, StatusBody::new(StatusWord::Unsubscribed)),
         Err(e) => fail(
             conn,
             ErrorCode::Internal,

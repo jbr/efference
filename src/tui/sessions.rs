@@ -15,7 +15,7 @@
 //! background processes is confirmed; an idle one with nothing running is not.
 
 use super::*;
-use crate::protocol::sessions::ListedSession;
+use crate::protocol::sessions::{ListedSession, ListedStatus};
 
 /// The switcher's state while it is open.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -56,14 +56,15 @@ impl SessionMenu {
 /// stall it has not been told about — or it holds background processes, which
 /// ending reaps.
 pub(crate) fn needs_confirm(row: &ListedSession) -> Option<String> {
-    let doing = match row.status.as_str() {
-        "running" => Some("is mid-turn"),
-        "gated" => Some("is holding a call at a gate"),
-        "stalled" => Some("stalled and has not been answered"),
-        "asking" => Some("is waiting on your answer to a question"),
-        "parked" => Some("is paused on an expired cache, waiting for you"),
-        "blocked" => Some("is stopped mid-turn until someone acts"),
-        _ => None,
+    let doing = match row.status {
+        ListedStatus::Running => Some("is mid-turn"),
+        ListedStatus::Gated => Some("is holding a call at a gate"),
+        ListedStatus::Stalled => Some("stalled and has not been answered"),
+        ListedStatus::Asking => Some("is waiting on your answer to a question"),
+        ListedStatus::Parked => Some("is paused on an expired cache, waiting for you"),
+        ListedStatus::Blocked => Some("is stopped mid-turn until someone acts"),
+        // A word this build does not know says nothing to confirm.
+        ListedStatus::Starting | ListedStatus::Idle | ListedStatus::Other(_) => None,
     };
     match (doing, row.processes) {
         (None, 0) => None,

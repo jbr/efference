@@ -12,7 +12,7 @@
 // this is where a read registers at all.
 
 import { useMemo, useState } from "react";
-import type { DirEntry } from "../api/files.ts";
+import type { DirEntry } from "../api/types.ts";
 import { matchPaths } from "../session/pathMatch.ts";
 import type { FileActivity } from "../session/touchedFiles.ts";
 import { useProjectPaths, type FileTree } from "../session/useFileTree.ts";

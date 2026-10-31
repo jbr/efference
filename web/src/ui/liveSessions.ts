@@ -4,14 +4,14 @@
 
 import { useEffect, useState } from "react";
 import { apiBase } from "../api/base.ts";
-import type { SessionEntry } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 import { openSessions } from "../api/sessions.ts";
 import { lastListing, rememberListing } from "../session/listing.ts";
 
 /** `null` until the first listing, and always `null` where the page has no host
  * behind it. */
-export function useLiveSessions(): SessionEntry[] | null {
-  const [sessions, setSessions] = useState<SessionEntry[] | null>(
+export function useLiveSessions(): ListedSession[] | null {
+  const [sessions, setSessions] = useState<ListedSession[] | null>(
     lastListing(),
   );
   useEffect(() => {

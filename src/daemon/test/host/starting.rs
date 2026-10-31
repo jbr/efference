@@ -20,7 +20,7 @@ fn gated_hook(gate: &Path) -> Vec<String> {
 
 /// A hook that outlasts the test, so the session stays starting until something
 /// cancels it.
-fn endless_hook() -> Vec<String> {
+pub(super) fn endless_hook() -> Vec<String> {
     vec![
         "/bin/sh".to_string(),
         "-c".to_string(),

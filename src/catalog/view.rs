@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Where a connection's listing stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "CatalogStatus"))]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
     /// A copy younger than the TTL.
@@ -26,7 +27,9 @@ pub enum Status {
 /// The role a model is being chosen for. The one place the rule for which models
 /// a role may be offered lives, so the host's `?role=` filter and the TUI's
 /// pickers cannot differ on it (docs/model-catalog.md).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
 pub enum ModelRole {
     Main,
     Triage,
@@ -74,6 +77,7 @@ impl ModelRole {
 /// One row as a client receives it: the stored row, the connection it belongs
 /// to, and the rank of the matching recent pick, folded in at read time.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CatalogModel {
     pub connection: String,
     #[serde(flatten)]
@@ -86,6 +90,7 @@ pub struct CatalogModel {
 
 /// One connection's entry in a catalog answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ConnectionCatalog {
     pub connection: String,
     pub provider: Provider,

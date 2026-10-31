@@ -272,3 +272,44 @@ fn progress_redraws_keep_their_last_state() {
     assert_eq!(without_overwrites("done.\r\n"), "done.\n");
     assert_eq!(without_overwrites("no newline"), "no newline");
 }
+
+/// What an archive answers with about the worktree, in the three shapes it takes
+/// (docs/control-api.md): the host builds each from the outcome and a client reads the
+/// key that names which it was. A git failure is not reachable from a route test, so its
+/// bytes are pinned here.
+#[test]
+fn a_retired_worktree_answers_with_the_key_that_names_it() {
+    use crate::protocol::sessions::RetiredWorktree;
+    let answer = |retired: Retired| serde_json::to_string(&retired.response()).unwrap();
+    assert_eq!(
+        answer(Retired::Removed {
+            branch_deleted: true
+        }),
+        r#"{"removed":true,"branch_deleted":true}"#
+    );
+    assert_eq!(
+        answer(Retired::Kept {
+            reason: "uncommitted changes: ?? notes.txt".into()
+        }),
+        r#"{"kept":"uncommitted changes: ?? notes.txt"}"#
+    );
+    assert_eq!(
+        answer(Retired::Failed("could not run git".into())),
+        r#"{"failed":"could not run git"}"#
+    );
+    assert_eq!(answer(Retired::Absent), "null");
+    for retired in [
+        RetiredWorktree::Removed {
+            removed: true,
+            branch_deleted: false,
+        },
+        RetiredWorktree::Kept { kept: "k".into() },
+        RetiredWorktree::Failed { failed: "f".into() },
+    ] {
+        let text = serde_json::to_string(&retired).unwrap();
+        assert_eq!(
+            serde_json::from_str::<RetiredWorktree>(&text).unwrap(),
+            retired
+        );
+    }
+}

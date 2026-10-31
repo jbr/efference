@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::log::attachment::Arrival;
+use crate::protocol::answers::StatusWord;
 
 /// Mint a submission id for a `POST /v1/turns` whose body didn't carry one, so
 /// every submitted turn is identified in the log regardless of client
@@ -35,16 +36,6 @@ pub enum Landing {
 }
 
 impl Landing {
-    /// The `delivery` a `POST /turns` answer carries (docs/control-api.md).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Answered => "answered",
-            Self::Now => "now",
-            Self::Queued => "queued",
-            Self::Held => "held",
-        }
-    }
-
     /// The landing a `delivery` string names.
     pub fn parse(delivery: &str) -> Option<Self> {
         match delivery {
@@ -71,6 +62,30 @@ pub struct QueuedTurn {
     /// reads as it always has.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<Arrival>,
+}
+
+/// The answer to `POST /turns`: the turn is enqueued, under the id it will be addressed by.
+/// The id is informational: the turn's effects can arrive on the stream before this body
+/// resolves.
+// docs/control-api.md
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TurnAccepted {
+    /// `accepted`.
+    pub status: StatusWord,
+    /// The id the client sent, or the one the host minted.
+    pub submission_id: String,
+    /// Where the turn went.
+    pub delivery: Landing,
+}
+
+/// The answer to `DELETE /turns/:submission_id`: the turns the recall popped, in the order they
+/// were submitted. Empty when the loop had already taken them.
+// docs/control-api.md
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct WithdrawnTurns {
+    pub withdrawn: Vec<QueuedTurn>,
 }
 
 #[cfg(test)]

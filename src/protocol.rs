@@ -8,13 +8,17 @@
 //! stays with that subsystem, as `impl` blocks on the types defined here.
 //!
 //! The module imports the vocabulary its shapes are written in — `log`, `policy`,
-//! `config`, `inference`, `inventory`, `api`, `process_monitor`, `project` — and nothing
-//! from a module that hosts sessions or is a client of them (docs/README.md, *Dependency
-//! direction*).
+//! `config`, `inference`, `inventory`, `api`, `process_monitor`, `project`, `catalog`,
+//! `devices`, `sign_ins` — and nothing from a module that hosts sessions or is a client of
+//! them (docs/README.md, *Dependency direction*).
 
 pub mod agents;
+pub mod answers;
 pub mod attention;
+pub mod files;
+pub mod projects;
 pub mod sessions;
+pub mod sign_in;
 pub mod state;
 pub mod status;
 pub mod stream;

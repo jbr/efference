@@ -232,6 +232,7 @@ mod push_routing;
 mod redirect;
 mod resumed_batch;
 mod review;
+mod route_bytes;
 mod schema;
 mod statics;
 mod status;

@@ -290,6 +290,7 @@ pub struct TriageIdentity {
 /// One connection a host can disclose to an inference-options client. It reports
 /// configuration status only; it never carries an endpoint or credential source.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ConnectionInventory {
     pub name: String,
     pub provider: Provider,

@@ -4,10 +4,10 @@
 //! The same collection as the live listing, filtered by the lifecycle word
 //! [`SessionState`] already names. The rows come from [`crate::inventory`]'s
 //! filesystem scan, held on the [`Host`] so an unchanged log is not read again.
-//! The row is its own type: [`ListedSession`] is also the `sessions` tool's
-//! schema, and an archived row has no status or processes to report. The
-//! single read answers a [`DormantSession`], which adds what reading the whole log
-//! and the usage record learns; the listing reads neither.
+//! The row is its own type: an archived row has no status or processes to report,
+//! which [`ListedSession`] carries. The single read answers a [`DormantSession`],
+//! which adds what reading the whole log and the usage record learns; the listing
+//! reads neither.
 
 use super::*;
 use crate::inventory::{InventoryRow, sort_rows};

@@ -6,9 +6,9 @@ import {
   createSession,
   fetchProjects,
   forgetProject,
-  type ProjectEntry,
   previewSession,
 } from "../api/sessionForm.ts";
+import type { ProjectEntry } from "../api/types.ts";
 import { sessionHref } from "../api/base.ts";
 import { navigate } from "./route.ts";
 import { launchedFrom, reopenedLaunch } from "./launchRetry.ts";

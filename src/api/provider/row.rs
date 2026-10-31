@@ -10,6 +10,7 @@ use super::*;
 
 /// USD per million tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "ModelPrice"))]
 pub struct Price {
     pub input: f64,
     pub output: f64,
@@ -41,6 +42,7 @@ impl Price {
 /// serves no turns lists only decision models, and OpenRouter declares it per
 /// entry in `architecture.output_modalities`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ModelKind {
     #[default]
@@ -57,6 +59,7 @@ impl ModelKind {
 /// One model a connection lists. `connection` is not part of the stored row: the
 /// catalog keys rows by it (`catalog.rs`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ListedModel {
     /// The provider-native id a session draft carries.
     pub model: String,

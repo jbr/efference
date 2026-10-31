@@ -5,6 +5,8 @@
 use super::*;
 
 use super::transport::{json_field, read_2xx};
+use crate::protocol::answers::{CatalogList, InventoryList};
+use crate::protocol::sign_in::{DeviceList, PendingSignInList, SignInLink};
 use trillium_client::Method;
 
 fn catalog_query(
@@ -106,12 +108,8 @@ impl Client {
         config: Option<&std::path::Path>,
         role: Option<ModelRole>,
     ) -> Result<Vec<ConnectionCatalog>> {
-        #[derive(serde::Deserialize)]
-        struct Catalog {
-            connections: Vec<ConnectionCatalog>,
-        }
         let query = catalog_query(cwd, config, None, role);
-        let catalog: Catalog = self
+        let catalog: CatalogList = self
             .get_root(&format!("/inference/catalog?{query}"))
             .await?;
         Ok(catalog.connections)
@@ -137,11 +135,7 @@ impl Client {
 
     /// The host's configured inference connections (`GET /inference`).
     pub async fn inference_inventory(&self) -> Result<Vec<ConnectionInventory>> {
-        #[derive(serde::Deserialize)]
-        struct Inventory {
-            connections: Vec<ConnectionInventory>,
-        }
-        let inventory: Inventory = self.get_root("/inference").await?;
+        let inventory: InventoryList = self.get_root("/inference").await?;
         Ok(inventory.connections)
     }
 
@@ -250,18 +244,15 @@ impl Client {
     /// the fragment. The `/auth/*` enrollment routes answer only over the Unix socket
     /// (host possession is the enrollment authority) and live beside `/v1`.
     pub async fn auth_link(&self) -> Result<String> {
-        self.auth_field("/auth/link", "url").await
+        let link: SignInLink = self.get_root("/auth/link").await?;
+        Ok(link.url)
     }
 
     /// The sign-ins waiting for approval at the TCP bind, oldest first
     /// (`GET /auth/pending`, docs/web-bind.md): what each browser calls itself and
     /// when it asked, never its code.
     pub async fn pending_sign_ins(&self) -> Result<Vec<crate::sign_ins::Pending>> {
-        #[derive(serde::Deserialize)]
-        struct Listing {
-            pending: Vec<crate::sign_ins::Pending>,
-        }
-        let listing: Listing = self.get_root("/auth/pending").await?;
+        let listing: PendingSignInList = self.get_root("/auth/pending").await?;
         Ok(listing.pending)
     }
 
@@ -296,11 +287,7 @@ impl Client {
     /// The devices enrolled at the TCP bind, oldest first (`GET /auth/devices`,
     /// docs/web-bind.md).
     pub async fn devices(&self) -> Result<Vec<crate::devices::Device>> {
-        #[derive(serde::Deserialize)]
-        struct Listing {
-            devices: Vec<crate::devices::Device>,
-        }
-        let listing: Listing = self.get_root("/auth/devices").await?;
+        let listing: DeviceList = self.get_root("/auth/devices").await?;
         Ok(listing.devices)
     }
 
@@ -325,11 +312,6 @@ impl Client {
     async fn get_root<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
         let body = self.send_at(Method::Get, path, None).await?;
         serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
-    }
-
-    /// One string field of an `/auth/*` response, each a single-field object.
-    async fn auth_field(&self, path: &str, field: &str) -> Result<String> {
-        json_field(&self.send_at(Method::Get, path, None).await?, field)
     }
 }
 

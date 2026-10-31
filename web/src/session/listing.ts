@@ -4,13 +4,13 @@
 // the new session's title known through that, until the fresh subscription's
 // first frame corrects it. A seed, not a source of truth.
 
-import type { SessionEntry } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 
-let listing: SessionEntry[] | null = null;
+let listing: ListedSession[] | null = null;
 
-export const lastListing = (): SessionEntry[] | null => listing;
+export const lastListing = (): ListedSession[] | null => listing;
 
-export function rememberListing(next: SessionEntry[]): void {
+export function rememberListing(next: ListedSession[]): void {
   listing = next;
 }
 

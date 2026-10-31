@@ -21,19 +21,20 @@ use super::super::status::SessionStatus;
 use super::*;
 
 /// The one word a row's `status` carries.
-fn status_word(status: &SessionStatus) -> &'static str {
-    match status {
-        SessionStatus::Running => "running",
-        SessionStatus::Idle => "idle",
-        SessionStatus::Gated { .. } => "gated",
-        SessionStatus::Asking { .. } => "asking",
-        SessionStatus::Stalled { .. } => "stalled",
-        SessionStatus::Parked { .. } => "parked",
-        SessionStatus::Blocked { .. } => "blocked",
-        // Neither is reachable from `Session::status`; the host reports an end
-        // by removing the row (`status.rs`).
-        SessionStatus::Ended => "ended",
-        SessionStatus::Failed { .. } => "failed",
+impl From<&SessionStatus> for ListedStatus {
+    fn from(status: &SessionStatus) -> Self {
+        match status {
+            SessionStatus::Running => Self::Running,
+            SessionStatus::Idle => Self::Idle,
+            SessionStatus::Gated { .. } => Self::Gated,
+            SessionStatus::Asking { .. } => Self::Asking,
+            SessionStatus::Stalled { .. } => Self::Stalled,
+            SessionStatus::Parked { .. } => Self::Parked,
+            SessionStatus::Blocked { .. } => Self::Blocked,
+            // Neither is reachable from `Session::status`; the host reports an end
+            // by removing the row (`status.rs`), so no word names them.
+            SessionStatus::Ended | SessionStatus::Failed { .. } => Self::Idle,
+        }
     }
 }
 
@@ -62,7 +63,7 @@ impl Host {
                     working: (starting.working() != project)
                         .then(|| starting.working().to_string_lossy().into_owned()),
                     created_by: starting.created_by().map(str::to_string),
-                    status: "starting".to_string(),
+                    status: ListedStatus::Starting,
                     processes: 0,
                 });
             }
@@ -75,7 +76,7 @@ impl Host {
             working: (directories.working() != directories.project())
                 .then(|| directories.working().to_string_lossy().into_owned()),
             created_by: self.created_by(id),
-            status: status_word(&session.status()).to_string(),
+            status: ListedStatus::from(&session.status()),
             processes: session
                 .process_states()
                 .iter()

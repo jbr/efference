@@ -1,4 +1,4 @@
-import type { ProjectEntry, SessionPreview } from "../api/sessionForm.ts";
+import type { ProjectEntry, ResolvedOptions } from "../api/types.ts";
 import type { Row } from "../ui/pickerRows.ts";
 import type { CardModel } from "../ui/overview.ts";
 
@@ -14,7 +14,7 @@ export const projects: ProjectEntry[] = [
   last_used_at: 1_760_000_000 - index * 3600,
 }));
 
-export const preview: SessionPreview = {
+export const preview: ResolvedOptions = {
   effective: {
     main: {
       value: {
@@ -49,13 +49,17 @@ export const pickerRows: Row[] = [
       name: "Claude Sonnet 5.5",
       recent: 1,
     },
-    model: { model: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" },
+    model: {
+      connection: "anthropic",
+      model: "claude-sonnet-5-5",
+      name: "Claude Sonnet 5.5",
+    },
     recent: true,
   },
   {
     kind: "model",
     node: { kind: "model", connection: "meta", model: "muse-spark-1.3" },
-    model: { model: "muse-spark-1.3" },
+    model: { connection: "meta", model: "muse-spark-1.3" },
     recent: true,
   },
   {
@@ -65,7 +69,10 @@ export const pickerRows: Row[] = [
       connection: "anthropic",
       provider: "anthropic",
       status: "fresh",
-      models: Array.from({ length: 14 }, (_, i) => ({ model: `m${i}` })),
+      models: Array.from({ length: 14 }, (_, i) => ({
+        connection: "anthropic",
+        model: `m${i}`,
+      })),
     },
   },
   {
@@ -75,7 +82,10 @@ export const pickerRows: Row[] = [
       connection: "codex",
       provider: "openai",
       status: "fresh",
-      models: Array.from({ length: 7 }, (_, i) => ({ model: `m${i}` })),
+      models: Array.from({ length: 7 }, (_, i) => ({
+        connection: "codex",
+        model: `m${i}`,
+      })),
     },
   },
 ];

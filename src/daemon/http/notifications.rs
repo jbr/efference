@@ -1,6 +1,7 @@
 //! `/notifications`: the ambient inbox's enqueue (docs/inbox.md).
 
 use super::*;
+use crate::protocol::answers::FiledNotification;
 
 /// File an ambient notification in the inbox (docs/inbox.md). 202 — it waits for the
 /// next triage; a client watches the `notifications` topic. The answer is `{"seq": N}`,
@@ -12,11 +13,8 @@ pub(super) async fn notify(mut conn: Conn) -> Conn {
     let body = conn.request_body_string().await.unwrap_or_default();
     match serde_json::from_str::<NotifyBody>(&body) {
         Ok(n) => {
-            let body = match shared.notify(n.source, n.body, n.slot) {
-                Some(seq) => format!(r#"{{"seq":{seq}}}"#),
-                None => "{}".to_string(),
-            };
-            conn.with_status(202).with_body(body).halt()
+            let seq = shared.notify(n.source, n.body, n.slot);
+            views::answer(conn, 202, FiledNotification { seq })
         }
         Err(e) => fail(
             conn,

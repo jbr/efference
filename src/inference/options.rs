@@ -53,6 +53,7 @@ pub struct SessionOptions {
 /// client renders each branch differently: an inherited value is editable in
 /// place, a requested one is the edit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionSource {
     /// The request named it.
@@ -77,7 +78,12 @@ pub enum SelectionSource {
 /// One effective field: the value that would be used, and where it came from.
 /// `source: null` marks a field whose resolution *failed* — the paired issue says
 /// why. A `value: null` with a source present is an ordinary omission.
+// The generated name of each instance joins `Effective` to its parameter with a hyphen,
+// which json-schema-to-typescript reads as a word break before a lowercase and an
+// uppercase name alike (`Effective-string`, `Effective-ModelSelection`); an underscore
+// is kept before an uppercase one.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "Effective-{T}"))]
 pub struct Effective<T> {
     pub value: Option<T>,
     pub source: Option<SelectionSource>,
@@ -115,6 +121,7 @@ impl<T> Effective<T> {
 /// The effective triage client, flattened so it reads like the other role
 /// selections rather than echoing the request's tagged spelling.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum EffectiveTriage {
     /// The triage runs on the main client.
@@ -136,6 +143,7 @@ pub enum EffectiveTriage {
 /// wire in both directions: the host builds every issue from a literal, and a
 /// control client decodes the same type back (docs/control-api.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "PreviewIssue"))]
 pub struct Issue {
     pub field: std::borrow::Cow<'static, str>,
     pub code: IssueCode,
@@ -168,6 +176,7 @@ impl Issue {
 /// The closed issue vocabulary. A client may render an unknown code by its
 /// `message` alone, but every code here is one it can special-case.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum IssueCode {
     /// The field is needed and absent.
@@ -188,12 +197,14 @@ pub enum IssueCode {
 /// serializes this; creation refuses a non-empty `issues` and then resolves
 /// credentials for the same selections.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ResolvedOptions {
     pub effective: EffectiveOptions,
     pub issues: Vec<Issue>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct EffectiveOptions {
     pub main: Effective<ModelSelection>,
     pub spotter: Effective<ModelSelection>,

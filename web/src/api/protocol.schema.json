@@ -201,6 +201,21 @@
         }
       ]
     },
+    "ArchiveOutcome": {
+      "description": "What became of a session that was archived.",
+      "oneOf": [
+        {
+          "const": "archived",
+          "description": "Stopped, with its directory and log intact: resumable.",
+          "type": "string"
+        },
+        {
+          "const": "discarded",
+          "description": "Removed, because it never had a turn (or its creation was cancelled while it\nstarted): its id is free again.",
+          "type": "string"
+        }
+      ]
+    },
     "ArchivedSession": {
       "description": "One archived session as `GET /sessions?state=archived` lists it: the\ninventory's row, with `state` saying which collection it is from.",
       "properties": {
@@ -881,6 +896,159 @@
       "description": "An Anthropic tool-use id (`toolu_…`) and its matching `tool_result` id.",
       "type": "string"
     },
+    "CatalogList": {
+      "description": "The connections of the model catalog, from `GET /inference/catalog`.",
+      "properties": {
+        "connections": {
+          "items": {
+            "$ref": "#/definitions/ConnectionCatalog"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "connections"
+      ],
+      "type": "object"
+    },
+    "CatalogModel": {
+      "description": "One row as a client receives it: the stored row, the connection it belongs\nto, and the rank of the matching recent pick, folded in at read time.",
+      "properties": {
+        "connection": {
+          "type": "string"
+        },
+        "context": {
+          "description": "Context window in tokens.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "created": {
+          "description": "Unix seconds.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Provider-supplied prose, when nonempty.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group": {
+          "description": "OpenRouter's author, alias marker removed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "images": {
+          "description": "Image input.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelKind"
+            }
+          ],
+          "description": "Absent on the wire for a text model, the common case."
+        },
+        "lifecycle": {
+          "description": "The provider's lifecycle stage (Anthropic `lifecycle`: `active`,\n`deprecated`, `retired`), verbatim.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "description": "The model line the provider files it under (Anthropic `line`: `haiku`,\n`sonnet`, …), read rather than inferred from the id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "The provider-native id a session draft carries.",
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "price": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelPrice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reasoning": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "recent": {
+          "description": "1 for the most recently and heavily picked model in the requested\nproject scope, counted across connections.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "connection",
+        "model"
+      ],
+      "type": "object"
+    },
+    "CatalogStatus": {
+      "description": "Where a connection's listing stands.",
+      "oneOf": [
+        {
+          "const": "fresh",
+          "description": "A copy younger than the TTL.",
+          "type": "string"
+        },
+        {
+          "const": "stale",
+          "description": "A copy past the TTL; a refresh is under way or pending.",
+          "type": "string"
+        },
+        {
+          "const": "missing",
+          "description": "No copy yet; a refresh is under way or pending.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "The last refresh failed and the copy is past the TTL or absent.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "The connection has no usable credential (or is disabled), so no read\nwas attempted.",
+          "type": "string"
+        }
+      ]
+    },
     "Closing": {
       "description": "A turn's closing message, cut at [`CLOSING_CAP`].",
       "properties": {
@@ -1509,6 +1677,68 @@
       ],
       "type": "object"
     },
+    "ConnectionCatalog": {
+      "description": "One connection's entry in a catalog answer.",
+      "properties": {
+        "age": {
+          "description": "Seconds since the copy was fetched.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "connection": {
+          "type": "string"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "models": {
+          "items": {
+            "$ref": "#/definitions/CatalogModel"
+          },
+          "type": "array"
+        },
+        "provider": {
+          "$ref": "#/definitions/Provider"
+        },
+        "status": {
+          "$ref": "#/definitions/CatalogStatus"
+        }
+      },
+      "required": [
+        "connection",
+        "provider",
+        "status",
+        "models"
+      ],
+      "type": "object"
+    },
+    "ConnectionInventory": {
+      "description": "One connection a host can disclose to an inference-options client. It reports\nconfiguration status only; it never carries an endpoint or credential source.",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/definitions/Provider"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "available"
+      ],
+      "type": "object"
+    },
     "ContentBlock": {
       "description": "A content block authored by the model or user. `Thinking` / `RedactedThinking`\ncarry the extended-thinking payload (docs/transport.md): `signature` is the\nopaque per-block token the API mints and requires echoed **verbatim** on replay\n(it rejects a modified block); `redacted_thinking` carries opaque `data` instead\nof text. Images are not blocks here — a tool result's images live on\n[`RawResult`], where the bytes are stored as they go on the wire.\n\n`Attachment` is a file the operator's composer attached to a `User` turn. It\nrecords the file's name, path, and triage signals, never its bytes: it\nprojects as the same notice an ambient arrival carries, and the model pulls\nthe file with `read` / `read_image` if it wants it (docs/inbox.md).",
       "oneOf": [
@@ -1912,6 +2142,18 @@
       ],
       "type": "object"
     },
+    "CreatedSession": {
+      "description": "The answer to `POST /sessions`: the id the session was reserved under. The session is\nlisted as `starting` and prepares after the answer.",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
     "CurrentOperations": {
       "description": "The `current_operations` topic: the upstream requests open now, the tool calls\nexecuting, and a compaction waiting or writing. The topic is `null` rather than empty\nwhen nothing is open; where the loop itself waits is the `loop_phase` topic.",
       "properties": {
@@ -1945,6 +2187,46 @@
         "requests",
         "tools",
         "compaction"
+      ],
+      "type": "object"
+    },
+    "Device": {
+      "description": "One row: an enrolled device, the holder of one TCP credential.",
+      "properties": {
+        "created_at": {
+          "description": "Unix seconds.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "$ref": "#/definitions/DeviceId"
+        },
+        "joined": {
+          "$ref": "#/definitions/DeviceJoined"
+        },
+        "kind": {
+          "$ref": "#/definitions/DeviceKind"
+        },
+        "label": {
+          "description": "Display text, cleaned on the way in ([`clean_label`]).",
+          "type": "string"
+        },
+        "last_seen_at": {
+          "description": "Unix seconds of the last request recorded, written at most every\n[`SEEN_INTERVAL_SECS`]; `None` before the first.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "joined",
+        "created_at",
+        "last_seen_at"
       ],
       "type": "object"
     },
@@ -2032,6 +2314,146 @@
       "required": [
         "host",
         "device"
+      ],
+      "type": "object"
+    },
+    "DeviceId": {
+      "description": "An enrolled device's id: 16 bytes from the OS random source, drawn fresh for\nevery enrollment, so a revoked id is never issued again. Public — it is the\nreadable half of a token and the table's key.",
+      "type": "string"
+    },
+    "DeviceJoined": {
+      "description": "How a device got its token.",
+      "oneOf": [
+        {
+          "const": "code",
+          "description": "A browser showed a short code, the operator approved it at the host\n(`efference devices approve`), and the browser claimed it (`crate::sign_ins`).",
+          "type": "string"
+        },
+        {
+          "const": "link",
+          "description": "A browser opened a sign-in link minted at the host — the one the host prints,\n`efference dev open`'s, an island's — and claimed it (`crate::sign_ins`).",
+          "type": "string"
+        },
+        {
+          "const": "add",
+          "description": "`efference devices add`, over the host's socket.",
+          "type": "string"
+        }
+      ]
+    },
+    "DeviceKind": {
+      "description": "What holds a device's token.",
+      "oneOf": [
+        {
+          "const": "browser",
+          "description": "A browser that signed in, keeping the token in its own storage.",
+          "type": "string"
+        },
+        {
+          "const": "script",
+          "description": "A program given a token by `efference devices add`.",
+          "type": "string"
+        }
+      ]
+    },
+    "DeviceList": {
+      "description": "The enrolled devices, oldest first, from `GET /auth/devices`. Never a token.",
+      "properties": {
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/Device"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "devices"
+      ],
+      "type": "object"
+    },
+    "DirEntry": {
+      "description": "One entry of a directory listing. `kind` follows symlinks (a link to a directory lists as\na directory) while `symlink` records that the entry itself is one, so a client can show\nthe indirection without a second request.",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/DirEntryKind"
+        },
+        "modified_at": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Absent (`null`) for a link whose target does not resolve."
+        },
+        "name": {
+          "description": "Bare in a flat listing; relative to the listed directory in a recursive one.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Bytes on disk. Reported for directories too, where it is the directory's own size and\nmeans nothing to a reader.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "symlink": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "size",
+        "modified_at",
+        "symlink"
+      ],
+      "type": "object"
+    },
+    "DirEntryKind": {
+      "description": "What a listed entry is, after following a symlink.",
+      "oneOf": [
+        {
+          "enum": [
+            "file",
+            "dir"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "A device, socket, fifo — or a symlink whose target does not resolve.",
+          "type": "string"
+        }
+      ]
+    },
+    "DirListing": {
+      "description": "A directory's listing. `path` is the directory's own path relative to the root, empty at\nthe root itself, so a client can render a breadcrumb without reconstructing it from the\nURL.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/definitions/DirEntry"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        },
+        "recursive": {
+          "description": "Whether entry names are paths (recursive) or bare names (flat).",
+          "type": "boolean"
+        },
+        "truncated": {
+          "description": "A cap was hit: the set is a prefix of what is there, not the whole of it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "recursive",
+        "truncated",
+        "entries"
       ],
       "type": "object"
     },
@@ -2191,6 +2613,221 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "Effective-EffectiveTriage": {
+      "description": "One effective field: the value that would be used, and where it came from.\n`source: null` marks a field whose resolution *failed* — the paired issue says\nwhy. A `value: null` with a source present is an ordinary omission.",
+      "properties": {
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SelectionSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/EffectiveTriage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "type": "object"
+    },
+    "Effective-ModelSelection": {
+      "description": "One effective field: the value that would be used, and where it came from.\n`source: null` marks a field whose resolution *failed* — the paired issue says\nwhy. A `value: null` with a source present is an ordinary omission.",
+      "properties": {
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SelectionSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "type": "object"
+    },
+    "Effective-string": {
+      "description": "One effective field: the value that would be used, and where it came from.\n`source: null` marks a field whose resolution *failed* — the paired issue says\nwhy. A `value: null` with a source present is an ordinary omission.",
+      "properties": {
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SelectionSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "type": "object"
+    },
+    "Effective-uint8": {
+      "description": "One effective field: the value that would be used, and where it came from.\n`source: null` marks a field whose resolution *failed* — the paired issue says\nwhy. A `value: null` with a source present is an ordinary omission.",
+      "properties": {
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SelectionSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ],
+      "type": "object"
+    },
+    "EffectiveOptions": {
+      "properties": {
+        "effort": {
+          "$ref": "#/definitions/Effective-string"
+        },
+        "main": {
+          "$ref": "#/definitions/Effective-ModelSelection"
+        },
+        "spotter": {
+          "$ref": "#/definitions/Effective-ModelSelection"
+        },
+        "temperature": {
+          "$ref": "#/definitions/Effective-uint8"
+        },
+        "triage": {
+          "$ref": "#/definitions/Effective-EffectiveTriage"
+        }
+      },
+      "required": [
+        "main",
+        "spotter",
+        "triage",
+        "effort",
+        "temperature"
+      ],
+      "type": "object"
+    },
+    "EffectiveTriage": {
+      "description": "The effective triage client, flattened so it reads like the other role\nselections rather than echoing the request's tagged spelling.",
+      "oneOf": [
+        {
+          "description": "The triage runs on the main client.",
+          "properties": {
+            "mode": {
+              "const": "shared",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A selected connection plus the provider-native model ID sent upstream.",
+          "properties": {
+            "auto_choice": {
+              "type": "boolean"
+            },
+            "connection": {
+              "type": "string"
+            },
+            "effort": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mode": {
+              "const": "separate",
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "$ref": "#/definitions/Provider"
+            },
+            "thinking": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "mode",
+            "connection",
+            "provider",
+            "model",
+            "thinking",
+            "auto_choice"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Enrolled": {
+      "description": "A device just enrolled, with its token: the one answer that carries the token.\nNo `Debug`, because the token is a credential.",
+      "properties": {
+        "device": {
+          "$ref": "#/definitions/Device"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "device",
+        "token"
+      ],
       "type": "object"
     },
     "ErrorBody": {
@@ -2409,6 +3046,21 @@
         }
       ]
     },
+    "FiledNotification": {
+      "description": "The answer to `POST /notifications`: where the notification arrived in the log.",
+      "properties": {
+        "seq": {
+          "description": "The arrival entry's seq. Absent for a notification on a slot, which has no entry\nuntil a triage shows it.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "Footer": {
       "description": "What a read of the status carries below the condition; subscription notifications\nleave it out.",
       "properties": {
@@ -2469,6 +3121,18 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "ForgottenProject": {
+      "description": "The answer to `DELETE /projects`: the identity that was forgotten.",
+      "properties": {
+        "forgotten": {
+          "$ref": "#/definitions/ProjectIdentity"
+        }
+      },
+      "required": [
+        "forgotten"
+      ],
       "type": "object"
     },
     "Gate": {
@@ -2707,6 +3371,56 @@
       },
       "type": "object"
     },
+    "InventoryList": {
+      "description": "The host's configured connections, from `GET /inference`, sorted by name. Whether each\ncan be used, and nothing that would let a client reach it: no endpoint, no credential.",
+      "properties": {
+        "connections": {
+          "items": {
+            "$ref": "#/definitions/ConnectionInventory"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "connections"
+      ],
+      "type": "object"
+    },
+    "IssueCode": {
+      "description": "The closed issue vocabulary. A client may render an unknown code by its\n`message` alone, but every code here is one it can special-case.",
+      "oneOf": [
+        {
+          "const": "required",
+          "description": "The field is needed and absent.",
+          "type": "string"
+        },
+        {
+          "const": "invalid_type",
+          "description": "The JSON value is the wrong type for the field.",
+          "type": "string"
+        },
+        {
+          "const": "out_of_range",
+          "description": "A numeric field is outside its accepted range.",
+          "type": "string"
+        },
+        {
+          "const": "invalid_selection",
+          "description": "The value is well-formed but selects nothing that exists.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable_connection",
+          "description": "The connection is configured, but its credential is disabled or did not load.",
+          "type": "string"
+        },
+        {
+          "const": "invalid_config",
+          "description": "The selected project config could not be read or parsed.",
+          "type": "string"
+        }
+      ]
+    },
     "Keep": {
       "description": "What of a tool result survives on the canonical wire (docs/triage.md).\nRanges are 1-based inclusive line spans, interpreted against the first\n`TRIAGE_LINE_CAP` lines — the set the triage showed the model.",
       "oneOf": [
@@ -2913,7 +3627,7 @@
       "type": "object"
     },
     "ListedSession": {
-      "description": "One row of `GET /sessions` (docs/control-api.md). Also the shape the\n`sessions` tool answers with, hence the schema derive (docs/tools.md).",
+      "description": "One row of `GET /sessions` (docs/control-api.md).",
       "properties": {
         "created_by": {
           "description": "The session that commissioned this one, when a session did\n(docs/tools.md). Absent for a human root.",
@@ -2940,8 +3654,12 @@
           "type": "integer"
         },
         "status": {
-          "description": "What the session is doing, as a single word: `starting` while it is\nprepared, then `running`, `idle`, `gated`, `asking`, `stalled`, `parked`, or\n`blocked`.",
-          "type": "string"
+          "allOf": [
+            {
+              "$ref": "#/definitions/ListedStatus"
+            }
+          ],
+          "description": "What the session is doing, as a single word."
         },
         "title": {
           "type": [
@@ -2961,6 +3679,69 @@
         "id",
         "status",
         "processes"
+      ],
+      "type": "object"
+    },
+    "ListedStatus": {
+      "description": "What a listed session is doing, in one word: `starting` while its environment and MCP\nservers are prepared, then the loop's phase as a list surface can show it without one\nstate read per row.",
+      "oneOf": [
+        {
+          "const": "starting",
+          "description": "Being prepared: no loop exists yet.",
+          "type": "string"
+        },
+        {
+          "const": "running",
+          "description": "A request, a batch of calls, or a timed delay.",
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "Waiting with nothing queued.",
+          "type": "string"
+        },
+        {
+          "const": "gated",
+          "description": "Holding a call for a decision.",
+          "type": "string"
+        },
+        {
+          "const": "asking",
+          "description": "Waiting on the operator's reply to a question.",
+          "type": "string"
+        },
+        {
+          "const": "stalled",
+          "description": "An idle loop whose last trajectory gave up, or a triage held without a verdict.",
+          "type": "string"
+        },
+        {
+          "const": "parked",
+          "description": "Stopped at its cold check mid-turn.",
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "description": "Stopped on a held pace or a config file to repair.",
+          "type": "string"
+        }
+      ]
+    },
+    "LocatedToolCall": {
+      "description": "A tool call and the entry that carries it, from `GET /tool_calls/:call_id`. A call is\nembedded in an `Assistant` entry rather than being one, so this is its address.",
+      "properties": {
+        "call": {
+          "$ref": "#/definitions/ToolCall"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq",
+        "call"
       ],
       "type": "object"
     },
@@ -3262,6 +4043,41 @@
           "type": "object"
         }
       ]
+    },
+    "ModelKind": {
+      "description": "What a listed model does (docs/model-catalog.md): produce a turn, or answer\ntyped questions about a state without producing one (a decision model, which\nonly the spotter can use — docs/permissions.md).\n\nA row inherits its kind from where it was listed: a connection whose provider\nserves no turns lists only decision models, and OpenRouter declares it per\nentry in `architecture.output_modalities`.",
+      "enum": [
+        "text",
+        "decisions"
+      ],
+      "type": "string"
+    },
+    "ModelPrice": {
+      "description": "USD per million tokens.",
+      "properties": {
+        "input": {
+          "format": "double",
+          "type": "number"
+        },
+        "output": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "type": "object"
+    },
+    "ModelRole": {
+      "description": "The role a model is being chosen for. The one place the rule for which models\na role may be offered lives, so the host's `?role=` filter and the TUI's\npickers cannot differ on it (docs/model-catalog.md).",
+      "enum": [
+        "main",
+        "triage",
+        "spotter"
+      ],
+      "type": "string"
     },
     "ModelSelection": {
       "description": "A selected connection plus the provider-native model ID sent upstream.",
@@ -4061,6 +4877,40 @@
       ],
       "type": "object"
     },
+    "PendingSignIn": {
+      "description": "A pending sign-in as the approving side sees it: the label the browser gave and when\nit asked. There is no code field, so no listing or approval answer can carry one —\nthe operator approves by typing what the browser displays, never by picking from a\nlist (docs/web-bind.md).",
+      "properties": {
+        "created_at": {
+          "description": "Unix seconds.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "label": {
+          "description": "Display text, cleaned on the way in ([`clean_label`]).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "PendingSignInList": {
+      "description": "The sign-ins waiting for approval, oldest first, from `GET /auth/pending`. A row has\nthe label and the time but never the code: approval is typing what the browser shows.",
+      "properties": {
+        "pending": {
+          "items": {
+            "$ref": "#/definitions/PendingSignIn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "pending"
+      ],
+      "type": "object"
+    },
     "Perms": {
       "description": "Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check\ntime (see [`crate::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.\nSerialized as the `role` topic reports a grant (docs/control-api.md).",
       "properties": {
@@ -4232,6 +5082,26 @@
       ],
       "type": "object"
     },
+    "PreviewIssue": {
+      "description": "Why a field could not be used as given. `field` names the request field, so a\nclient can attach the message to the control the operator is editing.\n\n`field` is a `Cow` rather than a `&'static str` because the type crosses the\nwire in both directions: the host builds every issue from a literal, and a\ncontrol client decodes the same type back (docs/control-api.md).",
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/IssueCode"
+        },
+        "field": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
     "ProcessEvent": {
       "description": "One lifecycle fact about one background process, addressed by the\nspawn-minted ordinal (docs/process-monitor.md).",
       "properties": {
@@ -4307,6 +5177,43 @@
         "outcome",
         "duration_ms",
         "at"
+      ],
+      "type": "object"
+    },
+    "ProcessOutputRead": {
+      "description": "One cursor read of a process's retained output, from `GET /processes/:id/output`.",
+      "properties": {
+        "cursor": {
+          "description": "Pass back as `since` to resume after what this read returned.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lost": {
+          "description": "Bytes between the caller's cursor and the earliest retained byte, dropped at the\nretention cap and reported rather than skipped.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "description": "The retained bytes from the caller's cursor to the end, lossily decoded. Empty when\nthe cursor is already at the end.",
+          "type": "string"
+        },
+        "running": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "output",
+        "cursor",
+        "lost",
+        "running"
       ],
       "type": "object"
     },
@@ -4479,6 +5386,85 @@
       ],
       "type": "object"
     },
+    "ProjectEntry": {
+      "description": "One remembered launch location. `cwd` and `config` are exactly what `POST /sessions`\ntakes back, so an entry replays a launch verbatim.",
+      "properties": {
+        "config": {
+          "description": "The configuration the launch named, as it was named. `null` asks creation to probe,\nwhich is what a launch that named none did.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "config_key": {
+          "description": "The identity the index stored the entry under, which `DELETE /projects` takes.\nReported rather than recomputed, because recomputing re-probes the filesystem.",
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "label": {
+          "description": "The directory's own name, or its full path where it has none (a filesystem root).",
+          "type": "string"
+        },
+        "last_used_at": {
+          "description": "Unix seconds.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "cwd",
+        "config",
+        "config_key",
+        "last_used_at"
+      ],
+      "type": "object"
+    },
+    "ProjectIdentity": {
+      "description": "What names one entry for `DELETE /projects`.",
+      "properties": {
+        "config_key": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cwd",
+        "config_key"
+      ],
+      "type": "object"
+    },
+    "ProjectList": {
+      "description": "The entries of `GET /projects`, most recently used first.",
+      "properties": {
+        "projects": {
+          "items": {
+            "$ref": "#/definitions/ProjectEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projects"
+      ],
+      "type": "object"
+    },
+    "ProposalResolution": {
+      "description": "The state a proposal reached, from `PATCH /proposals/:seq`: `committed` or `cancelled`.",
+      "properties": {
+        "state": {
+          "$ref": "#/definitions/EditState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
     "Provider": {
       "description": "Which API family fronts a session's endpoint, spelled as its name.",
       "enum": [
@@ -4580,6 +5566,19 @@
           "type": "object"
         }
       ]
+    },
+    "PushKey": {
+      "description": "The key a browser subscribes to push with, from `GET /push`: the machine's VAPID public\nkey, which is `applicationServerKey` verbatim.",
+      "properties": {
+        "key": {
+          "description": "Base64url of the uncompressed P-256 point.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
     },
     "PushRecord": {
       "description": "One step in a moment's push.",
@@ -4807,6 +5806,18 @@
         }
       ]
     },
+    "RemovedDevice": {
+      "description": "The answer to `DELETE /auth/devices/:id`: the device whose token is refused from now on.",
+      "properties": {
+        "removed": {
+          "$ref": "#/definitions/DeviceId"
+        }
+      },
+      "required": [
+        "removed"
+      ],
+      "type": "object"
+    },
     "RequestOrigin": {
       "description": "Which request shape spent the tokens (docs/log-and-projection.md) — the tag on each\npersisted usage line, so per-shape spend is a query over `usage.jsonl` rather than a\nreconstruction from the canonical log.",
       "oneOf": [
@@ -4980,6 +5991,25 @@
       },
       "required": [
         "sections"
+      ],
+      "type": "object"
+    },
+    "ResolvedOptions": {
+      "description": "Every effective field plus the issues that would stop creation. Preview\nserializes this; creation refuses a non-empty `issues` and then resolves\ncredentials for the same selections.",
+      "properties": {
+        "effective": {
+          "$ref": "#/definitions/EffectiveOptions"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/definitions/PreviewIssue"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "effective",
+        "issues"
       ],
       "type": "object"
     },
@@ -5365,6 +6395,51 @@
       ],
       "type": "object"
     },
+    "RetiredWorktree": {
+      "anyOf": [
+        {
+          "description": "Clean, so its directory is removed; the branch goes too when another branch\ncontains its tip.",
+          "properties": {
+            "branch_deleted": {
+              "type": "boolean"
+            },
+            "removed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "removed",
+            "branch_deleted"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Left untouched, for this reason.",
+          "properties": {
+            "kept": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kept"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Git could not remove it, for this reason.",
+          "properties": {
+            "failed": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "failed"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "What became of the git worktree a session made for itself when it was archived."
+    },
     "RetrySurface": {
       "description": "Which loop is retrying. A triage retry and a turn retry have different\nconsequences — a withheld triage asks the agent to re-run a call whose side\neffects already stand, where an exhausted turn ends the trajectory — so the\nsurface is part of the state rather than a detail folded into prose\n(docs/transport.md).",
       "enum": [
@@ -5566,6 +6641,92 @@
       ],
       "type": "object"
     },
+    "SelectionSource": {
+      "description": "The precedence branch that supplied an effective value. Closed, because a\nclient renders each branch differently: an inherited value is editable in\nplace, a requested one is the edit.",
+      "oneOf": [
+        {
+          "const": "request",
+          "description": "The request named it.",
+          "type": "string"
+        },
+        {
+          "const": "history",
+          "description": "Past explicit picks, decayed (docs/transport.md): the project mode\npast its mass threshold, else the system-wide aggregate.",
+          "type": "string"
+        },
+        {
+          "const": "user_default",
+          "description": "`[defaults]` in the user's inference config.",
+          "type": "string"
+        },
+        {
+          "const": "main_provider",
+          "description": "The main connection's provider supplied its own cheap-band spotter.",
+          "type": "string"
+        },
+        {
+          "const": "decision_connection",
+          "description": "A connection that can reach a decision model supplied jev as the spotter.",
+          "type": "string"
+        },
+        {
+          "const": "project_config",
+          "description": "The selected project config's `[transport]`.",
+          "type": "string"
+        },
+        {
+          "const": "provider_default",
+          "description": "Nothing named it, so the wire omits it and the provider decides.",
+          "type": "string"
+        },
+        {
+          "const": "shared_main",
+          "description": "Nothing named a separate triage client, so the triage shares main's.",
+          "type": "string"
+        }
+      ]
+    },
+    "SessionArchived": {
+      "description": "The answer to `DELETE /sessions/:session`, and to a `PATCH` that makes the session\n`archived`, once its teardown has run.",
+      "properties": {
+        "ended_with": {
+          "description": "The sessions that ended with it (its non-detached descendants), when there were any.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "resumed": {
+          "description": "`false` on a patch, which says it reopened nothing; absent on `DELETE`.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/definitions/ArchiveOutcome"
+        },
+        "worktree": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RetiredWorktree"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The fate of the session's own worktree; absent when it made none."
+        }
+      },
+      "required": [
+        "id",
+        "state"
+      ],
+      "type": "object"
+    },
     "SessionIdentity": {
       "description": "The `session_identity` topic: what a session is, for a client that has to name it on\nscreen — its id and title, the model it was configured with, and the directory it runs\nin (docs/control-api.md).\n\nAll but the title are fixed at boot. They are carried as a state topic rather than a\none-shot read so a client learns them from the connect snapshot along with\neverything else, and so either moving later reaches clients through the\nmechanism that already delivers whole-topic replacements.",
       "properties": {
@@ -5682,6 +6843,32 @@
       ],
       "type": "object"
     },
+    "SessionResumed": {
+      "description": "The answer to a `PATCH /sessions/:session` that makes the session `active`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "resumed": {
+          "description": "Whether this call is what made the session live: `false` for a repeat of a patch\nthe host had already taken, so a retry reads the same answer either way.",
+          "type": "boolean"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SessionState"
+            }
+          ],
+          "description": "`active`."
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "resumed"
+      ],
+      "type": "object"
+    },
     "SessionState": {
       "description": "Whether a session is running on this host.\n\nDeliberately two states. A deliberate archive and a host that went away are\ndifferent histories, and the inventory asks to keep them apart; they are the\nsame thing to act on, and an operator resuming a session does not care which\nit was.",
       "oneOf": [
@@ -5696,6 +6883,93 @@
           "type": "string"
         }
       ]
+    },
+    "SessionSupervised": {
+      "description": "The answer to a `PATCH /sessions/:session` that sets or clears a supervisor.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SessionState"
+            }
+          ],
+          "description": "`active`."
+        },
+        "supervisor": {
+          "description": "The pointer as it now reads: `null` once cleared.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "supervisor"
+      ],
+      "type": "object"
+    },
+    "SignInClaim": {
+      "anyOf": [
+        {
+          "description": "Approved, and this was the claim's first: the token the page keeps.",
+          "properties": {
+            "token": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "token"
+          ],
+          "type": "object"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/StatusBody"
+            }
+          ],
+          "description": "Live and not yet approved: the page asks again."
+        }
+      ],
+      "description": "A claim's answer from `POST /pair/claim`: the device token once the host approved, or\nword that it has not yet. A claim that names nothing (used, expired, displaced) is a\n`404` instead."
+    },
+    "SignInLink": {
+      "description": "The sign-in link from `GET /auth/link`: a sign-in approved before it was asked for, its\nclaim secret in the fragment.",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "SignInRequest": {
+      "description": "What `POST /pair` answers the page that asked: the claim secret this page alone polls\nwith, the short code it shows for the operator to approve at the host, and the seconds\nboth live.",
+      "properties": {
+        "claim": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "expires_in": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "claim",
+        "code",
+        "expires_in"
+      ],
+      "type": "object"
     },
     "Spot": {
       "description": "The spotter's verdict on one gated tool call (docs/permissions.md), logged as a\n[`Payload::Spot`] audit entry. The `stance` is the graded disposition the\nindependent rung returned; the `reason` is its one-line rationale, addressed to\nthe acting session (what it reads to self-correct or petition). `origin` records\nwhether the verdict was the spotter model's or the fail-closed fallback (the one\nsignal the stance alone erases — a deliberate `gate` and a failed spotter call\nboth surface as `Gate`).",
@@ -6226,6 +7500,18 @@
       ],
       "type": "object"
     },
+    "StatusBody": {
+      "description": "An answer whose word is all it has to say: `{\"status\": <word>}`.",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/StatusWord"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
     "StatusView": {
       "description": "One session's status, as every surface renders it.",
       "properties": {
@@ -6245,6 +7531,61 @@
         "footer"
       ],
       "type": "object"
+    },
+    "StatusWord": {
+      "description": "The word a route answers `status` with when it has acted on a request.",
+      "oneOf": [
+        {
+          "const": "accepted",
+          "description": "`POST /turns`: the turn is queued or delivered (`TurnAccepted`).",
+          "type": "string"
+        },
+        {
+          "const": "resolved",
+          "description": "`PUT /approvals/:call_id`: the decision reached the held call.",
+          "type": "string"
+        },
+        {
+          "const": "escalated",
+          "description": "`POST /approvals/:call_id/escalate`: the call stays held, and the operator is asked.",
+          "type": "string"
+        },
+        {
+          "const": "interrupted",
+          "description": "`POST /loop/interrupt`: the running tool was signalled.",
+          "type": "string"
+        },
+        {
+          "const": "continuing",
+          "description": "`POST /loop/continue`: the loop will take another turn on the wire it has.",
+          "type": "string"
+        },
+        {
+          "const": "compacting",
+          "description": "`POST /loop/compact`: the session's model is writing the summary.",
+          "type": "string"
+        },
+        {
+          "const": "killed",
+          "description": "`DELETE /processes/:id`: the process's group was signalled.",
+          "type": "string"
+        },
+        {
+          "const": "subscribed",
+          "description": "`POST /push/subscriptions`: the subscription is recorded.",
+          "type": "string"
+        },
+        {
+          "const": "unsubscribed",
+          "description": "`DELETE /push/subscriptions`: the subscription is not held.",
+          "type": "string"
+        },
+        {
+          "const": "pending",
+          "description": "`POST /pair/claim`: the sign-in waits for the operator's approval.",
+          "type": "string"
+        }
+      ]
     },
     "StreamDelta": {
       "description": "A live, pre-commit output fragment streamed to clients as the control stream's\n`output` class (docs/control-api.md). **Ephemeral and transport-only**:\nnever appended to the log, never projected, and droppable for a slow consumer.\nThe authoritative text always lands as a committed\n[`LogEntry`](crate::log::LogEntry) on `/events`, so the stream is a live convenience\nwith the durable log as its backstop — which is exactly why it can ride a lossy\n`broadcast` where `/events` must tail the log.\nEvery model-stream variant carries the content-block `index` it belongs to, and\n`ToolCallStart` additionally the `tool_use` id: a fragment is partial delivery *of a\nspecific item*, and a client that cannot tell which holds one slot per kind and loses the\nfirst tool call's arriving input the moment a second opens. [`ToolOutput`](Self::ToolOutput)\nand [`ProcessOutput`](Self::ProcessOutput) key on their own ids for the same reason\n(docs/control-api.md).",
@@ -7468,6 +8809,37 @@
       ],
       "type": "object"
     },
+    "TurnAccepted": {
+      "description": "The answer to `POST /turns`: the turn is enqueued, under the id it will be addressed by.\nThe id is informational: the turn's effects can arrive on the stream before this body\nresolves.",
+      "properties": {
+        "delivery": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Landing"
+            }
+          ],
+          "description": "Where the turn went."
+        },
+        "status": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/StatusWord"
+            }
+          ],
+          "description": "`accepted`."
+        },
+        "submission_id": {
+          "description": "The id the client sent, or the one the host minted.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "submission_id",
+        "delivery"
+      ],
+      "type": "object"
+    },
     "UnparkCause": {
       "description": "Why a park ended.",
       "oneOf": [
@@ -7904,6 +9276,21 @@
           "type": "object"
         }
       ]
+    },
+    "WithdrawnTurns": {
+      "description": "The answer to `DELETE /turns/:submission_id`: the turns the recall popped, in the order they\nwere submitted. Empty when the loop had already taken them.",
+      "properties": {
+        "withdrawn": {
+          "items": {
+            "$ref": "#/definitions/QueuedTurn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "withdrawn"
+      ],
+      "type": "object"
     },
     "WorktreeCheckout": {
       "description": "What `git worktree add` produced.",

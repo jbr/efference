@@ -19,14 +19,15 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { apiBase } from "../api/base.ts";
 import { bearer } from "../api/bearer.ts";
 import { lastListing } from "./listing.ts";
-import { ApiError, fetchSessions, type SessionEntry } from "../api/http.ts";
+import { ApiError, fetchSessions } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 
 export type Entry =
   /** One session's view: the page is under a session prefix, or the root is a
    * session daemon's. */
   | { kind: "session" }
   /** The host's root: the live sessions, each a link into its own view. */
-  | { kind: "list"; sessions: SessionEntry[] }
+  | { kind: "list"; sessions: ListedSession[] }
   /** No credential: the host's root answered the guarded listing with a `401`,
    * or the page holds no bearer. */
   | { kind: "unauthenticated" };

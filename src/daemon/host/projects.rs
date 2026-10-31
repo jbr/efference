@@ -2,6 +2,8 @@
 //! offers as quick-start locations, and the route that forgets one.
 
 use super::{ErrorCode, fail, host_of, missing_host};
+use crate::daemon::views;
+use crate::protocol::projects::{ForgottenProject, ProjectEntry, ProjectIdentity, ProjectList};
 use crate::remembered::Project;
 use std::path::PathBuf;
 use trillium::Conn;
@@ -38,29 +40,31 @@ pub(super) async fn list_projects(conn: Conn) -> Conn {
         // takes it up.
         Err(_) => host.remembered.recent(),
     };
-    let projects: Vec<serde_json::Value> = available
-        .iter()
-        .map(|project| {
-            serde_json::json!({
-                // What a picker shows without being given a name; there is no
-                // route to set one.
-                "label": project.label(),
-                // The creation request this entry stands for, spelled as
-                // `POST /sessions` spells it: `config` absent asks creation to
-                // probe, which is what a launch without a named configuration did.
-                "cwd": project.cwd.to_string_lossy(),
-                "config": project.config.as_ref().map(|c| c.to_string_lossy().into_owned()),
-                // The identity the entry is stored under, and what
-                // `DELETE /projects` takes. Reported rather than recomputed
-                // because recomputing re-probes the filesystem.
-                "config_key": project.config_key,
-                "last_used_at": project.last_used_at,
-            })
-        })
-        .collect();
-    conn.with_status(200)
-        .with_body(serde_json::json!({ "projects": projects }).to_string())
-        .halt()
+    let projects = available.iter().map(ProjectEntry::from).collect();
+    views::answer(conn, 200, ProjectList { projects })
+}
+
+impl From<&Project> for ProjectEntry {
+    fn from(project: &Project) -> Self {
+        Self {
+            // What a picker shows without being given a name; there is no route to set
+            // one.
+            label: project.label(),
+            // The creation request this entry stands for, spelled as `POST /sessions`
+            // spells it: `config` absent asks creation to probe, which is what a launch
+            // without a named configuration did.
+            cwd: project.cwd.to_string_lossy().into_owned(),
+            config: project
+                .config
+                .as_ref()
+                .map(|config| config.to_string_lossy().into_owned()),
+            // The identity the entry is stored under, and what `DELETE /projects` takes.
+            // Reported rather than recomputed because recomputing re-probes the
+            // filesystem.
+            config_key: project.config_key.clone(),
+            last_used_at: project.last_used_at,
+        }
+    }
 }
 
 /// `DELETE /projects?cwd=<root>&config_key=<key>`: forget one entry, by the
@@ -98,10 +102,9 @@ pub(super) async fn forget_project(conn: Conn) -> Conn {
             ),
         );
     }
-    conn.with_status(200)
-        .with_body(
-            serde_json::json!({ "forgotten": { "cwd": cwd.to_string_lossy(), "config_key": config_key } })
-                .to_string(),
-        )
-        .halt()
+    let forgotten = ProjectIdentity {
+        cwd: cwd.to_string_lossy().into_owned(),
+        config_key,
+    };
+    views::answer(conn, 200, ForgottenProject { forgotten })
 }

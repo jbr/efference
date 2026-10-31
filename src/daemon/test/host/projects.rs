@@ -108,6 +108,46 @@ async fn the_index_reports_launches_newest_first_with_a_derived_label() {
     host.swansong().shut_down().await;
 }
 
+/// The index and the forget answer keep their bytes: each entry's keys sorted, `config`
+/// `null` for a launch that named none, and the forgotten identity echoed back.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_index_and_the_forget_answer_keep_their_bytes() {
+    let roots = Roots::new();
+    let host = host_with_store(&roots);
+    let server = host_server(&host).await;
+    let store = store(&roots);
+    let one = roots.0.join("one");
+    let two = roots.0.join("two");
+    store.record(&launch(&two, None, 300));
+    store.record(&launch(&one, Some("eff.toml"), 100));
+    std::fs::write(one.join("eff.toml"), "").unwrap();
+    let quoted = |text: &str| serde_json::to_string(text).unwrap();
+    let (one_text, two_text) = (one.to_string_lossy(), two.to_string_lossy());
+    let named_key = one.join("eff.toml").to_string_lossy().into_owned();
+
+    assert_eq!(
+        server.get("/projects").await.body(),
+        format!(
+            r#"{{"projects":[{{"config":null,"config_key":"builtin-default","cwd":{},"label":"two","last_used_at":300}},{{"config":"eff.toml","config_key":{},"cwd":{},"label":"one","last_used_at":100}}]}}"#,
+            quoted(&two_text),
+            quoted(&named_key),
+            quoted(&one_text),
+        )
+    );
+    let forgotten = server.delete(&forget_url(&one, &named_key)).await;
+    forgotten.assert_status(200);
+    assert_eq!(
+        forgotten.body(),
+        format!(
+            r#"{{"forgotten":{{"config_key":{},"cwd":{}}}}}"#,
+            quoted(&named_key),
+            quoted(&one_text),
+        )
+    );
+
+    host.swansong().shut_down().await;
+}
+
 /// The index filters against the filesystem and writes nothing: an entry whose
 /// working root is gone is omitted, and it is on the next answer once the volume
 /// is back.

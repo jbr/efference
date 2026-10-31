@@ -120,6 +120,105 @@ async fn a_browser_signs_in_by_approval_at_the_host() {
     assert_eq!(auth.devices.list().unwrap().len(), 1);
 }
 
+/// What the page is answered, byte for byte: the claim, the code and the seconds both
+/// live while it asks, `pending` while the claim waits, and the token alone once it is
+/// approved.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_sign_in_answers_keep_their_bytes() {
+    let (auth, _state) = armed("sign-in-bytes");
+    let (server, _guard) = tcp_server(&auth).await;
+    let socket = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
+
+    let asked = server
+        .post("/pair")
+        .with_json_body(&serde_json::json!({ "label": "Firefox" }))
+        .await;
+    asked.assert_status(200);
+    let fields = json(asked.body());
+    let claim = fields["claim"].as_str().expect("a claim").to_string();
+    let code = fields["code"].as_str().expect("a code").to_string();
+    assert_eq!(
+        asked.body(),
+        format!(r#"{{"claim":"{claim}","code":"{code}","expires_in":{TTL_SECS}}}"#)
+    );
+
+    let body = serde_json::json!({ "claim": claim });
+    server
+        .post("/pair/claim")
+        .with_json_body(&body)
+        .await
+        .assert_status(202)
+        .assert_body(r#"{"status":"pending"}"#);
+    socket
+        .post("/auth/approve")
+        .with_json_body(&serde_json::json!({ "code": code }))
+        .await
+        .assert_status(200);
+    let collected = server.post("/pair/claim").with_json_body(&body).await;
+    collected.assert_status(200);
+    let token = json(collected.body())["token"]
+        .as_str()
+        .expect("a token")
+        .to_string();
+    assert_eq!(collected.body(), format!(r#"{{"token":"{token}"}}"#));
+}
+
+/// What the enrollment routes answer the socket, byte for byte: the link, the sign-ins
+/// waiting and the one approved, the devices with their keys sorted, the one answer that
+/// carries a token, and the id a revocation names.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_enrollment_answers_keep_their_bytes() {
+    let (auth, _state) = armed("enrollment-bytes");
+    let (server, _guard) = tcp_server(&auth).await;
+    let socket = TestServer::new(enrollment_routes(Some(Arc::clone(&auth)))).await;
+
+    let minted = socket.get("/auth/link").await;
+    let url = json(minted.body())["url"].as_str().unwrap().to_string();
+    assert_eq!(minted.body(), format!(r#"{{"url":"{url}"}}"#));
+
+    let asked = server
+        .post("/pair")
+        .with_json_body(&serde_json::json!({ "label": "Firefox" }))
+        .await;
+    let code = json(asked.body())["code"].as_str().unwrap().to_string();
+    let waiting = socket.get("/auth/pending").await;
+    let created = json(waiting.body())["pending"][0]["created_at"]
+        .as_i64()
+        .expect("a time");
+    let pending = format!(r#"{{"created_at":{created},"label":"Firefox"}}"#);
+    assert_eq!(waiting.body(), format!(r#"{{"pending":[{pending}]}}"#));
+    let approved = socket
+        .post("/auth/approve")
+        .with_json_body(&serde_json::json!({ "code": code }))
+        .await;
+    approved.assert_status(200);
+    assert_eq!(approved.body(), pending);
+
+    let added = socket
+        .post("/auth/devices")
+        .with_json_body(&serde_json::json!({ "label": "deploy" }))
+        .await;
+    added.assert_status(201);
+    let answer = json(added.body());
+    let (id, token) = (
+        answer["device"]["id"].as_str().unwrap().to_string(),
+        answer["token"].as_str().unwrap().to_string(),
+    );
+    let created = answer["device"]["created_at"].as_i64().unwrap();
+    let device = format!(
+        r#"{{"created_at":{created},"id":"{id}","joined":"add","kind":"script","label":"deploy","last_seen_at":null}}"#
+    );
+    assert_eq!(
+        added.body(),
+        format!(r#"{{"device":{device},"token":"{token}"}}"#)
+    );
+    let listing = socket.get("/auth/devices").await;
+    assert_eq!(listing.body(), format!(r#"{{"devices":[{device}]}}"#));
+    let removed = socket.delete(&format!("/auth/devices/{id}")).await;
+    removed.assert_status(200);
+    assert_eq!(removed.body(), format!(r#"{{"removed":"{id}"}}"#));
+}
+
 /// The link is a sign-in approved before it was asked for: the page claims it at once,
 /// enrolling a device that joined by `link` under the label the page sends, and the
 /// link's claim collects nothing after.

@@ -38,6 +38,7 @@ pub const LABEL_MAX_CHARS: usize = 64;
 /// every enrollment, so a revoked id is never issued again. Public — it is the
 /// readable half of a token and the table's key.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(with = "String"))]
 pub struct DeviceId([u8; DeviceId::LEN]);
 
 impl DeviceId {
@@ -117,6 +118,7 @@ impl FromSql for DeviceId {
 
 /// What holds a device's token.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "DeviceKind"))]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     /// A browser that signed in, keeping the token in its own storage.
@@ -138,6 +140,7 @@ impl Kind {
 
 /// How a device got its token.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "DeviceJoined"))]
 #[serde(rename_all = "lowercase")]
 pub enum Joined {
     /// A browser showed a short code, the operator approved it at the host
@@ -213,6 +216,7 @@ fn unrecognized(column: &'static str, value: &str) -> FromSqlError {
 
 /// One row: an enrolled device, the holder of one TCP credential.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Device {
     pub id: DeviceId,
     pub kind: Kind,
@@ -229,6 +233,7 @@ pub struct Device {
 /// A device just enrolled, with its token: the one answer that carries the token.
 /// No `Debug`, because the token is a credential.
 #[derive(Serialize, Deserialize, Clone)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Enrolled {
     pub device: Device,
     pub token: String,

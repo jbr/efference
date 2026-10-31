@@ -2,7 +2,7 @@
 // page; effort and temperature commit overrides in place. Preview values never
 // become overrides, and field errors stay beside the controls that fix them.
 import type { ReactNode } from "react";
-import type { SessionPreview } from "../api/sessionForm.ts";
+import type { ResolvedOptions } from "../api/types.ts";
 import {
   EFFORTS,
   type Draft,
@@ -21,7 +21,7 @@ export function Settings({
   onPick,
 }: {
   draft: Draft;
-  preview: SessionPreview | null;
+  preview: ResolvedOptions | null;
   onDraft: (draft: Draft) => void;
   onPick: (role: Role) => void;
 }) {

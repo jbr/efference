@@ -89,7 +89,11 @@ beforeEach(() => {
     state: "archived",
   });
   vi.mocked(fetchDormantSession).mockResolvedValue(dormant);
-  vi.mocked(resumeSession).mockResolvedValue({ state: "active" });
+  vi.mocked(resumeSession).mockResolvedValue({
+    id: identity.id,
+    state: "active",
+    resumed: true,
+  });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);

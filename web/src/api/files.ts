@@ -15,7 +15,7 @@
 import { join as joinBase } from "./base.ts";
 import { apiFetch } from "./http.ts";
 import { readEventStream } from "./sse.ts";
-import type { ErrorBody } from "./types.ts";
+import type { DirListing, ErrorBody } from "./types.ts";
 
 // Joined onto the client's base like every other control path (api/base.ts).
 // `/files` is mounted on a web listener only (docs/web-bind.md); a listener
@@ -78,27 +78,8 @@ export const dirStream = (
   callbacks: ChangeStreamCallbacks,
 ): ChangeStream => changeStream(fileUrl(path), callbacks);
 
-/** One entry of a listing. In a recursive listing `name` is the path relative
- * to the directory listed; in a flat one it is a bare name. */
-export interface DirEntry {
-  name: string;
-  kind: "file" | "dir" | "other";
-  size: number;
-  modified_at: number | null;
-  symlink: boolean;
-}
-
-export interface Listing {
-  /** The listed directory, relative to the root; `""` at the root. */
-  path: string;
-  recursive: boolean;
-  /** A server cap was hit: this is a prefix of the tree, not the whole of it. */
-  truncated: boolean;
-  entries: DirEntry[];
-}
-
 export type ListFetch =
-  | { kind: "ok"; listing: Listing }
+  | { kind: "ok"; listing: DirListing }
   | { kind: "refused"; code: ErrorBody["code"]; message: string };
 
 /** List a directory. `depth` above 1 walks below it — the recursive listing
@@ -110,7 +91,7 @@ export async function listDir(path: string, depth = 1): Promise<ListFetch> {
     headers: { accept: "application/json" },
   });
   if (response.ok) {
-    return { kind: "ok", listing: (await response.json()) as Listing };
+    return { kind: "ok", listing: (await response.json()) as DirListing };
   }
   try {
     const envelope = (await response.json()) as ErrorBody;

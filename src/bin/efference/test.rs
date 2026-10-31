@@ -116,18 +116,13 @@ fn bare_efference_is_the_tui_and_host_is_a_flag() {
 /// not candidates, and a listing with no cwd (an older host) is kept.
 #[test]
 fn a_hosts_listing_is_scoped_to_this_directory() {
-    use efference::protocol::sessions::ListedSession;
+    use efference::protocol::sessions::{ListedSession, ListedStatus};
     let scratch = tempfile::TempDir::with_prefix("efference-hosted-here-").unwrap();
     let dir = scratch.path();
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     let listing = |id: &str, cwd: Option<&str>| ListedSession {
-        id: id.into(),
-        title: None,
         cwd: cwd.map(str::to_string),
-        working: None,
-        created_by: None,
-        status: "idle".into(),
-        processes: 0,
+        ..ListedSession::new(id, ListedStatus::Idle)
     };
     let listings = [
         listing("here", Some(dir.to_str().unwrap())),

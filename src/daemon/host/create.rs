@@ -304,10 +304,13 @@ pub(super) async fn create_session(mut conn: Conn) -> Conn {
     // A human root: no session commissioned it, so it has no `created_by`
     // (docs/tools.md).
     match host.create(body, crate::env::Lineage::default()) {
-        Ok(starting) => conn
-            .with_status(201)
-            .with_body(serde_json::json!({ "id": starting.id() }).to_string())
-            .halt(),
+        Ok(starting) => views::answer(
+            conn,
+            201,
+            CreatedSession {
+                id: starting.id().to_string(),
+            },
+        ),
         Err(reason) => fail(conn, ErrorCode::BadRequest, reason),
     }
 }

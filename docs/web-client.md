@@ -64,7 +64,7 @@ the wire:
 
 | layer | job | React? |
 | --- | --- | --- |
-| `web/src/api/` | the `/v1` contract in TypeScript — `types.ts` generated from `protocol.schema.json`, with hand-written `entry.ts`, `frames.ts`, `decision.ts`, `source.ts`, and `samples.ts` beside it (below) — the control base (`base.ts`), the page's bearer (`bearer.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE parser and the one reconnecting reader every stream shares (`sse.ts`), the control stream over it (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
+| `web/src/api/` | the `/v1` contract in TypeScript — `types.ts` generated from `protocol.schema.json`, with hand-written `entry.ts`, `frames.ts`, `decision.ts`, `source.ts`, and `samples/` beside it (below) — the control base (`base.ts`), the page's bearer (`bearer.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE parser and the one reconnecting reader every stream shares (`sse.ts`), the control stream over it (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
 | `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), session verbs whose error recovery folds into the store (`actions.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
 | `web/src/ui/` | display — transcript, login, composer; the churn zone | yes |
 
@@ -78,9 +78,10 @@ entry (`selection`, `artifacts`, and the image-data omission the view derives on
 every read); `frames.ts` holds the frame envelope (`TopicName`,
 `TopicValues`, `StateSnapshot`, `StateFrame`) over the generated topic types;
 `decision.ts` holds the approval body, which the host reads by hand;
-`source.ts` reads the turn-source labels the host writes. `samples.ts` holds
-pinned values the generated types must still accept, so a type that stops
-describing the wire fails `typecheck`. The fold in `store.ts` is pure functions
+`source.ts` reads the turn-source labels the host writes. `samples/` holds, by
+area (topics, readouts, frames, entries, session routes, the host's session and
+inference routes, files, sign-in), pinned values the generated types must still
+accept, so a type that stops describing the wire fails `typecheck`. The fold in `store.ts` is pure functions
 over plain data — `applyFrame(session, frame)` — with vitest coverage of the
 properties the API doc promises (idempotent log replay, whole-topic state
 replacement, buffer settlement when an entry commits). When the control API

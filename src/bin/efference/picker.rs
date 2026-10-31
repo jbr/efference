@@ -75,7 +75,7 @@ pub(crate) fn menu(listings: &[(PathBuf, Vec<ListedSession>)], here: &Path) -> M
                     host: host.clone(),
                     id: session.id.clone(),
                     title: session.title.clone(),
-                    status: session.status.clone(),
+                    status: session.status.to_string(),
                 });
             } else {
                 menu.elsewhere += 1;

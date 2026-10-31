@@ -54,7 +54,7 @@ fn arrival() -> Arrival {
 }
 
 /// Two queued turns: the operator's text, and an agent's turn carrying an attachment.
-fn queue_two(shared: &Session) {
+pub(super) fn queue_two(shared: &Session) {
     shared.submit_turn(SubmittedTurn::new("first", "sub-1"));
     shared.submit_turn(
         SubmittedTurn::new("second", "sub-2")

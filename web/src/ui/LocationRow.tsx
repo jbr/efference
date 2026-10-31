@@ -1,5 +1,5 @@
 // Location choice and optional recent-entry removal (docs/web-session-creation.md).
-import type { ProjectEntry } from "../api/sessionForm.ts";
+import type { ProjectEntry } from "../api/types.ts";
 import { homeRelative } from "./identity.ts";
 import { splitPath } from "./overview.ts";
 import { showsConfig } from "./sessionForm.ts";

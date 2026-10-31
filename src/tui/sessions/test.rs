@@ -5,14 +5,13 @@ use crate::tui::topics::TopicUpdate;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 fn row(id: &str, status: &str, processes: usize) -> ListedSession {
+    // The word is read as a client reads it off the wire.
+    let status = serde_json::from_value(status.into()).expect("a listing status word");
     ListedSession {
-        id: id.into(),
         title: Some(format!("{id}'s work")),
         cwd: Some("/work".into()),
-        working: None,
-        created_by: None,
-        status: status.into(),
         processes,
+        ..ListedSession::new(id, status)
     }
 }
 
@@ -57,6 +56,30 @@ fn opening_the_switcher_asks_for_the_listing() {
     assert!(screen.contains("alpha"), "{screen}");
     assert!(screen.contains("beta"), "{screen}");
     assert!(screen.contains("running"), "{screen}");
+}
+
+/// A status word this build does not name, from a host newer than the client, is listed as
+/// the word it came as and gives no reason to confirm an archive by itself; the processes
+/// the session holds still do.
+#[test]
+fn a_status_this_build_does_not_name_is_listed_and_asks_nothing() {
+    assert_eq!(needs_confirm(&row("odd", "hibernating", 0)), None);
+    assert_eq!(
+        needs_confirm(&row("odd", "hibernating", 2)).as_deref(),
+        Some("odd holds 2 background processes")
+    );
+
+    let mut play = Screenplay::new(90, 24);
+    play.state.open_sessions();
+    let _ = play.took_host_cmd();
+    play.event(TuiEvent::Sessions(Ok(vec![row("odd", "hibernating", 0)])));
+    let screen = play.render();
+    assert!(screen.contains("hibernating"), "{screen}");
+    play.route_key(KeyCode::Char('a'), KeyModifiers::NONE);
+    assert!(
+        matches!(play.took_host_cmd(), Some(HostCmd::Archive(id)) if id == "odd"),
+        "nothing holds the archive at a confirm"
+    );
 }
 
 /// `a` on an idle row archives it with no ceremony; `a` on a busy one asks first,

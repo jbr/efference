@@ -1,7 +1,7 @@
 // What a session-list row says about itself (docs/web-client.md), off the
 // listing alone.
 
-import type { SessionEntry } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 
 /**
  * Why archiving this session should be confirmed, or `null` when there is nothing
@@ -9,7 +9,7 @@ import type { SessionEntry } from "../api/http.ts";
  * (docs/tui.md): a session that is doing something, or that holds background
  * processes archiving would reap.
  */
-export function archiveWarning(session: SessionEntry): string | null {
+export function archiveWarning(session: ListedSession): string | null {
   const doing =
     session.status === "running"
       ? "is mid-turn"

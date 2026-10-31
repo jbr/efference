@@ -160,6 +160,7 @@ pub struct Requested {
 /// the operator approves by typing what the browser displays, never by picking from a
 /// list (docs/web-bind.md).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "PendingSignIn"))]
 pub struct Pending {
     /// Display text, cleaned on the way in ([`clean_label`]).
     pub label: String,

@@ -2,7 +2,8 @@
 //! approval gate (docs/control-api.md, docs/permissions.md).
 
 use super::*;
-use crate::protocol::turns::{Landing, QueuedTurn};
+use crate::protocol::answers::{StatusBody, StatusWord};
+use crate::protocol::turns::{Landing, QueuedTurn, TurnAccepted, WithdrawnTurns};
 
 /// Enqueue a user turn (also seeds turn 1). 202 — watch the stream for the
 /// response; submission is decoupled from inference. A session still starting queues
@@ -92,12 +93,15 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
     // The id is informational here: the turn's effects — including the `User` entry
     // carrying this id — can arrive on the stream before this body resolves, so
     // clients must not sequence state on it (docs/control-api.md).
-    let body = serde_json::json!({
-        "status": "accepted",
-        "submission_id": submission_id,
-        "delivery": landing.as_str(),
-    });
-    conn.with_status(202).with_body(body.to_string()).halt()
+    views::answer(
+        conn,
+        202,
+        TurnAccepted {
+            status: StatusWord::Accepted,
+            submission_id,
+            delivery: landing,
+        },
+    )
 }
 
 /// Parse a `POST /turns` body and check what a body alone can be refused for.
@@ -171,8 +175,7 @@ pub(super) async fn withdraw_turns(conn: Conn) -> Conn {
         (None, None) => return missing_state(conn),
     };
     let withdrawn: Vec<QueuedTurn> = popped.iter().map(QueuedTurn::from).collect();
-    let body = serde_json::json!({ "withdrawn": withdrawn });
-    conn.with_status(200).with_body(body.to_string()).halt()
+    views::answer(conn, 200, WithdrawnTurns { withdrawn })
 }
 
 /// Resolve the pending approval gate, addressed by the call awaiting it. A
@@ -229,9 +232,7 @@ pub(super) async fn resolve_approval(mut conn: Conn) -> Conn {
         if wait {
             settle_and_state(&shared, conn).await
         } else {
-            conn.with_status(200)
-                .with_body(r#"{"status":"resolved"}"#)
-                .halt()
+            views::answer(conn, 200, StatusBody::new(StatusWord::Resolved))
         }
     } else {
         // The precondition failed: that id is not the pending gate — already
@@ -272,9 +273,7 @@ pub(super) async fn escalate_approval(mut conn: Conn) -> Conn {
     };
     let note = body.note.filter(|note| !note.trim().is_empty());
     if shared.escalate(&id, body.source, None, note) {
-        conn.with_status(200)
-            .with_body(r#"{"status":"escalated"}"#)
-            .halt()
+        views::answer(conn, 200, StatusBody::new(StatusWord::Escalated))
     } else {
         respond(
             conn,

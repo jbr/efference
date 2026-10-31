@@ -49,6 +49,55 @@ async fn query_sessions_previews_a_proposed_session_without_creating_one() {
     host.swansong().shut_down().await;
 }
 
+/// The preview's bytes: the fields in the order the type declares them, a selection
+/// carrying its precedence branch, a separate triage flattened beside its mode, and an
+/// issue beside the fields that still resolved.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_preview_keeps_its_bytes() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let server = host_server(&host).await;
+    let preview = async |body: Value| {
+        let response = server
+            .build(trillium::Method::Query, "/sessions")
+            .with_json_body(&body)
+            .await;
+        response.assert_status(200);
+        response.body().to_string()
+    };
+
+    assert_eq!(
+        preview(serde_json::json!({
+            "cwd": roots.0.join("one"), "connection": "test", "model": "m",
+        }))
+        .await,
+        concat!(
+            r#"{"effective":{"main":{"value":{"connection":"test","provider":"anthropic","model":"m"},"source":"request"},"#,
+            r#""spotter":{"value":{"connection":"test","provider":"anthropic","model":"claude-haiku-4-5"},"source":"main_provider"},"#,
+            r#""triage":{"value":{"mode":"shared"},"source":"shared_main"},"#,
+            r#""effort":{"value":null,"source":"provider_default"},"#,
+            r#""temperature":{"value":null,"source":"provider_default"}},"issues":[]}"#
+        )
+    );
+    assert_eq!(
+        preview(serde_json::json!({
+            "cwd": roots.0.join("one"), "connection": "test", "model": "m",
+            "triage": {"mode": "separate", "model": "test/t", "thinking": true, "effort": "low"},
+            "temperature": "260", "effort": "high",
+        }))
+        .await,
+        concat!(
+            r#"{"effective":{"main":{"value":{"connection":"test","provider":"anthropic","model":"m"},"source":"request"},"#,
+            r#""spotter":{"value":{"connection":"test","provider":"anthropic","model":"claude-haiku-4-5"},"source":"main_provider"},"#,
+            r#""triage":{"value":{"mode":"separate","connection":"test","provider":"anthropic","model":"t","thinking":true,"auto_choice":false,"effort":"low"},"source":"request"},"#,
+            r#""effort":{"value":"high","source":"request"},"#,
+            r#""temperature":{"value":null,"source":null}},"#,
+            r#""issues":[{"field":"temperature","code":"invalid_type","message":"must be a whole number from 0 to 100"}]}"#
+        )
+    );
+    host.swansong().shut_down().await;
+}
+
 /// **One bad field does not hide the good ones.** A malformed temperature is its
 /// own issue; every independently resolvable selection still comes back, because
 /// the form has to stay usable while the operator is mid-edit.

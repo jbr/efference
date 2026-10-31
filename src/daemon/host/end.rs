@@ -13,13 +13,20 @@ pub struct Ended {
 }
 
 impl Ended {
-    /// The `state` an archive answers with: `archived`, or `discarded` when the
-    /// session was removed (docs/control-api.md).
-    pub(super) fn state(&self) -> &'static str {
-        if self.discarded {
-            "discarded"
-        } else {
-            "archived"
+    /// The answer to an archive (docs/control-api.md): the `state` it reached,
+    /// `archived` or `discarded` when the session was removed, and the fate of its
+    /// worktree when it made one. A route adds what only it knows.
+    pub(super) fn answer(self, id: &str) -> SessionArchived {
+        SessionArchived {
+            id: id.to_string(),
+            state: if self.discarded {
+                ArchiveOutcome::Discarded
+            } else {
+                ArchiveOutcome::Archived
+            },
+            resumed: None,
+            worktree: self.retired.and_then(|retired| retired.response()),
+            ended_with: Vec::new(),
         }
     }
 }

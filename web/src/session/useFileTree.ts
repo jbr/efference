@@ -17,12 +17,8 @@
 // airtight against a change landing during setup.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  dirStream,
-  listDir,
-  type ChangeStream,
-  type DirEntry,
-} from "../api/files.ts";
+import { dirStream, listDir, type ChangeStream } from "../api/files.ts";
+import type { DirEntry } from "../api/types.ts";
 
 export interface DirState {
   entries: DirEntry[];

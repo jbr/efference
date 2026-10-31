@@ -22,10 +22,15 @@ use schemars::generate::SchemaSettings;
 use schemars::transform::{Transform, transform_subschemas};
 use serde_json::{Map, Value};
 
+use crate::catalog::{ConnectionCatalog, ModelRole};
+use crate::devices::Enrolled;
+use crate::inference::ResolvedOptions;
 use crate::log::LogEntry;
 use crate::process_monitor::ProcessRecord;
 use crate::protocol::stream::StreamDelta;
-use crate::protocol::{attention, sessions, state, status, turns};
+use crate::protocol::{
+    answers, attention, files, projects, sessions, sign_in, state, status, turns,
+};
 use crate::tools::ToolEntry;
 
 use super::artifacts::Link;
@@ -84,9 +89,36 @@ fn generate() -> Value {
         sessions::CreateSession,
         sessions::SessionOptionsRequest,
         sessions::PatchSession,
+        sessions::CreatedSession,
+        sessions::SessionResumed,
+        sessions::SessionSupervised,
+        sessions::SessionArchived,
+        ResolvedOptions,
+        ConnectionCatalog,
+        ModelRole,
+        answers::CatalogList,
+        projects::ProjectList,
+        projects::ForgottenProject,
+        files::DirListing,
+        sign_in::SignInRequest,
+        sign_in::SignInClaim,
+        sign_in::SignInLink,
+        sign_in::PendingSignInList,
+        sign_in::DeviceList,
+        sign_in::RemovedDevice,
+        Enrolled,
+        answers::InventoryList,
+        answers::StatusBody,
+        answers::FiledNotification,
+        answers::PushKey,
+        answers::ProposalResolution,
+        answers::LocatedToolCall,
+        answers::ProcessOutputRead,
         attention::AttentionReport,
         status::StatusView,
         turns::QueuedTurn,
+        turns::TurnAccepted,
+        turns::WithdrawnTurns,
         StreamDelta,
         ProcessRecord,
         ToolEntry,

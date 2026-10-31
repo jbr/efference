@@ -58,7 +58,7 @@ fn the_other_answers_each_have_a_line() {
     );
     let hosted = Closure::StillHosted {
         id: "hold-probe".into(),
-        status: "idle".into(),
+        status: ListedStatus::Idle,
     };
     assert_eq!(
         hosted.line(),
@@ -70,6 +70,19 @@ fn the_other_answers_each_have_a_line() {
     assert_eq!(
         unknown.line(),
         "efference: hold-probe is no longer on the host"
+    );
+}
+
+/// A status word this build does not name is printed as the host sent it.
+#[test]
+fn a_status_this_build_does_not_name_is_printed_as_it_came() {
+    let hosted = Closure::StillHosted {
+        id: "hold-probe".into(),
+        status: ListedStatus::from_word("hibernating".into()),
+    };
+    assert_eq!(
+        hosted.line(),
+        "efference: the stream for hold-probe ended while the host still lists it as hibernating"
     );
 }
 

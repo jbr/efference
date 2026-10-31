@@ -3,13 +3,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { SessionEntry } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 import { SessionSwitcher, Tab } from "./SessionSwitcher.tsx";
 import type { CardModel } from "./overview.ts";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-let listing: SessionEntry[];
-let updateListing: (sessions: SessionEntry[]) => void;
+let listing: ListedSession[];
+let updateListing: (sessions: ListedSession[]) => void;
 vi.mock("../session/listing.ts", () => ({
   lastListing: () => listing,
   rememberListing: vi.fn(),

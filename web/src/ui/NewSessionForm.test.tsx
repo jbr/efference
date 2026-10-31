@@ -8,7 +8,7 @@ import {
   forgetProject,
   previewSession,
 } from "../api/sessionForm.ts";
-import type { ProjectEntry, SessionPreview } from "../api/sessionForm.ts";
+import type { ProjectEntry, ResolvedOptions } from "../api/types.ts";
 import { NewSessionForm } from "./NewSessionForm.tsx";
 import { emptyDraft } from "./sessionForm.ts";
 
@@ -260,7 +260,7 @@ test("starting with the worktree on sends it in the creation body", async () => 
   });
 });
 
-const previewAnswer = (): SessionPreview => ({
+const previewAnswer = (): ResolvedOptions => ({
   effective: {
     main: { value: null, source: null },
     spotter: { value: null, source: null },

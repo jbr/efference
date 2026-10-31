@@ -242,3 +242,55 @@ async fn a_nested_listing_names_its_own_path() {
     assert_eq!(body["path"], "sub");
     assert_eq!(body["entries"][0]["name"], "nested.txt");
 }
+
+/// A listing's bytes (docs/web-bind.md): the fields in the order the type declares them, an
+/// entry's `kind` following a symlink while `symlink` says the entry is one, a link whose
+/// target is gone listed as `other` with no size or time, and the directory's own path
+/// beside its entries. Only files and links are listed, since a directory's own size is
+/// the filesystem's to choose.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_listing_keeps_its_bytes() {
+    let scratch = Scratch::new("bytes");
+    for (name, text, at) in [
+        ("a.txt", "a", 1_754_300_000_000),
+        ("sub/b.rs", "bb", 1_754_300_060_000),
+    ] {
+        let file = std::fs::File::options()
+            .write(true)
+            .open(scratch.write(name, text))
+            .expect("open");
+        file.set_modified(std::time::UNIX_EPOCH + Duration::from_millis(at))
+            .expect("set the modification time");
+    }
+    let nested = server(&scratch).await;
+    let listing = nested.get("/files/sub/").await;
+    listing.assert_status(200);
+    assert_eq!(
+        listing.body(),
+        r#"{"path":"sub","recursive":false,"truncated":false,"entries":[{"name":"b.rs","kind":"file","size":2,"modified_at":1754300060000,"symlink":false}]}"#
+    );
+
+    let flat = Scratch::new("bytes-flat");
+    let file = std::fs::File::options()
+        .write(true)
+        .open(flat.write("a.txt", "a"))
+        .expect("open");
+    file.set_modified(std::time::UNIX_EPOCH + Duration::from_millis(1_754_300_000_000))
+        .expect("set the modification time");
+    std::os::unix::fs::symlink(flat.path().join("a.txt"), flat.path().join("link"))
+        .expect("symlink");
+    std::os::unix::fs::symlink(flat.path().join("gone"), flat.path().join("dangling"))
+        .expect("symlink");
+    let server = server(&flat).await;
+    let listing = server.get("/files/").await;
+    listing.assert_status(200);
+    assert_eq!(
+        listing.body(),
+        concat!(
+            r#"{"path":"","recursive":false,"truncated":false,"entries":["#,
+            r#"{"name":"a.txt","kind":"file","size":1,"modified_at":1754300000000,"symlink":false},"#,
+            r#"{"name":"dangling","kind":"other","size":0,"modified_at":null,"symlink":true},"#,
+            r#"{"name":"link","kind":"file","size":1,"modified_at":1754300000000,"symlink":true}]}"#
+        )
+    );
+}

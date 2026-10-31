@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionEntry } from "./http.ts";
+import type { ListedSession } from "./types.ts";
 import { openSessions } from "./sessions.ts";
 
 /** A listing stream the test drives frame by frame, and that stays open so the
@@ -14,7 +14,7 @@ function liveStream() {
   });
   return {
     body,
-    send(listing: SessionEntry[]) {
+    send(listing: ListedSession[]) {
       controller.enqueue(
         encoder.encode(`data: ${JSON.stringify(listing)}\n\n`),
       );
@@ -24,7 +24,7 @@ function liveStream() {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function listing(...ids: string[]): SessionEntry[] {
+function listing(...ids: string[]): ListedSession[] {
   return ids.map((id) => ({
     id,
     cwd: "/project",
@@ -42,8 +42,8 @@ describe("openSessions", () => {
     const stream = liveStream();
     const fetchMock = vi.fn(async () => ({ ok: true, body: stream.body }));
     vi.stubGlobal("fetch", fetchMock);
-    const tabs: SessionEntry[][] = [];
-    const own: SessionEntry[][] = [];
+    const tabs: ListedSession[][] = [];
+    const own: ListedSession[][] = [];
     const first = openSessions((value) => tabs.push(value));
     const second = openSessions((value) => own.push(value));
     await settle();
@@ -75,7 +75,7 @@ describe("openSessions", () => {
     const stream = liveStream();
     const fetchMock = vi.fn(async () => ({ ok: true, body: stream.body }));
     vi.stubGlobal("fetch", fetchMock);
-    const heard: SessionEntry[][] = [];
+    const heard: ListedSession[][] = [];
     const handle = openSessions((value) => heard.push(value));
     await settle();
     stream.send(listing("a"));

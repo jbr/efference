@@ -2,7 +2,11 @@
 // preview freshness, issue placement, and creation guards.
 
 import { expect, test } from "vitest";
-import type { ProjectEntry, SessionPreview } from "../api/sessionForm.ts";
+import type {
+  PreviewIssue,
+  ProjectEntry,
+  ResolvedOptions,
+} from "../api/types.ts";
 import {
   EFFORTS,
   type Draft,
@@ -39,7 +43,7 @@ const draft = (over: Partial<Draft> = {}): Draft => ({
 });
 
 /** A preview answer with nothing flagged, or with the issues named. */
-const answer = (issues: SessionPreview["issues"] = []): SessionPreview =>
+const answer = (issues: ResolvedOptions["issues"] = []): ResolvedOptions =>
   ({
     effective: {
       main: { value: null, source: null },
@@ -49,7 +53,7 @@ const answer = (issues: SessionPreview["issues"] = []): SessionPreview =>
       temperature: { value: null, source: "provider_default" },
     },
     issues,
-  }) as SessionPreview;
+  }) as ResolvedOptions;
 
 test("a draft asks for its directory, and names a configuration only when it has one", () => {
   expect(sessionRequest(draft())).toEqual({
@@ -112,7 +116,7 @@ test("the worktree toggle is sent only when on", () => {
 });
 
 test("an issue is said once — by its row, or beside Start", () => {
-  const issues = [
+  const issues: PreviewIssue[] = [
     { field: "temperature", code: "out_of_range", message: "must be 0 to 100" },
     { field: "config", code: "invalid_config", message: "will not load" },
   ];
@@ -143,6 +147,8 @@ test("a resolved value is shown as the slug a reader recognizes", () => {
       connection: "openai",
       provider: "openai",
       model: "gpt-5",
+      thinking: false,
+      auto_choice: false,
     }),
   ).toBe("openai/gpt-5");
 });

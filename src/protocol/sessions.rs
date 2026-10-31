@@ -6,6 +6,7 @@
 //! rows' files and acting on the bodies is the host's (`daemon::host`).
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -238,9 +239,9 @@ impl PatchSession {
     }
 }
 
-/// One row of `GET /sessions` (docs/control-api.md). Also the shape the
-/// `sessions` tool answers with, hence the schema derive (docs/tools.md).
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, schemars::JsonSchema)]
+/// One row of `GET /sessions` (docs/control-api.md).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ListedSession {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -258,14 +259,116 @@ pub struct ListedSession {
     /// (docs/tools.md). Absent for a human root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
-    /// What the session is doing, as a single word: `starting` while it is
-    /// prepared, then `running`, `idle`, `gated`, `asking`, `stalled`, `parked`, or
-    /// `blocked`.
-    pub status: String,
+    /// What the session is doing, as a single word.
+    pub status: ListedStatus,
     /// Live background processes the session holds (docs/process-monitor.md). Ending
     /// it reaps them, which is why a listing carries the count.
     #[serde(default)]
     pub processes: usize,
+}
+
+impl ListedSession {
+    /// A row for `id` at `status` with nothing else known: no title, no directories, no
+    /// creator and no processes.
+    pub fn new(id: impl Into<String>, status: ListedStatus) -> Self {
+        Self {
+            id: id.into(),
+            title: None,
+            cwd: None,
+            working: None,
+            created_by: None,
+            status,
+            processes: 0,
+        }
+    }
+}
+
+/// What a listed session is doing, in one word: `starting` while its environment and MCP
+/// servers are prepared, then the loop's phase as a list surface can show it without one
+/// state read per row.
+// docs/control-api.md
+//
+// Read and written by hand, as the string it is on the wire, so that a word this build does
+// not name still decodes (`Other`) and nothing but a string does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename_all = "lowercase"))]
+pub enum ListedStatus {
+    /// Being prepared: no loop exists yet.
+    Starting,
+    /// A request, a batch of calls, or a timed delay.
+    Running,
+    /// Waiting with nothing queued.
+    Idle,
+    /// Holding a call for a decision.
+    Gated,
+    /// Waiting on the operator's reply to a question.
+    Asking,
+    /// An idle loop whose last trajectory gave up, or a triage held without a verdict.
+    Stalled,
+    /// Stopped at its cold check mid-turn.
+    Parked,
+    /// Stopped on a held pace or a config file to repair.
+    Blocked,
+    /// A word this build does not name, kept as it was read. The host never sends one: it
+    /// lets a client read the listing of a host newer than itself, and show the word as it
+    /// came. The schema and the generated types leave it out.
+    #[cfg_attr(test, schemars(skip))]
+    Other(String),
+}
+
+impl ListedStatus {
+    /// The words this build names, in the order the listing documents them.
+    const NAMED: [Self; 8] = [
+        Self::Starting,
+        Self::Running,
+        Self::Idle,
+        Self::Gated,
+        Self::Asking,
+        Self::Stalled,
+        Self::Parked,
+        Self::Blocked,
+    ];
+
+    /// The status a word names, or [`Other`](Self::Other) holding it.
+    pub fn from_word(word: String) -> Self {
+        Self::NAMED
+            .into_iter()
+            .find(|status| status.as_str() == word)
+            .unwrap_or(Self::Other(word))
+    }
+
+    /// The word the listing carries.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Starting => "starting",
+            Self::Running => "running",
+            Self::Idle => "idle",
+            Self::Gated => "gated",
+            Self::Asking => "asking",
+            Self::Stalled => "stalled",
+            Self::Parked => "parked",
+            Self::Blocked => "blocked",
+            Self::Other(word) => word,
+        }
+    }
+}
+
+impl fmt::Display for ListedStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ListedStatus {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ListedStatus {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer).map(Self::from_word)
+    }
 }
 
 /// One archived session as `GET /sessions?state=archived` lists it: the
@@ -304,3 +407,81 @@ pub struct DormantSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_tokens: Option<u64>,
 }
+
+/// The answer to `POST /sessions`: the id the session was reserved under. The session is
+/// listed as `starting` and prepares after the answer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct CreatedSession {
+    pub id: String,
+}
+
+/// The answer to a `PATCH /sessions/:session` that makes the session `active`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct SessionResumed {
+    pub id: String,
+    /// `active`.
+    pub state: SessionState,
+    /// Whether this call is what made the session live: `false` for a repeat of a patch
+    /// the host had already taken, so a retry reads the same answer either way.
+    pub resumed: bool,
+}
+
+/// The answer to a `PATCH /sessions/:session` that sets or clears a supervisor.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct SessionSupervised {
+    pub id: String,
+    /// `active`.
+    pub state: SessionState,
+    /// The pointer as it now reads: `null` once cleared.
+    pub supervisor: Option<String>,
+}
+
+/// What became of a session that was archived.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum ArchiveOutcome {
+    /// Stopped, with its directory and log intact: resumable.
+    Archived,
+    /// Removed, because it never had a turn (or its creation was cancelled while it
+    /// started): its id is free again.
+    Discarded,
+}
+
+/// What became of the git worktree a session made for itself when it was archived.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum RetiredWorktree {
+    /// Clean, so its directory is removed; the branch goes too when another branch
+    /// contains its tip.
+    Removed { removed: bool, branch_deleted: bool },
+    /// Left untouched, for this reason.
+    Kept { kept: String },
+    /// Git could not remove it, for this reason.
+    Failed { failed: String },
+}
+
+/// The answer to `DELETE /sessions/:session`, and to a `PATCH` that makes the session
+/// `archived`, once its teardown has run.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct SessionArchived {
+    pub id: String,
+    pub state: ArchiveOutcome,
+    /// `false` on a patch, which says it reopened nothing; absent on `DELETE`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumed: Option<bool>,
+    /// The fate of the session's own worktree; absent when it made none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<RetiredWorktree>,
+    /// The sessions that ended with it (its non-detached descendants), when there were any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ended_with: Vec<String>,
+}
+
+#[cfg(test)]
+mod test;

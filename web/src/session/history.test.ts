@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { LogEntry } from "../api/entry.ts";
+import type { LocatedToolCall } from "../api/types.ts";
 import { fetchCallSeq, fetchLogBefore, fetchLogRange } from "../api/http.ts";
 import { messagesAssistant } from "./assistant.ts";
 import {
@@ -24,6 +25,11 @@ const call = (seq: number, id = "c") =>
   entry(seq, {
     Assistant: messagesAssistant([], [], [{ id, name: "read", input: {} }]),
   });
+/** What the host answers a call's address with: the entry's seq, and the call. */
+const located = (seq: number, id = "c"): LocatedToolCall => ({
+  seq,
+  call: { id, name: "read", input: {} },
+});
 const result = (seq: number, id = "c") =>
   entry(seq, {
     ToolResult: {
@@ -134,7 +140,7 @@ it("keeps paging on an exactly full page and stops on the short final page", asy
   expect(loader.snapshot().done).toBe(true);
 });
 it("repairs a cut through a tool result without skipping intervening entries", async () => {
-  vi.mocked(fetchCallSeq).mockResolvedValue({ seq: 5 });
+  vi.mocked(fetchCallSeq).mockResolvedValue(located(5));
   vi.mocked(fetchLogRange).mockResolvedValue([call(5), entry(6)]);
   const entries = await coherentWindow(
     [result(7), entry(8)],
@@ -152,7 +158,7 @@ it("does not fetch references already contained in a window", async () => {
   expect(fetchCallSeq).not.toHaveBeenCalled();
 });
 it("fails rather than looping when an earlier reference cannot be resolved", async () => {
-  vi.mocked(fetchCallSeq).mockResolvedValue({ seq: 5 });
+  vi.mocked(fetchCallSeq).mockResolvedValue(located(5));
   vi.mocked(fetchLogRange).mockResolvedValue([]);
   await expect(coherentWindow([result(7)], "base")).rejects.toThrow(
     "references",
@@ -166,7 +172,7 @@ it("repairs a verdict-to-result-to-call chain across successive cuts", async () 
   vi.mocked(fetchLogRange)
     .mockResolvedValueOnce([pending])
     .mockResolvedValueOnce([call(5), entry(6)]);
-  vi.mocked(fetchCallSeq).mockResolvedValue({ seq: 5 });
+  vi.mocked(fetchCallSeq).mockResolvedValue(located(5));
   const entries = await coherentWindow(
     [entry(8, { ResultVerdict: { for_result: 7, wire: "Raw" } })],
     "base",

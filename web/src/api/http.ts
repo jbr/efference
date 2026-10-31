@@ -15,12 +15,22 @@ import type {
   DormantSession,
   ErrorBody,
   ListedSession,
+  LocatedToolCall,
   LoopResource,
-  ProcessState,
+  ProcessOutputRead,
   ProcessRecord,
-  QueuedTurn,
+  ProcessState,
+  ProposalResolution,
+  PushKey,
   ReviewLevel,
+  SessionArchived,
+  SessionResumed,
+  SignInClaim,
+  SignInRequest,
+  StatusBody,
   ToolEntry,
+  TurnAccepted,
+  WithdrawnTurns,
 } from "./types.ts";
 import type { Decision } from "./decision.ts";
 import type { LogEntry, Seq } from "./entry.ts";
@@ -161,7 +171,7 @@ export const fetchLogRange = (
     `${base}/v1/log?since=${since}&before=${before}`,
   );
 export const fetchCallSeq = (id: CallId, base: string = apiBase()) =>
-  requestAt<{ seq: Seq }>(
+  requestAt<LocatedToolCall>(
     "GET",
     `${base}/v1/tool_calls/${encodeURIComponent(id)}`,
   );
@@ -179,7 +189,7 @@ export const submitTurn = (
   attachments: Arrival[] = [],
   answers: CallId | null = null,
 ) =>
-  post<{ status: string; submission_id: string }>("/v1/turns", {
+  post<TurnAccepted>("/v1/turns", {
     text,
     submission_id: submissionId,
     // The web client is not the operator at a terminal; name where the turn
@@ -194,9 +204,7 @@ export const submitTurn = (
 // recall). The answer is authoritative: the loop may have dequeued the turn already, so
 // `withdrawn` can be shorter than the queue showed, or empty. A caller splices only this.
 export const withdrawTurns = (submissionId: string) =>
-  del<{ withdrawn: QueuedTurn[] }>(
-    `/v1/turns/${encodeURIComponent(submissionId)}`,
-  );
+  del<WithdrawnTurns>(`/v1/turns/${encodeURIComponent(submissionId)}`);
 
 // Attachments (docs/inbox.md): a file is uploaded when it is staged, so the
 // daemon's description of it — the one the model will read — is known while it
@@ -239,7 +247,7 @@ export const attachmentUrl = (name: string, base = apiBase()) =>
 // longer the pending gate, and `detail` carries the current one. The body names
 // this client as the decider, which the host records (docs/control-api.md).
 export const resolveApproval = (callId: CallId, decision: Decision) =>
-  put<{ status: string }>(`/v1/approvals/${encodeURIComponent(callId)}`, {
+  put<StatusBody>(`/v1/approvals/${encodeURIComponent(callId)}`, {
     ...decision,
     source: "web",
   });
@@ -263,7 +271,7 @@ export const patchLoop = ({ speedMs, held, reviewLevel }: LoopPatch) =>
 // (docs/control-api.md).
 export type InterruptControl = "stop-button" | "status-bar-stop";
 export const interruptLoop = (control: InterruptControl) =>
-  post<{ status: string }>("/v1/loop/interrupt", { source: "web", control });
+  post<StatusBody>("/v1/loop/interrupt", { source: "web", control });
 // Hand control back with no input (docs/control-api.md): the idle loop takes
 // another turn on the wire it already has — nothing is submitted and nothing is
 // appended, so this is not a turn with empty text. A moment with no continue in
@@ -271,7 +279,7 @@ export const interruptLoop = (control: InterruptControl) =>
 // `message` names the case.
 // `source` names the web client, as its turns do, so the log records who continued.
 export const continueLoop = () =>
-  post<{ status: string }>("/v1/loop/continue", { source: "web" });
+  post<StatusBody>("/v1/loop/continue", { source: "web" });
 // `background: true` on the foreground process is the handoff — expect 202,
 // the flip lands at the detach race (docs/control-api.md); `note` rides it as
 // the next user message. `muted` is the dismiss toggle.
@@ -294,19 +302,12 @@ export const fetchProcessRecord = (id: number) =>
 export const fetchToolEntry = (name: string) =>
   get<ToolEntry>(`/v1/tools/${encodeURIComponent(name)}`);
 export const killProcess = (id: number) =>
-  del<{ status: string }>(`/v1/processes/${id}`);
+  del<StatusBody>(`/v1/processes/${id}`);
 // The cold seed for a process's tail. `output` is lossy with no replay
 // (docs/control-api.md), so a process already running when the client connects
 // has no deltas to build a tail from; with no cursor this returns everything
 // retained. `lost` counts bytes dropped at the retention cap — reported rather
 // than silently skipped.
-export interface ProcessOutputRead {
-  id: number;
-  output: string;
-  cursor: number;
-  lost: number;
-  running: boolean;
-}
 export const fetchProcessOutput = (id: number, since?: number) =>
   get<ProcessOutputRead>(
     `/v1/processes/${id}/output${since === undefined ? "" : `?since=${since}`}`,
@@ -317,7 +318,7 @@ export const fetchProcessOutput = (id: number, since?: number) =>
 export const resolveProposal = (
   seq: number,
   state: "committed" | "cancelled",
-) => patch<{ state: string }>(`/v1/proposals/${seq}`, { state });
+) => patch<ProposalResolution>(`/v1/proposals/${seq}`, { state });
 
 // Web push (docs/web-push.md). The key is the daemon's derived VAPID public
 // key, base64url of an uncompressed P-256 point — `applicationServerKey` wants
@@ -336,30 +337,16 @@ export async function sendAttention(report: AttentionReport): Promise<void> {
   await throwIfFailed(response);
 }
 
-export const fetchPushKey = () => get<{ key: string }>("/v1/push");
+export const fetchPushKey = () => get<PushKey>("/v1/push");
 // The browser's `PushSubscription.toJSON()` shape is what the daemon accepts,
 // so this forwards it unreshaped. An upsert on the endpoint: a page that
 // re-registers leaves one entry.
 export const subscribePush = (subscription: PushSubscriptionJSON) =>
-  post<{ status: string }>("/v1/push/subscriptions", subscription);
+  post<StatusBody>("/v1/push/subscriptions", subscription);
 // Forget one subscription. Always 200 — an unsubscribe names an end state, and
 // the browser may have already dropped it.
 export const unsubscribePush = (endpoint: string) =>
-  del<{ status: string }>("/v1/push/subscriptions", { endpoint });
-
-/** What `POST /pair` answers the page that asked (docs/web-bind.md): the claim
- * secret this page alone polls with, the short code it shows for the operator to
- * approve at the host, and the seconds both live. */
-export interface SignInRequest {
-  claim: string;
-  code: string;
-  expires_in: number;
-}
-
-/** A claim's answer: the device token once the host approved, or word that it
- * has not yet. A claim that names nothing — used, expired, displaced — is a
- * `404` ApiError. */
-export type SignInClaim = { token: string } | { status: "pending" };
+  del<StatusBody>("/v1/push/subscriptions", { endpoint });
 
 // Ask to sign this browser in; `label` is what the host lists it as. Outside /v1
 // and outside the base: sign-in is the *listener's* surface, so it is at the root
@@ -373,44 +360,21 @@ export const requestSignIn = (label: string) =>
 export const claimSignIn = (claim: string, label: string) =>
   requestAt<SignInClaim>("POST", "/pair/claim", { claim, label });
 
-/** What a listed session is doing, in one word: `starting` while its environment
- * and MCP servers are prepared (docs/control-api.md). The host types the field as
- * a string and documents this set, so the narrowing is the client's. */
-export type SessionStatus =
-  | "starting"
-  | "running"
-  | "idle"
-  | "gated"
-  | "asking"
-  | "stalled"
-  | "parked"
-  | "blocked";
-
-/** One entry of the host's session listing (docs/web-client.md): the generated row
- * with `status` narrowed to the words above. The id is the path segment a client
- * joins its control base onto; the rest is what a list surface can show without one
- * `GET /sessions/<id>/v1/state` per row. */
-export interface SessionEntry extends Omit<ListedSession, "status"> {
-  status: SessionStatus;
-}
-
 // A host's one endpoint of its own (docs/web-client.md), at its root rather than
 // under the base — a client asking "which sessions are there" is asking the
 // listener, not a session. A session daemon serves no such route, which is how
 // the client tells the two bindings apart (session/entry.ts).
 export const fetchSessions = () =>
-  requestAt<SessionEntry[]>("GET", "/sessions");
+  requestAt<ListedSession[]>("GET", "/sessions");
 
 // Archive a hosted session (docs/control-api.md). The host answers once teardown has
 // run — background processes reaped, scratch removed — so the listing that
 // follows shows the finished state rather than a session on its way out.
 // The body names this client, as its turns do, so the log records who archived.
 export const archiveSession = (id: string) =>
-  requestAt<{ id: string; state: string }>(
-    "DELETE",
-    `/sessions/${encodeURIComponent(id)}`,
-    { source: "web" },
-  );
+  requestAt<SessionArchived>("DELETE", `/sessions/${encodeURIComponent(id)}`, {
+    source: "web",
+  });
 
 // Fetch archived sessions from the host (docs/control-api.md). When cwd is provided,
 // scopes the listing to that working root; otherwise returns archived sessions across
@@ -436,7 +400,7 @@ export const resumeSession = (
   cwd: string,
   resumeSwitch: Record<string, unknown> | null = null,
 ) =>
-  requestAt<{ state: string }>("PATCH", `/sessions/${encodeURIComponent(id)}`, {
+  requestAt<SessionResumed>("PATCH", `/sessions/${encodeURIComponent(id)}`, {
     state: "active",
     cwd,
     ...(resumeSwitch ?? {}),
@@ -449,4 +413,4 @@ export const resumeSession = (
 // cache is believed live, giving up the cached prefix. A moment with no compaction in
 // it answers `409 not_compactable` with a message naming the case.
 export const compactLoop = (warm = false) =>
-  post<{ status: string }>("/v1/loop/compact", warm ? { warm: true } : {});
+  post<StatusBody>("/v1/loop/compact", warm ? { warm: true } : {});

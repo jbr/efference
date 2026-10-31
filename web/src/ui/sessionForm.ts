@@ -14,11 +14,11 @@
 
 import type {
   EffectiveTriage,
+  ModelSelection,
   PreviewIssue,
   ProjectEntry,
-  SessionPreview,
-} from "../api/sessionForm.ts";
-import type { ModelSelection } from "../api/types.ts";
+  ResolvedOptions,
+} from "../api/types.ts";
 
 /** What the operator has overridden, and where the session would run. A
  * location from the remembered index, or one typed by hand; `config` null asks
@@ -173,7 +173,7 @@ export function temperatureOf(text: string): number | null {
  * it is dropped rather than shown and the current draft is re-sent. */
 export interface Answered {
   request: number;
-  answer: SessionPreview;
+  answer: ResolvedOptions;
 }
 
 /** The counter a committed edit moves to: one more than the last request, so

@@ -11,7 +11,8 @@ import { AppSettingsLink } from "./AppSettings.tsx";
 
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { openSessionCard, openSessions } from "../api/sessions.ts";
-import { archiveSession, type SessionEntry } from "../api/http.ts";
+import { archiveSession } from "../api/http.ts";
+import type { ListedSession } from "../api/types.ts";
 import type { StateSnapshot } from "../api/frames.ts";
 import { cardModel, foldRecent, type Recent, workspaces } from "./overview.ts";
 import { SessionCard } from "./SessionCard.tsx";
@@ -40,7 +41,7 @@ interface Feed {
 }
 
 /** Each listed session's state and recent log, followed while it is listed. */
-function useSessionFeeds(sessions: SessionEntry[]): Map<string, Feed> {
+function useSessionFeeds(sessions: ListedSession[]): Map<string, Feed> {
   const [feeds, setFeeds] = useState(() => new Map<string, Feed>());
   const ids = sessions.map((session) => session.id).join("\n");
   useEffect(() => {
@@ -118,7 +119,7 @@ function useStuckHeadings(
 export function SessionList({
   sessions: initial,
 }: {
-  sessions: SessionEntry[];
+  sessions: ListedSession[];
 }) {
   const [sessions, setSessions] = useState(initial);
   const [archiving, setArchiving] = useState<string | null>(null);

@@ -1,6 +1,7 @@
 //! `/proposals`: async config-edit proposals awaiting an orchestrator (docs/permissions.md).
 
 use super::*;
+use crate::protocol::answers::ProposalResolution;
 
 /// List async config-edit proposals awaiting an orchestrator decision
 /// (docs/permissions.md). The same array `/state` carries; a
@@ -53,14 +54,17 @@ pub(super) async fn patch_proposal(mut conn: Conn) -> Conn {
         }
     };
     match shared.resolve_proposal_decision(seq, commit, decision.note.unwrap_or_default()) {
-        Ok(true) => conn
-            .with_status(200)
-            .with_body(if commit {
-                r#"{"state":"committed"}"#
-            } else {
-                r#"{"state":"cancelled"}"#
-            })
-            .halt(),
+        Ok(true) => views::answer(
+            conn,
+            200,
+            ProposalResolution {
+                state: if commit {
+                    EditState::Committed
+                } else {
+                    EditState::Cancelled
+                },
+            },
+        ),
         Ok(false) => fail(
             conn,
             ErrorCode::NotFound,

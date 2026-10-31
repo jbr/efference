@@ -27,6 +27,14 @@ async fn push_key_is_the_derived_vapid_public_key() {
     crate::auth::Root::install(Some(crate::auth::Root::new("a test root")));
     let conn = server.get("/v1/push").await;
     conn.assert_status(200);
+    // The whole body: one key, the encoded point, and nothing around it.
+    assert_eq!(
+        conn.body(),
+        format!(
+            r#"{{"key":"{}"}}"#,
+            crate::push::public_key(&crate::auth::Root::new("a test root").vapid_key())
+        )
+    );
     conn.assert_json_body_with(|body: &Value| {
         let key = body["key"].as_str().expect("a key string");
         assert_eq!(

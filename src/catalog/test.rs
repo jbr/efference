@@ -283,3 +283,16 @@ fn a_role_is_offered_only_the_models_it_can_run() {
     assert_eq!(ModelRole::from_name("spotter"), Some(ModelRole::Spotter));
     assert_eq!(ModelRole::from_name("judge"), None);
 }
+
+/// A role is spelled one way: serde's is `name`'s, which is also what the `role` query
+/// parameter carries and `from_name` reads.
+#[test]
+fn a_model_role_is_spelled_one_way() {
+    for role in [ModelRole::Main, ModelRole::Triage, ModelRole::Spotter] {
+        assert_eq!(
+            serde_json::to_value(role).unwrap(),
+            serde_json::Value::from(role.name())
+        );
+        assert_eq!(ModelRole::from_name(role.name()), Some(role));
+    }
+}

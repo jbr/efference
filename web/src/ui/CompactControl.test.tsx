@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
 import { CompactControl } from "./CompactControl.tsx";
 import { compactLoop } from "../api/http.ts";
-import type { Verbs } from "../api/types.ts";
+import type { StatusBody, Verbs } from "../api/types.ts";
 vi.mock("../api/http.ts", () => ({
   compactLoop: vi.fn(),
   ApiError: class extends Error {},
@@ -30,8 +30,8 @@ test("one click directly summarizes and supplies warm consent without confirmati
     .mockClear()
     .mockImplementation(
       () =>
-        new Promise<{ status: string }>((resolve) => {
-          finish = () => resolve({ status: "started" });
+        new Promise<StatusBody>((resolve) => {
+          finish = () => resolve({ status: "compacting" });
         }),
     );
   try {
@@ -49,7 +49,9 @@ test("one click directly summarizes and supplies warm consent without confirmati
 test("a refusal the route publishes disables summary with its reason, and a cold session summarizes without warm", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
-  vi.mocked(compactLoop).mockClear().mockResolvedValue({ status: "started" });
+  vi.mocked(compactLoop)
+    .mockClear()
+    .mockResolvedValue({ status: "compacting" });
   try {
     for (const message of [
       "an approval gate is pending — resolve it first",

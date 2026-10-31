@@ -3,7 +3,9 @@
 
 use super::{ErrorCode, Host, fail, host_of, missing_host};
 use crate::catalog::{ConnectionCatalog, ModelRole, Recent, assemble};
+use crate::daemon::views;
 use crate::inference::ConnectionInventory;
+use crate::protocol::answers::CatalogList;
 use std::time::Duration;
 use trillium::Conn;
 use trillium_router::RouterConnExt;
@@ -124,9 +126,7 @@ pub(super) async fn catalog_all(conn: Conn) -> Conn {
             None => listed,
         });
     }
-    conn.with_status(200)
-        .with_body(serde_json::json!({ "connections": connections }).to_string())
-        .halt()
+    views::answer(conn, 200, CatalogList { connections })
 }
 
 /// `GET /inference/catalog/:connection?max_age=<secs>&cwd=&config=&role=`: one

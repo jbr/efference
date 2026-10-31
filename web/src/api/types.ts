@@ -103,6 +103,13 @@ export type ConfigChange =
       };
     };
 /**
+ * What became of a session that was archived.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ArchiveOutcome".
+ */
+export type ArchiveOutcome = "archived" | "discarded";
+/**
  * Whether a session is running on this host.
  *
  * Deliberately two states. A deliberate archive and a host that went away are
@@ -345,6 +352,43 @@ export type CacheMissReason =
   | "previous_message_not_found"
   | "unavailable"
   | "other";
+/**
+ * What a listed model does (docs/model-catalog.md): produce a turn, or answer
+ * typed questions about a state without producing one (a decision model, which
+ * only the spotter can use — docs/permissions.md).
+ *
+ * A row inherits its kind from where it was listed: a connection whose provider
+ * serves no turns lists only decision models, and OpenRouter declares it per
+ * entry in `architecture.output_modalities`.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ModelKind".
+ */
+export type ModelKind = "text" | "decisions";
+/**
+ * Which API family fronts a session's endpoint, spelled as its name.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "Provider".
+ */
+export type Provider =
+  | "anthropic"
+  | "openrouter"
+  | "openai"
+  | "openai-codex"
+  | "typesafe"
+  | "custom-messages"
+  | "custom-responses"
+  | "custom-completions"
+  | "custom-systemone";
+/**
+ * Where a connection's listing stands.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "CatalogStatus".
+ */
+export type CatalogStatus =
+  "fresh" | "stale" | "missing" | "failed" | "unavailable";
 /**
  * Wall-clock millis since the Unix epoch. **Log metadata only**: timestamps are
  * never projected onto the wire, so their non-determinism cannot affect cache
@@ -688,6 +732,29 @@ export type OpenRequest1 =
       stage: "streaming";
     };
 /**
+ * An enrolled device's id: 16 bytes from the OS random source, drawn fresh for
+ * every enrollment, so a revoked id is never issued again. Public — it is the
+ * readable half of a token and the table's key.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "DeviceId".
+ */
+export type DeviceId = string;
+/**
+ * How a device got its token.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "DeviceJoined".
+ */
+export type DeviceJoined = "code" | "link" | "add";
+/**
+ * What holds a device's token.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "DeviceKind".
+ */
+export type DeviceKind = "browser" | "script";
+/**
  * One subscription's answer to one push.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
@@ -719,6 +786,13 @@ export type DeviceDelivery1 =
       status: number | null;
     };
 /**
+ * What a listed entry is, after following a symlink.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "DirEntryKind".
+ */
+export type DirEntryKind = ("file" | "dir") | "other";
+/**
  * What the agent chose to do with one notification at a triage (docs/inbox.md).
  * "Leave" (bump to the next triage) is the *absence* of an entry, so it isn't a variant.
  *
@@ -726,6 +800,43 @@ export type DeviceDelivery1 =
  * via the `definition` "Disposition".
  */
 export type Disposition = "Pin" | "Dismiss";
+/**
+ * The precedence branch that supplied an effective value. Closed, because a
+ * client renders each branch differently: an inherited value is editable in
+ * place, a requested one is the edit.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SelectionSource".
+ */
+export type SelectionSource =
+  | "request"
+  | "history"
+  | "user_default"
+  | "main_provider"
+  | "decision_connection"
+  | "project_config"
+  | "provider_default"
+  | "shared_main";
+/**
+ * The effective triage client, flattened so it reads like the other role
+ * selections rather than echoing the request's tagged spelling.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "EffectiveTriage".
+ */
+export type EffectiveTriage =
+  | {
+      mode: "shared";
+    }
+  | {
+      auto_choice: boolean;
+      connection: string;
+      effort?: string | null;
+      mode: "separate";
+      model: string;
+      provider: Provider;
+      thinking: boolean;
+    };
 /**
  * The machine-readable half of an error response. Each variant has one canonical HTTP
  * status ([`ErrorCode::status`]), so a handler picks the code and the status follows.
@@ -793,21 +904,19 @@ export type ExitOutcome =
   | "signal"
   | "unknown";
 /**
- * Which API family fronts a session's endpoint, spelled as its name.
+ * The closed issue vocabulary. A client may render an unknown code by its
+ * `message` alone, but every code here is one it can special-case.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
- * via the `definition` "Provider".
+ * via the `definition` "IssueCode".
  */
-export type Provider =
-  | "anthropic"
-  | "openrouter"
-  | "openai"
-  | "openai-codex"
-  | "typesafe"
-  | "custom-messages"
-  | "custom-responses"
-  | "custom-completions"
-  | "custom-systemone";
+export type IssueCode =
+  | "required"
+  | "invalid_type"
+  | "out_of_range"
+  | "invalid_selection"
+  | "unavailable_connection"
+  | "invalid_config";
 /**
  * What of a tool result survives on the canonical wire (docs/triage.md).
  * Ranges are 1-based inclusive line spans, interpreted against the first
@@ -885,6 +994,23 @@ export type KeepaliveSkip1 =
  * via the `definition` "Landing".
  */
 export type Landing = "answered" | "now" | "queued" | "held";
+/**
+ * What a listed session is doing, in one word: `starting` while its environment and MCP
+ * servers are prepared, then the loop's phase as a list surface can show it without one
+ * state read per row.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ListedStatus".
+ */
+export type ListedStatus =
+  | "starting"
+  | "running"
+  | "idle"
+  | "gated"
+  | "asking"
+  | "stalled"
+  | "parked"
+  | "blocked";
 /**
  * The content of a log entry. Immutable once appended; curation never mutates
  * a payload's `raw`, only flips a [`WireState`] (docs/README.md).
@@ -1355,6 +1481,32 @@ export type LoopPhase =
 export type ReviewLevel =
   "autonomous" | "supervisor" | "spotter_human" | "human_only";
 /**
+ * The role a model is being chosen for. The one place the rule for which models
+ * a role may be offered lives, so the host's `?role=` filter and the TUI's
+ * pickers cannot differ on it (docs/model-catalog.md).
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ModelRole".
+ */
+export type ModelRole = "main" | "triage" | "spotter";
+/**
+ * What became of the git worktree a session made for itself when it was archived.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "RetiredWorktree".
+ */
+export type RetiredWorktree =
+  | {
+      branch_deleted: boolean;
+      removed: boolean;
+    }
+  | {
+      kept: string;
+    }
+  | {
+      failed: string;
+    };
+/**
  * Which loop is retrying. A triage retry and a turn retry have different
  * consequences — a withheld triage asks the agent to re-run a call whose side
  * effects already stand, where an exhausted turn ends the trajectory — so the
@@ -1365,6 +1517,36 @@ export type ReviewLevel =
  * via the `definition` "RetrySurface".
  */
 export type RetrySurface = "turn" | "triage";
+/**
+ * A claim's answer from `POST /pair/claim`: the device token once the host approved, or
+ * word that it has not yet. A claim that names nothing (used, expired, displaced) is a
+ * `404` instead.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SignInClaim".
+ */
+export type SignInClaim =
+  | {
+      token: string;
+    }
+  | StatusBody;
+/**
+ * The word a route answers `status` with when it has acted on a request.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "StatusWord".
+ */
+export type StatusWord =
+  | "accepted"
+  | "resolved"
+  | "escalated"
+  | "interrupted"
+  | "continuing"
+  | "compacting"
+  | "killed"
+  | "subscribed"
+  | "unsubscribed"
+  | "pending";
 /**
  * Why a trajectory stopped short of finishing (docs/transport.md).
  *
@@ -1862,6 +2044,98 @@ export interface BoundAction {
   session: string;
 }
 /**
+ * The connections of the model catalog, from `GET /inference/catalog`.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "CatalogList".
+ */
+export interface CatalogList {
+  connections: ConnectionCatalog[];
+}
+/**
+ * One connection's entry in a catalog answer.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ConnectionCatalog".
+ */
+export interface ConnectionCatalog {
+  /**
+   * Seconds since the copy was fetched.
+   */
+  age?: number | null;
+  connection: string;
+  error?: string | null;
+  models: CatalogModel[];
+  provider: Provider;
+  status: CatalogStatus;
+}
+/**
+ * One row as a client receives it: the stored row, the connection it belongs
+ * to, and the rank of the matching recent pick, folded in at read time.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "CatalogModel".
+ */
+export interface CatalogModel {
+  connection: string;
+  /**
+   * Context window in tokens.
+   */
+  context?: number | null;
+  /**
+   * Unix seconds.
+   */
+  created?: number | null;
+  /**
+   * Provider-supplied prose, when nonempty.
+   */
+  description?: string | null;
+  /**
+   * OpenRouter's author, alias marker removed.
+   */
+  group?: string | null;
+  /**
+   * Image input.
+   */
+  images?: boolean | null;
+  /**
+   * Absent on the wire for a text model, the common case.
+   */
+  kind?: ModelKind;
+  /**
+   * The provider's lifecycle stage (Anthropic `lifecycle`: `active`,
+   * `deprecated`, `retired`), verbatim.
+   */
+  lifecycle?: string | null;
+  /**
+   * The model line the provider files it under (Anthropic `line`: `haiku`,
+   * `sonnet`, …), read rather than inferred from the id.
+   */
+  line?: string | null;
+  /**
+   * The provider-native id a session draft carries.
+   */
+  model: string;
+  name?: string | null;
+  price?: ModelPrice | null;
+  reasoning?: boolean | null;
+  /**
+   * 1 for the most recently and heavily picked model in the requested
+   * project scope, counted across connections.
+   */
+  recent?: number | null;
+}
+/**
+ * USD per million tokens.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ModelPrice".
+ */
+export interface ModelPrice {
+  input: number;
+  output: number;
+}
+/**
  * A turn's closing message, cut at [`CLOSING_CAP`].
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
@@ -2062,6 +2336,18 @@ export interface ConfigRepair {
   restore_error: string;
 }
 /**
+ * One connection a host can disclose to an inference-options client. It reports
+ * configuration status only; it never carries an endpoint or credential source.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ConnectionInventory".
+ */
+export interface ConnectionInventory {
+  available: boolean;
+  name: string;
+  provider: Provider;
+}
+/**
  * The tag on a `content` a control-channel view truncated: how many bytes the view
  * carries, and how many the whole result holds. `GET /log/:seq` serves the rest
  * (docs/control-api.md).
@@ -2195,6 +2481,16 @@ export interface CreateSession {
   worktree: boolean;
 }
 /**
+ * The answer to `POST /sessions`: the id the session was reserved under. The session is
+ * listed as `starting` and prepares after the answer.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "CreatedSession".
+ */
+export interface CreatedSession {
+  id: string;
+}
+/**
  * The `current_operations` topic: the upstream requests open now, the tool calls
  * executing, and a compaction waiting or writing. The topic is `null` rather than empty
  * when nothing is open; where the loop itself waits is the `loop_phase` topic.
@@ -2240,6 +2536,84 @@ export interface RunningTool {
    * The tool's wire name.
    */
   tool: string;
+}
+/**
+ * One row: an enrolled device, the holder of one TCP credential.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "Device".
+ */
+export interface Device {
+  /**
+   * Unix seconds.
+   */
+  created_at: number;
+  id: DeviceId;
+  joined: DeviceJoined;
+  kind: DeviceKind;
+  /**
+   * Display text, cleaned on the way in ([`clean_label`]).
+   */
+  label: string;
+  /**
+   * Unix seconds of the last request recorded, written at most every
+   * [`SEEN_INTERVAL_SECS`]; `None` before the first.
+   */
+  last_seen_at: number | null;
+}
+/**
+ * The enrolled devices, oldest first, from `GET /auth/devices`. Never a token.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "DeviceList".
+ */
+export interface DeviceList {
+  devices: Device[];
+}
+/**
+ * One entry of a directory listing. `kind` follows symlinks (a link to a directory lists as
+ * a directory) while `symlink` records that the entry itself is one, so a client can show
+ * the indirection without a second request.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "DirEntry".
+ */
+export interface DirEntry {
+  kind: DirEntryKind;
+  /**
+   * Absent (`null`) for a link whose target does not resolve.
+   */
+  modified_at: Timestamp | null;
+  /**
+   * Bare in a flat listing; relative to the listed directory in a recursive one.
+   */
+  name: string;
+  /**
+   * Bytes on disk. Reported for directories too, where it is the directory's own size and
+   * means nothing to a reader.
+   */
+  size: number;
+  symlink: boolean;
+}
+/**
+ * A directory's listing. `path` is the directory's own path relative to the root, empty at
+ * the root itself, so a client can render a breadcrumb without reconstructing it from the
+ * URL.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "DirListing".
+ */
+export interface DirListing {
+  entries: DirEntry[];
+  path: string;
+  /**
+   * Whether entry names are paths (recursive) or bare names (flat).
+   */
+  recursive: boolean;
+  /**
+   * A cap was hit: the set is a prefix of what is there, not the whole of it.
+   */
+  truncated: boolean;
 }
 /**
  * One dormant session as `GET /sessions/:session` answers it: the listing's row,
@@ -2354,6 +2728,87 @@ export interface EditTelemetry {
   operation?: string | null;
 }
 /**
+ * One effective field: the value that would be used, and where it came from.
+ * `source: null` marks a field whose resolution *failed* — the paired issue says
+ * why. A `value: null` with a source present is an ordinary omission.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "Effective-EffectiveTriage".
+ */
+export interface EffectiveEffectiveTriage {
+  source: SelectionSource | null;
+  value: EffectiveTriage | null;
+}
+/**
+ * One effective field: the value that would be used, and where it came from.
+ * `source: null` marks a field whose resolution *failed* — the paired issue says
+ * why. A `value: null` with a source present is an ordinary omission.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "Effective-ModelSelection".
+ */
+export interface EffectiveModelSelection {
+  source: SelectionSource | null;
+  value: ModelSelection | null;
+}
+/**
+ * A selected connection plus the provider-native model ID sent upstream.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ModelSelection".
+ */
+export interface ModelSelection {
+  connection: string;
+  model: string;
+  provider: Provider;
+}
+/**
+ * One effective field: the value that would be used, and where it came from.
+ * `source: null` marks a field whose resolution *failed* — the paired issue says
+ * why. A `value: null` with a source present is an ordinary omission.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "Effective-string".
+ */
+export interface EffectiveString {
+  source: SelectionSource | null;
+  value: string | null;
+}
+/**
+ * One effective field: the value that would be used, and where it came from.
+ * `source: null` marks a field whose resolution *failed* — the paired issue says
+ * why. A `value: null` with a source present is an ordinary omission.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "Effective-uint8".
+ */
+export interface EffectiveUint8 {
+  source: SelectionSource | null;
+  value: number | null;
+}
+/**
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "EffectiveOptions".
+ */
+export interface EffectiveOptions {
+  effort: EffectiveString;
+  main: EffectiveModelSelection;
+  spotter: EffectiveModelSelection;
+  temperature: EffectiveUint8;
+  triage: EffectiveEffectiveTriage;
+}
+/**
+ * A device just enrolled, with its token: the one answer that carries the token.
+ * No `Debug`, because the token is a credential.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "Enrolled".
+ */
+export interface Enrolled {
+  device: Device;
+  token: string;
+}
+/**
  * The body of a non-2xx response.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
@@ -2443,6 +2898,19 @@ export interface StreamDiagnostics {
   status: number;
 }
 /**
+ * The answer to `POST /notifications`: where the notification arrived in the log.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "FiledNotification".
+ */
+export interface FiledNotification {
+  /**
+   * The arrival entry's seq. Absent for a notification on a slot, which has no entry
+   * until a triage shows it.
+   */
+  seq?: number | null;
+}
+/**
  * What a read of the status carries below the condition; subscription notifications
  * leave it out.
  *
@@ -2476,6 +2944,25 @@ export interface Footer {
    * Each queued turn's `source`, in submission order: `None` for the operator.
    */
   queued?: (string | null)[];
+}
+/**
+ * The answer to `DELETE /projects`: the identity that was forgotten.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ForgottenProject".
+ */
+export interface ForgottenProject {
+  forgotten: ProjectIdentity;
+}
+/**
+ * What names one entry for `DELETE /projects`.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ProjectIdentity".
+ */
+export interface ProjectIdentity {
+  config_key: string;
+  cwd: string;
 }
 /**
  * The `gate` topic: the call held for a decision, as `GET /state` surfaces it — the
@@ -2575,17 +3062,6 @@ export interface InferenceIdentity {
   triage: TriageIdentity;
 }
 /**
- * A selected connection plus the provider-native model ID sent upstream.
- *
- * This interface was referenced by `ControlChannel`'s JSON-Schema
- * via the `definition` "ModelSelection".
- */
-export interface ModelSelection {
-  connection: string;
-  model: string;
-  provider: Provider;
-}
-/**
  * Which client triages tool results: the main client (`shared`), or its own,
  * whose selection is then reported like the other roles. A shared triage reports
  * the main selection so two accounts on one model stay distinguishable.
@@ -2642,6 +3118,16 @@ export interface Interruption {
   killed?: boolean;
 }
 /**
+ * The host's configured connections, from `GET /inference`, sorted by name. Whether each
+ * can be used, and nothing that would let a client reach it: no endpoint, no credential.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "InventoryList".
+ */
+export interface InventoryList {
+  connections: ConnectionInventory[];
+}
+/**
  * The most recent cache miss the provider attributed, as `GET /state` publishes it
  * (docs/control-api.md). The reason is the provider's own spelling, and two of the six
  * values — `previous_message_not_found` and `unavailable` — mean no comparison was
@@ -2665,8 +3151,7 @@ export interface LastCacheMiss {
   reason: CacheMissReason;
 }
 /**
- * One row of `GET /sessions` (docs/control-api.md). Also the shape the
- * `sessions` tool answers with, hence the schema derive (docs/tools.md).
+ * One row of `GET /sessions` (docs/control-api.md).
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "ListedSession".
@@ -2690,17 +3175,26 @@ export interface ListedSession {
    */
   processes: number;
   /**
-   * What the session is doing, as a single word: `starting` while it is
-   * prepared, then `running`, `idle`, `gated`, `asking`, `stalled`, `parked`, or
-   * `blocked`.
+   * What the session is doing, as a single word.
    */
-  status: string;
+  status: ListedStatus;
   title?: string | null;
   /**
    * The session's working directory, when it is not the project: a session in
    * a git worktree (docs/worktrees.md).
    */
   working?: string | null;
+}
+/**
+ * A tool call and the entry that carries it, from `GET /tool_calls/:call_id`. A call is
+ * embedded in an `Assistant` entry rather than being one, so this is its address.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "LocatedToolCall".
+ */
+export interface LocatedToolCall {
+  call: ToolCall;
+  seq: number;
 }
 /**
  * One immutable, ordered record in the log.
@@ -3439,6 +3933,35 @@ export interface PendingProposal {
   seq: number;
 }
 /**
+ * A pending sign-in as the approving side sees it: the label the browser gave and when
+ * it asked. There is no code field, so no listing or approval answer can carry one —
+ * the operator approves by typing what the browser displays, never by picking from a
+ * list (docs/web-bind.md).
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "PendingSignIn".
+ */
+export interface PendingSignIn {
+  /**
+   * Unix seconds.
+   */
+  created_at: number;
+  /**
+   * Display text, cleaned on the way in ([`clean_label`]).
+   */
+  label: string;
+}
+/**
+ * The sign-ins waiting for approval, oldest first, from `GET /auth/pending`. A row has
+ * the label and the time but never the code: approval is typing what the browser shows.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "PendingSignInList".
+ */
+export interface PendingSignInList {
+  pending: PendingSignIn[];
+}
+/**
  * Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check
  * time (see [`crate::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.
  * Serialized as the `role` topic reports a grant (docs/control-api.md).
@@ -3513,6 +4036,46 @@ export interface PlanSnapshot {
    * The subscription plan type, such as `plus`.
    */
   type: string | null;
+}
+/**
+ * Why a field could not be used as given. `field` names the request field, so a
+ * client can attach the message to the control the operator is editing.
+ *
+ * `field` is a `Cow` rather than a `&'static str` because the type crosses the
+ * wire in both directions: the host builds every issue from a literal, and a
+ * control client decodes the same type back (docs/control-api.md).
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "PreviewIssue".
+ */
+export interface PreviewIssue {
+  code: IssueCode;
+  field: string;
+  message: string;
+}
+/**
+ * One cursor read of a process's retained output, from `GET /processes/:id/output`.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ProcessOutputRead".
+ */
+export interface ProcessOutputRead {
+  /**
+   * Pass back as `since` to resume after what this read returned.
+   */
+  cursor: number;
+  id: number;
+  /**
+   * Bytes between the caller's cursor and the earliest retained byte, dropped at the
+   * retention cap and reported rather than skipped.
+   */
+  lost: number;
+  /**
+   * The retained bytes from the caller's cursor to the end, lossily decoded. Empty when
+   * the cursor is already at the end.
+   */
+  output: string;
+  running: boolean;
 }
 /**
  * One process, running or exited — the durable answer to "what was `p#<n>`"
@@ -3615,6 +4178,86 @@ export interface ProcessState {
   spawned_at: Timestamp;
 }
 /**
+ * One remembered launch location. `cwd` and `config` are exactly what `POST /sessions`
+ * takes back, so an entry replays a launch verbatim.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ProjectEntry".
+ */
+export interface ProjectEntry {
+  /**
+   * The configuration the launch named, as it was named. `null` asks creation to probe,
+   * which is what a launch that named none did.
+   */
+  config: string | null;
+  /**
+   * The identity the index stored the entry under, which `DELETE /projects` takes.
+   * Reported rather than recomputed, because recomputing re-probes the filesystem.
+   */
+  config_key: string;
+  cwd: string;
+  /**
+   * The directory's own name, or its full path where it has none (a filesystem root).
+   */
+  label: string;
+  /**
+   * Unix seconds.
+   */
+  last_used_at: number;
+}
+/**
+ * The entries of `GET /projects`, most recently used first.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ProjectList".
+ */
+export interface ProjectList {
+  projects: ProjectEntry[];
+}
+/**
+ * The state a proposal reached, from `PATCH /proposals/:seq`: `committed` or `cancelled`.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ProposalResolution".
+ */
+export interface ProposalResolution {
+  state: EditState;
+}
+/**
+ * The key a browser subscribes to push with, from `GET /push`: the machine's VAPID public
+ * key, which is `applicationServerKey` verbatim.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "PushKey".
+ */
+export interface PushKey {
+  /**
+   * Base64url of the uncompressed P-256 point.
+   */
+  key: string;
+}
+/**
+ * The answer to `DELETE /auth/devices/:id`: the device whose token is refused from now on.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "RemovedDevice".
+ */
+export interface RemovedDevice {
+  removed: DeviceId;
+}
+/**
+ * Every effective field plus the issues that would stop creation. Preview
+ * serializes this; creation refuses a non-empty `issues` and then resolves
+ * credentials for the same selections.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ResolvedOptions".
+ */
+export interface ResolvedOptions {
+  effective: EffectiveOptions;
+  issues: PreviewIssue[];
+}
+/**
  * Lines kept vs. lines triage was shown, plus the count of results whose output was
  * withheld outright. Cumulative over some span of the log.
  *
@@ -3714,6 +4357,29 @@ export interface SelectionLines {
   total_lines: number;
 }
 /**
+ * The answer to `DELETE /sessions/:session`, and to a `PATCH` that makes the session
+ * `archived`, once its teardown has run.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SessionArchived".
+ */
+export interface SessionArchived {
+  /**
+   * The sessions that ended with it (its non-detached descendants), when there were any.
+   */
+  ended_with?: string[];
+  id: string;
+  /**
+   * `false` on a patch, which says it reopened nothing; absent on `DELETE`.
+   */
+  resumed?: boolean | null;
+  state: ArchiveOutcome;
+  /**
+   * The fate of the session's own worktree; absent when it made none.
+   */
+  worktree?: RetiredWorktree | null;
+}
+/**
  * The `session_identity` topic: what a session is, for a client that has to name it on
  * screen — its id and title, the model it was configured with, and the directory it runs
  * in (docs/control-api.md).
@@ -3781,6 +4447,73 @@ export interface SessionOptionsRequest {
   spotter_model?: string | null;
   temperature?: number | null;
   triage?: TriageChoice | null;
+}
+/**
+ * The answer to a `PATCH /sessions/:session` that makes the session `active`.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SessionResumed".
+ */
+export interface SessionResumed {
+  id: string;
+  /**
+   * Whether this call is what made the session live: `false` for a repeat of a patch
+   * the host had already taken, so a retry reads the same answer either way.
+   */
+  resumed: boolean;
+  /**
+   * `active`.
+   */
+  state: SessionState;
+}
+/**
+ * The answer to a `PATCH /sessions/:session` that sets or clears a supervisor.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SessionSupervised".
+ */
+export interface SessionSupervised {
+  id: string;
+  /**
+   * `active`.
+   */
+  state: SessionState;
+  /**
+   * The pointer as it now reads: `null` once cleared.
+   */
+  supervisor: string | null;
+}
+/**
+ * An answer whose word is all it has to say: `{"status": <word>}`.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "StatusBody".
+ */
+export interface StatusBody {
+  status: StatusWord;
+}
+/**
+ * The sign-in link from `GET /auth/link`: a sign-in approved before it was asked for, its
+ * claim secret in the fragment.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SignInLink".
+ */
+export interface SignInLink {
+  url: string;
+}
+/**
+ * What `POST /pair` answers the page that asked: the claim secret this page alone polls
+ * with, the short code it shows for the operator to approve at the host, and the seconds
+ * both live.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SignInRequest".
+ */
+export interface SignInRequest {
+  claim: string;
+  code: string;
+  expires_in: number;
 }
 /**
  * A trajectory that ended without finishing (docs/transport.md).
@@ -4234,4 +4967,36 @@ export interface ToolEntry {
    */
   server?: string | null;
   title?: string | null;
+}
+/**
+ * The answer to `POST /turns`: the turn is enqueued, under the id it will be addressed by.
+ * The id is informational: the turn's effects can arrive on the stream before this body
+ * resolves.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "TurnAccepted".
+ */
+export interface TurnAccepted {
+  /**
+   * Where the turn went.
+   */
+  delivery: Landing;
+  /**
+   * `accepted`.
+   */
+  status: StatusWord;
+  /**
+   * The id the client sent, or the one the host minted.
+   */
+  submission_id: string;
+}
+/**
+ * The answer to `DELETE /turns/:submission_id`: the turns the recall popped, in the order they
+ * were submitted. Empty when the loop had already taken them.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "WithdrawnTurns".
+ */
+export interface WithdrawnTurns {
+  withdrawn: QueuedTurn[];
 }
