@@ -136,6 +136,13 @@ pub struct Client {
     /// socket, and the partial comes back marked [`FailureClass::Aborted`].
     /// `None` for clients nothing interrupts (the spotter, the dev verbs).
     abort: Option<Arc<tokio::sync::Notify>>,
+    /// The loop's interrupt latch, on the model request the loop sends between its
+    /// junctures (docs/control-channel.md): read once the abort is armed, so a press
+    /// after the loop's last juncture stops the request before it is sent rather than
+    /// at the next juncture. Only that request carries it: a juncture or the
+    /// trajectory's start has consumed any earlier press, while every other request on
+    /// these clients may run with an earlier press still latched, which is not theirs.
+    interrupt_latch: Option<Arc<std::sync::atomic::AtomicBool>>,
     /// The session's effort level, when one is set (docs/transport.md). Rides
     /// every request this client makes — the turn loop and the triage, so the
     /// triage's prefix still matches the agent lineage's (docs/triage.md),
@@ -284,6 +291,7 @@ impl Client {
             reservation: reservation_state(),
             stream_ceiling: DEFAULT_STREAM_CEILING,
             abort: None,
+            interrupt_latch: None,
             effort: None,
             upstream: None,
             prompt_cache: PromptCachePolicy::None,
@@ -637,6 +645,15 @@ impl Client {
     /// (docs/consolidate.md).
     pub fn without_interrupt(mut self) -> Self {
         self.abort = None;
+        self.interrupt_latch = None;
+        self
+    }
+
+    /// This client, for the model request the loop sends between its junctures: it
+    /// reads the loop's interrupt `latch` once its abort is armed, and is not sent when
+    /// a press has landed since the loop's last juncture (docs/control-channel.md).
+    pub fn with_interrupt_latch(mut self, latch: Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.interrupt_latch = Some(latch);
         self
     }
 

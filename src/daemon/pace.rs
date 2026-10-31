@@ -374,6 +374,24 @@ impl Session {
         Arc::clone(&self.interrupt)
     }
 
+    /// The interrupt latch, for the loop's model request to read once its abort is armed
+    /// (`Client::with_interrupt_latch`, docs/control-channel.md). A press sets it
+    /// ([`interrupt`](Self::interrupt)) and the loop consumes it
+    /// ([`take_interrupt`](Self::take_interrupt)); the request only reads it.
+    pub(crate) fn interrupt_latch(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.interrupt_latch)
+    }
+
+    /// Run what a test armed for the loop's next model request (`before_request`): the
+    /// loop's last juncture is behind it, and the request has not armed its abort yet.
+    #[cfg(test)]
+    pub(crate) fn interleave_before_request(&self) {
+        let interleaved = self.before_request.lock().unwrap().take();
+        if let Some(interleaved) = interleaved {
+            interleaved(self);
+        }
+    }
+
     /// Record where the interrupt came from, then signal it. The entry is appended
     /// first, so it precedes the `failed: interrupted` stage the signal causes in
     /// the log (docs/log-and-projection.md). A failed write is reported and

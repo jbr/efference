@@ -78,9 +78,10 @@ const SETTLE: Duration = Duration::from_secs(3);
 const POLL: Duration = Duration::from_millis(100);
 
 /// Ask the host what became of the session `client` was attached to, once the stream
-/// has closed. An answer that says the session is still running, or stopped without an
-/// `Archived` entry, may be the middle of an archive, so it is asked again for a
-/// bounded time before it is reported.
+/// has closed. An answer that says the session is still hosted may be the middle of an
+/// archive, so it is asked again for a bounded time before it is reported. One on disk
+/// is final: a session leaves the host's map only once its `Archived` entry is written
+/// (docs/control-api.md), so one without it was stopped.
 pub(crate) async fn ask(client: &Client) -> Closure {
     ask_within(client, SETTLE).await
 }
@@ -89,10 +90,7 @@ async fn ask_within(client: &Client, budget: Duration) -> Closure {
     let deadline = Instant::now() + budget;
     loop {
         let closure = ask_once(client).await;
-        let changing = matches!(
-            closure,
-            Closure::StillHosted { .. } | Closure::Stopped { .. }
-        );
+        let changing = matches!(closure, Closure::StillHosted { .. });
         if !changing || Instant::now() >= deadline {
             return closure;
         }

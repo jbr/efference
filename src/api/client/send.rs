@@ -6,15 +6,33 @@ use super::*;
 
 use super::upstream_status::record_upstream_failure;
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use tokio::sync::futures::Notified;
+
+/// Why a read the operator's interrupt ended stopped: the failure its record-only entry
+/// carries (docs/log-and-projection.md).
+const INTERRUPTED: &str = "generation interrupted";
 
 impl Client {
     /// [`Self::complete`], with the output cap fixed at `cap` instead of reserved
     /// against the window when one is given. A fixed cap is sent as-is, also on the
     /// Codex profile that otherwise omits it, and a refusal of it is not retried at
     /// another value: the caller chose it (the Responses keepalive, docs/transport.md).
-    /// Reached through [`Self::send`], which handles an image refusal.
-    pub(super) async fn send_request(
+    ///
+    /// The operator's interrupt (docs/control-channel.md) is armed here, before anything
+    /// is sent, and the one armed future serves every attempt below — the image-withheld
+    /// retry ([`Self::send_with_image_fallback`]), a reservation or credential retry — so a
+    /// press between two attempts reaches the later one. Armed before sending rather than
+    /// once a stream opens: `notify_waiters` stores no permit, so a press that lands after
+    /// the request reached the upstream but before the read loop registered would
+    /// otherwise be lost, leaving the read on a stream that may never finish.
+    ///
+    /// The loop's model request then reads the loop's latch ([`Self::with_interrupt_latch`]),
+    /// which closes the gap before the arm. A press sets the latch and then notifies, and
+    /// `notify_waiters` wakes every future created before it: a press after the arm wakes
+    /// the read, and one before it set the latch first, so the read here sees it. A request
+    /// a press has reached here is not sent, and ends as a read the interrupt ended.
+    pub(super) async fn send(
         &self,
         turns: &[WireTurn],
         tools: &[Value],
@@ -22,9 +40,58 @@ impl Client {
         cap: Option<u32>,
         on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
+        let abort_signal = self
+            .abort
+            .clone()
+            .unwrap_or_else(|| Arc::new(tokio::sync::Notify::new()));
+        let abort = abort_signal.notified();
+        tokio::pin!(abort);
+        abort.as_mut().enable();
+        if self
+            .interrupt_latch
+            .as_ref()
+            .is_some_and(|latch| latch.load(Ordering::SeqCst))
+        {
+            log::debug!("{INTERRUPTED} before its request was sent");
+            return Ok(self.interrupted_unsent());
+        }
+        self.send_with_image_fallback(turns, tools, tool_choice, cap, abort, on_delta)
+            .await
+    }
+
+    /// The completion of a request the operator's interrupt reached before it was sent:
+    /// the one [`Self::read_stream`] returns for a read the interrupt ends before its first
+    /// event, without a request behind it, so no stage is recorded for it.
+    fn interrupted_unsent(&self) -> Completion {
+        let mut assembler = AnyAssembler::new(self.dialect());
+        assembler.fail(INTERRUPTED.to_string());
+        let mut completion = assembler.finish();
+        completion.failure_class = FailureClass::Aborted;
+        completion
+    }
+
+    /// One attempt of [`Self::send`], traced: its stages go to the session's log
+    /// (docs/log-and-projection.md), and an upstream failure to the session's cell.
+    pub(super) async fn send_request(
+        &self,
+        turns: &[WireTurn],
+        tools: &[Value],
+        tool_choice: ToolChoice,
+        cap: Option<u32>,
+        abort: Pin<&mut Notified<'_>>,
+        on_delta: impl FnMut(Streamed),
+    ) -> Result<Completion, Error> {
         let trace = Trace::begin(self.stages.as_ref(), self.origin, &self.active_trace);
         let result = self
-            .send_traced(trace.as_ref(), turns, tools, tool_choice, cap, on_delta)
+            .send_traced(
+                trace.as_ref(),
+                turns,
+                tools,
+                tool_choice,
+                cap,
+                abort,
+                on_delta,
+            )
             .await;
         if let Err(error) = &result
             && error_status(error).is_none_or(|status| (200..300).contains(&status))
@@ -58,7 +125,11 @@ impl Client {
             && completion.request_usage().usage.input_tokens > 0
     }
 
-    /// [`Self::send`]'s request itself, reporting the stages it passes to `trace`.
+    /// [`Self::send_request`]'s attempt itself, reporting the stages it passes to `trace`
+    /// and reading against `abort`, the interrupt [`Self::send`] armed.
+    // One caller, `send_request`, which hands every input through unchanged, so an
+    // options value would be the parameter list under another name.
+    #[allow(clippy::too_many_arguments)]
     async fn send_traced(
         &self,
         trace: Option<&Trace>,
@@ -66,6 +137,7 @@ impl Client {
         tools: &[Value],
         tool_choice: ToolChoice,
         cap: Option<u32>,
+        mut abort: Pin<&mut Notified<'_>>,
         on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
         // A turn list recorded in the other dialect never becomes a request: the
@@ -81,19 +153,6 @@ impl Client {
         // response's exact count.
         let body_bytes = encoded.body_bytes(&self.system, tools)?;
         let mut max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
-        // The operator's interrupt (docs/control-channel.md) is armed before the
-        // request is sent, not once its stream opens: `notify_waiters` stores no
-        // permit, so a press that lands after the request reaches the upstream but
-        // before the read loop registers would otherwise be lost, leaving the read
-        // on a stream that may never finish. Armed here, it is ready the first time
-        // the read loop polls it.
-        let abort_signal = self
-            .abort
-            .clone()
-            .unwrap_or_else(|| Arc::new(tokio::sync::Notify::new()));
-        let abort = abort_signal.notified();
-        tokio::pin!(abort);
-        abort.as_mut().enable();
         let open = Open {
             trace,
             encoded: &encoded,
@@ -429,14 +488,7 @@ impl Client {
         mut abort: Pin<&mut Notified<'_>>,
         mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
-        let mut assembler = match self.dialect() {
-            WireDialect::Messages => AnyAssembler::Messages(Assembler::new()),
-            WireDialect::Responses => AnyAssembler::Responses(ResponsesAssembler::new()),
-            WireDialect::Completions => AnyAssembler::Completions(CompletionsAssembler::new()),
-            WireDialect::SystemOne => {
-                unreachable!("a client is only built on a provider that serves turns")
-            }
-        };
+        let mut assembler = AnyAssembler::new(self.dialect());
         // The response the stream opened on, read off the executed conn before the
         // first event. Only the empty-finalized path keeps it (docs/transport.md) —
         // that path's whole record is otherwise one prose string, and the edge's
@@ -463,7 +515,7 @@ impl Client {
                 }
             },
             _ = abort.as_mut() => {
-                let why = "generation interrupted".to_string();
+                let why = INTERRUPTED.to_string();
                 log::debug!("{why}");
                 assembler.fail(why);
                 operator_abort = true;
@@ -708,6 +760,17 @@ enum AnyAssembler {
 }
 
 impl AnyAssembler {
+    fn new(dialect: WireDialect) -> Self {
+        match dialect {
+            WireDialect::Messages => Self::Messages(Assembler::new()),
+            WireDialect::Responses => Self::Responses(ResponsesAssembler::new()),
+            WireDialect::Completions => Self::Completions(CompletionsAssembler::new()),
+            WireDialect::SystemOne => {
+                unreachable!("a client is only built on a provider that serves turns")
+            }
+        }
+    }
+
     fn observed_response(&mut self, response: ResponseMeta) {
         match self {
             Self::Messages(a) => a.observed_response(response),

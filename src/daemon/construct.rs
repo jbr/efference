@@ -245,7 +245,7 @@ impl Session {
             pending: Mutex::new(None),
             supervisor: Mutex::new(None),
             interrupt: Arc::new(Notify::new()),
-            interrupt_latch: AtomicBool::new(false),
+            interrupt_latch: Arc::default(),
             detach: Notify::new(),
             detach_note: Mutex::new(None),
             appended: Notify::new(),
@@ -262,6 +262,8 @@ impl Session {
             between_pushes: Mutex::new(None),
             #[cfg(test)]
             before_archived: Mutex::new(None),
+            #[cfg(test)]
+            before_request: Mutex::new(None),
             queue: Mutex::new(std::collections::VecDeque::new()),
             ask: Mutex::new(None),
             settle_changed: Notify::new(),

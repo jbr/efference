@@ -41,7 +41,9 @@ impl Host {
 
     /// Archive every session on this host, starting or hosted, and return once none
     /// is left. A non-detached child is left to the cascade its creator's end runs
-    /// (`adopt_prepared`), so each session is archived once. A session that arrives
+    /// (`adopt_prepared`), so each session is archived once. An end resolves once its
+    /// session and the ones its cascade reached have left the map (`end.rs`), so a round
+    /// that has awaited its ends has emptied the map of them; a session that arrives
     /// meanwhile is taken by the next round.
     async fn archive_all(self: &Arc<Self>) {
         loop {
@@ -68,24 +70,6 @@ impl Host {
                 }
             }
             while ending.join_next().await.is_some() {}
-            self.left_the_map(&roots).await;
-        }
-    }
-
-    /// Wait until none of `ids` is in the map. A hosted session leaves once the
-    /// watcher `adopt_prepared` spawned has run its cascade, so this also waits out
-    /// the children that end with it.
-    async fn left_the_map(&self, ids: &[String]) {
-        loop {
-            // Armed before the map is read, as in `listing_stream`.
-            let changed = self.listing_changed.notified();
-            tokio::pin!(changed);
-            changed.as_mut().enable();
-            let present = self.ids();
-            if !ids.iter().any(|id| present.contains(id)) {
-                return;
-            }
-            changed.await;
         }
     }
 }

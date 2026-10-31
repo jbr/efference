@@ -831,7 +831,8 @@ Stop what the loop is doing now: a running tool is signalled (the SIGINT
 equivalent; kills its process group) and the turn continues from its withheld
 result; a generation in flight is ended — the stream is dropped, what streamed is
 kept as a record-only entry, and the loop returns to idle, where a queued turn
-lands at once. A no-op only when the loop is idle. A verb-route on the loop
+lands at once. A generation the loop is about to request is not sent, and ends the
+same way with nothing streamed. A no-op only when the loop is idle. A verb-route on the loop
 resource because it *is* a verb — it signals, it doesn't delete state.
 
 - Body, optional: `{ "source"?: "<string>", "control"?: "<string>" }`. `source` names who
@@ -844,8 +845,9 @@ resource because it *is* a verb — it signals, it doesn't delete state.
   harness (over MCP) or the calling session (in-session) as `source`.
 - The host appends the origin as a `Telemetry::Interrupt` entry before it signals, so
   the entry precedes the `failed: interrupted` stage the signal causes
-  ([log-and-projection.md](log-and-projection.md)); it is appended whether or not
-  anything was running.
+  ([log-and-projection.md](log-and-projection.md)); a request the signal stops before
+  it is sent records no stage. The entry is appended whether or not anything was
+  running.
 - `400 bad_request` — a body that is not an origin; nothing is signalled.
 
 - `200 {"status":"interrupted"}`

@@ -63,7 +63,7 @@ pub(crate) fn session_id_prefix(id: Option<&str>) -> String {
 }
 
 /// Code a test interleaves at one point in a session's work, run once there
-/// (`between_reads`, `between_pushes`, `before_archived`).
+/// (`between_reads`, `between_pushes`, `before_archived`, `before_request`).
 #[cfg(test)]
 type Interleaving = Box<dyn FnOnce(&Session) + Send>;
 
@@ -148,8 +148,10 @@ pub struct Session {
     /// awaits the abort future — every non-bash tool (`src/tools.rs`) — the wakeup has nowhere to
     /// land and is dropped. This flag is what survives it: the loop reads it at the junctures
     /// either side of a call and stops there, so the interrupt lands on tools it cannot suspend.
-    /// Latching also closes the window between a bash spawn and the abort future's first poll.
-    interrupt_latch: AtomicBool,
+    /// Latching also closes the window between a bash spawn and the abort future's first poll,
+    /// and the one between the loop's last juncture and its model request's armed abort: that
+    /// request reads it too (`Client::with_interrupt_latch`).
+    interrupt_latch: Arc<AtomicBool>,
     /// Fired by `PATCH /processes/:id {background: true}` — the detach half of the interrupt intent
     /// (docs/process-monitor.md, the foreground→background handoff). Like `interrupt`,
     /// `notify_waiters` reaches only a *currently-awaited* race, so a detach
@@ -206,6 +208,10 @@ pub struct Session {
     /// `Archived` entry is appended: a test's stand-in for the host's watcher landing there.
     #[cfg(test)]
     before_archived: Mutex<Option<Interleaving>>,
+    /// Run once by the loop's next model request, after the loop's last juncture and before
+    /// the request arms its abort: a test's stand-in for a press landing there.
+    #[cfg(test)]
+    before_request: Mutex<Option<Interleaving>>,
     /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
     /// the **authority** on what is pending, mirroring what was pushed into `turns_tx`. It closes
     /// the cross-task race in [`Session::is_settled`] (a turn exists even in the instant before the

@@ -199,7 +199,8 @@ under `spot`, one request id per POST (the cold question set and the relation se
 client-asserted labels as `POST /loop/interrupt` received them (`source` spelled as a
 turn's is, `control` naming the button or key). It is appended before the signal fires, so it
 precedes the `failed: interrupted` stage of the request the signal ends, and it is
-appended when nothing was running too. The `[env]` masker passes both labels.
+appended when nothing was running too. The loop's model request that the press reaches
+before it is sent is not sent and records no stage ([control-channel.md](control-channel.md)). The `[env]` masker passes both labels.
 
 `GateDecision` records a decision on a held call as `PUT /approvals/:call_id` or the
 in-session approve accepted it: `{call_id, decision, source?, note_submission?}`, where `decision` is the

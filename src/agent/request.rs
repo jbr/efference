@@ -112,8 +112,15 @@ async fn attempt(
     toolbox: &mut Toolbox,
     turn: &mut Turn,
 ) -> Result<Attempt, Error> {
+    // Where a test lands a press between the loop's last juncture and the request
+    // arming its abort (`before_request`).
+    #[cfg(test)]
+    shared.interleave_before_request();
+    // The request reads the latch once its abort is armed, so a press since the last
+    // juncture stops it before it is sent (docs/control-channel.md).
     let outcome = client
         .with_origin(RequestOrigin::Turn)
+        .with_interrupt_latch(shared.interrupt_latch())
         .complete(turns, tools, ToolChoice::auto(), |streamed| {
             shared.publish_delta(stream_delta(streamed));
         })

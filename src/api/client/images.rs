@@ -5,10 +5,12 @@
 //! placeholder, and when that retry succeeds the client withholds images from then
 //! on. Error body text is not read: the retry is the diagnosis.
 
+use std::pin::Pin;
 use std::sync::atomic::Ordering;
 
 use super::*;
 use crate::project::UserPart;
+use tokio::sync::futures::Notified;
 
 /// What stands in for the image blocks of one result once the client withholds
 /// them. Deterministic, so every request after the lesson projects the same bytes.
@@ -36,27 +38,43 @@ impl Client {
     /// (docs/transport.md). The recovery runs only while no request carrying images
     /// has succeeded on this client: once one has, the model reads images, a later
     /// rejection has another cause, and stripping the history's images would move a
-    /// prefix the provider has already cached.
-    pub(super) async fn send(
+    /// prefix the provider has already cached. Every attempt reads against `abort`, the
+    /// interrupt [`Self::send`] armed.
+    pub(super) async fn send_with_image_fallback(
         &self,
         turns: &[WireTurn],
         tools: &[Value],
         tool_choice: ToolChoice,
         cap: Option<u32>,
+        mut abort: Pin<&mut Notified<'_>>,
         mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
         if self.images_refused().is_some() {
             return self
-                .send_request(&withhold_images(turns), tools, tool_choice, cap, on_delta)
+                .send_request(
+                    &withhold_images(turns),
+                    tools,
+                    tool_choice,
+                    cap,
+                    abort,
+                    on_delta,
+                )
                 .await;
         }
         if !carries_images(turns) {
             return self
-                .send_request(turns, tools, tool_choice, cap, on_delta)
+                .send_request(turns, tools, tool_choice, cap, abort, on_delta)
                 .await;
         }
         let refusal = match self
-            .send_request(turns, tools, tool_choice, cap, &mut on_delta)
+            .send_request(
+                turns,
+                tools,
+                tool_choice,
+                cap,
+                abort.as_mut(),
+                &mut on_delta,
+            )
             .await
         {
             Err(e) if is_request_rejection(&e) && !self.images_accepted.load(Ordering::Relaxed) => {
@@ -70,7 +88,14 @@ impl Client {
             }
         };
         match self
-            .send_request(&withhold_images(turns), tools, tool_choice, cap, on_delta)
+            .send_request(
+                &withhold_images(turns),
+                tools,
+                tool_choice,
+                cap,
+                abort,
+                on_delta,
+            )
             .await
         {
             Ok(completion) => {

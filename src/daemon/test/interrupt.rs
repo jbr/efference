@@ -146,3 +146,165 @@ async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
     host.shut_down().await;
     runtime.finished().await.unwrap();
 }
+
+/// Whether `entry` is a request stage of `origin` matching `stage`.
+fn stage_of(
+    entry: &LogEntry,
+    origin: RequestOrigin,
+    stage: impl Fn(&crate::log::RequestStageKind) -> bool,
+) -> bool {
+    matches!(
+        &entry.payload,
+        Payload::Telemetry(crate::log::Telemetry::RequestStage(recorded))
+            if recorded.origin == origin && stage(&recorded.stage)
+    )
+}
+
+/// **A press before the request is armed stops it unsent.** The press lands after the
+/// loop's last juncture and before the turn's request arms its abort (`before_request`),
+/// where `notify_waiters` has no waiter to wake. The request reads the latch once armed,
+/// so it is never sent: the loop records the aborted attempt, consumes the press, and the
+/// turn ends there instead of after a response the operator had already stopped.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_press_before_the_request_is_armed_stops_it_unsent() {
+    let upstream = ScriptedUpstream::new(|_| Canned::stream(end_turn()));
+    let (host, runtime, _dir) = start(&upstream).await;
+    let session = Arc::clone(runtime.session());
+    *session.before_request.lock().unwrap() = Some(Box::new(|session: &Session| {
+        session.interrupt(crate::log::InterruptOrigin {
+            source: Some("web".into()),
+            control: Some("stop-button".into()),
+        });
+    }));
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    session
+        .wait_until_with(&upstream, "the turn ended", || session.turns_ended() == 1)
+        .await;
+
+    assert_eq!(
+        upstream.count(),
+        0,
+        "the request the press reached before its arm was sent"
+    );
+    assert!(!session.interrupt_pending(), "the press was consumed");
+    let log = session.snapshot();
+    let pressed = log
+        .iter()
+        .position(|entry| {
+            matches!(
+                &entry.payload,
+                Payload::Telemetry(crate::log::Telemetry::Interrupt(origin))
+                    if origin.control.as_deref() == Some("stop-button")
+            )
+        })
+        .expect("the press is in the log");
+    let aborted = log
+        .iter()
+        .position(|entry| {
+            matches!(
+                &entry.payload,
+                Payload::Assistant { excluded: Some(why), .. }
+                    if why.why() == "generation interrupted"
+            )
+        })
+        .expect("the aborted attempt is recorded");
+    assert!(pressed < aborted, "{pressed} before {aborted}");
+    assert!(
+        !log.iter()
+            .any(|entry| stage_of(entry, RequestOrigin::Turn, |_| true)),
+        "a request that was not sent records no stage"
+    );
+
+    host.shut_down().await;
+    runtime.finished().await.unwrap();
+}
+
+/// **A press at idle is not the idle triage's.** It has nothing to stop and stays latched
+/// until the next turn starts; the idle triage, which runs on the turn's own client
+/// meanwhile, answers only to a press during it, so its request goes out and ends.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_press_at_idle_leaves_the_idle_triage_alone() {
+    let upstream = ScriptedUpstream::new(|_| Canned::stream(end_turn()));
+    let (host, runtime, _dir) = start(&upstream).await;
+    let session = Arc::clone(runtime.session());
+    session.interrupt(Default::default());
+    session.notify(Notification::new("ci", "the build finished", None));
+
+    session
+        .wait_until_with(&upstream, "the idle triage ended", || {
+            session.loop_phase() == LoopPhase::Idle
+                && session.snapshot().iter().any(|entry| {
+                    stage_of(entry, RequestOrigin::Triage, |stage| {
+                        *stage == crate::log::RequestStageKind::Ended
+                    })
+                })
+        })
+        .await;
+
+    assert!(upstream.count() >= 1, "the idle triage's request went out");
+    assert!(
+        !session.snapshot().iter().any(|entry| {
+            stage_of(entry, RequestOrigin::Triage, |stage| {
+                matches!(stage, crate::log::RequestStageKind::Failed { .. })
+            })
+        }),
+        "the press at idle stopped no triage request"
+    );
+    assert!(
+        session.interrupt_pending(),
+        "the press stays latched until a turn starts"
+    );
+
+    host.shut_down().await;
+    runtime.finished().await.unwrap();
+}
+
+/// **A press during the turn's stream still ends it.** The request found the latch clear
+/// before it was sent; the press then wakes the read it armed: the attempt is kept as the
+/// aborted one, the press is consumed, and the loop goes idle without another request.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_press_during_the_turns_stream_still_ends_it() {
+    let first_event = events(&[
+        r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#
+            .to_string(),
+    ]);
+    let upstream = ScriptedUpstream::new(move |n| match n {
+        0 => Canned::stream(first_event.clone()).left_open(),
+        _ => Canned::stream(end_turn()),
+    });
+    let (host, runtime, _dir) = start(&upstream).await;
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+    session
+        .wait_until_with(&upstream, "the turn's stream is open", || {
+            session.snapshot().iter().any(|entry| {
+                stage_of(entry, RequestOrigin::Turn, |stage| {
+                    *stage == crate::log::RequestStageKind::FirstByte
+                })
+            })
+        })
+        .await;
+
+    session.interrupt(Default::default());
+    session
+        .wait_until("the turn ended", || session.turns_ended() == 1)
+        .await;
+
+    assert_eq!(upstream.count(), 1, "no request after the interrupted one");
+    assert!(!session.interrupt_pending(), "the press was consumed");
+    assert!(
+        session.snapshot().iter().any(|entry| {
+            stage_of(entry, RequestOrigin::Turn, |stage| {
+                *stage
+                    == crate::log::RequestStageKind::Failed {
+                        reason: "interrupted".into(),
+                    }
+            })
+        }),
+        "the turn's request closed as interrupted"
+    );
+
+    host.shut_down().await;
+    runtime.finished().await.unwrap();
+}
