@@ -145,7 +145,9 @@ impl ReadPlan {
     pub fn framed(&self, title: &str, rendered: String) -> String {
         let (header, body) = rendered.split_once('\n').unwrap_or((&rendered, ""));
         match (self.frame, self.end()) {
-            (Frame::Asked | Frame::First, None) => rendered,
+            // An ask is rendered whole whether or not new entries followed it; a first
+            // read with nothing new is the same body under the plain header.
+            (Frame::Asked, _) | (Frame::First, None) => rendered,
             (Frame::New { cursor }, None) => {
                 format!("{title}: nothing new since your last read (seq {cursor})\n")
             }
@@ -153,7 +155,6 @@ impl ReadPlan {
                 "{title}, new since your last read: {}\n{body}",
                 seqs(cursor + 1, to)
             ),
-            (Frame::Asked, Some(_)) => rendered,
             (Frame::First, Some(_)) => format!("{header} (your first read)\n{body}"),
         }
     }

@@ -86,13 +86,15 @@ fn the_schema_lists_every_name_a_provider_serializes_as() {
         Provider::Custom(WireDialect::SystemOne),
     ];
     for provider in every {
+        // One arm naming every variant: the match is the compile-time check that a
+        // variant added above is also listed here.
         match provider {
             Provider::Anthropic
             | Provider::OpenRouter
             | Provider::OpenAI
             | Provider::OpenAICodex
-            | Provider::TypeSafe => {}
-            Provider::Custom(
+            | Provider::TypeSafe
+            | Provider::Custom(
                 WireDialect::Messages
                 | WireDialect::Responses
                 | WireDialect::Completions

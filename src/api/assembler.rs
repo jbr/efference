@@ -141,6 +141,10 @@ impl Assembler {
     /// `event:` field; `data` is the raw JSON payload. Returns what this event contributed to the
     /// *live* view as a [`Streamed`] (if anything), so [`Client::complete`] can forward it to a
     /// live sink without re-parsing — every event that carries no live signal yields `None`.
+    // The match below is the SSE event vocabulary, read by event name: `ping` is a
+    // keepalive and `content_block_stop` a block boundary, so the two no-op arms
+    // coincide only in having nothing to do.
+    #[allow(clippy::match_same_arms)]
     pub(super) fn apply(
         &mut self,
         event_type: Option<&str>,

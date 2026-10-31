@@ -10,10 +10,9 @@ impl WireDialect {
     pub fn tool_name_limit(self) -> usize {
         match self {
             Self::Messages => 128,
-            Self::Responses => 64,
-            // OpenAI's function-name limit, which the other Completions servers
-            // inherit or exceed.
-            Self::Completions => 64,
+            // Responses caps function names at 64; Completions takes OpenAI's
+            // function-name limit, which its servers inherit or exceed.
+            Self::Responses | Self::Completions => 64,
             // No tools ride a System One request; the limit is never consulted.
             Self::SystemOne => 0,
         }

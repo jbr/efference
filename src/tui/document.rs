@@ -25,9 +25,8 @@ impl<'a> TuiAction<'a> {
     /// Get the URL for this action, if it has one.
     pub fn url(&self) -> Option<Cow<'a, str>> {
         match self {
-            TuiAction::FocusEntry(_) => None,
             TuiAction::OpenUrl(cow) => Some(cow.clone()),
-            TuiAction::SelectTheme(_) | TuiAction::ExpandItem(_) => None,
+            TuiAction::FocusEntry(_) | TuiAction::SelectTheme(_) | TuiAction::ExpandItem(_) => None,
         }
     }
 }

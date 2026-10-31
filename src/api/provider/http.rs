@@ -20,10 +20,9 @@ impl Provider {
             Self::OpenAICodex => {
                 Some("https://chatgpt.com/backend-api/codex/responses".to_string())
             }
-            Self::TypeSafe => None,
-            // A System One endpoint has no turns route; its one route is
-            // [`Self::decisions_url`].
-            Self::Custom(WireDialect::SystemOne) => None,
+            // No turns route: TypeSafe serves no inference, and a System One
+            // endpoint's one route is [`Self::decisions_url`].
+            Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => None,
             // The dialect picks the path: these two are the conventional routes,
             // and an endpoint that serves the dialect on a different path is a
             // base URL that includes it.
@@ -45,16 +44,19 @@ impl Provider {
             // OpenRouter fronts the same models on its own alpha route, which is
             // how this rung was reachable before first-party access existed.
             Self::OpenRouter => Some("https://openrouter.ai/api/alpha/decisions".to_string()),
-            Self::Anthropic | Self::OpenAI | Self::OpenAICodex => None,
+            // No decisions route: these serve turns only, and a turn dialect says
+            // nothing about serving the System One contract.
+            Self::Anthropic
+            | Self::OpenAI
+            | Self::OpenAICodex
+            | Self::Custom(
+                WireDialect::Messages | WireDialect::Responses | WireDialect::Completions,
+            ) => None,
             // The configured URL is the route, whole. Providers that adopted the
             // contract spell its path differently (`/v1/systemone`,
             // `/decisions/v1/systemone`, `/v1/decisions`, a per-model run URL),
             // so appending a conventional segment would be wrong for most of them.
             Self::Custom(WireDialect::SystemOne) => base.map(str::to_string),
-            // A turn dialect says nothing about serving the System One contract.
-            Self::Custom(
-                WireDialect::Messages | WireDialect::Responses | WireDialect::Completions,
-            ) => None,
         }
     }
 
@@ -191,6 +193,11 @@ impl Provider {
     /// actually carries the key there). Kept rather than switched off so the arm
     /// starts benefiting if the backend begins honouring the body field, since
     /// the value sent is the same one either way.
+    // One arm per provider, each carrying the reason for its answer: the answers are
+    // equal across arms that arrive at them differently — no such field, a 400 on an
+    // unknown top-level key, a server that may not tolerate one — so the table is read
+    // by variant and merging it would fold four reasons into one arm.
+    #[allow(clippy::match_same_arms)]
     pub(in crate::api) fn prompt_cache_key_field(&self) -> bool {
         match self {
             Self::Anthropic | Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => false,
@@ -330,12 +337,11 @@ impl Provider {
             Self::OpenRouter => Some("https://openrouter.ai/api/v1/key".to_string()),
             Self::OpenAI => Some("https://api.openai.com/v1/models".to_string()),
             Self::TypeSafe => Some("https://api.typesafe.ai/v1/models".to_string()),
-            Self::OpenAICodex => None,
-            // Both dialects converge on this route, and an endpoint serving
-            // neither a listing nor a key check is one whose credential is first
-            // tested by a turn. A System One endpoint's URL is the one route it
-            // has: it publishes no sibling listing to read a key check from.
-            Self::Custom(WireDialect::SystemOne) => None,
+            // No listing to read a key check from: the Codex backend has no cheap
+            // authenticated read, and a System One endpoint's one route is its
+            // decisions URL. An endpoint serving neither is one whose credential is
+            // first tested by a turn.
+            Self::OpenAICodex | Self::Custom(WireDialect::SystemOne) => None,
             Self::Custom(
                 WireDialect::Messages | WireDialect::Responses | WireDialect::Completions,
             ) => Some(join(base?, "models")),

@@ -116,14 +116,12 @@ fn the_side_request_frames_keep_their_bytes() {
     );
 }
 
-/// The `kind` of the log frame each payload rides in, which is also its SSE `event:`
-/// (docs/control-api.md): the payload variant's name, and for the telemetry family the
-/// telemetry variant's under a `telemetry.` prefix (docs/log-and-projection.md). Pinned
-/// as the frame carries it, ahead of `seq` and `data`.
-#[test]
-fn the_log_frame_kinds_keep_their_bytes() {
+/// One payload of each `Payload` and `Telemetry` variant, with the kind it frames under
+/// (docs/log-and-projection.md). Shared by the two tests below: the bytes one pins what
+/// each kind serializes to, and the topic one checks the set against the state topics.
+fn log_kinds() -> Vec<(Payload, &'static str)> {
     let telemetry = |t: Telemetry| Payload::Telemetry(t);
-    let kinds = [
+    vec![
         (Payload::user("hi"), "user"),
         (
             Payload::assistant(AssistantOutput::empty(WireDialect::Messages)),
@@ -287,8 +285,16 @@ fn the_log_frame_kinds_keep_their_bytes() {
             telemetry(Telemetry::Tools { tools: Vec::new() }),
             "telemetry.tools",
         ),
-    ];
-    for (seq, (payload, kind)) in (0u64..).zip(kinds) {
+    ]
+}
+
+/// The `kind` of the log frame each payload rides in, which is also its SSE `event:`
+/// (docs/control-api.md): the payload variant's name, and for the telemetry family the
+/// telemetry variant's under a `telemetry.` prefix (docs/log-and-projection.md). Pinned
+/// as the frame carries it, ahead of `seq` and `data`.
+#[test]
+fn the_log_frame_kinds_keep_their_bytes() {
+    for (seq, (payload, kind)) in (0u64..).zip(log_kinds()) {
         let frame = Frame::log(&LogEntry::new(seq, payload), None, None);
         let json = frame.to_json();
         let head = format!(r#"{{"class":"log","kind":"{kind}","seq":{seq},"data":"#);
@@ -297,6 +303,23 @@ fn the_log_frame_kinds_keep_their_bytes() {
             stream::FrameEvent::from(frame).event_type(),
             Some(kind),
             "the SSE event names the frame's kind"
+        );
+    }
+}
+
+/// A log frame's `kind` is also its SSE `event:`, and a state frame's is the topic's
+/// name, so a kind held by both would let a client take a log entry for a state update
+/// (docs/control-api.md). The two sets stay disjoint: a log payload variant named after
+/// a topic fails here before the channel carries the collision.
+#[test]
+fn no_log_frame_kind_is_named_like_a_state_topic() {
+    for (payload, _) in log_kinds() {
+        let kind = frames::payload_kind(&payload);
+        // Against the names `Topic::ALL` carries rather than `Topic::parse`, so the
+        // check cannot pass by the lookup answering `None` for every name.
+        assert!(
+            !Topic::ALL.iter().any(|topic| topic.as_str() == kind),
+            "{kind} names both a log frame's kind and a state topic"
         );
     }
 }

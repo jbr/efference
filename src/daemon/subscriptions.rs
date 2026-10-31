@@ -250,8 +250,9 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
         let ended = session.turns_ended();
         let routing = session.gate_routing();
         let notable = match (&last, &status) {
-            (_, SessionStatus::Running) => false,
-            (None, SessionStatus::Idle) => false,
+            // Neither is a push moment: a running loop has not come to rest, and a
+            // first sight of an idle session is not a change.
+            (_, SessionStatus::Running) | (None, SessionStatus::Idle) => false,
             (Some(_), SessionStatus::Idle) => ended != idle_seen,
             (Some((previous, routed)), current) => {
                 previous != current

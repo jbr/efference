@@ -313,13 +313,13 @@ impl Form {
                         value: Line::new(&self.draft.temperature.map_or_default(|t| t.to_string())),
                     },
                     4 => Self::picker(Role::Spotter),
-                    5 => Self::picker(Role::Triage),
                     // A boolean: no page, and no preview — the host resolves no
                     // worktree value to re-answer (docs/worktrees.md).
                     6 => {
                         self.draft.worktree = !self.draft.worktree;
                         return Action::Continue;
                     }
+                    // The triage row, and the fallback for an index past the list.
                     _ => Self::picker(Role::Triage),
                 };
             }

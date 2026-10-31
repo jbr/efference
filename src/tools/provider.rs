@@ -46,6 +46,9 @@ impl Provider {
     /// The spotter's brief for a tool this backend owns. `Bash` has none: a bash
     /// move is judged as its command text, not as a tool schema
     /// (`spotter::render_move`).
+    // The two `None` arms coincide only today: `ReadImage` has no brief *yet*, while
+    // `Bash` has none by construction. Each states its own reason.
+    #[allow(clippy::match_same_arms)]
     pub(super) fn brief(&self, name: &str) -> Option<ToolBrief<'_>> {
         match self {
             Provider::Bash(_) => None,
@@ -123,14 +126,14 @@ impl Provider {
             Provider::Bash(_) if name == bash::NAME => {
                 Some(ToolEntry::from_raw(name, &Bash::definition(), None, true))
             }
-            Provider::Bash(_) => None,
             Provider::ReadImage(_) if name == read_image::NAME => Some(ToolEntry::from_raw(
                 name,
                 &ReadImage::definition(),
                 None,
                 true,
             )),
-            Provider::ReadImage(_) => None,
+            // A built-in answers only for its own name.
+            Provider::Bash(_) | Provider::ReadImage(_) => None,
             Provider::Fs(s) => Some(ToolEntry::from_definition(s.schema(name)?, None, true)),
             Provider::SemanticEdit(s) => {
                 Some(ToolEntry::from_definition(s.schema(name)?, None, true))

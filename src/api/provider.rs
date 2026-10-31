@@ -121,9 +121,8 @@ impl Provider {
         match self {
             Self::Anthropic | Self::OpenRouter => Some(WireDialect::Messages),
             Self::OpenAI | Self::OpenAICodex => Some(WireDialect::Responses),
-            Self::Custom(WireDialect::SystemOne) => None,
+            Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => None,
             Self::Custom(dialect) => Some(*dialect),
-            Self::TypeSafe => None,
         }
     }
 
@@ -144,10 +143,11 @@ impl Provider {
     /// affordability check (the measured models are in docs/transport.md).
     pub fn keepalive_output_cap(&self) -> u32 {
         match self {
-            Self::Anthropic | Self::TypeSafe => 0,
-            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => 16,
-            Self::Custom(WireDialect::Responses | WireDialect::Completions) => 16,
-            Self::Custom(_) => 0,
+            Self::OpenRouter
+            | Self::OpenAI
+            | Self::OpenAICodex
+            | Self::Custom(WireDialect::Responses | WireDialect::Completions) => 16,
+            Self::Anthropic | Self::TypeSafe | Self::Custom(_) => 0,
         }
     }
 
@@ -313,6 +313,11 @@ impl Provider {
     /// the slug rather than the provider.
     ///
     /// [`ImagePlacement::AfterInterposedTurn`]: crate::project::ImagePlacement::AfterInterposedTurn
+    // The equal bodies are coincidences: `TypeSafe` and `Custom(SystemOne)` take
+    // `InToolResult` because no turn is ever projected for them, not because their
+    // dialects place images there, and the OpenRouter default agrees with the portable
+    // Messages shape without sharing its reason.
+    #[allow(clippy::match_same_arms)]
     pub fn image_placement(&self, model: &str) -> crate::project::ImagePlacement {
         match self {
             Self::Anthropic | Self::OpenAI | Self::OpenAICodex => {
@@ -364,6 +369,12 @@ impl Provider {
     /// Fixed at boot from the provider and slug, exactly like
     /// [`Self::image_placement`], so projection-plus-placement is deterministic
     /// within a session.
+    // `TrailingBlock` is the answer for three unrelated reasons: Anthropic's native
+    // placement, a custom Responses endpoint's own marker, and the arm that exists only
+    // because nothing projects a turn for the two providers that serve none. The named
+    // Responses providers reach it with their placement unused, since they place their
+    // own marker.
+    #[allow(clippy::match_same_arms)]
     pub fn breakpoint_placement(&self, model: &str) -> crate::project::BreakpointPlacement {
         match self {
             // Responses places its own marker (`api/responses.rs`); the Messages
@@ -425,13 +436,13 @@ impl Provider {
     pub fn map_temperature(&self, t: u8) -> f64 {
         let v = (t as f64) / 100.0;
         match self {
-            Self::Anthropic => v,
+            // Anthropic's scale is already 0..1, and the 0..1 range is the subset
+            // both scales accept, so a custom endpoint on either dialect cannot be
+            // sent an out-of-range value. An endpoint that wanted the wider range
+            // reads the whole scale as half-strength, which is a dull knob rather
+            // than a 400.
+            Self::Anthropic | Self::Custom(_) => v,
             Self::OpenRouter | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => v * 2.0,
-            // The 0..1 range is the subset both scales accept, so a custom
-            // endpoint on either dialect cannot be sent an out-of-range value.
-            // An endpoint that wanted the wider range reads the whole scale as
-            // half-strength, which is a dull knob rather than a 400.
-            Self::Custom(_) => v,
         }
     }
 }

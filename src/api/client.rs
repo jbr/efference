@@ -505,8 +505,7 @@ impl Client {
             WireDialect::Messages => {
                 conn.with_request_header("anthropic-version", ANTHROPIC_VERSION)
             }
-            WireDialect::Responses => conn,
-            WireDialect::Completions => conn,
+            WireDialect::Responses | WireDialect::Completions => conn,
             WireDialect::SystemOne => {
                 unreachable!("a client is only built on a provider that serves turns")
             }

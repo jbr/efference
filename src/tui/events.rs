@@ -10,6 +10,10 @@ use crate::tui::projection::ViewState;
 ///
 /// This is kept as the single dispatch point so a per-entry verb that *does* act on
 /// the document (fold, open-in-editor) has an obvious home when one is earned.
+// Each arm names where its action is actually applied — the caller's cursor, the theme
+// picker, `InteractiveState::expanded` — or that it is refused, as an external link is.
+// The bodies coincide only in leaving the document alone.
+#[allow(clippy::match_same_arms)]
 pub(super) fn handle_action(
     _document: &mut DocumentState<'_>,
     _view: &mut ViewState,

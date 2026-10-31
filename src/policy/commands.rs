@@ -453,8 +453,11 @@ fn simple_tokens(
     let mut tokens = vec![literal_word(simple.word_or_name.as_ref()?)?];
     for item in simple.suffix.iter().flat_map(|suffix| &suffix.0) {
         match item {
-            CommandPrefixOrSuffixItem::Word(word) => tokens.push(literal_word(word)?),
-            CommandPrefixOrSuffixItem::AssignmentWord(_, word) => tokens.push(literal_word(word)?),
+            // An assignment prefix contributes its literal word, as a plain word does.
+            CommandPrefixOrSuffixItem::Word(word)
+            | CommandPrefixOrSuffixItem::AssignmentWord(_, word) => {
+                tokens.push(literal_word(word)?);
+            }
             CommandPrefixOrSuffixItem::IoRedirect(redir) if redirect(redir) => {}
             _ => return None,
         }

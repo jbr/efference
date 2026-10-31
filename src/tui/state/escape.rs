@@ -36,10 +36,10 @@ impl<'a> InteractiveState<'a> {
     /// isn't already at rest there.
     fn normalize_to_composer(&mut self) {
         match std::mem::replace(&mut self.ui_mode, UiMode::Normal) {
-            UiMode::Help => {}
-            // The switcher closes; a confirm it was holding goes with it, which
-            // is the direction Esc is allowed to move a destructive verb.
-            UiMode::Sessions(_) => {}
+            // The mode replacement above is the whole step for both: the help screen
+            // just closes, and the switcher closes with any confirm it was holding,
+            // which is the direction Esc is allowed to move a destructive verb.
+            UiMode::Help | UiMode::Sessions(_) => {}
             UiMode::ThemePicker {
                 saved_theme_name, ..
             } => {

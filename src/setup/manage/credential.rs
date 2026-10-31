@@ -38,12 +38,10 @@ pub(super) async fn edit_connection<P: Prompter, Q: Probe>(
                 "Reveal the key and switch to an environment variable",
             ));
         }
-        ExistingAuth::CodexCache => {
-            choices.push(Choice::new("Re-authorize"));
-        }
-        // No move for a grant: there is no value to put in a variable, and
-        // nothing to paste. Running the login again is the whole repair.
-        ExistingAuth::Oauth { .. } => {
+        // One label, two mechanisms: a cached login is re-checked, a grant obtained
+        // again. No move for a grant — there is no value to put in a variable and
+        // nothing to paste — so re-authorizing is the whole repair.
+        ExistingAuth::CodexCache | ExistingAuth::Oauth { .. } => {
             choices.push(Choice::new("Re-authorize"));
         }
         // No credential to update or move; adding one is an `auth` line written

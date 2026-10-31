@@ -130,12 +130,8 @@ impl MarkdownRenderer {
                     Tag::TableRow => {
                         current_row.clear();
                     }
-                    Tag::TableCell => {
-                        // Cell content will be in current_spans
-                    }
-                    Tag::Paragraph => {
-                        // Paragraphs will be created when we hit TagEnd::Paragraph
-                    }
+                    // A cell's content rides `current_spans`, and a paragraph is built
+                    // at its `TagEnd`; neither has start-time work, as no other tag does.
                     _ => {}
                 },
                 Event::End(tag_end) => match tag_end {

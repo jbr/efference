@@ -76,11 +76,9 @@ pub(crate) struct CallView {
 fn positional_key(name: &str) -> Option<&'static str> {
     Some(match name {
         "read" => "paths",
-        "list" => "path",
         "search" => "pattern",
-        "write" => "path",
+        "list" | "write" | "read_image" => "path",
         "edit" | "undo_edit" | "retarget_edit" | "find_anchor" => "file_path",
-        "read_image" => "path",
         "read_process" | "kill_process" | "watch_process" => "handle",
         _ => return None,
     })

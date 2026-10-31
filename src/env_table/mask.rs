@@ -246,6 +246,10 @@ impl Masker {
     /// Not covered, by construction: signed thinking blocks (above) and
     /// `ResultImage.data` (base64 image bytes, where a substitution would
     /// corrupt the image rather than protect anything).
+    // Each no-op arm states what its payload holds and why none of it is text from the
+    // environment; the arms coincide only in that answer, and this audit is read one
+    // payload at a time.
+    #[allow(clippy::match_same_arms)]
     pub fn mask_payload(&self, payload: &mut Payload) {
         if self.is_empty() {
             return;

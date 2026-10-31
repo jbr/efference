@@ -479,8 +479,7 @@ impl<'a> InteractiveState<'a> {
                 // Transparent container: doesn't add its own newlines
                 // Interactive renderer is always in interactive mode
                 let should_show = match show_when {
-                    ShowWhen::Always => true,
-                    ShowWhen::Interactive => true,
+                    ShowWhen::Always | ShowWhen::Interactive => true,
                     ShowWhen::NonInteractive => false,
                 };
 

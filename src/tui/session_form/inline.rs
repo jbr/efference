@@ -147,10 +147,9 @@ pub fn run() -> io::Result<()> {
                 _ => Action::Continue,
             };
             match action {
-                Action::Continue => {}
-                // Nothing will answer a preview here, which the form states
-                // rather than leaving the fields looking merely unset.
-                Action::Preview(_) => {}
+                // A preview has no answerer here, which the form states rather than
+                // leaving the fields looking merely unset; continue is the loop's no-op.
+                Action::Continue | Action::Preview(_) => {}
                 other => break Ok::<_, io::Error>(other),
             }
         }

@@ -82,8 +82,9 @@ fn ask(key: KeyEvent) -> Option<Ask> {
         (KeyCode::Char('o') | KeyCode::Enter, _) => Some(Ask::Open),
         (KeyCode::Char('c'), KeyModifiers::NONE) => Some(Ask::Copy),
         (KeyCode::Char('p'), _) => Some(Ask::Print),
-        (KeyCode::Char('q') | KeyCode::Esc, _) => Some(Ask::Quit),
-        (KeyCode::Char('c' | 'd'), KeyModifiers::CONTROL) => Some(Ask::Quit),
+        // Quit is q or Esc anywhere, and Ctrl-C or Ctrl-D as the terminal spells it.
+        (KeyCode::Char('q') | KeyCode::Esc, _)
+        | (KeyCode::Char('c' | 'd'), KeyModifiers::CONTROL) => Some(Ask::Quit),
         _ => None,
     }
 }

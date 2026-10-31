@@ -250,8 +250,7 @@ impl Composer {
         match key.code {
             // Undo stays on the composer so the non-Super terminal bindings work
             // without keyboard enhancement support.
-            KeyCode::Char('/') if ctrl => self.undo(),
-            KeyCode::Char('_') if ctrl => self.undo(),
+            KeyCode::Char('/' | '_') if ctrl => self.undo(),
             KeyCode::Char('_') if alt => self.redo(),
 
             // Submit on plain Enter; insert a newline on C-j / Alt-Enter (Enter is

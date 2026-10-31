@@ -22,6 +22,10 @@ use super::*;
 
 /// The one word a row's `status` carries.
 impl From<&SessionStatus> for ListedStatus {
+    // `Idle` and `Ended | Failed` reach the same word for unrelated reasons: one is the
+    // status itself, the other is unreachable here and stands in only so the match is
+    // exhaustive.
+    #[allow(clippy::match_same_arms)]
     fn from(status: &SessionStatus) -> Self {
         match status {
             SessionStatus::Running => Self::Running,

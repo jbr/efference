@@ -74,9 +74,9 @@ impl Node {
     /// `connection/group`, `connection/model`.
     pub(super) fn id(&self) -> String {
         match (self.kind, &self.group) {
-            (Kind::Connection, _) => self.connection.clone(),
+            // A connection node and an ungrouped one are named by the connection alone.
+            (Kind::Connection, _) | (Kind::Group, None) => self.connection.clone(),
             (Kind::Group, Some(group)) => format!("{}/{group}", self.connection),
-            (Kind::Group, None) => self.connection.clone(),
             (Kind::Model, _) => format!("{}/{}", self.connection, self.model),
         }
     }
@@ -85,9 +85,10 @@ impl Node {
     pub(super) fn relative(&self, chips: &[Chip]) -> String {
         match (self.kind, chips.len()) {
             (Kind::Connection, _) => self.connection.clone(),
-            (Kind::Group, 0) => self.id(),
+            // With no chip shown, nothing has been narrowed to the group or model level,
+            // so the node is named by its full slug.
+            (Kind::Group | Kind::Model, 0) => self.id(),
             (Kind::Group, _) => self.group.clone().unwrap_or_default(),
-            (Kind::Model, 0) => self.id(),
             (Kind::Model, 1) => self.model.clone(),
             (Kind::Model, _) => strip_author(&self.model),
         }

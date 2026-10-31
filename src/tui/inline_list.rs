@@ -350,12 +350,12 @@ fn row_lines(
                 if w == 0 || (at > 0 && !column.padded && cell.is_empty()) {
                     continue;
                 }
+                // A dimmed cell is a hint whatever its column style, a plain one text,
+                // and only a primary cell in the chosen row takes the selection.
                 let style = match (column.style, row.dim, chosen) {
-                    (CellStyle::Dim, ..) => styles.hint,
-                    (CellStyle::Text, ..) => styles.text,
-                    (CellStyle::Primary, true, _) => styles.hint,
+                    (CellStyle::Dim, ..) | (CellStyle::Primary, true, _) => styles.hint,
+                    (CellStyle::Text, ..) | (CellStyle::Primary, false, false) => styles.text,
                     (CellStyle::Primary, false, true) => styles.selected,
-                    (CellStyle::Primary, false, false) => styles.text,
                 };
                 let lead = if at == 0 { "" } else { "  " };
                 let text = match column.padded {
