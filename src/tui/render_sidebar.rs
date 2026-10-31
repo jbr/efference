@@ -15,9 +15,12 @@ use ratatui::{
 };
 
 use super::SidebarRow;
+use super::policy_view::PolicyView;
 use super::render_frame::fmt_secs;
 use super::state::InteractiveState;
 use super::write_text::fold_control;
+use crate::inference::{ModelSelection, TriageIdentity};
+use crate::protocol::state::{KeepaliveSkip, KeepaliveSkipReason};
 
 /// Write `text` at absolute `(x, y)`, clipped to `max_w` columns. One cell per char
 /// (wide glyphs occupy one cell, as elsewhere in this TUI's chrome). Content text
@@ -60,6 +63,37 @@ fn wrap_words(text: &str, width: usize, max_lines: usize) -> Vec<String> {
     lines
 }
 
+/// A role's selection as the drawer names it: `<connection>/<native model>`.
+fn selection_label(selection: &ModelSelection) -> String {
+    format!("{}/{}", selection.connection, selection.model)
+}
+
+/// The triage role's label: `shared` when it rides the main client.
+fn triage_label(triage: &TriageIdentity) -> String {
+    if triage.shared {
+        "shared".to_string()
+    } else {
+        selection_label(&triage.selection)
+    }
+}
+
+/// The drawer's wording for `usage.keepalive_skipped`: what the loop is doing in place of
+/// pinging, with the figure that decided it.
+fn keepalive_note(skipped: &KeepaliveSkip) -> String {
+    match &skipped.why {
+        KeepaliveSkipReason::Rejected { .. } => "keepalive off: ping rejected".to_string(),
+        KeepaliveSkipReason::Exhausted { .. } => "keepalive paused: usage limit".to_string(),
+        KeepaliveSkipReason::Discard {
+            output_tokens,
+            completion_usd,
+            ..
+        } => {
+            let cost = completion_usd.map_or_default(|usd| format!(" (${usd:.4})"));
+            format!("keepalive paused: {} out{cost}", num(*output_tokens))
+        }
+    }
+}
+
 impl<'a> InteractiveState<'a> {
     pub(super) fn render_sidebar(&mut self, buf: &mut Buffer, area: Rect) {
         let bg = self.theme.document_bg_style;
@@ -100,15 +134,15 @@ impl<'a> InteractiveState<'a> {
         };
 
         // Owned snapshots for the render walk: the verb menus record hits through
-        // `&mut self`, which cannot run while the view structs are borrowed.
-        let processes = self.processes.clone();
-        let policy = self.policy.clone();
+        // `&mut self`, which cannot run while the topics are borrowed.
+        let processes = self.process_panel.clone();
+        let policy = PolicyView::of(&self.topics);
 
         // Session — what this session is: its title, then which model answers and
         // where it works, from the `session_identity` topic (docs/control-api.md).
         // Nothing in the transcript names the model. Absent until the connect
         // snapshot lands.
-        if let Some(identity) = self.session_identity.clone()
+        if let Some(identity) = self.topics.session_identity.clone()
             && y < bottom
         {
             put(buf, x0, y, max_w, "Session", header);
@@ -126,15 +160,21 @@ impl<'a> InteractiveState<'a> {
             // triage rows follow, since which account answers a permission check
             // or a triage is as invisible in the transcript as the model.
             let model = identity
-                .roles
+                .inference
                 .as_ref()
-                .map_or(identity.model.clone(), |roles| roles.main.clone());
+                .map_or(identity.model.clone(), |roles| selection_label(&roles.main));
             let mut rows = vec![("model", model, text)];
-            if let Some(roles) = &identity.roles {
-                rows.push(("spotter", roles.spotter.clone(), text));
-                rows.push(("triage", roles.triage.clone(), text));
+            if let Some(roles) = &identity.inference {
+                rows.push(("spotter", selection_label(&roles.spotter), text));
+                rows.push(("triage", triage_label(&roles.triage), text));
             }
-            rows.push(("directory", identity.cwd.clone(), text));
+            // Shortened against `$HOME` here, where the process environment is read; the
+            // topic carries the path as the host knows it.
+            rows.push((
+                "directory",
+                crate::home::tilde(std::path::Path::new(&identity.cwd)),
+                text,
+            ));
             rows.push(("session", identity.id.clone(), muted));
             for (label, value, style) in rows {
                 if y < bottom {
@@ -152,7 +192,7 @@ impl<'a> InteractiveState<'a> {
                 x0,
                 y,
                 max_w,
-                &format!("Processes  {}", self.processes.len()),
+                &format!("Processes  {}", self.process_panel.len()),
                 header,
             );
             y += 1;
@@ -160,7 +200,7 @@ impl<'a> InteractiveState<'a> {
                 if y + 1 >= bottom {
                     break;
                 }
-                let row = SidebarRow::Process(p.id);
+                let row = SidebarRow::Process(p.process.id);
                 let focused = self.sidebar_focus == Some(row);
                 if focused {
                     self.paint_focus_bar(buf, area.x, y, 2);
@@ -170,7 +210,7 @@ impl<'a> InteractiveState<'a> {
                     x0,
                     y,
                     max_w,
-                    &format!("{}  {}", p.handle(), p.command),
+                    &format!("{}  {}", p.handle(), p.process.command),
                     text,
                 );
                 // Every actionable row is clickable, focused or not — the click is
@@ -194,7 +234,7 @@ impl<'a> InteractiveState<'a> {
         }
 
         // Usage — the context window, cost, and token and cache telemetry.
-        if let Some(u) = self.usage.clone()
+        if let Some(u) = self.topics.usage.clone()
             && y < bottom
         {
             put(buf, x0, y, max_w, "Usage", header);
@@ -203,8 +243,9 @@ impl<'a> InteractiveState<'a> {
             // Context-window occupancy leads (docs/transport.md): the percentage is
             // the "am I close?" answer; the limit alone renders before the first
             // request (occupancy unknown, not zero).
-            if let Some(limit) = u.context_limit.filter(|l| *l > 0) {
-                let value = match u.context_used {
+            let context = u.context.unwrap_or_default();
+            if let Some(limit) = context.limit.filter(|l| *l > 0) {
+                let value = match context.used {
                     Some(used) => {
                         format!("{}% · {}/{}", used * 100 / limit, num(used), num(limit))
                     }
@@ -225,38 +266,45 @@ impl<'a> InteractiveState<'a> {
             // The keepalive's stance (docs/transport.md): stated only while it is not
             // pinging on schedule, so a session going cold unrefreshed is not a
             // surprise.
-            if let Some(note) = &u.keepalive_note {
-                rows.push(("", format!("⚠ {note}"), header));
+            if let Some(skipped) = &u.keepalive_skipped {
+                rows.push(("", format!("⚠ {}", keepalive_note(skipped)), header));
             }
             // Session cost (docs/transport.md): billed dollars from the provider's
             // accounting, absent where no per-request surface exists (direct
             // Anthropic). A nonzero unpriced count marks the total an undercount.
-            if let Some(usd) = u.cost_usd {
+            if let Some(cost) = &u.cost {
+                let usd = cost.usd;
                 let mut value = if usd >= 1.0 {
                     format!("${usd:.2}")
                 } else {
                     format!("${usd:.4}")
                 };
-                if let Some(n) = u.cost_unpriced.filter(|n| *n > 0) {
-                    value.push_str(&format!(" · {n} unpriced"));
+                if cost.unpriced > 0 {
+                    value.push_str(&format!(" · {} unpriced", cost.unpriced));
                 }
                 rows.push(("cost", value, text));
             }
             rows.push((
                 "tokens",
-                format!("in {} · out {}", num(u.input_tokens), num(u.output_tokens)),
+                format!(
+                    "in {} · out {}",
+                    num(u.cumulative.input_tokens),
+                    num(u.cumulative.output_tokens)
+                ),
                 text,
             ));
             // Triage retention (docs/triage.md): how much of what the triage
             // showed is still on the agent's record. Absent until the first triaged
             // result — zero shown is unknown, not 0%.
-            if let Some(percent) = (u.kept_lines * 100).checked_div(u.shown_lines) {
+            if let Some(percent) =
+                (u.retention.kept_lines * 100).checked_div(u.retention.shown_lines)
+            {
                 rows.push((
                     "kept",
                     format!(
                         "{percent}% · {}/{} lines",
-                        num(u.kept_lines),
-                        num(u.shown_lines)
+                        num(u.retention.kept_lines),
+                        num(u.retention.shown_lines)
                     ),
                     text,
                 ));
@@ -264,13 +312,17 @@ impl<'a> InteractiveState<'a> {
             // A result an older harness withheld on a failed triage (`TriageFailed`,
             // no longer written) carries no output at all — a distinct condition
             // from a low ratio, so it is stated rather than folded into one.
-            if u.withheld_results > 0 {
-                rows.push(("withheld", u.withheld_results.to_string(), muted));
+            if u.retention.withheld > 0 {
+                rows.push(("withheld", u.retention.withheld.to_string(), muted));
             }
-            if u.cache_read_input_tokens > 0 {
-                rows.push(("cache read", num(u.cache_read_input_tokens), muted));
+            if u.cumulative.cache_read_input_tokens > 0 {
+                rows.push((
+                    "cache read",
+                    num(u.cumulative.cache_read_input_tokens),
+                    muted,
+                ));
             }
-            if let Some(secs) = u.seconds_since_last_request {
+            if let Some(secs) = self.since_last_request {
                 rows.push(("idle", format!("{secs}s"), muted));
             }
             for (label, value, style) in rows {
@@ -292,15 +344,15 @@ impl<'a> InteractiveState<'a> {
             }
             // The review-level dial (docs/tui.md) — who reviews a gated call.
             // Read-only here; set it with `efference control review-level`.
-            if let Some(level) = &policy.review_level
+            if let Some(level) = policy.review_level
                 && y < bottom
             {
-                let value = match &policy.resolved_review_level {
+                let value = match policy.resolved_review_level {
                     // The dial and the position in force disagree: say both, dial
                     // first, so what was set and who answers are both readable
                     // (docs/permissions.md).
-                    Some(resolved) => format!("{level} → {resolved}"),
-                    None => level.clone(),
+                    Some(resolved) => format!("{} → {}", level.as_str(), resolved.as_str()),
+                    None => level.as_str().to_string(),
                 };
                 kv(buf, y, "review", &value, text);
                 y += 1;

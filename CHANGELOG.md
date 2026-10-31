@@ -5,6 +5,7 @@ one line per feature.
 
 ## [Unreleased]
 
+- Fixed the TUI's policy drawer, which never showed pending config proposals.
 - Fixed waiting for a session to settle: it could answer while a queued turn was starting, or wait out its timeout when an agent's message reached a paused session.
 
 ## [0.1.0] - 2026-10-27

@@ -61,11 +61,8 @@ impl<'a> InteractiveState<'a> {
         // uncached read unless the operator compacts (backlog: cold-session.md).
         // A parked loop is stopped mid-turn and waits on the operator, so it says so.
         // `C-o` is offered only where the compact route would take it (the `verbs` topic).
-        let compactable = self
-            .verbs
-            .as_ref()
-            .is_none_or(|verbs| verbs.compact_refused.is_none());
-        let note = match (self.cold.is_some(), self.compacting()) {
+        let compactable = self.compact_offered();
+        let note = match (self.topics.cold.is_some(), self.compacting()) {
             (true, true) => Some("cache expired · compacting… "),
             (true, false) if self.park() == Some(ParkReason::Expired) => Some(if compactable {
                 "paused: cache expired · ⏎ to continue · C-o compacts "
@@ -84,7 +81,7 @@ impl<'a> InteractiveState<'a> {
         if let Some(note) = note {
             segments.push((note.to_string(), muted));
         }
-        if let Some(u) = &self.usage {
+        if let Some(u) = &self.topics.usage {
             if u.cold_streak >= crate::protocol::state::COLD_STREAK_WARN {
                 segments.push((
                     format!("⚠ cache misses ×{}", u.cold_streak),
@@ -92,8 +89,9 @@ impl<'a> InteractiveState<'a> {
                         .add_modifier(ratatui::style::Modifier::BOLD),
                 ));
             }
-            if let Some(limit) = u.context_limit.filter(|l| *l > 0) {
-                let used = u.context_used.unwrap_or(0);
+            let context = u.context.unwrap_or_default();
+            if let Some(limit) = context.limit.filter(|l| *l > 0) {
+                let used = context.used.unwrap_or(0);
                 let filled = (used * METER_CELLS).div_ceil(limit).min(METER_CELLS);
                 let filled = if used > 0 { filled.max(1) } else { 0 };
                 let accent = self.theme.strip_item_focused_style.fg;
@@ -102,14 +100,14 @@ impl<'a> InteractiveState<'a> {
                     bg.fg(accent.unwrap_or_default()),
                 ));
                 segments.push(("─".repeat((METER_CELLS - filled) as usize), muted));
-                let caption = match u.context_used {
+                let caption = match context.used {
                     Some(used) => format!(" {}/{}", num(used), num(limit)),
                     None => format!(" {}", num(limit)),
                 };
                 segments.push((caption, muted));
             }
-            if let Some(usd) = u.cost_usd {
-                segments.push((format!("  ${usd:.2}"), muted));
+            if let Some(cost) = &u.cost {
+                segments.push((format!("  ${:.2}", cost.usd), muted));
             }
         }
 
@@ -149,7 +147,7 @@ impl<'a> InteractiveState<'a> {
             "efference",
             text.add_modifier(ratatui::style::Modifier::BOLD),
         );
-        if let Some(identity) = &self.session_identity {
+        if let Some(identity) = &self.topics.session_identity {
             x = put(buf, x + 2, y, left_limit, &identity.id, muted);
             if let Some(title) = &identity.title {
                 x = put(buf, x, y, left_limit, " · ", muted);

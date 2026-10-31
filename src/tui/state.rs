@@ -15,19 +15,19 @@ use std::time::Instant;
 use super::control_strip::{StripItem, StripVerb};
 use super::theme::InteractiveTheme;
 use super::utils::{find_node_at_path_mut, supports_cursor_shape};
-use super::{ColdView, ParkReason};
+use crate::api::{RetrySurface, UpstreamFailure, UpstreamRetry};
 use crate::frontend::{Interrupt, SubmittedTurn};
 use crate::log::{Approval, LogEntry, Payload};
+use crate::protocol::state::{PaceView, Stall};
+use crate::tui::ParkReason;
 use crate::tui::clipboard::TextClipboard;
 use crate::tui::composer::Composer;
 use crate::tui::document::{Document, DocumentNode, NodePath, TuiAction};
+use crate::tui::process_panel::BgProc;
 use crate::tui::projection::{self, LiveTail};
 use crate::tui::render_context::{RenderContext, ThemeError};
-use crate::tui::{
-    BgProc, Exit, HostCmd, PaceCmd, PaceView, PendingGate, SessionIdentityView, SidebarCmd,
-    SidebarReturn, SidebarRow, StallView, TuiEvent, UpstreamFailureView, UpstreamRetryView,
-    UsageStats,
-};
+use crate::tui::topics::Topics;
+use crate::tui::{Exit, HostCmd, PaceCmd, SidebarCmd, SidebarReturn, SidebarRow, TuiEvent};
 
 use crossbeam_channel::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
@@ -42,11 +42,6 @@ pub(super) const IDLE_STATUS: &str = "efference — ↑ controls";
 pub(super) fn view_status(label: &str) -> String {
     format!("viewing {label} · read-only — ↑ controls")
 }
-
-/// Cap on a process-panel row's live tail. The panel only renders the last line, and
-/// the `processes` topic's next replacement reconciles to the authoritative snapshot,
-/// so this just bounds the gap-filling append.
-const BG_TAIL_CAP: usize = 4096;
 
 /// The between-turns speed rungs the `+`/`-` keys step through (ms)
 /// (docs/tui.md). `0` is as-fast-as-possible; the ladder is coarse on
@@ -97,9 +92,11 @@ pub(super) fn pace_indicator(pace: Option<PaceView>) -> Option<String> {
 /// The status-bar upstream diagnostic. It records the last non-success response,
 /// and the daemon clears it on the next 2xx, so it names a failure that is
 /// current rather than one already survived (docs/transport.md).
-pub(super) fn upstream_failure_indicator(failure: Option<UpstreamFailureView>) -> Option<String> {
+pub(super) fn upstream_failure_indicator(failure: Option<&UpstreamFailure>) -> Option<String> {
     let failure = failure?;
-    Some(format!("upstream {} ×{}", failure.status, failure.count))
+    // A failure the upstream gave no status for (a stream that died mid-flight) has no
+    // status to name, and the bar shows only the ones that do.
+    Some(format!("upstream {} ×{}", failure.status?, failure.count))
 }
 
 /// The status-bar retry indicator (docs/transport.md). The daemon's `message`
@@ -108,12 +105,11 @@ pub(super) fn upstream_failure_indicator(failure: Option<UpstreamFailureView>) -
 /// triage's retry takes a `triage:` prefix, so a wait between tool results is not read
 /// as the model generating. The tail says the retry is automatic and that `⏎` on an
 /// empty composer skips the wait.
-pub(super) fn upstream_retry_indicator(retry: Option<&UpstreamRetryView>) -> Option<String> {
+pub(super) fn upstream_retry_indicator(retry: Option<&UpstreamRetry>) -> Option<String> {
     let retry = retry?;
-    Some(match retry.surface.as_str() {
-        "turn" => format!("↻ {} · ⏎ retries now", retry.message),
-        "triage" => format!("↻ triage: {} · ⏎ retries now", retry.message),
-        surface => format!("↻ {surface}: {} · ⏎ retries now", retry.message),
+    Some(match retry.surface {
+        RetrySurface::Turn => format!("↻ {} · ⏎ retries now", retry.message),
+        RetrySurface::Triage => format!("↻ triage: {} · ⏎ retries now", retry.message),
     })
 }
 
@@ -121,7 +117,7 @@ pub(super) fn upstream_retry_indicator(retry: Option<&UpstreamRetryView>) -> Opt
 /// names what happened — *the trajectory stopped: 12 attempts in a row failed
 /// upstream* — and the tail names the recovery, which is this client's gesture:
 /// `⏎` on an empty composer retries, as often as it is pressed.
-pub(super) fn stall_indicator(stall: Option<&StallView>) -> Option<String> {
+pub(super) fn stall_indicator(stall: Option<&Stall>) -> Option<String> {
     Some(format!("⚠ {} · ⏎ to retry", stall?.message))
 }
 
@@ -545,15 +541,6 @@ pub(super) struct InteractiveState<'a> {
     /// The `call_id` of the last `ask` whose recalled turns were taken back into the
     /// composer, so a re-delivered topic frame restores them once (docs/tui.md).
     pub ask_restored: Option<String>,
-    /// The pending `ask`, from the `ask` topic: which question the composer answers
-    /// (docs/tui.md). `None` while no question is pending.
-    pub ask: Option<crate::tui::parse::PendingAsk>,
-    /// The pending tool-approval gate, if any — the `gate` state topic
-    /// (docs/control-api.md).
-    pub pending_gate: Option<PendingGate>,
-    /// The session's preparation while it is starting, or its failure — the
-    /// `starting` topic (`starting.rs`, docs/control-api.md). `None` once started.
-    pub starting: Option<crate::tui::starting::StartingView>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `PUT /approvals/:call_id`.
     pub approve_tx: UnboundedSender<(String, Approval)>,
@@ -603,56 +590,23 @@ pub(super) struct InteractiveState<'a> {
     /// resolves into row focus (`sidebar_verb_hits` likewise for verbs).
     pub sidebar_hits: Vec<(Rect, SidebarRow)>,
     pub sidebar_verb_hits: Vec<(Rect, SidebarRow, usize)>,
-    /// Where the loop is, from the `loop_phase` state topic (docs/tui.md). Graduated Esc
-    /// reads it (via [`is_loop_active`](Self::is_loop_active)) to choose pause-vs-swallow —
-    /// reliable through a *silent* long tool, where streaming (`pending_request`) reads
-    /// false.
-    pub loop_phase: crate::protocol::state::LoopPhase,
-    /// What the loop routes would answer now, from the `verbs` topic; `None` until the
-    /// connect snapshot lands.
-    pub verbs: Option<super::VerbsView>,
-    /// The operator's pace dial / hold overlay, from the `pace` state topic
-    /// (docs/tui.md). `None` until the connect snapshot lands. Ephemeral chrome —
-    /// surfaced in the status bar (loud to the operator), never in the transcript, and never
-    /// projected (a held/slowed loop is byte-identical on the wire to a fast one).
-    pub pace: Option<PaceView>,
-    /// The live background processes (docs/process-monitor.md), from the `processes` topic. Rendered
-    /// as a persistent panel above the composer; empty hides it. Ephemeral chrome —
-    /// never part of the transcript document, so it never triggers a reproject.
-    pub processes: Vec<BgProc>,
-    /// The cumulative usage statistics, from the `usage` topic. Rendered in the
-    /// status bar. Ephemeral chrome — reflects API telemetry from the daemon.
-    pub usage: Option<UsageStats>,
-    /// The last non-success upstream response, from the `upstream_failure` topic. The daemon
-    /// clears it on recovery; never transcript content.
-    pub upstream_failure: Option<UpstreamFailureView>,
-    /// The retry in flight, from the `upstream_retry` topic. Level-triggered:
-    /// `None` while nothing is being retried. Status-bar chrome, never transcript content.
-    pub upstream_retry: Option<UpstreamRetryView>,
-    /// The trajectory-stalled condition, from the `stall` topic
-    /// (docs/transport.md). `None` while a trajectory is running or after one
-    /// finished; set when the loop gave up. Status-bar chrome, never transcript
-    /// content.
-    pub stall: Option<StallView>,
-    /// The `cold` topic as the header shows it (backlog: cold-session.md): whether
-    /// the cache is believed expired.
-    pub cold: Option<ColdView>,
-    /// The version of a release newer than the host, from the `newer_version` topic
-    /// (docs/update-check.md). The status bar states it at its right edge.
-    pub newer_version: Option<String>,
-    /// What this session is — the model and the working directory, from the
-    /// `session_identity` topic (docs/control-api.md). `None` until the connect
-    /// snapshot lands, and in views that never connect. Sidebar chrome.
-    pub session_identity: Option<SessionIdentityView>,
-    /// The `current_operations` topic (docs/control-api.md), and the status-bar text
-    /// derived from it against the clock. The text is re-derived once a second by
-    /// `refresh_clocks`, so rendering stays a pure function of state.
-    pub operations: Option<super::operations::OperationsView>,
+    /// The state topics the TUI reads, each as the `protocol` type the host sends and
+    /// replaced whole by its frame (`topics.rs`, docs/tui.md). The pace and the gate are
+    /// also written locally by the keys that act on them, ahead of the topic that
+    /// confirms the change.
+    pub topics: Topics,
+    /// The background-process panel's rows (docs/process-monitor.md): the `processes`
+    /// topic's listed processes with the tail collected from `process_output` deltas.
+    /// Rendered as a persistent panel above the composer; empty hides it. Ephemeral
+    /// chrome — never part of the transcript document, so it never triggers a reproject.
+    pub process_panel: Vec<BgProc>,
+    /// Seconds since the last upstream request, derived from `usage.last_request_at` and
+    /// the client clock when the `usage` topic arrives and on each clock tick, so
+    /// rendering stays a pure function of state.
+    pub since_last_request: Option<u64>,
+    /// The status-bar text for the `current_operations` topic, derived against the
+    /// clock the same way and re-derived once a second by `refresh_clocks`.
     pub operation_text: Option<String>,
-
-    /// The effective policy + pending proposals, from the policy topics. Drives the
-    /// sidebar's POLICY section (docs/permissions.md). Ephemeral chrome.
-    pub policy: Option<super::PolicyView>,
 
     /// A daemon-side change (committed entry, stream delta, gate, process list) is
     /// waiting to be painted. The UI loop coalesces these onto the redraw tick
@@ -685,3 +639,4 @@ mod events;
 mod gate;
 mod lifecycle;
 mod scroll;
+mod topics;

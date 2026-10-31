@@ -74,7 +74,11 @@ impl InteractiveState<'_> {
         let modal = centered(area);
         Clear.render(modal, buf);
 
-        let here = self.session_identity.as_ref().map(|identity| &identity.id);
+        let here = self
+            .topics
+            .session_identity
+            .as_ref()
+            .map(|identity| &identity.id);
         let items: Vec<ListItem> = menu
             .rows
             .iter()

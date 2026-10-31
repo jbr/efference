@@ -7,7 +7,13 @@
 
 use super::*;
 
-use crate::tui::{BgProc, PolicyEntry, PolicyView, SidebarCmd, SidebarRow};
+use crate::config::CommandStance;
+use crate::log::ConfigChange;
+use crate::policy::ReviewLevel;
+use crate::process_monitor::ProcessState;
+use crate::protocol::state::{PendingProposal, RoleView};
+use crate::tui::harness::process;
+use crate::tui::{SidebarCmd, SidebarRow};
 
 /// Seed a screenplay with one process and one proposed grant each in commands and
 /// paths — the minimal actionable sidebar. Returns the screenplay.
@@ -15,40 +21,31 @@ fn sidebar_play() -> Screenplay<'static> {
     let mut play = Screenplay::new(110, 24);
     play.user("watch the build");
     play.assistant("On it.", vec![]);
-    play.event(TuiEvent::Processes(vec![BgProc {
-        id: 3,
-        command: "cargo watch -x test".into(),
-        call_id: None,
-        spawned_at: 0,
-        last_chunk_at: None,
-        tail: "ok".into(),
-        running_secs: 12,
-        idle_secs: 3,
-    }]));
-    play.event(TuiEvent::Policy(PolicyView {
+    play.processes(vec![process(3, "cargo watch -x test")]);
+    play.process_output(3, "ok");
+    play.process_times(3, 12, 3);
+    play.topic(TopicUpdate::Role(Some(RoleView {
         scope: Some("this repo".into()),
-        scope_proposal: None,
-        commands: vec![
-            PolicyEntry {
-                label: "cargo".into(),
-                proposed: false,
-                seq: None,
+        commands: [("cargo".to_string(), CommandStance::Clear)].into(),
+        ..RoleView::default()
+    })));
+    play.topic(TopicUpdate::Proposals(vec![
+        PendingProposal {
+            seq: 7,
+            change: ConfigChange::Command {
+                command: "git log".into(),
             },
-            PolicyEntry {
-                label: "git log".into(),
-                proposed: true,
-                seq: Some(7),
+        },
+        PendingProposal {
+            seq: 9,
+            change: ConfigChange::Path {
+                path: "/refs".into(),
+                read: true,
+                write: false,
             },
-        ],
-        paths: vec![PolicyEntry {
-            label: "/refs  r".into(),
-            proposed: true,
-            seq: Some(9),
-        }],
-        tools: vec![],
-        review_level: Some("human_only".into()),
-        resolved_review_level: None,
-    }));
+        },
+    ]));
+    play.topic(TopicUpdate::ReviewLevel(Some(ReviewLevel::HumanOnly)));
     play
 }
 
@@ -184,7 +181,7 @@ fn a_vanished_row_no_ops_instead_of_firing_a_substitute() {
     assert_eq!(play.state.sidebar_focus, Some(SidebarRow::Process(3)));
 
     // The process exits; the topic re-emits without it.
-    play.event(TuiEvent::Processes(vec![]));
+    play.processes(vec![]);
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(
         play.took_sidebar_cmd(),
@@ -306,7 +303,7 @@ fn tab_leaves_an_open_unselected_sidebar() {
     assert_eq!(play.state.sidebar_focus, Some(SidebarRow::Process(3)));
 
     // The process exits; selection drops with it, column stays open.
-    play.event(TuiEvent::Processes(vec![]));
+    play.processes(vec![]);
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(play.state.sidebar_focus, None);
 
@@ -344,16 +341,11 @@ fn view_jumps_transcript_focus_to_the_processs_entry() {
         )],
     );
     play.tool_result("toolu_bg", "backgrounded as p#3.", false, WireState::Raw);
-    play.event(TuiEvent::Processes(vec![BgProc {
-        id: 3,
-        command: "npm run dev".into(),
+    play.processes(vec![ProcessState {
         call_id: Some("toolu_bg".into()),
-        spawned_at: 0,
-        last_chunk_at: None,
-        tail: "ready".into(),
-        running_secs: 12,
-        idle_secs: 3,
-    }]));
+        ..process(3, "npm run dev")
+    }]);
+    play.process_output(3, "ready");
 
     play.route_key(KeyCode::Up, KeyModifiers::NONE); // → strip
     play.route_key(KeyCode::Tab, KeyModifiers::NONE); // → sidebar, the process row

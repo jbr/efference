@@ -4,6 +4,7 @@ use super::attention::Attender;
 use super::senders::Submission;
 use super::*;
 use crate::inference::ImageMode;
+use crate::protocol::turns::QueuedTurn;
 
 /// Attach to a session and stay there until the operator leaves it.
 ///
@@ -116,11 +117,7 @@ async fn attach(
                 Ok(Ok(_)) => continue,
                 Ok(Err(_refusal)) => TuiEvent::NotDelivered {
                     answered: answers.is_some(),
-                    turn: crate::client::WithdrawnTurn {
-                        submission_id: turn.submission_id,
-                        text: turn.text,
-                        attachments: turn.attachments,
-                    },
+                    turn: QueuedTurn::from(&turn),
                 },
                 Err(e) => TuiEvent::Notice(format!("send failed: {e}")),
             };

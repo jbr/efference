@@ -21,7 +21,7 @@ impl<'a> InteractiveState<'a> {
             self.normalize_to_composer();
             return;
         }
-        let held = self.pace.is_some_and(|p| p.held);
+        let held = self.topics.pace.is_some_and(|p| p.held);
         if held {
             self.esc_interrupt();
         } else if self.is_loop_active() {
@@ -71,12 +71,12 @@ impl<'a> InteractiveState<'a> {
     /// pace), optimistic like the pace keys. The hint names both ways forward: another Esc stops a
     /// running tool now, and typing a message resumes (submit always resumes, unit 2).
     fn esc_hold(&mut self) {
-        let cur = self.pace.unwrap_or(PaceView {
+        let cur = self.topics.pace.unwrap_or(PaceView {
             speed_ms: 0,
             held: false,
         });
         let _ = self.pace_tx.send((None, Some(true)));
-        self.pace = Some(PaceView { held: true, ..cur });
+        self.topics.pace = Some(PaceView { held: true, ..cur });
         self.ui.debug_message =
             "⏸ HELD — esc again to stop the running tool · type to resume".into();
         self.dirty = true;
@@ -120,13 +120,13 @@ impl<'a> InteractiveState<'a> {
     /// the hold/resume key). The speed dial is retained underneath (resume returns to it).
     /// Optimistic like [`esc_hold`](Self::esc_hold).
     pub(in crate::tui) fn toggle_pace_hold(&mut self) {
-        let cur = self.pace.unwrap_or(PaceView {
+        let cur = self.topics.pace.unwrap_or(PaceView {
             speed_ms: 0,
             held: false,
         });
         let held = !cur.held;
         let _ = self.pace_tx.send((None, Some(held)));
-        self.pace = Some(PaceView { held, ..cur });
+        self.topics.pace = Some(PaceView { held, ..cur });
         self.ui.debug_message = if held {
             "paused — ⏸ HELD (resume: same key, or send a message)".into()
         } else {

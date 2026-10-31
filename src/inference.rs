@@ -266,7 +266,7 @@ pub struct ModelSelection {
 /// The roles a hosted session was created with, for `GET /state`'s
 /// `session_identity` and the boot report (docs/control-api.md). Display only:
 /// upstream requests carry the native `model` alone.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InferenceIdentity {
     pub main: ModelSelection,
     pub spotter: ModelSelection,
@@ -276,7 +276,7 @@ pub struct InferenceIdentity {
 /// Which client triages tool results: the main client (`shared`), or its own,
 /// whose selection is then reported like the other roles. A shared triage reports
 /// the main selection so two accounts on one model stay distinguishable.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TriageIdentity {
     pub shared: bool,
     #[serde(flatten)]

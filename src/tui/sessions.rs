@@ -374,7 +374,7 @@ impl InteractiveState<'_> {
         let Some(row) = menu.current().cloned() else {
             return false;
         };
-        if Some(&row.id) == self.session_identity.as_ref().map(|i| &i.id) {
+        if Some(&row.id) == self.topics.session_identity.as_ref().map(|i| &i.id) {
             self.ui_mode = UiMode::Normal;
             self.composing = !self.read_only();
             return false;

@@ -443,11 +443,7 @@ fn recall_asks_by_submission_id_and_splices_what_came_back() {
         "the echo stays until the daemon answers"
     );
 
-    play.event(TuiEvent::Recalled(vec![crate::client::WithdrawnTurn {
-        submission_id: submitted.submission_id.clone(),
-        text: submitted.text.clone(),
-        attachments: Vec::new(),
-    }]));
+    play.event(TuiEvent::Recalled(vec![QueuedTurn::from(&submitted)]));
     assert!(
         play.state.pending_turns.is_empty(),
         "the echo is gone once the withdraw is confirmed"

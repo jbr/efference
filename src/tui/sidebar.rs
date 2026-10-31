@@ -15,6 +15,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::prelude::Backend;
 
+use super::policy_view::PolicyView;
 use super::{InteractiveState, SidebarCmd, SidebarReturn, SidebarRow};
 
 /// One verb a focused row carries.
@@ -50,21 +51,12 @@ impl<'a> InteractiveState<'a> {
     /// dispatch cannot drift apart.
     pub(in crate::tui) fn sidebar_rows(&self) -> Vec<SidebarRow> {
         let mut rows: Vec<SidebarRow> = self
-            .processes
+            .process_panel
             .iter()
-            .map(|p| SidebarRow::Process(p.id))
+            .map(|p| SidebarRow::Process(p.process.id))
             .collect();
-        if let Some(policy) = &self.policy {
-            if let Some((seq, _)) = policy.scope_proposal {
-                rows.push(SidebarRow::Proposal(seq));
-            }
-            for section in [&policy.commands, &policy.paths, &policy.tools] {
-                for entry in section {
-                    if let (true, Some(seq)) = (entry.proposed, entry.seq) {
-                        rows.push(SidebarRow::Proposal(seq));
-                    }
-                }
-            }
+        if let Some(policy) = PolicyView::of(&self.topics) {
+            rows.extend(policy.proposals().map(SidebarRow::Proposal));
         }
         rows
     }
@@ -93,10 +85,10 @@ impl<'a> InteractiveState<'a> {
     /// The `tool_use` id of the call that spawned a listed process, if the daemon
     /// carried one (docs/process-monitor.md).
     fn process_call_id(&self, id: u64) -> Option<String> {
-        self.processes
+        self.process_panel
             .iter()
-            .find(|p| p.id == id)
-            .and_then(|p| p.call_id.clone())
+            .find(|p| p.process.id == id)
+            .and_then(|p| p.process.call_id.clone())
     }
 
     /// Resolve a row's identity against the current data — its position among the

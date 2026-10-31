@@ -7,7 +7,7 @@ use super::*;
 /// change a client commits unchanged as the `config_edit` decision, and the label that
 /// names what it allows ("always allow reading /work/refs"). Surfaced on `/state`'s
 /// `gate` topic (docs/control-api.md); never logged until committed.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GateGrant {
     pub change: ConfigChange,
     pub label: String,

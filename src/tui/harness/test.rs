@@ -1,6 +1,9 @@
 use super::Screenplay;
 use crate::log::{Keep, Stance, ToolCall, WireState};
-use crate::tui::{PaceView, TuiEvent};
+use crate::protocol::state::PaceView;
+use crate::protocol::turns::QueuedTurn;
+use crate::tui::TuiEvent;
+use crate::tui::topics::TopicUpdate;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::style::{Color, Modifier};
 use serde_json::json;

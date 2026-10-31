@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 use tokio::sync::futures::Notified;
 
@@ -41,7 +41,7 @@ pub fn turn_routing_state() -> TurnRoutingState {
 /// and error detail. Cleared on HTTP 2xx; later stream failure sets it again.
 /// Ephemeral transport diagnostics: never appended
 /// to the log or projected (docs/transport.md).
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpstreamFailure {
     pub status: Option<u16>,
     pub count: u32,
@@ -72,7 +72,7 @@ pub fn upstream_failure_state() -> UpstreamFailureState {
 /// effects already stand, where an exhausted turn ends the trajectory — so the
 /// surface is part of the state rather than a detail folded into prose
 /// (docs/transport.md).
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RetrySurface {
     Turn,
@@ -95,7 +95,7 @@ impl RetrySurface {
 /// daemon never has to re-emit a ticking field — a client computes the remaining
 /// wait itself (docs/control-api.md). It is control state, never projected, so the
 /// wall-clock reading cannot reach the cached prefix.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpstreamRetry {
     pub surface: RetrySurface,
     /// Which attempt just failed — 1-based, so `attempt` of `budget` reads directly.

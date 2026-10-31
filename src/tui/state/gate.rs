@@ -1,6 +1,8 @@
 //! Approval-gate handling: the composer's submit at a gate and the strip's gate verbs (docs/tui.md).
 
 use super::*;
+use crate::protocol::state::AskView;
+use crate::protocol::turns::QueuedTurn;
 
 impl<'a> InteractiveState<'a> {
     /// The cold line while the session is believed cold (docs/tui.md): what the next
@@ -8,10 +10,10 @@ impl<'a> InteractiveState<'a> {
     /// from the composer. The status bar draws it for as long as this is `Some`. It is
     /// information: the action goes through either way.
     pub(in crate::tui) fn cold_line(&self) -> Option<String> {
-        let cold = self.cold?;
-        let subject = if self.pending_gate.is_some() {
+        let cold = self.topics.cold.as_ref()?;
+        let subject = if self.topics.gate.is_some() {
             "approving or redirecting"
-        } else if self.ask.is_some() {
+        } else if self.topics.ask.is_some() {
             "your answer"
         } else {
             "a send"
@@ -28,7 +30,7 @@ impl<'a> InteractiveState<'a> {
     /// the composer composes text only; abort is the strip's verb). Otherwise it's a
     /// normal user turn (`POST /turns`).
     pub(in crate::tui) fn submit_composer(&mut self, text: String) {
-        if let Some(gate) = self.pending_gate.take() {
+        if let Some(gate) = self.topics.gate.take() {
             let trimmed = text.trim();
             let (decision, label) = if trimmed.is_empty() {
                 (Approval::Approve, "approved")
@@ -57,7 +59,7 @@ impl<'a> InteractiveState<'a> {
         // A send while a question shows answers that question, by name (docs/tui.md).
         let submission = crate::tui::senders::Submission {
             turn: submitted.clone(),
-            answers: self.ask.as_ref().map(|ask| ask.call_id.clone()),
+            answers: self.topics.ask.as_ref().map(|ask| ask.call_id.clone()),
         };
         if self.submit_tx.send(submission).is_ok() {
             self.clear_staged();
@@ -131,7 +133,7 @@ impl<'a> InteractiveState<'a> {
     /// An empty list is the lost race: the loop dequeued the turn between the keypress and the
     /// withdraw. Nothing is spliced and the status line says so — the echo stays until its `User`
     /// entry settles it.
-    pub(in crate::tui) fn apply_recall(&mut self, withdrawn: &[crate::client::WithdrawnTurn]) {
+    pub(in crate::tui) fn apply_recall(&mut self, withdrawn: &[QueuedTurn]) {
         if withdrawn.is_empty() {
             self.ui.debug_message = "already sent — nothing recalled".into();
             self.dirty = true;
@@ -170,11 +172,7 @@ impl<'a> InteractiveState<'a> {
     /// A send the daemon refused because it did not name the pending question, or named
     /// one no longer pending (docs/tui.md). Its text comes back to the composer as a recall
     /// would bring it; the question itself arrives on the `ask` topic.
-    pub(in crate::tui) fn apply_not_delivered(
-        &mut self,
-        turn: crate::client::WithdrawnTurn,
-        answered: bool,
-    ) {
+    pub(in crate::tui) fn apply_not_delivered(&mut self, turn: QueuedTurn, answered: bool) {
         self.apply_recall(&[turn]);
         self.ui.debug_message = if answered {
             "not sent: that question is no longer waiting; your message is back in the composer"
@@ -188,27 +186,28 @@ impl<'a> InteractiveState<'a> {
     /// those this client submitted come back — a submission id in `pending_turns` — so a
     /// restarted client, or another client's queue, restores nothing. What comes back goes
     /// through [`apply_recall`](Self::apply_recall), as a recall the operator asked for would.
-    pub(in crate::tui) fn apply_ask(&mut self, ask: Option<crate::tui::parse::PendingAsk>) {
+    pub(in crate::tui) fn apply_ask(&mut self, ask: Option<AskView>) {
         // The mark on the question follows the topic, with no log entry behind it.
-        if self.ask.as_ref().map(|a| &a.call_id) != ask.as_ref().map(|a| &a.call_id) {
+        if self.topics.ask.as_ref().map(|a| &a.call_id) != ask.as_ref().map(|a| &a.call_id) {
             self.mark_reproject();
         }
-        self.ask.clone_from(&ask);
-        let Some(ask) = ask else {
+        self.topics.ask = ask;
+        let Some(ask) = self.topics.ask.as_ref() else {
             return;
         };
         if self.ask_restored.as_deref() == Some(ask.call_id.as_str()) {
             return;
         }
-        self.ask_restored = Some(ask.call_id);
+        self.ask_restored = Some(ask.call_id.clone());
         let own: Vec<_> = ask
             .recalled
-            .into_iter()
+            .iter()
             .filter(|t| {
                 self.pending_turns
                     .iter()
                     .any(|p| p.submission_id == t.submission_id)
             })
+            .cloned()
             .collect();
         if !own.is_empty() {
             self.apply_recall(&own);
@@ -220,7 +219,7 @@ impl<'a> InteractiveState<'a> {
     /// this leaves any drafted text in place (the draft may be a redirect the
     /// operator decided against sending).
     pub(in crate::tui) fn approve_gate(&mut self) {
-        if let Some(gate) = self.pending_gate.take() {
+        if let Some(gate) = self.topics.gate.take() {
             let _ = self.approve_tx.send((gate.call_id, Approval::Approve));
             self.ui.debug_message = "approved".into();
             self.viewport.stuck_to_bottom = true;
@@ -230,7 +229,7 @@ impl<'a> InteractiveState<'a> {
     /// Abort the pending gate — the strip's `abort` verb. Like
     /// `approve_gate`, it leaves any drafted text in place.
     pub(in crate::tui) fn abort_gate(&mut self) {
-        if let Some(gate) = self.pending_gate.take() {
+        if let Some(gate) = self.topics.gate.take() {
             let _ = self.approve_tx.send((gate.call_id, Approval::Abort));
             self.ui.debug_message = "aborted".into();
             self.viewport.stuck_to_bottom = true;

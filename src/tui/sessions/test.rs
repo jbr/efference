@@ -1,5 +1,7 @@
 use super::*;
-use crate::tui::harness::Screenplay;
+use crate::protocol::state::SessionIdentity;
+use crate::tui::harness::{Screenplay, session_identity};
+use crate::tui::topics::TopicUpdate;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 fn row(id: &str, status: &str, processes: usize) -> ListedSession {
@@ -101,15 +103,7 @@ fn archiving_asks_only_when_there_is_something_to_lose() {
 #[test]
 fn enter_on_another_session_leaves_with_a_destination() {
     let mut play = Screenplay::new(90, 24);
-    play.state.session_identity = Some(SessionIdentityView {
-        id: "alpha".into(),
-        title: None,
-        model: "test/m".into(),
-        cwd: "/work".into(),
-        roles: None,
-        successor: None,
-        root: String::new(),
-    });
+    play.state.topics.session_identity = Some(session_identity("alpha", "test/m"));
     play.state.open_sessions();
     let _ = play.took_host_cmd();
     play.event(TuiEvent::Sessions(Ok(vec![
@@ -164,15 +158,7 @@ fn the_cursor_follows_the_row_it_was_on() {
 #[test]
 fn the_switcher_overlay() {
     let mut play = Screenplay::new(90, 20);
-    play.state.session_identity = Some(SessionIdentityView {
-        id: "alpha".into(),
-        title: None,
-        model: "test/m".into(),
-        cwd: "/work".into(),
-        roles: None,
-        successor: None,
-        root: String::new(),
-    });
+    play.state.topics.session_identity = Some(session_identity("alpha", "test/m"));
     play.state.open_sessions();
     let _ = play.took_host_cmd();
     play.event(TuiEvent::Sessions(Ok(vec![
@@ -188,15 +174,12 @@ fn the_switcher_overlay() {
 #[test]
 fn a_named_successor_is_followed() {
     let mut play = Screenplay::new(80, 12);
-    let quits = play.event_quits(TuiEvent::SessionIdentity(Some(SessionIdentityView {
-        id: "old-leaf".into(),
-        title: None,
-        model: "m".into(),
-        cwd: "~/p".into(),
-        roles: None,
-        successor: Some("new-leaf".into()),
-        root: "/home/someone/p".into(),
-    })));
+    let quits = play.event_quits(TuiEvent::Topic(TopicUpdate::SessionIdentity(Some(
+        SessionIdentity {
+            successor: Some("new-leaf".into()),
+            ..session_identity("old-leaf", "m")
+        },
+    ))));
     assert!(quits, "the loop leaves for the successor");
     assert!(matches!(
         play.state.switch_to.take(),

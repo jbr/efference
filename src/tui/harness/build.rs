@@ -134,9 +134,7 @@ impl Screenplay<'_> {
     /// control strip's foreground-bash-vs-other-tool distinction depends on it.
     pub(crate) fn running_tool(&mut self, call_id: &str, name: &str, input: Value) -> &mut Self {
         self.assistant("", vec![ToolCall::new(name, call_id, input)]);
-        self.event(TuiEvent::Phase(
-            crate::protocol::state::LoopPhase::Requesting,
-        ))
+        self.phase(LoopPhase::Requesting)
     }
 
     /// The Responses-dialect twin of [`running_tool`](Self::running_tool): commit an
@@ -159,9 +157,7 @@ impl Screenplay<'_> {
                 status: Some("completed".into()),
             }],
         )));
-        self.event(TuiEvent::Phase(
-            crate::protocol::state::LoopPhase::Requesting,
-        ))
+        self.phase(LoopPhase::Requesting)
     }
 
     /// The common case of [`running_tool`](Self::running_tool): a foreground `bash`
@@ -265,13 +261,9 @@ impl Screenplay<'_> {
         input: Value,
         reason: Option<&str>,
     ) -> &mut Self {
-        self.event(TuiEvent::Gate(Some(crate::tui::PendingGate {
-            call_id: call_id.into(),
-            name: name.into(),
-            input,
-            reason: reason.map(String::from),
-            acting_on: None,
-        })))
+        let mut held = gate(call_id, name, input);
+        held.reason = reason.map(String::from);
+        self.topic(TopicUpdate::Gate(Some(held)))
     }
 
     /// A pending gate whose hold is a bound `agents__decide` (docs/permissions.md):
@@ -285,24 +277,25 @@ impl Screenplay<'_> {
         leaf_input: Value,
         leaf_intent: Option<&str>,
     ) -> &mut Self {
-        let acting_on = crate::tui::ActingOn {
-            name: leaf_name.into(),
-            input: leaf_input,
-            intent: leaf_intent.map(String::from),
-            session: leaf_session.into(),
-            chain: vec![leaf_session.into()],
-        };
-        self.event(TuiEvent::Gate(Some(crate::tui::PendingGate {
-            call_id: call_id.into(),
-            name: crate::protocol::agents::DECIDE_WIRE_NAME.into(),
-            input: serde_json::json!({
+        let mut held = gate(
+            call_id,
+            crate::protocol::agents::DECIDE_WIRE_NAME,
+            serde_json::json!({
                 "agent": leaf_session,
                 "seq": "4",
                 "decision": "allow",
             }),
-            reason: None,
-            acting_on: Some(acting_on),
-        })))
+        );
+        held.acting_on = Some(BoundAction {
+            name: leaf_name.into(),
+            input: leaf_input,
+            intent: leaf_intent.map(String::from),
+            cwd: "/work".into(),
+            project: "/work".into(),
+            session: leaf_session.into(),
+            chain: vec![leaf_session.into()],
+        });
+        self.topic(TopicUpdate::Gate(Some(held)))
     }
 
     /// Flip a tool result to its raw output (docs/tui.md) —
@@ -312,5 +305,106 @@ impl Screenplay<'_> {
         self.state.view.toggle_raw(call_id);
         self.state.reproject();
         self
+    }
+}
+
+/// A gate holding `call_id`'s `name` call, with nothing else said about it: no reason, no
+/// bound action, no grant, no escalation. The one place the harness builds a [`Gate`]
+/// literal, so a field added to the topic costs a line here.
+pub(crate) fn gate(call_id: &str, name: &str, input: Value) -> Gate {
+    Gate {
+        call_id: call_id.into(),
+        name: name.into(),
+        input,
+        reason: None,
+        acting_on: None,
+        grant: None,
+        escalations: Vec::new(),
+    }
+}
+
+/// The `ask` topic naming `call_id`, question `n` of `of`, with no turns handed back. The
+/// one place the harness builds an [`AskView`] literal.
+pub(crate) fn asking(call_id: &str, n: usize, of: usize) -> AskView {
+    AskView {
+        call_id: call_id.into(),
+        question: "Which one?".into(),
+        n,
+        of,
+        recalled: Vec::new(),
+    }
+}
+
+/// The `cold` topic: the cache believed expired, and the prompt's size when a turn has
+/// reported it.
+pub(crate) fn cold(context_tokens: Option<u64>) -> Cold {
+    Cold {
+        since: Timestamp(0),
+        context_tokens,
+    }
+}
+
+/// A background process the panel lists, spawned now.
+pub(crate) fn process(id: u64, command: &str) -> ProcessState {
+    ProcessState {
+        id,
+        command: command.into(),
+        call_id: None,
+        pid: None,
+        spawned_at: Timestamp::now(),
+        background: true,
+        muted: false,
+    }
+}
+
+impl Screenplay<'_> {
+    /// The `processes` topic holding `processes`.
+    pub(crate) fn processes(&mut self, processes: Vec<ProcessState>) -> &mut Self {
+        self.topic(TopicUpdate::Processes(processes))
+    }
+
+    /// A `process_output` delta for process `id`, as the bridge delivers it.
+    pub(crate) fn process_output(&mut self, id: u64, chunk: &str) -> &mut Self {
+        self.event(TuiEvent::ProcessOutput {
+            id,
+            chunk: chunk.into(),
+        })
+    }
+
+    /// Fix the running and idle seconds the panel shows for process `id`. They derive
+    /// from the clock, so a scenario that snapshots them states them.
+    pub(crate) fn process_times(
+        &mut self,
+        id: u64,
+        running_secs: u64,
+        idle_secs: u64,
+    ) -> &mut Self {
+        let row = self
+            .state
+            .process_panel
+            .iter_mut()
+            .find(|row| row.process.id == id)
+            .expect("a listed process");
+        row.running_secs = running_secs;
+        row.idle_secs = idle_secs;
+        self
+    }
+
+    /// Fix the seconds since the last upstream request the drawer shows.
+    pub(crate) fn since_last_request(&mut self, secs: u64) -> &mut Self {
+        self.state.since_last_request = Some(secs);
+        self
+    }
+}
+
+/// A standalone session in `~/code/efference`: no title, no roles, no successor.
+pub(crate) fn session_identity(id: &str, model: &str) -> SessionIdentity {
+    SessionIdentity {
+        id: id.into(),
+        title: None,
+        model: model.into(),
+        cwd: "~/code/efference".into(),
+        inference: None,
+        successor: None,
     }
 }

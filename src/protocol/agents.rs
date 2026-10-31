@@ -57,7 +57,7 @@ pub(crate) fn decision_of(input: &Value) -> Option<Decision> {
 /// of sessions from the directly-targeted child down to the session holding the
 /// leaf. The parent's fast-path, spotter, and human gate all read this instead
 /// of the handle.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoundAction {
     /// The leaf tool's wire name.
     pub name: String,

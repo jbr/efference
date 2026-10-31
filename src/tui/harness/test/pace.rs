@@ -12,10 +12,10 @@ fn pace_state_is_loud_in_the_status_bar() {
     play.user("do a thing");
 
     // A hold with a retained speed: the indicator shouts HELD and shows the retained pace.
-    play.event(TuiEvent::Pace(PaceView {
+    play.topic(TopicUpdate::Pace(Some(PaceView {
         speed_ms: 10_000,
         held: true,
-    }));
+    })));
     assert!(play.find("HELD").is_some(), "held pace is loud");
     assert!(
         play.find("10s").is_some(),
@@ -23,18 +23,18 @@ fn pace_state_is_loud_in_the_status_bar() {
     );
 
     // Released but still slowed: HELD drops, the ⏱ speed indicator remains.
-    play.event(TuiEvent::Pace(PaceView {
+    play.topic(TopicUpdate::Pace(Some(PaceView {
         speed_ms: 10_000,
         held: false,
-    }));
+    })));
     assert!(play.find("HELD").is_none(), "resume drops the HELD");
     assert!(play.find("⏱ 10s").is_some(), "slowed-but-running indicator");
 
     // Default (fast, not held): no pace chrome at all.
-    play.event(TuiEvent::Pace(PaceView {
+    play.topic(TopicUpdate::Pace(Some(PaceView {
         speed_ms: 0,
         held: false,
-    }));
+    })));
     assert!(
         play.find("HELD").is_none() && play.find("⏱").is_none(),
         "the default fast pace adds no status chrome"
@@ -51,9 +51,7 @@ fn pace_widget_steps_and_commits() {
     let none = KeyModifiers::NONE;
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
-    play.event(TuiEvent::Phase(
-        crate::protocol::state::LoopPhase::Requesting,
-    ));
+    play.phase(crate::protocol::state::LoopPhase::Requesting);
 
     // At-rest composer + loop active: one Esc holds. Spill up onto the held strip.
     play.route_key(KeyCode::Esc, none);
@@ -117,9 +115,7 @@ fn pace_widget_esc_reverts_without_sending() {
     let none = KeyModifiers::NONE;
     let mut play = Screenplay::new(80, 12);
     play.user("x");
-    play.event(TuiEvent::Phase(
-        crate::protocol::state::LoopPhase::Requesting,
-    ));
+    play.phase(crate::protocol::state::LoopPhase::Requesting);
     play.route_key(KeyCode::Esc, none); // hold
     let _ = play.took_pace(); // drain the hold's own pace command
     play.route_key(KeyCode::Up, none); // → held strip
@@ -151,9 +147,7 @@ fn pace_widget_active_row() {
     let none = KeyModifiers::NONE;
     let mut play = Screenplay::new(80, 12);
     play.user("go");
-    play.event(TuiEvent::Phase(
-        crate::protocol::state::LoopPhase::Requesting,
-    ));
+    play.phase(crate::protocol::state::LoopPhase::Requesting);
     play.route_key(KeyCode::Esc, none); // hold
     play.route_key(KeyCode::Up, none); // → held strip
     play.route_key(KeyCode::Right, none); // interrupt → resume

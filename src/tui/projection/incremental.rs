@@ -20,6 +20,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::{CallIndex, Gate, LiveTail, ViewState, entry_nodes, tail_nodes};
 use crate::log::LogEntry;
+use crate::protocol::agents::BoundAction;
 use crate::tui::artifacts::Coordinate;
 use crate::tui::state::DocumentState;
 
@@ -43,7 +44,7 @@ pub(crate) struct Transcript {
     /// The gate this document was last built with — a change dirties both the call
     /// it left and the call it moved to. The bound action is part of the value: a
     /// bound `agents__decide` moving onto the same call still changes the render.
-    gate: Option<(String, Option<String>, Option<crate::tui::ActingOn>)>,
+    gate: Option<(String, Option<String>, Option<BoundAction>)>,
     /// The `ask` call the document was last built as current. The mark changes with
     /// no log entry, so a move dirties the ask it left and the one it reached.
     ask: Option<String>,

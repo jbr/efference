@@ -15,6 +15,7 @@ use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
 use super::{InteractiveState, UiMode};
 use crate::bash;
+use crate::protocol::state::PaceView;
 
 /// A verb the strip can carry — and the thing strip focus, a click target, and a
 /// sidebar return all hold, in place of a position (docs/tui.md). Dispatch happens
@@ -199,7 +200,7 @@ impl InteractiveState<'_> {
     /// [`TAIL`]. `held` is a modifier rather than a state of its own: wherever the
     /// hold verb appears it reads `resume` instead of `pause`.
     fn strip_context_verbs(&self) -> Vec<StripItem> {
-        let held = self.pace.is_some_and(|p| p.held);
+        let held = self.topics.pace.is_some_and(|p| p.held);
         let hold = if held {
             item("resume", "p", StripVerb::PauseToggle)
         } else {
@@ -208,7 +209,7 @@ impl InteractiveState<'_> {
         if self.start_failed() {
             return vec![item("retry", "r", StripVerb::Retry)];
         }
-        if self.pending_gate.is_some() {
+        if self.topics.gate.is_some() {
             return vec![
                 item("approve", "⏎", StripVerb::ApproveGate),
                 item("abort", "", StripVerb::AbortGate),
@@ -300,7 +301,7 @@ impl InteractiveState<'_> {
             return;
         }
         self.pace_widget = Some(super::state::PaceWidget {
-            entry_speed_ms: self.pace.map_or(0, |p| p.speed_ms),
+            entry_speed_ms: self.topics.pace.map_or(0, |p| p.speed_ms),
         });
         // The stepper owns the row, so nothing pinned survives it.
         self.strip_pinned = None;
@@ -318,10 +319,10 @@ impl InteractiveState<'_> {
         if self.pace_widget.is_none() {
             return;
         }
-        let cur = self.pace.map_or(0, |p| p.speed_ms);
-        let held = self.pace.is_some_and(|p| p.held);
+        let cur = self.topics.pace.map_or(0, |p| p.speed_ms);
+        let held = self.topics.pace.is_some_and(|p| p.held);
         let next = super::state::next_pace_rung(cur, slower);
-        self.pace = Some(super::PaceView {
+        self.topics.pace = Some(PaceView {
             speed_ms: next,
             held,
         });
@@ -335,11 +336,11 @@ impl InteractiveState<'_> {
         if self.pace_widget.take().is_none() {
             return;
         }
-        let speed = self.pace.map_or(0, |p| p.speed_ms);
+        let speed = self.topics.pace.map_or(0, |p| p.speed_ms);
         let _ = self.pace_tx.send((Some(speed), None));
         self.ui.debug_message = format!(
             "pace · {}",
-            super::state::pace_label(speed, self.pace.is_some_and(|p| p.held))
+            super::state::pace_label(speed, self.topics.pace.is_some_and(|p| p.held))
         )
         .into();
         self.dirty = true;
@@ -350,8 +351,8 @@ impl InteractiveState<'_> {
     /// daemon; just restore the local value the status bar reflects).
     pub(super) fn revert_pace_widget(&mut self) {
         if let Some(widget) = self.pace_widget.take() {
-            let held = self.pace.is_some_and(|p| p.held);
-            self.pace = Some(super::PaceView {
+            let held = self.topics.pace.is_some_and(|p| p.held);
+            self.topics.pace = Some(PaceView {
                 speed_ms: widget.entry_speed_ms,
                 held,
             });
@@ -420,7 +421,7 @@ impl InteractiveState<'_> {
             // from the state is the one thing the operator must not act on
             // unknowingly (docs/tui.md).
             Some("pinned · leave to re-rank")
-        } else if self.pending_gate.is_some() {
+        } else if self.topics.gate.is_some() {
             Some("type below to redirect")
         } else if self.clipboard_image {
             // A terminal's own paste cannot carry an image; `C-v` reads the clipboard itself.
@@ -516,7 +517,7 @@ impl InteractiveState<'_> {
         if entry.verb != StripVerb::PaceWidget {
             return entry.label.to_string();
         }
-        let val = super::state::pace_label(self.pace.map_or(0, |p| p.speed_ms), false);
+        let val = super::state::pace_label(self.topics.pace.map_or(0, |p| p.speed_ms), false);
         if self.pace_widget.is_some() {
             format!("▴ pace {val} ▾")
         } else {

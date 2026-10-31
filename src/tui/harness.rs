@@ -30,9 +30,14 @@ use super::grid::frame_grid;
 use super::render_context::{OutputMode, RenderContext};
 use super::state::InteractiveState;
 use super::theme::InteractiveTheme;
+use super::topics::TopicUpdate;
 use crate::log::{
-    Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, ToolCall, WireState,
+    Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, Timestamp, ToolCall,
+    WireState,
 };
+use crate::process_monitor::ProcessState;
+use crate::protocol::agents::BoundAction;
+use crate::protocol::state::{AskView, Cold, Gate, LoopPhase, SessionIdentity};
 use serde_json::{Value, json};
 
 /// A scripted TUI session: build state, drive input/events, snapshot the screen.
@@ -173,6 +178,17 @@ impl Screenplay<'_> {
     pub(crate) fn event(&mut self, event: TuiEvent) -> &mut Self {
         self.state.handle_event(event);
         self
+    }
+
+    /// Deliver one state topic's new value, as the bridge delivers a `state` frame
+    /// (docs/tui.md): the slot takes the whole value, `None` where the topic is clear.
+    pub(crate) fn topic(&mut self, update: TopicUpdate) -> &mut Self {
+        self.event(TuiEvent::Topic(update))
+    }
+
+    /// The loop moving to `phase` (the `loop_phase` topic).
+    pub(crate) fn phase(&mut self, phase: LoopPhase) -> &mut Self {
+        self.topic(TopicUpdate::LoopPhase(phase))
     }
 
     /// Whether folding this event in ended the UI loop — the sibling of
@@ -481,3 +497,4 @@ impl CellStyle {
 mod test;
 
 mod build;
+pub(crate) use build::{asking, cold, gate, process, session_identity};

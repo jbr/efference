@@ -17,7 +17,7 @@
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::log::ASK;
 
@@ -191,7 +191,7 @@ pub struct BgView {
 /// chunk. That content rides the ephemeral `output` class as `process_output` deltas
 /// instead (docs/process-monitor.md). What remains changes only on spawn, exit, mute, or the
 /// handoff flip.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProcessState {
     /// The spawn-minted ordinal (rendered `p#<n>` in prose; bare here and in routes).
     pub id: u64,

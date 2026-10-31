@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::{CommandStance, Perms, ToolSettings};
@@ -18,7 +18,7 @@ use crate::protocol::status::Escalated;
 /// The `gate` topic: the call held for a decision, as `GET /state` surfaces it — the
 /// ephemeral control state the log does not record, since it stores only the result.
 /// `null` when no gate is open.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Gate {
     pub call_id: String,
     /// The held tool's wire name.
@@ -41,7 +41,7 @@ pub struct Gate {
     pub grant: Option<GateGrant>,
     /// Each time the call was passed up undecided, in order (`decide` with `escalate`,
     /// docs/permissions.md); the last names whom it is routed to now.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub escalations: Vec<Escalated>,
 }
 
@@ -52,7 +52,7 @@ pub struct Gate {
 /// [`PendingNotification`](super::PendingNotification), the proposal
 /// **already has a durable `seq`** (the `Proposed` entry's), so that *is* its id — no
 /// queue-local counter.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PendingProposal {
     /// The `seq` of the `Proposed` log entry — the proposal's id, which the orchestrator's
     /// commit/cancel references.
@@ -66,7 +66,7 @@ pub struct PendingProposal {
 /// committed config edit folded in, so the live perimeter rather than the boot config
 /// (docs/permissions.md). It carries the policy's contents, not counts: an orchestrator
 /// inspecting a subordinate needs the commands, paths and scope actually in force.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RoleView {
     /// The base config's path, or `null` for the built-in default.
     pub source: Option<String>,

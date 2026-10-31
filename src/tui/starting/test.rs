@@ -1,5 +1,14 @@
 use super::*;
 use crate::tui::harness::Screenplay;
+use crate::tui::topics::TopicUpdate;
+
+/// The `starting` frame carrying `value`, read the way the bridge reads it.
+fn frame(value: serde_json::Value) -> TuiEvent {
+    match TopicUpdate::decode("starting", value) {
+        Ok(Some(update)) => TuiEvent::Topic(update),
+        other => panic!("not a starting frame: {other:?}"),
+    }
+}
 
 fn starting(resume: bool, failure: Option<&str>) -> TuiEvent {
     let failure = failure.map_or(serde_json::Value::Null, |reason| {
@@ -9,14 +18,15 @@ fn starting(resume: bool, failure: Option<&str>) -> TuiEvent {
             "withdrawn": [{"submission_id": "s1", "text": "the first ask"}],
         })
     });
-    TuiEvent::Starting(StartingView::parse(&serde_json::json!({
+    frame(serde_json::json!({
         "id": "fresh",
+        "cwd": "/work",
         "since": 1,
         "resume": resume,
         "stage": "preparing",
         "authorizing": null,
         "failure": failure,
-    })))
+    }))
 }
 
 /// While a session is prepared the status line says what preparation is doing,
@@ -28,19 +38,17 @@ fn the_status_line_says_what_preparation_is_doing() {
     let screen = play.render();
     assert!(screen.contains("starting — loading the config"), "{screen}");
 
-    play.event(TuiEvent::Starting(StartingView::parse(
-        &serde_json::json!({
-            "id": "fresh", "resume": false, "stage": "preparing", "authorizing": "exa",
-            "failure": null,
-        }),
-    )));
+    play.event(frame(serde_json::json!({
+        "id": "fresh", "cwd": "/work", "since": 1, "resume": false, "stage": "preparing",
+        "authorizing": "exa", "failure": null,
+    })));
     let screen = play.render();
     assert!(
         screen.contains("waiting for `exa` to be authorized"),
         "{screen}"
     );
 
-    play.event(TuiEvent::Starting(None));
+    play.event(frame(serde_json::Value::Null));
     assert!(!play.render().contains("starting —"));
 }
 

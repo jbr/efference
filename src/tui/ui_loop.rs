@@ -205,7 +205,7 @@ pub(super) fn ui_loop(
                     }
                     // The identity arrives only on this channel; `show` skips an
                     // unchanged title.
-                    if let Some(identity) = &state.session_identity {
+                    if let Some(identity) = &state.topics.session_identity {
                         let text = terminal_title::for_session(
                             &identity.id,
                             identity.title.as_deref(),

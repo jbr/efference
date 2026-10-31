@@ -224,7 +224,7 @@ fn transcript_redirected_gate() {
     play.pending_gate("toolu_1", "bash", json!({ "command": "rm -rf ./build" }));
     // The human redirects: gate clears, the call gets an error result, the steer
     // follows as a user turn (the real loop's redirect path).
-    play.event(TuiEvent::Gate(None));
+    play.topic(TopicUpdate::Gate(None));
     play.tool_result(
         "toolu_1",
         "Not run — the user replied instead of approving; see their next message.",

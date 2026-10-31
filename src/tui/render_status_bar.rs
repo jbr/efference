@@ -26,7 +26,7 @@ impl<'a> InteractiveState<'a> {
         // slowed loop is always legible.
         // While a question is pending, the idle hint says which one a send answers
         // (docs/tui.md); a message about something the operator just did keeps its place.
-        let message = match &self.ask {
+        let message = match &self.topics.ask {
             Some(ask)
                 if matches!(
                     &*self.ui.debug_message,
@@ -53,19 +53,19 @@ impl<'a> InteractiveState<'a> {
             self.frame_cost
                 .as_ref()
                 .and_then(super::frame_cost::FrameCost::readout),
-            super::state::pace_indicator(self.pace),
+            super::state::pace_indicator(self.topics.pace),
             // What the loop is waiting on (the `current_operations` topic): it leads
             // the transport chips, which qualify it.
             // A pending gate or `ask` owns the slot: the operator is what the loop waits on.
             self.status_operation_text(),
             // The retry leads the failure chip: it is the live state, and it says what
             // is being done about the status the chip names (docs/transport.md).
-            super::state::upstream_retry_indicator(self.upstream_retry.as_ref()),
-            super::state::upstream_failure_indicator(self.upstream_failure),
+            super::state::upstream_retry_indicator(self.topics.upstream_retry.as_ref()),
+            super::state::upstream_failure_indicator(self.topics.upstream_failure.as_ref()),
             // The stall leads nothing and trails everything: it is the terminal
             // condition, true until a turn starts, where the two above are live
             // transport state (docs/transport.md).
-            super::state::stall_indicator(self.stall.as_ref()),
+            super::state::stall_indicator(self.topics.stall.as_ref()),
         ]
         .into_iter()
         .flatten()
@@ -81,9 +81,10 @@ impl<'a> InteractiveState<'a> {
         // A session still starting, or one that did not, leads instead: there is no
         // cache to be cold yet.
         let lead = self
+            .topics
             .starting
             .as_ref()
-            .map(super::starting::StartingView::line)
+            .map(super::starting::line)
             .or_else(|| self.cold_line());
         let lead_len = lead.as_ref().map_or(0, |l| l.chars().count());
         let text = match &lead {
@@ -104,8 +105,8 @@ impl<'a> InteractiveState<'a> {
         // A newer release sits at the right edge, dimmed, and only where the line has
         // room for it after the text above: it is the one thing on the bar that is not
         // about this session, so it gives way to everything that is (docs/tui.md).
-        if let Some(version) = &self.newer_version {
-            let notice = format!("efference {version} is available");
+        if let Some(newer) = &self.topics.newer_version {
+            let notice = format!("efference {} is available", newer.version);
             let width = notice.chars().count() as u16;
             let text_end = usize::from(BASELINE_LEFT_MARGIN) + text.chars().count();
             let start = area.width.saturating_sub(width + BASELINE_LEFT_MARGIN);

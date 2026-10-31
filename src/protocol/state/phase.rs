@@ -58,7 +58,7 @@ impl LoopPhase {
 }
 
 /// Why a trajectory stopped short of finishing (docs/transport.md).
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StallReason {
     /// The stream-abort budget was spent: every attempt died before finalizing.
@@ -88,7 +88,7 @@ pub enum StallReason {
 /// set when the loop gives up, cleared when a trajectory next starts, so it
 /// names the *current* condition rather than a past one (the same clear-on-
 /// recovery rule the transport diagnostics follow).
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Stall {
     pub reason: StallReason,
     /// How many attempts were spent, where the failure path counts them;

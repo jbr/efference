@@ -13,7 +13,7 @@ use crate::project::Retention;
 ///
 /// Every instant is absolute Unix millis, so the topic stays quiet until a request
 /// happens: a client subtracts from its own clock (docs/control-api.md).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct UsageView {
     /// The last request's token counts, whatever it was for; `null` before the first.
     pub last: Option<Usage>,
@@ -56,7 +56,7 @@ pub struct UsageView {
 
 /// The model's context window and how much of it the last turn's prompt used
 /// (docs/transport.md).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextWindow {
     /// The window, as the provider reported it at boot; `null` when it reported none.
     pub limit: Option<u64>,
@@ -82,7 +82,7 @@ pub struct Cost {
 /// `at` is absolute wall-clock millis, like `last_request_at` and for the same reason
 /// (docs/control-api.md): an elapsed-time field changes on every read, which under
 /// level-triggered emission means the topic never goes quiet.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LastCacheMiss {
     pub reason: CacheMissReason,
     /// The provider's byte-derived estimate of the prefix that fell after the
@@ -96,7 +96,7 @@ pub struct LastCacheMiss {
 /// `usage.keepalive_skipped` (docs/control-api.md). Absent from the state while pings
 /// go out on schedule, or when the keepalive was never armed (no prompt cache,
 /// interval zero): it records a decision the loop made, not a configuration.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KeepaliveSkip {
     /// When the loop reached this stance, absolute Unix millis.
     pub at: Timestamp,
@@ -105,7 +105,7 @@ pub struct KeepaliveSkip {
 }
 
 /// The two reasons the loop does not ping.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum KeepaliveSkipReason {
     /// The last ping discarded output that the refresh would not repay against the

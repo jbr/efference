@@ -1,6 +1,17 @@
 use super::*;
+use crate::tui::harness::{gate, process};
+use crate::tui::process_panel::TAIL_CAP;
 use crate::tui::render_context::RenderContext;
+use crate::tui::topics::TopicUpdate;
 use tokio::sync::mpsc::UnboundedReceiver;
+
+/// The `kind` frame carrying `value`, read the way the bridge reads it.
+fn frame(kind: &str, value: serde_json::Value) -> TuiEvent {
+    match TopicUpdate::decode(kind, value) {
+        Ok(Some(update)) => TuiEvent::Topic(update),
+        other => panic!("not a {kind} frame: {other:?}"),
+    }
+}
 
 /// A state with one pending gate, plus the receiver the decision lands on.
 fn state_with_gate() -> (
@@ -13,13 +24,11 @@ fn state_with_gate() -> (
     let (senders, receivers) = crate::tui::senders::Senders::channels();
     let arx = receivers.approve;
     let mut s = InteractiveState::new(erx, senders, rc, theme);
-    s.pending_gate = Some(PendingGate {
-        call_id: "toolu_1".into(),
-        name: "bash".into(),
-        input: serde_json::json!({ "command": "ls" }),
-        reason: None,
-        acting_on: None,
-    });
+    s.topics.gate = Some(gate(
+        "toolu_1",
+        "bash",
+        serde_json::json!({ "command": "ls" }),
+    ));
     (s, arx)
 }
 
@@ -30,7 +39,7 @@ fn empty_submit_approves_the_gate() {
     let (id, dec) = arx.try_recv().expect("a decision was sent");
     assert_eq!(id, "toolu_1");
     assert!(matches!(dec, Approval::Approve));
-    assert!(s.pending_gate.is_none(), "gate cleared after resolving");
+    assert!(s.topics.gate.is_none(), "gate cleared after resolving");
 }
 
 #[test]
@@ -54,57 +63,49 @@ fn former_sentinels_redirect_with_their_literal_text() {
             Approval::Redirect(m) => assert_eq!(m, text),
             other => panic!("expected redirect for {text:?}, got {other:?}"),
         }
-        assert!(s.pending_gate.is_none(), "gate cleared after resolving");
+        assert!(s.topics.gate.is_none(), "gate cleared after resolving");
     }
 }
 
 #[test]
 fn process_output_smooths_the_matching_process_tail() {
     let (mut s, _arx) = state_with_gate();
-    s.processes = vec![BgProc {
+    s.handle_event(TuiEvent::Topic(TopicUpdate::Processes(vec![process(
+        1,
+        "cargo watch",
+    )])));
+    s.handle_event(TuiEvent::ProcessOutput {
         id: 1,
-        command: "cargo watch".into(),
-        call_id: None,
-        spawned_at: 0,
-        last_chunk_at: None,
-        tail: "tick 1\n".into(),
-        running_secs: 3,
-        idle_secs: 0,
-    }];
+        chunk: "tick 1\n".into(),
+    });
+    s.dirty = false;
     // A delta for the live process appends to its tail.
     s.handle_event(TuiEvent::ProcessOutput {
         id: 1,
         chunk: "tick 2\n".into(),
     });
-    assert_eq!(s.processes[0].tail, "tick 1\ntick 2\n");
+    assert_eq!(s.process_panel[0].tail, "tick 1\ntick 2\n");
     assert!(s.dirty, "panel repaints");
     // A delta for an unknown id is ignored (it appears with the next state change).
     s.handle_event(TuiEvent::ProcessOutput {
         id: 9,
         chunk: "nope".into(),
     });
-    assert_eq!(s.processes[0].tail, "tick 1\ntick 2\n");
+    assert_eq!(s.process_panel[0].tail, "tick 1\ntick 2\n");
 }
 
 #[test]
 fn process_output_bounds_the_tail_on_a_char_boundary() {
     let (mut s, _arx) = state_with_gate();
-    s.processes = vec![BgProc {
-        id: 1,
-        command: "chatty".into(),
-        call_id: None,
-        spawned_at: 0,
-        last_chunk_at: None,
-        tail: String::new(),
-        running_secs: 1,
-        idle_secs: 0,
-    }];
+    s.handle_event(TuiEvent::Topic(TopicUpdate::Processes(vec![process(
+        1, "chatty",
+    )])));
     // A multibyte burst past the cap must not panic and must stay valid UTF-8.
-    let chunk = "é".repeat(BG_TAIL_CAP); // 2 bytes each → 2× the cap
+    let chunk = "é".repeat(TAIL_CAP); // 2 bytes each → 2× the cap
     s.handle_event(TuiEvent::ProcessOutput { id: 1, chunk });
-    assert!(s.processes[0].tail.len() <= BG_TAIL_CAP);
+    assert!(s.process_panel[0].tail.len() <= TAIL_CAP);
     assert!(
-        s.processes[0].tail.chars().all(|c| c == 'é'),
+        s.process_panel[0].tail.chars().all(|c| c == 'é'),
         "no codepoint sliced"
     );
 }
@@ -196,20 +197,19 @@ fn the_operation_text_follows_the_topic_while_running() {
         "requests": [{"request": 0, "origin": "turn", "stage": "sent", "since": now}],
         "tools": [],
     });
-    let view = crate::tui::operations::parse_current_operations(&topic);
 
-    assert!(!s.handle_event(TuiEvent::Operations(view)));
+    assert!(!s.handle_event(frame("current_operations", topic)));
     assert_eq!(s.operation_text, None, "not shown while the loop is idle");
 
-    assert!(!s.handle_event(TuiEvent::Phase(
+    assert!(!s.handle_event(TuiEvent::Topic(TopicUpdate::LoopPhase(
         crate::protocol::state::LoopPhase::Requesting
-    )));
+    ))));
     assert_eq!(
         s.operation_text.as_deref(),
         Some("waiting on the model · 0s")
     );
 
-    assert!(!s.handle_event(TuiEvent::Operations(None)));
+    assert!(!s.handle_event(TuiEvent::Topic(TopicUpdate::CurrentOperations(None))));
     assert_eq!(s.operation_text, None);
 }
 
@@ -223,20 +223,20 @@ fn a_pending_gate_or_ask_leads_the_operation_text() {
         "requests": [{"request": 0, "origin": "title", "stage": "sent", "since": now}],
         "tools": [],
     });
-    s.handle_event(TuiEvent::Phase(crate::protocol::state::LoopPhase::Gated));
-    s.handle_event(TuiEvent::Operations(
-        crate::tui::operations::parse_current_operations(&topic),
-    ));
-    assert!(s.pending_gate.is_some());
+    s.handle_event(TuiEvent::Topic(TopicUpdate::LoopPhase(
+        crate::protocol::state::LoopPhase::Gated,
+    )));
+    s.handle_event(frame("current_operations", topic));
+    assert!(s.topics.gate.is_some());
     assert_eq!(
         s.status_operation_text().as_deref(),
         Some("waiting for your approval")
     );
 
-    s.pending_gate = None;
-    s.handle_event(TuiEvent::Phase(
+    s.topics.gate = None;
+    s.handle_event(TuiEvent::Topic(TopicUpdate::LoopPhase(
         crate::protocol::state::LoopPhase::Requesting,
-    ));
+    )));
     assert_eq!(
         s.status_operation_text().as_deref(),
         Some("writing a title · 0s")

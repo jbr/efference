@@ -87,7 +87,7 @@ impl<'a> InteractiveState<'a> {
         } else {
             (self.composer.line_count(content_width) as u16).clamp(1, 6)
         };
-        let proc_height: u16 = (self.processes.len() as u16).min(PROC_PANEL_MAX);
+        let proc_height: u16 = (self.process_panel.len() as u16).min(PROC_PANEL_MAX);
         self.viewport.input_height = input_height;
         // The control strip (docs/tui.md) holds a constant one-row slot directly
         // above the composer; staged attachments take a row each above it, capped.
@@ -348,7 +348,7 @@ impl<'a> InteractiveState<'a> {
     /// `processes` topic; capped at [`PROC_PANEL_MAX`] rows (the rest are still in the
     /// list, just not shown — the directed `list()` read of Slice 2 will surface all).
     fn render_processes_panel(&self, buf: &mut ratatui::buffer::Buffer, area: Rect) {
-        for (row, p) in (0..area.height).zip(&self.processes) {
+        for (row, p) in (0..area.height).zip(&self.process_panel) {
             let y = area.y + row;
             for x in 0..area.width {
                 if let Some(cell) = buf.cell_mut((area.x + x, y)) {
@@ -359,7 +359,7 @@ impl<'a> InteractiveState<'a> {
             let header = format!(
                 "▶ {}  {} · {} · idle {} │ ",
                 p.handle(),
-                p.command,
+                p.process.command,
                 fmt_secs(p.running_secs),
                 fmt_secs(p.idle_secs)
             );

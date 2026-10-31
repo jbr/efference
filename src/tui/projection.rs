@@ -14,6 +14,7 @@ use crate::log::{
     AssistantOutput, ContentBlock, Exclusion, LogEntry, MessagesOutputBlock, Payload, RawResult,
     Summary, ToolCall, Triaged, WireState,
 };
+use crate::protocol::agents::BoundAction;
 use crate::tui::artifacts::Coordinate;
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, Span, SpanStyle,
@@ -68,7 +69,7 @@ pub(crate) struct Gate<'g> {
     pub reason: Option<&'g str>,
     /// The leaf action a bound `agents__decide` authorizes (docs/permissions.md),
     /// shown beside the approval so the human sees the child's held move.
-    pub acting_on: Option<&'g crate::tui::ActingOn>,
+    pub acting_on: Option<&'g BoundAction>,
 }
 
 /// Where a call's *late-arriving* annotations live: `call_id` → the log index of

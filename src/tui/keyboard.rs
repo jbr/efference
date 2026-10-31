@@ -190,7 +190,7 @@ impl<'a> InteractiveState<'a> {
 
             // While a gate is pending, Enter always resolves it — even on an empty
             // buffer (= approve), which the composer would otherwise swallow.
-            if self.pending_gate.is_some()
+            if self.topics.gate.is_some()
                 && key.code == KeyCode::Enter
                 && !key.modifiers.contains(KeyModifiers::ALT)
             {
@@ -218,9 +218,10 @@ impl<'a> InteractiveState<'a> {
                     return false;
                 }
                 match self
+                    .topics
                     .verbs
                     .as_ref()
-                    .map(|verbs| verbs.continue_refused.clone())
+                    .map(|verbs| verbs.continue_verb.refusal().map(str::to_string))
                 {
                     Some(None) => {
                         self.continue_trajectory();

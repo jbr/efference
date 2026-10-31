@@ -2,9 +2,18 @@
 //! `newer_version` topic names one, and dropped where the line has no room for it.
 
 use super::*;
+use crate::protocol::state::NewerVersion;
+use crate::tui::topics::TopicUpdate;
 
 fn newer(version: Option<&str>) -> TuiEvent {
-    TuiEvent::NewerVersion(version.map(str::to_string))
+    TuiEvent::Topic(TopicUpdate::NewerVersion(version.map(|version| {
+        NewerVersion {
+            version: version.to_string(),
+            tag: format!("v{version}"),
+            url: format!("https://efference.net/releases/v{version}"),
+            update_command: "curl -fsSL https://efference.net/install.sh | sh".into(),
+        }
+    })))
 }
 
 /// The notice sits on the status bar's row, flush right, dimmed, and leaves when

@@ -374,7 +374,7 @@ pub struct ContextGrants {
 /// Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check
 /// time (see [`crate::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.
 /// Serialized as the `role` topic reports a grant (docs/control-api.md).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Perms {
     pub read: bool,
     pub write: bool,

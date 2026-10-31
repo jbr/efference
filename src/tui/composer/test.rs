@@ -471,12 +471,9 @@ fn empty_enter_hands_control_back() {
 /// control is not the operator's to hand back, and the daemon would decline.
 #[test]
 fn empty_enter_is_inert_while_the_loop_runs() {
-    use crate::tui::TuiEvent;
     use crate::tui::harness::Screenplay;
     let mut play = Screenplay::new(80, 12);
-    play.event(TuiEvent::Phase(
-        crate::protocol::state::LoopPhase::Requesting,
-    ));
+    play.phase(crate::protocol::state::LoopPhase::Requesting);
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(!play.took_continue(), "nothing fired mid-turn");
     assert_eq!(play.took_turn(), None);
@@ -487,20 +484,26 @@ fn empty_enter_is_inert_while_the_loop_runs() {
 /// mid-trajectory — a wait on the upstream it retries now — fires.
 #[test]
 fn empty_enter_follows_the_published_continue() {
-    use crate::protocol::state::LoopPhase;
+    use crate::protocol::state::{LoopPhase, VerbAnswer, Verbs};
     use crate::tui::harness::Screenplay;
-    use crate::tui::{TuiEvent, VerbsView};
+    use crate::tui::topics::TopicUpdate;
+    let verbs = |continue_verb| {
+        TopicUpdate::Verbs(Some(Verbs {
+            turn: VerbAnswer::accepted(),
+            continue_verb,
+            compact: VerbAnswer::accepted(),
+        }))
+    };
     let mut play = Screenplay::new(80, 12);
-    play.event(TuiEvent::Verbs(VerbsView {
-        continue_refused: Some("nothing to continue: the last turn completed".into()),
-        ..VerbsView::default()
-    }));
+    play.topic(verbs(VerbAnswer::refused(
+        "nothing to continue: the last turn completed",
+    )));
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(!play.took_continue(), "a refused continue is not sent");
     assert!(play.render().contains("nothing to continue"));
 
-    play.event(TuiEvent::Phase(LoopPhase::Delayed { until: 0 }));
-    play.event(TuiEvent::Verbs(VerbsView::default()));
+    play.phase(LoopPhase::Delayed { until: 0 });
+    play.topic(verbs(VerbAnswer::accepted()));
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(
         play.took_continue(),

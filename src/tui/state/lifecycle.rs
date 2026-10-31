@@ -1,6 +1,7 @@
 //! Construction, theme application, and the small state accessors.
 
 use super::*;
+use crate::protocol::state::LoopPhase;
 
 #[cfg(test)]
 mod test;
@@ -127,9 +128,6 @@ impl<'a> InteractiveState<'a> {
             compaction_tx,
             pending_turns: Vec::new(),
             ask_restored: None,
-            ask: None,
-            pending_gate: None,
-            starting: None,
             approve_tx,
             pace_tx,
             interrupt_tx,
@@ -142,20 +140,10 @@ impl<'a> InteractiveState<'a> {
             sidebar_verb_focus: 0,
             sidebar_hits: Vec::new(),
             sidebar_verb_hits: Vec::new(),
-            loop_phase: crate::protocol::state::LoopPhase::Idle,
-            verbs: None,
-            pace: None,
-            processes: Vec::new(),
-            usage: None,
-            upstream_failure: None,
-            upstream_retry: None,
-            operations: None,
+            topics: Topics::default(),
+            process_panel: Vec::new(),
+            since_last_request: None,
             operation_text: None,
-            stall: None,
-            cold: None,
-            newer_version: None,
-            session_identity: None,
-            policy: None,
 
             dirty: false,
             reproject_pending: false,
@@ -198,14 +186,14 @@ impl<'a> InteractiveState<'a> {
 
     /// Whether the daemon's loop is anywhere but idle.
     pub(in crate::tui) fn loop_running(&self) -> bool {
-        self.loop_phase != crate::protocol::state::LoopPhase::Idle
+        self.topics.loop_phase != LoopPhase::Idle
     }
 
     /// Why the loop is parked at its cold check, or `None` when it is not: the `cold`
     /// topic still set is an expired cache, cleared is a compaction that ended it.
     pub(in crate::tui) fn park(&self) -> Option<ParkReason> {
-        (self.loop_phase == crate::protocol::state::LoopPhase::ColdParked).then(|| {
-            if self.cold.is_some() {
+        (self.topics.loop_phase == LoopPhase::ColdParked).then(|| {
+            if self.topics.cold.is_some() {
                 ParkReason::Expired
             } else {
                 ParkReason::Compacted
@@ -215,9 +203,20 @@ impl<'a> InteractiveState<'a> {
 
     /// Whether a compaction is waiting or writing, from `current_operations`.
     pub(in crate::tui) fn compacting(&self) -> bool {
-        self.operations
+        self.topics
+            .current_operations
             .as_ref()
             .is_some_and(|operations| operations.compaction.is_some())
+    }
+
+    /// Whether the compact route would take what `C-o` sends (docs/tui.md): a request
+    /// without `warm`, which the route refuses while it believes the cache is live. Before
+    /// the `verbs` topic arrives the key is offered and the host answers for itself.
+    pub(in crate::tui) fn compact_offered(&self) -> bool {
+        self.topics
+            .verbs
+            .as_ref()
+            .is_none_or(|verbs| verbs.compact.accepted && verbs.compact.warm != Some(true))
     }
 
     /// The tool call currently executing, derived from the committed log alone —
@@ -244,7 +243,7 @@ impl<'a> InteractiveState<'a> {
     /// single call; on a batch the cost is a stale label rather than a wrong lifecycle
     /// state. A gate
     /// pending on the call looks the same from here; callers that care check
-    /// `pending_gate` first.
+    /// `topics.gate` first.
     ///
     /// [`AssistantOutput::tool_calls`]: crate::log::AssistantOutput::tool_calls
     pub(in crate::tui) fn in_flight_call(&self) -> Option<crate::log::ToolCall> {

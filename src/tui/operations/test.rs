@@ -1,11 +1,20 @@
 use super::*;
-use serde_json::json;
+use crate::tui::topics::TopicUpdate;
+use serde_json::{Value, json};
 
 const NOW: u64 = 1_754_300_130_000;
 const MODEL: &str = "z-ai/glm-5.3-flash";
 
+/// The `current_operations` frame `topic`, read the way the bridge reads it.
+fn operations(topic: &Value) -> Option<CurrentOperations> {
+    match TopicUpdate::decode("current_operations", topic.clone()) {
+        Ok(Some(TopicUpdate::CurrentOperations(operations))) => operations,
+        other => panic!("not a current_operations frame: {other:?}"),
+    }
+}
+
 fn text(topic: &Value) -> Option<String> {
-    operation_text(&parse_current_operations(topic)?, MODEL, NOW)
+    operation_text(&operations(topic)?, MODEL, NOW)
 }
 
 fn request(origin: &str, stage: &str, ago_ms: u64) -> Value {
@@ -14,7 +23,7 @@ fn request(origin: &str, stage: &str, ago_ms: u64) -> Value {
 
 #[test]
 fn nothing_open_is_no_view() {
-    assert_eq!(parse_current_operations(&Value::Null), None);
+    assert!(operations(&Value::Null).is_none());
 }
 
 #[test]

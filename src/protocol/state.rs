@@ -24,6 +24,8 @@ mod operations;
 mod permissions;
 mod phase;
 mod starting;
+#[cfg(test)]
+mod test;
 mod usage;
 
 pub use operations::{
@@ -208,6 +210,11 @@ impl VerbAnswer {
             ..Self::accepted()
         }
     }
+
+    /// The message a refusal carries, `None` when the route would take the request.
+    pub fn refusal(&self) -> Option<&str> {
+        (!self.accepted).then(|| self.message.as_deref().unwrap_or_default())
+    }
 }
 
 /// One pending ambient notification, as the `notifications` topic lists it (docs/inbox.md):
@@ -237,7 +244,7 @@ pub struct PendingNotification {
 /// one-shot read so a client learns them from the connect snapshot along with
 /// everything else, and so either moving later reaches clients through the
 /// mechanism that already delivers whole-topic replacements.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionIdentity {
     /// The session id (docs/session-title.md): its directory name under
     /// `.efference/`, the `--name` a client resolves, the address a peer

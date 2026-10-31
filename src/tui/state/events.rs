@@ -85,152 +85,16 @@ impl<'a> InteractiveState<'a> {
                 self.loading.pending_request = true;
                 self.mark_reproject();
             }
-            TuiEvent::Gate(gate) => {
-                // The gate renders inline in the transcript (the tail call shows
-                // `⏸ awaiting approval`, docs/tui.md), so a gate change must
-                // reproject — unlike the other ephemeral chrome (processes/usage). The
-                // status bar still mirrors the affordance for the scrolled-away case.
-                self.ui.debug_message = match &gate {
-                    Some(g) => {
-                        format!("approval needed: {} — ⏎ approve · type to redirect", g.name).into()
-                    }
-                    // Gate resolved — drop the stale "approval needed" hint.
-                    None => IDLE_STATUS.into(),
-                };
-                self.pending_gate = gate;
-                self.mark_reproject();
-            }
-            TuiEvent::Processes(mut processes) => {
-                // Ephemeral chrome, not transcript content — repaint, no reproject
-                // (the running tail is never in the log, docs/process-monitor.md).
-                //
-                // Carry each process's accumulated tail across the replacement. The
-                // `processes` topic is structure only — it cannot carry the tail without
-                // re-emitting per output chunk (docs/control-api.md) — so this client is
-                // the only holder of it, and a wholesale assignment would wipe what the
-                // `process_output` deltas built. Matched by id; a process that has since
-                // exited simply drops out with its tail.
-                for proc in &mut processes {
-                    if let Some(prev) = self.processes.iter().find(|p| p.id == proc.id) {
-                        proc.tail.clone_from(&prev.tail);
-                        proc.last_chunk_at = prev.last_chunk_at;
-                        proc.refresh_elapsed();
-                    }
-                }
-                self.processes = processes;
-                self.dirty = true;
-            }
+            TuiEvent::Topic(update) => return self.apply_topic(update),
             TuiEvent::ProcessOutput { id, chunk } => {
                 // The panel's tail is built *here*, not received: the `processes` topic
                 // carries structure only, so these deltas are the sole source of tail
                 // content (docs/control-api.md). An unknown id (a process the panel
                 // has not seen yet) is ignored — it appears with the next state change.
-                // Bound the accumulation so a chatty process can't grow it without
-                // limit; only the last line is shown anyway.
-                if let Some(p) = self.processes.iter_mut().find(|p| p.id == id) {
-                    p.last_chunk_at = Some(crate::log::Timestamp::now().0);
-                    p.refresh_elapsed();
-                    p.tail.push_str(&chunk);
-                    if p.tail.len() > BG_TAIL_CAP {
-                        let from = p.tail.len() - BG_TAIL_CAP;
-                        // Trim on a char boundary so the panel never slices a codepoint.
-                        let from = (from..=p.tail.len())
-                            .find(|&i| p.tail.is_char_boundary(i))
-                            .unwrap_or(p.tail.len());
-                        p.tail.drain(..from);
-                    }
+                if let Some(row) = self.process_panel.iter_mut().find(|p| p.process.id == id) {
+                    row.push_output(&chunk);
                     self.dirty = true;
                 }
-            }
-            TuiEvent::Usage(usage) => {
-                // Ephemeral telemetry, not transcript content — update and redraw, no
-                // reproject. Usage stats are rendered in the status bar.
-                self.usage = Some(usage);
-                return false;
-            }
-            TuiEvent::UpstreamFailure(failure) => {
-                // Ephemeral transport diagnostic, not transcript content — update and
-                // repaint the status bar without reprojection.
-                self.upstream_failure = failure;
-                self.dirty = true;
-            }
-            TuiEvent::UpstreamRetry(retry) => {
-                // Same class as the failure diagnostic: status-bar chrome, no
-                // reprojection. `None` is the all-clear and removes the indicator.
-                self.upstream_retry = retry;
-                self.dirty = true;
-            }
-
-            TuiEvent::CacheExpired(cold) => {
-                self.cold = cold;
-                self.dirty = true;
-            }
-
-            TuiEvent::NewerVersion(version) => {
-                self.newer_version = version;
-                self.dirty = true;
-            }
-
-            TuiEvent::Stall(stall) => {
-                // Status-bar chrome like the two transport diagnostics above;
-                // `None` means a trajectory is running again.
-                self.stall = stall;
-                self.dirty = true;
-            }
-
-            TuiEvent::SessionIdentity(identity) => {
-                // A session that handed off (docs/tools.md) is followed to its
-                // successor: the same exit the session switcher takes, so the
-                // attach loop re-enters on the successor's prefix.
-                let follow = self.switch_to.is_none()
-                    && identity
-                        .as_ref()
-                        .and_then(|view| view.successor.as_ref())
-                        .is_some();
-                if follow && let Some(view) = &identity {
-                    self.switch_to = Some(Exit::Switch {
-                        id: view.successor.clone().unwrap_or_default(),
-                    });
-                }
-                // Sidebar chrome (the SESSION section), not transcript content —
-                // update and repaint, no reproject.
-                self.session_identity = identity;
-                self.dirty = true;
-                if follow {
-                    return true;
-                }
-            }
-
-            TuiEvent::Policy(policy) => {
-                // Ephemeral chrome (the sidebar POLICY section), not transcript content —
-                // update and repaint, no reproject.
-                self.policy = Some(policy);
-                self.dirty = true;
-            }
-            TuiEvent::Pace(pace) => {
-                // Operator-view chrome (the status-bar pace indicator), not transcript content —
-                // update and repaint, no reproject (docs/tui.md). Reconciles
-                // the optimistic update a pace key made with the daemon's authoritative pace.
-                self.pace = Some(pace);
-                self.dirty = true;
-            }
-            TuiEvent::Phase(phase) => {
-                // The "is the loop working" signal graduated Esc reads (docs/tui.md);
-                // the operation text is shown only while the loop is not idle.
-                self.loop_phase = phase;
-                self.refresh_operation_text();
-                self.dirty = true;
-                return false;
-            }
-            TuiEvent::Starting(starting) => self.apply_starting(starting),
-            TuiEvent::Verbs(verbs) => {
-                self.verbs = Some(verbs);
-                self.dirty = true;
-            }
-            TuiEvent::Operations(operations) => {
-                self.operations = operations;
-                self.refresh_operation_text();
-                self.dirty = true;
             }
             TuiEvent::Image { seq, idx, image } => {
                 // The reserved footprint was sized from the entry view's metadata,
@@ -251,7 +115,6 @@ impl<'a> InteractiveState<'a> {
             }
             TuiEvent::Recalled(withdrawn) => self.apply_recall(&withdrawn),
             TuiEvent::NotDelivered { turn, answered } => self.apply_not_delivered(turn, answered),
-            TuiEvent::Ask(ask) => self.apply_ask(ask),
             TuiEvent::Uploaded { key, result } => self.upload_landed(key, result),
             TuiEvent::ClipboardImage(found) => {
                 self.clipboard_image = found;
@@ -340,71 +203,6 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Recompute every clock-derived display value from the absolute stamps it was
-    /// derived from: each process row's running/idle seconds and the status bar's
-    /// seconds-since-last-request. Returns whether anything moved.
-    ///
-    /// Called once a second by the UI loop's clock tick. The wire stopped carrying
-    /// ticking values so the level-triggered `state` topics could stay quiet
-    /// (docs/control-api.md); the elapsed *display* still has to advance, and this is
-    /// where it does — keeping rendering itself a pure function of state, which the
-    /// snapshot harness depends on.
-    pub(in crate::tui) fn refresh_clocks(&mut self) -> bool {
-        let mut changed = false;
-        for p in &mut self.processes {
-            let before = (p.running_secs, p.idle_secs);
-            p.refresh_elapsed();
-            changed |= (p.running_secs, p.idle_secs) != before;
-        }
-        changed |= self.refresh_operation_text();
-        if let Some(usage) = &mut self.usage {
-            let secs = usage.last_request_at.map(crate::tui::secs_since);
-            if usage.seconds_since_last_request != secs {
-                usage.seconds_since_last_request = secs;
-                changed = true;
-            }
-        }
-        if changed {
-            self.dirty = true;
-        }
-        changed
-    }
-
-    /// The status bar's operation slot: while the loop is running, a pending gate or `ask`
-    /// reads as the operator being waited on, ahead of whatever request or tool is open (docs/tui.md).
-    pub(crate) fn status_operation_text(&self) -> Option<String> {
-        let pending = crate::tui::operations::pending_text(
-            self.loop_phase == crate::protocol::state::LoopPhase::Gated,
-            self.loop_phase == crate::protocol::state::LoopPhase::Asking,
-        );
-        pending
-            .map(str::to_string)
-            .or_else(|| self.operation_text.clone())
-    }
-
-    /// Re-derive the status bar's operation text from the topic, the session's model,
-    /// and the clock. Shown only while the loop is running: an idle triage or a
-    /// keepalive ping is not something the operator is waiting on. Returns whether
-    /// the text changed.
-    fn refresh_operation_text(&mut self) -> bool {
-        let text = match (&self.operations, self.loop_running()) {
-            (Some(view), true) => {
-                let model = self
-                    .session_identity
-                    .as_ref()
-                    .map_or("the model", |identity| identity.model.as_str());
-                crate::tui::operations::operation_text(view, model, crate::log::Timestamp::now().0)
-            }
-            _ => None,
-        };
-        let changed = text != self.operation_text;
-        self.operation_text = text;
-        if changed {
-            self.dirty = true;
-        }
-        changed
-    }
-
     /// Flag that the transcript must be re-projected before the next paint.
     pub(super) fn mark_reproject(&mut self) {
         self.reproject_pending = true;
@@ -435,14 +233,12 @@ impl<'a> InteractiveState<'a> {
         // before the paint rather than inside it, so without attributing it here a
         // frame's reported cost would omit rebuilding the nodes it then lays out.
         let started = self.frame_cost.is_some().then(Instant::now);
+        let held = self.topics.gate.as_ref();
         let gate = projection::Gate {
-            call: self.pending_gate.as_ref().map(|g| g.call_id.as_str()),
-            ask: self.ask.as_ref().map(|a| a.call_id.as_str()),
-            reason: self.pending_gate.as_ref().and_then(|g| g.reason.as_deref()),
-            acting_on: self
-                .pending_gate
-                .as_ref()
-                .and_then(|g| g.acting_on.as_ref()),
+            call: held.map(|g| g.call_id.as_str()),
+            ask: self.topics.ask.as_ref().map(|a| a.call_id.as_str()),
+            reason: held.and_then(|g| g.reason.as_deref()),
+            acting_on: held.and_then(|g| g.acting_on.as_ref()),
         };
         self.transcript.update(
             &mut self.document,

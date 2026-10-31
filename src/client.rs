@@ -27,7 +27,7 @@ use crate::protocol::sessions::{
     SessionState,
 };
 use crate::protocol::transcript::TranscriptRead;
-use crate::protocol::turns::Landing;
+use crate::protocol::turns::{Landing, QueuedTurn};
 
 mod host;
 mod transport;
@@ -219,7 +219,7 @@ impl Client {
     /// this can return fewer turns than the queue showed — possibly none. That is the contract:
     /// a caller splicing the popped text into a composer splices only this, never a turn already
     /// on its way to the model.
-    pub async fn withdraw_turns(&self, submission_id: &str) -> Result<Vec<WithdrawnTurn>> {
+    pub async fn withdraw_turns(&self, submission_id: &str) -> Result<Vec<QueuedTurn>> {
         let body = self.delete(&format!("/turns/{submission_id}")).await?;
         let parsed: WithdrawResponse = serde_json::from_str(&body)
             .with_context(|| format!("parsing the withdraw response: {body}"))?;
@@ -568,20 +568,9 @@ impl Client {
     }
 }
 
-/// One turn a `DELETE /turns/:submission_id` actually popped (docs/control-api.md) — the text a
-/// client splices back into its composer, with the id it was submitted under, and the uploads it
-/// carried, still in the store to be staged again.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
-pub struct WithdrawnTurn {
-    pub submission_id: String,
-    pub text: String,
-    #[serde(default)]
-    pub attachments: Vec<Arrival>,
-}
-
 #[derive(serde::Deserialize)]
 struct WithdrawResponse {
-    withdrawn: Vec<WithdrawnTurn>,
+    withdrawn: Vec<QueuedTurn>,
 }
 
 /// What a `POST /loop/compact` came back with (docs/control-api.md). A decline is a

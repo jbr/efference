@@ -269,7 +269,7 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
 /// stays exactly as the model wrote it; this annotation names which child and what
 /// it is holding. The chain joins with `→` when the approval passed through more
 /// than one session.
-pub(in crate::tui) fn bound_action(bound: &crate::tui::ActingOn) -> DocumentNode<'static> {
+pub(in crate::tui) fn bound_action(bound: &BoundAction) -> DocumentNode<'static> {
     let display = crate::mcp::display_name(&bound.name);
     let detail = match bound.name.as_str() {
         "bash" => bound

@@ -42,6 +42,8 @@ pub(crate) mod keyboard;
 pub(crate) mod markdown;
 pub(crate) mod mouse;
 pub(crate) mod pasteboard;
+pub(crate) mod policy_view;
+pub(crate) mod process_panel;
 pub(crate) mod projection;
 pub(crate) mod render_code_block;
 pub(crate) mod render_context;
@@ -72,6 +74,7 @@ pub(crate) mod starting;
 pub(crate) mod state;
 pub(crate) mod table_layout;
 pub(crate) mod theme;
+pub(crate) mod topics;
 pub(crate) mod utils;
 pub(crate) mod write_text;
 
@@ -91,49 +94,11 @@ pub enum ParkReason {
     Compacted,
 }
 
-/// The `verbs` topic as the UI reads it (docs/control-api.md): the refusal each route
-/// would give now, `None` where it accepts.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct VerbsView {
-    /// `POST /loop/continue`'s refusal.
-    pub continue_refused: Option<String>,
-    /// `POST /loop/compact`'s refusal for a request without `warm` — what `C-o` sends.
-    pub compact_refused: Option<String>,
-}
-
-impl VerbsView {
-    /// Parse the topic. A compaction the route accepts only with `warm: true` is a
-    /// refusal for `C-o`, which never sends it; the route's own words for that arrive
-    /// when it is asked.
-    pub(crate) fn parse(value: &serde_json::Value) -> Self {
-        let refusal = |verb: &serde_json::Value| {
-            (verb["accepted"] != true).then(|| verb["message"].as_str().unwrap_or("").to_string())
-        };
-        let compact = &value["compact"];
-        Self {
-            continue_refused: refusal(&value["continue"]),
-            compact_refused: if compact["accepted"] == true && compact["warm"] == true {
-                Some("the cache is not believed expired".to_string())
-            } else {
-                refusal(compact)
-            },
-        }
-    }
-}
-
-/// The `cold` topic as the UI reads it: the cache is believed expired, and what reading
-/// the context uncached would cost.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ColdView {
-    /// The last turn's prompt in tokens, when a turn has reported it.
-    pub context_tokens: Option<u64>,
-}
-
 /// One inbound message to the UI thread, decoded by the bridge from the unified
 /// control stream's frames (docs/control-api.md): durable [`Entry`](TuiEvent::Entry)
 /// values from `log` frames, the ephemeral deltas from `output` frames (folded into
-/// the live tail until their committed entry lands), and the chrome below from
-/// `state` frames — each a whole-topic replacement.
+/// the live tail until their committed entry lands), and a [`Topic`](TuiEvent::Topic)
+/// for each `state` frame — a whole-topic replacement.
 #[derive(Debug)]
 pub(crate) enum TuiEvent {
     /// A committed log entry (a `log` frame — the durable class).
@@ -166,61 +131,9 @@ pub(crate) enum TuiEvent {
     /// content, since the `processes` topic carries structure only; demuxed by
     /// `id` exactly as [`ToolOutput`](TuiEvent::ToolOutput) is by `call_id`.
     ProcessOutput { id: u64, chunk: String },
-    /// The pending tool-approval gate changed (the `gate` topic).
-    Gate(Option<PendingGate>),
-    /// The live background processes changed (the `processes` topic,
-    /// docs/process-monitor.md — the running tail is ephemeral, never logged, so it has no
-    /// `log` entry; [`ProcessOutput`](TuiEvent::ProcessOutput) deltas layer the content
-    /// on top).
-    Processes(Vec<BgProc>),
-    /// The usage statistics changed (the `usage` topic). Reflects cumulative token
-    /// counts and cache telemetry.
-    Usage(UsageStats),
-    /// The last non-success upstream response changed (the `upstream_failure` topic).
-    /// Ephemeral transport diagnostic, rendered in the status bar.
-    UpstreamFailure(Option<UpstreamFailureView>),
-    /// The trajectory-stalled condition changed (the `stall` topic,
-    /// docs/transport.md). Level-triggered: `None` once a trajectory starts
-    /// again. Status-bar chrome — it is what distinguishes an idle daemon that
-    /// finished from one that gave up.
-    Stall(Option<StallView>),
-    /// The session's cache is believed expired, or no longer (the `cold` topic,
-    /// backlog: cold-session.md). Level-triggered: `None` is warm or never-sent.
-    CacheExpired(Option<ColdView>),
-    /// A release newer than the host is out, or none is known (the `newer_version`
-    /// topic, docs/update-check.md): its version. Level-triggered, status-bar chrome.
-    NewerVersion(Option<String>),
-    /// The session's preparation (the `starting` topic, docs/control-api.md):
-    /// `None` once it has started. Level-triggered, status-bar chrome — and a
-    /// failure's turns go back in the composer (`starting.rs`).
-    Starting(Option<starting::StartingView>),
-    /// Where the loop is (the `loop_phase` topic, docs/control-api.md). The "is
-    /// something happening" signal graduated Esc reads to choose pause-vs-swallow
-    /// (docs/tui.md) — reliable through a silent tool, unlike streaming deltas.
-    Phase(crate::protocol::state::LoopPhase),
-    /// What the loop routes would answer now (the `verbs` topic, docs/control-api.md).
-    Verbs(VerbsView),
-    /// A retry in flight changed (the `upstream_retry` topic, docs/transport.md).
-    /// Level-triggered: `None` is the all-clear. Ephemeral transport diagnostic,
-    /// rendered in the status bar.
-    UpstreamRetry(Option<UpstreamRetryView>),
-    /// What this session is — the configured model and its working directory (the
-    /// `session_identity` topic, docs/control-api.md). Static per session today;
-    /// it arrives on the connect snapshot and drives the sidebar's SESSION section.
-    SessionIdentity(Option<SessionIdentityView>),
-    /// What the loop is waiting on (the `current_operations` topic,
-    /// docs/control-api.md). Level-triggered: `None` is nothing open. Status-bar
-    /// chrome.
-    Operations(Option<operations::OperationsView>),
-
-    /// The effective policy + its pending proposals changed (the `role`, `proposals`,
-    /// and `review_level` topics, merged by the bridge). Drives the sidebar's POLICY
-    /// section (docs/permissions.md).
-    Policy(PolicyView),
-    /// The operator's pace dial / hold overlay changed (the `pace` topic,
-    /// docs/tui.md). Loud to the operator (surfaced in the status bar),
-    /// silent to the agent — it is never logged or projected.
-    Pace(PaceView),
+    /// One state topic's new value (a `state` frame, docs/control-api.md): the whole value,
+    /// replacing what the store held for it (`topics.rs`, docs/tui.md).
+    Topic(topics::TopicUpdate),
     /// A result image's bytes came back from the control channel, decoded — or
     /// didn't, with the reason (docs/tui.md). Folded into the
     /// [`ImageStore`](image::ImageStore); the transcript's reservation for it was
@@ -245,17 +158,13 @@ pub(crate) enum TuiEvent {
     /// (docs/tui.md). The list can be shorter than what was asked for — or empty, when the loop
     /// dequeued the turn first — because the server's answer is authoritative; the composer
     /// splices exactly this and nothing else.
-    Recalled(Vec<crate::client::WithdrawnTurn>),
+    Recalled(Vec<crate::protocol::turns::QueuedTurn>),
     /// A send was refused: it named no question while one was pending, or named one no
     /// longer pending (`answered`). The turn comes back for the composer (docs/tui.md).
     NotDelivered {
-        turn: crate::client::WithdrawnTurn,
+        turn: crate::protocol::turns::QueuedTurn,
         answered: bool,
     },
-    /// The `ask` topic (docs/control-api.md): `None` while no question is pending. Its
-    /// `recalled` turns are the queue the daemon withdrew when the question began, for the
-    /// composer to take back (docs/tui.md).
-    Ask(Option<parse::PendingAsk>),
     /// A staged attachment's upload answered (docs/inbox.md): what the daemon stored, keyed
     /// by the staging key, or why it could not.
     Uploaded {
@@ -360,236 +269,10 @@ pub(crate) enum Exit {
     SwitchWithDraft { id: String, draft: String },
 }
 
-/// The operator's pace state, as surfaced by `GET /state`'s `pace`
-/// (docs/tui.md). `speed_ms` is the between-turns delay; `held` is the
-/// pause overlay. Operator-view chrome — never part of the transcript.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PaceView {
-    pub speed_ms: u64,
-    pub held: bool,
-}
-
 /// A pace command the operator issues from the TUI (docs/tui.md), sent to
 /// the tokio side, which issues `PATCH /loop {pace}`: `(speed_ms, held)`, each optional so a key
 /// can move the speed dial, toggle the hold, or both.
 pub(crate) type PaceCmd = (Option<u64>, Option<bool>);
-
-/// One live background process as the panel holds it: the wire's structural fields
-/// merged with the tail this client accumulated itself.
-///
-/// The `processes` topic carries structure only — no tail, no last-chunk stamp — because
-/// both change per output chunk and would make a level-triggered topic re-emit at the
-/// rate of the output (docs/control-api.md). The content arrives as `process_output`
-/// deltas instead, layered on top by `handle_event`.
-///
-/// `running_secs`/`idle_secs` are **derived for display** when state changes, from the
-/// absolute stamps beside them. Derived at event time rather than at render time so
-/// rendering stays a pure function of state (the snapshot harness depends on that); the
-/// stamps are retained so the clock tick can recompute them without a round-trip
-/// (`refresh_clocks`).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BgProc {
-    /// The spawn-minted process id (bare on the wire; rendered `p#<n>` for display).
-    pub id: u64,
-    pub command: String,
-    /// The `tool_use` id of the call that spawned this process, from the wire
-    /// (docs/process-monitor.md). `None` on a daemon that predates the mapping; the
-    /// sidebar's `view` verb is the one thing that needs it, and says so when it
-    /// is missing rather than jumping somewhere arbitrary.
-    pub call_id: Option<String>,
-    /// Absolute Unix millis, from the wire.
-    pub spawned_at: u64,
-    /// Absolute Unix millis, stamped locally on each `process_output` delta. `None` until
-    /// the first chunk — the wire cannot supply it without re-emitting per chunk.
-    pub last_chunk_at: Option<u64>,
-    /// Accumulated locally from `process_output` deltas, seeded on first sight from
-    /// `GET /processes/:id/output` (the bridge's cold-open fetch, docs/control-api.md).
-    pub tail: String,
-    pub running_secs: u64,
-    pub idle_secs: u64,
-}
-
-impl BgProc {
-    /// Recompute the display counters from the absolute stamps. Called whenever the
-    /// panel's state changes, and once a second by the clock tick (`refresh_clocks`).
-    pub fn refresh_elapsed(&mut self) {
-        self.running_secs = secs_since(self.spawned_at);
-        self.idle_secs = self.last_chunk_at.map_or(0, secs_since);
-    }
-
-    /// The prose form of the id (`p#3`) — what the panel shows, matching the
-    /// vocabulary the model and the transcript use.
-    pub fn handle(&self) -> String {
-        crate::process_monitor::handle(self.id)
-    }
-}
-
-/// A pending tool-approval gate, as surfaced by `GET /state`'s `gate`.
-#[derive(Debug, Clone)]
-pub(crate) struct PendingGate {
-    pub call_id: String,
-    pub name: String,
-    pub input: serde_json::Value,
-    /// The spotter's one-line reason for holding this call, if it gated via the spotter
-    /// (docs/permissions.md) — surfaced inline at the gate so the human sees *why*.
-    pub reason: Option<String>,
-    /// The leaf action this approval authorizes, when the held call is a bound
-    /// `agents__decide` (docs/permissions.md). The gate renders the child and
-    /// its held move instead of the approval's id.
-    pub acting_on: Option<ActingOn>,
-}
-
-/// The leaf action behind a bound `agents__decide` (docs/permissions.md), as
-/// `GET /state`'s `gate.acting_on` carries it: the child's tool and input, the
-/// intent it wrote, and the session chain the approval passed through.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ActingOn {
-    pub name: String,
-    pub input: serde_json::Value,
-    pub intent: Option<String>,
-    /// The session the parent's call directly names.
-    pub session: String,
-    /// The session ids from that target down to the session holding the leaf.
-    pub chain: Vec<String>,
-}
-/// Usage statistics from the daemon — the `usage` state topic (also `GET /state`'s
-/// `usage` key).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct UsageStats {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_input_tokens: u64,
-    pub cache_creation_input_tokens: u64,
-    /// The wire's absolute `usage.last_request_at` (Unix millis), retained so the
-    /// clock tick can recompute the elapsed display without a round-trip
-    /// (docs/control-api.md — the daemon sends the instant, not a ticking count, so a
-    /// level-triggered `usage` topic stays quiet).
-    pub last_request_at: Option<u64>,
-    /// Seconds since the last upstream request, derived from `last_request_at` at
-    /// parse time and again on each clock tick. Derived rather than computed at render
-    /// time so rendering stays a pure function of state and the snapshot harness stays
-    /// deterministic.
-    pub seconds_since_last_request: Option<u64>,
-    /// The model's context-window limit, from `usage.context.limit` — the
-    /// boot-fetched capability (docs/transport.md). `None` when the daemon
-    /// reports no capabilities (offline verbs, tests).
-    pub context_limit: Option<u64>,
-    /// The last request's total prompt tokens, from `usage.context.used`.
-    /// `None` until the first request of the session.
-    pub context_used: Option<u64>,
-    /// The session's billed cost so far in USD, from `usage.cost.usd` — the
-    /// provider's own accounting (docs/transport.md). `None` when the provider
-    /// has no per-request cost surface (direct Anthropic).
-    pub cost_usd: Option<f64>,
-    /// Requests the cost fetch could not price, from `usage.cost.unpriced` —
-    /// nonzero marks `cost_usd` as an undercount.
-    pub cost_unpriced: Option<u64>,
-    /// Lines kept vs. lines triage was shown, cumulative over the session, from
-    /// `usage.retention` (docs/triage.md). `(0, 0)` before the first
-    /// triaged result — unknown, and rendered as absent rather than as 0%.
-    pub kept_lines: u64,
-    pub shown_lines: u64,
-    /// Results whose output a failed triage withheld, from `usage.retention.withheld`.
-    /// Not folded into the ratio; rendered only when nonzero.
-    pub withheld_results: u64,
-    /// Consecutive main-loop requests that read nothing from the cache with no
-    /// legitimate reason (not boot, not a model change, not idle past the TTL), from
-    /// `usage.cold_streak` (docs/log-and-projection.md). Past
-    /// `protocol::state::COLD_STREAK_WARN` the sidebar says so; a warm read resets it to 0,
-    /// which clears the line.
-    pub cold_streak: u32,
-    /// One line stating the keepalive's stance, from `usage.keepalive_skipped`
-    /// (docs/control-api.md): worded at parse time so rendering stays a pure function of
-    /// state. `None` while pings go out on schedule or the keepalive was never armed.
-    pub keepalive_note: Option<String>,
-}
-
-/// The last non-success upstream response, as surfaced by `GET /state`. Cleared
-/// by the next 2xx, so it names a failure that is current (docs/transport.md).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct UpstreamFailureView {
-    pub status: u16,
-    pub count: u32,
-}
-
-/// A retry in flight, as surfaced by `GET /state`'s `upstream_retry`
-/// (docs/transport.md).
-///
-/// The topic also carries `next_attempt_at` (absolute Unix millis) and the
-/// upstream's `detail` text; neither is kept here. The status bar renders one
-/// line and does not tick, so a countdown would either be stale or force a
-/// wall-clock read into the render path, and the error text belongs in the log
-/// rather than in a single status row.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UpstreamRetryView {
-    /// `"turn"` or `"triage"` — a triage wait sits between tool results rather than
-    /// in a generation, so the surface is rendered, not folded away.
-    pub surface: String,
-    /// The daemon's lead line, e.g. *attempt 2 of 12 failed upstream, retrying*. It
-    /// already names the attempt and budget, so the status bar shows it verbatim.
-    pub message: String,
-}
-
-/// A trajectory that gave up, as surfaced by `GET /state`'s `stall`
-/// (docs/transport.md).
-///
-/// The topic also carries the reason, the attempt count, the instant it
-/// stopped, and the upstream's `detail`; the status bar keeps only the lead
-/// line, for the same reason it keeps only the retry's — one row, no clock.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StallView {
-    /// The daemon's lead line, e.g. *the trajectory stopped: 12 attempts in a
-    /// row failed upstream*. The status bar shows it verbatim and adds the
-    /// recovery gesture.
-    pub message: String,
-}
-
-/// What the session is, as surfaced by `GET /state`'s `session_identity`
-/// (docs/control-api.md): the model it was configured with and the directory it
-/// runs in. Rendered in the sidebar's SESSION section — which model is answering
-/// is not derivable from the transcript, and a log that mixes models across
-/// sessions needs the current one named.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SessionIdentityView {
-    /// The session id — its address (docs/session-title.md); what to type into
-    /// `--name` or hand to a peer.
-    pub id: String,
-    /// The current title, once one has been written.
-    pub title: Option<String>,
-    pub model: String,
-    /// The working directory, already shortened against `$HOME` at parse time —
-    /// derivation stays out of the render path, as with the usage stats.
-    pub cwd: String,
-    /// The hosted role selections (`session_identity.inference`), or `None` for a
-    /// standalone session that has no connection catalog to name.
-    pub roles: Option<SessionRolesView>,
-    /// The session this one handed its work to (docs/tools.md), once it has: the
-    /// TUI follows it there.
-    pub successor: Option<String>,
-    /// The working directory as the host reports it, unshortened — where a
-    /// followed successor's session directory is.
-    pub root: String,
-}
-
-/// The three inference roles as the sidebar prints them: each a qualified
-/// `<connection>/<native model>`, derived at parse time so the renderer stays a
-/// pure function of state. Triage reads `shared` when it rides the main client.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SessionRolesView {
-    pub main: String,
-    pub spotter: String,
-    pub triage: String,
-}
-
-/// One line in the sidebar's POLICY section: a committed grant, or a *proposed* one
-/// (rendered tentatively — see [`PolicyView`]). A proposed entry carries the proposal's
-/// `seq` so the sidebar can commit/cancel it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PolicyEntry {
-    pub label: String,
-    pub proposed: bool,
-    pub seq: Option<u64>,
-}
 
 /// An actionable sidebar row, held by *identity* rather than screen position
 /// (docs/tui.md). A process is its spawn-minted id; a proposal is the `seq` of its
@@ -638,30 +321,6 @@ pub(crate) enum SidebarCmd {
     CancelProposal(u64),
 }
 
-/// The effective policy and its pending proposals, from `GET /state`'s `role` +
-/// `proposals` (docs/permissions.md). On-thesis: a proposal is a projection of its
-/// committed self, so it's merged into its section *in sorted position* and flagged
-/// `proposed` — committing it drops the flag in place, no reflow.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct PolicyView {
-    pub scope: Option<String>,
-    /// A proposed *replacement* scope (a `Scope` proposal), shown tentatively under the
-    /// committed one; `(seq, text)`.
-    pub scope_proposal: Option<(u64, String)>,
-    pub commands: Vec<PolicyEntry>,
-    pub paths: Vec<PolicyEntry>,
-    pub tools: Vec<PolicyEntry>,
-    /// The review-level dial (docs/tui.md) from `/state`'s `review_level` — who reviews
-    /// a gated call (`autonomous` / `supervisor` / `spotter_human` / `human_only`).
-    /// Read-only here; the interactive gear selector is deferred to the ergonomics pass.
-    pub review_level: Option<String>,
-    /// The position **in force**, when it is not the dial's own value: a `supervisor`
-    /// session whose supervisor has ended or was cleared reviews as `spotter_human`, and the operator
-    /// reading this sidebar is the one who answers (docs/permissions.md). `None`
-    /// whenever the two agree.
-    pub resolved_review_level: Option<String>,
-}
-
 use std::io::{self, stdout};
 use std::thread;
 use std::time::Duration;
@@ -705,7 +364,6 @@ mod test;
 
 mod bridge;
 mod operations;
-mod parse;
 mod run;
 mod ui_loop;
 

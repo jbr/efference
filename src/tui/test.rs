@@ -1,9 +1,6 @@
-use crate::tui::UpstreamRetryView;
-use crate::tui::parse::{
-    parse_pending_gate, parse_policy, parse_session_identity, parse_stall, parse_upstream_failure,
-    parse_upstream_retry,
-};
-use crate::tui::state::{stall_indicator, upstream_retry_indicator};
+use crate::api::{RetrySurface, UpstreamFailure, UpstreamRetry};
+use crate::protocol::state::{Stall, StallReason};
+use crate::tui::state::{stall_indicator, upstream_failure_indicator, upstream_retry_indicator};
 
 use crate::tui::run::{DEFAULT_THEME, resolve_theme};
 
@@ -29,170 +26,60 @@ fn a_tmtheme_path_is_accepted_without_membership() {
     let p = "/tmp/Custom.tmTheme";
     assert_eq!(resolve_theme(Some(p.into())).unwrap(), p);
 }
+/// The failure indicator names the upstream's status and how many times in a row it came
+/// back. A failure the upstream gave no status for names nothing, and the bar shows none.
 #[test]
-fn parses_a_pending_gate() {
-    // A `gate` state frame's `data`: the topic's whole value.
-    let topic = serde_json::json!({"call_id":"toolu_x","input":{"command":"ls"},"name":"bash"});
-    let gate = parse_pending_gate(&topic).expect("a gate");
-    assert_eq!(gate.call_id, "toolu_x");
-    assert_eq!(gate.name, "bash");
-    assert_eq!(gate.input["command"], "ls");
-}
-
-#[test]
-fn null_gate_is_no_gate() {
-    // `null` is the topic's cleared value (docs/control-api.md), not an absence.
-    assert!(parse_pending_gate(&serde_json::Value::Null).is_none());
-}
-
-#[test]
-fn parses_upstream_failure() {
-    let topic = serde_json::json!({"status":429,"count":2});
-    let failure = parse_upstream_failure(&topic).expect("upstream failure");
-    assert_eq!(failure.status, 429);
-    assert_eq!(failure.count, 2);
-}
-
-#[test]
-fn null_upstream_failure_is_absent() {
-    assert!(parse_upstream_failure(&serde_json::Value::Null).is_none());
-}
-
-#[test]
-fn parses_upstream_retry() {
-    let topic = serde_json::json!({
-        "surface": "triage",
-        "attempt": 2,
-        "budget": 12,
-        "next_attempt_at": 1754300002000u64,
-        "message": "attempt 2 of 12 failed upstream, retrying",
-        "detail": "upstream SSE stream failed mid-stream: connection reset",
-    });
-    let retry = parse_upstream_retry(&topic).expect("upstream retry");
-    assert_eq!(retry.surface, "triage");
-    assert_eq!(retry.message, "attempt 2 of 12 failed upstream, retrying");
-}
-
-#[test]
-fn null_upstream_retry_is_the_all_clear() {
-    assert!(parse_upstream_retry(&serde_json::Value::Null).is_none());
+fn failure_indicator_names_the_status_and_the_count() {
+    let mut failure = UpstreamFailure::new(Some(429), "slow down");
+    failure.count = 2;
+    assert_eq!(
+        upstream_failure_indicator(Some(&failure)).unwrap(),
+        "upstream 429 ×2"
+    );
+    assert!(
+        upstream_failure_indicator(Some(&UpstreamFailure::new(None, "stream reset"))).is_none()
+    );
+    assert!(upstream_failure_indicator(None).is_none());
 }
 
 /// The indicator leads with the daemon's own sentence, never the status code, marks
 /// a triage retry apart from a turn's, and says `⏎` retries now (docs/transport.md).
 #[test]
 fn retry_indicator_names_the_surface() {
-    let view = |surface: &str| UpstreamRetryView {
-        surface: surface.into(),
+    let view = |surface| UpstreamRetry {
+        surface,
+        attempt: 2,
+        budget: 12,
+        next_attempt_at: 1_754_300_002_000,
         message: "attempt 2 of 12 failed upstream, retrying".into(),
+        detail: "upstream SSE stream failed mid-stream: connection reset".into(),
     };
     assert_eq!(
-        upstream_retry_indicator(Some(&view("turn"))).unwrap(),
+        upstream_retry_indicator(Some(&view(RetrySurface::Turn))).unwrap(),
         "↻ attempt 2 of 12 failed upstream, retrying · ⏎ retries now"
     );
     assert_eq!(
-        upstream_retry_indicator(Some(&view("triage"))).unwrap(),
+        upstream_retry_indicator(Some(&view(RetrySurface::Triage))).unwrap(),
         "↻ triage: attempt 2 of 12 failed upstream, retrying · ⏎ retries now"
     );
     assert!(upstream_retry_indicator(None).is_none());
 }
 
 /// The `stall` topic is what tells an idle TUI that the last trajectory gave up
-/// rather than finished (docs/transport.md). Only the lead line is kept; it renders
+/// rather than finished (docs/transport.md). Only the lead line is shown; it renders
 /// verbatim with the recovery gesture; `null` — a trajectory running again — is no indicator.
 #[test]
 fn stall_indicator_shows_the_daemons_lead_line() {
-    let topic = serde_json::json!({
-        "reason": "retries_exhausted",
-        "attempts": 12,
-        "at": 1754300002000u64,
-        "message": "the trajectory stopped: 12 attempts in a row failed upstream",
-        "detail": "upstream SSE stream failed mid-stream: connection reset",
-    });
-    let stall = parse_stall(&topic).expect("stall");
+    let stall = Stall {
+        reason: StallReason::RetriesExhausted,
+        attempts: Some(12),
+        at: 1_754_300_002_000,
+        message: "the trajectory stopped: 12 attempts in a row failed upstream".into(),
+        detail: "upstream SSE stream failed mid-stream: connection reset".into(),
+    };
     assert_eq!(
         stall_indicator(Some(&stall)).unwrap(),
         "⚠ the trajectory stopped: 12 attempts in a row failed upstream · ⏎ to retry"
     );
-    assert!(parse_stall(&serde_json::Value::Null).is_none());
     assert!(stall_indicator(None).is_none());
-}
-
-/// The `session_identity` topic names the model and the working directory
-/// (docs/control-api.md). The cwd is shortened against `$HOME` at parse time, so
-/// the renderer never reads the environment.
-#[test]
-fn parses_session_identity_with_a_home_relative_cwd() {
-    let home = std::env::home_dir().expect("a home directory");
-    let cwd = home.join("code/efference");
-    let topic = serde_json::json!({
-        "id": "amber-heron",
-        "model": "anthropic/claude-opus-4",
-        "cwd": cwd.to_string_lossy(),
-    });
-    let identity = parse_session_identity(&topic).expect("session identity");
-    assert_eq!(identity.id, "amber-heron");
-    assert_eq!(identity.title, None);
-    assert_eq!(identity.model, "anthropic/claude-opus-4");
-    assert_eq!(identity.cwd, "~/code/efference");
-
-    // The title arrives on the same topic once one is written (docs/session-title.md).
-    let titled = serde_json::json!({
-        "id": "amber-heron",
-        "title": "Session names",
-        "model": "m",
-        "cwd": "/srv/build",
-    });
-    assert_eq!(
-        parse_session_identity(&titled).unwrap().title.as_deref(),
-        Some("Session names")
-    );
-
-    // A path outside home keeps its absolute form — a partial component match
-    // ("/home/jbrx") must not be rewritten either.
-    let elsewhere = serde_json::json!({ "id": "x", "model": "m", "cwd": "/srv/build" });
-    assert_eq!(
-        parse_session_identity(&elsewhere).unwrap().cwd,
-        "/srv/build"
-    );
-}
-
-/// A daemon that never set the topic reports `null`, which is no view at all —
-/// the sidebar's SESSION section then simply doesn't render.
-#[test]
-fn null_session_identity_is_no_view() {
-    assert!(parse_session_identity(&serde_json::Value::Null).is_none());
-}
-
-/// The policy sidebar shows each `[tools]` entry with the fields it sets, so a carve-out
-/// reads as one; a proposed grant is labelled as the entry it becomes (docs/tui.md).
-#[test]
-fn tool_entries_show_their_fields_and_proposals_their_committed_label() {
-    let role = serde_json::json!({
-        "tools": {
-            "efference": { "enabled": true, "granted": true },
-            "efference.bash": { "enabled": false },
-            "agents": { "enabled": true },
-        },
-    });
-    let proposals = serde_json::json!([
-        { "seq": 7, "change": { "Tool": { "name": "agents__message" } } },
-    ]);
-    let view = parse_policy(
-        &role,
-        &proposals,
-        &serde_json::Value::Null,
-        &serde_json::Value::Null,
-    )
-    .expect("a role parses");
-    let labels: Vec<&str> = view.tools.iter().map(|e| e.label.as_str()).collect();
-    assert_eq!(
-        labels,
-        [
-            "agents  enabled",
-            "agents.message  granted",
-            "efference  enabled · granted",
-            "efference.bash  off",
-        ]
-    );
 }

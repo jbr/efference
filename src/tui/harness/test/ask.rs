@@ -2,8 +2,10 @@
 //! *asked* mark, the reply is the operator's message, and the composer's send answers it.
 
 use super::*;
-use crate::client::WithdrawnTurn;
-use crate::tui::parse::PendingAsk;
+use crate::frontend::SubmittedTurn;
+use crate::protocol::state::AskView;
+use crate::protocol::turns::QueuedTurn;
+use crate::tui::harness::asking;
 
 fn ask(id: &str, question: &str) -> ToolCall {
     ToolCall::new("ask", id, json!({ "question": question }))
@@ -104,31 +106,21 @@ fn recalled_turns_return_once_and_only_when_ours() {
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     let ours = play.state.pending_turns[0].submission_id.clone();
     let topic = || {
-        Some(PendingAsk {
-            call_id: "toolu_ask".into(),
-            n: 1,
-            of: 1,
+        Some(AskView {
             recalled: vec![
-                WithdrawnTurn {
-                    submission_id: ours.clone(),
-                    text: "earlier thought".into(),
-                    attachments: Vec::new(),
-                },
-                WithdrawnTurn {
-                    submission_id: "someone-else".into(),
-                    text: "not ours".into(),
-                    attachments: Vec::new(),
-                },
+                QueuedTurn::from(&SubmittedTurn::new("earlier thought", ours.clone())),
+                QueuedTurn::from(&SubmittedTurn::new("not ours", "someone-else")),
             ],
+            ..asking("toolu_ask", 1, 1)
         })
     };
-    play.event(TuiEvent::Ask(topic()));
+    play.topic(TopicUpdate::Ask(topic()));
     assert_eq!(play.state.composer.text(), "earlier thought");
     assert!(play.state.pending_turns.is_empty(), "the echo went with it");
 
     // The same ask delivered again restores nothing more.
     play.state.composer.clear();
-    play.event(TuiEvent::Ask(topic()));
+    play.topic(TopicUpdate::Ask(topic()));
     assert_eq!(play.state.composer.text(), "");
 }
 
@@ -136,15 +128,12 @@ fn recalled_turns_return_once_and_only_when_ours() {
 #[test]
 fn a_restarted_client_restores_nothing() {
     let mut play = Screenplay::new(70, 12);
-    play.event(TuiEvent::Ask(Some(PendingAsk {
-        call_id: "toolu_ask".into(),
-        n: 1,
-        of: 1,
-        recalled: vec![WithdrawnTurn {
-            submission_id: "minted-before-restart".into(),
-            text: "old".into(),
-            attachments: Vec::new(),
-        }],
+    play.topic(TopicUpdate::Ask(Some(AskView {
+        recalled: vec![QueuedTurn::from(&SubmittedTurn::new(
+            "old",
+            "minted-before-restart",
+        ))],
+        ..asking("toolu_ask", 1, 1)
     })));
     assert_eq!(play.state.composer.text(), "");
 }
@@ -161,12 +150,7 @@ fn the_continue_refusal_reaches_the_status_line() {
 }
 
 fn topic(call_id: &str, n: usize, of: usize) -> TuiEvent {
-    TuiEvent::Ask(Some(PendingAsk {
-        call_id: call_id.into(),
-        n,
-        of,
-        recalled: Vec::new(),
-    }))
+    TuiEvent::Topic(TopicUpdate::Ask(Some(asking(call_id, n, of))))
 }
 
 /// Two questions in one completion: the topic names the first, which the composer's
@@ -229,7 +213,7 @@ fn a_cleared_topic_leaves_an_ask_as_asked() {
     let mut play = Screenplay::new(70, 12);
     play.assistant("Ready.", vec![ask("toolu_ask", "Ship it?")]);
     play.event(topic("toolu_ask", 1, 1));
-    play.event(TuiEvent::Ask(None));
+    play.topic(TopicUpdate::Ask(None));
     assert!(play.find("▸ answering").is_none());
     assert!(play.find("asked").is_some());
     assert!(play.find("your reply answers").is_none());
@@ -269,11 +253,7 @@ fn a_send_refused_for_a_pending_question_returns_to_the_composer() {
     assert_eq!(play.state.pending_turns.len(), 1);
 
     play.event(TuiEvent::NotDelivered {
-        turn: WithdrawnTurn {
-            submission_id: sent.turn.submission_id,
-            text: sent.turn.text,
-            attachments: Vec::new(),
-        },
+        turn: QueuedTurn::from(&sent.turn),
         answered: false,
     });
     assert_eq!(play.state.composer.text(), "keep going");
@@ -285,12 +265,7 @@ fn a_send_refused_for_a_pending_question_returns_to_the_composer() {
 #[test]
 fn a_send_while_a_question_shows_names_it() {
     let mut play = Screenplay::new(70, 12);
-    play.event(TuiEvent::Ask(Some(PendingAsk {
-        call_id: "toolu_ask".into(),
-        n: 1,
-        of: 1,
-        recalled: Vec::new(),
-    })));
+    play.topic(TopicUpdate::Ask(Some(asking("toolu_ask", 1, 1))));
     play.type_str("yes");
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     let sent = play.took_submission().expect("sent");

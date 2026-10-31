@@ -6,83 +6,8 @@
 //! second, which keeps rendering a pure function of state. The wording matches the
 //! web client's turn state (docs/web-client.md).
 
-use serde_json::Value;
-
-/// One open upstream request.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OpenRequestView {
-    /// `turn`, `triage`, `spot`, … — the topic's `origin`.
-    pub origin: String,
-    /// `sent`, `retrying`, or `streaming`.
-    pub stage: String,
-    /// Unix millis at which this stage began.
-    pub since: u64,
-    pub attempt: Option<u64>,
-    pub status: Option<u64>,
-}
-
-/// One tool call executing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RunningToolView {
-    pub tool: String,
-    pub intent: Option<String>,
-    /// The shell command of a `bash` call; it labels the tool in place of the intent.
-    pub command: Option<String>,
-    pub since: u64,
-}
-
-/// The `current_operations` topic's value.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct OperationsView {
-    pub requests: Vec<OpenRequestView>,
-    pub tools: Vec<RunningToolView>,
-    /// A compaction waiting or writing (docs/summary.md), with the instant its state
-    /// began; `None` when none is open.
-    pub compaction: Option<u64>,
-}
-
-/// Parse the topic; `null` (nothing open) is no view.
-pub(super) fn parse_current_operations(value: &Value) -> Option<OperationsView> {
-    if value.is_null() {
-        return None;
-    }
-    let requests = value
-        .get("requests")?
-        .as_array()?
-        .iter()
-        .filter_map(|r| {
-            Some(OpenRequestView {
-                origin: r.get("origin")?.as_str()?.to_string(),
-                stage: r.get("stage")?.as_str()?.to_string(),
-                since: r.get("since")?.as_u64()?,
-                attempt: r.get("attempt").and_then(Value::as_u64),
-                status: r.get("status").and_then(Value::as_u64),
-            })
-        })
-        .collect();
-    let tools = value
-        .get("tools")?
-        .as_array()?
-        .iter()
-        .filter_map(|t| {
-            Some(RunningToolView {
-                tool: t.get("tool")?.as_str()?.to_string(),
-                intent: t.get("intent").and_then(Value::as_str).map(str::to_string),
-                command: t.get("command").and_then(Value::as_str).map(str::to_string),
-                since: t.get("since")?.as_u64()?,
-            })
-        })
-        .collect();
-    let compaction = value
-        .get("compaction")
-        .and_then(|c| c.get("since"))
-        .and_then(Value::as_u64);
-    Some(OperationsView {
-        requests,
-        tools,
-        compaction,
-    })
-}
+use crate::log::RequestOrigin;
+use crate::protocol::state::{CurrentOperations, OpenRequest, OpenStage};
 
 /// "45s", "2m 10s", "1h 05m".
 fn elapsed(ms: u64) -> String {
@@ -99,51 +24,44 @@ fn elapsed(ms: u64) -> String {
 
 /// Which request leads when several are open: the turn's own, then the side
 /// requests by how much they hold the loop.
-fn rank(origin: &str) -> usize {
-    [
-        "turn",
-        "triage",
-        "spot",
-        "compaction",
-        "title",
-        "triage_primer",
-        "keepalive",
-        "triage_keepalive",
-    ]
-    .iter()
-    .position(|o| *o == origin)
-    .unwrap_or(7)
+fn rank(origin: RequestOrigin) -> usize {
+    match origin {
+        RequestOrigin::Turn => 0,
+        RequestOrigin::Triage => 1,
+        RequestOrigin::Spot => 2,
+        RequestOrigin::Compaction => 3,
+        RequestOrigin::Title => 4,
+        RequestOrigin::TriagePrimer => 5,
+        RequestOrigin::Keepalive => 6,
+        RequestOrigin::TriageKeepalive
+        | RequestOrigin::Consolidation
+        | RequestOrigin::AbortedAttempt
+        | RequestOrigin::Unknown => 7,
+    }
 }
 
-fn request_text(request: &OpenRequestView, model: &str, now: u64) -> String {
+fn request_text(request: &OpenRequest, model: &str, now: u64) -> String {
     let since = elapsed(now.saturating_sub(request.since));
-    let retrying = format!(
-        "retrying upstream · attempt {} ({}) · {since}",
-        request.attempt.map_or("?".into(), |a| a.to_string()),
-        request.status.map_or("?".into(), |s| s.to_string()),
-    );
-    match request.origin.as_str() {
-        "triage" if request.stage == "retrying" => retrying,
-        "triage" => format!(
-            "triage · {}{since}",
-            if request.stage == "sent" {
-                "waiting "
-            } else {
-                "streaming "
-            }
-        ),
-        "spot" => format!("spotter judging · {since}"),
-        "title" => format!("writing a title · {since}"),
-        "compaction" => format!("writing the summary · {since}"),
-        "triage_primer" | "keepalive" | "triage_keepalive" => {
-            format!("warming the cache · {since}")
+    let retrying = |attempt: u32, status: u16| {
+        format!("retrying upstream · attempt {attempt} ({status}) · {since}")
+    };
+    match (request.origin, &request.stage) {
+        (RequestOrigin::Triage, OpenStage::Retrying { attempt, status }) => {
+            retrying(*attempt, *status)
         }
+        (RequestOrigin::Triage, OpenStage::Sent) => format!("triage · waiting {since}"),
+        (RequestOrigin::Triage, OpenStage::Streaming) => format!("triage · streaming {since}"),
+        (RequestOrigin::Spot, _) => format!("spotter judging · {since}"),
+        (RequestOrigin::Title, _) => format!("writing a title · {since}"),
+        (RequestOrigin::Compaction, _) => format!("writing the summary · {since}"),
+        (
+            RequestOrigin::TriagePrimer | RequestOrigin::Keepalive | RequestOrigin::TriageKeepalive,
+            _,
+        ) => format!("warming the cache · {since}"),
         // A turn, an aborted attempt, or an origin this build does not know.
-        _ => match request.stage.as_str() {
-            "retrying" => retrying,
-            "streaming" => format!("{model} streaming"),
-            _ => format!("waiting on {model} · {since}"),
-        },
+        (_, OpenStage::Retrying { attempt, status }) => retrying(*attempt, *status),
+        (_, OpenStage::Streaming) => format!("{model} streaming"),
+        (_, OpenStage::Sent) => format!("waiting on {model} · {since}"),
     }
 }
 
@@ -160,14 +78,14 @@ pub(crate) fn pending_text(gate: bool, ask: bool) -> Option<&'static str> {
 }
 
 /// One line for the leading open operation, or `None` when none is open.
-pub(crate) fn operation_text(view: &OperationsView, model: &str, now: u64) -> Option<String> {
+pub(crate) fn operation_text(view: &CurrentOperations, model: &str, now: u64) -> Option<String> {
     let lead = view
         .requests
         .iter()
-        .min_by_key(|r| (rank(&r.origin), r.since));
+        .min_by_key(|r| (rank(r.origin), r.since));
     // The turn's own request leads; any other yields to a running tool, which is
     // what the operator is waiting on when both are open.
-    if let Some(lead) = lead.filter(|r| r.origin == "turn") {
+    if let Some(lead) = lead.filter(|r| r.origin == RequestOrigin::Turn) {
         return Some(request_text(lead, model, now));
     }
     if let Some(tool) = view.tools.first() {

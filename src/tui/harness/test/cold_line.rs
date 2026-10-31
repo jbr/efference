@@ -3,8 +3,7 @@
 
 use super::*;
 use crate::log::Approval;
-use crate::tui::ColdView;
-use crate::tui::parse::PendingAsk;
+use crate::tui::harness::{asking, cold};
 
 fn gated(play: &mut Screenplay) {
     play.user("Clean the build directory.");
@@ -19,10 +18,8 @@ fn gated(play: &mut Screenplay) {
     play.pending_gate("toolu_1", "bash", json!({ "command": "rm -rf ./build" }));
 }
 
-fn cold(tokens: Option<u64>) -> TuiEvent {
-    TuiEvent::CacheExpired(Some(ColdView {
-        context_tokens: tokens,
-    }))
+fn expired(tokens: Option<u64>) -> TuiEvent {
+    TuiEvent::Topic(TopicUpdate::Cold(Some(cold(tokens))))
 }
 
 /// A gate on a cold session states what approving reads, and approving sends the decision.
@@ -30,7 +27,7 @@ fn cold(tokens: Option<u64>) -> TuiEvent {
 fn a_gate_on_a_cold_session_shows_the_cost_and_approving_decides() {
     let mut play = Screenplay::new(100, 14);
     gated(&mut play);
-    play.event(cold(Some(120_400)));
+    play.event(expired(Some(120_400)));
     assert!(
         play.render()
             .contains("cache expired — approving or redirecting reads ~120k tokens uncached"),
@@ -49,7 +46,7 @@ fn a_gate_on_a_cold_session_shows_the_cost_and_approving_decides() {
 fn the_cold_line_without_a_known_cost() {
     let mut play = Screenplay::new(100, 14);
     gated(&mut play);
-    play.event(cold(None));
+    play.event(expired(None));
     assert!(
         play.render()
             .contains("approving or redirecting reads the context uncached")
@@ -70,8 +67,8 @@ fn a_gate_without_the_cold_line() {
 
     let mut play = Screenplay::new(100, 14);
     gated(&mut play);
-    play.event(cold(Some(1_000)));
-    play.event(TuiEvent::CacheExpired(None));
+    play.event(expired(Some(1_000)));
+    play.topic(TopicUpdate::Cold(None));
     assert!(!play.render().contains("cache expired"));
 }
 
@@ -80,7 +77,7 @@ fn a_gate_without_the_cold_line() {
 fn aborting_a_cold_gate() {
     let mut play = Screenplay::new(100, 14);
     gated(&mut play);
-    play.event(cold(Some(120_000)));
+    play.event(expired(Some(120_000)));
     play.state.abort_gate();
     assert_eq!(
         play.took_approval(),
@@ -93,13 +90,8 @@ fn aborting_a_cold_gate() {
 #[test]
 fn an_answer_to_an_ask_on_a_cold_session_shows_the_cost() {
     let mut play = Screenplay::new(100, 14);
-    play.event(TuiEvent::Ask(Some(PendingAsk {
-        call_id: "toolu_ask".into(),
-        n: 1,
-        of: 1,
-        recalled: Vec::new(),
-    })));
-    play.event(cold(Some(48_000)));
+    play.topic(TopicUpdate::Ask(Some(asking("toolu_ask", 1, 1))));
+    play.event(expired(Some(48_000)));
     assert!(
         play.render()
             .contains("cache expired — your answer reads ~48k tokens uncached")
@@ -116,7 +108,7 @@ fn an_answer_to_an_ask_on_a_cold_session_shows_the_cost() {
 #[test]
 fn the_composer_on_a_cold_session_shows_the_cost_and_sends() {
     let mut play = Screenplay::new(100, 14);
-    play.event(cold(Some(48_000)));
+    play.event(expired(Some(48_000)));
     assert!(
         play.render()
             .contains("cache expired — a send reads ~48k tokens uncached"),
