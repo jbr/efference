@@ -1,5 +1,6 @@
 //! `QUERY /sessions`: the lenient half of the session-options surface
-//! (docs/control-api.md). Creation deserializes straight into [`CreateSession`]
+//! (docs/control-api.md). Creation deserializes straight into
+//! [`CreateSession`](crate::protocol::sessions::CreateSession)
 //! and a wrong type is a `400`; preview cannot do that, because a form's whole
 //! reason to ask is that one of its fields is mid-edit. So the body is read out
 //! of a `serde_json::Value` field by field, and each failure becomes an issue
@@ -142,7 +143,7 @@ fn decode_session_options(body: &Value) -> Option<DecodedOptions> {
 /// `QUERY /sessions`: resolve a proposed session without minting a directory,
 /// reading credentials, or preparing runtime resources. The only file it touches
 /// is the project config it would select, read to answer where effort comes from.
-pub(super) async fn preview_session(mut conn: Conn) -> Conn {
+pub(crate) async fn preview_session(mut conn: Conn) -> Conn {
     let body = conn.request_body_string().await.unwrap_or_default();
     let body: Value = match serde_json::from_str(&body) {
         Ok(body) => body,

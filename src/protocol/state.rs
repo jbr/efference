@@ -1,7 +1,7 @@
 //! `GET /state` and its level-triggered `state` frames (docs/control-api.md): one value
 //! per state topic, each the whole of what the topic says now, `null` when it is clear.
 //!
-//! The host builds every topic from its own state (`daemon/views.rs`) and publishes each
+//! The host builds every topic from its own state (`daemon/topic_values.rs`) and publishes each
 //! one that moved (`daemon/topics.rs`); `GET /state` is [`StateTopics`], and a client
 //! that folds the frames holds the same values. [`Topic`] names them.
 //!

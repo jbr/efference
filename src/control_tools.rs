@@ -149,6 +149,16 @@ impl Control {
     }
 }
 
+/// The in-session set's server for the session `caller` on `host`, ready for its toolbox
+/// to mount (docs/tools.md): what the process serving a host installs with
+/// `Host::set_session_control`, since the host does not name these verbs.
+pub fn in_session_server(
+    host: &std::sync::Arc<crate::daemon::Host>,
+    caller: String,
+) -> Box<dyn crate::tools::ControlServer> {
+    crate::tools::control_server(Control::in_session(host, caller))
+}
+
 /// The in-session set, mounted in a session's toolbox as `Provider::Sessions`
 /// (docs/tools.md).
 impl crate::tools::SessionControl for Control {

@@ -4,7 +4,8 @@
 serve the same `/v1` routes ([control-api.md](control-api.md)); the TCP listener wraps
 them in a hardening + auth gate, while the UDS stays auth-exempt (filesystem permissions
 are its trust model) and remains the CLI verbs' channel. Implemented in
-`src/daemon/handler.rs` (the one stack every listener mounts), `src/daemon/tcp.rs`
+`src/daemon/handler.rs` (the one stack every listener mounts), `src/daemon/serve.rs` (the
+host's listeners), `src/daemon/host_routes.rs` (the host's route table), `src/daemon/tcp.rs`
 (the listener and the credential state) with its submodules in `src/daemon/tcp/` —
 `gate.rs` (the gate and the anonymous surface it prices), `headers.rs` (the response
 headers), and `routes.rs` (the sign-in and enrollment routes, the web client

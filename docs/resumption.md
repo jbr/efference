@@ -215,7 +215,8 @@ discarded (`src/discard.rs`), not archived:
 ## The session as a resource
 
 `PATCH /sessions/:id` with `{"state": "active"}` revives a session
-([control-api.md](control-api.md); `src/daemon/host/resume.rs`). `state` is the
+([control-api.md](control-api.md); `src/daemon/host_http/patch.rs` for the route,
+`src/daemon/host/resume.rs` for the reopening). `state` is the
 lifecycle, `active` or `archived`, separate from the `status` a listing reports for what
 a live session is doing. `DELETE /sessions/:id` is the same transition as
 `{"state": "archived"}`. The body carries `cwd`, since the path alone can't locate a

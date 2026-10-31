@@ -75,10 +75,9 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         // on a host reaches its project's sessions directly, with its own id as
         // the caller. Mounted before the first projection so `tools[]` is fixed
         // from turn one.
-        toolbox.mount_sessions(crate::control_tools::Control::in_session(
-            &host,
-            session_id.to_string(),
-        ));
+        if let Some(server) = host.session_control_server(session_id) {
+            toolbox.mount_control_server(server);
+        }
         // The `lsp` built-ins (docs/tools.md), bound at the working directory. Binding
         // starts the project's language servers, so it waits on `enabled` rather than
         // leaving the tools to the filter below.

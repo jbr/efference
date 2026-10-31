@@ -237,12 +237,12 @@ mod subscriptions;
 mod supervise;
 mod tools;
 mod topic_bytes;
+mod topic_values;
 mod triage_client;
 mod triage_keepalive;
 mod triage_stream;
 mod upstream_hold;
 mod verbs;
-mod views;
 mod wait;
 
 mod host;

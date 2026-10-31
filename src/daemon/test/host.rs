@@ -20,6 +20,7 @@ mod island;
 mod preview;
 mod projects;
 mod resume;
+mod session_control;
 mod shell;
 mod starting;
 mod supervise;

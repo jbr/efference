@@ -1372,7 +1372,7 @@ recovery it can perform, `config_repair` names one it cannot.
 
 **`status` is where the session stands, as one view.** The host builds it from the
 loop phase and the state each condition needs (`src/daemon/status/view.rs`), publishes
-it as the `status` topic through `src/daemon/views.rs`, and registers the topic beside
+it as the `status` topic through `src/daemon/topic_values.rs`, and registers the topic beside
 every other one in `src/protocol/state/topic.rs`; the same view is what subscription
 notifications render ([tools.md](tools.md)), so the topic and
 the inbox say the same thing. Per condition it carries:

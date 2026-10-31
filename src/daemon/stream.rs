@@ -22,9 +22,14 @@
 //! gate before the `spot` entry whose text the gate is quoting, or an idle `loop_phase` before
 //! the entries that finished the turn — the second answering "is it done?" wrong, in the
 //! direction a human acts on.
+//!
+//! A session still starting has no `Session` to follow yet: [`starting_stream`] is its
+//! leg of the same route, which continues into [`control_stream`] once the session has
+//! started.
 
+use super::starting::{Outcome, Starting};
 use super::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 /// Which classes and topics a connection subscribed to (`?include=`).
 ///
@@ -386,30 +391,88 @@ pub(crate) fn control_stream(
     }))
 }
 
-impl Session {
-    /// The current value of each named topic, stamped with one shared watermark.
-    ///
-    /// Values first, then `last_seq` — the same ordering [`topic_snapshot`] uses and for
-    /// the same reason: a stamp that runs ahead of its values only delays release, while
-    /// one that lags them would let a client render state accounting for an entry it has
-    /// not been sent.
-    ///
-    /// [`topic_snapshot`]: Session::topic_snapshot
-    fn subscribed_snapshot(&self, topics: &[Topic]) -> Vec<StateUpdate> {
-        let values: Vec<(Topic, Arc<str>)> = topics
-            .iter()
-            .map(|&topic| (topic, Arc::from(self.topic_json(topic).to_string())))
-            .collect();
-        let watermark = self.last_committed_seq();
-        values
-            .into_iter()
-            .map(|(topic, json)| StateUpdate {
-                topic,
-                json,
-                watermark,
-            })
-            .collect()
-    }
+/// One `/events` connection on a starting session: its frames while starting, then
+/// the session's own.
+enum Leg {
+    Starting {
+        entry: Arc<Starting>,
+        include: Include,
+        since: u64,
+        /// What this connection last sent per topic, in [`Starting::TOPICS`] order.
+        sent: [Option<String>; 4],
+        ready: VecDeque<FrameEvent>,
+    },
+    Session(Pin<Box<dyn Stream<Item = FrameEvent> + Send + Sync + 'static>>),
+    Done,
+}
+
+/// The `/events` stream of a starting session (docs/control-api.md). Level-triggered
+/// frames for `verbs`, `queued`, `starting`, and `status` (those of them the connection
+/// subscribed to) as they move; then, once the session has started, the session's own
+/// stream from the connection's `since`, whose connect snapshot carries `starting:
+/// null`. A failure or an archive ends the stream after the frames describing it.
+pub(crate) fn starting_stream(
+    entry: Arc<Starting>,
+    include: Include,
+    since: u64,
+) -> Pin<Box<dyn Stream<Item = FrameEvent> + Send + Sync + 'static>> {
+    let leg = Leg::Starting {
+        entry,
+        include,
+        since,
+        sent: Default::default(),
+        ready: VecDeque::new(),
+    };
+    Box::pin(futures_lite::stream::unfold(leg, |mut leg| async move {
+        loop {
+            match &mut leg {
+                Leg::Starting {
+                    entry,
+                    include,
+                    since,
+                    sent,
+                    ready,
+                } => {
+                    if let Some(event) = ready.pop_front() {
+                        return Some((event, leg));
+                    }
+                    let entry = Arc::clone(entry);
+                    let changed = entry.changed.notified();
+                    tokio::pin!(changed);
+                    changed.as_mut().enable();
+                    // The outcome is read before the topics, so the topics read after
+                    // it describe at least that outcome: a failure's frame is queued
+                    // before the leg ends.
+                    let outcome = entry.outcome();
+                    for (slot, topic) in Starting::TOPICS.into_iter().enumerate() {
+                        if !include.topics.contains(&topic) {
+                            continue;
+                        }
+                        let json = entry.topic_json(topic).to_string();
+                        if sent[slot].as_deref() != Some(json.as_str()) {
+                            ready.push_back(Frame::state_raw(topic, &json).into());
+                            sent[slot] = Some(json);
+                        }
+                    }
+                    if !ready.is_empty() {
+                        continue;
+                    }
+                    match outcome {
+                        Some(Outcome::Started(session)) => {
+                            leg = Leg::Session(control_stream(session, include.clone(), *since));
+                        }
+                        Some(Outcome::Failed(_) | Outcome::Cancelled(_)) => leg = Leg::Done,
+                        None => changed.await,
+                    }
+                }
+                Leg::Session(stream) => {
+                    use futures_lite::StreamExt;
+                    return stream.next().await.map(|event| (event, leg));
+                }
+                Leg::Done => return None,
+            }
+        }
+    }))
 }
 
 /// The bytes of the result a [`Payload::ResultVerdict`] names, read one entry at a

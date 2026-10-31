@@ -82,6 +82,30 @@ impl Session {
             })
             .collect()
     }
+
+    /// The current value of each named topic, stamped with one shared watermark.
+    ///
+    /// Values first, then `last_seq` — the same ordering [`topic_snapshot`] uses and for
+    /// the same reason: a stamp that runs ahead of its values only delays release, while
+    /// one that lags them would let a client render state accounting for an entry it has
+    /// not been sent.
+    ///
+    /// [`topic_snapshot`]: Session::topic_snapshot
+    pub(super) fn subscribed_snapshot(&self, topics: &[Topic]) -> Vec<StateUpdate> {
+        let values: Vec<(Topic, Arc<str>)> = topics
+            .iter()
+            .map(|&topic| (topic, Arc::from(self.topic_json(topic).to_string())))
+            .collect();
+        let watermark = self.last_committed_seq();
+        values
+            .into_iter()
+            .map(|(topic, json)| StateUpdate {
+                topic,
+                json,
+                watermark,
+            })
+            .collect()
+    }
 }
 
 /// The single diffing task: wake, recompute every topic, publish the ones that moved.

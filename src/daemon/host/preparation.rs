@@ -132,7 +132,7 @@ impl Host {
     }
 
     /// A starting session whose preparation failed within [`FAILURE_KEPT`].
-    pub(super) fn recently_failed(&self, id: &str) -> Option<Arc<Starting>> {
+    pub(crate) fn recently_failed(&self, id: &str) -> Option<Arc<Starting>> {
         let failed = self.failed.lock().unwrap();
         let (starting, at) = failed.get(id)?;
         (at.elapsed() < FAILURE_KEPT).then(|| Arc::clone(starting))

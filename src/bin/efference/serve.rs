@@ -442,6 +442,9 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     // The artifact-only loopback listener, which the first adopt starts (docs/artifacts.md):
     // installed before anything below can adopt a session.
     host.set_artifact_listener(daemon::artifacts::spawn_listener);
+    // The `agents__*` verbs a hosted session's toolbox mounts, which the host does not name
+    // (docs/tools.md): installed before anything below can boot a session.
+    host.set_session_control(efference::control_tools::in_session_server);
     // Only with the user's answer: a configuration without one never checks
     // (docs/update-check.md). An island is a host like any other here.
     if efference::user_config::UpdatesConfig::load(Path::new(&home))?.check {

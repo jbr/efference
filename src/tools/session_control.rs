@@ -3,7 +3,9 @@
 //!
 //! The verbs and the executor that runs them sit above the toolbox, so the toolbox names
 //! neither. It mounts any [`SessionControl`] and holds the in-process server it builds
-//! over one as a [`ControlServer`], the one provider whose type is erased.
+//! over one as a [`ControlServer`], the one provider whose type is erased. A server built
+//! elsewhere is mounted as it comes ([`Toolbox::mount_control_server`]), which is how a
+//! host that cannot name the verbs gets them into a session's toolbox.
 
 use super::*;
 use std::pin::Pin;
@@ -49,6 +51,14 @@ pub trait ControlServer: Send + Sync {
     fn completes_hand_off(&self, call: &ToolCall) -> bool;
     /// [`SessionControl::resolve_bound_action`], asked of the mounted state.
     fn resolve_bound_action(&self, call: &ToolCall) -> anyhow::Result<BoundAction>;
+}
+
+/// The in-process server over `control`, its types erased: the namespaced verb set, ready to
+/// mount (docs/tools.md).
+pub fn control_server<Control: SessionControl>(control: Control) -> Box<dyn ControlServer> {
+    let server: McpServer<Control, Control::Verbs> =
+        McpServer::from_state_namespaced(control, &[], crate::names::tools::AGENTS_NAMESPACE);
+    Box::new(server)
 }
 
 impl<Control: SessionControl> ControlServer for McpServer<Control, Control::Verbs> {

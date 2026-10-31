@@ -8,7 +8,7 @@
 //! bind time, and never a per-conn guess about which listener a request arrived on.
 
 use super::files_view::Files;
-use super::host::host_routes;
+use super::host_routes::host_routes;
 use super::http::control_routes;
 use super::tcp::{
     SecurityHeaders, Surface, TcpAuth, enrollment_routes, frontend, gate, pair_routes,

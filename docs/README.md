@@ -163,7 +163,7 @@ Read top-down; open the subsystem doc you need.
 | Session status — the one view of where a session stands (the `status` topic), its plaintext rendering, and the subscriptions that post it | [tools.md](tools.md), [control-api.md](control-api.md) | `src/protocol/status.rs`, `src/daemon/status.rs` (+ `src/daemon/status/`), `src/daemon/subscriptions.rs` |
 | Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/triage/title.rs` |
 | Starting sessions — the host's entry for a session while its environment and MCP servers are prepared, and how a failure or an archive ends it | [control-api.md](control-api.md) | `src/daemon/starting.rs`, `src/daemon/host/entries.rs`, `src/daemon/host/preparation.rs` |
-| Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |
+| Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/daemon/host_http/patch.rs`, `src/daemon/host_http/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |
 | Worktree sessions — a session's own git checkout, and the project/working directory pair | [worktrees.md](worktrees.md) | `src/worktree.rs`, `src/session_dir/worktree.rs`, `src/policy/directories.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | Background processes — the process monitor | [process-monitor.md](process-monitor.md) | `src/process_monitor.rs`, `src/bash.rs`, `src/spawn.rs`, `src/terminal_text.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
@@ -178,14 +178,14 @@ Read top-down; open the subsystem doc you need.
 | Host-owned inference — named connections, credential loading, per-role model selection | [transport.md](transport.md) | `src/user_config.rs`, `src/inference.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | Config schemas — the published JSON schemas for both config files, and the `#:schema` line that names them | [config-schemas.md](config-schemas.md) | `src/config_schemas.rs`, `src/config/raw.rs`, `src/user_config.rs`, `assets/schemas/` |
 | The user state database — `~/.efference/state.db`, and the table per module that owns it | [state-store.md](state-store.md) | `src/state.rs` (+ each table's module) |
-| Model catalog — each connection's normalized model listing, stored in the state database | [model-catalog.md](model-catalog.md) | `src/catalog.rs`, `src/daemon/host/catalog.rs`, `src/api/provider/row.rs` |
+| Model catalog — each connection's normalized model listing, stored in the state database | [model-catalog.md](model-catalog.md) | `src/catalog.rs`, `src/daemon/host_http/catalog.rs`, `src/api/provider/row.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/auth.rs` (+ `src/mcp/auth/`), `src/mcp/http.rs` |
 | The secret store — API keys and OAuth grants in the OS credential store, or through `[secrets]` commands | [secrets.md](secrets.md) | `src/secrets.rs`, `src/secrets/commands.rs`, `src/mcp/auth/store.rs`, `src/user_config.rs`, `src/inference.rs` |
-| The TCP bind — the web client's front door (root-derived credentials, enrolled devices, signing a browser in by approval, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/devices.rs`, `src/sign_ins.rs`, `src/daemon/handler.rs`, `src/daemon/tcp.rs` (+ `src/daemon/tcp/`), `src/bin/efference/devices.rs` |
+| The TCP bind — the web client's front door (root-derived credentials, enrolled devices, signing a browser in by approval, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/devices.rs`, `src/sign_ins.rs`, `src/daemon/handler.rs`, `src/daemon/serve.rs`, `src/daemon/host_routes.rs`, `src/daemon/tcp.rs` (+ `src/daemon/tcp/`), `src/bin/efference/devices.rs` |
 | The web client, component gallery, and stream tape/replay API | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp/gate.rs`, `src/daemon/tcp/headers.rs`, `src/daemon/tcp/routes.rs` |
 | Fenced HTML artifacts — signed links, sandbox, runtime, theme, built-in libraries and files | [artifacts.md](artifacts.md) | `src/artifact.rs`, `src/daemon/artifacts.rs` (+ `src/daemon/artifacts/`), `src/tui/artifacts.rs`, `web/src/ui/Artifact.tsx`, `web/public/artifacts/`, `web/src/theme/`, `assets/artifact-libs/`, `assets/guide/artifacts.md` |
 | The update check — the signed `latest.json`, `efference update --check`, the host's daily check, and the `newer_version` topic | [update-check.md](update-check.md) | `src/update_check.rs`, `src/user_config/updates.rs`, `src/daemon/host/update_check.rs`, `src/daemon/newer_version.rs`, `src/bin/efference/update.rs`, `src/setup/updates.rs` |
-| Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/push.rs` (+ `src/push/`), `src/daemon/push.rs`, `src/daemon/attention.rs`, `src/daemon/delayed_push.rs` |
+| Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/push.rs` (+ `src/push/`), `src/daemon/push.rs`, `src/daemon/attention.rs`, `src/daemon/host/attention_report.rs`, `src/daemon/delayed_push.rs` |
 | The TUI client | [tui.md](tui.md) | `src/tui/`, `src/user_config/tui.rs`, `src/terminal_title.rs` |
 
 Where a module has grown a directory beside it (`src/api/`, `src/config/`, `src/policy/`,
@@ -205,11 +205,13 @@ written once in `src/control_tools.rs` and `src/control_tools/` — and
 
 `src/daemon.rs` holds the shared-state vocabulary and the loop wiring; each concern it
 serves lives in a `src/daemon/` submodule named for its governing doc — `handler.rs`
-(the one handler stack every listener mounts), `http.rs` with one file per route
-family under `http/`, and `stream.rs` (the control channel), `config_edits.rs` (permissions), `notifications.rs` (the
+(the one handler stack every listener mounts), `serve.rs` (`serve_host`, which binds the
+host's listeners), `http.rs` with one file per route family under `http/`, `host_routes.rs`
+(the host's route table) with its handlers in `host_http.rs` and `host_http/`, and
+`stream.rs` (the control channel), `config_edits.rs` (permissions), `notifications.rs` (the
 inbox), `background.rs` (the process monitor), `phase.rs` (where the loop is) and `verbs.rs`
 (what each loop route would answer now), plus `pace.rs`, `approvals.rs`, `metrics.rs`,
-`keepalive.rs`, `watch.rs`, and `views.rs` (the `/state` and `/log` readouts).
+`keepalive.rs`, `watch.rs`, `topic_values.rs` (the `/state` readouts), and `views.rs` (the `/log` readouts).
 
 ## Dependency direction
 
@@ -238,7 +240,8 @@ file that makes it and the path it imports: the turn loop (`agent`) holds the `S
 and refreshes the config through `daemon`. A new import of that kind fails the test, and
 so does a named one that has gone, until its line is deleted. The toolbox (`tools`)
 reaches the session-control tools through a trait it defines, `SessionControl`, which
-`control_tools` implements and boot mounts ([tools.md](tools.md)).
+`control_tools` implements. The host builds the server a session mounts through a function
+the serving process installs ([tools.md](tools.md)).
 
 ## Repository layout
 

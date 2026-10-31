@@ -286,10 +286,13 @@ enables `agents` (or one of its verbs). The toolbox takes the set through a trai
 own, `SessionControl` (`src/tools/session_control.rs`): the verbs to mount, and the two
 answers the permission path takes from the host before it classifies one of their calls,
 a hand-off's completion and a decision's bound action ([permissions.md](permissions.md)).
-`control_tools::Control` implements it with the in-session set as its verbs, and boot
-mounts `Control::in_session`, so `tools` names neither the verbs nor the host; the
-toolbox holds the server over them as a `ControlServer` trait object, the one provider
-whose calls go through a boxed future. The session's model reaches its project's other
+`control_tools::Control` implements it with the in-session set as its verbs. The host
+does not name `control_tools` either: the process that serves it installs a
+`MountSessionControl` (`Host::set_session_control`, `src/daemon/host/session_control.rs`;
+the binary installs `control_tools::in_session_server`), and boot asks the host for the
+server it mounts. A host with none installed boots sessions without the `agents__*` tools.
+The toolbox holds the server over the verbs as a `ControlServer` trait object, the one
+provider whose calls go through a boxed future. The session's model reaches its project's other
 sessions by tool call, under namespaced wire names (`agents__message`, `agents__status`,
 `agents__create`). None is granted by default, so the spotter judges each call. Acting verbs never block: an in-session caller hears its
 children through its inbox (below) rather than through a waiting call. What a supervising

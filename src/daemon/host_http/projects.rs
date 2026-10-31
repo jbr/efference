@@ -20,7 +20,7 @@ use trillium::Conn;
 ///
 /// Creation re-validates what this filter checked: a volume can unmount between
 /// the two, and `POST /sessions` answers for itself.
-pub(super) async fn list_projects(conn: Conn) -> Conn {
+pub(crate) async fn list_projects(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
@@ -75,7 +75,7 @@ impl From<&Project> for ProjectEntry {
 /// nothing else: no file, no directory, and no session that ran there. Not
 /// listing an entry is not forgetting it, so an unavailable location stays
 /// remembered and comes back on its own.
-pub(super) async fn forget_project(conn: Conn) -> Conn {
+pub(crate) async fn forget_project(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };

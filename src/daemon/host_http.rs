@@ -1,53 +1,31 @@
-//! The host's own routes, and the stage that resolves `/sessions/:session/*` into
-//! conn state for the session's control routes (docs/control-api.md).
+//! The host's own handlers (docs/control-api.md): the session list and archiving, the
+//! inference inventory and attention reports, and the helpers every handler of the host
+//! shares. The families with a file of their own are in `host_http/`; the table that
+//! mounts them is `host_routes.rs`.
 
+use super::host::Ended;
+use super::host::listing::listing_stream;
 use super::*;
 use crate::protocol::answers::InventoryList;
 
-/// The host's routes (docs/control-api.md). `POST /sessions` is mounted on every
-/// host listener, socket and network alike: creation's environment is
-/// established per request (docs/env.md), so what it needs is the hook or the
-/// host's own baseline rather than a local caller. `files` serves each session's
-/// `/files` under its prefix — the web transport, as on a session bind.
-pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
-    let router = Router::new()
-        .get("/inference", inference_inventory)
-        .get("/inference/catalog", catalog_all)
-        .get("/inference/catalog/:connection", catalog_one)
-        .with_route(trillium::Method::Query, "/sessions", preview_session)
-        .get("/sessions", list_sessions())
-        // Registered before the `/sessions/:session/*` wildcard below, which would
-        // resolve the session into conn state and 404 a patch that is what
-        // makes it live in the first place (and a read of a dormant session).
-        .get("/sessions/:session", read_session)
-        .patch("/sessions/:session", patch_session)
-        .delete("/sessions/:session", end_session)
-        // Where sessions have been started, and forgetting one. Registered
-        // before the `/sessions/:session/*` wildcard below, which is a different
-        // prefix but the same reader of a path's first segment.
-        .get("/projects", list_projects)
-        // Clients report whether a person is attending (`attention.rs`).
-        .post("/attention", report_attention)
-        .delete("/projects", forget_project)
-        // The wildcard remainder becomes the conn's path, so the control routes
-        // match `/v1/…` exactly as they do at a session bind's root.
-        //
-        // The session segment is `:session`, never `:id`: the wildcard rewrites
-        // the *path* but leaves this capture in the conn's params, and a
-        // same-named capture inside `control_routes` (`/v1/processes/:id`,
-        // `/v1/notifications/:id`) would then read the session name where the
-        // route means an ordinal — every such route answering 400
-        // "process id must be an integer" for a well-formed id.
-        .all(
-            "/sessions/:session/*",
-            (
-                move |conn: Conn| async move { resolve_session(conn, files) },
-                control_routes(),
-                files.then(files::route),
-            ),
-        );
-    router.post("/sessions", create_session)
-}
+mod archived;
+use archived::archived_listing;
+pub(super) use archived::read_session;
+
+mod catalog;
+pub(super) use catalog::{catalog_all, catalog_one};
+
+mod create;
+pub(super) use create::create_session;
+
+mod options;
+pub(super) use options::preview_session;
+
+mod patch;
+pub(super) use patch::patch_session;
+
+mod projects;
+pub(super) use projects::{forget_project, list_projects};
 
 pub(super) fn host_of(conn: &Conn) -> Option<Arc<Host>> {
     conn.shared_state::<Arc<Host>>().map(Arc::clone)
@@ -59,7 +37,7 @@ pub(super) fn missing_host(conn: Conn) -> Conn {
 
 /// `GET /inference`: configured host connections, sorted by name. The registry is
 /// loaded once at host startup, so this never reads config or credentials per request.
-async fn inference_inventory(conn: Conn) -> Conn {
+pub(super) async fn inference_inventory(conn: Conn) -> Conn {
     match host_of(&conn) {
         Some(host) => views::answer(
             conn,
@@ -75,7 +53,7 @@ async fn inference_inventory(conn: Conn) -> Conn {
 /// `POST /attention`: one client's report of whether a person is attending, and
 /// which session it has open (`attention.rs`, docs/web-push.md). `204` on
 /// success; a malformed body is a `400` naming the problem.
-async fn report_attention(mut conn: Conn) -> Conn {
+pub(super) async fn report_attention(mut conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
@@ -98,7 +76,7 @@ async fn report_attention(mut conn: Conn) -> Conn {
 /// change, and any other request passes through untouched to the JSON half
 /// below (docs/control-api.md). A `state` query is read first (`archived.rs`):
 /// `archived` answers the dormant listing as JSON whatever the `Accept`.
-fn list_sessions() -> impl trillium::Handler {
+pub(super) fn list_sessions() -> impl trillium::Handler {
     (
         archived_listing,
         sse(|conn: &mut Conn| match host_of(conn) {
@@ -120,40 +98,6 @@ async fn read_sessions(conn: Conn) -> Conn {
     }
 }
 
-/// `/sessions/:session/*`: put the session into conn state for the control
-/// routes, or `404` when no hosted session has that id. Exact public web-shell
-/// routes pass through even without a session (docs/web-client.md).
-fn resolve_session(conn: Conn, web: bool) -> Conn {
-    let Some(host) = host_of(&conn) else {
-        return missing_host(conn);
-    };
-    let id = conn.param("session").unwrap_or_default().to_string();
-    // A starting session has no `Session` yet: the control routes that serve it read
-    // the entry, and the rest answer `409 starting` (`http.rs`). One that failed is
-    // served the same way for a while, so its reason reaches a late client.
-    let entry = host
-        .entry(&id)
-        .or_else(|| host.recently_failed(&id).map(Entry::Starting));
-    match entry {
-        Some(Entry::Hosted(hosted)) => conn
-            .with_state(hosted.session)
-            // The view `files::route` serves, one route for every session.
-            .with_state(hosted.files),
-        Some(Entry::Starting(starting)) => conn.with_state(starting),
-        // The router has stripped the session prefix. These exact routes carry
-        // only the public shell; the client then observes the API's 404 and goes
-        // home (docs/web-client.md). Control and file paths still fail here.
-        None if web
-            && conn.method() == trillium::Method::Get
-            && tcp::Surface::Session
-                .spa_route(&format!("/{}", conn.path().trim_start_matches('/'))) =>
-        {
-            conn
-        }
-        None => no_such_session(conn, &id),
-    }
-}
-
 /// `DELETE /sessions/:session`: archive the session. The same transition as
 /// `PATCH {"state": "archived"}`, in the imperative spelling, and answering once
 /// teardown has run — background children reaped, scratch removed — so a client
@@ -162,7 +106,7 @@ fn resolve_session(conn: Conn, web: bool) -> Conn {
 /// Archiving rather than ending is what it does: the runtime stops, and the
 /// directory and log stay, so the session is resumable by patching it `active`
 /// again (docs/log-and-projection.md).
-async fn end_session(mut conn: Conn) -> Conn {
+pub(super) async fn end_session(mut conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };

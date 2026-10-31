@@ -103,7 +103,7 @@ async fn entry(
 /// answer holds only what that role may choose: no decision models for a role
 /// that runs turns, and no connection that serves none. Without it nothing is
 /// filtered.
-pub(super) async fn catalog_all(conn: Conn) -> Conn {
+pub(crate) async fn catalog_all(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
@@ -134,7 +134,7 @@ pub(super) async fn catalog_all(conn: Conn) -> Conn {
 /// `max_age` (default the catalog TTL, floor one minute). A failed read answers
 /// with the old copy, if any, and `status: "failed"`. `role` filters as on the
 /// whole catalog; naming a role the connection cannot serve at all is a 400.
-pub(super) async fn catalog_one(conn: Conn) -> Conn {
+pub(crate) async fn catalog_one(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };

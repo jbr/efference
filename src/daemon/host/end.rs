@@ -18,7 +18,7 @@ impl Ended {
     /// The answer to an archive (docs/control-api.md): the `state` it reached,
     /// `archived` or `discarded` when the session was removed, and the fate of its
     /// worktree when it made one. A route adds what only it knows.
-    pub(super) fn answer(self, id: &str) -> SessionArchived {
+    pub(crate) fn answer(self, id: &str) -> SessionArchived {
         SessionArchived {
             id: id.to_string(),
             state: if self.discarded {

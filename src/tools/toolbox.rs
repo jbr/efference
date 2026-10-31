@@ -126,9 +126,13 @@ impl Toolbox {
     /// under the `agents__<verb>` wire names. The verb set is `control`'s own
     /// ([`SessionControl::Verbs`]), so nothing is hidden here.
     pub fn mount_sessions<Control: SessionControl>(&mut self, control: Control) {
-        let server: McpServer<Control, Control::Verbs> =
-            McpServer::from_state_namespaced(control, &[], crate::names::tools::AGENTS_NAMESPACE);
-        self.providers.push(Provider::Sessions(Box::new(server)));
+        self.mount_control_server(control_server(control));
+    }
+
+    /// Mount a session-control server built elsewhere ([`control_server`]), at the same
+    /// place in the mounted set [`Self::mount_sessions`] puts one.
+    pub fn mount_control_server(&mut self, server: Box<dyn ControlServer>) {
+        self.providers.push(Provider::Sessions(server));
     }
 
     /// Mount the `lsp` built-ins (docs/tools.md) over a session's binding. Mounted before

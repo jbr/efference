@@ -1,4 +1,4 @@
-//! Tests for `views.rs`.
+//! Tests for `topic_values.rs`.
 
 use super::*;
 use crate::config::CommandStance;

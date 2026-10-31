@@ -527,28 +527,6 @@ impl Session {
     pub fn child_env(&self) -> crate::env_table::ChildEnv {
         self.env_policy.child_env()
     }
-    /// The transcript window the in-session `transcript` tool serves
-    /// (docs/tools.md): the same selection as `GET /transcript`, with the
-    /// daemon's own argument check, at the conversation grain for the reading
-    /// session `me` (docs/control-api.md). The `LogSelect` type stays private to the
-    /// daemon, so this is the one public shape.
-    pub(crate) fn transcript_window(
-        &self,
-        since: Option<u64>,
-        before: Option<u64>,
-        tail: Option<u64>,
-        me: &str,
-    ) -> Result<String, String> {
-        if since.is_some() && tail.is_some() {
-            return Err("since and tail are mutually exclusive".into());
-        }
-        let select = LogSelect {
-            since,
-            before,
-            tail,
-        };
-        Ok(self.transcript(&select, transcript::Grain::Conversation, Some(me)))
-    }
 
     /// Snapshot the full session tool catalog for `GET /v1/tools/:name`
     /// (docs/control-api.md) — `agent::tool_catalog`, which mirrors
@@ -641,6 +619,8 @@ pub mod artifacts;
 #[allow(dead_code)]
 mod frames;
 mod handler;
+mod host_http;
+mod host_routes;
 mod http;
 mod keepalive;
 mod metrics;
@@ -662,6 +642,7 @@ mod delayed_push;
 mod push;
 mod stream;
 pub(crate) mod tcp;
+mod topic_values;
 mod topics;
 pub(crate) mod transcript;
 mod verbs;
@@ -710,11 +691,13 @@ mod paths;
 pub(crate) mod permissions;
 mod review;
 mod runtime;
+mod serve;
 pub mod slug;
 mod starting;
-pub use host::{Host, serve_host};
+pub use host::Host;
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};
+pub use serve::serve_host;
 
 pub use frontend::RemoteFrontend;
 pub use tcp::{TcpBind, TlsPem};

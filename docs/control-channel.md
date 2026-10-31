@@ -34,7 +34,7 @@ commands, the session's `EnvPolicy`, and every child spawn. Config edits reuse t
 base for masking rather than sampling the host environment. Child inheritance is
 replaced before policy and harness-owned values are applied ([env.md](env.md)).
 
-`Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership lives in `src/daemon/host.rs`; the session's own tasks are owned by a `SessionRuntime` (below), not by the type itself. Its contents:
+`Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership lives in `src/daemon/serve.rs`; the session's own tasks are owned by a `SessionRuntime` (below), not by the type itself. Its contents:
 
 **`Arc<Mutex<Log>>`** — the persisted, append-only log (see [log-and-projection.md](log-and-projection.md)). The loop appends under this lock via `Session::append`, which also pings the append notifier so SSE tailers wake. The lock is never held across an `await`; code that needs to call the model on a snapshot calls `Session::snapshot()` to clone the entries first.
 
@@ -123,7 +123,7 @@ session's lifetime from `start` to teardown and nothing outside it.
 ## The host: several sessions in one process
 
 `Host` (`src/daemon/host.rs`) is a map of session ids to started runtimes under
-one root `Swansong`; `serve_host` binds the control socket (`~/.efference/host.sock`,
+one root `Swansong`; `serve_host` (`src/daemon/serve.rs`) binds the control socket (`~/.efference/host.sock`,
 or the path `efference --host --socket` names) and the optional TCP listener with that
 `Swansong`,
 so a signal stops the listeners and every session. `Host::adopt` registers a

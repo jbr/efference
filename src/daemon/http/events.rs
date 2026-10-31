@@ -40,7 +40,7 @@ pub(super) fn events(heartbeat: Duration) -> impl trillium::Handler {
                 since,
             }) => match source {
                 Source::Session(shared) => control_stream(shared, include, since),
-                Source::Starting(starting) => starting::starting_stream(starting, include, since),
+                Source::Starting(starting) => stream::starting_stream(starting, include, since),
             },
             // Unreachable: the validating half halts before this runs.
             None => Box::pin(futures_lite::stream::empty()),

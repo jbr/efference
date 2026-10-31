@@ -9,46 +9,29 @@
 //! the unchanged control routes (docs/control-api.md). Nothing is forwarded: the
 //! session's handlers run in this process against its `Session`.
 
-use super::errors::{ErrorCode, fail};
 use super::files_view::Files;
-use super::http::control_routes;
-use super::permissions;
 use super::runtime::SessionRuntime;
 use super::*;
 use crate::inference::SessionOptions;
 use crate::protocol::sessions::{
-    ArchiveOutcome, ArchivedSession, CreateSession, CreatedSession, DormantSession, ListedSession,
-    ListedStatus, PatchSession, SessionArchived, SessionResumed, SessionState, SessionSupervised,
+    ArchiveOutcome, ArchivedSession, CreateSession, DormantSession, ListedSession, ListedStatus,
+    PatchSession, SessionArchived, SessionState,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use trillium_tokio::Swansong;
 
 mod create;
-use create::create_session;
 
-mod options;
-use options::preview_session;
-
-mod resume;
-use resume::patch_session;
+pub(super) mod resume;
 
 mod archived;
-use archived::{archived_listing, read_session};
 
-mod catalog;
-use catalog::{catalog_all, catalog_one};
-
-mod projects;
-use projects::{forget_project, list_projects};
-
-mod listing;
-use listing::listing_stream;
+pub(super) mod listing;
 
 mod supervise;
 pub use supervise::SupervisorRefused;
 
-mod entries;
+pub(super) mod entries;
 use entries::{Entry, Sessions};
 
 mod preparation;
@@ -63,25 +46,25 @@ mod island_exit;
 
 mod agents;
 
+mod attention_report;
+
+mod session_control;
+
 mod update_check;
 
 #[cfg(test)]
 mod testing;
 
-mod routes;
-pub(crate) use routes::host_routes;
-use routes::{host_of, missing_host, no_such_session};
-
 /// One process's sessions and the `Swansong` they all hang under.
 pub struct Host {
     swansong: Swansong,
-    inference: crate::inference::InferenceRegistry,
+    pub(super) inference: crate::inference::InferenceRegistry,
     /// Each connection's model listing, stored in the user state database
     /// (docs/model-catalog.md).
-    catalog: crate::catalog::Catalog,
+    pub(super) catalog: crate::catalog::Catalog,
     /// Where sessions have been launched, in the same database (docs/control-api.md).
     /// Written by every successful creation and read by the index route.
-    remembered: crate::remembered::Projects,
+    pub(super) remembered: crate::remembered::Projects,
     /// The host-wide register of session ids, in the same database
     /// (`session_ids.rs`, docs/session-title.md).
     session_ids: crate::session_ids::SessionIds,
@@ -140,6 +123,11 @@ pub struct Host {
     /// the first adopt, under this host's `Swansong`; `None` once its bind failed, so
     /// the bind is tried once.
     artifact_origin: std::sync::OnceLock<Option<String>>,
+    /// What builds the in-session `agents__*` server a hosted session mounts
+    /// (docs/tools.md). The verbs' module (`control_tools`) sits above the host, so the
+    /// process that serves this host installs it ([`Self::set_session_control`]) before
+    /// anything is adopted (`session_control.rs`).
+    session_control: std::sync::OnceLock<MountSessionControl>,
     /// One lock per MCP server for refreshing its stored grant, shared by the token
     /// store every session here mounts with, so the host's sessions refresh a
     /// server's grant once however many find it expired (docs/mcp-auth.md).
@@ -156,13 +144,18 @@ pub struct Host {
 /// ([`Host::set_artifact_listener`]).
 pub type StartArtifactListener = fn(&Arc<Host>) -> io::Result<String>;
 
+/// What builds the in-session server for the session named by the `String` on a host
+/// (docs/tools.md): the process serving the host installs one
+/// ([`Host::set_session_control`]).
+pub type MountSessionControl = fn(&Arc<Host>, String) -> Box<dyn crate::tools::ControlServer>;
+
 /// What the host keeps per session: the state handlers read, the child
 /// `Swansong` that ends it, and its `/files` view rooted at its own cwd.
 #[derive(Clone)]
 pub(super) struct Hosted {
-    session: Arc<Session>,
+    pub(super) session: Arc<Session>,
     swansong: Swansong,
-    files: Files,
+    pub(super) files: Files,
     /// How the entry leaves the map (`end.rs`): an end under way holds the removal back
     /// until it has recorded the session, and resolves once the entry has gone.
     departure: Departure,
@@ -236,6 +229,7 @@ impl Host {
             newer_version: Arc::default(),
             artifact_listener: std::sync::OnceLock::new(),
             artifact_origin: std::sync::OnceLock::new(),
+            session_control: std::sync::OnceLock::new(),
             mcp_refresh_locks: Default::default(),
             language_servers: crate::tools::lsp::language_servers(),
         })
@@ -569,7 +563,7 @@ impl Host {
     }
 
     /// The entry under `id`, starting or hosted.
-    fn entry(&self, id: &str) -> Option<Entry> {
+    pub(super) fn entry(&self, id: &str) -> Option<Entry> {
         self.sessions.lock().unwrap().entry(id).cloned()
     }
 
@@ -600,81 +594,4 @@ impl Host {
             Entry::Hosted(_) => None,
         }
     }
-}
-
-/// Run a host: bind the control socket and the optional TCP listener over
-/// `host`, and serve until shutdown. Sessions arrive by `POST /sessions`.
-pub async fn serve_host(
-    host: Arc<Host>,
-    socket: PathBuf,
-    bind: Option<TcpBind>,
-) -> Result<(), Error> {
-    // The state beside this socket and the socket itself are the host's whole
-    // on-disk footprint; tighten them before anything is served from here
-    // (docs/state-store.md). The directory is created when missing so the
-    // first boot is tightened too, not only later ones.
-    if let Some(dir) = socket.parent().filter(|dir| !dir.as_os_str().is_empty()) {
-        if let Err(e) = std::fs::create_dir_all(dir) {
-            log::warn!("could not prepare {}: {e}", dir.display());
-        }
-        permissions::tighten_state_dir(dir);
-    }
-    let web = bind.map(tcp::arm);
-    let web_auth = web.as_ref().map(|(auth, _)| Arc::clone(auth));
-    let server = trillium_tokio::config()
-        .with_swansong(host.swansong().clone())
-        .with_shared_state(Arc::clone(&host))
-        .listeners()
-        .bind_uds(&socket)
-        .map_err(|e| -> Error { format!("failed to bind {}: {e}", socket.display()).into() })?
-        .spawn(handler(
-            Transport::Socket {
-                auth: web_auth.clone(),
-            },
-            App::Host,
-        ));
-    // The bind minted the socket under the process umask; owner-only is the
-    // contract (docs/control-channel.md) — a connect needs write permission,
-    // so this is exactly the accounts that may reach the channel.
-    permissions::tighten_socket(&socket);
-    log::info!("host socket: {}", socket.display());
-    let mut _tcp_server = None;
-    if let Some((auth, listener)) = web {
-        let open = listener.open;
-        let addr = listener.addr.clone();
-        let handle = tcp::spawn(
-            &listener,
-            handler(
-                Transport::Web {
-                    auth: Arc::clone(&auth),
-                },
-                App::Host,
-            ),
-            host.swansong().clone(),
-            Arc::clone(&host),
-        )
-        .map_err(|e| -> Error { format!("failed to bind {addr}: {e}").into() })?;
-        // Bound before the link is minted: a bind to port 0 learns its port here.
-        if let Some(bound) = handle.info().await.tcp_socket_addr() {
-            auth.bound_port(bound.port());
-        }
-        log::info!("web: {} (bound {addr})", auth.public_base());
-        match auth.mint_link() {
-            Ok(link) => {
-                log::info!("  {link}");
-                if open && webbrowser::open(&link).is_err() {
-                    log::warn!("could not open a browser for {link}");
-                }
-            }
-            Err(e) => log::warn!("could not mint a sign-in link: {e}"),
-        }
-        _tcp_server = Some(handle);
-    }
-    // The listener's shutdown completes only when every session's teardown
-    // guard has dropped: the runtimes are children of the same `Swansong`.
-    server.await;
-    // Every session has released its binding by now; this reaps what is still starting
-    // or running (docs/tools.md).
-    crate::tools::lsp::shut_down(Arc::clone(host.language_servers())).await;
-    Ok(())
 }

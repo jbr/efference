@@ -14,9 +14,7 @@
 //! a composer, and the connections end after the frame that carries it. Archived: the
 //! preparation was cancelled on purpose, and the connections end.
 
-use super::stream::{FrameEvent, Include, control_stream};
 use super::*;
-use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 
 use crate::protocol::channel_value;
@@ -35,7 +33,7 @@ pub(crate) struct Failure {
 }
 
 #[derive(Clone)]
-enum Outcome {
+pub(super) enum Outcome {
     Started(Arc<Session>),
     Failed(Failure),
     /// Stopped on purpose — archived, or the host shutting down — with what stopped it.
@@ -67,7 +65,7 @@ pub(crate) struct Starting {
     cancelled: AtomicBool,
     cancel: Notify,
     inner: Mutex<Inner>,
-    changed: Notify,
+    pub(super) changed: Notify,
 }
 
 /// Who a starting session is: what the host knows before anything is prepared.
@@ -369,9 +367,10 @@ impl Starting {
     }
 
     /// The topics a starting entry publishes, in [`Topic::ALL`] order.
-    const TOPICS: [Topic; 4] = [Topic::Verbs, Topic::Queued, Topic::Starting, Topic::Status];
+    pub(super) const TOPICS: [Topic; 4] =
+        [Topic::Verbs, Topic::Queued, Topic::Starting, Topic::Status];
 
-    fn topic_json(&self, topic: Topic) -> Value {
+    pub(super) fn topic_json(&self, topic: Topic) -> Value {
         match topic {
             Topic::Verbs => channel_value(self.verbs()),
             Topic::Queued => channel_value(self.queued()),
@@ -392,93 +391,9 @@ impl Starting {
         Value::Object(out).to_string()
     }
 
-    fn outcome(&self) -> Option<Outcome> {
+    pub(super) fn outcome(&self) -> Option<Outcome> {
         self.inner.lock().unwrap().outcome.clone()
     }
-}
-
-/// One `/events` connection on a starting session: its frames while starting, then
-/// the session's own.
-enum Leg {
-    Starting {
-        entry: Arc<Starting>,
-        include: Include,
-        since: u64,
-        /// What this connection last sent per topic, in [`Starting::TOPICS`] order.
-        sent: [Option<String>; 4],
-        ready: VecDeque<FrameEvent>,
-    },
-    Session(Pin<Box<dyn Stream<Item = FrameEvent> + Send + Sync + 'static>>),
-    Done,
-}
-
-/// The `/events` stream of a starting session (docs/control-api.md). Level-triggered
-/// frames for `verbs`, `queued`, `starting`, and `status` (those of them the connection
-/// subscribed to) as they move; then, once the session has started, the session's own
-/// stream from the connection's `since`, whose connect snapshot carries `starting:
-/// null`. A failure or an archive ends the stream after the frames describing it.
-pub(crate) fn starting_stream(
-    entry: Arc<Starting>,
-    include: Include,
-    since: u64,
-) -> Pin<Box<dyn Stream<Item = FrameEvent> + Send + Sync + 'static>> {
-    let leg = Leg::Starting {
-        entry,
-        include,
-        since,
-        sent: Default::default(),
-        ready: VecDeque::new(),
-    };
-    Box::pin(futures_lite::stream::unfold(leg, |mut leg| async move {
-        loop {
-            match &mut leg {
-                Leg::Starting {
-                    entry,
-                    include,
-                    since,
-                    sent,
-                    ready,
-                } => {
-                    if let Some(event) = ready.pop_front() {
-                        return Some((event, leg));
-                    }
-                    let entry = Arc::clone(entry);
-                    let changed = entry.changed.notified();
-                    tokio::pin!(changed);
-                    changed.as_mut().enable();
-                    // The outcome is read before the topics, so the topics read after
-                    // it describe at least that outcome: a failure's frame is queued
-                    // before the leg ends.
-                    let outcome = entry.outcome();
-                    for (slot, topic) in Starting::TOPICS.into_iter().enumerate() {
-                        if !include.topics.contains(&topic) {
-                            continue;
-                        }
-                        let json = entry.topic_json(topic).to_string();
-                        if sent[slot].as_deref() != Some(json.as_str()) {
-                            ready.push_back(Frame::state_raw(topic, &json).into());
-                            sent[slot] = Some(json);
-                        }
-                    }
-                    if !ready.is_empty() {
-                        continue;
-                    }
-                    match outcome {
-                        Some(Outcome::Started(session)) => {
-                            leg = Leg::Session(control_stream(session, include.clone(), *since));
-                        }
-                        Some(Outcome::Failed(_) | Outcome::Cancelled(_)) => leg = Leg::Done,
-                        None => changed.await,
-                    }
-                }
-                Leg::Session(stream) => {
-                    use futures_lite::StreamExt;
-                    return stream.next().await.map(|event| (event, leg));
-                }
-                Leg::Done => return None,
-            }
-        }
-    }))
 }
 
 #[cfg(test)]

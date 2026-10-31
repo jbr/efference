@@ -372,7 +372,7 @@ mod mcp_server;
 mod provider;
 pub mod read_image;
 mod session_control;
-pub use session_control::{ControlServer, SessionControl};
+pub use session_control::{ControlServer, SessionControl, control_server};
 mod toolbox;
 #[cfg(test)]
 use toolbox::strip_unreadable_images;

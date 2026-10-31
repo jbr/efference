@@ -12,7 +12,7 @@ fn hosted_files(host: &Arc<Host>) -> impl trillium::Handler {
             let host = Arc::clone(&host);
             async move { info.with_shared_state(host) }
         }),
-        crate::daemon::host::host_routes(true),
+        host_routes::host_routes(true),
     )
 }
 
