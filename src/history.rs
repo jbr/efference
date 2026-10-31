@@ -98,8 +98,8 @@ impl TriagePick {
         at: i64,
         scope: &Scope,
         explicit: bool,
-        main: &crate::inference::ModelSelection,
-        triage: Option<&crate::inference::ModelSelection>,
+        main: &crate::user_config::ModelSelection,
+        triage: Option<&crate::user_config::ModelSelection>,
     ) -> Option<Self> {
         let triage = triage.filter(|_| explicit)?;
         Some(Self {

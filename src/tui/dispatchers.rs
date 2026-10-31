@@ -304,13 +304,13 @@ fn pace_sender(client: &Client, mut pace_rx: UnboundedReceiver<PaceCmd>) -> Join
 /// that resolution.
 fn interrupt_sender(
     client: &Client,
-    mut interrupt_rx: UnboundedReceiver<crate::frontend::Interrupt>,
+    mut interrupt_rx: UnboundedReceiver<crate::tools::Interrupt>,
 ) -> JoinHandle<()> {
     let interrupt_client = client.clone();
     tokio::spawn(async move {
         while let Some(intent) = interrupt_rx.recv().await {
             match intent {
-                crate::frontend::Interrupt::Kill => {
+                crate::tools::Interrupt::Kill => {
                     let _ = interrupt_client
                         .interrupt(&crate::log::InterruptOrigin {
                             source: None,
@@ -318,7 +318,7 @@ fn interrupt_sender(
                         })
                         .await;
                 }
-                crate::frontend::Interrupt::Detach => {
+                crate::tools::Interrupt::Detach => {
                     let _ = interrupt_client.background(None).await;
                 }
             }

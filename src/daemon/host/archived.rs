@@ -10,7 +10,8 @@
 //! reads neither.
 
 use super::*;
-use crate::inventory::{InventoryRow, sort_rows};
+use crate::inventory::sort_rows;
+use crate::protocol::inventory::InventoryRow;
 use crate::session_dir::SESSION_BASE;
 use std::collections::HashSet;
 

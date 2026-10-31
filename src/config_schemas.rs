@@ -22,7 +22,7 @@ pub const PROJECT: &str = "project.v1.json";
 
 /// The schema for `~/.efference/config.toml`.
 pub fn user() -> Schema {
-    generate::<crate::inference::InferenceConfig>(USER, "efference user configuration")
+    generate::<crate::user_config::InferenceConfig>(USER, "efference user configuration")
 }
 
 /// The schema for a project's `efference.toml`.

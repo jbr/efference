@@ -13,7 +13,7 @@
 //! every word of it. Esc clears a non-empty query first and otherwise asks to go
 //! back, as in the model picker.
 
-use crate::inventory::InventoryRow;
+use crate::protocol::inventory::InventoryRow;
 use crate::tui::inline::Styles;
 use crate::tui::inline_list::{
     self, CellStyle, Column, Line, ListFrame, ListInput, ListKey, ListRow, list_key,

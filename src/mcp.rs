@@ -51,8 +51,8 @@ use tokio::sync::Mutex;
 
 use crate::bash::Outcome;
 use crate::config::McpTransport;
-use crate::frontend::Interrupt;
 use crate::log::{Notification, RawResult, ToolCall};
+use crate::tools::Interrupt;
 use crate::tools::anthropic_def;
 
 pub mod auth;

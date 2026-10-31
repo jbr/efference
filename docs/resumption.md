@@ -191,8 +191,8 @@ signal, or `kill -9` takes none of this, and the island's sessions are left inte
 A log is *empty* when it holds no `User` and no `Assistant` entry: the preamble,
 telemetry, the `Ambient` and `Triage` entries of an idle triage, `Worktree` and
 `Archived` are the harness's own record, so a session with only those has lost nothing
-the operator wrote or the agent did (`src/discard.rs`). Such a session is discarded, not
-archived:
+the operator wrote or the agent did (`is_empty` in `src/log.rs`). Such a session is
+discarded (`src/discard.rs`), not archived:
 
 - **At archive.** Each archive path (`DELETE`, `PATCH {"state": "archived"}`, a child
   ending with its creator, an island's exit) removes the session directory and releases

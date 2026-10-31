@@ -4,26 +4,8 @@
 
 use super::*;
 use crate::api::{Endpoint, ModelCapabilities};
+use crate::inference::TriageModel;
 use std::time::Duration;
-
-/// `--triage-model` and its two knobs, as the CLI collects them and as a host's
-/// creation body spells them.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TriageModel {
-    pub model: String,
-    #[serde(default)]
-    /// `--triage-thinking`: let the model reason (off by default; the reasoning is
-    /// discarded with the fork's tail).
-    pub thinking: bool,
-    #[serde(default)]
-    /// `--triage-auto-choice`: `tool_choice: auto` instead of forcing the triage tool.
-    pub auto_choice: bool,
-    #[serde(default)]
-    /// `--triage-effort`: the reasoning level, in the model's own vocabulary
-    /// (validated against its metadata like `--effort`). Implies thinking on: a
-    /// model that can be turned down rather than off is the case this serves.
-    pub effort: Option<String>,
-}
 
 impl Triager {
     /// The separate-model triage for `triage` (docs/triage.md): the model's

@@ -47,7 +47,7 @@ impl Roots {
 /// resolution and into `boot::prepare`. The credential never reaches a provider:
 /// every case here fails before the first request.
 fn one_connection_registry() -> crate::inference::InferenceRegistry {
-    let config = crate::inference::InferenceConfig::from_toml(
+    let config = crate::user_config::InferenceConfig::from_toml(
         r#"
 [connections.test]
 provider = "anthropic"
@@ -76,7 +76,7 @@ fn registry_with_hook(argv: &[String]) -> crate::inference::InferenceRegistry {
         .map(|part| format!("{part:?}"))
         .collect::<Vec<_>>()
         .join(", ");
-    let config = crate::inference::InferenceConfig::from_toml(&format!(
+    let config = crate::user_config::InferenceConfig::from_toml(&format!(
         "\nenv_hook = [{listed}]\n\n\
          [connections.test]\n\
          provider = \"anthropic\"\n\
@@ -486,7 +486,7 @@ async fn the_catalog_role_filter_drops_decision_only_connections_for_turn_roles(
     use crate::client::ModelRole;
     let roots = Roots::new();
     let cwd = roots.0.join("one");
-    let config = crate::inference::InferenceConfig::from_toml(
+    let config = crate::user_config::InferenceConfig::from_toml(
         r#"
 [connections.text]
 provider = "openrouter"
@@ -553,7 +553,7 @@ disabled = true
 async fn the_catalog_reports_an_unavailable_connection_with_its_recent_picks() {
     let roots = Roots::new();
     let cwd = roots.0.join("one");
-    let config = crate::inference::InferenceConfig::from_toml(
+    let config = crate::user_config::InferenceConfig::from_toml(
         r#"
 [connections.off]
 provider = "openrouter"
@@ -656,7 +656,7 @@ async fn a_process_id_survives_the_session_prefix() {
 /// listed as unavailable rather than omitted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn inference_inventory_is_sorted_and_secret_free() {
-    let config = crate::inference::InferenceConfig::from_toml(
+    let config = crate::user_config::InferenceConfig::from_toml(
         r#"
 [connections.test]
 provider = "anthropic"

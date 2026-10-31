@@ -387,7 +387,7 @@ fn bind_flags(bind: Option<&str>) -> serve::BindFlags {
 /// the table's name and certificate, and `--bind ""` switches the table's bind off.
 #[test]
 fn bind_flags_override_the_host_table_key_by_key() {
-    let table = efference::inference::HostConfig {
+    let table = efference::user_config::HostConfig {
         bind: Some("100.64.0.1:7878".into()),
         public_url: Some("https://box.example.ts.net:7878".into()),
         tls_cert: Some("/c.crt".into()),

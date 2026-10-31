@@ -115,7 +115,7 @@ pub(super) struct RawBash {
 }
 
 /// `[transport]`: the connection to the model.
-// docs/transport.md. Absent durations fall back to [`crate::api::DEFAULT_STREAM_CEILING`] and
+// docs/transport.md. Absent durations fall back to [`DEFAULT_STREAM_CEILING`] and
 // the provider's derived keepalive interval ([`crate::daemon::keepalive_interval`]).
 #[derive(Deserialize, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -580,18 +580,18 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
             background_after: raw
                 .bash
                 .background_after
-                .map_or(crate::bash::DEFAULT_BACKGROUND_AFTER, Duration::from_secs),
-            background_after_max: raw.bash.background_after_max.map_or(
-                crate::bash::DEFAULT_BACKGROUND_AFTER_MAX,
-                Duration::from_secs,
-            ),
+                .map_or(DEFAULT_BACKGROUND_AFTER, Duration::from_secs),
+            background_after_max: raw
+                .bash
+                .background_after_max
+                .map_or(DEFAULT_BACKGROUND_AFTER_MAX, Duration::from_secs),
         },
         transport: TransportLimits {
             effort: raw.transport.effort,
             stream_ceiling: raw
                 .transport
                 .stream_ceiling
-                .map_or(crate::api::DEFAULT_STREAM_CEILING, Duration::from_secs),
+                .map_or(DEFAULT_STREAM_CEILING, Duration::from_secs),
             keepalive_interval: raw.transport.keepalive_interval.map(Duration::from_secs),
         },
     })

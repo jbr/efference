@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::env_table::EnvSnapshot;
-use crate::inference::InferenceConfig;
 use crate::secrets::Secrets;
+use crate::user_config::InferenceConfig;
 use std::path::Path;
 use std::sync::Arc;
 

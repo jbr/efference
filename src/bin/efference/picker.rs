@@ -17,7 +17,7 @@
 //! theme the new-session form draws (`app.rs`, docs/tui.md).
 
 use super::*;
-use efference::inventory::InventoryRow;
+use efference::protocol::inventory::InventoryRow;
 use efference::protocol::sessions::{ListedSession, PatchSession};
 use efference::tui::inline;
 use efference::tui::resume_list::{ResumeRow, now_ms};
@@ -115,7 +115,10 @@ pub(crate) async fn live_listings() -> Result<Vec<(PathBuf, Vec<ListedSession>)>
 
 /// The verb: gather what the live hosts hold here, ask, and hand off to the
 /// path the explicit flag would have taken.
-pub(crate) async fn run(display: efference::inference::TuiConfig, bind: Option<&str>) -> CliResult {
+pub(crate) async fn run(
+    display: efference::user_config::TuiConfig,
+    bind: Option<&str>,
+) -> CliResult {
     let theme = display.theme.clone();
     let here = std::env::current_dir()?;
     let listings = live_listings().await?;
@@ -220,7 +223,7 @@ pub(crate) async fn resume_on(client: &ControlClient, id: &str) -> Result<(), Cl
 /// non-interactive path.
 pub(crate) async fn create_through_form(
     host: PathBuf,
-    display: efference::inference::TuiConfig,
+    display: efference::user_config::TuiConfig,
 ) -> CliResult {
     let client = ControlClient::new(&host);
     let Some(id) = efference::tui::session_form::run_hosted(client, display.theme.clone()).await?

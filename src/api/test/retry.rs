@@ -81,24 +81,21 @@ fn retry_topic_tracks_attempts_and_clears_on_finalize() {
     assert_eq!(retry.get(), None);
 
     for attempt in 1..=3u32 {
-        retry.set(crate::agent::stream_abort_retry(
+        retry.set(stream_abort_retry(
             RetrySurface::Turn,
             attempt,
-            crate::agent::STREAM_ABORT_ATTEMPTS,
+            STREAM_ABORT_ATTEMPTS,
             std::time::Duration::from_secs(1),
             "upstream SSE stream failed mid-stream: connection reset",
         ));
         let live = retry.get().expect("a retry is in flight");
         assert_eq!(live.surface, RetrySurface::Turn);
         assert_eq!(live.attempt, attempt);
-        assert_eq!(live.budget, crate::agent::STREAM_ABORT_ATTEMPTS);
+        assert_eq!(live.budget, STREAM_ABORT_ATTEMPTS);
         // Leads with what is happening, not with a status code.
         assert_eq!(
             live.message,
-            format!(
-                "attempt {attempt} of {} failed upstream, retrying",
-                crate::agent::STREAM_ABORT_ATTEMPTS
-            )
+            format!("attempt {attempt} of {STREAM_ABORT_ATTEMPTS} failed upstream, retrying")
         );
         assert!(live.detail.contains("connection reset"));
         assert!(live.next_attempt_at > crate::log::Timestamp::now().0 - 1000);
@@ -114,20 +111,17 @@ fn retry_topic_tracks_attempts_and_clears_on_finalize() {
 #[test]
 fn exhaustion_leaves_the_retry_topic_cleared() {
     let retry = upstream_retry_state();
-    retry.set(crate::agent::stream_abort_retry(
+    retry.set(stream_abort_retry(
         RetrySurface::Triage,
-        crate::agent::STREAM_ABORT_ATTEMPTS - 1,
-        crate::agent::STREAM_ABORT_ATTEMPTS,
+        STREAM_ABORT_ATTEMPTS - 1,
+        STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(30),
         "aborted",
     ));
     assert!(retry.get().is_some());
 
     // The loop's exit on a spent budget: no pause to publish, only the clear.
-    assert_eq!(
-        crate::agent::stream_abort_backoff(crate::agent::STREAM_ABORT_ATTEMPTS),
-        None
-    );
+    assert_eq!(stream_abort_backoff(STREAM_ABORT_ATTEMPTS), None);
     retry.clear(RetrySurface::Triage);
     assert_eq!(retry.get(), None);
 }
@@ -138,10 +132,10 @@ fn exhaustion_leaves_the_retry_topic_cleared() {
 #[test]
 fn a_triage_clear_does_not_erase_a_turn_retry() {
     let retry = upstream_retry_state();
-    retry.set(crate::agent::stream_abort_retry(
+    retry.set(stream_abort_retry(
         RetrySurface::Turn,
         2,
-        crate::agent::STREAM_ABORT_ATTEMPTS,
+        STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(2),
         "aborted",
     ));

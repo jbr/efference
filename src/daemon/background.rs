@@ -217,8 +217,8 @@ impl Session {
     /// What `GET /processes` and the `processes` state topic carry — structure only,
     /// no tail (docs/control-api.md). Distinct from
     /// [`bg_snapshot`](Self::bg_snapshot), the model-facing triage view; see
-    /// [`ProcessState`](crate::process_monitor::ProcessState) for why they diverge.
-    pub(crate) fn process_states(&self) -> Vec<crate::process_monitor::ProcessState> {
+    /// [`ProcessState`](crate::protocol::state::ProcessState) for why they diverge.
+    pub(crate) fn process_states(&self) -> Vec<crate::protocol::state::ProcessState> {
         self.process_monitor.lock().unwrap().process_states()
     }
 
@@ -270,7 +270,7 @@ impl Session {
 
     /// One *running* process's representation — the `PATCH`/`DELETE` target check
     /// for `/processes/:id` (docs/control-api.md).
-    pub fn running_process(&self, id: u64) -> Option<crate::process_monitor::ProcessState> {
+    pub fn running_process(&self, id: u64) -> Option<crate::protocol::state::ProcessState> {
         self.process_monitor.lock().unwrap().running_state(id)
     }
 
@@ -343,7 +343,7 @@ impl Session {
         let pgid = self.process_monitor.lock().unwrap().pgid_of(id);
         match pgid {
             Some(pgid) => {
-                crate::bash::kill_group(pgid);
+                crate::spawn::kill_group(pgid);
                 true
             }
             None => false,
@@ -365,7 +365,7 @@ impl Session {
     /// Teardown wants [`reap_all_bg`](Self::reap_all_bg).
     pub fn kill_all_bg(&self) {
         for pgid in self.process_monitor.lock().unwrap().running_pgids() {
-            crate::bash::kill_group(pgid);
+            crate::spawn::kill_group(pgid);
         }
     }
 

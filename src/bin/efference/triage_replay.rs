@@ -16,8 +16,9 @@ mod sweep;
 
 use super::*;
 use crate::dev::TriageArgs;
+use efference::inference::TriageModel;
 use efference::project::Reader;
-use efference::triage::{Pending, TriageModel, TriageView, Triager, triage_request};
+use efference::triage::{Pending, TriageView, Triager, triage_request};
 use std::io::Write;
 
 use compare::*;

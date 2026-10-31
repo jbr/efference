@@ -40,9 +40,11 @@ fn every_toml_block_in_a_guide_is_a_valid_config() {
                 "" => crate::config::try_parse_text(&block)
                     .map(drop)
                     .map_err(|e| e.to_string()),
-                "~/.efference/config.toml" => crate::inference::InferenceConfig::from_toml(&block)
-                    .map(drop)
-                    .map_err(|e| e.to_string()),
+                "~/.efference/config.toml" => {
+                    crate::user_config::InferenceConfig::from_toml(&block)
+                        .map(drop)
+                        .map_err(|e| e.to_string())
+                }
                 other => panic!("unknown toml fence title {other:?} in `{name}`"),
             };
             if let Err(e) = parsed {

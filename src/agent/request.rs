@@ -3,7 +3,7 @@
 //! ends in when no attempt gives a usable turn.
 
 use super::*;
-use crate::api::Completion;
+use crate::api::{Completion, STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry};
 
 /// What one model request came to.
 enum Attempt {

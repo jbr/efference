@@ -162,10 +162,10 @@ async fn a_retry_publishes_without_an_append() {
     drain(&mut rx).await; // the startup snapshot
 
     // Exactly what the turn loop does before sleeping: no log append anywhere.
-    retry.set(agent::stream_abort_retry(
+    retry.set(crate::api::stream_abort_retry(
         crate::api::RetrySurface::Turn,
         2,
-        agent::STREAM_ABORT_ATTEMPTS,
+        crate::api::STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(2),
         "upstream SSE stream failed mid-stream",
     ));

@@ -36,7 +36,8 @@ impl Host {
         // The session is rooted at its project and works in the directory the client
         // sent: they differ when that directory is inside a worktree
         // (docs/worktrees.md).
-        let project = crate::worktree::project_of(&body.cwd).unwrap_or_else(|| body.cwd.clone());
+        let project =
+            crate::session_dir::worktree::project_of(&body.cwd).unwrap_or_else(|| body.cwd.clone());
         let directories = crate::policy::Directories::new(project.clone(), body.cwd.clone());
         // An environment the caller supplied is the base, and nothing is run.
         let supplied_env = match body.env.take() {

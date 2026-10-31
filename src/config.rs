@@ -78,6 +78,14 @@ use toml_edit::{DocumentMut, InlineTable, Item, Table, Value, value};
 
 use crate::log::ConfigChange;
 
+/// The shipped defaults, used when no `[bash]` config section says otherwise.
+/// 300s clears a real `cargo build --release` while firing on under 1% of this
+/// repo's corpus; the ceiling is high enough for a genuinely slow build and
+/// still finite. The asymmetry is what sets them: a premature detach costs one
+/// `read_process` and loses nothing, an absent one costs the session.
+pub const DEFAULT_BACKGROUND_AFTER: Duration = Duration::from_secs(300);
+pub const DEFAULT_BACKGROUND_AFTER_MAX: Duration = Duration::from_secs(1800);
+
 /// How long a foreground `bash` command may block the turn (docs/process-monitor.md).
 ///
 /// Two numbers rather than one, because they answer different questions.
@@ -96,11 +104,23 @@ pub struct BashLimits {
 impl Default for BashLimits {
     fn default() -> Self {
         Self {
-            background_after: crate::bash::DEFAULT_BACKGROUND_AFTER,
-            background_after_max: crate::bash::DEFAULT_BACKGROUND_AFTER_MAX,
+            background_after: DEFAULT_BACKGROUND_AFTER,
+            background_after_max: DEFAULT_BACKGROUND_AFTER_MAX,
         }
     }
 }
+
+/// How long one SSE response may stay open before the read loop stops waiting on
+/// it (docs/transport.md). The retry policy bounds *failures*; this bounds
+/// *success taking forever* — a stream that neither finalizes nor dies has no
+/// other bound, and blocks its turn with nothing on `GET /state` to read.
+///
+/// One hour — roughly ten times the widest model call this repo's own corpus has
+/// recorded, and set that far out deliberately: a ceiling that fires on a merely
+/// *slow* stream discards real work, where one that fires late only delays the
+/// diagnosis of a hang. Operators whose workload says otherwise set
+/// `[transport] stream-ceiling` ([`TransportLimits`]).
+pub const DEFAULT_STREAM_CEILING: Duration = Duration::from_secs(3600);
 
 /// Transport-layer limits an operator can set (docs/transport.md). Both knobs
 /// are operator-set because the right value is workload-dependent — a long think
@@ -139,7 +159,7 @@ pub struct TransportLimits {
 impl Default for TransportLimits {
     fn default() -> Self {
         Self {
-            stream_ceiling: crate::api::DEFAULT_STREAM_CEILING,
+            stream_ceiling: DEFAULT_STREAM_CEILING,
             keepalive_interval: None,
             effort: None,
         }

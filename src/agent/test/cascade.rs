@@ -15,7 +15,7 @@ impl Frontend for NeverGates {
             call.name
         )
     }
-    async fn interrupted(&mut self) -> crate::frontend::Interrupt {
+    async fn interrupted(&mut self) -> crate::tools::Interrupt {
         unreachable!("no tool runs")
     }
 }
@@ -70,7 +70,7 @@ impl Frontend for RecordingFrontend {
         self.grants.push(gate.grant);
         self.decision.clone()
     }
-    async fn interrupted(&mut self) -> crate::frontend::Interrupt {
+    async fn interrupted(&mut self) -> crate::tools::Interrupt {
         unreachable!("no tool runs")
     }
 }

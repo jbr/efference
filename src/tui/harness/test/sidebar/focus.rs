@@ -10,7 +10,7 @@ use super::*;
 use crate::config::CommandStance;
 use crate::log::ConfigChange;
 use crate::policy::ReviewLevel;
-use crate::process_monitor::ProcessState;
+use crate::protocol::state::ProcessState;
 use crate::protocol::state::{PendingProposal, RoleView};
 use crate::tui::harness::process;
 use crate::tui::{SidebarCmd, SidebarRow};

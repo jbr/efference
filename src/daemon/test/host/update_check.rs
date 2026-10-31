@@ -2,7 +2,7 @@
 //! reaches every hosted session as the `newer_version` topic, and nothing else does.
 
 use super::*;
-use crate::daemon::frames::Topic;
+use crate::protocol::state::Topic;
 use crate::update_check::Release;
 use crate::update_check::fixtures::{NEWER, NEWER_SIG, check};
 

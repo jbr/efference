@@ -2,7 +2,7 @@ use serde_json::json;
 
 use crate::api::UpstreamFailure;
 use crate::log::Timestamp;
-use crate::process_monitor::ProcessState;
+use crate::protocol::state::ProcessState;
 use crate::protocol::state::{LoopPhase, PaceView, SessionIdentity, UsageView};
 use crate::tui::harness::{Screenplay, gate, process, session_identity};
 use crate::tui::state::{Exit, IDLE_STATUS};

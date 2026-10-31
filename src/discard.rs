@@ -1,22 +1,12 @@
 //! Sessions that never had a turn are removed, not kept (docs/resumption.md).
 //!
-//! A log is *empty* when it holds no `User` and no `Assistant` entry: the preamble,
-//! telemetry, the notifications an idle triage touched, and `Archived` are all
-//! activity of the harness, so a session with only those has lost nothing the
+//! A session whose log is *empty* ([`crate::log::is_empty`]) has lost nothing the
 //! operator wrote or the agent did. Archiving a hosted session
 //! ([`crate::daemon::Host::end`]) removes one; a host start removes none, so an
 //! empty log a crashed host left is reopened as interrupted and discarded when it
 //! is archived.
 
-use crate::log::{LogEntry, Payload};
 use std::path::Path;
-
-/// Whether `entries` hold no operator turn and no agent turn.
-pub fn is_empty(entries: &[LogEntry]) -> bool {
-    !entries
-        .iter()
-        .any(|entry| matches!(entry.payload, Payload::User(_) | Payload::Assistant { .. }))
-}
 
 /// Remove a session's directory and release its id.
 ///

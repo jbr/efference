@@ -1,6 +1,6 @@
-use crate::inference::InferenceConfig;
 use crate::secrets::testing::ScriptStore;
 use crate::secrets::{SecretError, Secrets};
+use crate::user_config::InferenceConfig;
 
 /// With a `[secrets]` table the store is its commands, and nothing else is chosen;
 /// with none it is the platform's.

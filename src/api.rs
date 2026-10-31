@@ -633,7 +633,7 @@ mod thinking;
 mod truncation;
 
 pub use auth_value::{AuthValue, Reload, Reloaded, Reread, sync_reload};
-pub use client::{Client, DEFAULT_STREAM_CEILING, KeepaliveError, SentRequest};
+pub use client::{Client, KeepaliveError, SentRequest};
 pub use completions::{
     encode_completions, render_completions_request_pretty, translate_completions,
 };
@@ -644,6 +644,7 @@ pub use diagnostics::{
     drain_upstream_attempts, push_upstream_attempt, turn_routing_state, upstream_attempt_queue,
     upstream_failure_state, upstream_retry_state,
 };
+pub(crate) use diagnostics::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry};
 pub(crate) use endpoint::codex_cached_credentials;
 pub use endpoint::{Endpoint, ProbeResponse, sticky_session_id};
 pub use failure::{FailureClass, OpenError, error_class, error_status, is_request_rejection};
@@ -659,7 +660,7 @@ pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,
     render_responses_request_pretty,
 };
-pub use request_options::{OutputCapField, RequestOptions};
+pub use request_options::RequestOptions;
 pub use reservation::{
     OutputCapRejection, Reservation, ReservationState, UNKNOWN_OUTPUT_CAP, is_window_overflow,
     output_cap_rejection, reservation_state,

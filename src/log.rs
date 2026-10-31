@@ -426,6 +426,16 @@ pub fn latest_title(entries: &[LogEntry]) -> Option<&str> {
     })
 }
 
+/// Whether `entries` hold no operator turn and no agent turn: no `User` and no `Assistant`
+/// entry. The preamble, telemetry, the notifications an idle triage touched, and
+/// `Archived` are all activity of the harness, so a log with only those records nothing
+/// the operator wrote or the agent did (docs/resumption.md).
+pub fn is_empty(entries: &[LogEntry]) -> bool {
+    !entries
+        .iter()
+        .any(|entry| matches!(entry.payload, Payload::User(_) | Payload::Assistant { .. }))
+}
+
 /// A content block authored by the model or user. `Thinking` / `RedactedThinking`
 /// carry the extended-thinking payload (docs/transport.md): `signature` is the
 /// opaque per-block token the API mints and requires echoed **verbatim** on replay

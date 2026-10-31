@@ -313,7 +313,7 @@ impl ProcessGroup {
 
     fn kill(&mut self) {
         if let Some(pgid) = self.pgid.take() {
-            crate::bash::kill_group(pgid);
+            crate::spawn::kill_group(pgid);
         }
     }
 }

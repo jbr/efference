@@ -52,18 +52,6 @@ const RETRY_MAX_ATTEMPTS: u32 = 4;
 /// surfaces as the failed attempt, for the loop's schedule to absorb.
 const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
 
-/// How long one SSE response may stay open before the read loop stops waiting on
-/// it (docs/transport.md). The retry policy above bounds *failures*; this bounds
-/// *success taking forever* — a stream that neither finalizes nor dies has no
-/// other bound, and blocks its turn with nothing on `GET /state` to read.
-///
-/// One hour — roughly ten times the widest model call this repo's own corpus has
-/// recorded, and set that far out deliberately: a ceiling that fires on a merely
-/// *slow* stream discards real work, where one that fires late only delays the
-/// diagnosis of a hang. Operators whose workload says otherwise set
-/// `[transport] stream-ceiling` (`config::TransportLimits`).
-pub const DEFAULT_STREAM_CEILING: Duration = Duration::from_secs(3600);
-
 /// The non-2xx statuses the transport retries on its own, before the agent loop
 /// sees a failure (docs/transport.md): the rate-limit and server-side family.
 const RETRY_STATUSES: [Status; 5] = [
@@ -289,7 +277,7 @@ impl Client {
             max_tokens: MAX_TOKENS,
             context_length: None,
             reservation: reservation_state(),
-            stream_ceiling: DEFAULT_STREAM_CEILING,
+            stream_ceiling: crate::config::DEFAULT_STREAM_CEILING,
             abort: None,
             interrupt_latch: None,
             effort: None,

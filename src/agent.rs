@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::api::{Client, Error, RetrySurface, Streamed, ToolChoice, UpstreamRetry};
+use crate::api::{Client, Error, RetrySurface, Streamed, ToolChoice};
 use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
@@ -50,61 +50,6 @@ const MAX_TOOL_RESULT_BYTES: usize = 256 * 1024;
 
 /// Coalesce a burst of near-simultaneous events into one idle triage (docs/process-monitor.md).
 const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
-
-/// Attempts per model call when the upstream fails transiently — a stream that
-/// dies before finalizing, or a request that could not open one
-/// (docs/transport.md): each failed attempt is appended record-only (it projects
-/// to nothing, so the replay re-sends byte-identical messages over the still-warm
-/// prefix), then the request goes again after a [`stream_abort_backoff`] pause.
-/// Triage reaches for the same constant and the same schedule
-/// (`triage/request.rs`): one stated policy, whichever surface the failure lands on.
-///
-/// Sized to **wait the failure out**. An upstream failure is usually an ephemeral
-/// condition, and the alternative on exhaustion — a stall the operator has to
-/// continue — is not clearly better than waiting another few minutes, and is
-/// strictly worse when nobody is at the keyboard to read it: exhaustion is
-/// legible to a supervising client through the `stall` topic, but the continue
-/// still has to come from somewhere (docs/transport.md). Sized against an endpoint whose p99
-/// latency sits near the client's timeout, where abort streaks run several deep rather
-/// than recovering on the first retry. Twelve attempts on the capped schedule spends
-/// about three and a half minutes before giving up.
-pub(crate) const STREAM_ABORT_ATTEMPTS: u32 = 12;
-
-/// The pause before the next attempt after `aborted` of them have died, or
-/// `None` when the budget is spent. Doubling from one second, **capped** — the
-/// cap is what lets the attempt count grow without the wait becoming a hang:
-/// uncapped doubling over twelve attempts would sleep for over an hour, with a
-/// single pause longer than the whole schedule is now.
-pub(crate) fn stream_abort_backoff(aborted: u32) -> Option<std::time::Duration> {
-    const CAP: u64 = 30;
-    (aborted < STREAM_ABORT_ATTEMPTS)
-        .then(|| std::time::Duration::from_secs((1u64 << (aborted - 1).min(20)).min(CAP)))
-}
-
-/// The retry-in-flight state one aborted attempt publishes (docs/transport.md).
-///
-/// Both retry loops build their value here, so `turn` and `triage` differ only in
-/// the surface they name — the attempt count, the budget, and the lead line stay
-/// the one policy. `next_attempt_at` is absolute, so nothing has to re-emit a
-/// countdown; the client subtracts.
-pub(crate) fn stream_abort_retry(
-    surface: RetrySurface,
-    attempt: u32,
-    budget: u32,
-    pause: std::time::Duration,
-    why: &str,
-) -> UpstreamRetry {
-    UpstreamRetry {
-        surface,
-        attempt,
-        budget,
-        next_attempt_at: crate::log::Timestamp::now()
-            .0
-            .saturating_add(pause.as_millis() as u64),
-        message: format!("attempt {attempt} of {budget} failed upstream, retrying"),
-        detail: why.to_string(),
-    }
-}
 
 /// The stalled-trajectory state one give-up publishes (docs/transport.md).
 ///

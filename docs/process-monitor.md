@@ -97,7 +97,7 @@ ordinal, which costs nothing, while an under-match would collide.
 
 Every spawn is placed in a fresh process group (`process_group(0)` — the child pid
 equals its pgid). On teardown the daemon calls `killpg` with that pgid, taking down
-the command and any grandchildren it spawned. The `kill_group` helper in `bash.rs`
+the command and any grandchildren it spawned. The `kill_group` helper in `spawn.rs`
 is shared between the foreground abort path and the process monitor's kill/teardown path.
 The process monitor registry exposes `running_pgids()` — the set of all still-running
 pgids — for the teardown sweep.
@@ -217,7 +217,7 @@ true`), but the operator can also move a **running foreground** command into the
 process monitor mid-flight, instead of the only mid-run lever being kill.
 
 The interrupt that races a running tool carries an **intent**
-(`frontend::Interrupt`): `Kill` — `POST /loop/interrupt`, `killpg` the group —
+(`tools::Interrupt`): `Kill` — `POST /loop/interrupt`, `killpg` the group —
 or `Detach` — `PATCH /processes/:id {background: true}`, addressed at the
 foreground entry the spawn already registered (the client resolves the id from
 the listing; the blind verb-route this replaced could not say *what* to
@@ -524,7 +524,7 @@ its output, so the text the agent reads drops them. The capture keeps the bytes 
 the routes that serve it to clients (`GET /processes/:id/output`, the `process_output`
 deltas) return them unchanged; the clients clean them for display themselves.
 
-Every text the agent reads is made by `process_monitor::strip_formatting`, a pure
+Every text the agent reads is made by `terminal_text::strip_formatting`, a pure
 `&str -> String`: a synchronous `bash` result (the `RawResult` that is logged and that
 triage reads), the `read_process` body, the tail in the ambient triage and in a pin,
 the exit notification's final output, and the line a watch hit quotes. Watch patterns

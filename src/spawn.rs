@@ -12,6 +12,9 @@
 //! Holding a lock across `spawn()` keeps pipe creation and process start of one
 //! spawn from interleaving with another's. The critical section is a few system
 //! calls; nothing awaits inside it.
+//!
+//! [`kill_group`] is the other end of a child spawned as the leader of its own
+//! process group.
 
 use std::io;
 use std::sync::Mutex;
@@ -47,4 +50,30 @@ pub fn tokio(cmd: &mut tokio::process::Command) -> io::Result<tokio::process::Ch
     // The one sanctioned spawn: the lock above is held (clippy.toml).
     #[allow(clippy::disallowed_methods)]
     cmd.spawn()
+}
+
+/// `SIGKILL` the whole process group led by `pgid`. The child was spawned with
+/// `process_group(0)`, so its pid *is* its pgid; killing the group takes down
+/// any grandchildren too. Best-effort — a racing exit may already have reaped
+/// it, in which case `killpg` just returns `ESRCH`. Used by the foreground abort
+/// path and by the process monitor's kill / teardown (docs/process-monitor.md).
+pub(crate) fn kill_group(pgid: u32) {
+    // SAFETY: an FFI call with no memory effects; a stale/invalid pgid is a
+    // benign `ESRCH`, which we intentionally ignore (best-effort teardown).
+    #[allow(unsafe_code)]
+    unsafe {
+        libc::killpg(pgid as libc::pid_t, libc::SIGKILL);
+    }
+}
+
+/// Test probe: whether group `pgid` still has a member. `killpg` with signal 0 checks
+/// existence and permission only, so a killed process still answers until its parent
+/// waits it (docs/process-monitor.md).
+#[cfg(test)]
+pub(crate) fn group_alive(pgid: u32) -> bool {
+    // SAFETY: signal 0 checks existence and permission only; no memory effects.
+    #[allow(unsafe_code)]
+    unsafe {
+        libc::killpg(pgid as libc::pid_t, 0) == 0
+    }
 }

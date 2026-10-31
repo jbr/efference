@@ -286,7 +286,7 @@ fn a_coverage_rejection_reports_what_was_answered() {
 /// to wait a flaky provider out without the tail of the schedule becoming a hang.
 #[test]
 fn an_aborted_triage_stream_backs_off_on_the_main_loops_budget() {
-    use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff};
+    use crate::api::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff};
     use std::time::Duration;
     assert_eq!(stream_abort_backoff(1), Some(Duration::from_secs(1)));
     assert_eq!(stream_abort_backoff(2), Some(Duration::from_secs(2)));

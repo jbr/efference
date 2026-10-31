@@ -69,7 +69,7 @@ async fn a_state_ping_wakes_the_wait() {
 async fn a_retry_change_wakes_the_wait() {
     woken_by(
         |session| {
-            session.upstream_retry.set(agent::stream_abort_retry(
+            session.upstream_retry.set(crate::api::stream_abort_retry(
                 RetrySurface::Turn,
                 1,
                 3,

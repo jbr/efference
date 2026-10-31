@@ -14,7 +14,7 @@
 //! ticking values, and deriving them here keeps rendering a pure function of state.
 
 use super::*;
-use crate::process_monitor::ProcessState;
+use crate::protocol::state::ProcessState;
 use crate::protocol::state::{Gate, LoopPhase, SessionIdentity};
 use crate::tui::process_panel;
 use crate::tui::topics::TopicUpdate;

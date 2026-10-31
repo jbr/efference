@@ -3,7 +3,7 @@
 //!
 //! The host builds every topic from its own state (`daemon/views.rs`) and publishes each
 //! one that moved (`daemon/topics.rs`); `GET /state` is [`StateTopics`], and a client
-//! that folds the frames holds the same values.
+//! that folds the frames holds the same values. [`Topic`] names them.
 //!
 //! The channel carries every topic through `serde_json::Value`, which this crate builds
 //! without `preserve_order`, so the keys of each object come out sorted, at every depth,
@@ -16,7 +16,6 @@ use crate::api::{UpstreamFailure, UpstreamRetry};
 use crate::inference::InferenceIdentity;
 use crate::log::Seq;
 use crate::policy::ReviewLevel;
-use crate::process_monitor::ProcessState;
 use crate::protocol::status::StatusView;
 use crate::protocol::turns::{Landing, QueuedTurn};
 
@@ -26,6 +25,7 @@ mod phase;
 mod starting;
 #[cfg(test)]
 mod test;
+mod topic;
 mod usage;
 
 pub use operations::{
@@ -34,6 +34,7 @@ pub use operations::{
 pub use permissions::{Gate, PendingProposal, RoleView};
 pub use phase::{BlockedReason, ConfigRepair, LoopPhase, Stall, StallReason};
 pub use starting::{Stage, StartFailure, StartingView};
+pub(crate) use topic::Topic;
 pub use usage::{
     COLD_STREAK_WARN, Cold, ContextWindow, Cost, KeepaliveSkip, KeepaliveSkipReason, LastCacheMiss,
     UsageView,
@@ -134,6 +135,45 @@ pub struct AskView {
     /// The turns withdrawn from the queue when this ask started, in the shape a recall
     /// returns, for the submitting client to put back in its composer.
     pub recalled: Vec<QueuedTurn>,
+}
+
+/// One running process as `GET /processes` and the `processes` state topic carry it —
+/// one representation for both, so the level-triggered topic and the resource listing
+/// cannot drift (docs/control-api.md).
+///
+/// No `tail` and no last-chunk stamp: both change with every output chunk, and this
+/// topic is level-triggered, so carrying them would emit a whole-topic replacement per
+/// chunk. That content rides the ephemeral `output` class as `process_output` deltas
+/// instead (docs/process-monitor.md). What remains changes only on spawn, exit, mute, or the
+/// handoff flip.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct ProcessState {
+    /// The spawn-minted ordinal (rendered `p#<n>` in prose; bare here and in routes).
+    pub id: u64,
+    pub command: String,
+    /// The `tool_use` id of the transcript call this process came from — the
+    /// call↔process mapping (docs/process-monitor.md). A client holding a transcript
+    /// entry finds its process here (and its output at
+    /// `GET /processes/:id/output`); a client holding a process row finds the
+    /// entry to jump to. Stamped at the mint, so a call that was backgrounded
+    /// mid-run carries the same id it did in the foreground.
+    pub call_id: Option<String>,
+    /// The OS pid — an *attribute*, never the identifier (pids are recycled; the log
+    /// is durable, docs/process-monitor.md). Carried so a client or the
+    /// agent can interact with the process directly (signals, `lsof`) when the
+    /// process monitor doesn't model what it needs. `None` if the OS didn't report one.
+    pub pid: Option<u32>,
+    /// Absolute Unix millis. The client subtracts from its own clock; the daemon never
+    /// re-emits merely because time passed.
+    pub spawned_at: crate::log::Timestamp,
+    /// `false` while the process is the loop's in-flight foreground tool; flipped in
+    /// place by the handoff (docs/process-monitor.md).
+    pub background: bool,
+    /// Dismissed-from-view (still running, still notifies on exit). Carried rather
+    /// than filtered so the listing is the whole truth; clients that hide muted rows
+    /// do so themselves.
+    pub muted: bool,
 }
 
 /// The `pace` topic: the operator's between-turns dial (docs/control-channel.md) — loud to

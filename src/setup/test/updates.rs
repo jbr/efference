@@ -40,7 +40,7 @@ async fn a_first_run_asks_and_writes_the_answer() {
             text.ends_with(&format!("\n[updates]\ncheck = {written}\n")),
             "{text}"
         );
-        let parsed = crate::inference::InferenceConfig::from_toml(&text);
+        let parsed = crate::user_config::InferenceConfig::from_toml(&text);
         assert!(parsed.is_ok());
     }
 }

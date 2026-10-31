@@ -2,6 +2,7 @@
 //! (docs/transport.md).
 
 use super::*;
+use crate::user_config::{AuthConfig, CONFIG_RELATIVE_PATH, InferenceConfig};
 
 impl InferenceRegistry {
     /// Load the host's user configuration and credentials from the environment

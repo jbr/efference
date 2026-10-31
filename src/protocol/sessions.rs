@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::inference::{ResumeSwitch, SessionOptions};
-use crate::inventory::InventoryRow;
+use crate::protocol::inventory::InventoryRow;
 
 /// Body of `POST /sessions` (docs/control-api.md): a `SessionRequest` as a
 /// client spells it. One type on both ends — the control client serializes it,

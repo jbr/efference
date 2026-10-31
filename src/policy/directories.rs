@@ -10,9 +10,9 @@ use super::paths::{absolutize, lexical_normalize};
 /// the same directory unless the session works in a git worktree (`crate::worktree`).
 ///
 /// A target inside any worktree is judged as its project counterpart
-/// ([`crate::worktree::counterpart`]), for every session: each worktree carries exactly
-/// the project's grants. Only classification sees the counterpart; the tool still
-/// touches the path the model named.
+/// ([`crate::session_dir::worktree::counterpart`]), for every session: each worktree
+/// carries exactly the project's grants. Only classification sees the counterpart; the
+/// tool still touches the path the model named.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Directories {
     project: PathBuf,
@@ -48,7 +48,8 @@ impl Directories {
     /// [`Self::target`] for a path already absolute and normalized: a bash redirection
     /// resolved against a `cd`'s directory rather than the working directory.
     pub fn judged(&self, path: &Path) -> PathBuf {
-        crate::worktree::counterpart(&self.project, path).unwrap_or_else(|| path.to_path_buf())
+        crate::session_dir::worktree::counterpart(&self.project, path)
+            .unwrap_or_else(|| path.to_path_buf())
     }
 
     /// The working directory as classification judges it: the project, for a session

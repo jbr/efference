@@ -35,8 +35,8 @@ use crate::log::{
     Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, Timestamp, ToolCall,
     WireState,
 };
-use crate::process_monitor::ProcessState;
 use crate::protocol::agents::BoundAction;
+use crate::protocol::state::ProcessState;
 use crate::protocol::state::{AskView, Cold, Gate, LoopPhase, SessionIdentity};
 use serde_json::{Value, json};
 
@@ -204,7 +204,7 @@ impl Screenplay<'_> {
     pub(crate) fn took_interrupt(&mut self) -> bool {
         matches!(
             self.receivers.interrupt.try_recv(),
-            Ok(crate::frontend::Interrupt::Kill)
+            Ok(crate::tools::Interrupt::Kill)
         )
     }
 
@@ -213,7 +213,7 @@ impl Screenplay<'_> {
     pub(crate) fn took_background(&mut self) -> bool {
         matches!(
             self.receivers.interrupt.try_recv(),
-            Ok(crate::frontend::Interrupt::Detach)
+            Ok(crate::tools::Interrupt::Detach)
         )
     }
 

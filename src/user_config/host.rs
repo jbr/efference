@@ -11,8 +11,6 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::api::Error;
-
 /// `[host]`: where a host started with `efference --host` serves the web interface.
 /// With no `bind` it serves only its Unix socket. A flag beside `efference --host`
 /// overrides each key for that launch.
@@ -42,7 +40,7 @@ impl HostConfig {
     /// empty table — the host's own launch reports the missing file — and a
     /// leading `~/` in a path is expanded against `home`, since these are
     /// written by hand.
-    pub fn load(home: &Path) -> Result<Self, Error> {
+    pub fn load(home: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let config = super::InferenceConfig::read_user(home)?.unwrap_or_default();
         Ok(config.host.expand_home(home))
     }

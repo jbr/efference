@@ -17,15 +17,12 @@
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-
 use crate::log::ASK;
+use crate::protocol::state::ProcessState;
+use crate::terminal_text::strip_formatting;
 
 mod record;
 pub use record::{ProcessRecord, from_log};
-
-mod terminal;
-pub use terminal::strip_formatting;
 
 mod tools;
 pub use tools::{brief, tool_definitions};
@@ -180,45 +177,6 @@ pub struct BgView {
     pub tail: String,
     pub running_secs: u64,
     pub idle_secs: u64,
-}
-
-/// One running process as `GET /processes` and the `processes` state topic carry it —
-/// one representation for both, so the level-triggered topic and the resource listing
-/// cannot drift (docs/control-api.md).
-///
-/// No `tail` and no last-chunk stamp: both change with every output chunk, and this
-/// topic is level-triggered, so carrying them would emit a whole-topic replacement per
-/// chunk. That content rides the ephemeral `output` class as `process_output` deltas
-/// instead (docs/process-monitor.md). What remains changes only on spawn, exit, mute, or the
-/// handoff flip.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct ProcessState {
-    /// The spawn-minted ordinal (rendered `p#<n>` in prose; bare here and in routes).
-    pub id: u64,
-    pub command: String,
-    /// The `tool_use` id of the transcript call this process came from — the
-    /// call↔process mapping (docs/process-monitor.md). A client holding a transcript
-    /// entry finds its process here (and its output at
-    /// `GET /processes/:id/output`); a client holding a process row finds the
-    /// entry to jump to. Stamped at the mint, so a call that was backgrounded
-    /// mid-run carries the same id it did in the foreground.
-    pub call_id: Option<String>,
-    /// The OS pid — an *attribute*, never the identifier (pids are recycled; the log
-    /// is durable, docs/process-monitor.md). Carried so a client or the
-    /// agent can interact with the process directly (signals, `lsof`) when the
-    /// process monitor doesn't model what it needs. `None` if the OS didn't report one.
-    pub pid: Option<u32>,
-    /// Absolute Unix millis. The client subtracts from its own clock; the daemon never
-    /// re-emits merely because time passed.
-    pub spawned_at: crate::log::Timestamp,
-    /// `false` while the process is the loop's in-flight foreground tool; flipped in
-    /// place by the handoff (docs/process-monitor.md).
-    pub background: bool,
-    /// Dismissed-from-view (still running, still notifies on exit). Carried rather
-    /// than filtered so the listing is the whole truth; clients that hide muted rows
-    /// do so themselves.
-    pub muted: bool,
 }
 
 /// What one process's exit produced (docs/process-monitor.md): the durable record for

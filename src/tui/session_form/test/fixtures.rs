@@ -3,10 +3,9 @@
 use super::*;
 use crate::api::{ListedModel, Price};
 use crate::client::{CatalogModel, CatalogStatus, ConnectionCatalog};
-use crate::inference::{
-    ConnectionInventory, InferenceConfig, InferenceRegistry, ResolvedOptions, SessionOptions,
-};
+use crate::inference::{ConnectionInventory, InferenceRegistry, ResolvedOptions, SessionOptions};
 use crate::log::Provider;
+use crate::user_config::InferenceConfig;
 use ratatui::{buffer::Buffer, layout::Rect};
 
 /// The host's configuration behind both the inventory and the preview resolver.

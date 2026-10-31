@@ -384,7 +384,7 @@ const EXEC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 ///
 /// The child leads its own process group and is reaped on a thread (`wait_with_output` drains the
 /// pipes, so a chatty command can't deadlock on a full pipe buffer); on timeout the whole group is
-/// killed ([`crate::bash::kill_group`]), so a hung command's children die with it.
+/// killed ([`crate::spawn::kill_group`]), so a hung command's children die with it.
 fn run_exec(
     command: &str,
     base: &Path,
@@ -417,7 +417,7 @@ fn run_exec(
     let output = match rx.recv_timeout(timeout) {
         Ok(result) => result.map_err(|e| err(format!("waiting on the command: {e}")))?,
         Err(_) => {
-            crate::bash::kill_group(pgid);
+            crate::spawn::kill_group(pgid);
             return Err(err(format!("timed out after {}s", timeout.as_secs_f32())));
         }
     };

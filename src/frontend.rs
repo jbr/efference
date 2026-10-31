@@ -21,6 +21,7 @@
 use crate::log::{Approval, ContentBlock, ToolCall};
 use crate::protocol::agents::BoundAction;
 use crate::protocol::turns::QueuedTurn;
+use crate::tools::Interrupt;
 
 /// The `source` of the kickoff turn a `first-turn` config submits (docs/context.md).
 /// Reserved: the clients read it to leave the turn out of the transcript, since it
@@ -201,19 +202,6 @@ impl From<&SubmittedTurn> for QueuedTurn {
             attachments: turn.attachments.clone(),
         }
     }
-}
-
-/// The operator's intent when interrupting a *running* tool (docs/process-monitor.md).
-/// Both reach the one intervention point pace can't — mid-tool — but differ in
-/// what happens to the child.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Interrupt {
-    /// Kill the process group now (`POST /loop/interrupt`, the Ctrl-C guardrail).
-    Kill,
-    /// Keep the child running but stop blocking on it: hand it to the background
-    /// process monitor as a `p#<n>` process (`PATCH /processes/:id {background: true}`, the
-    /// foreground→background handoff, docs/process-monitor.md).
-    Detach,
 }
 
 /// What a gate carries beyond the held call (docs/permissions.md): the optional inputs of

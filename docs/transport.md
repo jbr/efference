@@ -1352,7 +1352,7 @@ listed by name), so a misspelled decision-model id fails session creation naming
 ids that exist, rather than booting clean and failing every gate closed. The listing
 GET is authenticated, so it is the credential check too.
 
-**Host-owned connections (`src/inference.rs`).** A host names its connections in
+**Host-owned connections (`src/user_config.rs`, `src/inference.rs`).** A host names its connections in
 `~/.efference/config.toml`, read from the host's startup `HOME` — a secret-free
 file `efference setup` writes interactively ([operating.md](operating.md)): each `[connections.<name>]` declares a `provider` and where its credential
 comes from (`auth = { kind = "env", key = "VAR" }` reads the named variable from

@@ -14,20 +14,13 @@ use super::transcript::{Grain, Reading};
 use super::*;
 use crate::api::UpstreamFailure;
 use crate::protocol::answers::LocatedToolCall;
+use crate::protocol::channel_value;
 use crate::protocol::state::{
     ContextWindow, Cost, Gate, LoopResource, PaceView, RoleView, StateTopics, UsageView,
 };
 use crate::protocol::status::StatusView;
 use crate::protocol::transcript::Handle;
 use crate::protocol::turns::QueuedTurn;
-
-/// A value as the control channel carries it: a [`Value`], whose objects sort their keys
-/// (serde_json without `preserve_order`), so a type's field order never reaches the
-/// bytes. Every topic, the composite snapshot, and the loop resource go through here; a
-/// value that cannot be serialized is `null`.
-pub(super) fn channel_value(value: impl Serialize) -> Value {
-    serde_json::to_value(value).unwrap_or(Value::Null)
-}
 
 /// Answer `conn` with `body` as the channel carries it ([`channel_value`]): the status,
 /// the body's JSON with its keys sorted, and the conn halted so a handler mounted later

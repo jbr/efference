@@ -7,10 +7,11 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::MAX_TOKENS;
-use super::request_options::{OutputCapField, RequestOptions};
+use super::request_options::RequestOptions;
 use super::thinking::ToolChoice;
 use crate::log::{AssistantOutput, CompletionsMessage, MessagesOutputBlock, ResultImage};
 use crate::project::{UserPart, WireTurn};
+use crate::user_config::OutputCapField;
 
 pub(crate) mod assembler;
 #[cfg(test)]

@@ -122,7 +122,8 @@ async fn resume_minting(
     // child environment exists; any other missing directory refuses here. A working
     // directory inside another session's worktree is not this session's to re-create.
     let restores_worktree = !directories.working().is_dir()
-        && directories.working() == crate::worktree::path(directories.project(), &session_id);
+        && directories.working()
+            == crate::session_dir::worktree::path(directories.project(), &session_id);
     for (what, dir) in [
         ("project directory", directories.project()),
         ("working directory", directories.working()),
@@ -410,7 +411,7 @@ fn frozen_preamble(entries: &[LogEntry]) -> Option<(String, String, Option<Strin
 fn check_main_switch(
     entries: &[LogEntry],
     recorded_identity: &str,
-    target: &crate::inference::ModelSelection,
+    target: &crate::user_config::ModelSelection,
 ) -> Result<(), String> {
     if recorded_identity.is_empty() {
         return Err(

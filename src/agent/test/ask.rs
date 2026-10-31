@@ -199,7 +199,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
         async fn approve(&mut self, call: &ToolCall, _: GateOptions<'_>) -> Approval {
             panic!("an ask reached the human gate: {}", call.name)
         }
-        async fn interrupted(&mut self) -> crate::frontend::Interrupt {
+        async fn interrupted(&mut self) -> crate::tools::Interrupt {
             unreachable!()
         }
     }

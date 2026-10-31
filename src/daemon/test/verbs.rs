@@ -77,7 +77,7 @@ fn held_triage(shared: Arc<Session>) -> Arc<Session> {
 
 fn retrying(shared: Arc<Session>) -> Arc<Session> {
     shared.set_phase(LoopPhase::Requesting);
-    shared.upstream_retry.set(agent::stream_abort_retry(
+    shared.upstream_retry.set(crate::api::stream_abort_retry(
         crate::api::RetrySurface::Turn,
         1,
         12,

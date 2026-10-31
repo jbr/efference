@@ -140,7 +140,7 @@ fn parses_the_transport_stream_ceiling() {
     assert_eq!(role.transport.stream_ceiling, Duration::from_secs(900));
     assert_eq!(
         parse_str("").transport.stream_ceiling,
-        crate::api::DEFAULT_STREAM_CEILING
+        DEFAULT_STREAM_CEILING
     );
 }
 

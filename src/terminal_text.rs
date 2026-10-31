@@ -1,10 +1,12 @@
-//! Terminal formatting removal for agent-facing process output (docs/process-monitor.md).
+//! Terminal formatting removal (docs/process-monitor.md).
 //!
 //! A process that believes it writes to a terminal colours its output, rewrites
 //! lines with carriage returns, and wraps text in hyperlinks. The capture keeps
 //! those bytes; the text the agent reads, and the triage that reads it, goes
-//! through [`strip_formatting`] first. The aim is readable text, not an emulated
-//! screen: nothing is positioned, and an overwritten line keeps only its last state.
+//! through [`strip_formatting`] first. So does text someone else supplied that reaches
+//! the operator's terminal, such as a device's label. The aim is readable text, not an
+//! emulated screen: nothing is positioned, and an overwritten line keeps only its
+//! last state.
 
 /// `s` without terminal formatting.
 ///

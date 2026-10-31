@@ -8,7 +8,7 @@
 //! a topic replacement must not wipe it: [`panel`] carries each tail across by process id.
 
 use super::secs_since;
-use crate::process_monitor::ProcessState;
+use crate::protocol::state::ProcessState;
 
 /// Cap on a row's tail. The panel shows the last line only, and the next topic
 /// replacement is the authoritative list of rows, so this bounds the gap-filling append.

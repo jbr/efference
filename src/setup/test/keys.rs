@@ -55,7 +55,7 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
 check = true
 "#
     );
-    let parsed = crate::inference::InferenceConfig::from_toml(&render("", &draft).unwrap());
+    let parsed = crate::user_config::InferenceConfig::from_toml(&render("", &draft).unwrap());
     assert!(parsed.is_ok());
 }
 
@@ -358,7 +358,7 @@ async fn a_typesafe_only_config_asks_for_a_provider_for_the_agent() {
     assert!(text.contains("[connections.typesafe]"), "{text}");
     assert!(!text.contains("\n[defaults]"), "{text}");
     assert!(
-        crate::inference::InferenceConfig::from_toml(&text).is_ok(),
+        crate::user_config::InferenceConfig::from_toml(&text).is_ok(),
         "{text}"
     );
 }

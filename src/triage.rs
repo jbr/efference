@@ -36,10 +36,9 @@ use crate::log::RequestOrigin;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry};
 use crate::api::{
-    Client, Completion, PlanState, RequestUsage, RetrySurface, Streamed, ToolChoice,
-    UpstreamFailureState, UpstreamRetryCell,
+    Client, Completion, PlanState, RequestUsage, RetrySurface, STREAM_ABORT_ATTEMPTS, Streamed,
+    ToolChoice, UpstreamFailureState, UpstreamRetryCell, stream_abort_backoff, stream_abort_retry,
 };
 use crate::inbox::ShownNotification;
 use crate::log::context::Item;
@@ -658,7 +657,6 @@ use validate::*;
 
 pub use digest_view::TriageView;
 pub use handles::{reply_only_triage, shows_rider};
-pub use own::TriageModel;
 pub use primer::{TriagePrimerInput, TriagePrimerOutcome};
 pub use replay::{ReplayVerdict, TriageAttempt, triage_request};
 pub use request::{TRIAGE_RESTARTS, TriageFailure};

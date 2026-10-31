@@ -9,7 +9,7 @@ use efference::setup::{Existing, LiveProbe, Prompter as _, Tone, terminal::Termi
 /// The user configuration path under this process's `HOME`.
 fn default_config_path() -> Result<PathBuf, CliError> {
     let home = std::env::var_os("HOME").ok_or("HOME is not set; pass --config <path>")?;
-    Ok(PathBuf::from(home).join(efference::inference::CONFIG_RELATIVE_PATH))
+    Ok(PathBuf::from(home).join(efference::user_config::CONFIG_RELATIVE_PATH))
 }
 
 /// Bare `efference`: setup on a machine with no configuration. Configured, a
@@ -49,7 +49,7 @@ async fn offer_here(
     terminal: &mut Terminal,
     kept: Option<String>,
     bind: Option<&str>,
-    display: efference::inference::TuiConfig,
+    display: efference::user_config::TuiConfig,
 ) -> CliResult {
     let here = std::env::current_dir()?;
     // The history default is named in the question because it is what the

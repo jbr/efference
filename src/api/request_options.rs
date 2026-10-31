@@ -5,6 +5,8 @@
 
 use serde_json::{Map, Value};
 
+use crate::user_config::OutputCapField;
+
 #[cfg(test)]
 mod test;
 
@@ -18,29 +20,6 @@ pub struct RequestOptions {
     pub body: Map<String, Value>,
     /// The key the output cap travels under.
     pub output_cap_field: OutputCapField,
-}
-
-/// The output cap's spelling: `max_tokens` on most servers, `max_completion_tokens`
-/// on OpenAI's own Chat Completions endpoint.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum OutputCapField {
-    #[default]
-    MaxTokens,
-    MaxCompletionTokens,
-}
-
-impl OutputCapField {
-    /// The published user schema for a connection's `output-cap-field`: the spellings
-    /// [`RequestOptions::new`] accepts (docs/config-schemas.md).
-    pub fn name_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        crate::config_schemas::documented_enum([
-            ("max_tokens", "The default, which most servers read."),
-            (
-                "max_completion_tokens",
-                "OpenAI's own Chat Completions endpoint.",
-            ),
-        ])
-    }
 }
 
 /// Keys the Completions encoder writes, which a `body` table may not replace. The

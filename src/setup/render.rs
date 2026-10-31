@@ -1,4 +1,4 @@
-//! A [`Draft`] as the TOML `src/inference.rs` reads (docs/operating.md).
+//! A [`Draft`] as the TOML `src/user_config.rs` reads (docs/operating.md).
 //!
 //! Rendering goes through a format-preserving document so an existing file keeps
 //! its comments and order: new `[connections.<name>]` tables are appended, and
@@ -83,7 +83,7 @@ pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
     })
 }
 
-/// `auth = { kind = "…" }` as `src/inference.rs` reads it.
+/// `auth = { kind = "…" }` as `src/user_config.rs` reads it.
 fn auth_inline_table(auth: &AuthSource) -> InlineTable {
     let mut table = InlineTable::new();
     match auth {

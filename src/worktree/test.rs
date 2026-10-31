@@ -1,61 +1,6 @@
 use super::testing::{commit, git, repository};
 use super::*;
 
-#[test]
-fn a_worktree_lives_under_the_session_base() {
-    assert_eq!(
-        path(Path::new("/p"), "quiet-fox"),
-        PathBuf::from("/p/.efference/worktrees/quiet-fox")
-    );
-}
-
-#[test]
-fn a_path_in_a_worktree_stands_for_the_same_path_in_the_project() {
-    let project = Path::new("/p");
-    assert_eq!(
-        counterpart(
-            project,
-            Path::new("/p/.efference/worktrees/quiet-fox/src/lib.rs")
-        ),
-        Some(PathBuf::from("/p/src/lib.rs"))
-    );
-    assert_eq!(
-        counterpart(project, Path::new("/p/.efference/worktrees/quiet-fox")),
-        Some(PathBuf::from("/p"))
-    );
-    // Compared as text too: `PathBuf` equality ignores a trailing separator, which a
-    // reviewer shown the path does not.
-    let root = counterpart(project, Path::new("/p/.efference/worktrees/quiet-fox"));
-    assert_eq!(root.unwrap().to_str(), Some("/p"));
-}
-
-#[test]
-fn paths_outside_every_worktree_have_no_counterpart() {
-    let project = Path::new("/p");
-    for path in [
-        "/p/src/lib.rs",
-        "/p/.efference/quiet-fox/log.jsonl",
-        "/p/.efference/worktrees",
-        "/elsewhere/.efference/worktrees/quiet-fox/src",
-    ] {
-        assert_eq!(counterpart(project, Path::new(path)), None, "{path}");
-    }
-}
-
-#[test]
-fn a_directory_in_a_worktree_belongs_to_its_project() {
-    for dir in [
-        "/p/.efference/worktrees/quiet-fox",
-        "/p/.efference/worktrees/quiet-fox/src/bin",
-    ] {
-        assert_eq!(
-            project_of(Path::new(dir)),
-            Some(PathBuf::from("/p")),
-            "{dir}"
-        );
-    }
-}
-
 fn temp_dir(label: &str) -> PathBuf {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let n = RandomState::new().build_hasher().finish();
@@ -75,7 +20,10 @@ fn add_makes_a_worktree_on_a_new_branch_at_head_and_remove_undoes_it() {
     let env = crate::env_table::ChildEnv::default();
 
     let added = add(&project, "quiet-fox", &project, &env).unwrap();
-    assert_eq!(added.path, path(&project, "quiet-fox"));
+    assert_eq!(
+        added.path,
+        crate::session_dir::worktree::path(&project, "quiet-fox")
+    );
     assert!(added.path.join("f.txt").is_file());
     assert_eq!(added.branch, "efference/quiet-fox");
     assert_eq!(added.base, head);
@@ -244,20 +192,8 @@ fn add_outside_a_git_work_tree_is_refused() {
     let env = crate::env_table::ChildEnv::default();
     let error = add(&dir, "quiet-fox", &dir, &env).unwrap_err();
     assert!(error.contains("git work tree"), "{error}");
-    assert!(!path(&dir, "quiet-fox").exists());
+    assert!(!crate::session_dir::worktree::path(&dir, "quiet-fox").exists());
     std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[test]
-fn a_directory_in_no_worktree_belongs_to_none() {
-    for dir in [
-        "/p",
-        "/p/src",
-        "/p/.efference/worktrees",
-        "/p/.efference/quiet-fox",
-    ] {
-        assert_eq!(project_of(Path::new(dir)), None, "{dir}");
-    }
 }
 
 /// A progress meter's redraws keep only their last state, the line a terminal would

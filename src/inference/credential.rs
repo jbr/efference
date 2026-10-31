@@ -1,6 +1,7 @@
 //! Reading a connection's credential from its declared source (docs/transport.md).
 
 use super::*;
+use crate::user_config::AuthConfig;
 
 pub(super) fn load_credential(
     name: &str,

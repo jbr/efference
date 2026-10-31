@@ -119,13 +119,13 @@ impl Secrets {
     /// commands when it has the table, and otherwise the platform's store. An
     /// unreadable or unparsable configuration is an error naming its path; a
     /// missing one names no commands.
-    pub fn configured(home: &Path) -> Result<Self, crate::api::Error> {
-        let config = crate::inference::InferenceConfig::read_user(home)?;
+    pub fn configured(home: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let config = crate::user_config::InferenceConfig::read_user(home)?;
         Ok(Self::from_table(config.and_then(|config| config.secrets)))
     }
 
     /// [`configured`](Self::configured) under this process's home directory.
-    pub fn for_user() -> Result<Self, crate::api::Error> {
+    pub fn for_user() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let home = std::env::home_dir()
             .ok_or("no home directory to read ~/.efference/config.toml under")?;
         Self::configured(&home)

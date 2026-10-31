@@ -19,7 +19,7 @@ use super::*;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 
-use super::views::channel_value;
+use crate::protocol::channel_value;
 use crate::protocol::state::{Stage, StartFailure, StartingView, VerbAnswer, Verbs};
 use crate::protocol::status::{Condition, Footer, StatusView};
 use crate::protocol::turns::{Landing, QueuedTurn};

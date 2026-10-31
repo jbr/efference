@@ -2,9 +2,9 @@
 
 use super::*;
 use crate::api::ModelCapabilities;
-use crate::bash::group_alive;
 use crate::daemon::{SessionBoot, SessionRuntime};
 use crate::log::{Provider, Stance};
+use crate::spawn::group_alive;
 use crate::spotter::StaticSpotter;
 use crate::triage::Triager;
 use std::path::Path;

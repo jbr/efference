@@ -27,7 +27,7 @@ the gate's decision is the same shape on both.
 
 The bind is configured by the `[host]` table of the user configuration,
 `~/.efference/config.toml` (`bind`, `public-url`, `tls-cert`, `tls-key`;
-`src/inference/host.rs`), with a flag beside `efference --host` overriding each key alone —
+`src/user_config/host.rs`), with a flag beside `efference --host` overriding each key alone —
 `--bind ""` turns a configured bind off for one launch. The table describes the machine's
 host rather than a shell, which is what lets a host started by a service manager, with no
 interactive environment, carry the same bind. A leading `~/` in a certificate path

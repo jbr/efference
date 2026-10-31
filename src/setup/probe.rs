@@ -140,7 +140,7 @@ impl LiveProbe {
             // Opened here rather than by the first write, which is the
             // default (docs/secrets.md): setup offers to keep a value only
             // where keeping one can work, and says why not otherwise.
-            secrets: crate::inference::InferenceConfig::from_toml(config_text)
+            secrets: crate::user_config::InferenceConfig::from_toml(config_text)
                 .map_err(|error| error.to_string())
                 .map(|config| Secrets::from_table(config.secrets))
                 .and_then(|secrets| secrets.open().map(|()| secrets)),

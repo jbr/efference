@@ -9,7 +9,8 @@
 
 use super::*;
 use crate::dev::PrimerLadderArgs;
-use efference::triage::{Pending, TriageModel, TriageView, Triager};
+use efference::inference::TriageModel;
+use efference::triage::{Pending, TriageView, Triager};
 use std::io::Write;
 
 /// Parse `--gaps` (`"0,120,300,480"`) into seconds between primer pairs.

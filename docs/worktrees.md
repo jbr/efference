@@ -3,8 +3,9 @@
 A session can work in its own git worktree: a second checkout of the project, on its own
 branch, so its edits do not land in the checkout another session or the operator is
 using. `POST /sessions {"worktree": true}` asks for one (`efference` CLI `--worktree`,
-the `create` control tool's `worktree`). Worktree placement and every git operation live
-in `src/worktree.rs`; the directory pair lives in `src/policy/directories.rs`.
+the `create` control tool's `worktree`). Worktree placement lives in
+`src/session_dir/worktree.rs` and the git operations in `src/worktree.rs`; the directory
+pair lives in `src/policy/directories.rs`.
 
 ## Project and working directory
 
@@ -24,7 +25,7 @@ a worktree has neither of its own. The header records the working directory (`wo
 only when it differs, so a header without a worktree is unchanged.
 
 The host derives the pair from the one `cwd` a creation request carries
-(`worktree::project_of`): a `cwd` inside `<project>/.efference/worktrees/<id>` belongs to
+(`session_dir::worktree::project_of`): a `cwd` inside `<project>/.efference/worktrees/<id>` belongs to
 that project and works where it was sent, so a session created from inside a worktree —
 by a person in a terminal there, or by a session working there — inherits the worktree.
 A child that wants its own asks for `worktree: true`. The user-wide `env_hook`
@@ -68,7 +69,7 @@ prefix.
 
 `[paths]` keys resolve against the project and the paths a call names against the
 working directory. A target inside any worktree, `.efference/worktrees/<id>/<rest>`, is
-classified as `<project>/<rest>` (`worktree::counterpart`, applied by
+classified as `<project>/<rest>` (`session_dir::worktree::counterpart`, applied by
 `Directories::target`): every worktree, the session's own and every other session's,
 carries exactly the project's grants, narrower ones included. A grant of `.` therefore
 covers the project checkout and every worktree, for reading and writing — a worktree is

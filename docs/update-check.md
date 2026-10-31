@@ -39,7 +39,7 @@ the same version. `latest.json` names stable releases only.
   configuration says, and it needs no host. `efference update` without `--check` refuses,
   naming the check and the install command. `efference --version` prints the version.
 - **A host asks automatically only when `[updates] check = true`** in
-  `~/.efference/config.toml` (`src/inference/updates.rs`). A file without the key never
+  `~/.efference/config.toml` (`src/user_config/updates.rs`). A file without the key never
   checks; the key is not a default to find and turn off. `efference setup` asks the
   question, yes preselected, wherever neither the file nor the run has an answer: last on a
   first run, and on leaving the management list otherwise, whose "Update check" entry

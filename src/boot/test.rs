@@ -121,7 +121,7 @@ pub(crate) fn codex_registry(root: &Path, id: &str) -> crate::inference::Inferen
     )
     .unwrap();
     crate::api::seed_codex_catalog(crate::log::Provider::OpenAICodex, &account);
-    let config = crate::inference::InferenceConfig::from_toml(
+    let config = crate::user_config::InferenceConfig::from_toml(
         r#"
 [connections.oai]
 provider = "openai-codex"
@@ -165,7 +165,7 @@ fn listing_endpoint(body: &'static str) -> (ScriptedUpstream, String) {
 /// configuration because a described endpoint publishes no catalog to pick a
 /// default from, which is a resolution failure before any capability read.
 fn request_for(base: &str, root: &Path, id: &str, temperature: Option<u8>) -> SessionRequest {
-    let config = crate::inference::InferenceConfig::from_toml(&format!(
+    let config = crate::user_config::InferenceConfig::from_toml(&format!(
         r#"
 [defaults]
 spotter = "edge/m"
@@ -345,7 +345,7 @@ async fn a_late_failure_removes_the_worktree_it_made() {
     req.create.worktree = true;
 
     failure(prepare(req).await, "unreadable [context] must fail");
-    assert!(!crate::worktree::path(root.path(), "late-fox").exists());
+    assert!(!crate::session_dir::worktree::path(root.path(), "late-fox").exists());
     assert!(!root.session_dir("late-fox").exists());
     let branches = git(root.path(), &["branch", "--list", "efference/late-fox"]);
     assert!(branches.is_empty(), "the branch is deleted");

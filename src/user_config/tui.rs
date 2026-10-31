@@ -10,8 +10,6 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::api::Error;
-
 /// `[tui]`: how the terminal UI draws. Read by each terminal client, not by the host.
 // `[tui]` as written. Every key is optional. The `///` docs are the published user schema's
 // hover text (docs/config-schemas.md).
@@ -62,7 +60,7 @@ pub enum ImageMode {
 impl TuiConfig {
     /// The table from the user configuration under `home`. A missing file is an
     /// empty table, and a theme path written `~/…` is expanded against `home`.
-    pub fn load(home: &Path) -> Result<Self, Error> {
+    pub fn load(home: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let config = super::InferenceConfig::read_user(home)?.unwrap_or_default();
         Ok(config.tui.expand_home(home))
     }

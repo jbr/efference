@@ -27,7 +27,6 @@ use semantic_edit_mcp::SemanticEditTools;
 use serde_json::{Value, json};
 
 use crate::bash::{self, Bash, Outcome};
-use crate::frontend::Interrupt;
 use crate::log::{INTENT, Notification, RawResult, ToolCall};
 use read_image::ReadImage;
 
@@ -96,6 +95,19 @@ fn with_intent(mut definition: Value) -> Value {
         required.insert(0, Value::String(INTENT.to_string()));
     }
     definition
+}
+
+/// The operator's intent when interrupting a *running* tool (docs/process-monitor.md).
+/// Both reach the one intervention point pace can't — mid-tool — but differ in
+/// what happens to the child.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interrupt {
+    /// Kill the process group now (`POST /loop/interrupt`, the Ctrl-C guardrail).
+    Kill,
+    /// Keep the child running but stop blocking on it: hand it to the background
+    /// process monitor as a `p#<n>` process (`PATCH /processes/:id {background: true}`, the
+    /// foreground→background handoff, docs/process-monitor.md).
+    Detach,
 }
 
 /// A tool backend. Each variant owns whatever state its tools need; `Bash` is

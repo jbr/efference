@@ -143,10 +143,10 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
 fn the_stream_ceiling_defaults_generously_and_is_operator_settable() {
     assert_eq!(
         crate::config::TransportLimits::default().stream_ceiling,
-        DEFAULT_STREAM_CEILING
+        crate::config::DEFAULT_STREAM_CEILING
     );
     // Comfortably past the widest model call in this repo's corpus (363s).
-    assert!(DEFAULT_STREAM_CEILING >= std::time::Duration::from_secs(3600));
+    assert!(crate::config::DEFAULT_STREAM_CEILING >= std::time::Duration::from_secs(3600));
 }
 
 /// The attribution headers ride an OpenRouter inference POST and no other

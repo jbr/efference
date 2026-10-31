@@ -19,7 +19,7 @@ impl BindFlags {
     /// Each flag given wins over its `[host]` key, one key at a time
     /// (docs/web-bind.md), so `--bind 127.0.0.1:0` keeps a configured name and
     /// `--bind ""` turns the table's bind off.
-    pub(crate) fn over(self, table: efference::inference::HostConfig) -> Self {
+    pub(crate) fn over(self, table: efference::user_config::HostConfig) -> Self {
         Self {
             bind: self.bind.or(table.bind),
             public_url: self.public_url.or(table.public_url),
@@ -396,7 +396,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     let bind_flags = if island {
         bind_flags
     } else {
-        bind_flags.over(efference::inference::HostConfig::load(Path::new(&home))?)
+        bind_flags.over(efference::user_config::HostConfig::load(Path::new(&home))?)
     };
     let owner = island.then(|| {
         let socket = socket.clone();
@@ -439,7 +439,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     let host = daemon::Host::new(inference, host_env);
     // Only with the user's answer: a configuration without one never checks
     // (docs/update-check.md). An island is a host like any other here.
-    if efference::inference::UpdatesConfig::load(Path::new(&home))?.check {
+    if efference::user_config::UpdatesConfig::load(Path::new(&home))?.check {
         host.check_for_updates(efference::update_check::UpdateCheck::published());
     }
     // Adopted first: an island archives its sessions when its owner goes, and so

@@ -6,9 +6,10 @@
 
 use super::gate::Surface;
 use super::*;
-use crate::daemon::views::{answer, channel_value};
+use crate::daemon::views::answer;
 use crate::devices::DeviceId;
 use crate::protocol::answers::{StatusBody, StatusWord};
+use crate::protocol::channel_value;
 use crate::protocol::sign_in::{
     DeviceList, PendingSignInList, RemovedDevice, SignInClaim, SignInLink, SignInRequest,
 };

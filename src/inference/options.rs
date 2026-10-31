@@ -13,11 +13,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Connection, InferenceRegistry, ModelReference, ModelSelection, ResolvedRole, ResolvedTriage,
-    SessionInference, TriageChoice, role_secret_values,
+    Connection, InferenceRegistry, ModelReference, ResolvedRole, ResolvedTriage, SessionInference,
+    TriageChoice, TriageModel, role_secret_values,
 };
 use crate::api::Error;
-use crate::triage::TriageModel;
+use crate::user_config::ModelSelection;
 
 /// The accepted temperature, stated once. Both control routes and the CLI reach
 /// it through [`InferenceRegistry::resolve_options`], so none of them carries its

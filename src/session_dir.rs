@@ -1,11 +1,14 @@
 //! The on-disk shape of a session directory (docs/control-channel.md, docs/state-store.md):
 //! the directory session dirs live under, the name of the log inside one, the ids that may
-//! name one, and the owner-only modes they and their files are created with.
+//! name one, the owner-only modes they and their files are created with, and where a
+//! session's git worktree sits beside them ([`worktree`]).
 //!
-//! The worktree placement, the id register, the archived-session scan, discard, the log
-//! writer and the attachment store each read these, and none of them needs the host that
-//! serves a session. The module imports nothing from the crate, so every one of them can
-//! import it (docs/README.md, *Dependency direction*).
+//! The id register, the archived-session scan, discard, the log writer and the attachment
+//! store each read these, and none of them needs the host that serves a session. The module
+//! imports nothing from the crate, so every one of them can import it (docs/README.md,
+//! *Dependency direction*).
+
+pub mod worktree;
 
 /// The directory every session dir lives under, relative to the working directory a
 /// session was started in (docs/control-channel.md). One session is

@@ -682,7 +682,7 @@ fn the_identity_topic_keeps_its_bytes() {
         bytes(&shared, Topic::SessionIdentity),
         r#"{"cwd":"/work","id":"amber-heron","model":"anthropic/claude-opus-4"}"#
     );
-    let selection = |model: &str| crate::inference::ModelSelection {
+    let selection = |model: &str| crate::user_config::ModelSelection {
         connection: "work".into(),
         provider: crate::log::Provider::OpenRouter,
         model: model.into(),

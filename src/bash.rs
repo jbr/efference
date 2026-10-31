@@ -22,8 +22,8 @@ use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-use crate::frontend::Interrupt;
 use crate::log::RawResult;
+use crate::tools::Interrupt;
 use std::time::Duration;
 
 /// What a tool run resolved to. Every path still pairs the `tool_use` with
@@ -105,21 +105,13 @@ pub struct Bash {
     pub child_env: crate::env_table::ChildEnv,
 }
 
-/// The shipped defaults, used when no `[bash]` config section says otherwise.
-/// 300s clears a real `cargo build --release` while firing on under 1% of this
-/// repo's corpus; the ceiling is high enough for a genuinely slow build and
-/// still finite. The asymmetry is what sets them: a premature detach costs one
-/// `read_process` and loses nothing, an absent one costs the session.
-pub const DEFAULT_BACKGROUND_AFTER: Duration = Duration::from_secs(300);
-pub const DEFAULT_BACKGROUND_AFTER_MAX: Duration = Duration::from_secs(1800);
-
 impl Default for Bash {
     fn default() -> Self {
         Self {
             cwd: std::path::PathBuf::from("."),
             tmpdir: None,
-            background_after: DEFAULT_BACKGROUND_AFTER,
-            background_after_max: DEFAULT_BACKGROUND_AFTER_MAX,
+            background_after: crate::config::DEFAULT_BACKGROUND_AFTER,
+            background_after_max: crate::config::DEFAULT_BACKGROUND_AFTER_MAX,
             child_env: crate::env_table::ChildEnv::default(),
         }
     }
@@ -286,7 +278,7 @@ impl Bash {
         match interrupted {
             Some(Interrupt::Kill) => {
                 if let Some(pgid) = pgid {
-                    kill_group(pgid);
+                    crate::spawn::kill_group(pgid);
                 }
                 let mut content = decode(&combined);
                 push_line_break(&mut content);
@@ -349,32 +341,6 @@ pub(crate) async fn drain_pipes<T>(
     None
 }
 
-/// `SIGKILL` the whole process group led by `pgid`. The child was spawned with
-/// `process_group(0)`, so its pid *is* its pgid; killing the group takes down
-/// any grandchildren too. Best-effort — a racing exit may already have reaped
-/// it, in which case `killpg` just returns `ESRCH`. Used by the foreground abort
-/// path and by the process monitor's kill / teardown (docs/process-monitor.md).
-pub(crate) fn kill_group(pgid: u32) {
-    // SAFETY: an FFI call with no memory effects; a stale/invalid pgid is a
-    // benign `ESRCH`, which we intentionally ignore (best-effort teardown).
-    #[allow(unsafe_code)]
-    unsafe {
-        libc::killpg(pgid as libc::pid_t, libc::SIGKILL);
-    }
-}
-
-/// Test probe: whether group `pgid` still has a member. `killpg` with signal 0 checks
-/// existence and permission only, so a killed process still answers until its parent
-/// waits it (docs/process-monitor.md).
-#[cfg(test)]
-pub(crate) fn group_alive(pgid: u32) -> bool {
-    // SAFETY: signal 0 checks existence and permission only; no memory effects.
-    #[allow(unsafe_code)]
-    unsafe {
-        libc::killpg(pgid as libc::pid_t, 0) == 0
-    }
-}
-
 /// The marker [`render`] appends on a non-zero exit. Named so the writer below
 /// and [`reported_exit_status`] cannot drift.
 const EXITED_WITH: &str = "[exited with status ";
@@ -401,7 +367,7 @@ pub(crate) fn reported_exit_status(content: &str) -> Option<&str> {
 /// (docs/process-monitor.md). The result is what the agent and the triage read; the
 /// bytes as written went out through `on_output` as they arrived.
 fn decode(combined: &[u8]) -> String {
-    crate::process_monitor::strip_formatting(&String::from_utf8_lossy(combined))
+    crate::terminal_text::strip_formatting(&String::from_utf8_lossy(combined))
 }
 
 /// Decode the accumulated (arrival-interleaved) output and mark `is_error` on a

@@ -3,9 +3,9 @@
 //! (docs/tui.md), so an instrument can be pointed at a theme or an image
 //! protocol for one run.
 
-use efference::inference::TuiConfig;
+use efference::user_config::TuiConfig;
 
-/// The `--images` value — the CLI face of [`efference::inference::ImageMode`]
+/// The `--images` value — the CLI face of [`efference::user_config::ImageMode`]
 /// (docs/tui.md). Detection lies under tmux in both directions, so the
 /// override covers both: forcing a protocol detection missed, and turning off
 /// one it wrongly claimed.
@@ -21,9 +21,9 @@ pub(crate) enum ImagesArg {
     Off,
 }
 
-impl From<ImagesArg> for efference::inference::ImageMode {
+impl From<ImagesArg> for efference::user_config::ImageMode {
     fn from(arg: ImagesArg) -> Self {
-        use efference::inference::ImageMode;
+        use efference::user_config::ImageMode;
         match arg {
             ImagesArg::Auto => ImageMode::Auto,
             ImagesArg::Kitty => ImageMode::Kitty,

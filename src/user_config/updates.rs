@@ -10,8 +10,6 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::api::Error;
-
 /// `[updates]`: whether efference checks for newer versions of itself.
 // `[updates]` as written. The `///` docs are the published user schema's hover text
 // (docs/config-schemas.md).
@@ -31,7 +29,7 @@ pub struct UpdatesConfig {
 impl UpdatesConfig {
     /// The table from the user configuration under `home`. A missing file is an empty
     /// table, which checks nothing.
-    pub fn load(home: &Path) -> Result<Self, Error> {
+    pub fn load(home: &Path) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         Ok(super::InferenceConfig::read_user(home)?
             .unwrap_or_default()
             .updates)

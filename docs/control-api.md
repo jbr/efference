@@ -449,7 +449,7 @@ name, plus `last_seq`, which is the log's cursor rather than control state and
 sits outside the fold.
 
 Every topic, the composite snapshot, and the loop resource are serialized
-through `daemon::views::channel_value`, a `serde_json::Value` round trip that
+through `protocol::channel_value`, a `serde_json::Value` round trip that
 sorts object keys at every depth, so a struct's field order never reaches the
 bytes. Each topic's bytes are pinned by `src/daemon/test/topic_bytes.rs`: a
 change to a carried type fails there first.
@@ -1373,7 +1373,7 @@ recovery it can perform, `config_repair` names one it cannot.
 **`status` is where the session stands, as one view.** The host builds it from the
 loop phase and the state each condition needs (`src/daemon/status/view.rs`), publishes
 it as the `status` topic through `src/daemon/views.rs`, and registers the topic beside
-every other one in `src/daemon/frames.rs`; the same view is what subscription
+every other one in `src/protocol/state/topic.rs`; the same view is what subscription
 notifications render ([tools.md](tools.md)), so the topic and
 the inbox say the same thing. Per condition it carries:
 

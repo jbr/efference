@@ -37,7 +37,7 @@ use crate::api::{
 };
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
-use crate::frontend::{Frontend, GateOptions, Interrupt, SubmittedTurn};
+use crate::frontend::{Frontend, GateOptions, SubmittedTurn};
 use crate::log::{
     Approval, CallId, EditState, LogEntry, Notification, Payload, RawResult, RequestOrigin, Seq,
     ToolCall, Turn,
@@ -49,11 +49,12 @@ use crate::project::{
 };
 use crate::protocol::state::{
     BlockedReason, ConfigRepair, LoopPhase, PendingProposal, SessionIdentity, Stall, StallReason,
+    Topic,
 };
 use crate::protocol::stream::StreamDelta;
 use crate::protocol::turns::mint_submission_id;
 use crate::spotter::Spotter;
-use crate::tools::Toolbox;
+use crate::tools::{Interrupt, Toolbox};
 
 /// The prefix session-scoped log lines carry, the shape the lifecycle
 /// announcements use (docs/control-channel.md). Empty when there is no id —
@@ -680,7 +681,7 @@ use config_edits::session_visible_notice;
 pub(crate) use construct::SessionParts;
 use entry_view::{EntryView, result_raw};
 use errors::{ErrorBody, ErrorCode, fail, respond};
-use frames::{Frame, Topic};
+use frames::Frame;
 pub use metrics::{CacheRead, ColdStart, ColdStreak, USAGE_NAME, UsageLine, last_turn_usage};
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;

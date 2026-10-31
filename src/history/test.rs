@@ -272,8 +272,8 @@ fn scope_for_request_mirrors_load_probe() {
     );
 }
 
-fn selection(connection: &str, model: &str) -> crate::inference::ModelSelection {
-    crate::inference::ModelSelection {
+fn selection(connection: &str, model: &str) -> crate::user_config::ModelSelection {
+    crate::user_config::ModelSelection {
         connection: connection.to_string(),
         provider: crate::log::Provider::Anthropic,
         model: model.to_string(),

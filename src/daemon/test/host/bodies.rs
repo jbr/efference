@@ -127,7 +127,7 @@ async fn the_catalog_keeps_its_bytes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unavailable_connection_keeps_its_bytes() {
     let roots = Roots::new();
-    let config = crate::inference::InferenceConfig::from_toml(
+    let config = crate::user_config::InferenceConfig::from_toml(
         r#"
 [connections.off]
 provider = "openrouter"

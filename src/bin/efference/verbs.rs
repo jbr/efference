@@ -5,7 +5,7 @@
 //! TUI, and the display settings every TUI it draws reads.
 
 use super::*;
-use efference::inference::TuiConfig;
+use efference::user_config::TuiConfig;
 
 /// The `[tui]` table of the user configuration (docs/tui.md): what every
 /// surface this process draws a TUI on reads, read once at launch. Without a

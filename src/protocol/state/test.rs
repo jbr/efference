@@ -14,13 +14,13 @@ use crate::api::{
     UpstreamRetry, Usage,
 };
 use crate::config::{Perms, ToolSettings};
-use crate::inference::{InferenceIdentity, ModelSelection, TriageIdentity};
+use crate::inference::{InferenceIdentity, TriageIdentity};
 use crate::log::{ConfigChange, Provider, Timestamp};
 use crate::policy::GateGrant;
-use crate::process_monitor::ProcessState;
 use crate::project::Retention;
 use crate::protocol::agents::BoundAction;
 use crate::protocol::status::Escalated;
+use crate::user_config::ModelSelection;
 
 const AT: u64 = 1_754_300_000_000;
 

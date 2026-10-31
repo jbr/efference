@@ -3,7 +3,7 @@
 use super::attention::Attender;
 use super::dispatchers::Dispatchers;
 use super::*;
-use crate::inference::TuiConfig;
+use crate::user_config::TuiConfig;
 
 /// Attach to a session and stay there until the operator leaves it.
 ///
@@ -213,7 +213,7 @@ pub(super) fn resolve_theme(theme: Option<String>) -> Result<String> {
 #[cfg(feature = "dev")]
 pub async fn run_session_form_prototype() -> Result<()> {
     let display = TuiConfig {
-        images: crate::inference::ImageMode::Off,
+        images: crate::user_config::ImageMode::Off,
         ..TuiConfig::default()
     };
     run_offline(gallery::log(), None, display, None, true).await
