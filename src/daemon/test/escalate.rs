@@ -389,7 +389,7 @@ async fn a_one_level_chain_reaches_the_operator_with_a_push() {
 
 /// The dial does not route an escalated gate back: turning `c`'s dial away from
 /// `supervisor` and back leaves it with `g`, and `p` is not handed it again.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn the_dial_does_not_route_an_escalated_gate_back() {
     let fixture = Fixture::new().await;
     let (g, p, c) = (

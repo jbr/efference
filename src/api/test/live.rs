@@ -10,6 +10,18 @@ use crate::testing::upstream::{Canned, ScriptedUpstream};
 const FIRST_EVENT: &str = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
     \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
 
+/// The ceiling the tests below set, taken on a paused clock: the read ends when it
+/// fires, and a ceiling that fired early or late would end it somewhere else.
+const CEILING: std::time::Duration = std::time::Duration::from_millis(200);
+
+fn assert_ended_at_the_ceiling(started: tokio::time::Instant) {
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= CEILING && elapsed < CEILING * 2,
+        "the read ended at the ceiling, not before or well after it: {elapsed:?}"
+    );
+}
+
 /// **The duration ceiling** (docs/transport.md): a stream that opens, trickles,
 /// and then never finalizes is given up on rather than blocking its turn forever,
 /// and the completion comes back marked exactly the way a mid-stream abort is —
@@ -19,18 +31,19 @@ const FIRST_EVENT: &str = "event: message_start\ndata: {\"message\":{\"model\":\
 ///
 /// One read loop serves both stream surfaces, so a turn and a triage are
 /// bounded by the same knob.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
     // The upstream holds the response open after its first event, so the *client's*
     // ceiling is what ends the read.
     let upstream = ScriptedUpstream::answering([Canned::stream(FIRST_EVENT).left_open()]);
     let endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
-    let client = Client::new(endpoint, "m", "sys", None)
-        .with_stream_ceiling(std::time::Duration::from_millis(200));
+    let client = Client::new(endpoint, "m", "sys", None).with_stream_ceiling(CEILING);
+    let started = tokio::time::Instant::now();
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect("the ceiling is not an open failure — it assembles a partial");
+    assert_ended_at_the_ceiling(started);
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("ceiling"), "{why}");
     assert!(why.contains("stream-ceiling"), "names the knob: {why}");
@@ -45,7 +58,7 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
 /// aborted attempt, but a class the retry loops do not retry. The notifier is
 /// registered before the first read, so a press that lands between events is
 /// not lost to `notify_waiters`' no-permit semantics.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
     let upstream = ScriptedUpstream::answering([Canned::stream(FIRST_EVENT).left_open()]);
     let endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
@@ -58,7 +71,7 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         presser.notify_waiters();
     });
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
@@ -226,7 +239,7 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
 /// The duration ceiling on the Responses dialect: a stream that delivered partial
 /// text and then stayed open is cut at the ceiling, the partial kept record-only
 /// with a transient class, so the abort schedule retries it (docs/transport.md).
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
     let upstream = ScriptedUpstream::answering([Canned::stream(
         "event: response.created\ndata: {\"type\":\"response.created\",\
@@ -239,13 +252,14 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
     )
     .left_open()]);
     let endpoint = upstream.endpoint(Provider::OpenAI, "/v1/responses");
-    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None)
-        .with_stream_ceiling(std::time::Duration::from_millis(200));
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None).with_stream_ceiling(CEILING);
     let mut streamed = Vec::new();
+    let started = tokio::time::Instant::now();
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |s| streamed.push(s))
         .await
         .expect("the ceiling assembles a partial");
+    assert_ended_at_the_ceiling(started);
     let why = completion.upstream_failure().expect("marked");
     assert!(why.contains("stream-ceiling"), "{why}");
     assert_eq!(completion.failure_class, FailureClass::Transient);

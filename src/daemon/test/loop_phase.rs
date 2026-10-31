@@ -2,7 +2,7 @@
 //! (docs/control-api.md): `settle` returns at the phases that wait on someone outside
 //! the loop and at idle, and at no step in between.
 
-use super::upstream_hold::{start, start_with};
+use super::upstream_hold::{FIRST_PAUSE, start, start_with};
 use super::*;
 use crate::daemon::{BlockedReason, LoopPhase};
 use crate::frontend::SubmittedTurn;
@@ -154,9 +154,13 @@ async fn settle_returns_on_a_held_pace() {
     host.shut_down().await;
 }
 
-/// A finite pace delay ends on its own timer: `settle` waits through it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+/// A finite pace delay ends on its own timer: `settle` waits through it. The scripted
+/// call runs a real process, so the clock is paused once the loop is delayed at its
+/// juncture, with nothing left to wait on but the timer (`upstream_hold.rs`). The delay
+/// is long enough that the real time between the juncture and the pause cannot reach it.
+#[tokio::test]
 async fn settle_waits_through_a_pace_delay() {
+    const PACE: Duration = Duration::from_secs(600);
     let upstream = ScriptedUpstream::new(|n| match n {
         0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
         1 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
@@ -164,7 +168,7 @@ async fn settle_waits_through_a_pace_delay() {
     });
     let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
-    session.set_pace(Some(Duration::from_secs(2)), None);
+    session.set_pace(Some(PACE), None);
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     let waiter = settle(&session);
 
@@ -173,19 +177,38 @@ async fn settle_waits_through_a_pace_delay() {
             matches!(session.loop_phase(), LoopPhase::Delayed { .. })
         })
         .await;
+    tokio::time::pause();
     assert!(!session.is_settled());
     assert!(
         !waiter.is_finished(),
         "a timed delay is not a decision point"
     );
-    let state = waiter.await.unwrap();
+
+    // Half the delay passes, and the loop is still held at its juncture.
+    tokio::time::sleep(PACE / 2).await;
+    assert!(
+        matches!(session.loop_phase(), LoopPhase::Delayed { .. }),
+        "{:?}",
+        session.loop_phase()
+    );
+    assert!(!session.is_settled());
+    assert!(!waiter.is_finished(), "settle waits out the delay");
+
+    // The rest of it ends on its own, and the turn finishes.
+    let state = tokio::time::timeout(PACE, waiter)
+        .await
+        .expect("the delay ends on its timer")
+        .unwrap();
     assert_eq!(state["loop_phase"], serde_json::json!({"phase": "idle"}));
+    assert_eq!(upstream.count(), 3, "the turn went on after the delay");
     host.shut_down().await;
 }
 
 /// The pause between upstream attempts is a delay that ends on a timer: `settle` waits
-/// through it, and the operator's continue cuts it short.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+/// through it, and the operator's continue cuts it short. On a paused clock: the pause
+/// is observed before any of it passes, most of it passes with the loop still held, and
+/// the continue ends it with the rest unspent.
+#[tokio::test(start_paused = true)]
 async fn settle_waits_through_a_retry_pause() {
     // The transport makes four attempts before the loop sees the failure.
     let upstream = ScriptedUpstream::new(|n| match n {
@@ -202,6 +225,7 @@ async fn settle_waits_through_a_retry_pause() {
             matches!(session.loop_phase(), LoopPhase::Delayed { .. })
         })
         .await;
+    let paused_at = tokio::time::Instant::now();
     let LoopPhase::Delayed { until } = session.loop_phase() else {
         unreachable!()
     };
@@ -215,13 +239,32 @@ async fn settle_waits_through_a_retry_pause() {
         !waiter.is_finished(),
         "a retry pause is not a decision point"
     );
+
+    // Nearly all of the first pause passes with the loop still held.
+    tokio::time::sleep(FIRST_PAUSE * 9 / 10).await;
+    assert!(
+        matches!(session.loop_phase(), LoopPhase::Delayed { .. }),
+        "{:?}",
+        session.loop_phase()
+    );
+    assert!(!session.is_settled());
+    assert!(!waiter.is_finished(), "settle waits out the pause");
+
     assert_eq!(
         session.request_continue(Default::default()),
         Ok(()),
         "continue retries now"
     );
-    let state = waiter.await.unwrap();
+    let state = tokio::time::timeout(FIRST_PAUSE, waiter)
+        .await
+        .expect("continue ends the pause")
+        .unwrap();
     assert_eq!(state["loop_phase"], serde_json::json!({"phase": "idle"}));
+    assert!(
+        paused_at.elapsed() < FIRST_PAUSE,
+        "the continue ended the pause, not its timer: {:?}",
+        paused_at.elapsed()
+    );
     host.shut_down().await;
 }
 

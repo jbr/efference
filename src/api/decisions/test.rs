@@ -190,7 +190,7 @@ async fn a_provider_without_the_route_refuses() {
 
 /// A rate-limit burst is absorbed by the retry budget rather than failing the
 /// spotter over to the human gate on the first 429 (docs/permissions.md).
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_rate_limited_decision_is_retried() {
     use std::sync::{
         Arc,
@@ -221,8 +221,9 @@ async fn a_rate_limited_decision_is_retried() {
 }
 
 /// A `Retry-After` beyond the whole budget is not waited out: the gate's
-/// fallback is faster than the wait (docs/permissions.md).
-#[tokio::test]
+/// fallback is faster than the wait (docs/permissions.md). On a paused clock a wait
+/// would show as the elapsed time it was.
+#[tokio::test(start_paused = true)]
 async fn a_long_retry_after_is_not_waited_out() {
     let server = |conn: trillium::Conn| async move {
         conn.with_status(Status::TooManyRequests)
@@ -231,7 +232,7 @@ async fn a_long_retry_after_is_not_waited_out() {
     };
     let client = trillium_client::Client::new(trillium_testing::ServerConnector::new(server))
         .with_handler(decisions_retry());
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     let conn = client
         .post("http://decisions.test/")
         .with_body("{}")

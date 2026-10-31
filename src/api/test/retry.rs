@@ -260,7 +260,7 @@ async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
 /// The documented transient family is retried by the transport itself: a 503
 /// (`server_is_overloaded`) followed by a 200 completes, and the absorbed attempt
 /// is queued with its body for the loop's record (docs/transport.md).
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_503_open_is_retried_and_the_attempt_is_queued() {
     let upstream = ScriptedUpstream::answering([
         Canned::json(
@@ -293,7 +293,7 @@ async fn a_503_open_is_retried_and_the_attempt_is_queued() {
 
 /// The operator's "retry now" (docs/transport.md) ends a backoff pause early, and a
 /// hurry landing before the pause starts is not lost; an unhurried pause runs out.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_hurry_ends_the_pause_whenever_it_lands() {
     let retry = upstream_retry_state();
     let long = Some(std::time::Duration::from_secs(60));

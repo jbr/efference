@@ -278,7 +278,7 @@ async fn a_submitted_turn_is_delivered_after_the_batch() {
 
 /// **An event does not replay the batch.** The notification waits in the inbox, no
 /// triage projects the unanswered wire, and nothing runs.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn an_event_wake_leaves_the_batch_alone() {
     let log = stopped_log(vec![call("c1", "printf one")], &["c1"], |log| {
         gated(log, "c1");

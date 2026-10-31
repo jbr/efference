@@ -12,7 +12,7 @@ fn session() -> Arc<Session> {
 /// A reply answers a held session's question and releases the hold, as any submit does
 /// (docs/control-channel.md): otherwise the operator's answer would leave the loop
 /// parked at the next juncture.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_reply_resumes_a_held_session() {
     let shared = session();
     shared.set_pace(None, Some(true));
@@ -62,7 +62,7 @@ fn the_ask_topic_carries_the_question_and_what_was_recalled() {
 }
 
 /// The topic differ publishes the ask when it appears and clears it when it ends.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn the_topic_differ_publishes_an_ask_and_its_end() {
     let shared = session();
     let mut rx = shared.subscribe_state();

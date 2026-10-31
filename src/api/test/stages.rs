@@ -105,7 +105,7 @@ async fn a_normal_request_records_sent_first_byte_ended() {
 
 /// A refused attempt the transport retries is recorded between sent and first
 /// byte, and the request still ends once.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_retried_request_records_the_refused_attempt() {
     let upstream = ScriptedUpstream::answering([unavailable(), finalized()]);
     let recorder = Arc::new(Recorder::default());
@@ -131,7 +131,7 @@ async fn a_retried_request_records_the_refused_attempt() {
 }
 
 /// The operator's interrupt closes the request as `failed: interrupted`.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_interrupted_request_records_failed_interrupted() {
     let event = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
                  \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
@@ -164,7 +164,7 @@ async fn an_interrupted_request_records_failed_interrupted() {
 }
 
 /// A request whose future is dropped before it finishes does not stay open.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_cancelled_request_closes_as_interrupted() {
     // The upstream takes the request and says nothing until the client gives up.
     let upstream = ScriptedUpstream::answering([Canned::silent()]);

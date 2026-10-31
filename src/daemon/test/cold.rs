@@ -7,12 +7,13 @@ use crate::log::Telemetry;
 
 /// A session whose cache is already believed cold: a zero lifetime and one turn on
 /// the record, a moment ago.
-async fn cold_session() -> (Arc<Session>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+fn cold_session() -> (Arc<Session>, mpsc::UnboundedReceiver<SubmittedTurn>) {
     let (shared, rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::ZERO);
     append_compactable_history(&shared);
     shared.record_request(RequestOrigin::Turn, RequestUsage::new(Usage::default()));
-    tokio::time::sleep(Duration::from_millis(5)).await;
+    // The belief reads the wall clock, which a paused tokio clock does not move.
+    std::thread::sleep(Duration::from_millis(5));
     assert!(shared.cold_since().is_some());
     (shared, rx)
 }
@@ -58,7 +59,7 @@ fn a_shared_triage_refreshes_the_cold_belief_and_an_own_triage_does_not() {
 /// person's action is noted for the loop's cold check.
 #[tokio::test]
 async fn a_turn_on_a_cold_session_goes_through() {
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     let server = test_server(&shared).await;
 
     let conn = server
@@ -80,7 +81,7 @@ async fn a_turn_on_a_cold_session_goes_through() {
 /// answers — and a person's action releases it, consumed.
 #[tokio::test]
 async fn the_cold_check_parks_until_a_person_acts() {
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     let check = tokio::spawn({
         let shared = Arc::clone(&shared);
         async move { shared.await_warm_or_person().await }
@@ -131,7 +132,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
 /// the next turn or continue, and the phase says so while `cold` is null.
 #[tokio::test]
 async fn a_fold_leaves_the_park_folded() {
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     let check = tokio::spawn({
         let shared = Arc::clone(&shared);
         async move { shared.await_warm_or_person().await }
@@ -183,7 +184,7 @@ async fn a_person_acting_on_a_warm_session_is_not_kept() {
 /// warm one's.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_client_sends_to_a_cold_session_without_a_flag() {
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     let client = test_client(&shared).await;
 
     client.turn("hello").await.unwrap();
@@ -222,7 +223,7 @@ fn cold_records(shared: &Session) -> Vec<crate::log::ColdEvent> {
 /// (docs/control-api.md). The log records the release and no park.
 #[tokio::test]
 async fn an_approval_releases_the_next_check_and_no_park_follows() {
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     let server = test_server(&shared).await;
     let call = bash_call("cargo build");
     let _gate = shared.register_pending(&call, None, None);
@@ -260,7 +261,7 @@ async fn every_person_action_releases_a_park_and_is_recorded() {
         ReleasedBy::Ask,
         ReleasedBy::Continue,
     ] {
-        let (shared, _rx) = cold_session().await;
+        let (shared, _rx) = cold_session();
         let check = tokio::spawn({
             let shared = Arc::clone(&shared);
             async move { shared.await_warm_or_person().await }
@@ -315,7 +316,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
     assert!(!warm.person_acted.load(Ordering::SeqCst));
     assert!(cold_records(&warm).is_empty());
 
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     let server = test_server(&shared).await;
     let call = bash_call("ls");
     let _gate = shared.register_pending(&call, None, None);
@@ -339,7 +340,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
 /// A decision on a gate that has moved on releases nothing.
 #[tokio::test]
 async fn a_moved_gate_releases_nothing() {
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     let server = test_server(&shared).await;
     server
         .put("/v1/approvals/toolu_gone")
@@ -353,7 +354,7 @@ async fn a_moved_gate_releases_nothing() {
 /// An answer to an `ask` is a turn on the route and is recorded as an answer.
 #[tokio::test]
 async fn an_answer_to_an_ask_is_recorded_as_an_answer() {
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     let server = test_server(&shared).await;
     let mut wait = shared.begin_ask("ask_1", "Proceed?".into(), 1, 1);
 
@@ -374,9 +375,9 @@ async fn an_answer_to_an_ask_is_recorded_as_an_answer() {
 
 /// An idle inbox wake waits while the session is cold, and a person's action lets it
 /// through.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_inbox_wake_while_cold_waits_for_a_person() {
-    let (shared, _rx) = cold_session().await;
+    let (shared, _rx) = cold_session();
     shared.notify("ci".into(), "build failed".into(), None);
     let wake = tokio::spawn({
         let shared = Arc::clone(&shared);

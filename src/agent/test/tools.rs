@@ -76,7 +76,7 @@ async fn wait_refuses_when_no_known_source_can_wake_it() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn wait_wakes_for_a_notification_and_returns_its_body() {
     let (shared, _rx) = Session::in_memory();
     let handle = shared
@@ -105,7 +105,7 @@ async fn wait_wakes_for_a_notification_and_returns_its_body() {
 
 /// A turn queued while the agent waits ends the wait (docs/process-monitor.md): the
 /// juncture after the result delivers it, so a wait can no longer sleep through it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn wait_wakes_when_a_turn_is_queued() {
     let (shared, _rx) = Session::in_memory();
     let handle = shared
@@ -146,7 +146,7 @@ async fn wait_returns_at_once_for_a_turn_already_queued() {
 
 /// An agent's turn held back behind the operator's hold is not delivered at the
 /// juncture, so it does not end a wait; the release that sends it does.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_held_back_turn_wakes_wait_only_when_released() {
     let (shared, _rx) = Session::in_memory();
     let handle = shared

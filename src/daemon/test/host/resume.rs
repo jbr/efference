@@ -324,7 +324,7 @@ async fn an_archive_releases_the_log_while_a_stream_holds_the_session() {
 /// A resume takes `detached` from the header the session was created with, so a
 /// detached child keeps outliving its creator without the caller repeating it
 /// (docs/resumption.md).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
     let roots = Roots::new();
     let (host, _server) = hosting_one(&roots).await;
@@ -440,7 +440,7 @@ async fn an_archive_and_a_cascaded_child_end_log_archived() {
 
 /// A host shutdown stops its sessions without archiving them: they are what a
 /// restarted host resumes.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_host_shutdown_does_not_log_archived() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());

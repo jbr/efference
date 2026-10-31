@@ -39,7 +39,7 @@ async fn a_refresh_stores_rows_and_a_young_copy_is_not_read_again() {
     assert_eq!(reads.load(Ordering::SeqCst), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn concurrent_refreshes_share_one_read() {
     let catalog = Catalog::new(None);
     let reads = Arc::new(AtomicUsize::new(0));

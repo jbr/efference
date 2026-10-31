@@ -51,7 +51,7 @@ fn queued(shared: &Session) -> Vec<String> {
 
 /// The next submitted turn is the reply: its text is the result, its submission and
 /// source travel with it, and it never reaches the queue.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_submitted_turn_resolves_the_ask_instead_of_queueing() {
     let shared = session();
     let task = start(&shared, ask_call("ask_1", "Which branch?"), ONE).await;
@@ -75,7 +75,7 @@ async fn a_submitted_turn_resolves_the_ask_instead_of_queueing() {
 }
 
 /// A blank submission is not an answer.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_blank_turn_does_not_resolve_the_ask() {
     let shared = session();
     let task = start(&shared, ask_call("ask_1", "Ready?"), ONE).await;
@@ -87,7 +87,7 @@ async fn a_blank_turn_does_not_resolve_the_ask() {
 }
 
 /// A notification is an ambient note, not a reply (docs/inbox.md).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_notification_does_not_resolve_the_ask() {
     let shared = session();
     let task = start(&shared, ask_call("ask_1", "Ready?"), ONE).await;
@@ -101,7 +101,7 @@ async fn a_notification_does_not_resolve_the_ask() {
 
 /// A turn queued before the ask started is withdrawn — not the answer, not stranded —
 /// and reported on the ask in the recall route's shape.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn turns_queued_before_the_ask_are_recalled_and_published() {
     let shared = session();
     shared.submit_turn(SubmittedTurn::new("earlier thought", "early-1"));
@@ -131,7 +131,7 @@ async fn turns_queued_before_the_ask_are_recalled_and_published() {
 
 /// An interrupt ends the ask like any tool call; nothing stays pending and the next
 /// submission opens an ordinary turn.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn an_interrupt_ends_the_ask_and_leaves_nothing_pending() {
     let shared = session();
     let task = start(&shared, ask_call("ask_1", "Sure?"), ONE).await;
@@ -189,7 +189,7 @@ fn asks_in_a_batch_are_numbered_in_call_order() {
 
 /// `run_call` answers an `ask` ahead of the cascade: no gate, no spotter (there is
 /// nothing to authorize), and the result carries who replied.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn run_call_skips_the_cascade_and_carries_the_reply() {
     struct Silent;
     impl Frontend for Silent {

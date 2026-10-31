@@ -1,7 +1,7 @@
 //! Session runtimes stop independently inside one process (docs/control-channel.md).
 
 use super::*;
-use crate::api::{Endpoint, ModelCapabilities};
+use crate::api::ModelCapabilities;
 use crate::bash::group_alive;
 use crate::daemon::{SessionBoot, SessionRuntime};
 use crate::log::{Provider, Stance};
@@ -31,10 +31,13 @@ impl Drop for Roots {
 }
 
 /// A boot that never reaches a provider: the loop parks in `read_user_turn`
-/// until shutdown, which is the state a hosted idle session sits in.
+/// until shutdown, which is the state a hosted idle session sits in. A request it is
+/// woken to send goes to a port nothing listens on, refused in process
+/// (`crate::testing::refusing_endpoint`): it fails after the transport's retries, as it
+/// would against a real closed port, and no socket is involved.
 pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
     let scratch = cwd.join("scratch");
-    let endpoint = Endpoint::at(Provider::Anthropic, "http://127.0.0.1:9/v1/messages");
+    let endpoint = crate::testing::refusing_endpoint(Provider::Anthropic, "/v1/messages");
     SessionBoot {
         client: Client::new(endpoint, "m", "sys", None),
         toolbox: Toolbox::bash_and_mcps(cwd.to_path_buf(), Some(scratch)).unwrap(),
@@ -183,7 +186,7 @@ async fn a_first_turn_is_submitted_into_an_empty_log() {
 }
 
 /// A log that already holds a user turn has had its opening: no kickoff.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_first_turn_is_not_repeated_on_a_log_that_has_begun() {
     let roots = Roots::new();
     let host = Swansong::new();

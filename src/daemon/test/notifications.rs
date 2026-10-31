@@ -80,7 +80,7 @@ fn a_wake_notification_keeps_its_flag() {
 /// notification has not been shown, and otherwise unblocks when one arrives. A triage's
 /// mark (`shown_through`) covering it ends the wake, so a deferred item can't spin the
 /// loop.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn inbox_wake_fires_on_unshown_not_on_shown() {
     let (shared, _turns_rx) = Session::in_memory();
 
@@ -184,7 +184,7 @@ fn arrived_notifications_survive_a_reload_and_slot_ones_do_not() {
 /// The idle loop's wake ignores a notification the log restored: a resumed session starts
 /// no triage over it, while one that arrives afterward wakes the loop, and the triage that
 /// follows is offered both (docs/resumption.md).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn the_idle_wake_ignores_a_restored_notification_until_a_new_one_arrives() {
     let mut log = Log::in_memory();
     log.append(

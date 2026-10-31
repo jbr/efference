@@ -99,7 +99,7 @@ async fn the_title_ask_compresses_an_over_budget_title() {
 
 /// A standing title with nothing after it answers the title check: no ask may run,
 /// even though the mock would answer one.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn the_title_ask_stays_silent_while_the_title_answers_the_check() {
     let shared = session();
     shared
@@ -128,7 +128,7 @@ fn user_turn(shared: &Session, text: &str) {
 /// end on a one-turn session — spend one triage: the second check's predicate still
 /// says yes, since no `Title` exists yet, and only the in-flight guard stops a
 /// second ask.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn title_checks_during_an_ask_in_flight_spend_one_peek() {
     let shared = session();
     user_turn(&shared, "start");

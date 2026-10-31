@@ -18,7 +18,7 @@ async fn drain(rx: &mut broadcast::Receiver<StateUpdate>) -> HashMap<Topic, Stat
 /// The second half is the property that makes level-triggered emission viable at all: if
 /// a quiet daemon re-published topics, `?include=state` would be a firehose on a watch
 /// rather than the reason that subscription exists.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn publishes_the_full_set_once_then_only_changes() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut rx = shared.subscribe_state();
@@ -52,7 +52,7 @@ async fn publishes_the_full_set_once_then_only_changes() {
 /// A published value is the topic's **whole** current value — the same bytes
 /// `GET /state` carries under that key. This is the fold-equals-snapshot invariant at
 /// the source: both sides come from `topic_json`, so they cannot drift.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_published_value_equals_that_key_of_get_state() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut rx = shared.subscribe_state();
@@ -79,7 +79,7 @@ async fn a_published_value_equals_that_key_of_get_state() {
 /// A stamp that ran ahead of the values would only delay a frame; one that lagged them
 /// would let a client render state accounting for an entry it has not been sent, which is
 /// the failure the read-values-then-`last_seq` order exists to prevent.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn updates_are_stamped_with_the_log_position_they_reflect() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut rx = shared.subscribe_state();
@@ -115,7 +115,7 @@ async fn updates_are_stamped_with_the_log_position_they_reflect() {
 /// This is what covers the two topics whose mutating code holds an `Arc` but no
 /// [`Session`] — the upstream-failure cell and the cost cell — and it is why a missed ping
 /// is "late" rather than "stale forever".
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn an_append_alone_wakes_the_diff() {
     // The upstream-failure cell is reached through its own `Arc`, exactly as the HTTP
     // client reaches it — no `Session` in hand, so no way to ping.
@@ -147,7 +147,7 @@ async fn an_append_alone_wakes_the_diff() {
 /// A retry pause has no append to ride on, so the retry cell carries its own change
 /// signal — the topic must publish while the loop is sleeping, not after it wakes
 /// (docs/transport.md).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_retry_publishes_without_an_append() {
     let retry = upstream_retry_state();
     let (shared, _turns_rx) = Session::full(SessionParts {
@@ -197,7 +197,7 @@ async fn a_retry_publishes_without_an_append() {
 /// The `status` topic is published like the others: in the startup snapshot, then
 /// whenever the view moves — here a gate opening — with the same bytes `GET /state`
 /// carries under `status`.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn the_status_republishes_when_it_moves() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut rx = shared.subscribe_state();

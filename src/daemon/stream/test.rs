@@ -82,7 +82,7 @@ fn include_parses_classes_and_topics() {
 /// The SSE fields a client switches on before parsing anything: `event:` is the frame's
 /// kind, and `id:` is the resume cursor — set on the durable class and nowhere else, so
 /// `EventSource`'s Last-Event-ID tracks `seq` and is never corrupted by an ephemeral frame.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn sse_fields_carry_the_kind_and_the_cursor() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut stream = control_stream(Arc::clone(&shared), Include::default(), 0);
@@ -122,7 +122,7 @@ async fn sse_fields_carry_the_kind_and_the_cursor() {
 
 /// A connection is opened with every subscribed topic's current value, so a client
 /// renders without a separate `GET /state` call.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_connection_opens_with_a_state_snapshot() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut stream = control_stream(
@@ -145,7 +145,7 @@ async fn a_connection_opens_with_a_state_snapshot() {
 /// **`GET /state` ≡ the fold of every `state` frame since connect.** One definition, two
 /// transports — and the property that lets the poll be deleted rather than merely
 /// supplemented.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn the_fold_of_state_frames_equals_get_state() {
     let (shared, _turns_rx) = Session::in_memory();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
@@ -189,7 +189,7 @@ async fn the_fold_of_state_frames_equals_get_state() {
 /// guarantee intact. Driven through the entangled pair from the design: the gate carries a
 /// `reason` read back out of a `spot` entry, so a client seeing the gate first would hold
 /// text quoting an entry it had not received.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn no_state_frame_arrives_before_the_log_it_reflects() {
     let (shared, _turns_rx) = Session::in_memory();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
@@ -235,7 +235,7 @@ async fn no_state_frame_arrives_before_the_log_it_reflects() {
 ///
 /// Without this the watch-app case — `?include=state` — would wait forever on a cursor
 /// that never advances, which is the degenerate reading of the coherence rule.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn state_only_subscribers_are_not_gated_on_the_log() {
     let (shared, _turns_rx) = Session::in_memory();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
@@ -272,7 +272,7 @@ async fn state_only_subscribers_are_not_gated_on_the_log() {
 /// while an idle client is parked would simply never render. The park matters: polling
 /// to quiescence first is what routes the update through the wait rather than through
 /// `absorb_state`'s `try_recv`.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn an_update_arriving_while_parked_is_not_dropped() {
     let (shared, _turns_rx) = Session::in_memory();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
@@ -299,7 +299,7 @@ async fn an_update_arriving_while_parked_is_not_dropped() {
 /// silently dropped. `output` is lossy under backpressure (the ring drops oldest), but an
 /// idle connection has no backpressure — losing one delta per park would be corruption in
 /// the live tail, not load-shedding.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_delta_arriving_while_parked_is_not_dropped() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut stream = control_stream(
@@ -325,7 +325,7 @@ async fn a_delta_arriving_while_parked_is_not_dropped() {
 
 /// Log frames are never delayed behind the ephemeral class — the hazard one socket
 /// introduces that three did not, and the reason the drain order is part of the contract.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn the_durable_class_is_drained_first() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut stream = control_stream(
@@ -367,7 +367,7 @@ fn assistant(text: &str) -> Payload {
 ///
 /// Process output is explicitly not turn-scoped: a backgrounded process emitting while
 /// a turn commits must still reach the client.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_committed_entry_preempts_the_deltas_describing_it() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut stream = control_stream(
@@ -413,7 +413,7 @@ async fn a_committed_entry_preempts_the_deltas_describing_it() {
 
 /// The drop is scoped to the response that committed, not to the connection: the next
 /// entry ends it, so the deltas of the *next* response are delivered normally.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn block_deltas_flow_again_after_the_next_entry() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut stream = control_stream(
@@ -445,7 +445,7 @@ async fn block_deltas_flow_again_after_the_next_entry() {
 /// A compaction's account is not a block of the response that committed: a compaction running
 /// beside a parked loop keeps streaming after an `Assistant` frame, so the drain that
 /// retires block deltas leaves the writer's alone.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn narrator_deltas_survive_a_committed_assistant_entry() {
     let (shared, _turns_rx) = Session::in_memory();
     let mut stream = control_stream(

@@ -778,7 +778,7 @@ async fn server_messages_are_enqueued_on_the_servers_slot() {
     assert_eq!(message.slot.as_deref(), Some("mcp:fake"));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_abandoned_call_is_cancelled_on_the_wire() {
     let call_id = Arc::new(Mutex::new(None::<RequestId>));
     let record = Arc::clone(&call_id);

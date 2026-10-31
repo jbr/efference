@@ -43,7 +43,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
 
 /// `await_settled` blocks while the loop is busy and returns the moment it parks — and the
 /// `enable()`-before-check ordering means a `going_idle()` racing the registration isn't lost.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn await_settled_returns_when_the_loop_parks() {
     let (shared, _rx) = Session::in_memory();
     shared.submit_turn(SubmittedTurn::new("hi", "sub-test"));
@@ -128,7 +128,7 @@ fn set_pace_moves_the_dials_and_retains_speed_under_a_hold() {
 }
 
 /// Default pace never blocks the juncture (fast path: no hold, zero speed).
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn pace_at_juncture_is_a_noop_by_default() {
     let (shared, _rx) = Session::in_memory();
     tokio::time::timeout(Duration::from_millis(200), shared.pace_at_juncture())
@@ -137,7 +137,7 @@ async fn pace_at_juncture_is_a_noop_by_default() {
 }
 
 /// A hold blocks the juncture indefinitely; a **release** ends it immediately (the resume trigger).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn hold_blocks_the_juncture_until_released() {
     let (shared, _rx) = Session::in_memory();
     shared.set_pace(None, Some(true)); // hold
@@ -154,6 +154,7 @@ async fn hold_blocks_the_juncture_until_released() {
     let s2 = Arc::clone(&shared);
     let waiter = tokio::spawn(async move { s2.pace_at_juncture().await });
     tokio::time::sleep(Duration::from_millis(20)).await; // let the pace wait arm + await
+    assert!(!waiter.is_finished(), "the held juncture waits");
     shared.set_pace(None, Some(false)); // release
     tokio::time::timeout(Duration::from_millis(500), waiter)
         .await
@@ -162,7 +163,7 @@ async fn hold_blocks_the_juncture_until_released() {
 }
 
 /// The operator's submit resumes: it drops the hold, and its queued turn ends the juncture wait.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_submit_resumes_and_skips_the_juncture() {
     let (shared, _rx) = Session::in_memory();
     shared.set_pace(None, Some(true));
@@ -181,7 +182,7 @@ async fn a_submit_resumes_and_skips_the_juncture() {
 /// reported held but not sent to the loop, the juncture stays held, and an idle loop holding it
 /// reads as settled, since it waits on the operator. The operator's own turn releases the hold,
 /// and both reach the loop in submission order.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn an_agents_turn_waits_behind_the_operators_hold() {
     let (shared, mut turns_rx) = Session::in_memory();
     shared.set_pace(None, Some(true));
@@ -239,7 +240,7 @@ async fn releasing_the_hold_sends_what_it_held_back() {
 
 /// A turn queued before the hold landed waits for the release too: the hold outranks queued
 /// input at the juncture.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn the_hold_outranks_a_turn_queued_before_it() {
     let (shared, _rx) = Session::in_memory();
     let from_parent = SubmittedTurn::new("next", "a1").sourced(Some("session[parent]".into()));
@@ -274,7 +275,7 @@ async fn an_agents_answer_leaves_the_hold() {
 
 /// A finite paced sleep is interruptible: a submitted message ends the delay early rather than
 /// making the operator's steer wait out the remaining pace.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_submit_interrupts_a_finite_paced_sleep() {
     let (shared, _rx) = Session::in_memory();
     shared.set_pace(Some(Duration::from_secs(30)), None); // slow, not held
@@ -282,6 +283,7 @@ async fn a_submit_interrupts_a_finite_paced_sleep() {
     let s2 = Arc::clone(&shared);
     let waiter = tokio::spawn(async move { s2.pace_at_juncture().await });
     tokio::time::sleep(Duration::from_millis(20)).await; // let the pace wait enter its sleep
+    assert!(!waiter.is_finished(), "the paced juncture is asleep");
     shared.submit_turn(SubmittedTurn::new("urgent", "sub-test")); // fires the pace interrupt
 
     tokio::time::timeout(Duration::from_millis(500), waiter)

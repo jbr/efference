@@ -29,7 +29,7 @@ fn scripted_upstream(open: &Turnstile) -> ScriptedUpstream {
 /// the triage and goes idle without another request. Left set, the latch rides into the
 /// next completion and stops its first call as "aborted by user" — the model's
 /// answer to whatever the operator queued to explain the press.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     // The triage's stream opens as soon as its request arrives.
     let open = Turnstile::new();
@@ -51,7 +51,9 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
             session.loop_phase() == LoopPhase::Idle
         })
         .await;
-    // Room for a request the loop should not make.
+    // Room for a request the loop should not make. The call that ran is long done, so the
+    // clock can be paused for the room (`upstream_hold.rs`).
+    tokio::time::pause();
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     assert_eq!(

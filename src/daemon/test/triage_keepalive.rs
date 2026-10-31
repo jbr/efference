@@ -1,7 +1,7 @@
 //! Tests for the triage lineage's keepalive (docs/transport.md): where it arms, what it
 //! stores, and what its ping sends — the stored request, as sent.
 
-use super::keepalive::{pinged_session, record_turn};
+use super::keepalive::{self, pinged_session, record_turn};
 use super::runtime::{started, workdir};
 use super::*;
 use crate::api::{Client, Endpoint, PromptCachePolicy, RequestUsage, SentRequest};
@@ -42,8 +42,9 @@ fn stored(turns: Vec<WireTurn>) -> SentRequest {
 
 /// The triage lineage's ping is the stored request (docs/transport.md): its turns, its
 /// `tools[]` and its forced `retain`, and nothing appended. The loop's own spec carries no
-/// envelope for this lineage.
-#[tokio::test]
+/// envelope for this lineage. Taken on a paused clock, with the ping due at once: the
+/// interval is read off `std::time::Instant`, which a paused clock does not move.
+#[tokio::test(start_paused = true)]
 async fn a_triage_ping_sends_the_stored_request() {
     let ok = r#"{"id":"m","model":"m","usage":{"input_tokens":5000,"output_tokens":1}}"#;
     let upstream = ScriptedUpstream::new(move |_| Canned::json(200, ok));
@@ -60,7 +61,7 @@ async fn a_triage_ping_sends_the_stored_request() {
             None,
         )),
         tools: Vec::new(),
-        ping_at: Duration::from_millis(1),
+        ping_at: Duration::ZERO,
         prices: None,
     };
     let task = tokio::spawn(keepalive_loop(spec, Arc::clone(&shared)));
@@ -196,8 +197,10 @@ async fn idle_triage_is_no_touch_and_a_triage_ping_keeps_the_cap() {
 /// The model name the separate triage client sends, which tells its requests apart.
 const TRIAGE_MODEL: &str = "triage-m";
 
-/// The interval the end-to-end sessions run their keepalive at.
-const PING_AT: Duration = Duration::from_secs(2);
+/// The interval the end-to-end sessions run their keepalive at. The clocks it is read
+/// against are `std::time::Instant`s, which a paused clock does not move, so a test sets
+/// them back (`keepalive::idle_for`) instead of waiting an interval out.
+const PING_AT: Duration = Duration::from_secs(10 * 60);
 
 /// A ping's non-streamed answer.
 const PING: &str = r#"{"id":"p","model":"m","usage":{"input_tokens":10,"cache_read_input_tokens":900,"output_tokens":0}}"#;
@@ -247,36 +250,41 @@ fn is_ping(body: &Value) -> bool {
     body["max_tokens"] == 0
 }
 
-/// Run one turn — a bash call, its triage, the closing prose — and wait for the first
-/// triage ping. Returns the triage request that got the verdict and the ping, and how long
-/// after that request the ping arrived.
-async fn triage_then_ping(script: fn(usize) -> Canned) -> (Value, Value, Duration) {
-    let upstream = ScriptedUpstream::new(script);
-    let (host, runtime, _dir) = start_with_triage_model(&upstream).await;
+/// A session whose turn — a bash call, its triage, the closing prose — has run, returned
+/// once the triage's verdict is logged.
+async fn after_a_triage(
+    upstream: &ScriptedUpstream,
+) -> (Swansong, Arc<Session>, SessionRuntime, TempDir) {
+    let (host, runtime, dir) = start_with_triage_model(upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
-
     session
-        .wait_until_with(&upstream, "the triage's verdict", || {
-            triage_bodies(&upstream).iter().any(|b| !is_ping(b))
+        .wait_until_with(upstream, "the triage's verdict", || {
+            triage_bodies(upstream).iter().any(|b| !is_ping(b))
                 && session
                     .snapshot()
                     .iter()
                     .any(|e| matches!(e.payload, Payload::Triage(_)))
         })
         .await;
-    let triaged = Instant::now();
+    (host, session, runtime, dir)
+}
+
+/// Wait for the first triage ping and return it with the triage request that got the
+/// verdict.
+async fn the_ping_and_its_request(
+    session: &Session,
+    upstream: &ScriptedUpstream,
+) -> (Value, Value) {
     session
-        .wait_until_with(&upstream, "the triage ping", || {
-            triage_bodies(&upstream).iter().any(is_ping)
+        .wait_until_with(upstream, "the triage ping", || {
+            triage_bodies(upstream).iter().any(is_ping)
         })
         .await;
-    let waited = triaged.elapsed();
-    let sent = triage_bodies(&upstream);
+    let sent = triage_bodies(upstream);
     let request = sent.iter().rfind(|b| !is_ping(b)).unwrap().clone();
     let ping = sent.into_iter().find(is_ping).unwrap();
-    host.shut_down().await;
-    (request, ping, waited)
+    (request, ping)
 }
 
 /// Every envelope field the cache keys on is the request's own, and the ping's messages
@@ -309,38 +317,53 @@ fn assert_ping_is_the_request_through_its_breakpoint(request: &Value, ping: &Val
 
 /// A separate Messages triage lineage pings at the interval after its last triage
 /// request, and the ping is that request up to its breakpoint, under its forced `retain`.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+/// Once the turn's bash call has run the clock is paused (`upstream_hold.rs`) and the
+/// lineage's clocks are set back to a minute short of the interval: the loop ticks past
+/// it for five minutes and sends nothing, and the minute that makes it up brings the
+/// ping at the next tick.
+#[tokio::test]
 async fn a_messages_triage_lineage_pings_its_last_request_at_the_interval() {
-    let (request, ping, waited) = triage_then_ping(|n| match n {
+    const MINUTE: Duration = Duration::from_secs(60);
+    let upstream = ScriptedUpstream::new(|n| match n {
         0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
         1 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
         2 => Canned::stream(end_turn()),
         _ => Canned::json(200, PING),
-    })
-    .await;
+    });
+    let (host, session, _runtime, _dir) = after_a_triage(&upstream).await;
+    tokio::time::pause();
+    keepalive::idle_for(&session, PING_AT - MINUTE);
+    tokio::time::sleep(5 * MINUTE).await;
+    assert!(
+        !triage_bodies(&upstream).iter().any(is_ping),
+        "no ping before the interval has passed"
+    );
+    keepalive::idle_for(&session, MINUTE);
+    let (request, ping) = the_ping_and_its_request(&session, &upstream).await;
+    host.shut_down().await;
     assert_eq!(request["tool_choice"]["name"], "retain");
     assert_ping_is_the_request_through_its_breakpoint(&request, &ping);
-    // Measured from when the verdict was seen, which is after the triage clock was
-    // stamped; the wake that saw it may come a little after the stamp.
-    assert!(
-        waited + Duration::from_millis(100) >= PING_AT,
-        "the ping waits out the interval: {waited:?}"
-    );
 }
 
 /// A model that refused the forced `tool_choice` is pinged with the unforced form it was
 /// last sent: `auto`, as the fallback sent it. The fallback's instruction rides after the
-/// breakpoint and is dropped with the current step.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+/// breakpoint and is dropped with the current step. The interval is not the subject: once
+/// the turn's bash call has run, the clock is paused (`upstream_hold.rs`) and the session
+/// set back past the interval, so the first tick pings.
+#[tokio::test]
 async fn a_model_that_refused_forced_choice_is_pinged_unforced() {
-    let (request, ping, _) = triage_then_ping(|n| match n {
+    let upstream = ScriptedUpstream::new(|n| match n {
         0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
         1 => Canned::json(400, FORCED_REFUSAL),
         2 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
         3 => Canned::stream(end_turn()),
         _ => Canned::json(200, PING),
-    })
-    .await;
+    });
+    let (host, session, _runtime, _dir) = after_a_triage(&upstream).await;
+    tokio::time::pause();
+    keepalive::idle_for(&session, PING_AT);
+    let (request, ping) = the_ping_and_its_request(&session, &upstream).await;
+    host.shut_down().await;
     assert_eq!(request["tool_choice"]["type"], "auto", "{request}");
     assert!(
         request["messages"]

@@ -419,7 +419,7 @@ fn resumed_log_edits_fold_into_the_initial_effective_config() {
 /// gate rather than running on under a policy the file no longer shows — and the
 /// gate clears the way it was always going to: the human fixes the file, the
 /// watcher's next refresh adopts it, and the park releases.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_unrepairable_config_parks_the_loop_until_the_file_parses() {
     use std::os::unix::fs::PermissionsExt;
 

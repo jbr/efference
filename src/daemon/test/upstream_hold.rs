@@ -3,6 +3,16 @@
 //! schedule instead of stalling at once, a triage without a verdict holds
 //! its results rather than showing the agent an error, and the operator's
 //! continue retries either wait now.
+//!
+//! The fixtures here are what a live-loop test builds on, and a test whose subject is
+//! time builds on them with a paused clock. `#[tokio::test(start_paused = true)]` does
+//! for a script that answers without running a call: the clock moves only when the
+//! runtime has nothing else to do, and the scripted upstream answers in process. A
+//! script that calls `bash` runs a real process, which the runtime also waits on with
+//! nothing else to do, so a paused clock races past the call's own deadlines (and the
+//! wait helper's hang guard) while the process is still starting. A test with such a
+//! script runs on the real clock until the call's result is in and calls
+//! `tokio::time::pause()` there.
 
 use super::runtime::{boot, started, workdir};
 use super::*;
@@ -37,6 +47,11 @@ pub(super) async fn start_with(
     let runtime = started(boot, &host).await;
     (host, runtime, dir)
 }
+
+/// How long the loop waits after the first failed attempt (`stream_abort_backoff`,
+/// `agent.rs`), held as a number so a test that waits it out fails when the schedule
+/// changes under it.
+pub(super) const FIRST_PAUSE: Duration = Duration::from_secs(1);
 
 const REFUSED: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"no"}}"#;
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
@@ -217,8 +232,11 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
 /// **A failed request takes the schedule.** The transport exhausts its own
 /// attempts on an overloaded upstream and returns an error; the loop records it
 /// and waits to retry instead of stalling, and the operator's continue cuts the
-/// wait short.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+/// wait short. On a paused clock the wait would end by itself when the runtime has
+/// nothing else to do, so the test lets most of the first pause pass with the loop
+/// still waiting, and holds the continue to the rest of it: the turn finishes with
+/// that pause unspent.
+#[tokio::test(start_paused = true)]
 async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
     // The transport makes four attempts before the loop sees the failure.
     let upstream = ScriptedUpstream::new(|n| match n {
@@ -234,9 +252,16 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
             session.upstream_retry.get().is_some()
         })
         .await;
+    let waiting_since = tokio::time::Instant::now();
     assert!(
         session.stall().is_none(),
         "a transient failure does not stall"
+    );
+    // Most of the first pause passes with the loop still waiting.
+    tokio::time::sleep(FIRST_PAUSE * 9 / 10).await;
+    assert!(
+        session.upstream_retry.get().is_some(),
+        "the loop waits out the pause"
     );
     assert_eq!(
         session.request_continue(Default::default()),
@@ -248,6 +273,11 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
             session.loop_phase() == LoopPhase::Idle
         })
         .await;
+    assert!(
+        waiting_since.elapsed() < FIRST_PAUSE,
+        "the continue ended the wait, not its timer: {:?}",
+        waiting_since.elapsed()
+    );
     assert!(session.stall().is_none());
     assert!(session.upstream_retry.get().is_none());
     assert!(

@@ -23,7 +23,7 @@ async fn hosted(label: &str) -> (Arc<Host>, Arc<Session>, PathBuf) {
 
 /// A check that finds a newer release publishes it on a hosted session's stream,
 /// with the command that installs it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_newer_release_reaches_the_sessions_topic() {
     let (host, session, root) = hosted("newer").await;
     assert_eq!(session.topic_json(Topic::NewerVersion), Value::Null);
@@ -62,7 +62,7 @@ async fn a_newer_release_reaches_the_sessions_topic() {
 }
 
 /// A failed check publishes nothing: the topic stays as it was.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_failed_check_publishes_nothing() {
     let (host, session, root) = hosted("failed").await;
     host.check_for_updates(check(&[("/releases/latest.json", NEWER)]).installed("0.1.0"));

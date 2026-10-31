@@ -134,7 +134,7 @@ async fn self_target_is_refused() {
 /// project is read and messaged by its id, and what it hears names the sender's
 /// project, on a note and, once the sender supervises it, on a turn. The overview
 /// stays the caller's project, and an id the host does not hold is not found.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_session_in_another_project_is_reached_by_its_id() {
     let fixture = Fixture::new().await;
     let control = fixture.control("parent");

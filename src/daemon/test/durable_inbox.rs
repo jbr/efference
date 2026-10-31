@@ -48,7 +48,7 @@ fn triages(session: &Session) -> Vec<Triage> {
 /// **Two messages logged before a restart** start nothing on resume; a notification that
 /// arrives afterward wakes the idle triage, which offers all three together and records that
 /// it showed them, and then nothing wakes the loop again.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_resume_over_two_unshown_messages_waits_and_then_offers_both_with_the_new_one() {
     let mut log = quiet_log();
     let first = arrive(
@@ -133,7 +133,7 @@ async fn an_arrival_during_a_triage_request_is_shown_by_the_next_one() {
 /// **A must-wake message from before a restart** still pins at its first show whatever the
 /// triage says (the first show being the triage a later arrival starts), and the pin wakes
 /// the idle agent into a turn.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_must_wake_message_still_pins_after_a_restart() {
     let mut log = quiet_log();
     let seq = arrive(

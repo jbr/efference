@@ -54,7 +54,7 @@ async fn events_replays_then_tails_live() {
 /// must read raw body bytes rather than decoded events (the invisibility is the point).
 /// The heartbeat is what makes a `?since` past the head — served as a wait, not an
 /// error — distinguishable from a dead connection.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn an_idle_stream_heartbeats_with_comments() {
     use futures_lite::AsyncReadExt;
 

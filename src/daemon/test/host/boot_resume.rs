@@ -240,7 +240,7 @@ async fn an_empty_session_a_host_left_is_reopened_and_discarded_at_archive() {
 
 /// A resume starts nothing: a restored notification no triage showed leaves the log as
 /// the resume wrote it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_resume_over_an_unshown_notification_appends_nothing() {
     let root = Root::new("boot-resume-quiet");
     left(&root, "quiet", None, false, |log| {

@@ -34,8 +34,19 @@ async fn settle_answer(shared: &Arc<Session>, cap: Duration) -> (Option<String>,
         async move { settle_and_state_within(&shared, conn, cap).await }
     })
     .await;
-    answer(&server.get("/").await)
+    answer(&guarded(server.get("/")).await)
 }
+
+/// A request that answers within `HANG`, so a cap that never fires fails the test: with
+/// the clock paused, a wait nothing ends would otherwise never come back.
+async fn guarded<F: IntoFuture>(request: F) -> F::Output {
+    tokio::time::timeout(HANG, request.into_future())
+        .await
+        .expect("an answer within the hang guard")
+}
+
+/// Past the longest cap these tests set.
+const HANG: Duration = Duration::from_secs(120);
 
 async fn starting_answer(starting: &Arc<Starting>, cap: Duration) -> (Option<String>, Value) {
     let starting = Arc::clone(starting);
@@ -44,7 +55,7 @@ async fn starting_answer(starting: &Arc<Starting>, cap: Duration) -> (Option<Str
         async move { settle_starting_within(&starting, conn, cap).await }
     })
     .await;
-    answer(&server.get("/").await)
+    answer(&guarded(server.get("/")).await)
 }
 
 fn answer(response: &trillium_testing::ConnTest) -> (Option<String>, Value) {
@@ -64,7 +75,7 @@ async fn a_settled_session_answers_settled_true_at_once() {
     assert_eq!(state["loop_phase"], serde_json::json!({"phase": "idle"}));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_unsettled_session_answers_settled_false_at_the_cap() {
     let session = session();
     session.set_phase(LoopPhase::Requesting);
@@ -76,7 +87,7 @@ async fn an_unsettled_session_answers_settled_false_at_the_cap() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_session_that_settles_inside_the_cap_answers_true() {
     let session = session();
     session.set_phase(LoopPhase::Requesting);
@@ -89,7 +100,7 @@ async fn a_session_that_settles_inside_the_cap_answers_true() {
     assert_eq!(header.as_deref(), Some("true"));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_starting_session_that_has_not_started_answers_false_at_the_cap() {
     let starting = starting();
     let (header, state) = starting_answer(&starting, CAP).await;

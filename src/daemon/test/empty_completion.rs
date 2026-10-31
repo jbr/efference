@@ -19,7 +19,7 @@ fn thinking_only() -> String {
     ])
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_thinking_only_completion_is_asked_again() {
     let upstream = ScriptedUpstream::new(|n| match n {
         0 => Canned::stream(thinking_only()),

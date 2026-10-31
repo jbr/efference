@@ -295,6 +295,20 @@ pub(super) fn record_turn(shared: &Session, prefix: u64) {
     );
 }
 
+/// The session as it stands after sitting idle for `idle`: its touch, real-turn and
+/// triage clocks set back by that much. The keepalive reads them off `std::time::Instant`,
+/// which a paused clock does not move, so a test that needs time to have passed on them
+/// sets them back instead of waiting.
+pub(super) fn idle_for(shared: &Session, idle: Duration) {
+    let back = |at: &mut Option<Instant>| {
+        *at = at.map(|at| at.checked_sub(idle).expect("a clock that can be set back"));
+    };
+    let mut metrics = shared.metrics.lock().unwrap();
+    back(&mut metrics.last_request_at);
+    back(&mut metrics.last_real_turn_at);
+    back(&mut metrics.last_triage_at);
+}
+
 fn skipped(shared: &Session) -> Value {
     let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
     state["usage"]["keepalive_skipped"].clone()
@@ -302,8 +316,10 @@ fn skipped(shared: &Session) -> Value {
 
 /// An expensive first ping at a small prefix makes the next tick skip, with the stance
 /// in `/state`; the same estimate against a prefix that has grown pings again and
-/// clears it. Real one-second ticks (the loop's floor).
-#[tokio::test]
+/// clears it. The ticks are the loop's one-second floor, taken on a paused clock; the
+/// ping is due at once (`Duration::ZERO`), since the interval is read off
+/// `std::time::Instant` and a paused clock does not move it.
+#[tokio::test(start_paused = true)]
 async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
     let ping_body = r#"{"id":"m","model":"m","usage":{"input_tokens":5000,"output_tokens":10000}}"#;
     let upstream = ScriptedUpstream::new(move |_| Canned::json(200, ping_body));
@@ -312,7 +328,7 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
         client,
         Arc::clone(&shared),
         Vec::new(),
-        Duration::from_millis(1),
+        Duration::ZERO,
         None,
     ));
     let sent = |n| upstream.count() == n;
@@ -343,7 +359,7 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
 }
 
 /// A permanent rejection still ends the loop, and the state says why.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_permanent_rejection_ends_the_loop() {
     let upstream = ScriptedUpstream::new(|_| Canned::json(400, r#"{"error":"bad"}"#));
     let (shared, client) = pinged_session(&upstream, 5_000);
@@ -351,7 +367,7 @@ async fn a_permanent_rejection_ends_the_loop() {
         client,
         Arc::clone(&shared),
         Vec::new(),
-        Duration::from_millis(1),
+        Duration::ZERO,
         None,
     ));
     tokio::time::timeout(Duration::from_secs(10), task)
@@ -366,8 +382,10 @@ async fn a_permanent_rejection_ends_the_loop() {
 
 /// A plan's usage limit (a 429 whose body names it) pauses the pings instead of
 /// retrying them every tick, with the reset time in the stance; the next real turn
-/// resumes them.
-#[tokio::test]
+/// resumes them. The pause ends when the real-turn clock reads below what it read at the
+/// limit, so the session has been idle for ten minutes first: on `std::time::Instant`
+/// readings of microseconds the new turn would not reliably read below them.
+#[tokio::test(start_paused = true)]
 async fn an_exhausted_limit_pauses_until_the_next_turn() {
     let limit = r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","resets_at":1791623333,"resets_in_seconds":13597}}"#;
     let ok = r#"{"id":"m","model":"m","usage":{"input_tokens":5000,"output_tokens":1}}"#;
@@ -376,11 +394,12 @@ async fn an_exhausted_limit_pauses_until_the_next_turn() {
         _ => Canned::json(200, ok),
     });
     let (shared, client) = pinged_session(&upstream, 5_000);
+    idle_for(&shared, Duration::from_secs(10 * 60));
     let task = tokio::spawn(main_loop(
         client,
         Arc::clone(&shared),
         Vec::new(),
-        Duration::from_millis(1),
+        Duration::ZERO,
         None,
     ));
     let sent = |n| upstream.count() == n;

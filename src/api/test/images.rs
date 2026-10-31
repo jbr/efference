@@ -123,7 +123,7 @@ async fn openrouters_404_for_an_unroutable_image_is_recovered_from() {
 }
 
 /// A rate limit is about the caller, not the content: nothing is withheld.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_429_is_not_a_reason_to_withhold_images() {
     let limited = r#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"#;
     let (client, server) = scripted(vec![(429, limited); 6]);

@@ -389,7 +389,7 @@ fn waiting_executor(
 }
 
 /// A capped answer is polled again; the call ends on the first settled one.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn capped_answers_are_repolled_until_settled() {
     let (executor, client, waits) =
         waiting_executor(|n| Some(if n < 2 { "false" } else { "true" }));

@@ -108,7 +108,7 @@ fn pinned(session: &Session, seq: Seq) -> bool {
 /// child's slot, and the parent's idle loop pins it even though its triage
 /// cannot reach a model (the stub endpoint refuses connections); the resolution's
 /// idle follows on the same slot. A sibling that did not subscribe hears nothing.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says() {
     let fixture = Fixture::new().await;
     let parent = fixture.session("parent");
@@ -367,7 +367,7 @@ async fn a_question_tells_a_driver_its_message_came_back() {
 
 /// Ending a session posts its end to its subscribers, and ends the sessions it
 /// commissioned — except a detached one, which outlives it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn an_end_is_posted_and_cascades_to_non_detached_children() {
     let fixture = Fixture::new().await;
     let parent = fixture.session("parent");
