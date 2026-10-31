@@ -13,7 +13,8 @@
 
 import { apiBase } from "./base.ts";
 import { readEventStream, type StreamHandle } from "./sse.ts";
-import type { Frame, Seq } from "./types.ts";
+import type { Frame } from "./frames.ts";
+import type { Seq } from "./entry.ts";
 
 export interface StreamCallbacks {
   onFrame(frame: Frame): void;

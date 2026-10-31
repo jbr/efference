@@ -12,7 +12,7 @@ import "./inspector/Layout.css";
 // cordon's renderers rather than growing its own.
 
 import { useEffect, useMemo, useState } from "react";
-import type { CallId, Process } from "../api/types.ts";
+import type { CallId, ProcessState } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
 import { assistantView } from "../session/assistant.ts";
 import { CommandView } from "./inspector/CommandView.tsx";
@@ -126,7 +126,7 @@ export function Inspector({
 }: {
   node: CallNode;
   hidden?: boolean;
-  process?: Process;
+  process?: ProcessState;
   /** The exit transition is running; `onSlideOut` unmounts when it lands. */
   closing: boolean;
   onSlideOut: () => void;

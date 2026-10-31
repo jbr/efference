@@ -1,13 +1,13 @@
 import { PlanMeter } from "../ui/PlanMeter.tsx";
 import { ContextMeter } from "../ui/TopBar.tsx";
-import type { Plan } from "../api/types.ts";
+import type { PlanSnapshot } from "../api/types.ts";
 
 const NOW = Date.now();
 function specimenPlan(
   used: number,
   elapsed: number | null,
   spark = false,
-): Plan {
+): PlanSnapshot {
   const window = (minutes: number, percent: number) => ({
     used_percent: percent,
     window_minutes: minutes,

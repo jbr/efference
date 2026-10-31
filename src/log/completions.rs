@@ -24,6 +24,7 @@ const READABLE: [&str; 4] = ["text", "summary", "content", "thinking"];
 
 /// One assistant message. Serializes as the bare object it replays as.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct CompletionsMessage(Map<String, Value>);
 

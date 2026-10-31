@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CallId, LogEntry } from "../../api/types.ts";
+import type { CallId } from "../../api/types.ts";
+import type { LogEntry } from "../../api/entry.ts";
 import { fetchCallSeq, fetchLogRange } from "../../api/http.ts";
 import { buildTree, type CallNode } from "../../session/tree.ts";
 

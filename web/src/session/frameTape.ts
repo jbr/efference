@@ -1,5 +1,5 @@
 // Bounded recorder storage; evicted frames advance the replay base (docs/web-client.md).
-import type { Frame } from "../api/types.ts";
+import type { Frame } from "../api/frames.ts";
 
 export class FrameTape {
   private frames: Frame[] = [];

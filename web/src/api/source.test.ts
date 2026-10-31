@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { senderName, sessionSource } from "./types.ts";
+import { senderName, sessionSource } from "./source.ts";
 
 describe("a session source", () => {
   test("names another project only when it was sent from one", () => {

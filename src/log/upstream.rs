@@ -26,6 +26,11 @@ mod test;
 /// so an old log line parses and an ordinary failure writes the same bytes it
 /// always did.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    test,
+    derive(schemars::JsonSchema),
+    schemars(with = "UpstreamFailureSpellings")
+)]
 pub struct UpstreamFailureRecord {
     /// The provider's error verbatim when one arrived, or a harness-written note.
     pub why: String,
@@ -57,6 +62,22 @@ impl std::fmt::Display for UpstreamFailureRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.why)
     }
+}
+
+/// The two spellings [`UpstreamFailureRecord`]'s `Serialize` writes, as a type the schema
+/// derive can read: it cannot see a hand-written `Serialize`. A test writes the same two
+/// values through both.
+#[cfg(test)]
+#[derive(Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+enum UpstreamFailureSpellings {
+    /// The failure with no diagnostics attached.
+    Text(String),
+    /// The failure with the evidence its stream captured.
+    Structured {
+        why: String,
+        stream: StreamDiagnostics,
+    },
 }
 
 /// The structured spelling, written only when diagnostics are attached.
@@ -109,6 +130,7 @@ impl<'de> Deserialize<'de> for UpstreamFailureRecord {
 /// a missing piece must not cost the pieces that are present. Values pass the
 /// log's `[env]` masker like any other stored text (docs/env.md).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct StreamDiagnostics {
     /// The HTTP status the stream arrived on — 200 on this path, recorded rather
     /// than assumed.

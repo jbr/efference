@@ -28,6 +28,7 @@ use super::{CallId, Timestamp};
 /// One lifecycle fact about one background process, addressed by the
 /// spawn-minted ordinal (docs/process-monitor.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcessEvent {
     /// The spawn-minted ordinal — bare, as routes and frames carry it; rendered
     /// `p#<n>` in prose by [`crate::process_monitor::handle`].
@@ -39,6 +40,7 @@ pub struct ProcessEvent {
 /// payloads: they share the id that joins them, and a reader folding a log for
 /// "what was `p#3`" wants both under one match.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum ProcessEventKind {
     /// The process entered the background namespace — spawned with `background:
     /// true`, or adopted by the handoff (docs/process-monitor.md).
@@ -50,6 +52,7 @@ pub enum ProcessEventKind {
 /// What a process was, recorded at the moment its handle became a fact a reader
 /// can encounter (docs/process-monitor.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcessSpawn {
     pub command: String,
     /// The `tool_use` id of the call that spawned it — the call↔process mapping
@@ -71,6 +74,7 @@ pub struct ProcessSpawn {
 /// exit half of a [`ProcessRecord`](crate::process_monitor::ProcessRecord), so the
 /// live registry and a log fold answer with one type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcessExit {
     pub outcome: ExitOutcome,
     /// Wall-clock milliseconds from spawn to exit.
@@ -82,6 +86,7 @@ pub struct ProcessExit {
 /// How a process ended (docs/process-monitor.md) — the structured form of the prose
 /// the exit notification carries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ExitOutcome {
     /// Exited normally with this status code.

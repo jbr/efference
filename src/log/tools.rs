@@ -11,6 +11,7 @@ use super::{LogEntry, Payload, Telemetry};
 /// Empty when the arrays are equal. `reordered` is set when the names and definitions are
 /// the same and only their order moved, which is still a different request prefix.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ToolsChange {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub added: Vec<String>,

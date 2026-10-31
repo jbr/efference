@@ -15,7 +15,7 @@
 import { join as joinBase } from "./base.ts";
 import { apiFetch } from "./http.ts";
 import { readEventStream } from "./sse.ts";
-import type { ErrorEnvelope } from "./types.ts";
+import type { ErrorBody } from "./types.ts";
 
 // Joined onto the client's base like every other control path (api/base.ts).
 // `/files` is mounted on a web listener only (docs/web-bind.md); a listener
@@ -99,7 +99,7 @@ export interface Listing {
 
 export type ListFetch =
   | { kind: "ok"; listing: Listing }
-  | { kind: "refused"; code: ErrorEnvelope["code"]; message: string };
+  | { kind: "refused"; code: ErrorBody["code"]; message: string };
 
 /** List a directory. `depth` above 1 walks below it — the recursive listing
  * the path finder matches against — and the server clamps both it and the
@@ -113,7 +113,7 @@ export async function listDir(path: string, depth = 1): Promise<ListFetch> {
     return { kind: "ok", listing: (await response.json()) as Listing };
   }
   try {
-    const envelope = (await response.json()) as ErrorEnvelope;
+    const envelope = (await response.json()) as ErrorBody;
     return { kind: "refused", code: envelope.code, message: envelope.message };
   } catch {
     return {
@@ -128,7 +128,7 @@ export type FileFetch =
   | { kind: "ok"; text: string; etag: string | null }
   /** The `If-None-Match` matched — the common poll answer, no body. */
   | { kind: "unchanged" }
-  | { kind: "refused"; code: ErrorEnvelope["code"]; message: string };
+  | { kind: "refused"; code: ErrorBody["code"]; message: string };
 
 /** `path` is relative to the daemon's working directory, which is the only
  * root the surface serves (docs/web-bind.md); segments are encoded here so a
@@ -152,7 +152,7 @@ export async function fetchFile(
     };
   }
   try {
-    const envelope = (await response.json()) as ErrorEnvelope;
+    const envelope = (await response.json()) as ErrorBody;
     return { kind: "refused", code: envelope.code, message: envelope.message };
   } catch {
     return {

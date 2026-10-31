@@ -50,6 +50,31 @@ impl Serialize for Provider {
     }
 }
 
+/// The channel's spelling of a provider as a schema: one string per [`Provider::name`]
+/// (docs/control-api.md). Built from the tables the parsers use, so a provider added to
+/// either table reaches the schema; the hand-written [`Serialize`] is invisible to the derive.
+#[cfg(test)]
+impl schemars::JsonSchema for Provider {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Provider".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let mut names: Vec<&str> = Self::NAMED.iter().map(|(_, p, _)| p.name()).collect();
+        names.dedup();
+        names.extend(
+            WireDialect::NAMED
+                .iter()
+                .map(|(_, dialect, _)| Self::Custom(*dialect).name()),
+        );
+        schemars::json_schema!({
+            "description": "Which API family fronts a session's endpoint, spelled as its name.",
+            "type": "string",
+            "enum": names,
+        })
+    }
+}
+
 /// Read back what [`Serialize`] wrote, so a control client decodes the host's
 /// own types instead of carrying a parallel copy of them. The accepted
 /// vocabulary is [`Provider::name`]'s output, which is wider than

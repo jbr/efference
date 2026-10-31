@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Frame, LogEntry, RequestStage } from "../api/types.ts";
+import type { Frame } from "../api/frames.ts";
+import type { LogEntry } from "../api/entry.ts";
+import type { OpenRequest, RequestStage } from "../api/types.ts";
 import { messagesAssistant } from "./assistant.ts";
 import { applyFrame, emptySession, seed, type Session } from "./store.ts";
 
@@ -25,11 +27,16 @@ const delta = (
     | "triage_thinking_delta",
   text: string,
   callIds?: string[],
-): Frame => ({
-  class: "output",
-  kind,
-  data: callIds === undefined ? { text } : { text, call_ids: callIds },
-});
+): Frame => {
+  if (kind === "triage_delta" || kind === "triage_thinking_delta") {
+    return {
+      class: "output",
+      kind,
+      data: { text, call_ids: callIds ?? [] },
+    };
+  }
+  return { class: "output", kind, data: { text } };
+};
 const fold = (...frames: Frame[]) => frames.reduce(applyFrame, emptySession);
 const triage = (for_result: number | null): LogEntry["payload"] => ({
   Triage: {
@@ -39,6 +46,7 @@ const triage = (for_result: number | null): LogEntry["payload"] => ({
     inbox: [],
     surfaced: [],
     retries: [],
+    thinking: [],
   },
 });
 const result = (call_id: string): LogEntry["payload"] => ({
@@ -48,13 +56,7 @@ const result = (call_id: string): LogEntry["payload"] => ({
     wire: "Pending",
   },
 });
-const ops = (
-  requests: {
-    request: number;
-    origin: "compaction" | "triage" | "consolidation";
-    stage: "sent" | "streaming" | "retrying";
-  }[],
-): Frame => ({
+const ops = (requests: OpenRequest[]): Frame => ({
   class: "state",
   kind: "current_operations",
   data: { requests, tools: [], compaction: null },
@@ -122,7 +124,13 @@ describe("side request streams", () => {
           from: 0,
           upto: 0,
           text: "summary",
-          made_by: { compaction: {} },
+          made_by: {
+            compaction: {
+              connection: "anthropic",
+              provider: "anthropic",
+              model: "claude-sonnet-5-5",
+            },
+          },
         },
       }),
     );
@@ -212,7 +220,9 @@ describe("side request streams", () => {
   });
 
   it("uses current_operations for mid-request seeds and completion, without reopening a settled request", () => {
-    const active = ops([{ request: 3, origin: "triage", stage: "streaming" }]);
+    const active = ops([
+      { request: 3, origin: "triage", stage: "streaming", since: 0 },
+    ]);
     let s = fold(
       active,
       delta("triage_delta", "idle", []),
@@ -223,7 +233,7 @@ describe("side request streams", () => {
     expectEmpty(s);
     s = applyFrame(
       s,
-      ops([{ request: 4, origin: "triage", stage: "streaming" }]),
+      ops([{ request: 4, origin: "triage", stage: "streaming", since: 0 }]),
     );
     s = applyFrame(s, delta("triage_delta", "new", []));
     expect(s.streaming.triage[0]?.text).toBe("new");

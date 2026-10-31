@@ -7,7 +7,7 @@
 // thing from its bridge.
 
 import { fetchProcessOutput } from "../api/http.ts";
-import type { Process } from "../api/types.ts";
+import type { ProcessState } from "../api/types.ts";
 import { seedProcessOutput, type Store } from "./store.ts";
 
 export class ProcessSeeder {
@@ -22,7 +22,7 @@ export class ProcessSeeder {
    * leaves exactly the cold case, where the buffer is empty and everything
    * retained belongs in front of whatever arrives next.
    */
-  sync(processes: Process[]): void {
+  sync(processes: ProcessState[]): void {
     const buffered = this.store.snapshot().streaming.processOutput;
     for (const proc of processes) {
       if (this.seeded.has(proc.id)) continue;

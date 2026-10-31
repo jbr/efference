@@ -14,6 +14,7 @@ use super::*;
 ///
 /// [`project`]: crate::project::project
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum WireState {
     /// Captured durably, but not yet accepted onto the main agent's wire.
     /// An appended result verdict resolves this state (docs/triage.md).
@@ -45,6 +46,7 @@ pub enum WireState {
 /// What an interrupt stopped (docs/control-channel.md): carried by
 /// [`WireState::Interrupted`], whose line is rendered from it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Interruption {
     /// Who interrupted, spelled as a turn's `source` is; `None` for the operator.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,6 +66,7 @@ pub struct Interruption {
 /// `raw` plus this each turn, so a field added here is one setter and one render
 /// clause, never a sweep.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Triaged {
     pub keep: Keep,
     pub note: Option<String>,
@@ -108,6 +111,7 @@ impl From<Triaged> for WireState {
 /// Ranges are 1-based inclusive line spans, interpreted against the first
 /// `TRIAGE_LINE_CAP` lines — the set the triage showed the model.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum Keep {
     /// Keep every (shown) line.
     All,

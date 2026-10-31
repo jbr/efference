@@ -176,6 +176,7 @@ pub struct ToolBrief<'a> {
 /// (`src/process_monitor.rs` draws the same untrusted-server line for the
 /// built-ins' own annotations).
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ToolEntry {
     /// The wire name this entry was looked up by (`<server>__<tool>` or an
     /// unprefixed embedded name) — echoed back so a caller that resolved a
@@ -191,6 +192,12 @@ pub struct ToolEntry {
     /// pre-injection one that would flag `intent` as undeclared on every call.
     pub input_schema: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
+    // The MCP annotations are mcplease's type, which derives no schema; any object
+    // describes them.
+    #[cfg_attr(
+        test,
+        schemars(with = "Option<std::collections::BTreeMap<String, Value>>")
+    )]
     pub annotations: Option<mcplease::types::ToolAnnotations>,
     /// The server that mounted this tool, or `None` for one of the harness's
     /// own embedded tools (`bash`, `read_image`, the fs/semantic-edit MCP

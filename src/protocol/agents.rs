@@ -58,6 +58,7 @@ pub(crate) fn decision_of(input: &Value) -> Option<Decision> {
 /// leaf. The parent's fast-path, spotter, and human gate all read this instead
 /// of the handle.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct BoundAction {
     /// The leaf tool's wire name.
     pub name: String,

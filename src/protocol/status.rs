@@ -17,6 +17,7 @@ pub const CLOSING_CAP: usize = 4096;
 
 /// One session's status, as every surface renders it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct StatusView {
     pub id: String,
     pub condition: Condition,
@@ -25,6 +26,7 @@ pub struct StatusView {
 
 /// The condition, and what each one carries for its reader.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Condition {
     /// Being prepared: the `starting` topic's stage and authorization.
@@ -74,6 +76,7 @@ pub enum Condition {
 
 /// A queued message a question returned undelivered: who sent it and what it said.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Returned {
     /// The turn's `source`: `None` for the operator.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -83,6 +86,7 @@ pub struct Returned {
 
 /// A held call, as its decider reads it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct HeldCall {
     /// The provider's id for the call, which the approval route takes; `decide` maps
     /// the handle to it.
@@ -109,6 +113,7 @@ pub struct HeldCall {
 
 /// Who decides a held call (docs/permissions.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Reviewer {
     Operator,
@@ -123,6 +128,7 @@ pub enum Reviewer {
 /// for whoever decides next (docs/permissions.md). The gate topic and the status view
 /// both carry these (docs/control-api.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Escalated {
     /// Who escalated, spelled as a turn's `source` is: `session[<id>]`, `mcp[<name>]`;
     /// `null` for the operator's own command line.
@@ -135,6 +141,7 @@ pub struct Escalated {
 
 /// A turn's closing message, cut at [`CLOSING_CAP`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Closing {
     /// The entry it was read from.
     pub seq: Seq,
@@ -146,6 +153,7 @@ pub struct Closing {
 
 /// Why a loop is parked at its cold check.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Park {
     /// The cache is believed expired; continuing reads `context_tokens` uncached.
@@ -159,6 +167,7 @@ pub enum Park {
 
 /// What a blocked loop waits on.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Block {
     /// The operator's pace is held.
@@ -175,6 +184,7 @@ pub enum Block {
 
 /// One thing a working loop is doing: an open operation, a retry, or the pace.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Activity {
     /// A tool call executing.
@@ -207,6 +217,7 @@ pub enum Activity {
 /// What a read of the status carries below the condition; subscription notifications
 /// leave it out.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Footer {
     /// The main model's native id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -233,6 +244,7 @@ pub struct Footer {
 
 /// A background process the session holds.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Background {
     pub id: u64,
     pub command: String,

@@ -2,7 +2,7 @@
 // Retained frames replay from their exact base; a held store snapshot remains
 // independent when its position leaves the retained window.
 
-import type { Frame } from "../api/types.ts";
+import type { Frame } from "../api/frames.ts";
 import type { FrameTap } from "./connect.ts";
 import { applyFrame, type Session, type Store } from "./store.ts";
 import { sessionId } from "../api/base.ts";

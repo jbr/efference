@@ -61,6 +61,7 @@ pub enum Verdict {
 /// Spelled on the control channel by [`as_str`](Self::as_str)'s token, which is also
 /// its serde form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewLevel {
     /// No synchronous human: a spotter `Watch`/`Gate` redirects the model to its config

@@ -5,10 +5,13 @@
 
 import { describe, expect, it, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { Usage } from "../api/types.ts";
+import type { UsageView } from "../api/types.ts";
 import { TopBar } from "./TopBar.tsx";
 
-const usage = (context: Usage["context"], cost: Usage["cost"] = null): Usage =>
+const usage = (
+  context: UsageView["context"],
+  cost: UsageView["cost"] = null,
+): UsageView =>
   ({
     last: null,
     cumulative: {
@@ -22,9 +25,9 @@ const usage = (context: Usage["context"], cost: Usage["cost"] = null): Usage =>
     cost,
     limits: {},
     cold_streak: 0,
-  }) as unknown as Usage;
+  }) as unknown as UsageView;
 
-const bar = (context: Usage["context"], cost: Usage["cost"] = null) =>
+const bar = (context: UsageView["context"], cost: UsageView["cost"] = null) =>
   renderToStaticMarkup(
     <TopBar
       listHref={null}

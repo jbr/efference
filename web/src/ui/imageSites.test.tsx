@@ -8,7 +8,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { Attachment } from "../api/types.ts";
+import type { Arrival } from "../api/types.ts";
 import { LightboxHost } from "./Lightbox.tsx";
 import { closeLightbox } from "./lightbox.ts";
 import { SentAttachments, StagedAttachments } from "./Attachments.tsx";
@@ -115,7 +115,7 @@ function mount() {
   };
 }
 
-const picture: Attachment = {
+const picture: Arrival = {
   name: "pic.png",
   path: "/stored/pic.png",
   kind: { Image: { format: "PNG", width: 4, height: 3, bytes: 3 } },

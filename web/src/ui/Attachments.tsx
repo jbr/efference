@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { attachmentUrl } from "../api/http.ts";
-import type { Attachment } from "../api/types.ts";
+import type { Arrival } from "../api/types.ts";
 import { openLightbox } from "./lightbox.ts";
 import { describeKind, isImage, type Staged } from "./staging.ts";
 import { imageAttrs, useApiImage } from "./useApiImage.ts";
@@ -80,7 +80,7 @@ export function StagedAttachments({
  * lightbox resolves that URL through its own hold on the bytes
  * (ui/useApiImage.ts), so this button leaving the page does not take the image
  * from under it. */
-function SentThumbnail({ attachment }: { attachment: Attachment }) {
+function SentThumbnail({ attachment }: { attachment: Arrival }) {
   const url = attachmentUrl(attachment.name);
   const src = useApiImage(url);
   return (
@@ -103,11 +103,7 @@ function SentThumbnail({ attachment }: { attachment: Attachment }) {
 
 /** The files a sent (or queued) turn carried. An image's thumbnail opens the
  * lightbox, so the full-size bytes are visible without leaving the app. */
-export function SentAttachments({
-  attachments,
-}: {
-  attachments: Attachment[];
-}) {
+export function SentAttachments({ attachments }: { attachments: Arrival[] }) {
   if (attachments.length === 0) return null;
   return (
     <ul className="attachments sent">

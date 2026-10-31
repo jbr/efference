@@ -25,7 +25,7 @@ import { apiBase, sessionHref, sessionId } from "../api/base.ts";
 import { prefetchStore } from "../session/registry.ts";
 import { archiveSession } from "../api/http.ts";
 import { openSessionCard } from "../api/sessions.ts";
-import type { StateSnapshot } from "../api/types.ts";
+import type { StateSnapshot } from "../api/frames.ts";
 import {
   type CardModel,
   cardModel,

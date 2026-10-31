@@ -14,6 +14,7 @@ use super::*;
 /// cannot perturb the byte-stability pin (docs/log-and-projection.md) — the same
 /// property every [`Telemetry`] entry has.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ToolTelemetry {
     /// The `tool_use` id — the join back to the call and its [`Payload::ToolResult`].
     pub call_id: CallId,
@@ -49,6 +50,7 @@ fn is_zero(n: &usize) -> bool {
 /// outcomes — so the three classes are readable off every tool without per-tool
 /// knowledge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ToolOutcome {
     /// The call did what it was asked to do.
@@ -75,6 +77,7 @@ pub enum ToolOutcome {
 
 /// Bash-call fields (docs/tools.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct BashTelemetry {
     /// The status the result reported — `"1"`, or `"signal"` for a command a
     /// signal killed. `None` means the result reported none, which for a
@@ -101,6 +104,7 @@ pub struct BashTelemetry {
 /// tool that spells its arguments this way and costs nothing to collect; nothing
 /// is plumbed out of the editing crates.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct EditTelemetry {
     /// The call's `operation` argument, where it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -86,6 +86,7 @@ pub type Turn = u32;
 /// never projected onto the wire, so their non-determinism cannot affect cache
 /// stability (docs/log-and-projection.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Timestamp(pub u64);
 
 impl Timestamp {
@@ -109,6 +110,7 @@ impl Timestamp {
 
 /// An Anthropic tool-use id (`toolu_…`) and its matching `tool_result` id.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CallId(pub String);
 
 impl From<&str> for CallId {
@@ -131,6 +133,7 @@ impl From<String> for CallId {
 
 /// One immutable, ordered record in the log.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LogEntry {
     pub seq: Seq,
     pub turn: Turn,
@@ -160,6 +163,7 @@ pub struct LogEntry {
 /// The content of a log entry. Immutable once appended; curation never mutates
 /// a payload's `raw`, only flips a [`WireState`] (docs/README.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum Payload {
     /// Prose (and, later, richer blocks) authored by the user / operator.
     User(Vec<ContentBlock>),
@@ -352,6 +356,7 @@ pub enum Payload {
 /// A session reopened from its log (docs/log-and-projection.md): what the loader
 /// knows changed across the restart, and what it set aside to continue.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Resumed {
     /// Milliseconds between the last entry before the restart and this one.
     pub gap_ms: u64,
@@ -392,6 +397,7 @@ impl Resumed {
 
 /// One title decision (docs/session-title.md): the text and who wrote it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Title {
     pub text: String,
     pub author: TitleAuthor,
@@ -400,6 +406,7 @@ pub struct Title {
 /// Who set a [`Title`]: the triage model's title ask, or an operator over the control
 /// channel (docs/session-title.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TitleAuthor {
     Triage,
@@ -427,6 +434,7 @@ pub fn latest_title(entries: &[LogEntry]) -> Option<&str> {
 /// projects as the same notice an ambient arrival carries, and the model pulls
 /// the file with `read` / `read_image` if it wants it (docs/inbox.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum ContentBlock {
     Text(String),
     Thinking { text: String, signature: String },
@@ -438,6 +446,7 @@ pub enum ContentBlock {
 /// whose object maps serialize with sorted keys — deterministic, sidestepping
 /// the `HashMap`-key-order cache hazard (docs/log-and-projection.md).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ToolCall {
     pub id: CallId,
     pub name: String,
@@ -485,6 +494,7 @@ impl ToolCall {
 /// What the agent chose to do with one notification at a triage (docs/inbox.md).
 /// "Leave" (bump to the next triage) is the *absence* of an entry, so it isn't a variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum Disposition {
     /// Promote into canonical working context (projects at the [`Triage`] position).
     Pin,
@@ -496,6 +506,7 @@ pub enum Disposition {
 /// bound to a logical `slot` (a later notification on it supersedes this one while queued).
 /// Immutable; once logged as a [`Payload::Ambient`] its arrival `seq` is its id.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Notification {
     pub source: String,
     pub body: String,

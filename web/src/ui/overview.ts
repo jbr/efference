@@ -7,8 +7,15 @@
 // and a supervisor's card names what it supervises. Working with a subagent
 // should be no further away than working with the session that created it.
 
-import type { ArchivedSession, SessionEntry } from "../api/http.ts";
-import type { BlockedReason, LogEntry, StateSnapshot } from "../api/types.ts";
+import type { SessionEntry } from "../api/http.ts";
+import type {
+  ArchivedSession,
+  BlockedReason,
+  ContextWindow,
+  Cost,
+} from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
+import type { StateSnapshot } from "../api/frames.ts";
 import { callView } from "./signature.ts";
 import { viewOf } from "../session/assistant.ts";
 import { homeRelative } from "./identity.ts";
@@ -37,9 +44,9 @@ export interface CardModel {
   park: "expired" | "compacted" | null;
   /** Why a `blocked` session is blocked (the `loop_phase` topic); `null` when not known. */
   blocked: BlockedReason | null;
-  context: { used: number | null; limit: number | null } | null;
+  context: ContextWindow | null;
   /** The provider's billed running total; `unpriced > 0` makes it a floor. */
-  cost: { usd: number; unpriced: number } | null;
+  cost: Cost | null;
   /** `triage` is `null` when it is the main model — the default. */
   models: { main: string; spotter: string; triage: string | null } | null;
 }
@@ -68,7 +75,7 @@ export interface Recent {
 export function foldRecent(recent: Recent, entry: LogEntry): Recent {
   const payload = entry.payload;
   if ("User" in payload) return { intent: recent.intent };
-  if (!("Assistant" in payload) || payload.Assistant.excluded !== undefined) {
+  if (!("Assistant" in payload) || payload.Assistant.excluded != null) {
     return recent;
   }
   const view = viewOf(payload.Assistant.output);

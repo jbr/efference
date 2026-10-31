@@ -10,6 +10,11 @@ use serde::{Deserialize, Serialize};
 /// (docs/context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.
 /// This is what [`crate::env`] builds from disk at boot and freezes into the cached prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(
+    test,
+    derive(schemars::JsonSchema),
+    schemars(rename = "ResolvedContext")
+)]
 pub struct Resolved {
     pub sections: Vec<Section>,
 }
@@ -18,6 +23,11 @@ pub struct Resolved {
 /// `description` is the operator's prose hint about how to use these files (e.g. how to read or
 /// write a memory), rendered as a `<description>` child element inside the group wrapper.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    test,
+    derive(schemars::JsonSchema),
+    schemars(rename = "ContextSection")
+)]
 pub struct Section {
     pub heading: Option<String>,
     pub items: Vec<Item>,
@@ -28,6 +38,7 @@ pub struct Section {
 /// Both render as a name tag `<name>…</name>` (docs/context.md); the name is the file's
 /// frontmatter `name`, else its basename.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "ContextItem"))]
 pub enum Item {
     /// The full body rides in the preamble inside `<name>…</name>`. `path` is kept for provenance /
     /// the boot snapshot, not rendered (the tag name is the identity).

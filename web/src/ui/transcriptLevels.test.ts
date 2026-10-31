@@ -3,7 +3,8 @@
 // whole at any distance.
 
 import { expect, test } from "vitest";
-import type { LogEntry, WireState } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
+import type { WireState } from "../api/types.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { buildTree, type CallNode } from "../session/tree.ts";
 import {

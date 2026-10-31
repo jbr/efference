@@ -27,6 +27,7 @@ test("running process becomes finished with final output and no follow/action co
   );
   const process = {
     id: 7,
+    call_id: null,
     pid: 123,
     command: "demo",
     spawned_at: Date.now(),

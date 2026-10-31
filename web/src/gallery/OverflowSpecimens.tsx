@@ -4,7 +4,7 @@
 // stay as wide as the screen; `?overflow` lists any element whose content
 // spills (docs/web-client.md "A transcript item never widens the page").
 
-import type { LogEntry } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { emptyStreaming } from "../session/store.ts";
 import { buildTree } from "../session/tree.ts";

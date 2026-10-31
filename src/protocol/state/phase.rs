@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Where the loop is now. Exclusive: what is in flight beside it — open requests,
 /// running tools, a compaction — is the `current_operations` topic.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "phase", rename_all = "snake_case")]
 pub enum LoopPhase {
     /// Waiting for a turn, a continue, or an inbox wake.
@@ -33,6 +34,7 @@ pub enum LoopPhase {
 
 /// Why the loop is [`LoopPhase::Blocked`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum BlockedReason {
     /// A triage could not reach its model; the results are held (docs/triage.md).
@@ -59,6 +61,7 @@ impl LoopPhase {
 
 /// Why a trajectory stopped short of finishing (docs/transport.md).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StallReason {
     /// The stream-abort budget was spent: every attempt died before finalizing.
@@ -89,6 +92,7 @@ pub enum StallReason {
 /// names the *current* condition rather than a past one (the same clear-on-
 /// recovery rule the transport diagnostics follow).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Stall {
     pub reason: StallReason,
     /// How many attempts were spent, where the failure path counts them;
@@ -117,6 +121,7 @@ pub struct Stall {
 /// operation that is never autonomous — it gates for the orchestrator even under
 /// `--autonomous`, so a file in this condition always has an owner.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ConfigRepair {
     /// The file a human has to fix.
     pub path: String,

@@ -191,6 +191,7 @@ const THINKING_ADAPTIVE: Thinking = Thinking::Adaptive {
 /// present with an explicit `null`. `default` alone covers only the absent case;
 /// a present `null` still hits the `u64` and errors the whole response away.
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Usage {
     #[serde(default, deserialize_with = "null_or_missing")]
     pub input_tokens: u64,
@@ -262,6 +263,7 @@ pub struct CacheMiss {
 /// so a later one may hide behind it. The last two mean no comparison was produced at
 /// all, and are not evidence that the prefix moved.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CacheMissReason {
     /// A different model served the request; the cache is per model.

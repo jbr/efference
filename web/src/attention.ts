@@ -11,6 +11,7 @@
 import { sendAttention } from "./api/http.ts";
 import { sessionId } from "./api/base.ts";
 import { bearer } from "./api/bearer.ts";
+import type { AttentionReport } from "./api/types.ts";
 import { subscribe as subscribeRoute } from "./ui/route.ts";
 
 /** How recent an input event must be for the person to count as attending. */
@@ -30,12 +31,6 @@ export const TICK_MS = 5_000;
  * above bounds how often that can happen; this keeps a pointer that flickers
  * across the window edge from reporting on each flicker. */
 export const INPUT_THROTTLE_MS = 10_000;
-
-export interface AttentionReport {
-  client: string;
-  session: string | null;
-  active: boolean;
-}
 
 export interface Attending {
   visible: boolean;

@@ -435,6 +435,37 @@ joining does. The creation body is one type, `daemon::CreateSession`, serialized
 by the client and deserialized by the host, so a new session knob is one field;
 it has no Debug, because it carries the environment.
 
+## The contract
+
+The names and shapes that cross the channel live in `src/protocol/`: one
+submodule per surface — `agents`, `sessions`, `turns`, `state` (with `state/`),
+`status`, `stream`, `transcript`, `attention`. Behaviour that needs the daemon
+stays in `src/daemon/` as impl blocks on these types. Every state topic has a
+type, and `StateTopics` builds `GET /state`: one field per topic under its own
+name, plus `last_seq`, which is the log's cursor rather than control state and
+sits outside the fold.
+
+Every topic, the composite snapshot, and the loop resource are serialized
+through `daemon::views::channel_value`, a `serde_json::Value` round trip that
+sorts object keys at every depth, so a struct's field order never reaches the
+bytes. Each topic's bytes are pinned by `src/daemon/test/topic_bytes.rs`: a
+change to a carried type fails there first.
+
+A JSON Schema of the contract is committed at
+`web/src/api/protocol.schema.json` (draft-07, under schemars' `Serialize`
+contract) and pinned by `src/daemon/test/schema.rs`: a change to a carried type
+moves the schema and fails there. Regenerate with
+`EFFERENCE_WRITE_SCHEMAS=1 cargo test schema`. `web/src/api/types.ts` is
+generated from that schema by `json-schema-to-typescript` (`pnpm run types`);
+`pnpm run check` fails on drift (`types:check`), and
+`web/src/api/samples.ts` holds pinned values the generated types must still
+accept, so a type that stops describing the wire fails `typecheck`. Beside the
+generated file are hand-written modules: `entry.ts` (the entry view's
+additions — `selection`, `artifacts`, and the image-data omission),
+`frames.ts` (the frame envelope over the generated topic types),
+`decision.ts` (the approval body, which the host reads by hand), and
+`source.ts`.
+
 ## Connection lifecycle (how a client catches up and stays live)
 
 Two requests, one of them long-lived:
@@ -955,14 +986,62 @@ as settled. The same predicate, and the same header, back the `?wait` flags on
 told the present is what it waited for.
 
 Its keys are `last_seq` plus **exactly one field per state topic**, each named by the
-topic. That is structural, not incidental: the same per-topic functions build this
+topic — 27 keys, listed below in wire order. `channel_value` sorts object keys at every
+depth, so `last_seq` sits between `gate` and `loop_phase`, not first. That is structural,
+not incidental: the same per-topic functions build this
 snapshot and the level-triggered `state` frames, so the two cannot drift and `GET /state`
 equals the fold of every `state` frame since connect. `last_seq` is the one field that is
 not a topic — it is the log's cursor rather than control state, and sits outside the fold.
 
 ```jsonc
 {
-  "last_seq": 42,                  // u64 or null (empty log); NOT a topic
+  "ask": {                         // null unless an `ask` is pending (docs/process-monitor.md)
+    "call_id": "toolu_…",
+    "question": "…",
+    "n": 1, "of": 2,               // its place among one completion's asks
+    "recalled": [ … ]              // turns withdrawn from the queue when it began,
+  },                               //   in the shape DELETE /turns/:id returns,
+  "cold": {                        // null while the prompt cache is believed warm, before
+                                   //   the first turn, on a model with no cache, and when
+                                   //   there is nothing to fold (the only answer is the
+                                   //   read, so nothing is asked)
+    "since": 1754300300000,        // absolute Unix millis: the last turn or keepalive
+                                   //   ping plus the provider's cache lifetime
+                                   //   (transport.md; backlog: cold-session.md)
+    "context_tokens": 48210        // the last turn's prompt: what a cold read would pay,
+                                   //   or null before a turn's usage is known
+  },
+  "compaction_failure": null,      // {"error":"…","at":…} after a compaction failed, until a
+                                   //   turn's request goes out or another compaction is asked
+                                   //   for; folded from the log, so it survives a restart. A
+                                   //   compaction in flight is in `current_operations`,
+  "config_repair": {               // null whenever the config file parses (permissions.md)
+    "path": "/repo/.efference/work/config.toml",  // the file a human has to fix
+    "at": 1754300000000,           // absolute Unix millis at which the loop parked
+    "message": "config unparseable — the loop is parked until a human repairs the file",
+    "parse_error": "…",            // why the file did not parse
+    "restore_error": "…"           // why writing the last good content back also failed
+  },
+  "current_operations": {          // null when no request, tool, or compaction is open
+    "requests": [{                 // open requests, in the order they were sent
+      "request": 57,               // the id its log entries share (log-and-projection.md)
+      "origin": "turn",            // "turn" | "triage" | "title" | "spot" | "keepalive" | …
+      "stage": "sent",             // "sent": no stream event yet | "streaming": first event arrived
+                                   //   | "retrying": an attempt was refused (adds "attempt", "status")
+      "since": 1754300000000       // absolute Unix millis at which this stage began
+    }],
+    "tools": [{                    // calls dispatched and not yet resulted
+      "call_id": "toolu_1", "tool": "bash", "intent": "run the suite",  // intent may be null
+      "command": "cargo test",     // bash calls only: the command, read from the call's input
+      "since": 1754300040000
+    }],
+    "compaction": {                // null unless one is open (POST /loop/compact, summary.md)
+      "state": "writing",          // "waiting": accepted, request not yet sent | "writing"
+      "warm": false,               // asked of a session whose cache was believed live
+      "cut": 412,                  // the last seq the summary covers
+      "since": 1754300050000       // absolute Unix millis at which this state began
+    }
+  },
   "gate": {                        // null when no gate is open
     "call_id": "toolu_…",
     "name": "bash",
@@ -989,23 +1068,24 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "note": "…"                  //   optional: the escalator's note to whoever decides next
     }]                             //   the last entry routes the call (docs/permissions.md)
   },
-  "ask": {                         // null unless an `ask` is pending (docs/process-monitor.md)
-    "call_id": "toolu_…",
-    "question": "…",
-    "n": 1, "of": 2,               // its place among one completion's asks
-    "recalled": [ … ]              // turns withdrawn from the queue when it began,
-  },                               //   in the shape DELETE /turns/:id returns
-  "role": {                        // EFFECTIVE policy = base config + folded edits
-    "source": "/path/efference.toml",   // or null for the built-in default
-    "scope": "…",
-    "watch_for": [ … ],
-    "commands": { "<prefix>": "clear|watch|gate|deny" },
-    "tools": { "<key>": { "enabled"?: true, "granted"?: true } },  // the [tools] table, keyed as
-                                   //   the file spells it, with only the fields an entry sets
-    "paths": { "<path>": { "read": true, "write": false } }
+  "last_seq": 42,                  // u64 or null (empty log); NOT a topic,
+  "loop_phase": {                  // where the loop is: exactly one phase, tagged by `phase`
+    "phase": "requesting"          //   "idle" | "requesting" | "executing"
+  },                               //   | "delayed" (+ "until": absolute millis) | "gated" | "asking"
+                                   //   | "cold_parked" | "blocked" (+ "reason": "triage_unavailable"
+                                   //   | "triage_defect" | "config_repair" | "pace_held"),
+  "newer_version": {               // null unless the host's update check found a release newer
+                                   //   than the host (update-check.md); the same on every session
+    "version": "0.2.0",            // from the signed latest.json
+    "tag": "v0.2.0",
+    "url": "https://efference.net/releases/v0.2.0",
+    "update_command": "curl -fsSL https://efference.net/install.sh | sh"  // what installs it
   },
   "notifications": [ { "id": 3, "source": "…", "body": "…", "slot": "…", "wake"?: true } ],
-  "proposals": [ { "seq": 17, "change": { … } } ],
+  "pace": {                            // the operator's pace dial
+    "speed_ms": 15000,
+    "held": false
+  },
   "processes": [                   // every running tool-spawned process: STRUCTURE ONLY
     { "id": 1,                     // spawn-minted ordinal; rendered "p#1" in prose
       "command": "cargo watch -x test",
@@ -1015,6 +1095,88 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "background": true,          // false = the in-flight foreground tool (flagged, not filtered)
       "muted": false }
   ],
+  "proposals": [ { "seq": 17, "change": { … } } ],
+  "queued": [                      // turns submitted but not yet dequeued, in submission order
+    { "submission_id": "…",        //   `[]` when nothing is pending. Ephemeral — a pending
+      "text": "…",                 //   turn is never logged, so this is the only place it is
+      "attachments": [ … ] }       //   (only when it carries any)
+  ],                               //   readable, and what `DELETE /turns/:id` addresses,
+  "resolved_review_level": "spotter_human",  // the review position in force,
+  "review_level": "spotter_human",  // the review dial as set,
+  "role": {                        // EFFECTIVE policy = base config + folded edits
+    "source": "/path/efference.toml",   // or null for the built-in default
+    "scope": "…",
+    "watch_for": [ … ],
+    "commands": { "<prefix>": "clear|watch|gate|deny" },
+    "tools": { "<key>": { "enabled"?: true, "granted"?: true } },  // the [tools] table, keyed as
+                                   //   the file spells it, with only the fields an entry sets
+    "paths": { "<path>": { "read": true, "write": false } }
+  },
+  "session_identity": {           // null until boot sets it (tests, offline verbs)
+    "id": "amber-heron",                 // the session id — directory, --name, address (session-title.md)
+    "title": "Session names: slugs and titles",  // the last Title entry's text; absent until one is written
+    "model": "anthropic/claude-opus-4",  // the native model id, verbatim
+    "cwd": "/Users/jbr/code/efference",  // absolute; shortening it is presentation
+    "inference": {                       // hosted sessions only (docs/transport.md)
+      "main":    {"connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"},
+      "spotter": {"connection": "work", "provider": "openrouter", "model": "anthropic/claude-haiku-4-5"},
+      "triage":  {"shared": true, "connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"}
+    },
+    "successor": "calm-finch"            // once this session has handed off (docs/tools.md); absent before
+  },
+  "stall": {                       // null unless the work stopped short (transport.md);
+                                   //   `POST /loop/continue` retries it
+    "reason": "retries_exhausted", // "retries_exhausted" | "request_failed" | "upstream_refused"
+                                   //   | "triage_unavailable" | "triage_defect" — the triage
+                                   //   reasons hold a triage with the loop still running
+    "attempts": 12,                // attempts spent, where the path counts them; else null
+    "at": 1754300000000,           // absolute Unix millis at which the loop gave up
+    "message": "the trajectory stopped: 12 attempts in a row failed upstream",
+    "detail": "upstream SSE stream failed mid-stream: connection reset"
+  },
+  "starting": null,                // always null on a running session; a session still being
+                                   //   prepared publishes it (*A starting session*, above),
+  "status": {                      // where the session stands, as one view (below)
+    "id": "amber-heron",
+    "condition": {                 // tagged by "kind"
+      "kind": "gated",             //   "working" | "gated" | "asking" | "idle" | "stalled"
+                                   //   | "parked" | "blocked" | "starting" | "failed_to_start"
+                                   //   | "ended" | "failed"
+      "call_id": "toolu_…",
+      "tool": "bash",              // the display name (`fs.list`)
+      "summary": "curl -sI https://example.com",  // a bash command, or the arguments
+      "intent": "fetch only the response headers",
+      "handle": "8.2",             // the transcript label: `seq`, or `seq.n` in a shared entry
+      "held_because": "its reviewer is unsure this fits the session's scope; no earlier call like it was allowed",
+      "reviewer": { "kind": "supervisor", "id": "calm-finch" },  // or { "kind": "operator" }
+      "escalations": [ … ]         // optional: as the gate topic's, the last one routing it
+    },
+    "footer": {                    // each field absent when unknown or empty
+      "model": "anthropic/claude-opus-4",
+      "context_used": 48210, "context_limit": 200000,
+      "cost": { "usd": 0.0421, "unpriced": 0 },
+      "background": [ { "id": 1, "command": "cargo watch -x test", "since": 1754300000000 } ],
+      "queued": [ "session[calm-finch]", null ]  // each queued turn's source; null: the operator
+    }
+  },
+  "supervisor": null,               // the session answering this one's gates, or null,
+  "triage_upstream_failure": null, // a separate triage client's own last non-success status, in the shape
+                                   //   of `upstream_failure`; null while the triage borrows the agent's
+                                   //   client and once its own client gets a 2xx (docs/triage.md),
+  "upstream_failure": {            // null once a 2xx arrives — the all-clear (transport.md)
+    "status": 429,                 // the last non-success status; content-free by design
+    "count": 2                     // consecutive responses carrying it
+  },
+  "upstream_retry": {              // null when nothing is being retried (transport.md)
+    "surface": "turn",             // "turn" | "triage" — a triage waits between tool
+                                   //   results; `POST /loop/continue` retries now
+    "attempt": 2,                  // the attempt that just failed, 1-based
+    "budget": 12,                  // attempts before the loop gives up
+    "next_attempt_at": 1754300002000,  // absolute Unix millis; the client subtracts,
+                                   //   so the daemon never re-emits a ticking field
+    "message": "attempt 2 of 12 failed upstream, retrying",  // leads with what is happening
+    "detail": "upstream SSE stream failed mid-stream: connection reset"
+  },
   "usage": {
     "last": { "input_tokens": …, "output_tokens": …,
               "cache_read_input_tokens": …, "cache_creation_input_tokens": … },
@@ -1077,132 +1239,10 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                             //   null while the triage borrows the agent's client and when its
                                             //   provider reports no windows
   },
-  "loop_phase": {                  // where the loop is: exactly one phase, tagged by `phase`
-    "phase": "requesting"          //   "idle" | "requesting" | "executing"
-  },                               //   | "delayed" (+ "until": absolute millis) | "gated" | "asking"
-                                   //   | "cold_parked" | "blocked" (+ "reason": "triage_unavailable"
-                                   //   | "triage_defect" | "config_repair" | "pace_held")
   "verbs": {                       // what each loop route would answer now (below)
     "turn": { "accepted": true, "delivery": "queued" },   // "now" | "queued"
     "continue": { "accepted": false, "message": "the loop is already running — there is nothing to hand back" },
     "compact": { "accepted": true, "warm": true }         // warm: only with a `warm: true` body
-  },
-  "queued": [                      // turns submitted but not yet dequeued, in submission order
-    { "submission_id": "…",        //   `[]` when nothing is pending. Ephemeral — a pending
-      "text": "…",                 //   turn is never logged, so this is the only place it is
-      "attachments": [ … ] }       //   (only when it carries any)
-  ],                               //   readable, and what `DELETE /turns/:id` addresses
-  "stall": {                       // null unless the work stopped short (transport.md);
-                                   //   `POST /loop/continue` retries it
-    "reason": "retries_exhausted", // "retries_exhausted" | "request_failed" | "upstream_refused"
-                                   //   | "triage_unavailable" | "triage_defect" — the triage
-                                   //   reasons hold a triage with the loop still running
-    "attempts": 12,                // attempts spent, where the path counts them; else null
-    "at": 1754300000000,           // absolute Unix millis at which the loop gave up
-    "message": "the trajectory stopped: 12 attempts in a row failed upstream",
-    "detail": "upstream SSE stream failed mid-stream: connection reset"
-  },
-  "upstream_failure": {            // null once a 2xx arrives — the all-clear (transport.md)
-    "status": 429,                 // the last non-success status; content-free by design
-    "count": 2                     // consecutive responses carrying it
-  },
-  "triage_upstream_failure": null, // a separate triage client's own last non-success status, in the shape
-                                   //   of `upstream_failure`; null while the triage borrows the agent's
-                                   //   client and once its own client gets a 2xx (docs/triage.md)
-  "upstream_retry": {              // null when nothing is being retried (transport.md)
-    "surface": "turn",             // "turn" | "triage" — a triage waits between tool
-                                   //   results; `POST /loop/continue` retries now
-    "attempt": 2,                  // the attempt that just failed, 1-based
-    "budget": 12,                  // attempts before the loop gives up
-    "next_attempt_at": 1754300002000,  // absolute Unix millis; the client subtracts,
-                                   //   so the daemon never re-emits a ticking field
-    "message": "attempt 2 of 12 failed upstream, retrying",  // leads with what is happening
-    "detail": "upstream SSE stream failed mid-stream: connection reset"
-  },
-  "cold": {                        // null while the prompt cache is believed warm, before
-                                   //   the first turn, on a model with no cache, and when
-                                   //   there is nothing to fold (the only answer is the
-                                   //   read, so nothing is asked)
-    "since": 1754300300000,        // absolute Unix millis: the last turn or keepalive
-                                   //   ping plus the provider's cache lifetime
-                                   //   (transport.md; backlog: cold-session.md)
-    "context_tokens": 48210        // the last turn's prompt: what a cold read would pay,
-                                   //   or null before a turn's usage is known
-  },
-  "compaction_failure": null,      // {"error":"…","at":…} after a compaction failed, until a
-                                   //   turn's request goes out or another compaction is asked
-                                   //   for; folded from the log, so it survives a restart. A
-                                   //   compaction in flight is in `current_operations`
-  "config_repair": {               // null whenever the config file parses (permissions.md)
-    "path": "/repo/.efference/work/config.toml",  // the file a human has to fix
-    "at": 1754300000000,           // absolute Unix millis at which the loop parked
-    "message": "config unparseable — the loop is parked until a human repairs the file",
-    "parse_error": "…",            // why the file did not parse
-    "restore_error": "…"           // why writing the last good content back also failed
-  },
-  "session_identity": {           // null until boot sets it (tests, offline verbs)
-    "id": "amber-heron",                 // the session id — directory, --name, address (session-title.md)
-    "title": "Session names: slugs and titles",  // the last Title entry's text; absent until one is written
-    "model": "anthropic/claude-opus-4",  // the native model id, verbatim
-    "cwd": "/Users/jbr/code/efference",  // absolute; shortening it is presentation
-    "inference": {                       // hosted sessions only (docs/transport.md)
-      "main":    {"connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"},
-      "spotter": {"connection": "work", "provider": "openrouter", "model": "anthropic/claude-haiku-4-5"},
-      "triage":  {"shared": true, "connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"}
-    },
-    "successor": "calm-finch"            // once this session has handed off (docs/tools.md); absent before
-  },
-  "current_operations": {          // null when no request, tool, or compaction is open
-    "requests": [{                 // open requests, in the order they were sent
-      "request": 57,               // the id its log entries share (log-and-projection.md)
-      "origin": "turn",            // "turn" | "triage" | "title" | "spot" | "keepalive" | …
-      "stage": "sent",             // "sent": no stream event yet | "streaming": first event arrived
-                                   //   | "retrying": an attempt was refused (adds "attempt", "status")
-      "since": 1754300000000       // absolute Unix millis at which this stage began
-    }],
-    "tools": [{                    // calls dispatched and not yet resulted
-      "call_id": "toolu_1", "tool": "bash", "intent": "run the suite",  // intent may be null
-      "command": "cargo test",     // bash calls only: the command, read from the call's input
-      "since": 1754300040000
-    }],
-    "compaction": {                // null unless one is open (POST /loop/compact, summary.md)
-      "state": "writing",          // "waiting": accepted, request not yet sent | "writing"
-      "warm": false,               // asked of a session whose cache was believed live
-      "cut": 412,                  // the last seq the summary covers
-      "since": 1754300050000       // absolute Unix millis at which this state began
-    }
-  },
-  "starting": null,                // always null on a running session; a session still being
-                                   //   prepared publishes it (*A starting session*, above)
-  "status": {                      // where the session stands, as one view (below)
-    "id": "amber-heron",
-    "condition": {                 // tagged by "kind"
-      "kind": "gated",             //   "working" | "gated" | "asking" | "idle" | "stalled"
-                                   //   | "parked" | "blocked" | "starting" | "failed_to_start"
-                                   //   | "ended" | "failed"
-      "call_id": "toolu_…",
-      "tool": "bash",              // the display name (`fs.list`)
-      "summary": "curl -sI https://example.com",  // a bash command, or the arguments
-      "intent": "fetch only the response headers",
-      "handle": "8.2",             // the transcript label: `seq`, or `seq.n` in a shared entry
-      "held_because": "its reviewer is unsure this fits the session's scope; no earlier call like it was allowed",
-      "reviewer": { "kind": "supervisor", "id": "calm-finch" },  // or { "kind": "operator" }
-      "escalations": [ … ]         // optional: as the gate topic's, the last one routing it
-    },
-    "footer": {                    // each field absent when unknown or empty
-      "model": "anthropic/claude-opus-4",
-      "context_used": 48210, "context_limit": 200000,
-      "cost": { "usd": 0.0421, "unpriced": 0 },
-      "background": [ { "id": 1, "command": "cargo watch -x test", "since": 1754300000000 } ],
-      "queued": [ "session[calm-finch]", null ]  // each queued turn's source; null: the operator
-    }
-  },
-  "newer_version": {               // null unless the host's update check found a release newer
-                                   //   than the host (update-check.md); the same on every session
-    "version": "0.2.0",            // from the signed latest.json
-    "tag": "v0.2.0",
-    "url": "https://efference.net/releases/v0.2.0",
-    "update_command": "curl -fsSL https://efference.net/install.sh | sh"  // what installs it
   }
 }
 ```
@@ -1307,8 +1347,10 @@ supervisor distinguishes it from `stall` on exactly that: `stall` names a
 recovery it can perform, `config_repair` names one it cannot.
 
 **`status` is where the session stands, as one view.** The host builds it from the
-loop phase and the state each condition needs (`src/daemon/status/view.rs`), and the same
-view is what subscription notifications render ([tools.md](tools.md)), so the topic and
+loop phase and the state each condition needs (`src/daemon/status/view.rs`), publishes
+it as the `status` topic through `src/daemon/views.rs`, and registers the topic beside
+every other one in `src/daemon/frames.rs`; the same view is what subscription
+notifications render ([tools.md](tools.md)), so the topic and
 the inbox say the same thing. Per condition it carries:
 
 | `kind` | fields |

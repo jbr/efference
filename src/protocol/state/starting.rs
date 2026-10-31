@@ -11,6 +11,7 @@ use crate::protocol::turns::QueuedTurn;
 /// servers are being prepared, or whose preparation failed. `null` once the session has
 /// started, which is every value a running session publishes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct StartingView {
     pub id: String,
     /// The project root holding the session, which a resume names.
@@ -30,6 +31,7 @@ pub struct StartingView {
 /// Why preparation ended without a session, and the turns sent while it was starting,
 /// handed back for a client to put in a composer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct StartFailure {
     pub reason: String,
     /// When it failed, absolute Unix millis.
@@ -40,6 +42,7 @@ pub struct StartFailure {
 
 /// Which part of preparation is running (docs/control-api.md).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "StartingStage"))]
 #[serde(rename_all = "snake_case")]
 pub enum Stage {
     /// Establishing the session's environment: the user-wide `env_hook` (docs/env.md).

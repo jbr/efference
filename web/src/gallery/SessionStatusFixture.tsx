@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Starting } from "../api/types.ts";
+import type { StartingView } from "../api/types.ts";
 import { ComposerToolbar } from "../ui/ComposerToolbar.tsx";
 import { sessionStatus } from "../ui/sessionStatus.ts";
 import { turnState } from "../ui/turnState.ts";
@@ -14,7 +14,7 @@ export function SessionStatusFixture({ state }: { state: StatusState }) {
   const narrow = useNarrow();
   const failed = state === "Startup failed" || state === "Retry refused";
   const inspection = state === "Inspection failed";
-  const starting: Starting | null =
+  const starting: StartingView | null =
     state === "Your turn" || state === "Reconnecting" || inspection
       ? null
       : {

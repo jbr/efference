@@ -5,7 +5,7 @@
 
 import { afterEach, expect, test, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { ProcessRecord } from "../api/types.ts";
+import type { ProcessRecord, ToolCall } from "../api/types.ts";
 import { CallHead } from "./CallHead.tsx";
 import { callView } from "./signature.ts";
 import { layoutSignature } from "./signatureLayout.ts";
@@ -16,10 +16,13 @@ import { loadProcessRecord } from "./processRecord.ts";
 const record = (over: Partial<ProcessRecord> = {}): ProcessRecord => ({
   id: 4,
   command: "cargo run --release --bin efference",
+  call_id: null,
+  pid: null,
   spawned_at: 1754300000000,
   background: true,
   muted: false,
   running: true,
+  exit: null,
   ...over,
 });
 
@@ -145,7 +148,7 @@ test("a transport failure leaves the handle resolvable later", async () => {
 
 /** The transcript's head for a call, chips and all, at `columns`. */
 function head(
-  call: { id: string; name: string; input: unknown },
+  call: ToolCall,
   onOpenFile: (path: string, id: string) => unknown = () => undefined,
   columns: number | null = null,
 ) {

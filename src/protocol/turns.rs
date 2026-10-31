@@ -20,6 +20,7 @@ pub fn mint_submission_id() -> String {
 /// Where a submitted turn went: the `delivery` a `POST /turns` answer carries
 /// (docs/control-api.md), and the one the `verbs` topic says a turn would get now.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Landing {
     /// It answered the question it named.
@@ -61,6 +62,7 @@ impl Landing {
 /// withdrew and a failed start handed back, so a client puts each back in its composer.
 /// A pending turn is never logged: this is the only place it is readable.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct QueuedTurn {
     /// The id the turn was submitted under, which a recall addresses.
     pub submission_id: String,

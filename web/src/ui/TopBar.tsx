@@ -12,7 +12,7 @@ import type {
   SessionIdentity,
   UpstreamFailure,
   UpstreamRetry,
-  Usage,
+  UsageView,
 } from "../api/types.ts";
 import { sessionId } from "../api/base.ts";
 import { sessionName } from "./identity.ts";
@@ -36,7 +36,7 @@ const tokens = (n: number) =>
 export function ContextMeter({
   context,
 }: {
-  context: NonNullable<Usage["context"]>;
+  context: NonNullable<UsageView["context"]>;
 }) {
   const { used, limit } = context;
   const usedText = used === null ? "?" : used.toLocaleString();
@@ -63,7 +63,7 @@ export function ContextMeter({
  * Anthropic session has none. `costLabel` marks the total `~` once any request
  * went unpriced, so it reads as a floor; how many did is in the title, since
  * past the first the count adds nothing. */
-export function CostMeter({ cost }: { cost: NonNullable<Usage["cost"]> }) {
+export function CostMeter({ cost }: { cost: NonNullable<UsageView["cost"]> }) {
   const label = costLabel(cost);
   return (
     <span
@@ -145,7 +145,7 @@ export function TopBar({
    * `null` at a session daemon's root, where there is no list. */
   listHref: string | null;
   identity: SessionIdentity | null;
-  usage: Usage | null;
+  usage: UsageView | null;
   upstreamFailure: UpstreamFailure | null;
   upstreamRetry: UpstreamRetry | null;
   summary?: CompactControlProps;

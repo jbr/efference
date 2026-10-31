@@ -1,10 +1,10 @@
 import type {
   CallId,
   CurrentOperations,
-  LogEntry,
-  OutputData,
   RequestStage,
+  StreamDelta,
 } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 
 export interface SideText {
   text: string;
@@ -234,61 +234,60 @@ export function sideLog<T extends SideStreaming>(
 
 export function sideOutput<T extends SideStreaming>(
   s: T,
-  kind: string,
-  data: OutputData,
+  delta: StreamDelta,
 ): T {
-  if (!("text" in data)) return s;
-  if (
-    kind === "consolidation_delta" ||
-    kind === "consolidation_thinking_delta"
-  ) {
-    if (
-      s.sideRequests.consolidation.phase !== "open" ||
-      s.consolidation === null
-    )
+  switch (delta.kind) {
+    case "consolidation_delta":
+    case "consolidation_thinking_delta": {
+      if (
+        s.sideRequests.consolidation.phase !== "open" ||
+        s.consolidation === null
+      )
+        return s;
+      const tail = s.consolidation;
+      const field = delta.kind === "consolidation_delta" ? "text" : "thinking";
+      return {
+        ...s,
+        consolidation: { ...tail, [field]: cap(tail[field] + delta.data.text) },
+      };
+    }
+    case "compaction_delta":
+    case "compaction_thinking_delta": {
+      if (s.sideRequests.compaction.phase !== "open") return s;
+      const tail = s.compaction ?? { text: "", thinking: "" };
+      const field = delta.kind === "compaction_delta" ? "text" : "thinking";
+      return {
+        ...s,
+        compaction: { ...tail, [field]: cap(tail[field] + delta.data.text) },
+      };
+    }
+    case "triage_delta":
+    case "triage_thinking_delta": {
+      if (s.sideRequests.triage.phase !== "open") return s;
+      const callIds = [...new Set(delta.data.call_ids)].sort();
+      if (
+        callIds.length === 0
+          ? s.sideRequests.idleSettled
+          : callIds.some((id) => s.sideRequests.settledCalls.includes(id))
+      )
+        return s;
+      const at = s.triage.findIndex(
+        (tail) =>
+          tail.callIds.length === callIds.length &&
+          tail.callIds.every((id, i) => id === callIds[i]),
+      );
+      const tail = s.triage[at] ?? { callIds, text: "", thinking: "" };
+      const field = delta.kind === "triage_delta" ? "text" : "thinking";
+      const next = { ...tail, [field]: cap(tail[field] + delta.data.text) };
+      return {
+        ...s,
+        triage:
+          at === -1
+            ? [...s.triage, next]
+            : s.triage.map((tail, i) => (i === at ? next : tail)),
+      };
+    }
+    default:
       return s;
-    const tail = s.consolidation;
-    const field = kind === "consolidation_delta" ? "text" : "thinking";
-    return {
-      ...s,
-      consolidation: { ...tail, [field]: cap(tail[field] + data.text) },
-    };
   }
-  if (kind === "compaction_delta" || kind === "compaction_thinking_delta") {
-    if (s.sideRequests.compaction.phase !== "open") return s;
-    const tail = s.compaction ?? { text: "", thinking: "" };
-    const field = kind === "compaction_delta" ? "text" : "thinking";
-    return {
-      ...s,
-      compaction: { ...tail, [field]: cap(tail[field] + data.text) },
-    };
-  }
-  if (
-    (kind !== "triage_delta" && kind !== "triage_thinking_delta") ||
-    !("call_ids" in data)
-  )
-    return s;
-  if (s.sideRequests.triage.phase !== "open") return s;
-  const callIds = [...new Set(data.call_ids)].sort();
-  if (
-    callIds.length === 0
-      ? s.sideRequests.idleSettled
-      : callIds.some((id) => s.sideRequests.settledCalls.includes(id))
-  )
-    return s;
-  const at = s.triage.findIndex(
-    (tail) =>
-      tail.callIds.length === callIds.length &&
-      tail.callIds.every((id, i) => id === callIds[i]),
-  );
-  const tail = s.triage[at] ?? { callIds, text: "", thinking: "" };
-  const field = kind === "triage_delta" ? "text" : "thinking";
-  const next = { ...tail, [field]: cap(tail[field] + data.text) };
-  return {
-    ...s,
-    triage:
-      at === -1
-        ? [...s.triage, next]
-        : s.triage.map((tail, i) => (i === at ? next : tail)),
-  };
 }

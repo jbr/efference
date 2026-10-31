@@ -1,7 +1,10 @@
-import { sessionSource, type InterruptOrigin } from "../api/types.ts";
+import { sessionSource } from "../api/source.ts";
+import type { InterruptOrigin } from "../api/types.ts";
 
 /** Client-asserted origin of a recorded interrupt (docs/control-api.md). */
-export function interruptFrom({ source, control }: InterruptOrigin): string {
+export function interruptFrom(origin: InterruptOrigin): string {
+  const source = origin.source ?? undefined;
+  const control = origin.control ?? undefined;
   if (source === "web") {
     if (control === "stop-button") return "the web stop button";
     if (control === "status-bar-stop") return "the web status-bar stop button";

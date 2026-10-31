@@ -6,9 +6,15 @@ import {
   resolveApproval,
   submitTurn as postTurn,
   withdrawTurns,
-  type WithdrawnTurn,
 } from "../api/http.ts";
-import type { Ask, Attachment, CallId, Decision, Gate } from "../api/types.ts";
+import type {
+  AskView,
+  Arrival,
+  CallId,
+  Gate,
+  QueuedTurn,
+} from "../api/types.ts";
+import type { Decision } from "../api/decision.ts";
 import {
   applyFrame,
   mintTurn,
@@ -37,7 +43,7 @@ import {
 export async function submitTurn(
   store: Store,
   text: string,
-  attachments: Attachment[] = [],
+  attachments: Arrival[] = [],
 ): Promise<void> {
   const id = crypto.randomUUID();
   const answers = store.snapshot().topics.ask?.call_id ?? null;
@@ -49,7 +55,7 @@ export async function submitTurn(
   } catch (error) {
     store.update((s) => unmintTurn(s, id));
     if (error instanceof ApiError && error.code === "not_delivered") {
-      const ask = (error.detail ?? null) as Ask | null;
+      const ask = (error.detail ?? null) as AskView | null;
       store.update((s) =>
         applyFrame(s, { class: "state", kind: "ask", data: ask }),
       );
@@ -79,7 +85,7 @@ export async function submitTurn(
 export async function recallTurn(
   store: Store,
   id: string,
-): Promise<WithdrawnTurn[]> {
+): Promise<QueuedTurn[]> {
   const { withdrawn } = await withdrawTurns(id);
   store.update((s) =>
     removePendingTurns(

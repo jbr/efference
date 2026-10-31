@@ -8,15 +8,15 @@ import { Disclosure } from "./Disclosure.tsx";
 // every folded item opens whole on a tap, and the density toggles hide, they
 // never drop (docs/web-client.md).
 
-import { handoffPredecessor, senderName } from "../api/types.ts";
+import { handoffPredecessor, senderName } from "../api/source.ts";
 import { memo, useMemo, type ComponentProps } from "react";
 import type {
-  Ask,
-  Attachment,
+  AskView,
+  Arrival,
   ConfigEdit,
   Summary,
   Spot,
-  UserBlock,
+  ContentBlock,
   WorktreeEvent,
 } from "../api/types.ts";
 import type { LiveBlock, PendingTurn, Streaming } from "../session/store.ts";
@@ -39,7 +39,7 @@ import { LiveResult, TranscriptItems } from "./TranscriptItems.tsx";
 // Blank-line joined: these bodies render as markdown, and distinct wire
 // blocks are separate paragraphs — a single newline would soft-wrap the last
 // line of one block into the first of the next.
-const text = (blocks: UserBlock[]) =>
+const text = (blocks: ContentBlock[]) =>
   blocks
     .filter((b) => !("Attachment" in b))
     .map((b) =>
@@ -51,7 +51,7 @@ const text = (blocks: UserBlock[]) =>
     )
     .join("\n\n");
 
-const attachmentsOf = (blocks: UserBlock[]): Attachment[] =>
+const attachmentsOf = (blocks: ContentBlock[]): Arrival[] =>
   blocks.flatMap((b) => ("Attachment" in b ? [b.Attachment] : []));
 
 /** One transcript row: the label gutter and the content column. `label` is
@@ -229,7 +229,7 @@ function Leaf({
   node: LeafNode;
   /** The `ask` topic, for ask leaves only (others get `null` so a topic change
    * does not re-render them). */
-  liveAsk: Ask | null;
+  liveAsk: AskView | null;
   /** Enabled only by the real session transcript, never embedded specimens. */
   artifactEnabled: boolean;
 }) {
@@ -634,7 +634,7 @@ export function TranscriptContent({
   streaming: Streaming;
   pending: PendingTurn[];
   /** The `ask` topic: while non-null, a send answers the current question. */
-  ask: Ask | null;
+  ask: AskView | null;
   onRecall: (id: string) => void;
   onInspect: (callId: CallId) => void;
   onOpenFile: (path: string, callId: CallId) => void;

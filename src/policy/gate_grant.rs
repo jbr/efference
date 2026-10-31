@@ -8,6 +8,7 @@ use super::*;
 /// names what it allows ("always allow reading /work/refs"). Surfaced on `/state`'s
 /// `gate` topic (docs/control-api.md); never logged until committed.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct GateGrant {
     pub change: ConfigChange,
     pub label: String,

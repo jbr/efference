@@ -14,6 +14,7 @@ use crate::project::Retention;
 /// Every instant is absolute Unix millis, so the topic stays quiet until a request
 /// happens: a client subtracts from its own clock (docs/control-api.md).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct UsageView {
     /// The last request's token counts, whatever it was for; `null` before the first.
     pub last: Option<Usage>,
@@ -57,6 +58,7 @@ pub struct UsageView {
 /// The model's context window and how much of it the last turn's prompt used
 /// (docs/transport.md).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ContextWindow {
     /// The window, as the provider reported it at boot; `null` when it reported none.
     pub limit: Option<u64>,
@@ -67,6 +69,7 @@ pub struct ContextWindow {
 
 /// The session's billed cost, where the provider prices requests (docs/transport.md).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Cost {
     pub usd: f64,
     /// Requests that could not be priced, which make `usd` an undercount.
@@ -83,6 +86,7 @@ pub struct Cost {
 /// (docs/control-api.md): an elapsed-time field changes on every read, which under
 /// level-triggered emission means the topic never goes quiet.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LastCacheMiss {
     pub reason: CacheMissReason,
     /// The provider's byte-derived estimate of the prefix that fell after the
@@ -97,6 +101,7 @@ pub struct LastCacheMiss {
 /// go out on schedule, or when the keepalive was never armed (no prompt cache,
 /// interval zero): it records a decision the loop made, not a configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct KeepaliveSkip {
     /// When the loop reached this stance, absolute Unix millis.
     pub at: Timestamp,
@@ -106,6 +111,7 @@ pub struct KeepaliveSkip {
 
 /// The two reasons the loop does not ping.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum KeepaliveSkipReason {
     /// The last ping discarded output that the refresh would not repay against the
@@ -144,6 +150,7 @@ pub enum KeepaliveSkipReason {
 /// (docs/control-api.md). The topic is `null` while the cache is believed warm, before
 /// the first turn, on a model with no cache, and when there is nothing to compact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Cold {
     /// When the cache is believed to have expired: the last request on the main prefix
     /// plus the provider's cache lifetime.

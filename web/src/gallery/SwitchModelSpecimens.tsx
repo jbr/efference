@@ -1,5 +1,8 @@
-import type { ArchivedSession, DormantSession } from "../api/http.ts";
-import type { SessionIdentity } from "../api/types.ts";
+import type {
+  SessionIdentity,
+  ArchivedSession,
+  DormantSession,
+} from "../api/types.ts";
 import { SwitchModelPage } from "../ui/SwitchModelPage.tsx";
 import { archivedTarget, keeping, liveTarget } from "../ui/switchModel.ts";
 import { Specimen } from "./Specimens.tsx";

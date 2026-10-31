@@ -6,7 +6,8 @@
 import { expect, test, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { ArtifactKind, Ask, LogEntry } from "../api/types.ts";
+import type { ArtifactKind, AskView } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { emptyStreaming } from "../session/store.ts";
 import type { Streaming } from "../session/store.ts";
@@ -73,7 +74,7 @@ async function markupAfterEffects(
 const element = (
   entries: LogEntry[],
   over: {
-    ask?: Ask | null;
+    ask?: AskView | null;
     pending?: string[];
     streaming?: Streaming;
     artifactEnabled?: boolean;
@@ -152,7 +153,7 @@ const withArtifacts = (
     },
   });
 
-const topic = (call_id: string, n: number, of: number): Ask => ({
+const topic = (call_id: string, n: number, of: number): AskView => ({
   call_id,
   question: "?",
   n,

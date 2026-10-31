@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from "react";
-import type { Usage } from "../api/types.ts";
+import type { UsageView } from "../api/types.ts";
 import { CompactControl, type CompactControlProps } from "./CompactControl.tsx";
 import { HoverPopup } from "./HoverPopup.tsx";
 import "./ContextPopup.css";
@@ -9,7 +9,7 @@ export function ContextPopup({
   summary,
   children,
 }: {
-  context: Usage["context"];
+  context: UsageView["context"];
   summary: CompactControlProps;
   children?: ReactNode;
 }) {

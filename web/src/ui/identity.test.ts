@@ -1,4 +1,4 @@
-import { handoffPredecessor } from "../api/types.ts";
+import { handoffPredecessor } from "../api/source.ts";
 import { describe, expect, it } from "vitest";
 
 import { successorHref, homeRelative } from "./identity.ts";

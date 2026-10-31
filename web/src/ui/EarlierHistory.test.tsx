@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { fetchLogBefore } from "../api/http.ts";
-import type { LogEntry } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { HistoryLoader } from "../session/history.ts";
 import { seed, Store } from "../session/store.ts";
 import { EarlierHistory } from "./EarlierHistory.tsx";

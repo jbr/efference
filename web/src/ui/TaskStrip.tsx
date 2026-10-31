@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Process } from "../api/types.ts";
+import type { ProcessState } from "../api/types.ts";
 import "./TaskStrip.css";
 
 export function TaskStrip({
@@ -7,7 +7,7 @@ export function TaskStrip({
   selected,
   onInspect,
 }: {
-  processes: Process[];
+  processes: ProcessState[];
   selected: string | null;
   onInspect: (id: string) => void;
 }) {

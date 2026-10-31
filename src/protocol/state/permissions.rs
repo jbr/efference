@@ -19,6 +19,7 @@ use crate::protocol::status::Escalated;
 /// ephemeral control state the log does not record, since it stores only the result.
 /// `null` when no gate is open.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Gate {
     pub call_id: String,
     /// The held tool's wire name.
@@ -53,6 +54,7 @@ pub struct Gate {
 /// **already has a durable `seq`** (the `Proposed` entry's), so that *is* its id — no
 /// queue-local counter.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PendingProposal {
     /// The `seq` of the `Proposed` log entry — the proposal's id, which the orchestrator's
     /// commit/cancel references.
@@ -67,6 +69,7 @@ pub struct PendingProposal {
 /// (docs/permissions.md). It carries the policy's contents, not counts: an orchestrator
 /// inspecting a subordinate needs the commands, paths and scope actually in force.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RoleView {
     /// The base config's path, or `null` for the built-in default.
     pub source: Option<String>,

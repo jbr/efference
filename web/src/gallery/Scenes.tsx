@@ -2,7 +2,8 @@ import { summaryPreviews } from "../session/summaryPreviews.ts";
 import { TriagePreview } from "../ui/SideStreams.tsx";
 import { useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { Ask, CallId, LogEntry } from "../api/types.ts";
+import type { AskView, CallId } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { emptyStreaming, type Streaming } from "../session/store.ts";
 import { buildTree } from "../session/tree.ts";
@@ -31,7 +32,7 @@ const command = {
 };
 const question =
   "The worktree controls are ready. Should I commit this change now, or leave it uncommitted for another design pass?";
-const ask: Ask = {
+const ask: AskView = {
   call_id: "gallery-ask",
   question,
   n: 1,
@@ -40,7 +41,7 @@ const ask: Ask = {
 };
 const secondQuestion =
   "Should the new-session form remember the worktree option for the next session, or reset it each time?";
-const secondAsk: Ask = {
+const secondAsk: AskView = {
   ...ask,
   call_id: "gallery-ask-second",
   question: secondQuestion,

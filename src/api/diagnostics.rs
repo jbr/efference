@@ -42,6 +42,7 @@ pub fn turn_routing_state() -> TurnRoutingState {
 /// Ephemeral transport diagnostics: never appended
 /// to the log or projected (docs/transport.md).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct UpstreamFailure {
     pub status: Option<u16>,
     pub count: u32,
@@ -73,6 +74,7 @@ pub fn upstream_failure_state() -> UpstreamFailureState {
 /// surface is part of the state rather than a detail folded into prose
 /// (docs/transport.md).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RetrySurface {
     Turn,
@@ -96,6 +98,7 @@ impl RetrySurface {
 /// wait itself (docs/control-api.md). It is control state, never projected, so the
 /// wall-clock reading cannot reach the cached prefix.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct UpstreamRetry {
     pub surface: RetrySurface,
     /// Which attempt just failed — 1-based, so `attempt` of `budget` reads directly.

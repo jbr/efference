@@ -17,6 +17,7 @@ use super::*;
 /// The machine-readable half of an error response. Each variant has one canonical HTTP
 /// status ([`ErrorCode::status`]), so a handler picks the code and the status follows.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ErrorCode {
     /// Malformed body, unparseable path parameter, out-of-range value. 400.
@@ -105,6 +106,7 @@ impl ErrorCode {
 
 /// The body of a non-2xx response.
 #[derive(Serialize, Debug)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(crate) struct ErrorBody {
     pub(crate) code: ErrorCode,
     /// The human half — surfaced verbatim by the CLI. Free to change; clients branch on

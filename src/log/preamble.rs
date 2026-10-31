@@ -12,6 +12,7 @@ use super::{LogEntry, Payload, Provider, context};
 /// record, so a rename in the live configuration model does not change how an
 /// existing log deserializes (docs/log-and-projection.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LoggedInference {
     pub connection: String,
     pub provider: Provider,
@@ -50,6 +51,7 @@ pub fn recorded_inference(entries: &[LogEntry]) -> Option<&LoggedInference> {
 
 /// Which inference the triage step ran on (docs/triage.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum TriageModel {
     /// Triage ran on the session's main inference.
     Shared,
@@ -87,6 +89,7 @@ impl TriageModel {
 /// with; the latest `Preamble` that carries this overrides it, so a switched role
 /// survives the next resume.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RecordedRoles {
     pub spotter: LoggedInference,
     pub triage: TriageModel,

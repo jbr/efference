@@ -8,11 +8,12 @@
 // archived and then resumed on the chosen models; a dormant one resumes on them
 // in a single patch, seeded from the roles its listing read back from the log.
 
-import type { ArchivedSession, DormantSession } from "../api/http.ts";
 import type {
   Cold,
-  RecordedSelections,
+  ResumeSwitch,
   SessionIdentity,
+  ArchivedSession,
+  DormantSession,
 } from "../api/types.ts";
 
 /** One role's selection: the connection by name and the provider-native model id
@@ -97,7 +98,7 @@ export function archivedTarget(
  * absent, so its row opens on "Choose a model" and a pick is what the resume
  * sends for it. */
 export function recordedFromSelections(
-  selections: RecordedSelections | null | undefined,
+  selections: ResumeSwitch | null | undefined,
 ): RecordedRoles | null {
   if (selections == null) return null;
   const roles: RecordedRoles = {};

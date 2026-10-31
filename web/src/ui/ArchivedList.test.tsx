@@ -4,10 +4,10 @@
 // chosen ones instead. The row is one button, so the menu is a sibling; this pins
 // that neither hit area swallows the other.
 
+import type { ArchivedSession } from "../api/types.ts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ArchivedSession } from "../api/http.ts";
 import { ArchivedList } from "./ArchivedList.tsx";
 
 const session = (id: string): ArchivedSession => ({

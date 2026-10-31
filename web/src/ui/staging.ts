@@ -1,7 +1,7 @@
 // Attachment descriptions and paste rules (docs/inbox.md, docs/web-client.md).
 // Upload ownership and staged state live in drafts.ts, outside the composer.
 
-import type { Attachment, AttachmentKind } from "../api/types.ts";
+import type { Arrival, AttachmentKind } from "../api/types.ts";
 
 /** How many lines of pasted text stay in the draft; past this a paste is staged
  * as a file instead, so a bulky blob never takes the decision about whether to
@@ -52,7 +52,7 @@ export interface Staged {
    * URL once uploaded or restored, `null` for anything that is not an image. */
   preview: string | null;
   status: "uploading" | "ready" | "failed";
-  attachment?: Attachment;
+  attachment?: Arrival;
   error?: string;
   /** A paste staged for its length keeps its text, so the chip can put it back
    * in the draft instead. */

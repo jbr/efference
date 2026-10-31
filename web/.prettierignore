@@ -5,3 +5,8 @@ pnpm-lock.yaml
 # index.html carries the block scripts/startup-images.py generates (one link per launch
 # image); Prettier would reflow its 80 link tags on every run, so the file is excluded.
 index.html
+
+# The protocol schema is written by the host's schema test (EFFERENCE_WRITE_SCHEMAS=1 cargo
+# test schema) as serde_json prints it; Prettier would reflow its arrays and the committed
+# file would no longer match what the test compares it to.
+src/api/protocol.schema.json

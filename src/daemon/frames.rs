@@ -307,61 +307,12 @@ impl Frame {
     /// An ephemeral output frame. No `seq`: these are pre-commit and carry no cursor,
     /// which is the whole reason they are a distinct durability class.
     pub(crate) fn output(delta: &StreamDelta) -> Self {
-        let (kind, data) = match delta {
-            StreamDelta::AssistantText { index, text } => (
-                "assistant_delta",
-                serde_json::json!({ "index": index, "text": text }),
-            ),
-            StreamDelta::ThinkingText { index, text } => (
-                "thinking_delta",
-                serde_json::json!({ "index": index, "text": text }),
-            ),
-            StreamDelta::ToolCallStart {
-                index,
-                call_id,
-                name,
-            } => (
-                "tool_call_start",
-                serde_json::json!({ "index": index, "call_id": call_id, "name": name }),
-            ),
-            StreamDelta::ToolCallInput { index, fragment } => (
-                "tool_call_input",
-                serde_json::json!({ "index": index, "fragment": fragment }),
-            ),
-            StreamDelta::ToolOutput { call_id, chunk } => (
-                "tool_output",
-                serde_json::json!({ "call_id": call_id, "chunk": chunk }),
-            ),
-            StreamDelta::ProcessOutput { id, chunk } => (
-                "process_output",
-                serde_json::json!({ "id": id, "chunk": chunk }),
-            ),
-            StreamDelta::CompactionText { text } => {
-                ("compaction_delta", serde_json::json!({ "text": text }))
-            }
-            StreamDelta::CompactionThinking { text } => (
-                "compaction_thinking_delta",
-                serde_json::json!({ "text": text }),
-            ),
-            StreamDelta::ConsolidationText { text } => {
-                ("consolidation_delta", serde_json::json!({ "text": text }))
-            }
-            StreamDelta::ConsolidationThinking { text } => (
-                "consolidation_thinking_delta",
-                serde_json::json!({ "text": text }),
-            ),
-            StreamDelta::TriageText { call_ids, text } => (
-                "triage_delta",
-                serde_json::json!({ "call_ids": call_ids, "text": text }),
-            ),
-            StreamDelta::TriageThinking { call_ids, text } => (
-                "triage_thinking_delta",
-                serde_json::json!({ "call_ids": call_ids, "text": text }),
-            ),
-        };
+        // The delta serializes as `{"kind", "data"}`; the envelope names the kind itself
+        // and carries the data, whose keys sort as every channel object's do.
+        let data = views::channel_value(delta)["data"].take();
         Self {
             class: Class::Output,
-            kind,
+            kind: delta.kind(),
             seq: None,
             data: raw(&data),
             render: None,

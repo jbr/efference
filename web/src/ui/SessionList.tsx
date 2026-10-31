@@ -1,3 +1,4 @@
+import type { ArchivedSession } from "../api/types.ts";
 import { AppSettingsLink } from "./AppSettings.tsx";
 // The host's root: live sessions and recent archived work, grouped by working
 // directory into workspaces (docs/web-client.md).
@@ -11,7 +12,7 @@ import { AppSettingsLink } from "./AppSettings.tsx";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { openSessionCard, openSessions } from "../api/sessions.ts";
 import { archiveSession, type SessionEntry } from "../api/http.ts";
-import type { StateSnapshot } from "../api/types.ts";
+import type { StateSnapshot } from "../api/frames.ts";
 import { cardModel, foldRecent, type Recent, workspaces } from "./overview.ts";
 import { SessionCard } from "./SessionCard.tsx";
 import { useLaunchNavigation } from "./newSessionNavigation.ts";
@@ -25,11 +26,7 @@ import { ResumePage } from "./ResumePage.tsx";
 import { useResumeNavigation } from "./resumeNavigation.ts";
 import { partitionArchived } from "./resume.ts";
 import { useNarrow } from "./useNarrow.ts";
-import {
-  fetchArchivedSessions,
-  resumeSession,
-  type ArchivedSession,
-} from "../api/http.ts";
+import { fetchArchivedSessions, resumeSession } from "../api/http.ts";
 import { sessionHref } from "../api/base.ts";
 import { navigate, useSearch } from "./route.ts";
 import { SwitchModelPage } from "./SwitchModelPage.tsx";

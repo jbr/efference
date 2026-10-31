@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 /// persisted usage line, so per-shape spend is a query over `usage.jsonl` rather than a
 /// reconstruction from the canonical log.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RequestOrigin {
     /// An agent-loop completion (docs/README.md).
@@ -103,6 +104,7 @@ impl RequestOrigin {
 
 /// One stage of one upstream request (docs/log-and-projection.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RequestStage {
     /// The request's id, unique within the session: minted by the host when the
     /// request starts, because the provider's generation id arrives late or never.
@@ -132,6 +134,7 @@ impl RequestStage {
 
 /// Where a request is, in the order a request passes them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RequestStageKind {
     /// The request was handed to the transport.

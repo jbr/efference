@@ -8,7 +8,7 @@
 
 import { useCallback, useState } from "react";
 import { fetchLogEntry } from "../api/http.ts";
-import type { LogEntry, RawResult, Seq } from "../api/types.ts";
+import type { LogEntry, RawResult, Seq } from "../api/entry.ts";
 
 /** The `RawResult` of a `ToolResult` entry, or null for any other payload. */
 export function resultOf(entry: LogEntry): RawResult | null {
@@ -39,7 +39,7 @@ export function useWholeResult(seq: Seq | null, raw: RawResult | null) {
         const result = resultOf(entry);
         // A failure is a value, not a throw: the truncated content stays on
         // screen and the marker says the rest did not arrive.
-        if (result === null || result.content_elided !== undefined) {
+        if (result === null || result.content_elided != null) {
           setState("failed");
           return;
         }
@@ -52,7 +52,7 @@ export function useWholeResult(seq: Seq | null, raw: RawResult | null) {
 
   return {
     raw: whole ?? raw,
-    elided: whole === null ? raw?.content_elided : undefined,
+    elided: whole === null ? (raw?.content_elided ?? undefined) : undefined,
     state,
     fetchWhole,
   };

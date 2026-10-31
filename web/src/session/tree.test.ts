@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  KICKOFF_SOURCE,
-  type LogEntry,
-  type RawResult,
-  type WireState,
-} from "../api/types.ts";
+import { KICKOFF_SOURCE } from "../api/source.ts";
+import type { LogEntry, RawResult } from "../api/entry.ts";
+import type { ToolCall, WireState } from "../api/types.ts";
 import {
   buildTree,
   upstreamFailureWhy,
@@ -80,7 +77,12 @@ describe("record-only entries", () => {
       entry(1, {
         Assistant: {
           ...messagesAssistant([], [], []),
-          excluded: { Upstream: { why: "empty finalized stream", stream: {} } },
+          excluded: {
+            Upstream: {
+              why: "empty finalized stream",
+              stream: { status: 200 },
+            },
+          },
         },
       }),
     ]);
@@ -120,7 +122,9 @@ describe("record-only entries", () => {
 
   it("reads the why out of either serialization", () => {
     expect(upstreamFailureWhy("aborted")).toBe("aborted");
-    expect(upstreamFailureWhy({ why: "aborted", stream: {} })).toBe("aborted");
+    expect(
+      upstreamFailureWhy({ why: "aborted", stream: { status: 200 } }),
+    ).toBe("aborted");
   });
 
   it("leaves a finalized turn unmarked", () => {
@@ -346,8 +350,9 @@ describe("the transcript tree", () => {
           inbox: [],
           surfaced: [],
           retries: [],
+          thinking: [],
         },
-      } as LogEntry["payload"]),
+      }),
     ]);
     expect(nodes).toHaveLength(1);
     expect(nodes[0].kind).toBe("batch");
@@ -446,7 +451,11 @@ describe("title and preamble entries", () => {
       entry(seq, { Title: { text, author: "triage" } });
     const nodes = buildTree([
       entry(0, {
-        Preamble: { identity: "You are m.", body: " …", context: null },
+        Preamble: {
+          identity: "You are m.",
+          body: " …",
+          context: { sections: [] },
+        },
       }),
       title(1, "Probe the models endpoint"),
       title(2, "Probe the models endpoint"),
@@ -478,10 +487,8 @@ describe("ask", () => {
     name: "ask",
     input: { question },
   });
-  const asking = (
-    seq: number,
-    calls: { id: string; name: string; input: unknown }[],
-  ) => entry(seq, { Assistant: messagesAssistant([], [], calls) });
+  const asking = (seq: number, calls: ToolCall[]) =>
+    entry(seq, { Assistant: messagesAssistant([], [], calls) });
   const reply = (
     seq: number,
     callId: string,
@@ -564,7 +571,9 @@ describe("interrupt origin association", () => {
     entry(seq, {
       Assistant: {
         ...messagesAssistant([], [{ Text: "Partial response" }], []),
-        excluded: { Upstream: { why: "generation interrupted", stream: {} } },
+        excluded: {
+          Upstream: { why: "generation interrupted", stream: { status: 200 } },
+        },
       },
     });
   const stage = (

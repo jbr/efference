@@ -60,6 +60,53 @@ fn provider_names_are_a_closed_vocabulary() {
     );
 }
 
+/// The control channel's schema for a provider lists the names `Serialize` writes. The
+/// list is built from the tables the parsers read; this checks it against every variant,
+/// and an exhaustive match stops compiling when a variant is added without being listed.
+#[test]
+fn the_schema_lists_every_name_a_provider_serializes_as() {
+    use schemars::JsonSchema;
+
+    let schema = Provider::json_schema(&mut schemars::SchemaGenerator::default());
+    let listed: Vec<&str> = schema.as_value()["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap())
+        .collect();
+    let every = [
+        Provider::Anthropic,
+        Provider::OpenRouter,
+        Provider::OpenAI,
+        Provider::OpenAICodex,
+        Provider::TypeSafe,
+        Provider::Custom(WireDialect::Messages),
+        Provider::Custom(WireDialect::Responses),
+        Provider::Custom(WireDialect::Completions),
+        Provider::Custom(WireDialect::SystemOne),
+    ];
+    for provider in every {
+        match provider {
+            Provider::Anthropic
+            | Provider::OpenRouter
+            | Provider::OpenAI
+            | Provider::OpenAICodex
+            | Provider::TypeSafe => {}
+            Provider::Custom(
+                WireDialect::Messages
+                | WireDialect::Responses
+                | WireDialect::Completions
+                | WireDialect::SystemOne,
+            ) => {}
+        }
+        assert!(
+            listed.contains(&provider.name()),
+            "{provider} is not listed"
+        );
+    }
+    assert_eq!(listed.len(), every.len());
+}
+
 /// The endpoint's Debug redacts the credential and the extra headers.
 #[test]
 fn endpoint_debug_redacts_credentials() {

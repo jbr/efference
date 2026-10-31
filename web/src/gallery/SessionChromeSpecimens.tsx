@@ -1,12 +1,12 @@
 import { useState } from "react";
-import type { Usage } from "../api/types.ts";
+import type { UsageView } from "../api/types.ts";
 import { MoreButton, Tab } from "../ui/SessionSwitcher.tsx";
 import { TopBar } from "../ui/TopBar.tsx";
 import { tabCards } from "./fixtures.ts";
 import { Specimen } from "./Specimens.tsx";
 import { SessionStatusFixture } from "./SessionStatusFixture.tsx";
 
-const usage: Usage = {
+const usage: UsageView = {
   last: null,
   cumulative: {
     input_tokens: 147_000,
@@ -17,7 +17,14 @@ const usage: Usage = {
   last_request_at: null,
   context: { used: 147_000, limit: 272_000 },
   cost: { usd: 0.42, unpriced: 0 },
+  cold_streak: 0,
+  triage_cold_streak: null,
+  last_cache_miss: null,
+  keepalive_skipped: null,
+  triage_keepalive_skipped: null,
   plan: null,
+  triage_plan: null,
+  retention: { kept_lines: 0, shown_lines: 0, truncated_lines: 0, withheld: 0 },
 };
 
 /** Real header controls and tab components, without a host subscription. */

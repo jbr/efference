@@ -8,6 +8,7 @@ use super::*;
 /// config struct's layout. [`crate::policy::apply_config_change`] applies each [`ConfigChange`] to
 /// the config it folds into.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ConfigEdit {
     /// Where this edit sits in the propose→commit/cancel lifecycle
     /// (docs/permissions.md). The fold gates on it: only [`EditState::Committed`]
@@ -37,6 +38,7 @@ pub struct ConfigEdit {
 /// `Committed` directly (the human's gesture / file edit *is* the commit). The fold applies only
 /// `Committed`; `Proposed` and `Cancelled` are audit-only and never reach the effective config.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum EditState {
     /// Filed by an async initiator, awaiting an orchestrator decision. Inert in the effective
@@ -60,6 +62,7 @@ pub enum EditState {
 /// [`crate::daemon`]: `Scope` and `Path` are the perimeter the session should learn moved;
 /// `Command` and `Tool` reach the model only through the classifier.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigChange {
     /// Clear a bash command-prefix: add `command` to the `[commands]` set. The string is the

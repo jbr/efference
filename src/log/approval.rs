@@ -15,6 +15,7 @@ use super::ConfigChange;
 /// Serialized into the log as a gate decision's record (`Telemetry::GateDecision`,
 /// docs/log-and-projection.md), so a rename here changes what new entries say.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum Approval {
     /// Run the call.
     Approve,

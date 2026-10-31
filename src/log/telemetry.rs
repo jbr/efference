@@ -11,6 +11,7 @@ use super::{Approval, CallId, ColdEvent, PushRecord, RequestStage, ToolTelemetry
 
 /// One telemetry fact, recorded as `{"Telemetry": {"<Variant>": …}}`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum Telemetry {
     /// Per-call tool telemetry (docs/tools.md) — how long one call took, how it
     /// came out, and how big its result was, appended right after the
@@ -103,6 +104,7 @@ pub enum Telemetry {
 /// like a turn's `source`; a client that says nothing leaves both absent
 /// (docs/control-api.md).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InterruptOrigin {
     /// Who interrupted, spelled as a turn's `source` is: `web`, `mcp[<name>]`,
     /// `session[<id>]`. Absent for the operator's own command line or TUI.
@@ -118,6 +120,7 @@ pub struct InterruptOrigin {
 /// is: `web`, `mcp[<name>]`, `session[<id>]`; absent for the operator's own command line
 /// or TUI (docs/control-api.md).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ContinueOrigin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
@@ -125,6 +128,7 @@ pub struct ContinueOrigin {
 
 /// One accepted gate decision ([`Telemetry::GateDecision`]).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct GateDecision {
     /// The held call's `tool_use` id.
     pub call_id: CallId,
@@ -165,6 +169,7 @@ impl GateDecision {
 
 /// One accepted escalation of a held call ([`Telemetry::Escalation`]).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Escalation {
     /// The held call's `tool_use` id.
     pub call_id: CallId,

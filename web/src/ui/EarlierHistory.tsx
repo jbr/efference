@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { captureHistoryAnchor } from "./historyAnchor.ts";
-import type { LogEntry } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import type { HistoryLoader } from "../session/history.ts";
 import { subscribeTail, tailFollowing } from "./followTail.ts";
 

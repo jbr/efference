@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bearer } from "./api/bearer.ts";
+import type { AttentionReport } from "./api/types.ts";
 import {
   Attender,
-  type AttentionReport,
   HEARTBEAT_MS,
   INPUT_THROTTLE_MS,
   INPUT_WINDOW_MS,

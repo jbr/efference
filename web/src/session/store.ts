@@ -6,17 +6,15 @@
 // imports React or touches the network.
 
 import type {
-  Ask,
-  Attachment,
+  AskView,
+  Arrival,
   CallId,
-  Frame,
-  LogEntry,
-  OutputData,
-  Process,
-  Seq,
+  ProcessState,
   Spot,
-  StateTopics,
+  StreamDelta,
 } from "../api/types.ts";
+import type { Frame, TopicValues } from "../api/frames.ts";
+import type { LogEntry, Seq } from "../api/entry.ts";
 import {
   closeSide,
   emptySideStreaming,
@@ -79,7 +77,7 @@ export interface Session {
   /** Committed entries in seq order — the window we've seen, not the whole log. */
   entries: LogEntry[];
   lastSeq: Seq | null;
-  topics: StateTopics;
+  topics: TopicValues;
   streaming: Streaming;
   /** Turns the daemon accepted (a 202) whose `User` entries have not streamed
    * back yet — the operator's delivery signal (docs/web-client.md). Ordered;
@@ -118,12 +116,12 @@ export interface Session {
 export interface PendingTurn {
   id: string;
   text: string;
-  attachments: Attachment[];
+  attachments: Arrival[];
 }
 
 /** The turns an `ask` handed back to the composer. */
 export interface AskRecall {
-  turns: NonNullable<StateTopics["ask"]>["recalled"];
+  turns: NonNullable<TopicValues["ask"]>["recalled"];
   nonce: number;
 }
 
@@ -175,7 +173,7 @@ export function pushPendingTurn(
   session: Session,
   id: string,
   text: string,
-  attachments: Attachment[] = [],
+  attachments: Arrival[] = [],
 ): Session {
   if (session.entries.some((e) => e.submission_id === id)) return session;
   if (session.withdrawn.includes(id)) return session;
@@ -198,7 +196,7 @@ export function unmintTurn(session: Session, id: string): Session {
 /** Take back the turns an `ask` withdrew from the queue (docs/web-client.md), once
  * per ask: only those whose ids this client minted, whose echoes go with them.
  * They reach the composer through `askRecall`. */
-function restoreAskRecall(session: Session, ask: Ask | null): Session {
+function restoreAskRecall(session: Session, ask: AskView | null): Session {
   if (ask === null || ask.call_id === session.askRestored) return session;
   const own = ask.recalled.filter((t) =>
     session.minted.includes(t.submission_id),
@@ -283,7 +281,7 @@ function learnProcessCalls(
 ): Record<CallId, number> {
   if (!Array.isArray(data)) return known;
   let next = known;
-  for (const proc of data as Process[]) {
+  for (const proc of data as ProcessState[]) {
     const callId = proc.call_id;
     if (typeof callId !== "string" || next[callId] === proc.id) continue;
     if (next === known) next = { ...known };
@@ -305,7 +303,7 @@ export function applyFrame(session: Session, frame: Frame): Session {
             frame.kind === "current_operations"
               ? sideOperations(
                   session.streaming,
-                  (frame.data as StateTopics["current_operations"]) ?? null,
+                  (frame.data as TopicValues["current_operations"]) ?? null,
                 )
               : frame.kind === "compaction_failure" && frame.data !== null
                 ? closeSide(session.streaming, "compaction")
@@ -315,16 +313,12 @@ export function applyFrame(session: Session, frame: Frame): Session {
               ? learnProcessCalls(session.processCalls, frame.data)
               : session.processCalls,
         },
-        frame.kind === "ask" ? (frame.data as Ask | null) : null,
+        frame.kind === "ask" ? (frame.data as AskView | null) : null,
       );
     case "output":
       return {
         ...session,
-        streaming: applyOutput(
-          sideOutput(session.streaming, frame.kind, frame.data),
-          frame.kind,
-          frame.data,
-        ),
+        streaming: applyOutput(sideOutput(session.streaming, frame), frame),
       };
     default:
       // A durability class from a newer daemon: nothing safe to fold.
@@ -396,71 +390,61 @@ function appendBlock(
   return { ...streaming, blocks };
 }
 
-function applyOutput(
-  streaming: Streaming,
-  kind: string,
-  data: OutputData,
-): Streaming {
-  switch (kind) {
+function applyOutput(streaming: Streaming, delta: StreamDelta): Streaming {
+  switch (delta.kind) {
     case "assistant_delta":
-      if ("index" in data && "text" in data) {
-        return appendBlock(streaming, data.index, "text", data.text);
-      }
-      return streaming;
+      return appendBlock(streaming, delta.data.index, "text", delta.data.text);
     case "thinking_delta":
-      if ("index" in data && "text" in data) {
-        return appendBlock(streaming, data.index, "thinking", data.text);
-      }
-      return streaming;
-    case "tool_call_start":
+      return appendBlock(
+        streaming,
+        delta.data.index,
+        "thinking",
+        delta.data.text,
+      );
+    case "tool_call_start": {
       if (streaming.draining) return streaming;
-      if ("index" in data && "call_id" in data && "name" in data) {
-        return {
-          ...streaming,
-          blocks: [
-            ...streaming.blocks.filter((b) => b.index !== data.index),
-            {
-              index: data.index,
-              kind: "call" as const,
-              text: "",
-              callId: data.call_id,
-              name: data.name,
-            },
-          ].sort((a, b) => a.index - b.index),
-        };
-      }
-      return streaming;
+      const { index, call_id, name } = delta.data;
+      return {
+        ...streaming,
+        blocks: [
+          ...streaming.blocks.filter((b) => b.index !== index),
+          {
+            index,
+            kind: "call" as const,
+            text: "",
+            callId: call_id,
+            name,
+          },
+        ].sort((a, b) => a.index - b.index),
+      };
+    }
     case "tool_call_input":
-      if ("index" in data && "fragment" in data) {
-        return appendBlock(streaming, data.index, "call", data.fragment);
-      }
-      return streaming;
+      return appendBlock(
+        streaming,
+        delta.data.index,
+        "call",
+        delta.data.fragment,
+      );
     case "tool_output":
-      if ("call_id" in data && "chunk" in data) {
-        return {
-          ...streaming,
-          toolOutput: {
-            ...streaming.toolOutput,
-            [data.call_id]: cap(
-              (streaming.toolOutput[data.call_id] ?? "") + data.chunk,
-            ),
-          },
-        };
-      }
-      return streaming;
+      return {
+        ...streaming,
+        toolOutput: {
+          ...streaming.toolOutput,
+          [delta.data.call_id]: cap(
+            (streaming.toolOutput[delta.data.call_id] ?? "") + delta.data.chunk,
+          ),
+        },
+      };
     case "process_output":
-      if ("id" in data) {
-        return {
-          ...streaming,
-          processOutput: {
-            ...streaming.processOutput,
-            [data.id]: cap(
-              (streaming.processOutput[data.id] ?? "") + data.chunk,
-            ),
-          },
-        };
-      }
-      return streaming;
+      return {
+        ...streaming,
+        processOutput: {
+          ...streaming.processOutput,
+          [delta.data.id]: cap(
+            (streaming.processOutput[delta.data.id] ?? "") + delta.data.chunk,
+          ),
+        },
+      };
     default:
       return streaming;
   }

@@ -22,6 +22,7 @@ pub const BUILTIN_NAMESPACES: [&str; 3] = [
 /// the default ([`Config::tool_enabled`], [`ToolsTable::granted`]). Serialized as the `role`
 /// topic reports an entry, with only the fields it sets (docs/control-api.md).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ToolSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,

@@ -10,13 +10,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  senderName,
-  type Cold,
-  type Decision,
-  type Gate,
-  type Spot,
-} from "../api/types.ts";
+import { senderName } from "../api/source.ts";
+import type { Cold, Gate, Spot } from "../api/types.ts";
+import type { Decision } from "../api/decision.ts";
 import { coldLine as coldLineFor } from "./coldLine.ts";
 import { callView } from "./signature.ts";
 import { flatSignature } from "./signatureLayout.ts";

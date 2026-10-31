@@ -31,6 +31,7 @@ pub const TEMPERATURE: std::ops::RangeInclusive<u8> = 0..=100;
 /// unambiguous; the slug stays for surfaces where one opaque string is the
 /// convenient thing to pass.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SessionOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection: Option<String>,

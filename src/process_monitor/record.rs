@@ -25,6 +25,7 @@ use crate::log::{LogEntry, Payload, ProcessEvent, ProcessEventKind, ProcessExit,
 /// One process, running or exited — the durable answer to "what was `p#<n>`"
 /// (docs/process-monitor.md).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcessRecord {
     /// The spawn-minted ordinal (rendered `p#<n>` in prose; bare here and in routes).
     pub id: u64,

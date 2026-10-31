@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
-import type { Plan, PlanWindow } from "../api/types.ts";
+import type { PlanSnapshot, PlanWindow } from "../api/types.ts";
 import { PlanMeter } from "./PlanMeter.tsx";
 import { elapsedPercent, planMeterOptions, windowLabel } from "./planMeter.ts";
 
@@ -19,7 +19,7 @@ const long: PlanWindow = {
   window_minutes: 10_080,
   resets_at: null,
 };
-const plan: Plan = {
+const plan: PlanSnapshot = {
   type: "plus",
   active: null,
   observed_at: now,
@@ -98,7 +98,7 @@ test("click cycles Codex and reported Spark windows and falls back when an allow
 });
 
 test("active allowance is initially shown and past resets retain the last reading rather than inventing renewed quota", () => {
-  const active: Plan = {
+  const active: PlanSnapshot = {
     ...plan,
     active: "codex_spark",
     limits: {

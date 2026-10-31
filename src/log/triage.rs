@@ -10,6 +10,7 @@ use super::*;
 ///
 /// [`ToolResult`]: Payload::ToolResult
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Triage {
     /// The `seq` of the [`Payload::ToolResult`] this verdict triaged — `None` for a
     /// **standalone** triage (the idle-triggered inbox-only triage, docs/inbox.md: a triage
@@ -69,6 +70,7 @@ pub struct Triage {
 
 /// Where a [`Triage`] verdict came from (docs/triage.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "TriageOrigin"))]
 pub enum Origin {
     /// A real `retain` call from the triage model.
     Model,

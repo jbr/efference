@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test, vi } from "vitest";
-import type { Frame, LogEntry } from "../api/types.ts";
+import type { Frame } from "../api/frames.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { record } from "./record.ts";
 import { seed, Store } from "./store.ts";
 import { prependHistory } from "./history.ts";

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Frame, LogEntry } from "../api/types.ts";
+import type { Frame } from "../api/frames.ts";
+import type { LogEntry } from "../api/entry.ts";
+import type { UpstreamFailure, UpstreamRetry } from "../api/types.ts";
 import { messagesAssistant } from "./assistant.ts";
 import {
   applyFrame,
@@ -110,7 +112,7 @@ describe("the state fold", () => {
   // Both transport diagnostics are level-triggered: recovery arrives as a `null`
   // frame on each, and the chip surface reads the folded value (docs/transport.md).
   it("folds a retry in flight and honours its all-clear", () => {
-    const retry = {
+    const retry: UpstreamRetry = {
       surface: "turn",
       attempt: 2,
       budget: 12,
@@ -118,16 +120,17 @@ describe("the state fold", () => {
       message: "attempt 2 of 12 failed upstream, retrying",
       detail: "upstream SSE stream failed mid-stream: connection reset",
     };
+    const failure: UpstreamFailure = {
+      status: 529,
+      count: 2,
+      detail: "overloaded",
+    };
     const failing = fold(emptySession, [
-      {
-        class: "state",
-        kind: "upstream_failure",
-        data: { status: 529, count: 2 },
-      },
+      { class: "state", kind: "upstream_failure", data: failure },
       { class: "state", kind: "upstream_retry", data: retry },
     ]);
     expect(failing.topics.upstream_retry).toEqual(retry);
-    expect(failing.topics.upstream_failure).toEqual({ status: 529, count: 2 });
+    expect(failing.topics.upstream_failure).toEqual(failure);
 
     const recovered = fold(failing, [
       { class: "state", kind: "upstream_retry", data: null },

@@ -6,7 +6,7 @@ import { useHistoricalCall } from "./useHistoricalCall.ts";
 import { fetchCallSeq, fetchLogRange } from "../../api/http.ts";
 import { messagesAssistant } from "../../session/assistant.ts";
 import { buildTree, type CallNode } from "../../session/tree.ts";
-import type { LogEntry } from "../../api/types.ts";
+import type { LogEntry } from "../../api/entry.ts";
 vi.mock("../../api/http.ts", () => ({
   fetchCallSeq: vi.fn(),
   fetchLogRange: vi.fn(),

@@ -5,7 +5,8 @@
 // whole. Ports stay literal — same names, same classifications — so
 // divergence is findable by diffing against tools.rs.
 
-import type { SelectionLines, RawResult, WireState } from "../api/types.ts";
+import type { SelectionLines, WireState } from "../api/types.ts";
+import type { RawResult } from "../api/entry.ts";
 import {
   selectionKept,
   renderInterruption,
@@ -177,7 +178,7 @@ export const byteSize = (bytes: number) =>
  * from measuring `content`, which is only ever the prefix that arrived. */
 export function elisionLabel(raw: RawResult): string | null {
   const elided = raw.content_elided;
-  if (elided === undefined) return null;
+  if (elided == null) return null;
   return `${byteSize(elided.kept_bytes)} of ${byteSize(elided.total_bytes)} shown`;
 }
 

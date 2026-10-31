@@ -25,14 +25,14 @@ import {
   patchLoop,
 } from "../api/http.ts";
 import type {
-  Ask,
-  Attachment,
+  AskView,
+  Arrival,
   Cold,
   CompactionFailure,
   CurrentOperations,
   LoopPhase,
   NewerVersion,
-  Pace,
+  PaceView,
   Stall,
   Verbs,
 } from "../api/types.ts";
@@ -63,7 +63,7 @@ import { useDragToDismiss } from "./useDragToDismiss.ts";
  * two events, not one value. */
 export interface Recalled {
   text: string;
-  attachments: Attachment[];
+  attachments: Arrival[];
   nonce: number;
 }
 
@@ -89,11 +89,11 @@ export function Composer({
   triage = [],
   newerVersion = null,
 }: {
-  submit: (text: string, attachments: Attachment[]) => Promise<void>;
+  submit: (text: string, attachments: Arrival[]) => Promise<void>;
   /** A turn a recall pulled back out of the daemon's queue, to prepend to the
    * draft (docs/web-client.md). */
   recalled: Recalled | null;
-  pace: Pace | null;
+  pace: PaceView | null;
   /** The `loop_phase` topic (docs/control-api.md): where the loop is. */
   phase: LoopPhase | null;
   /** The `verbs` topic: what the continue and compact routes would answer now,
@@ -109,7 +109,7 @@ export function Composer({
    * it (the float carries its own steering input). */
   gatePending: boolean;
   /** The pending `ask`: the placeholder says which question a send answers. */
-  ask: Pick<Ask, "n" | "of"> | null;
+  ask: Pick<AskView, "n" | "of"> | null;
   /** The `cold` and `compaction_failure` topics (docs/web-client.md): a cold session
    * states what a send reads and offers a compaction beside it, and a compaction's
    * failure shows. */
@@ -275,7 +275,7 @@ export function Composer({
     if (!text && attachments.ready.length === 0) {
       const verb = verbs?.continue;
       if (verb !== undefined && !verb.accepted) {
-        setError(verb.message);
+        setError(verb.message ?? null);
         return;
       }
       try {

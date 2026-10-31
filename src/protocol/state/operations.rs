@@ -10,6 +10,7 @@ use crate::log::{CallId, RequestOrigin, Seq};
 /// executing, and a compaction waiting or writing. The topic is `null` rather than empty
 /// when nothing is open; where the loop itself waits is the `loop_phase` topic.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CurrentOperations {
     /// Open requests, in the order they were sent.
     pub requests: Vec<OpenRequest>,
@@ -21,6 +22,7 @@ pub struct CurrentOperations {
 
 /// A request that has been sent and not closed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct OpenRequest {
     /// The id the request's log entries share (docs/log-and-projection.md).
     pub request: u64,
@@ -33,6 +35,7 @@ pub struct OpenRequest {
 
 /// Where an open request is, published as its `stage`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "stage", rename_all = "snake_case")]
 pub enum OpenStage {
     /// Handed to the transport; no stream event yet.
@@ -46,6 +49,7 @@ pub enum OpenStage {
 
 /// A call dispatched and not yet resulted.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RunningTool {
     pub call_id: CallId,
     /// The tool's wire name.
@@ -61,6 +65,7 @@ pub struct RunningTool {
 
 /// A compaction still to land (docs/summary.md), published as its `state`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum OpenCompaction {
     /// Accepted; its summarizing request not yet sent.
@@ -80,6 +85,7 @@ pub enum OpenCompaction {
 /// (docs/summary.md). It stands until a turn's request goes out or another compaction is
 /// asked for, and is folded from the log, so it survives a restart.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CompactionFailure {
     pub error: String,
     /// When it failed, absolute Unix millis.

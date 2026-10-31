@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LogEntry } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import {
   acquireStore,
   forgetStore,

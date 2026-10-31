@@ -6,7 +6,7 @@ import {
   removeAttachment,
   uploadAttachment,
 } from "../api/http.ts";
-import type { Attachment } from "../api/types.ts";
+import type { Arrival } from "../api/types.ts";
 import { isImage, pastedName, type Staged } from "./staging.ts";
 
 export interface Draft {
@@ -17,7 +17,7 @@ export interface Draft {
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 interface Dependencies {
   storage: DraftStorage | null;
-  upload: (name: string, file: File) => Promise<Attachment>;
+  upload: (name: string, file: File) => Promise<Arrival>;
   remove: (name: string) => Promise<void>;
 }
 
@@ -39,9 +39,9 @@ function browserStorage(): DraftStorage | null {
   }
 }
 
-function isAttachment(value: unknown): value is Attachment {
+function isAttachment(value: unknown): value is Arrival {
   if (typeof value !== "object" || value === null) return false;
-  const a = value as Partial<Attachment>;
+  const a = value as Partial<Arrival>;
   if (typeof a.name !== "string" || typeof a.path !== "string") return false;
   if (typeof a.kind !== "object" || a.kind === null) return false;
   if ("Image" in a.kind) {
@@ -233,7 +233,7 @@ export class DraftStore {
     );
   };
 
-  restore = (attachments: Attachment[]) => {
+  restore = (attachments: Arrival[]) => {
     this.update({
       ...this.value,
       staged: [

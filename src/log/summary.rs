@@ -9,6 +9,7 @@ use super::*;
 /// itself projects to nothing; the text appears where the range ends
 /// (docs/summary.md, docs/log-and-projection.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Summary {
     pub from: Seq,
     pub upto: Seq,
@@ -72,6 +73,7 @@ impl Summary {
 
 /// Who made a [`Summary`]'s text (docs/summary.md).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MadeBy {
     /// The session's agent, in a `consolidate` call, with the region in view
@@ -92,6 +94,7 @@ impl MadeBy {
 /// replaces the range for a triage model on its own client; the main projection
 /// ignores it, so the main model's wire bytes do not depend on it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Audience {
     #[default]

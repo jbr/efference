@@ -1,4 +1,4 @@
-import type { ArchivedSession } from "../api/http.ts";
+import type { ArchivedSession } from "../api/types.ts";
 
 /**
  * Format relative age from epoch millisecond timestamps, matching TUI age formatting:

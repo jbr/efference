@@ -21,6 +21,7 @@ use crate::triage::TriageModel;
 /// default; `Shared` explicitly bypasses a configured separate default; `Separate`
 /// carries the existing independent-client options.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum TriageChoice {
     Shared,
@@ -257,6 +258,7 @@ enum AuthConfig {
 
 /// A selected connection plus the provider-native model ID sent upstream.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ModelSelection {
     pub connection: String,
     pub provider: Provider,
@@ -267,6 +269,7 @@ pub struct ModelSelection {
 /// `session_identity` and the boot report (docs/control-api.md). Display only:
 /// upstream requests carry the native `model` alone.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InferenceIdentity {
     pub main: ModelSelection,
     pub spotter: ModelSelection,
@@ -277,6 +280,7 @@ pub struct InferenceIdentity {
 /// whose selection is then reported like the other roles. A shared triage reports
 /// the main selection so two accounts on one model stay distinguishable.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct TriageIdentity {
     pub shared: bool,
     #[serde(flatten)]

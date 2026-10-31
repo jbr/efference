@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LogEntry } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
+import type { ToolCall } from "../api/types.ts";
 import { messagesAssistant } from "./assistant.ts";
 import {
   anchorForCall,
@@ -68,9 +69,8 @@ const entry = (payload: LogEntry["payload"]): LogEntry => ({
   at: 0,
   payload,
 });
-const assistant = (
-  calls: { id: string; name: string; input: unknown }[],
-): LogEntry => entry({ Assistant: messagesAssistant([], [], calls) });
+const assistant = (calls: ToolCall[]): LogEntry =>
+  entry({ Assistant: messagesAssistant([], [], calls) });
 const result = (callId: string, isError = false, content = ""): LogEntry =>
   entry({
     ToolResult: {

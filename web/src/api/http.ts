@@ -8,27 +8,30 @@
 import { apiBase, join } from "./base.ts";
 import { bearer } from "./bearer.ts";
 import type {
-  Attachment,
+  ArchivedSession,
+  Arrival,
+  AttentionReport,
   CallId,
-  Decision,
-  ErrorEnvelope,
-  LogEntry,
-  LoopPhase,
-  Process,
+  DormantSession,
+  ErrorBody,
+  ListedSession,
+  LoopResource,
+  ProcessState,
   ProcessRecord,
-  RecordedSelections,
+  QueuedTurn,
   ReviewLevel,
-  Seq,
-  StateSnapshot,
   ToolEntry,
 } from "./types.ts";
+import type { Decision } from "./decision.ts";
+import type { LogEntry, Seq } from "./entry.ts";
+import type { StateSnapshot } from "./frames.ts";
 
 export class ApiError extends Error {
-  code: ErrorEnvelope["code"];
+  code: ErrorBody["code"];
   status: number;
   detail: unknown;
 
-  constructor(status: number, envelope: ErrorEnvelope) {
+  constructor(status: number, envelope: ErrorBody) {
     super(envelope.message);
     this.code = envelope.code;
     this.status = status;
@@ -110,9 +113,9 @@ export async function requestAt<T>(
 /** Throw a non-2xx as an ApiError carrying its error envelope. */
 export async function throwIfFailed(response: Response): Promise<void> {
   if (response.ok) return;
-  let envelope: ErrorEnvelope;
+  let envelope: ErrorBody;
   try {
-    envelope = (await response.json()) as ErrorEnvelope;
+    envelope = (await response.json()) as ErrorBody;
   } catch {
     envelope = { code: "internal", message: `http ${response.status}` };
   }
@@ -173,7 +176,7 @@ export const fetchLogEntry = (seq: Seq) => get<LogEntry>(`/v1/log/${seq}`);
 export const submitTurn = (
   text: string,
   submissionId: string,
-  attachments: Attachment[] = [],
+  attachments: Arrival[] = [],
   answers: CallId | null = null,
 ) =>
   post<{ status: string; submission_id: string }>("/v1/turns", {
@@ -190,13 +193,8 @@ export const submitTurn = (
 // Withdraw the pending-queue suffix beginning at this submission (docs/control-api.md —
 // recall). The answer is authoritative: the loop may have dequeued the turn already, so
 // `withdrawn` can be shorter than the queue showed, or empty. A caller splices only this.
-export interface WithdrawnTurn {
-  submission_id: string;
-  text: string;
-  attachments?: Attachment[];
-}
 export const withdrawTurns = (submissionId: string) =>
-  del<{ withdrawn: WithdrawnTurn[] }>(
+  del<{ withdrawn: QueuedTurn[] }>(
     `/v1/turns/${encodeURIComponent(submissionId)}`,
   );
 
@@ -209,7 +207,7 @@ export async function uploadAttachment(
   name: string,
   body: Blob,
   base = apiBase(),
-): Promise<Attachment> {
+): Promise<Arrival> {
   const response = await apiFetch(
     join(`/v1/attachments?name=${encodeURIComponent(name)}`, base),
     {
@@ -219,7 +217,7 @@ export async function uploadAttachment(
     },
   );
   await throwIfFailed(response);
-  return (await response.json()) as Attachment;
+  return (await response.json()) as Arrival;
 }
 // A staged upload taken back before sending. A sent one stays: its turn names it.
 // A 204 has no body for `request` to parse, hence the bare fetch.
@@ -254,15 +252,12 @@ export interface LoopPatch {
   reviewLevel?: ReviewLevel;
 }
 export const patchLoop = ({ speedMs, held, reviewLevel }: LoopPatch) =>
-  patch<{ pace: unknown; review_level: string; loop_phase: LoopPhase }>(
-    "/v1/loop",
-    {
-      ...(speedMs !== undefined || held !== undefined
-        ? { pace: { speed_ms: speedMs, held } }
-        : {}),
-      ...(reviewLevel !== undefined ? { review_level: reviewLevel } : {}),
-    },
-  );
+  patch<LoopResource>("/v1/loop", {
+    ...(speedMs !== undefined || held !== undefined
+      ? { pace: { speed_ms: speedMs, held } }
+      : {}),
+    ...(reviewLevel !== undefined ? { review_level: reviewLevel } : {}),
+  });
 // Signals the running tool; it deletes no state. The body names this client and
 // the affordance, which the host records on an `Interrupt` entry
 // (docs/control-api.md).
@@ -283,7 +278,7 @@ export const continueLoop = () =>
 export const patchProcess = (
   id: number,
   body: { background?: boolean; muted?: boolean; note?: string },
-) => patch<Process | null>(`/v1/processes/${id}`, body);
+) => patch<ProcessState | null>(`/v1/processes/${id}`, body);
 // What one handle was, running or exited (docs/control-api.md): the live
 // registry answers when it holds the process, a compaction over the log's lifecycle
 // records when it does not. `404 not_found` for an id never minted into the
@@ -331,11 +326,7 @@ export const resolveProposal = (
  * has open (docs/web-push.md). The host's own surface, at the listener's root
  * under either binding; answered `204`, so nothing is parsed. `keepalive` lets
  * the report that says the page is leaving outlive it. */
-export async function sendAttention(report: {
-  client: string;
-  session: string | null;
-  active: boolean;
-}): Promise<void> {
+export async function sendAttention(report: AttentionReport): Promise<void> {
   const response = await apiFetch("/attention", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -382,53 +373,25 @@ export const requestSignIn = (label: string) =>
 export const claimSignIn = (claim: string, label: string) =>
   requestAt<SignInClaim>("POST", "/pair/claim", { claim, label });
 
-/** One entry of the host's session listing (docs/web-client.md). The id is the
- * path segment a client joins its control base onto; the rest is what a list
- * surface can show without one `GET /sessions/<id>/v1/state` per row. */
-export interface SessionEntry {
-  id: string;
-  // The session's current title, once one has been written (docs/session-title.md).
-  title?: string;
-  cwd?: string;
-  created_by?: string;
-  /** What the session is doing, in one word: `starting` while its environment
-   * and MCP servers are prepared (docs/control-api.md). */
-  status:
-    | "starting"
-    | "running"
-    | "idle"
-    | "gated"
-    | "asking"
-    | "stalled"
-    | "parked"
-    | "blocked";
-  /** Live background processes the session holds; archiving it reaps them. */
-  processes: number;
-}
+/** What a listed session is doing, in one word: `starting` while its environment
+ * and MCP servers are prepared (docs/control-api.md). The host types the field as
+ * a string and documents this set, so the narrowing is the client's. */
+export type SessionStatus =
+  | "starting"
+  | "running"
+  | "idle"
+  | "gated"
+  | "asking"
+  | "stalled"
+  | "parked"
+  | "blocked";
 
-export interface ArchivedSession {
-  id: string;
-  cwd: string;
-  title?: string;
-  created_at?: number;
-  last_active_at?: number;
-  problem?: string;
-  /** Why this host's last attempt to resume the session failed; unlike a
-   * `problem`, the session is still resumable (docs/control-api.md). */
-  resume_failure?: string;
-  state: "archived";
-}
-
-/** One dormant session, as `GET /sessions/:id` answers it (docs/control-api.md):
- * the listing's row and what reading its log and usage record learns. The listing
- * itself carries neither, since a scan over every root reads no log whole. */
-export interface DormantSession extends ArchivedSession {
-  /** The roles the session last ran on, in the flat shape a resume patch takes.
-   * Absent when the host could not read the log, or the log records none. */
-  selections?: RecordedSelections | null;
-  /** The prompt the session's last turn sent: what a cold read would pay.
-   * Absent when the usage record holds no `turn` line. */
-  context_tokens?: number | null;
+/** One entry of the host's session listing (docs/web-client.md): the generated row
+ * with `status` narrowed to the words above. The id is the path segment a client
+ * joins its control base onto; the rest is what a list surface can show without one
+ * `GET /sessions/<id>/v1/state` per row. */
+export interface SessionEntry extends Omit<ListedSession, "status"> {
+  status: SessionStatus;
 }
 
 // A host's one endpoint of its own (docs/web-client.md), at its root rather than

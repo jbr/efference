@@ -375,6 +375,7 @@ pub struct ContextGrants {
 /// time (see [`crate::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.
 /// Serialized as the `role` topic reports a grant (docs/control-api.md).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Perms {
     pub read: bool,
     pub write: bool,

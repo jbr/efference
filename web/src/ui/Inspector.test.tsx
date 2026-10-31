@@ -6,7 +6,8 @@ import { Inspector } from "./Inspector.tsx";
 import { fetchProcessOutput, fetchProcessRecord } from "../api/http.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { buildTree, type CallNode } from "../session/tree.ts";
-import type { LogEntry, RawResult, WireState } from "../api/types.ts";
+import type { LogEntry, RawResult } from "../api/entry.ts";
+import type { WireState } from "../api/types.ts";
 vi.mock("../api/http.ts", async (actual) => ({
   ...(await actual<typeof import("../api/http.ts")>()),
   fetchProcessOutput: vi.fn(),
@@ -144,6 +145,7 @@ test("a backgrounded command shows the process capture, not its handoff result",
   });
   vi.mocked(fetchProcessRecord).mockResolvedValue({
     id: 4,
+    call_id: null,
     pid: 99,
     command: "env",
     spawned_at: 0,

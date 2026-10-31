@@ -11,6 +11,7 @@ use super::*;
 /// signal the stance alone erases — a deliberate `gate` and a failed spotter call
 /// both surface as `Gate`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Spot {
     /// The `tool_use` id of the call this verdict judged.
     pub call_id: CallId,
@@ -56,6 +57,7 @@ pub struct Spot {
 /// promotion answer into the stance — rather than a separate flag — makes the contradictory
 /// combinations (`watch`/`gate` + "always safe") unrepresentable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Stance {
     /// Reversible-and-in-scope (or irreversible-but-scope-sanctioned): auto-approve.
@@ -82,6 +84,7 @@ pub enum Stance {
 /// sketch fold carry `reversible` and `sanctioned`, which are ignored on read, and
 /// lack `sketch` and `precedent`, which default to `None`.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Axes {
     pub in_scope: f64,
     /// Names a path outside every grant. Split from [`Self::path_denied`]
@@ -136,6 +139,7 @@ impl Axes {
 /// how many the model read as the `same` action and how many as `wider`, with the
 /// number the move's level required.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Precedent {
     pub candidates: usize,
     pub same: usize,
@@ -152,6 +156,7 @@ pub struct Precedent {
 /// One candidate's reading: the earlier call, by id, and the mean of its two
 /// askings for `same` and for `wider`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Compared {
     pub call_id: CallId,
     pub same: f64,

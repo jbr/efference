@@ -1,6 +1,6 @@
+import type { ArchivedSession } from "../api/types.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
 import { ActionsMenu } from "./ActionsMenu.tsx";
-import type { ArchivedSession } from "../api/http.ts";
 
 export function ArchivedList({
   sessions,

@@ -122,6 +122,7 @@ describe("the roles a dormant session records", () => {
           model: "openrouter/gemini",
           thinking: true,
           auto_choice: false,
+          effort: null,
         },
       }),
     ).toEqual({
@@ -136,6 +137,7 @@ describe("the roles a dormant session records", () => {
         model: "openrouter/gemini",
         thinking: true,
         auto_choice: false,
+        effort: null,
       },
     });
     expect(
@@ -178,6 +180,7 @@ describe("what the triage row shows", () => {
       model: "gemini",
       thinking: true,
       auto_choice: false,
+      effort: null,
     },
   });
 

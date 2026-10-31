@@ -13,11 +13,10 @@ import { join } from "../api/base.ts";
 import type {
   CallId,
   SelectionLines,
-  RawResult,
-  ResultImage,
   ToolCall,
   WireState,
 } from "../api/types.ts";
+import type { RawResult, ResultImage } from "../api/entry.ts";
 import { openLightbox } from "./lightbox.ts";
 import { Code, NumberedCode, StreamingCode } from "./Code.tsx";
 import { PinnedBox } from "./Thinking.tsx";

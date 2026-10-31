@@ -1,6 +1,6 @@
+import type { ArchivedSession } from "../api/types.ts";
 import { describe, expect, it } from "vitest";
 import { formatAge, partitionArchived, filterArchived } from "./resume.ts";
-import type { ArchivedSession } from "../api/http.ts";
 
 describe("formatAge", () => {
   it("formats relative age correctly", () => {

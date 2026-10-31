@@ -10,7 +10,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Frame } from "../api/types.ts";
+import type { Frame } from "../api/frames.ts";
 import { record, SCRUB_EVENT } from "./record.ts";
 import { Store, seed } from "./store.ts";
 import { prependHistory } from "./history.ts";

@@ -3,12 +3,12 @@ import { Code } from "../Code.tsx";
 import { ResultRanges } from "../ResultRanges.tsx";
 import type { ResultRender } from "../../render/parse.ts";
 import type {
-  Process,
+  ProcessState,
   ProcessRecord,
-  RawResult,
   ToolTelemetry,
   WireState,
 } from "../../api/types.ts";
+import type { RawResult } from "../../api/entry.ts";
 import {
   fetchProcessRecord,
   killProcess,
@@ -31,7 +31,7 @@ export function CommandView({
   result,
   telemetry,
 }: {
-  process?: Process;
+  process?: ProcessState;
   /** The process to ask the process monitor about; absent when the committed
    * result is the output, since a finished foreground command leaves no
    * record there. */
@@ -125,7 +125,7 @@ export function CommandView({
     <section className="command-inspection">
       <p className="dim">
         {process
-          ? `Running · ${process.background ? "background" : "foreground"} · ${Math.max(0, Math.floor((now - process.spawned_at) / 1000))}s · pid ${process.pid}`
+          ? `Running · ${process.background ? "background" : "foreground"} · ${Math.max(0, Math.floor((now - process.spawned_at) / 1000))}s${process.pid == null ? "" : ` · pid ${process.pid}`}`
           : ended}
       </p>
       {process && (

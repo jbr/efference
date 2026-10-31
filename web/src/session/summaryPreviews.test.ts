@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import type { LogEntry } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { emptyStreaming } from "./store.ts";
 import { summaryPreviews } from "./summaryPreviews.ts";
 

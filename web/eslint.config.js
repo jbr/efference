@@ -78,6 +78,28 @@ export default tseslint.config(
       "no-restricted-properties": ["error", ...onGlobalObjects(eventSource)],
     },
   },
+  // types.ts is generated from the host's types, and four of them are entries as the
+  // host stores them. What the channel serves is the entry view, declared in
+  // src/api/entry.ts (docs/web-client.md), so those four are imported from there.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/api/entry.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "(^|/)(api/)?types(\\.ts)?$",
+              importNames: ["LogEntry", "Payload", "RawResult", "ResultImage"],
+              message:
+                "types.ts holds the entry as stored; the channel serves the view in src/api/entry.ts.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   {
     rules: {
       "@typescript-eslint/explicit-function-return-type": "off",

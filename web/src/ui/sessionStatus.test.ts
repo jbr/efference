@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import type { Starting } from "../api/types.ts";
+import type { StartingView } from "../api/types.ts";
 import { sessionStatus } from "./sessionStatus.ts";
 
 const defaults = {
@@ -10,7 +10,7 @@ const defaults = {
   onRetry: vi.fn(),
   inspectionError: null,
 } as const;
-function starting(overrides: Partial<Starting> = {}): Starting {
+function starting(overrides: Partial<StartingView> = {}): StartingView {
   return {
     id: "deft-walnut",
     cwd: "/project",

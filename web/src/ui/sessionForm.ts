@@ -14,11 +14,11 @@
 
 import type {
   EffectiveTriage,
-  ModelSelection,
   PreviewIssue,
   ProjectEntry,
   SessionPreview,
 } from "../api/sessionForm.ts";
+import type { ModelSelection } from "../api/types.ts";
 
 /** What the operator has overridden, and where the session would run. A
  * location from the remembered index, or one typed by hand; `config` null asks

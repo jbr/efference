@@ -1,12 +1,9 @@
+import type { ArchivedSession } from "../api/types.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "./AppHeader.tsx";
 import { LocationRow } from "./LocationRow.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
-import {
-  fetchArchivedSessions,
-  resumeSession,
-  type ArchivedSession,
-} from "../api/http.ts";
+import { fetchArchivedSessions, resumeSession } from "../api/http.ts";
 import { fetchProjects, type ProjectEntry } from "../api/sessionForm.ts";
 import { sessionHref } from "../api/base.ts";
 import { navigate } from "./route.ts";

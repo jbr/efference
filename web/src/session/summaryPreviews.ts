@@ -1,4 +1,5 @@
-import type { CurrentOperations, LogEntry } from "../api/types.ts";
+import type { CurrentOperations } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import type { Streaming } from "./store.ts";
 import type { SummaryPreviewNode } from "./tree.ts";
 

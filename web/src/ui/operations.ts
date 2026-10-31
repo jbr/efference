@@ -39,18 +39,22 @@ const rank = (origin: RequestOrigin) => {
 
 function requestText(request: OpenRequest, model: string, now: number): string {
   const since = elapsed(now - request.since);
-  const retrying = `retrying upstream · attempt ${request.attempt ?? "?"} (${request.status ?? "?"}) · ${since}`;
+  const retrying =
+    request.stage === "retrying"
+      ? `retrying upstream · attempt ${request.attempt} (${request.status}) · ${since}`
+      : null;
   switch (request.origin) {
     case "turn":
     case "aborted_attempt":
     case "unknown":
-      if (request.stage === "retrying") return retrying;
+      if (retrying !== null) return retrying;
       if (request.stage === "streaming") return `${model} streaming`;
       return `waiting on ${model} · ${since}`;
     case "triage":
-      return request.stage === "retrying"
-        ? retrying
-        : `triage · ${request.stage === "sent" ? "waiting " : "streaming "}${since}`;
+      return (
+        retrying ??
+        `triage · ${request.stage === "sent" ? "waiting " : "streaming "}${since}`
+      );
     case "spot":
       return `spotter judging · ${since}`;
     case "title":

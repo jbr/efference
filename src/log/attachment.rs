@@ -13,6 +13,11 @@ use serde::{Deserialize, Serialize};
 /// file is worth pulling *without* re-deriving its content from the notice. Tunable — the right
 /// fields are an empirical question about real pastes, not a settled schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    test,
+    derive(schemars::JsonSchema),
+    schemars(rename = "AttachmentKind")
+)]
 pub enum Kind {
     /// Valid UTF-8: byte size, line count, a sniffed shape, and the first non-blank line.
     Text {
@@ -35,6 +40,11 @@ pub enum Kind {
 /// A coarse guess at a text attachment's shape, from its first lines. Coarse on purpose: it
 /// steers a first move (grep vs read vs ignore) and is never relied on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    test,
+    derive(schemars::JsonSchema),
+    schemars(rename = "AttachmentShape")
+)]
 pub enum Shape {
     Json,
     Diff,
@@ -60,6 +70,7 @@ impl Shape {
 /// Also the content of a [`ContentBlock::Attachment`](super::ContentBlock::Attachment), which is how
 /// a turn carries the files its composer attached — so its serialized form is part of the log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Arrival {
     /// The file's name inside its store directory — how a client addresses it
     /// (`GET /attachments/:name`) and how a turn references an upload.

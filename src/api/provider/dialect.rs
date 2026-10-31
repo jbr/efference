@@ -51,7 +51,7 @@ impl WireDialect {
 
     /// Every name [`Self::from_name`] accepts, with the hover text the published user
     /// schema shows for it (docs/config-schemas.md).
-    const NAMED: &[(&str, Self, &str)] = &[
+    pub(super) const NAMED: &[(&str, Self, &str)] = &[
         ("messages", Self::Messages, "Anthropic Messages."),
         ("responses", Self::Responses, "OpenAI Responses."),
         ("completions", Self::Completions, "OpenAI Chat Completions."),

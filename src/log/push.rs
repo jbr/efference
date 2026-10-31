@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 /// Which situation fired the moment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MomentKind {
     /// An approval gate opened.
@@ -27,6 +28,7 @@ pub enum MomentKind {
 
 /// One step in a moment's push.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PushRecord {
     /// The moment's number, unique within the session.
     pub moment: u64,
@@ -37,6 +39,7 @@ pub struct PushRecord {
 
 /// What happened to the moment's push.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum PushEvent {
     /// No client was attending, so the push went out at once.
@@ -62,6 +65,7 @@ pub enum PushEvent {
 
 /// A client that was attending when the moment fired.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AttentiveClient {
     pub client: String,
     /// The session it had open, if any.
@@ -70,6 +74,7 @@ pub struct AttentiveClient {
 
 /// Why a held push never went out.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "cause", rename_all = "snake_case")]
 pub enum PushCancel {
     /// The gate was approved, redirected, or aborted.
@@ -88,6 +93,7 @@ pub enum PushCancel {
 
 /// One subscription's answer to one push.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct DeviceDelivery {
     /// The endpoint's host (`web.push.apple.com`), which names the browser vendor.
     pub host: String,
@@ -100,6 +106,7 @@ pub struct DeviceDelivery {
 
 /// What the push service said.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum DeliveryOutcome {
     /// A 2xx.

@@ -2,7 +2,7 @@
 // route serves the same entry whole, so the client reads its result out of it.
 
 import { expect, test } from "vitest";
-import type { LogEntry } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { resultOf } from "./wholeResult.ts";
 
 const entry = (seq: number, payload: LogEntry["payload"]): LogEntry => ({

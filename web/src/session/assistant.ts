@@ -11,13 +11,17 @@ import type {
   CompletionsMessage,
   ContentBlock,
   MessagesOutputBlock,
-  Payload,
   ToolCall,
 } from "../api/types.ts";
+import type { Payload } from "../api/entry.ts";
+
+/** A block of thinking or prose: a `ContentBlock` without the composer's
+ * attachment, which only a user turn carries. */
+export type ProseBlock = Exclude<ContentBlock, { Attachment: unknown }>;
 
 export interface AssistantView {
-  thinking: ContentBlock[];
-  text: ContentBlock[];
+  thinking: ProseBlock[];
+  text: ProseBlock[];
   calls: ToolCall[];
 }
 
@@ -70,11 +74,26 @@ const DEFINED = new Set(["role", "content", "tool_calls", "refusal"]);
 /** Keys whose string values are read out of an opaque structure (`READABLE`). */
 const READABLE = new Set(["text", "summary", "content", "thinking"]);
 
+/** The keys the dialect defines, as the transcript reads a stored message. The
+ * message is a map of whatever the vendor sent (`CompletionsMessage` is open),
+ * so this is a reading of it, not a promise the schema makes. */
+interface CompletionsKeys {
+  content?: string | { type: string; [extra: string]: unknown }[];
+  tool_calls?: {
+    id?: string;
+    function?: { name?: string; arguments?: string };
+    [extra: string]: unknown;
+  }[];
+  refusal?: string;
+  [extra: string]: unknown;
+}
+
 /** Mirrors `CompletionsMessage::{text, reasoning_text, tool_calls}`. Reasoning is
  * a display heuristic: a flat string under an opaque key wins; only when there is
  * none are structured keys and non-`text` content parts walked, since OpenRouter
  * sends the same reasoning both flat and as `reasoning_details`. */
-function completionsView(message: CompletionsMessage): AssistantView {
+function completionsView(stored: CompletionsMessage): AssistantView {
+  const message = stored as CompletionsKeys;
   const view: AssistantView = { thinking: [], text: [], calls: [] };
   const parts = Array.isArray(message.content) ? message.content : [];
   if (typeof message.content === "string") {
@@ -140,8 +159,8 @@ function parseArguments(args: string): unknown {
  * A bare `Text` given as thinking becomes an unsigned `Thinking` block, since
  * the dialect has no other place for it. */
 export function messagesAssistant(
-  thinking: ContentBlock[],
-  text: ContentBlock[],
+  thinking: ProseBlock[],
+  text: ProseBlock[],
   calls: ToolCall[],
 ): { output: AssistantOutput } {
   return {

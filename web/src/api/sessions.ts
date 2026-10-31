@@ -14,7 +14,8 @@
 
 import { readEventStream } from "./sse.ts";
 import { apiFetch, type SessionEntry } from "./http.ts";
-import type { Frame, LogEntry, Seq, StateSnapshot } from "./types.ts";
+import type { Frame, StateSnapshot } from "./frames.ts";
+import type { LogEntry, Seq } from "./entry.ts";
 
 export interface SessionsHandle {
   close(): void;

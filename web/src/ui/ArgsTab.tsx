@@ -185,8 +185,8 @@ export function ArgsTab({
       {entry !== null && (
         <ToolHeading
           name={entry.name}
-          title={entry.title}
-          description={entry.description}
+          title={entry.title ?? undefined}
+          description={entry.description ?? undefined}
           server={server}
         />
       )}

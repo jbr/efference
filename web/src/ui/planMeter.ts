@@ -1,4 +1,4 @@
-import type { Plan, PlanWindow } from "../api/types.ts";
+import type { PlanSnapshot, PlanWindow } from "../api/types.ts";
 
 export interface PlanMeterOption {
   key: string;
@@ -17,7 +17,7 @@ export function windowLabel(minutes: number | null, kind: string): string {
 }
 
 /** Only reported allowances and windows enter the cycle (docs/web-client.md). */
-export function planMeterOptions(plan: Plan): PlanMeterOption[] {
+export function planMeterOptions(plan: PlanSnapshot): PlanMeterOption[] {
   return Object.entries(plan.limits)
     .sort(([a], [b]) =>
       a === "codex" ? -1 : b === "codex" ? 1 : a.localeCompare(b),

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import type { LogEntry } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { fetchCallSeq, fetchLogBefore, fetchLogRange } from "../api/http.ts";
 import { messagesAssistant } from "./assistant.ts";
 import {

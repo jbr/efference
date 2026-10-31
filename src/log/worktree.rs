@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 /// One event in a session's own worktree.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct WorktreeEvent {
     /// The worktree's directory.
     pub path: PathBuf,
@@ -28,6 +29,7 @@ pub struct WorktreeEvent {
 
 /// What happened to the worktree.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum WorktreeEventKind {
     /// Created at session creation, on a new branch.
@@ -53,6 +55,11 @@ pub enum WorktreeEventKind {
 
 /// What `git worktree add` produced.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    test,
+    derive(schemars::JsonSchema),
+    schemars(rename = "WorktreeCheckout")
+)]
 pub struct Checkout {
     /// The commit the checkout is on: the creator's `HEAD` for an add; the branch tip
     /// or the project's `HEAD` for a restore.

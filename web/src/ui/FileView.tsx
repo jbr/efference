@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiBase } from "../api/base.ts";
+import type { ErrorBody } from "../api/types.ts";
 import { useDrawerWidth } from "./inspector/useDrawerWidth.ts";
 import "./FileSidebar.css";
 import { fetchFile, fileStream, type ChangeStream } from "../api/files.ts";
@@ -36,10 +37,8 @@ interface Shown {
   anchored: AnchorMatch | null;
 }
 
-interface Refusal {
-  code: string;
-  message: string;
-}
+/** A route's refusal as the viewer reads it: the error body's code and message. */
+type Refusal = Pick<ErrorBody, "code" | "message">;
 
 /** A scroll request. `demanded` distinguishes "you asked for this edit" — which
  * happens whether or not follow is on — from "the file moved under you", which

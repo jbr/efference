@@ -76,6 +76,7 @@ pub(crate) fn new_key() -> [u8; KEY_BYTES] {
 
 /// One artifact's address, as the client entry view carries it (docs/control-api.md).
 #[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "ArtifactLink"))]
 pub(crate) struct Link {
     pub(crate) text_block: usize,
     pub(crate) fence: usize,

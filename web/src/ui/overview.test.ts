@@ -1,9 +1,12 @@
 // The overview's attention rule, supervision as a peer relation, and grouping
 // by working directory (docs/web-client.md).
 
+import type { ArchivedSession } from "../api/types.ts";
 import { expect, test } from "vitest";
-import type { ArchivedSession, SessionEntry } from "../api/http.ts";
-import type { LogEntry, Payload, StateSnapshot } from "../api/types.ts";
+import type { SessionEntry } from "../api/http.ts";
+import type { LogEntry, Payload } from "../api/entry.ts";
+import type { StateSnapshot } from "../api/frames.ts";
+import { samples } from "../api/samples.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import {
   cardModel,
@@ -25,19 +28,7 @@ const entry = (over: Partial<SessionEntry> = {}): SessionEntry => ({
 
 const asked: StateSnapshot = {
   last_seq: 3,
-  usage: {
-    last: null,
-    cumulative: {
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-    },
-    last_request_at: 1000,
-    context: null,
-    cost: null,
-    plan: null,
-  },
+  usage: { ...samples.state[0].usage, last_request_at: 1000 },
 };
 
 test("idle is the operator's turn once a turn has run, and new before", () => {

@@ -2,7 +2,8 @@
 // the model reads for it (`render_resumed`, src/project/render.rs): the same facts
 // stated to the operator, minus the leading glyph the wire notice has.
 
-import type { Resumed, Seq } from "../api/types.ts";
+import type { Resumed } from "../api/types.ts";
+import type { Seq } from "../api/entry.ts";
 
 /** A gap as the wire notice writes it: `45s`, `12m`, `3h 5m`, `2d 4h`. */
 export function gapText(gapMs: number): string {
@@ -32,7 +33,7 @@ export function resumedLine(resumed: Resumed, at: Seq): string {
       `operator's next action brings ${pronoun} back.`;
   }
   const after = resumed.resumes_after;
-  if (after !== undefined && after + 1 < at) {
+  if (after != null && after + 1 < at) {
     const count = at - (after + 1);
     const [noun, were, they] =
       count === 1

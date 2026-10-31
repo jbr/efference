@@ -1,4 +1,5 @@
-import type { RawResult, WireState } from "../../api/types.ts";
+import type { RawResult } from "../../api/entry.ts";
+import type { WireState } from "../../api/types.ts";
 import { diffRows, langForPath, resultRender } from "../../render/parse.ts";
 import { RangeContent } from "../RangeContent.tsx";
 import { ResultBody } from "../ToolBlocks.tsx";

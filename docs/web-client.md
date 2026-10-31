@@ -64,16 +64,28 @@ the wire:
 
 | layer | job | React? |
 | --- | --- | --- |
-| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the page's bearer (`bearer.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE parser and the one reconnecting reader every stream shares (`sse.ts`), the control stream over it (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
+| `web/src/api/` | the `/v1` contract in TypeScript — `types.ts` generated from `protocol.schema.json`, with hand-written `entry.ts`, `frames.ts`, `decision.ts`, `source.ts`, and `samples.ts` beside it (below) — the control base (`base.ts`), the page's bearer (`bearer.ts`), the one request entry point `apiFetch` + the fetch wrapper + error envelope (`http.ts`), the SSE parser and the one reconnecting reader every stream shares (`sse.ts`), the control stream over it (`stream.ts`), the `/files` reads and change-poke streams (`files.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
 | `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), session verbs whose error recovery folds into the store (`actions.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
 | `web/src/ui/` | display — transcript, login, composer; the churn zone | yes |
 
-`types.ts` is the one place wire shapes are declared client-side; nothing in `ui/`
-names a wire field. The fold in `store.ts` is pure functions over plain data —
-`applyFrame(session, frame)` — with vitest coverage of the properties the API doc
-promises (idempotent log replay, whole-topic state replacement, buffer settlement
-when an entry commits). When the control API moves, `api/` and the fold are the
-whole blast radius.
+`types.ts` is generated from `protocol.schema.json` (`pnpm run types`), which
+`EFFERENCE_WRITE_SCHEMAS=1 cargo test schema` writes from the Rust types
+([control-api.md](control-api.md)); `pnpm run check` fails when it is stale
+(`types:check`). Nothing in `ui/` names a wire field — wire shapes are declared
+client-side in exactly two places: the generated file, and the hand-written
+modules beside it. `entry.ts` holds the entry view's additions to the stored
+entry (`selection`, `artifacts`, and the image-data omission the view derives on
+every read); `frames.ts` holds the frame envelope (`TopicName`,
+`TopicValues`, `StateSnapshot`, `StateFrame`) over the generated topic types;
+`decision.ts` holds the approval body, which the host reads by hand;
+`source.ts` reads the turn-source labels the host writes. `samples.ts` holds
+pinned values the generated types must still accept, so a type that stops
+describing the wire fails `typecheck`. The fold in `store.ts` is pure functions
+over plain data — `applyFrame(session, frame)` — with vitest coverage of the
+properties the API doc promises (idempotent log replay, whole-topic state
+replacement, buffer settlement when an entry commits). When the control API
+moves, regenerating `types.ts` and adjusting the hand-written modules and the
+fold are the whole blast radius.
 
 The fold treats `output` as **lossy and unordered relative to `log`**, because it
 is: the daemon drains an available log entry before reading output deltas
@@ -2174,7 +2186,7 @@ and layout growth pin the tail. A navigation to an earlier transcript position
 must instead disengage follow intent rather than relying on a programmatic
 scroll event to identify a reader departure.
 
-The decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
+The decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/decision.ts`):
 approve, abort, and redirect with steering text. The route also takes a
 `config_edit` grant, which the web client does not offer: a grant guessed from
 the call's input was a command prefix whatever the call gated on. The host now
@@ -2288,7 +2300,7 @@ A session that hands off (docs/tools.md) names its successor in `session_identit
 `SessionView` replaces the page's location with the successor's (`ui/identity.ts`
 `successorHref`) — `replace`, so Back does not return to the archived predecessor. The
 successor's transcript opens on the predecessor's brief, whose `User` entry carries the
-reserved `handoff[<id>]` source (`api/types.ts` `handoffPredecessor`): drawn as a harness
+reserved `handoff[<id>]` source (`api/source.ts` `handoffPredecessor`): drawn as a harness
 note ("handed off from `<id>` — its brief:") rather than as the operator's turn.
 
 ## Serving and auth

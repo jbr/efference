@@ -99,3 +99,30 @@ fn the_header_allowlist_is_case_insensitive_and_closed() {
     assert!(!is_captured_header("set-cookie"));
     assert!(!is_captured_header("x-openrouter-account"));
 }
+
+/// The schema describes `UpstreamFailureSpellings`, so the two spellings it names have to
+/// be the two the hand-written `Serialize` writes.
+#[test]
+fn the_schema_spellings_serialize_as_the_record_does() {
+    let bare = UpstreamFailureRecord::from("attempt failed");
+    assert_eq!(
+        serde_json::to_value(&bare).unwrap(),
+        serde_json::to_value(UpstreamFailureSpellings::Text("attempt failed".into())).unwrap()
+    );
+    let stream = StreamDiagnostics {
+        status: 200,
+        ..StreamDiagnostics::default()
+    };
+    let structured = UpstreamFailureRecord {
+        why: "empty".into(),
+        stream: Some(stream.clone()),
+    };
+    assert_eq!(
+        serde_json::to_value(&structured).unwrap(),
+        serde_json::to_value(UpstreamFailureSpellings::Structured {
+            why: "empty".into(),
+            stream,
+        })
+        .unwrap()
+    );
+}

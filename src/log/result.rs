@@ -5,6 +5,7 @@ use super::*;
 /// The full, immutable result of a tool run. Survives in the log forever; never
 /// overwritten by triage — that is what makes every triage reversible.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RawResult {
     pub content: String,
     pub is_error: bool,
@@ -63,6 +64,7 @@ impl RawResult {
 /// carries, and how many the whole result holds. `GET /log/:seq` serves the rest
 /// (docs/control-api.md).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ContentElision {
     pub kept_bytes: usize,
     pub total_bytes: usize,
@@ -74,6 +76,7 @@ pub struct ContentElision {
 /// `data`; the dimensions the *model* needs ride in the result's text content,
 /// written by the tool.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ResultImage {
     /// An API-accepted media type: `image/jpeg`, `image/png`, `image/gif`, or
     /// `image/webp`.

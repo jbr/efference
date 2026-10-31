@@ -39,6 +39,7 @@ const CHUNK: u64 = 64 * 1024;
 
 /// One session directory under a root's `.efference/`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InventoryRow {
     /// The directory name.
     pub id: String,

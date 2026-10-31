@@ -192,6 +192,7 @@ pub struct BgView {
 /// instead (docs/process-monitor.md). What remains changes only on spawn, exit, mute, or the
 /// handoff flip.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcessState {
     /// The spawn-minted ordinal (rendered `p#<n>` in prose; bare here and in routes).
     pub id: u64,

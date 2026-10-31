@@ -10,7 +10,7 @@
 // well, because a run of short recordings (a session driven turn by turn)
 // would otherwise push out the long one a design pass was stepping through.
 
-import type { Frame } from "../api/types.ts";
+import type { Frame } from "../api/frames.ts";
 import type { Session } from "./store.ts";
 
 const DB = "efference-scrub";

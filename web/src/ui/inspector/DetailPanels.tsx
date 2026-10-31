@@ -3,12 +3,12 @@
 
 import type {
   Keep,
-  RawResult,
   SelectionLines,
   ToolOutcome,
   ToolTelemetry,
   WireState,
 } from "../../api/types.ts";
+import type { RawResult } from "../../api/entry.ts";
 import { wireLabel } from "../../render/parse.ts";
 import { rustLines } from "../../render/triage.ts";
 
@@ -101,7 +101,7 @@ export function TelemetryPanel({ telemetry }: { telemetry: ToolTelemetry }) {
     ]);
   }
   const bash = telemetry.bash;
-  if (bash !== undefined) {
+  if (bash != null) {
     // Absent `exit_status` on a completed foreground command is exit zero — the
     // log omits the field rather than writing "0", so the label is restored here.
     rows.push([
@@ -110,12 +110,12 @@ export function TelemetryPanel({ telemetry }: { telemetry: ToolTelemetry }) {
     ]);
   }
   const edit = telemetry.edit;
-  if (edit !== undefined) {
-    if (edit.operation !== undefined) rows.push(["operation", edit.operation]);
-    if (edit.anchor_bytes !== undefined) {
+  if (edit != null) {
+    if (edit.operation != null) rows.push(["operation", edit.operation]);
+    if (edit.anchor_bytes != null) {
       rows.push(["anchor", formatBytes(edit.anchor_bytes)]);
     }
-    if (edit.content_bytes !== undefined) {
+    if (edit.content_bytes != null) {
       rows.push(["content", formatBytes(edit.content_bytes)]);
     }
   }

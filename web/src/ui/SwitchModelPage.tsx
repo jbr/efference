@@ -9,6 +9,7 @@
 // so does its location. Each role opens the same model picker, so browsing and
 // the catalog behave as they do there.
 
+import type { DormantSession } from "../api/types.ts";
 import { useEffect, useRef, useState } from "react";
 import { AppHeader } from "./AppHeader.tsx";
 import { kilotokens } from "./compact.ts";
@@ -29,7 +30,6 @@ import {
   archiveSession,
   fetchDormantSession,
   resumeSession,
-  type DormantSession,
 } from "../api/http.ts";
 import "./NewSessionForm.css";
 import "./SwitchModelPage.css";

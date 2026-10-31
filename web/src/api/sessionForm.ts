@@ -13,6 +13,7 @@
 // would turn every inherited default into an explicit override.
 
 import { requestAt } from "./http.ts";
+import type { ModelSelection } from "./types.ts";
 
 /** One remembered launch location. `cwd` and `config` are exactly what
  * `POST /sessions` takes back, so an entry replays a launch verbatim;
@@ -67,12 +68,6 @@ export type SelectionSource =
   | "project_config"
   | "provider_default"
   | "shared_main";
-
-export interface ModelSelection {
-  connection: string;
-  provider: string;
-  model: string;
-}
 
 /** Triage resolves to sharing main or to a flattened separate selection, so an
  * inherited default previews as the separate client creation would build. */

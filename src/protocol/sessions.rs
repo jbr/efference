@@ -26,6 +26,7 @@ use crate::inventory::InventoryRow;
 /// empty map is an explicit empty environment, so `{}` and omitted are different
 /// requests.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 // The control channel's JSON body: each flag is its own optional key, and a client sends
 // any subset of them.
 #[allow(clippy::struct_excessive_bools)]
@@ -98,6 +99,7 @@ impl CreateSession {
 /// The body of `QUERY /sessions` (docs/control-api.md): where the proposed
 /// session would run, plus the same editable selections creation accepts.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SessionOptionsRequest {
     /// The proposed session's project root. Absolute, as creation's is: it is
     /// what a relative `config` resolves against.
@@ -125,6 +127,7 @@ impl SessionOptionsRequest {
 /// same thing to act on, and an operator resuming a session does not care which
 /// it was.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum SessionState {
     /// Running here. Patching this on a session that is not running reopens it
@@ -141,6 +144,7 @@ pub enum SessionState {
 /// nothing else. `state` is the only one that describes the session; the rest
 /// supply what the transition needs.
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PatchSession {
     /// What to make the session's lifecycle be. Omitted leaves it alone — a patch
     /// that changed nothing is refused rather than read as agreement.
@@ -267,6 +271,7 @@ pub struct ListedSession {
 /// One archived session as `GET /sessions?state=archived` lists it: the
 /// inventory's row, with `state` saying which collection it is from.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ArchivedSession {
     #[serde(flatten)]
     pub row: InventoryRow,
@@ -282,6 +287,7 @@ pub struct ArchivedSession {
 /// and what a client offering the model switches at resume reads
 /// (docs/resumption.md). A field the session's files cannot answer is left out.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct DormantSession {
     #[serde(flatten)]
     pub archived: ArchivedSession,

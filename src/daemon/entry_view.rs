@@ -223,6 +223,7 @@ pub(crate) fn result_raw<'e>(entry: &LogEntry, log: &'e [LogEntry]) -> Option<&'
 /// lines the result has, and how many the model's view kept. Present only on a
 /// triaged result, so a raw or elided one serializes as before.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SelectionLines {
     pub total_lines: usize,
     pub kept_lines: usize,

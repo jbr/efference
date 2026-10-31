@@ -8,6 +8,7 @@ use super::{SessionOptions, TriageChoice};
 /// The model selections an `active` patch may carry, in the shapes creation takes
 /// (docs/control-api.md). A field left out keeps what the session recorded.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ResumeSwitch {
     /// The main model: a connection and a native model id, or the `connection/model`
     /// slug as `model` alone.

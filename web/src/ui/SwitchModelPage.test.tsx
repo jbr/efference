@@ -12,8 +12,11 @@ import {
   fetchDormantSession,
   resumeSession,
 } from "../api/http.ts";
-import type { ArchivedSession, DormantSession } from "../api/http.ts";
-import type { SessionIdentity } from "../api/types.ts";
+import type {
+  SessionIdentity,
+  ArchivedSession,
+  DormantSession,
+} from "../api/types.ts";
 import { SwitchModelPage } from "./SwitchModelPage.tsx";
 import {
   archivedTarget,
@@ -54,7 +57,7 @@ const identity: SessionIdentity = {
 const listing: ArchivedSession = {
   id: identity.id,
   cwd: project,
-  title: identity.title,
+  title: identity.title ?? undefined,
   state: "archived",
 };
 

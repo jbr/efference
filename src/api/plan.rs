@@ -17,6 +17,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PlanWindow {
     /// How much of the window is spent, from 0 through 100.
     pub used_percent: f64,
@@ -28,6 +29,7 @@ pub struct PlanWindow {
 
 /// The windows for one independently metered allowance.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PlanLimit {
     /// The backend's display name, when supplied.
     pub name: Option<String>,
@@ -39,6 +41,7 @@ pub struct PlanLimit {
 
 /// The plan and limits as of the most recent Codex response that carried them.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PlanSnapshot {
     /// The subscription plan type, such as `plus`.
     #[serde(rename = "type")]

@@ -21,18 +21,17 @@
 // real boundary that is not nested on: it would put agent prose a level deeper
 // than the calls issued in the same breath, and the prose is often the answer.
 
-import {
-  KICKOFF_SOURCE,
-  type CallId,
-  type Exclusion,
-  type LogEntry,
-  type InterruptOrigin,
-  type Seq,
-  type Spot,
-  type ToolCall,
-  type ToolTelemetry,
-  type UpstreamFailureRecord,
+import { KICKOFF_SOURCE } from "../api/source.ts";
+import type {
+  CallId,
+  Exclusion,
+  InterruptOrigin,
+  Spot,
+  ToolCall,
+  ToolTelemetry,
+  UpstreamFailureRecord,
 } from "../api/types.ts";
+import type { LogEntry, Seq } from "../api/entry.ts";
 import { assistantView } from "./assistant.ts";
 
 /** The prose half of a record-only mark, whichever shape the log wrote
@@ -40,11 +39,9 @@ import { assistantView } from "./assistant.ts";
 /** The upstream's failure an exclusion carries, or `undefined` for none (an
  * empty completion, or a finalized turn). */
 export const upstreamOf = (
-  excluded: Exclusion | undefined,
+  excluded: Exclusion | null | undefined,
 ): UpstreamFailureRecord | undefined =>
-  excluded === undefined || excluded === "Empty"
-    ? undefined
-    : excluded.Upstream;
+  excluded == null || excluded === "Empty" ? undefined : excluded.Upstream;
 
 export const upstreamFailureWhy = (record: UpstreamFailureRecord): string =>
   typeof record === "string" ? record : record.why;
@@ -236,7 +233,7 @@ export function buildTree(
         upstream !== undefined &&
         upstreamFailureWhy(upstream) === "generation interrupted";
       if (
-        excluded !== undefined &&
+        excluded != null &&
         (interrupted ||
           thinking.length > 0 ||
           text.length > 0 ||

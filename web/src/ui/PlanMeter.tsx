@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import type { Plan } from "../api/types.ts";
+import type { PlanSnapshot } from "../api/types.ts";
 import { HoverPopup } from "./HoverPopup.tsx";
 import { ContextBar } from "./ContextBar.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
@@ -11,7 +11,7 @@ export function PlanMeter({
   plan,
   now: fixedNow,
 }: {
-  plan: Plan;
+  plan: PlanSnapshot;
   now?: number;
 }) {
   const options = planMeterOptions(plan);

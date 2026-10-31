@@ -8,6 +8,7 @@ use super::UpstreamFailureRecord;
 /// skips it, and the loop asks again (docs/transport.md). Skipping it is what lets the
 /// next request re-send the same bytes and ride the cached prefix.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum Exclusion {
     /// The upstream produced no usable turn: the stream died before finalizing, finalized
     /// with no content and no usage, or the request itself failed. The provider has no

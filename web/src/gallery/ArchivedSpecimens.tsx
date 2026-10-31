@@ -1,4 +1,4 @@
-import type { ArchivedSession } from "../api/http.ts";
+import type { ArchivedSession } from "../api/types.ts";
 import { ArchivedCard } from "../ui/ArchivedCard.tsx";
 import { ArchivedList } from "../ui/ArchivedList.tsx";
 import { Specimen } from "./Specimens.tsx";

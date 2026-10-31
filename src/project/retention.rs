@@ -30,6 +30,7 @@ use crate::log::{LogEntry, Payload, RawResult, WireState};
 /// Lines kept vs. lines triage was shown, plus the count of results whose output was
 /// withheld outright. Cumulative over some span of the log.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Retention {
     /// Lines surviving on the wire, summed over triaged results.
     pub kept_lines: u64,

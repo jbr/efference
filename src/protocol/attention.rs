@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// One client's report, as `POST /attention` receives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct AttentionReport {
     /// A per-page-load (web) or per-process (TUI) id the client generated.

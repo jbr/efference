@@ -13,6 +13,7 @@ use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 /// What a fence draws, named by its info string.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "ArtifactKind"))]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Kind {
     /// `html-artifact`: a page the agent wrote.

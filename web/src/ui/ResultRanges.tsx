@@ -1,5 +1,6 @@
 import { memo } from "react";
-import type { RawResult, WireState } from "../api/types.ts";
+import type { RawResult } from "../api/entry.ts";
+import type { WireState } from "../api/types.ts";
 import { rustLines } from "../render/triage.ts";
 import { diffRows, readRows, isDiffTool } from "../render/parse.ts";
 import { RangeContent } from "./RangeContent.tsx";

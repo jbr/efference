@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ApiError } from "../api/http.ts";
-import type { Attachment } from "../api/types.ts";
+import type { Arrival } from "../api/types.ts";
 import { DraftStore } from "./drafts.ts";
 
-const attachment: Attachment = {
+const attachment: Arrival = {
   name: "note.txt",
   path: "/stored/note.txt",
   kind: { Binary: { bytes: 5 } },
 };
-const image: Attachment = {
+const image: Arrival = {
   name: "image.png",
   path: "/stored/image.png",
   kind: { Image: { format: "PNG", width: 1, height: 1, bytes: 5 } },
@@ -24,7 +24,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 function setup(base = "/sessions/a") {
-  const pending = deferred<Attachment>();
+  const pending = deferred<Arrival>();
   const upload = vi.fn(() => pending.promise);
   const remove = vi.fn(() => Promise.resolve());
   const store = new DraftStore(base, { storage: localStorage, upload, remove });

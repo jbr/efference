@@ -12,7 +12,7 @@
 // not inferred from the connection.
 
 import { apiBase } from "../api/base.ts";
-import type { Frame } from "../api/types.ts";
+import type { Frame } from "../api/frames.ts";
 import { ApiError, fetchLogTail } from "../api/http.ts";
 import type { StreamHandle } from "../api/sse.ts";
 import { openStream, type StreamCallbacks } from "../api/stream.ts";

@@ -1,8 +1,8 @@
 export function isHandoff(
   content: string,
-  handle: string | undefined,
+  handle: string | null | undefined,
 ): boolean {
-  if (handle === undefined) return false;
+  if (handle == null) return false;
   return (
     content.startsWith(`backgrounded as ${handle}.`) ||
     (content.startsWith("this command was still running after ") &&

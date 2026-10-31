@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
-import type { Starting } from "../api/types.ts";
+import type { StartingView } from "../api/types.ts";
 import { startingLine } from "./startingLine.ts";
 
-const starting = (patch: Partial<Starting>): Starting => ({
+const starting = (patch: Partial<StartingView>): StartingView => ({
   id: "fresh",
   cwd: "/work",
   since: 1,

@@ -9,7 +9,8 @@
 // its only surface. A `..`-leading path would escape the root the same way
 // and is declined for the same reason.
 
-import type { CallId, LogEntry } from "../api/types.ts";
+import type { CallId } from "../api/types.ts";
+import type { LogEntry } from "../api/entry.ts";
 import { assistantView } from "./assistant.ts";
 import { anchorFromResult, type DiffAnchor } from "./editAnchor.ts";
 

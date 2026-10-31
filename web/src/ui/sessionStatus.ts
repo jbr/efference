@@ -1,4 +1,4 @@
-import type { Starting } from "../api/types.ts";
+import type { StartingView } from "../api/types.ts";
 import type { Connection } from "../session/store.ts";
 import type { ComposerStatusMessage } from "./ComposerStatus.tsx";
 import { startingLine } from "./startingLine.ts";
@@ -12,7 +12,7 @@ export function sessionStatus({
   onRetry,
   inspectionError,
 }: {
-  starting: Starting | null;
+  starting: StartingView | null;
   connection: Connection;
   retrying: boolean;
   retryError: string | null;

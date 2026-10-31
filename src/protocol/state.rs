@@ -48,6 +48,7 @@ pub const SETTLED_HEADER: &str = "efference-settled";
 /// starting answers only `last_seq` and the four topics it publishes (`verbs`, `queued`,
 /// `starting`, `status`).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct StateTopics {
     /// The highest committed `seq`, `null` on an empty log. Not a topic: the log's
     /// cursor rather than control state, so no frame carries it.
@@ -111,6 +112,7 @@ pub struct StateTopics {
 /// The loop resource (`GET /loop`, `PATCH /loop`, docs/control-api.md): the operator's
 /// dials and where the loop is, each the value — and the name — of its state topic.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LoopResource {
     pub pace: PaceView,
     pub review_level: ReviewLevel,
@@ -121,6 +123,7 @@ pub struct LoopResource {
 /// (docs/process-monitor.md), as `GET /state` and a status body say it. `null` when none
 /// is pending.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AskView {
     pub call_id: String,
     pub question: String,
@@ -136,6 +139,7 @@ pub struct AskView {
 /// The `pace` topic: the operator's between-turns dial (docs/control-channel.md) — loud to
 /// the operator's clients, never logged or projected.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PaceView {
     /// The delay between steps, in milliseconds.
     pub speed_ms: u64,
@@ -147,6 +151,7 @@ pub struct PaceView {
 /// from the check the route itself runs. A client renders a refused verb disabled with
 /// its message; a request that arrives after the topic moved is checked again.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Verbs {
     /// `POST /turns`: always accepted while the session runs, with where the turn would
     /// land.
@@ -161,6 +166,7 @@ pub struct Verbs {
 /// One loop route's answer: `accepted`, and either what an accepted request would do or
 /// the message a refusal carries.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct VerbAnswer {
     pub accepted: bool,
     /// An accepted turn's delivery: at once, or queued until the loop's next juncture.
@@ -220,6 +226,7 @@ impl VerbAnswer {
 /// One pending ambient notification, as the `notifications` topic lists it (docs/inbox.md):
 /// an arrived notification not yet shown by a triage, or a slot notification still queued.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PendingNotification {
     /// The arrival entry's `seq`, the handle a triage's verdict addresses. Absent for a
     /// slot notification, which has no entry until it is shown.
@@ -245,6 +252,7 @@ pub struct PendingNotification {
 /// everything else, and so either moving later reaches clients through the
 /// mechanism that already delivers whole-topic replacements.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SessionIdentity {
     /// The session id (docs/session-title.md): its directory name under
     /// `.efference/`, the `--name` a client resolves, the address a peer
@@ -275,6 +283,7 @@ pub struct SessionIdentity {
 /// is newer than the host (docs/update-check.md), and the command that installs it. Host
 /// state, the same on every session of a host.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct NewerVersion {
     /// The version as the release names it: `0.2.0`.
     pub version: String,

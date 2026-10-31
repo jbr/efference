@@ -8,6 +8,7 @@ use super::*;
 /// from different providers. Presentation and execution consume semantic accessors;
 /// request projection consumes the concrete arm (docs/log-and-projection.md).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum AssistantOutput {
     /// The content blocks of one Anthropic-Messages assistant message, in provider
     /// order. OpenRouter's Anthropic-compatible endpoint uses the same shape.
@@ -164,6 +165,7 @@ impl AssistantOutput {
 
 /// One ordered content block in an Anthropic-Messages assistant message.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum MessagesOutputBlock {
     Text(String),
     /// Visible thinking plus the opaque signature required for replay.
@@ -185,6 +187,7 @@ pub enum MessagesOutputBlock {
 /// item for audit; an assembler that constructs it marks the enclosing turn record-only
 /// rather than projecting or dispatching it (docs/transport.md).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum ResponsesOutputItem {
     Reasoning {
         id: String,
@@ -227,17 +230,20 @@ pub enum ResponsesOutputItem {
 
 /// One `summary_text` part of a reasoning item.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ResponsesReasoningSummary {
     pub text: String,
 }
 
 /// One `reasoning_text` part of a reasoning item.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ResponsesReasoningText {
     pub text: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ResponsesPhase {
     Commentary,
@@ -245,6 +251,7 @@ pub enum ResponsesPhase {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum ResponsesMessageContent {
     OutputText {
         text: String,
