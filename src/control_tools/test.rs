@@ -253,7 +253,7 @@ async fn the_command_line_reads_the_audit_grain_on_request() {
 
     let fetched = Entries {
         seqs: vec![seq],
-        agent: None,
+        agent: Default::default(),
     }
     .execute(control, RequestContext::default())
     .await
@@ -291,7 +291,7 @@ async fn proposal_commits_and_cancels_through_the_client_executor() {
         seq,
         cancel,
         note: note.into(),
-        agent: None,
+        agent: Default::default(),
     };
 
     let result = proposal(commit_seq, false, "looks safe")
@@ -303,10 +303,12 @@ async fn proposal_commits_and_cancels_through_the_client_executor() {
         .await;
     assert_eq!(result.unwrap(), format!("cancelled {cancel_seq}"));
 
-    let remaining = State { agent: None }
-        .execute(control.clone(), RequestContext::default())
-        .await
-        .unwrap();
+    let remaining = State {
+        agent: Default::default(),
+    }
+    .execute(control.clone(), RequestContext::default())
+    .await
+    .unwrap();
     assert_eq!(
         remaining.state.get("proposals").cloned(),
         Some(serde_json::json!([])),
@@ -426,3 +428,4 @@ async fn an_answer_without_the_header_counts_as_settled() {
 }
 
 mod surfaces;
+mod tool_bytes;

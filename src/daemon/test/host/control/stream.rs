@@ -16,7 +16,7 @@ use trillium_websockets::tungstenite::protocol::frame::coding::CloseCode;
 /// gives.
 async fn followed(control: &Control, agent: &str) -> (String, String) {
     let said = McpStatus {
-        agent: Some(agent.into()),
+        agent: agent.into(),
         follow: true,
     }
     .execute(control.clone(), RequestContext::default())
@@ -235,7 +235,7 @@ async fn follow_names_one_agent() {
     let host = hosting(&roots, &["child"]).await;
     let (control, _) = mount(&host).await;
     let err = McpStatus {
-        agent: None,
+        agent: Default::default(),
         follow: true,
     }
     .execute(control, RequestContext::default())

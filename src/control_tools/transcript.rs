@@ -1,12 +1,10 @@
-use super::args::{optional_handle, turn_source};
+use super::args::{NamedAgent, optional_handle, turn_source};
 use super::executor::state_of;
-use super::{Control, Executor};
+use super::verb::{ControlVerb, VerbCall};
+use super::{ClientExecutor, HostExecutor};
 use crate::protocol::transcript::{Handle, ReadPlan, TranscriptRead};
 use anyhow::{Result, anyhow};
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Read what an agent said and did: its messages in full, and each call on one line
@@ -15,9 +13,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "transcript")]
 pub struct Transcript {
-    /// The agent's id.
-    #[arg(long)]
-    pub agent: String,
+    #[command(flatten)]
+    pub agent: NamedAgent,
     /// One entry in full, by its seq (`8`, or `8.2` for one of several calls).
     #[serde(
         default,
@@ -63,8 +60,13 @@ impl ToolMeta for Transcript {
 
 impl Transcript {
     /// The handle of the one entry to read in full (the zoom), refused beside a window
-    /// bound.
+    /// bound, after refusing a window with both bounds.
     fn zoom(&self) -> Result<Option<Handle>> {
+        if self.since.is_some() && self.tail.is_some() {
+            return Err(anyhow!(
+                "since and tail are mutually exclusive; pass one, or neither for what is new"
+            ));
+        }
         let Some(seq) = &self.seq else {
             return Ok(None);
         };
@@ -80,86 +82,79 @@ impl Transcript {
     }
 }
 
-impl Tool<Control> for Transcript {
+impl ControlVerb for Transcript {
     type Output = String;
 
-    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
-        if self.since.is_some() && self.tail.is_some() {
-            return Err(anyhow!(
-                "since and tail are mutually exclusive; pass one, or neither for what is new"
-            ));
-        }
+    async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
         let zoom = self.zoom()?;
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(Some(&self.agent)).await?;
-                // The reader, spelled as its turns' `source` is, so its own turns and
-                // decisions read "you" (docs/control-api.md).
-                let me = turn_source(&context);
-                // A zoom sends the handle as given; `zoom` has checked it parses.
-                if zoom.is_some() {
-                    let read = TranscriptRead {
-                        seq: self.seq.as_deref(),
-                        me: me.as_deref(),
-                        ..Default::default()
-                    };
-                    return client.transcript(read).await;
-                }
-                if self.audit {
-                    let read = TranscriptRead {
-                        since: self.since,
-                        tail: self.tail,
-                        audit: true,
-                        ..Default::default()
-                    };
-                    let text = client.transcript(read).await?;
-                    return Ok(match text.is_empty() {
-                        true => "(no entries)".to_string(),
-                        false => text,
-                    });
-                }
-                let state_now = state_of(&client).await?;
-                let id = state_now["session_identity"]["id"]
-                    .as_str()
-                    .map_or_else(|| self.agent.clone(), str::to_string);
-                let last = state_now["last_seq"].as_u64();
-                let cursor = state.cursor(&id);
-                let plan = ReadPlan::new(cursor, self.since, self.tail, last);
-                let read = TranscriptRead {
-                    since: plan.since,
-                    before: plan.before,
-                    tail: plan.tail,
-                    me: me.as_deref(),
-                    ..Default::default()
-                };
-                let text = client.transcript(read).await?;
-                if let Some(seq) = plan.cursor_after(cursor) {
-                    state.set_cursor(&id, seq);
-                }
-                Ok(plan.framed(&title(&id), text))
-            }
-            Executor::Host(state) => {
-                let (target, id) = state.resolve(Some(&self.agent))?;
-                let caller = state.caller();
-                if let Some(handle) = zoom {
-                    return target
-                        .transcript_zoom(handle, Some(caller))
-                        .map_err(|reason| anyhow!("{reason}"));
-                }
-                // The host holds the cursor per reader and target (docs/tools.md).
-                let host = state.host()?;
-                let cursor = host.read_cursor(&id, caller);
-                let plan =
-                    ReadPlan::new(cursor, self.since, self.tail, target.last_committed_seq());
-                let text = target
-                    .transcript_window(plan.since, plan.before, plan.tail, caller)
-                    .map_err(|reason| anyhow!("{reason}"))?;
-                if let Some(seq) = plan.cursor_after(cursor) {
-                    host.set_read_cursor(&id, caller, seq);
-                }
-                Ok(plan.framed(&title(&id), text))
-            }
+        let client = state.client(Some(self.agent.id())).await?;
+        // The reader, spelled as its turns' `source` is, so its own turns and decisions
+        // read "you" (docs/control-api.md).
+        let me = turn_source(call.context);
+        // A zoom sends the handle as given; `zoom` has checked it parses.
+        if zoom.is_some() {
+            let read = TranscriptRead {
+                seq: self.seq.as_deref(),
+                me: me.as_deref(),
+                ..Default::default()
+            };
+            return client.transcript(read).await;
         }
+        if self.audit {
+            let read = TranscriptRead {
+                since: self.since,
+                tail: self.tail,
+                audit: true,
+                ..Default::default()
+            };
+            let text = client.transcript(read).await?;
+            return Ok(match text.is_empty() {
+                true => "(no entries)".to_string(),
+                false => text,
+            });
+        }
+        let state_now = state_of(&client).await?;
+        let id = state_now["session_identity"]["id"]
+            .as_str()
+            .unwrap_or(self.agent.id())
+            .to_string();
+        let last = state_now["last_seq"].as_u64();
+        let cursor = state.cursor(&id);
+        let plan = ReadPlan::new(cursor, self.since, self.tail, last);
+        let read = TranscriptRead {
+            since: plan.since,
+            before: plan.before,
+            tail: plan.tail,
+            me: me.as_deref(),
+            ..Default::default()
+        };
+        let text = client.transcript(read).await?;
+        if let Some(seq) = plan.cursor_after(cursor) {
+            state.set_cursor(&id, seq);
+        }
+        Ok(plan.framed(&title(&id), text))
+    }
+
+    async fn host(self, state: &HostExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let zoom = self.zoom()?;
+        let (target, id) = state.resolve(Some(self.agent.id()))?;
+        let caller = state.caller();
+        if let Some(handle) = zoom {
+            return target
+                .transcript_zoom(handle, Some(caller))
+                .map_err(|reason| anyhow!("{reason}"));
+        }
+        // The host holds the cursor per reader and target (docs/tools.md).
+        let host = state.host()?;
+        let cursor = host.read_cursor(&id, caller);
+        let plan = ReadPlan::new(cursor, self.since, self.tail, target.last_committed_seq());
+        let text = target
+            .transcript_window(plan.since, plan.before, plan.tail, caller)
+            .map_err(|reason| anyhow!("{reason}"))?;
+        if let Some(seq) = plan.cursor_after(cursor) {
+            host.set_read_cursor(&id, caller, seq);
+        }
+        Ok(plan.framed(&title(&id), text))
     }
 }
 

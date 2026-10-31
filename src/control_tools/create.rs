@@ -1,16 +1,14 @@
 use super::args::{reader_name, turn_source};
 use super::executor::status_in;
 use super::status::operator_relation;
-use super::{Control, Executor};
+use super::verb::{ControlVerb, VerbCall};
+use super::{ClientExecutor, HostExecutor};
 use crate::daemon::status::{Moves, Reader, Relation, answers};
 use crate::protocol::sessions::CreateSession;
 use crate::protocol::status::Condition;
 use crate::protocol::turns::mint_submission_id;
 use anyhow::{Context, Result, anyhow};
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -139,155 +137,150 @@ fn model_of(identity: &serde_json::Value) -> Option<String> {
     }
 }
 
-impl Tool<Control> for Create {
+impl ControlVerb for Create {
     type Output = String;
 
-    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+    async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
         let now = super::now();
-        match &control.executor {
-            Executor::Client(state) => {
-                let here = std::env::current_dir().context("reading the working directory")?;
-                let env = crate::env_table::EnvSnapshot::capture()
-                    .map_err(anyhow::Error::msg)?
-                    .into_entries();
-                let request = self.request(here, env);
-                let host = state.host_client()?;
-                let id = host.create_session(&request).await?;
-                // Wait out the preparation: a starting session's wait settles when it
-                // has started and settled, or failed (docs/control-api.md).
-                let client = host.clone().with_prefix(&format!("/sessions/{id}"));
-                let started = state.settle_within(&client, None, client.settle()).await?;
-                let state_now: serde_json::Value = serde_json::from_str(&started.body)?;
-                let view = status_in(&state_now)?;
-                if let Condition::FailedToStart { reason } = &view.condition {
-                    return Err(anyhow!("{id} did not start: {reason}"));
-                }
-                // An MCP mount watches what it creates, from the status this answer
-                // shows, so `wait` reports what comes after (docs/operating.md). The
-                // command line holds no mount to watch from.
-                let watched = !control.is_cli();
-                if watched {
-                    state.watch(&id, Some(&view))?;
-                }
-                let me = reader_name(&context);
-                // Its status stream, for a client that holds one open (docs/operating.md).
-                // The agent exists either way, so a server that cannot bind is a line in
-                // the answer rather than an error.
-                let follow = match watched {
-                    true => Some(match state.stream_url(&id, me.as_deref()).await {
-                        Ok(url) => answers::follow(&url),
-                        Err(e) => answers::no_stream(&e),
-                    }),
-                    false => None,
-                };
-                let reader = Reader::read(operator_relation(&view), &Moves::MCP, me.as_deref());
-                let then = match self.first_message() {
-                    Some(text) => {
-                        let source = turn_source(&context);
-                        let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id())
-                            .sourced(source);
-                        match client.submit(&turn, None).await? {
-                            Ok(landing) => answers::sent(&id, landing, Some(&view), now),
-                            Err(refusal) => format!("first message not delivered: {refusal}"),
-                        }
-                    }
-                    None => answers::fresh(&view, &reader, now),
-                };
-                let row = host.sessions().await?.into_iter().find(|row| row.id == id);
-                let identity = &state_now["session_identity"];
-                let working = row
-                    .as_ref()
-                    .and_then(|row| row.working.clone().or(row.cwd.clone()))
-                    .or_else(|| identity["cwd"].as_str().map(str::to_string))
-                    .unwrap_or_default();
-                let project = row
-                    .as_ref()
-                    .filter(|row| row.working.is_some())
-                    .and_then(|row| row.cwd.clone());
-                Ok(answers::created(&answers::Created {
-                    id: &id,
-                    model: model_of(identity),
-                    working: &working,
-                    project: project.as_deref(),
-                    branch: self.worktree.then(|| crate::worktree::branch(&id)),
-                    gates: answers::gates("the operator", self.autonomous),
-                    watched,
-                    follow,
-                    then,
-                }))
-            }
-            Executor::Host(state) => {
-                // A session-driven creation runs in the caller's cwd and with the
-                // caller's child environment as the new session's base — the same
-                // environment its own bash children get (docs/tools.md).
-                let caller = state.caller_session()?;
-                let request =
-                    self.request(caller.cwd().to_path_buf(), caller.child_env().resolved());
-                // A child runs under its own project's config (docs/tools.md): minted
-                // in another project, it would work under that project's rules rather
-                // than the caller's, so a session could reach past its own config by
-                // commissioning there. Refused here, before anything is minted. The
-                // child's project is resolved as the host will resolve it: a `cwd`
-                // inside a worktree belongs to that worktree's project
-                // (docs/worktrees.md).
-                let cwd = request.cwd.clone();
-                let child_project =
-                    crate::worktree::project_of(&cwd).unwrap_or_else(|| cwd.clone());
-                let base = child_project.join(crate::session_dir::SESSION_BASE);
-                let project = caller
-                    .storage_base()
-                    .map(crate::policy::lexical_normalize)
-                    .ok_or_else(|| anyhow!("the calling session has no project base"))?;
-                if base != project {
-                    anyhow::bail!(
-                        "refused: {} is outside this project ({}) — a child runs under its own \
-                         project's efference.toml, so a session creates only in its own \
-                         project; create under this project's directory instead",
-                        cwd.display(),
-                        project.display()
-                    );
-                }
-                // The child records the caller as its creator, which is what makes
-                // it a descendant for later driving verbs — and subscribes the caller
-                // to the child's status (docs/tools.md).
-                let (child, id) = state.create(request).await?;
-                let view = child.status_view(&id, &child.status());
-                let reader =
-                    Reader::read(Relation::Driver, &Moves::IN_SESSION, Some(state.caller()));
-                let then = match self.first_message() {
-                    Some(text) => {
-                        let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id())
-                            .sourced(Some(state.source_for(&child)));
-                        match child.submit_named_turn(turn, None) {
-                            Ok(landing) => answers::sent(&id, landing, Some(&view), now),
-                            Err(refusal) => format!(
-                                "first message not delivered: {}",
-                                refusal.message(&id, Some(state.caller()))
-                            ),
-                        }
-                    }
-                    None => answers::fresh(&view, &reader, now),
-                };
-                let directories = child.directories();
-                let working = directories.working().display().to_string();
-                let project = (directories.working() != directories.project())
-                    .then(|| directories.project().display().to_string());
-                let identity = child
-                    .identity()
-                    .and_then(|identity| serde_json::to_value(identity).ok())
-                    .unwrap_or_default();
-                Ok(answers::created(&answers::Created {
-                    id: &id,
-                    model: model_of(&identity),
-                    working: &working,
-                    project: project.as_deref(),
-                    branch: self.worktree.then(|| crate::worktree::branch(&id)),
-                    gates: answers::gates("you", self.autonomous),
-                    watched: false,
-                    follow: None,
-                    then,
-                }))
-            }
+        let here = std::env::current_dir().context("reading the working directory")?;
+        let env = crate::env_table::EnvSnapshot::capture()
+            .map_err(anyhow::Error::msg)?
+            .into_entries();
+        let request = self.request(here, env);
+        let host = state.host_client()?;
+        let id = host.create_session(&request).await?;
+        // Wait out the preparation: a starting session's wait settles when it
+        // has started and settled, or failed (docs/control-api.md).
+        let client = host.clone().with_prefix(&format!("/sessions/{id}"));
+        let started = state.settle_within(&client, None, client.settle()).await?;
+        let state_now: serde_json::Value = serde_json::from_str(&started.body)?;
+        let view = status_in(&state_now)?;
+        if let Condition::FailedToStart { reason } = &view.condition {
+            return Err(anyhow!("{id} did not start: {reason}"));
         }
+        // An MCP mount watches what it creates, from the status this answer
+        // shows, so `wait` reports what comes after (docs/operating.md). The
+        // command line holds no mount to watch from.
+        let watched = !call.cli;
+        if watched {
+            state.watch(&id, Some(&view))?;
+        }
+        let me = reader_name(call.context);
+        // Its status stream, for a client that holds one open (docs/operating.md).
+        // The agent exists either way, so a server that cannot bind is a line in
+        // the answer rather than an error.
+        let follow = match watched {
+            true => Some(match state.stream_url(&id, me.as_deref()).await {
+                Ok(url) => answers::follow(&url),
+                Err(e) => answers::no_stream(&e),
+            }),
+            false => None,
+        };
+        let reader = Reader::read(operator_relation(&view), &Moves::MCP, me.as_deref());
+        let then = match self.first_message() {
+            Some(text) => {
+                let source = turn_source(call.context);
+                let turn =
+                    crate::frontend::SubmittedTurn::new(text, mint_submission_id()).sourced(source);
+                match client.submit(&turn, None).await? {
+                    Ok(landing) => answers::sent(&id, landing, Some(&view), now),
+                    Err(refusal) => format!("first message not delivered: {refusal}"),
+                }
+            }
+            None => answers::fresh(&view, &reader, now),
+        };
+        let row = host.sessions().await?.into_iter().find(|row| row.id == id);
+        let identity = &state_now["session_identity"];
+        let working = row
+            .as_ref()
+            .and_then(|row| row.working.clone().or(row.cwd.clone()))
+            .or_else(|| identity["cwd"].as_str().map(str::to_string))
+            .unwrap_or_default();
+        let project = row
+            .as_ref()
+            .filter(|row| row.working.is_some())
+            .and_then(|row| row.cwd.clone());
+        Ok(answers::created(&answers::Created {
+            id: &id,
+            model: model_of(identity),
+            working: &working,
+            project: project.as_deref(),
+            branch: self.worktree.then(|| crate::worktree::branch(&id)),
+            gates: answers::gates("the operator", self.autonomous),
+            watched,
+            follow,
+            then,
+        }))
+    }
+
+    async fn host(self, state: &HostExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let now = super::now();
+        // A session-driven creation runs in the caller's cwd and with the
+        // caller's child environment as the new session's base — the same
+        // environment its own bash children get (docs/tools.md).
+        let caller = state.caller_session()?;
+        let request = self.request(caller.cwd().to_path_buf(), caller.child_env().resolved());
+        // A child runs under its own project's config (docs/tools.md): minted
+        // in another project, it would work under that project's rules rather
+        // than the caller's, so a session could reach past its own config by
+        // commissioning there. Refused here, before anything is minted. The
+        // child's project is resolved as the host will resolve it: a `cwd`
+        // inside a worktree belongs to that worktree's project
+        // (docs/worktrees.md).
+        let cwd = request.cwd.clone();
+        let child_project = crate::worktree::project_of(&cwd).unwrap_or_else(|| cwd.clone());
+        let base = child_project.join(crate::session_dir::SESSION_BASE);
+        let project = caller
+            .storage_base()
+            .map(crate::policy::lexical_normalize)
+            .ok_or_else(|| anyhow!("the calling session has no project base"))?;
+        if base != project {
+            anyhow::bail!(
+                "refused: {} is outside this project ({}) — a child runs under its own \
+                 project's efference.toml, so a session creates only in its own \
+                 project; create under this project's directory instead",
+                cwd.display(),
+                project.display()
+            );
+        }
+        // The child records the caller as its creator, which is what makes
+        // it a descendant for later driving verbs — and subscribes the caller
+        // to the child's status (docs/tools.md).
+        let (child, id) = state.create(request).await?;
+        let view = child.status_view(&id, &child.status());
+        let reader = Reader::read(Relation::Driver, &Moves::IN_SESSION, Some(state.caller()));
+        let then = match self.first_message() {
+            Some(text) => {
+                let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id())
+                    .sourced(Some(state.source_for(&child)));
+                match child.submit_named_turn(turn, None) {
+                    Ok(landing) => answers::sent(&id, landing, Some(&view), now),
+                    Err(refusal) => format!(
+                        "first message not delivered: {}",
+                        refusal.message(&id, Some(state.caller()))
+                    ),
+                }
+            }
+            None => answers::fresh(&view, &reader, now),
+        };
+        let directories = child.directories();
+        let working = directories.working().display().to_string();
+        let project = (directories.working() != directories.project())
+            .then(|| directories.project().display().to_string());
+        let identity = child
+            .identity()
+            .and_then(|identity| serde_json::to_value(identity).ok())
+            .unwrap_or_default();
+        Ok(answers::created(&answers::Created {
+            id: &id,
+            model: model_of(&identity),
+            working: &working,
+            project: project.as_deref(),
+            branch: self.worktree.then(|| crate::worktree::branch(&id)),
+            gates: answers::gates("you", self.autonomous),
+            watched: false,
+            follow: None,
+            then,
+        }))
     }
 }

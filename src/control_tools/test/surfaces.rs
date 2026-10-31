@@ -290,6 +290,41 @@ fn a_numeric_seq_reads_as_a_handle() {
     assert_eq!(message.reply_to.as_deref(), Some("3.1"));
 }
 
+/// The `agent` argument reads as a plain field of its verb (`args.rs`): a call that leaves
+/// out `agent` and another argument is told about `agent`, the first in declaration
+/// order, and a mistyped `agent` is told its type. A form `#[serde(flatten)]`ed in would
+/// read after the verb's own fields and tell both calls about `seq` instead. An omitted or
+/// null optional agent reads as none.
+#[test]
+fn the_agent_argument_reads_as_a_plain_field() {
+    let refused = |input: serde_json::Value| {
+        serde_json::from_value::<Decide>(input)
+            .map(|_| ())
+            .unwrap_err()
+            .to_string()
+    };
+    assert_eq!(refused(serde_json::json!({})), "missing field `agent`");
+    assert_eq!(
+        refused(serde_json::json!({"decision": "allow"})),
+        "missing field `agent`"
+    );
+    assert_eq!(
+        refused(serde_json::json!({"agent": 5})),
+        "invalid type: integer `5`, expected a string"
+    );
+    let message = serde_json::from_value::<Message>(serde_json::json!({}))
+        .map(|_| ())
+        .unwrap_err();
+    assert_eq!(message.to_string(), "missing field `agent`");
+
+    for omitted in [serde_json::json!({}), serde_json::json!({"agent": null})] {
+        let status: Status = serde_json::from_value(omitted).unwrap();
+        assert_eq!(status.agent.id(), None);
+    }
+    let status: Status = serde_json::from_value(serde_json::json!({"agent": "c"})).unwrap();
+    assert_eq!(status.agent.id(), Some("c"));
+}
+
 /// What the three sets advertise to a model or a mounting harness names no path in this
 /// repository: the tool descriptions and schemas are read where `docs/` does not exist,
 /// and the MCP instructions travel with them. Implementer cross-references are `//`
@@ -313,7 +348,7 @@ fn advertised_tools_name_no_repository_path() {
         }
     }
     assert!(
-        !paths.is_match(mcp::INSTRUCTIONS),
+        !paths.is_match(MCP_INSTRUCTIONS),
         "the MCP instructions name a repository path"
     );
 }

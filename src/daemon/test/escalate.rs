@@ -226,12 +226,10 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
         .is_some_and(|n| !n.wake)
     })
     .await;
-    let status = Status {
-        agent: Some("c".into()),
-    }
-    .execute(fixture.control("g"), RequestContext::default())
-    .await
-    .unwrap();
+    let status = Status { agent: "c".into() }
+        .execute(fixture.control("g"), RequestContext::default())
+        .await
+        .unwrap();
     assert!(status.starts_with(&format!("c: {reviewer}")), "{status}");
     assert!(
         status.contains("\ndecide: agents__decide(agent: \"c\""),

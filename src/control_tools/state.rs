@@ -1,9 +1,8 @@
-use super::{Control, Executor, StateResult};
+use super::args::AgentOrHere;
+use super::verb::{ControlVerb, VerbCall};
+use super::{ClientExecutor, StateResult};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Print a session's whole `/state` body, without waiting: where the loop is
@@ -13,10 +12,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "state")]
 pub struct State {
-    /// The agent's id. Defaults to the one session live here.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for State {
@@ -35,16 +33,11 @@ impl ToolMeta for State {
     }
 }
 
-impl Tool<Control> for State {
+impl ControlVerb for State {
     type Output = StateResult;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<StateResult> {
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                StateResult::plain(&client.state().await?)
-            }
-            Executor::Host(_) => Err(super::operator_verb("state")),
-        }
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<StateResult> {
+        let client = state.client(self.agent.id()).await?;
+        StateResult::plain(&client.state().await?)
     }
 }

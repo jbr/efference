@@ -1,9 +1,7 @@
-use super::{Control, Executor};
+use super::ClientExecutor;
+use super::verb::{ControlVerb, VerbCall};
 use anyhow::{Result, anyhow};
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Set which session supervises a session, or clear it. A session's supervisor
@@ -44,28 +42,23 @@ impl ToolMeta for Supervisor {
     }
 }
 
-impl Tool<Control> for Supervisor {
+impl ControlVerb for Supervisor {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
         let supervisor = match (self.supervisor, self.clear) {
             (Some(supervisor), false) => Some(supervisor),
             (None, true) => None,
             (Some(_), true) => return Err(anyhow!("pass a supervisor or `clear`, not both")),
             (None, false) => return Err(anyhow!("pass a supervisor, or `clear` to clear it")),
         };
-        match &control.executor {
-            Executor::Client(state) => {
-                let host = state.host_client()?;
-                let set = host
-                    .set_supervisor(&self.agent, supervisor.as_deref())
-                    .await?;
-                Ok(match set {
-                    Some(supervisor) => format!("{}: supervised by {supervisor}", self.agent),
-                    None => format!("{}: no supervisor", self.agent),
-                })
-            }
-            Executor::Host(_) => Err(super::operator_verb("supervisor")),
-        }
+        let host = state.host_client()?;
+        let set = host
+            .set_supervisor(&self.agent, supervisor.as_deref())
+            .await?;
+        Ok(match set {
+            Some(supervisor) => format!("{}: supervised by {supervisor}", self.agent),
+            None => format!("{}: no supervisor", self.agent),
+        })
     }
 }

@@ -1,8 +1,9 @@
-//! The session-control tools: one definition per verb, three tool sets over them
+//! The session-control tools: each verb declared once, for every set that lists it
 //! (docs/tools.md, docs/operating.md).
 //!
-//! Each verb is written once here as an [mcplease] tool struct, and three
-//! `tools!` invocations list them:
+//! A verb is a tool struct in a file of its own — its arguments, its title and hints, and
+//! a [`ControlVerb`](verb::ControlVerb) impl saying what it does through each executor —
+//! and a row of the verb table below, which names it and marks the sets that list it:
 //!
 //! - [`in_session`], mounted in a hosted session's toolbox under `agents__<verb>`
 //!   (`Provider::Sessions`);
@@ -10,10 +11,10 @@
 //! - [`cli`], the clap `Subcommand` behind `efference control <verb>`: the agent verbs
 //!   plus the operator's route verbs.
 //!
-//! Each set names the shared structs in scope (`tools!(…, modules = false, …)`), since
-//! mcplease's default form declares a module per tool and a module has one parent. A
-//! set is an allow-list: the stdio mount serves its whole enum, and mcplease has no
-//! way to hide a tool from it.
+//! From the table, `verbs!` (`verb.rs`) writes each struct's mcplease `Tool` impl and
+//! the three sets' `tools!` enums. A set is an allow-list: the stdio mount serves its
+//! whole enum, and mcplease has no way to hide a tool from it. The `agent` argument the
+//! verbs share is declared once for each form it takes (`args.rs`).
 //!
 //! One module name dodges a dependency of the same name (`use image::Image` would be
 //! ambiguous against the `image` crate): the `image` tool lives in `read_image.rs`.
@@ -40,6 +41,7 @@ mod executor;
 mod follow;
 mod hand_off;
 mod host_executor;
+mod instructions;
 mod interrupt;
 mod message;
 mod notify;
@@ -55,12 +57,9 @@ mod stream;
 mod supervisor;
 mod title;
 mod transcript;
+mod verb;
 mod wait;
 mod watch;
-
-pub mod cli;
-pub mod in_session;
-pub mod mcp;
 
 pub use archive::Archive;
 pub use background::Background;
@@ -75,6 +74,7 @@ pub use executor::{ClientExecutor, Fallback};
 pub(crate) use follow::follow_status;
 pub use hand_off::HandOff;
 pub use host_executor::HostExecutor;
+pub use instructions::MCP_INSTRUCTIONS;
 pub use interrupt::Interrupt;
 pub use message::Message;
 pub use notify::Notify;
@@ -90,6 +90,39 @@ pub use supervisor::Supervisor;
 pub use title::Title;
 pub use transcript::Transcript;
 pub use wait::Wait;
+
+// The verb table (docs/tools.md): each verb's tool struct, the name it is advertised
+// under, and the sets that list it — a session's own toolbox, `efference mcp`, and
+// `efference control` — with `-` for a set that does not. A set lists its verbs in table
+// order, which is the order a mounting harness caches and a session's `tools[]` carries.
+// `status` has a struct per set, since the MCP one adds `follow` and the command line's
+// repeats `--agent` and prints JSON on request; `as Status` names the latter two as the
+// command line names its subcommand.
+verb::verbs! {
+    //  struct                  name             in a session  efference mcp  efference control
+    Create                      "create"         [session      mcp            cli];
+    Message                     "message"        [session      mcp            cli];
+    Decide                      "decide"         [session      mcp            cli];
+    Interrupt                   "interrupt"      [session      mcp            cli];
+    Archive                     "archive"        [session      mcp            cli];
+    Status                      "status"         [session      -              -  ];
+    McpStatus as Status         "status"         [-            mcp            -  ];
+    CliStatus as Status         "status"         [-            -              cli];
+    Transcript                  "transcript"     [session      mcp            cli];
+    HandOff                     "hand_off"       [session      -              -  ];
+    Wait                        "wait"           [-            mcp            -  ];
+    Settle                      "settle"         [-            -              cli];
+    State                       "state"          [-            -              cli];
+    Pace                        "pace"           [-            -              cli];
+    Title                       "title"          [-            -              cli];
+    Background                  "background"     [-            -              cli];
+    Proposal                    "proposal"       [-            -              cli];
+    ReviewLevel                 "review_level"   [-            -              cli];
+    Supervisor                  "supervisor"     [-            -              cli];
+    Notify                      "notify"         [-            -              cli];
+    Entries                     "entries"        [-            -              cli];
+    Image                       "image"          [-            -              cli];
+}
 
 /// The tool state: an executor and the presentation requested by its mount.
 /// Cloned into every call, which may run alongside others.
@@ -107,11 +140,6 @@ impl Control {
     /// Bind tools to an executor. `cli` selects the command line's presentation.
     pub fn new(executor: Executor, cli: bool) -> Self {
         Self { executor, cli }
-    }
-
-    /// Whether this dispatch came from the command line. See [`Control::cli`].
-    fn is_cli(&self) -> bool {
-        self.cli
     }
 
     /// Whether `call` is this session archiving its own predecessor — the session whose

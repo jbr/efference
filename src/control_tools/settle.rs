@@ -1,10 +1,8 @@
+use super::ClientExecutor;
 use super::results::{StateResult, pretty};
-use super::{Control, Executor};
+use super::verb::{ControlVerb, VerbCall};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Wait until an agent reaches its next decision point — a held call, a question,
@@ -41,21 +39,16 @@ impl ToolMeta for Settle {
     }
 }
 
-impl Tool<Control> for Settle {
+// Not mounted in a session: a session has an inbox to be woken through, not a blocking
+// wait (docs/tools.md).
+impl ControlVerb for Settle {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                let waited = state
-                    .settle_within(&client, self.timeout_s, client.settle())
-                    .await?;
-                Ok(pretty(&StateResult::waited(&waited.body, waited.settled)?))
-            }
-            // Not mounted in a session: a session has an inbox to be woken through,
-            // not a blocking wait (docs/tools.md).
-            Executor::Host(_) => Err(super::operator_verb("settle")),
-        }
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let client = state.client(self.agent.as_deref()).await?;
+        let waited = state
+            .settle_within(&client, self.timeout_s, client.settle())
+            .await?;
+        Ok(pretty(&StateResult::waited(&waited.body, waited.settled)?))
     }
 }

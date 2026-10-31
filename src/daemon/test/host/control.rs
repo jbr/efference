@@ -125,10 +125,12 @@ fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, oneshot::Receiver<Appro
 async fn the_overview_reads_every_session_on_the_host() {
     let roots = Roots::new();
     let host = hosting_a_family(&roots).await;
-    let overview = Status { agent: None }
-        .execute(mcp_over(&host).await, RequestContext::default())
-        .await
-        .unwrap();
+    let overview = Status {
+        agent: Default::default(),
+    }
+    .execute(mcp_over(&host).await, RequestContext::default())
+    .await
+    .unwrap();
     assert_eq!(
         overview,
         "child: idle, its turn is done\nparent: idle, its turn is done"

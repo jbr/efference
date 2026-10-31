@@ -1,24 +1,20 @@
-use super::args::reader_name;
+use super::args::{AgentOrAll, reader_name};
 use super::executor::{state_of, status_in};
-use super::{Control, Executor, HostExecutor};
+use super::verb::{ControlVerb, VerbCall};
+use super::{ClientExecutor, HostExecutor};
 use crate::daemon::status::{Moves, Reader, Relation, answers};
 use crate::protocol::status::{Condition, Reviewer, StatusView};
 use anyhow::{Result, anyhow};
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Where an agent stands and the call that answers it. With no agent, one line for
 /// each agent in view.
-#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename = "status")]
 pub struct Status {
-    /// The agent's id; omitted, every agent in view.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrAll::is_none")]
+    pub agent: AgentOrAll,
 }
 
 impl ToolMeta for Status {
@@ -59,67 +55,65 @@ pub(super) fn session_relation(state: &HostExecutor, view: &StatusView, drives: 
     Relation::of_session(view, state.caller(), state.supervises(&view.id), drives)
 }
 
-impl Tool<Control> for Status {
+impl ControlVerb for Status {
     type Output = String;
 
-    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+    async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
         let now = super::now();
-        match &control.executor {
-            Executor::Client(state) => {
-                let me = reader_name(&context);
-                if self.agent.is_none() && state.host_wide() {
-                    let host = state.host_client()?;
-                    let mut lines = Vec::new();
-                    for row in host.sessions().await? {
-                        let client = host.clone().with_prefix(&format!("/sessions/{}", row.id));
-                        let Ok(view) = status_in(&state_of(&client).await?) else {
-                            continue;
-                        };
-                        let reader = operator_reader(&view, me.as_deref());
-                        lines.push(answers::overview_line(&view, &reader, false, now));
-                    }
-                    return Ok(answers::overview(
-                        &lines,
-                        &format!(
-                            "the host holds no agents; `{}` starts one",
-                            (Moves::MCP.create)()
-                        ),
-                    ));
-                }
-                let client = state.client(self.agent.as_deref()).await?;
-                let view = status_in(&state_of(&client).await?)?;
-                let reader = operator_reader(&view, me.as_deref());
-                Ok(crate::daemon::status::render(&view, &reader, now))
-            }
-            Executor::Host(state) => {
-                let host = state.host()?;
-                let caller = state.caller();
-                let Some(agent) = self.agent.as_deref() else {
-                    let mut lines = Vec::new();
-                    for id in state.project_ids()? {
-                        let Some(view) = host.status_view_of(&id) else {
-                            continue;
-                        };
-                        let drives = state.drives(&id)?;
-                        let relation = session_relation(state, &view, drives);
-                        let reader = Reader::read(relation, &Moves::IN_SESSION, Some(caller));
-                        lines.push(answers::overview_line(&view, &reader, drives, now));
-                    }
-                    return Ok(answers::overview(
-                        &lines,
-                        &format!(
-                            "no other agents in this project; `{}` starts one",
-                            (Moves::IN_SESSION.create)()
-                        ),
-                    ));
+        let me = reader_name(call.context);
+        if self.agent.is_none() && state.host_wide() {
+            let host = state.host_client()?;
+            let mut lines = Vec::new();
+            for row in host.sessions().await? {
+                let client = host.clone().with_prefix(&format!("/sessions/{}", row.id));
+                let Ok(view) = status_in(&state_of(&client).await?) else {
+                    continue;
                 };
-                let (target, id) = state.resolve(Some(agent))?;
-                let view = target.status_view(&id, &target.status());
-                let relation = session_relation(state, &view, state.drives(&id)?);
-                let reader = Reader::read(relation, &Moves::IN_SESSION, Some(caller));
-                Ok(crate::daemon::status::render(&view, &reader, now))
+                let reader = operator_reader(&view, me.as_deref());
+                lines.push(answers::overview_line(&view, &reader, false, now));
             }
+            return Ok(answers::overview(
+                &lines,
+                &format!(
+                    "the host holds no agents; `{}` starts one",
+                    (Moves::MCP.create)()
+                ),
+            ));
         }
+        let client = state.client(self.agent.id()).await?;
+        let view = status_in(&state_of(&client).await?)?;
+        let reader = operator_reader(&view, me.as_deref());
+        Ok(crate::daemon::status::render(&view, &reader, now))
+    }
+
+    async fn host(self, state: &HostExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let now = super::now();
+        let host = state.host()?;
+        let caller = state.caller();
+        let Some(agent) = self.agent.id() else {
+            let mut lines = Vec::new();
+            for id in state.project_ids()? {
+                let Some(view) = host.status_view_of(&id) else {
+                    continue;
+                };
+                let drives = state.drives(&id)?;
+                let relation = session_relation(state, &view, drives);
+                let reader = Reader::read(relation, &Moves::IN_SESSION, Some(caller));
+                lines.push(answers::overview_line(&view, &reader, drives, now));
+            }
+            return Ok(answers::overview(
+                &lines,
+                &format!(
+                    "no other agents in this project; `{}` starts one",
+                    (Moves::IN_SESSION.create)()
+                ),
+            ));
+        };
+        let (target, id) = state.resolve(Some(agent))?;
+        let view = target.status_view(&id, &target.status());
+        let relation = session_relation(state, &view, state.drives(&id)?);
+        let reader = Reader::read(relation, &Moves::IN_SESSION, Some(caller));
+        Ok(crate::daemon::status::render(&view, &reader, now))
     }
 }
 
@@ -133,9 +127,8 @@ impl Tool<Control> for Status {
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename = "status")]
 pub struct McpStatus {
-    /// The agent's id; omitted, every agent in view.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrAll::is_none")]
+    pub agent: AgentOrAll,
     /// Also answer with a WebSocket URL streaming this agent's statuses: where it stands
     /// on connect, then each new decision point, until it ends.
     #[serde(default)]
@@ -152,24 +145,18 @@ impl ToolMeta for McpStatus {
     }
 }
 
-impl Tool<Control> for McpStatus {
+impl ControlVerb for McpStatus {
     type Output = String;
 
-    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+    async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
         let read = Status {
             agent: self.agent.clone(),
         };
         if !self.follow {
-            return read.execute(control, context).await;
+            return read.client(state, call).await;
         }
-        let Executor::Client(state) = &control.executor else {
-            return Err(anyhow!(
-                "`follow` is served by `efference mcp`; a session hears its agents through \
-                 its inbox"
-            ));
-        };
-        let agent = match &self.agent {
-            Some(agent) => agent.clone(),
+        let agent = match self.agent.id() {
+            Some(agent) => agent.to_string(),
             None if state.host_wide() => {
                 return Err(anyhow!("`follow` streams one agent: name it with `agent`"));
             }
@@ -182,9 +169,19 @@ impl Tool<Control> for McpStatus {
                     anyhow!("`follow` streams an agent on the host: name it with `agent`")
                 })?,
         };
-        let me = reader_name(&context);
-        let status = read.execute(control.clone(), context).await?;
+        let me = reader_name(call.context);
+        let status = read.client(state, call).await?;
         let url = state.stream_url(&agent, me.as_deref()).await?;
         Ok(format!("{status}\n{}", answers::follow(&url)))
+    }
+
+    async fn host(self, state: &HostExecutor, call: &VerbCall<'_>) -> Result<String> {
+        if self.follow {
+            return Err(anyhow!(
+                "`follow` is served by `efference mcp`; a session hears its agents through \
+                 its inbox"
+            ));
+        }
+        Status { agent: self.agent }.host(state, call).await
     }
 }

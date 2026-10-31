@@ -1,9 +1,8 @@
-use super::{Control, Executor};
+use super::ClientExecutor;
+use super::args::AgentOrHere;
+use super::verb::{ControlVerb, VerbCall};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Detach the tool the session is running into the background process monitor: it keeps
@@ -18,10 +17,9 @@ pub struct Background {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub note: Option<String>,
-    /// The agent's id. Defaults to the one session live here.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for Background {
@@ -40,21 +38,16 @@ impl ToolMeta for Background {
     }
 }
 
-impl Tool<Control> for Background {
+impl ControlVerb for Background {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                Ok(match client.background(self.note.as_deref()).await? {
-                    Some(id) => format!(
-                        "requested backgrounding p#{id} (lands only while it is still running)"
-                    ),
-                    None => "no foreground tool running; nothing to background".into(),
-                })
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let client = state.client(self.agent.id()).await?;
+        Ok(match client.background(self.note.as_deref()).await? {
+            Some(id) => {
+                format!("requested backgrounding p#{id} (lands only while it is still running)")
             }
-            Executor::Host(_) => Err(super::operator_verb("background")),
-        }
+            None => "no foreground tool running; nothing to background".into(),
+        })
     }
 }

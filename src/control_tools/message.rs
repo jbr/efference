@@ -1,14 +1,12 @@
-use super::args::{optional_handle, turn_source};
+use super::args::{NamedAgent, optional_handle, turn_source};
 use super::executor::{state_of, status_in};
-use super::{Control, Executor};
+use super::verb::{ControlVerb, VerbCall};
+use super::{ClientExecutor, HostExecutor};
 use crate::daemon::status::answers;
 use crate::log::Notification;
 use crate::protocol::turns::mint_submission_id;
 use anyhow::{Result, anyhow};
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Send an agent a message. From a session that drives it — the one that created
@@ -18,9 +16,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "message")]
 pub struct Message {
-    /// The agent's id.
-    #[arg(long)]
-    pub agent: String,
+    #[command(flatten)]
+    pub agent: NamedAgent,
     /// The message. Empty continues an agent you drive.
     #[arg(skip)]
     pub text: String,
@@ -67,76 +64,72 @@ impl Message {
     }
 }
 
-impl Tool<Control> for Message {
+impl ControlVerb for Message {
     type Output = String;
 
-    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+    async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
         let text = self.text();
         let blank = text.trim().is_empty();
         let now = super::now();
-        match &control.executor {
-            Executor::Client(state) => {
-                // An operator client drives every session (docs/tools.md).
-                let client = state.client(Some(&self.agent)).await?;
-                let view = status_in(&state_of(&client).await?).ok();
-                let id = view
-                    .as_ref()
-                    .map_or_else(|| self.agent.clone(), |view| view.id.clone());
-                if blank && self.reply_to.is_none() {
-                    return match client
-                        .continue_loop(turn_source(&context).as_deref())
-                        .await?
-                    {
-                        crate::client::ContinueOutcome::Accepted => Ok(answers::continuing(&id)),
-                        crate::client::ContinueOutcome::Declined { message } => {
-                            Err(anyhow!("not continued: {message}"))
-                        }
-                    };
+        // An operator client drives every session (docs/tools.md).
+        let client = state.client(Some(self.agent.id())).await?;
+        let view = status_in(&state_of(&client).await?).ok();
+        let id = view
+            .as_ref()
+            .map_or_else(|| self.agent.id().to_string(), |view| view.id.clone());
+        let source = turn_source(call.context);
+        if blank && self.reply_to.is_none() {
+            return match client.continue_loop(source.as_deref()).await? {
+                crate::client::ContinueOutcome::Accepted => Ok(answers::continuing(&id)),
+                crate::client::ContinueOutcome::Declined { message } => {
+                    Err(anyhow!("not continued: {message}"))
                 }
-                let source = turn_source(&context);
-                let turn =
-                    crate::frontend::SubmittedTurn::new(text, mint_submission_id()).sourced(source);
-                let sent = client.submit(&turn, self.reply_to.as_deref()).await?;
-                match sent {
-                    Ok(landing) => Ok(answers::sent(&id, landing, view.as_ref(), now)),
-                    Err(refusal) => Err(anyhow!(refusal)),
-                }
+            };
+        }
+        let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id()).sourced(source);
+        let sent = client.submit(&turn, self.reply_to.as_deref()).await?;
+        match sent {
+            Ok(landing) => Ok(answers::sent(&id, landing, view.as_ref(), now)),
+            Err(refusal) => Err(anyhow!(refusal)),
+        }
+    }
+
+    async fn host(self, state: &HostExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let text = self.text();
+        let blank = text.trim().is_empty();
+        let now = super::now();
+        let (target, id) = state.resolve(Some(self.agent.id()))?;
+        if !state.drives(&id)? {
+            if self.reply_to.is_some() {
+                return Err(anyhow!(answers::reply_from_a_peer(&id)));
             }
-            Executor::Host(state) => {
-                let (target, id) = state.resolve(Some(&self.agent))?;
-                if !state.drives(&id)? {
-                    if self.reply_to.is_some() {
-                        return Err(anyhow!(answers::reply_from_a_peer(&id)));
-                    }
-                    if blank {
-                        return Err(anyhow!(answers::empty_from_a_peer(&id)));
-                    }
-                    // A note from a session that does not drive the target, under the
-                    // caller's id, and its project when that is another (docs/inbox.md).
-                    target.notify(Notification::new(
-                        state.note_source_for(&target),
-                        text,
-                        None,
-                    ));
-                    return Ok(answers::left_in_inbox(&id));
-                }
-                if blank && self.reply_to.is_none() {
-                    let origin = crate::log::ContinueOrigin::default()
-                        .with_source(Some(state.source_for(&target)));
-                    return match target.request_continue(origin) {
-                        Ok(()) => Ok(answers::continuing(&id)),
-                        Err(why) => Err(anyhow!("not continued: {}", why.message())),
-                    };
-                }
-                let view = target.status_view(&id, &target.status());
-                let source = state.source_for(&target);
-                let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id())
-                    .sourced(Some(source.clone()));
-                match target.submit_named_turn(turn, self.reply_to.as_deref()) {
-                    Ok(landing) => Ok(answers::sent(&id, landing, Some(&view), now)),
-                    Err(refusal) => Err(anyhow!(refusal.message(&id, Some(state.caller())))),
-                }
+            if blank {
+                return Err(anyhow!(answers::empty_from_a_peer(&id)));
             }
+            // A note from a session that does not drive the target, under the caller's
+            // id, and its project when that is another (docs/inbox.md).
+            target.notify(Notification::new(
+                state.note_source_for(&target),
+                text,
+                None,
+            ));
+            return Ok(answers::left_in_inbox(&id));
+        }
+        if blank && self.reply_to.is_none() {
+            let origin =
+                crate::log::ContinueOrigin::default().with_source(Some(state.source_for(&target)));
+            return match target.request_continue(origin) {
+                Ok(()) => Ok(answers::continuing(&id)),
+                Err(why) => Err(anyhow!("not continued: {}", why.message())),
+            };
+        }
+        let view = target.status_view(&id, &target.status());
+        let source = state.source_for(&target);
+        let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id())
+            .sourced(Some(source.clone()));
+        match target.submit_named_turn(turn, self.reply_to.as_deref()) {
+            Ok(landing) => Ok(answers::sent(&id, landing, Some(&view), now)),
+            Err(refusal) => Err(anyhow!(refusal.message(&id, Some(state.caller())))),
         }
     }
 }

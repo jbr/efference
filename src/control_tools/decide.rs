@@ -1,8 +1,9 @@
-use super::args::{handle, reader_name, turn_source};
+use super::args::{NamedAgent, handle, reader_name, turn_source};
 use super::executor::{state_of, status_in};
 use super::host_executor::names_held;
 use super::status::{operator_relation, session_relation};
-use super::{Control, Executor};
+use super::verb::{ControlVerb, VerbCall};
+use super::{ClientExecutor, HostExecutor};
 use crate::daemon::Decider;
 use crate::daemon::status::{Moves, Reader, answers};
 use crate::log::Approval;
@@ -10,10 +11,7 @@ use crate::protocol::agents::Decision;
 use crate::protocol::status::{Condition, HeldCall, Reviewer, StatusView};
 use crate::protocol::turns::mint_submission_id;
 use anyhow::{Result, anyhow};
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Decide the call an agent is holding for a decision. `allow` runs it, and a
@@ -23,9 +21,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "decide")]
 pub struct Decide {
-    /// The agent's id.
-    #[arg(long)]
-    pub agent: String,
+    #[command(flatten)]
+    pub agent: NamedAgent,
     /// The held call's seq, as the agent's status gives it (`8`, or `8.2` for one of
     /// several calls).
     #[serde(deserialize_with = "handle")]
@@ -96,116 +93,114 @@ fn held_named(view: &StatusView, seq: &str) -> Option<HeldCall> {
     }
 }
 
-impl Tool<Control> for Decide {
+impl ControlVerb for Decide {
     type Output = String;
 
-    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+    async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
         let now = super::now();
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(Some(&self.agent)).await?;
-                let me = reader_name(&context);
-                let moved = |view: &StatusView| {
-                    let reader = Reader::read(operator_relation(view), &Moves::MCP, me.as_deref());
-                    anyhow!(answers::gate_moved(&self.seq, view, &reader, now))
-                };
-                let view = status_in(&state_of(&client).await?)?;
-                let Some(held) = held_named(&view, &self.seq) else {
-                    return Err(moved(&view));
-                };
-                // The decider, as a turn's sender is: the mounting harness from its
-                // clientInfo over MCP, nobody (the operator) from the command line.
-                let source = turn_source(&context);
-                let Some(approval) = self.approval() else {
-                    // An operator client is on the operator's side, so its escalation
-                    // asks the person: it goes to the operator (docs/permissions.md).
-                    if !client
-                        .escalate(&held.call_id, source.as_deref(), self.note())
-                        .await?
-                    {
-                        return Err(moved(&status_in(&state_of(&client).await?)?));
-                    }
-                    return Ok(answers::escalated(&view.id, &held, None, self.note()));
-                };
-                let note_submission = self.note_submission();
-                if !client
-                    .decide(
-                        &held.call_id,
-                        &approval,
-                        source.as_deref(),
-                        note_submission.as_deref(),
-                    )
-                    .await?
-                {
-                    return Err(moved(&status_in(&state_of(&client).await?)?));
-                }
-                if let (Some(note), Some(submission_id)) = (self.note(), note_submission)
-                    && let Err(refusal) = client
-                        .submit(
-                            &crate::frontend::SubmittedTurn::new(note, submission_id)
-                                .sourced(source.clone()),
-                            None,
-                        )
-                        .await?
-                {
-                    return Err(anyhow!(
-                        "{}; your note was not delivered: {refusal}",
-                        answers::decided(&view.id, &held, true, None)
-                    ));
-                }
-                Ok(answers::decided(&view.id, &held, self.allow(), self.note()))
+        let client = state.client(Some(self.agent.id())).await?;
+        let me = reader_name(call.context);
+        let moved = |view: &StatusView| {
+            let reader = Reader::read(operator_relation(view), &Moves::MCP, me.as_deref());
+            anyhow!(answers::gate_moved(&self.seq, view, &reader, now))
+        };
+        let view = status_in(&state_of(&client).await?)?;
+        let Some(held) = held_named(&view, &self.seq) else {
+            return Err(moved(&view));
+        };
+        // The decider, as a turn's sender is: the mounting harness from its clientInfo
+        // over MCP, nobody (the operator) from the command line.
+        let source = turn_source(call.context);
+        let Some(approval) = self.approval() else {
+            // An operator client is on the operator's side, so its escalation asks the
+            // person: it goes to the operator (docs/permissions.md).
+            if !client
+                .escalate(&held.call_id, source.as_deref(), self.note())
+                .await?
+            {
+                return Err(moved(&status_in(&state_of(&client).await?)?));
             }
-            Executor::Host(state) => {
-                // Only the target's supervisor, or the session the held call was
-                // escalated to, decides in-session (docs/permissions.md).
-                let (target, id) = state.resolve_decided(Some(&self.agent), &self.seq)?;
-                let caller = state.caller();
-                let moved = |view: &StatusView| {
-                    let relation = session_relation(state, view, true);
-                    let reader = Reader::read(relation, &Moves::IN_SESSION, Some(caller));
-                    anyhow!(answers::gate_moved(&self.seq, view, &reader, now))
-                };
-                let view = target.status_view(&id, &target.status());
-                let gate = target
-                    .pending_gate()
-                    .filter(|gate| names_held(gate.handle.as_deref(), &self.seq));
-                let (Some(gate), Some(held)) = (gate, held_named(&view, &self.seq)) else {
-                    return Err(moved(&view));
-                };
-                // Decided by the calling session, as its messages are sent (docs/tools.md).
-                let source = state.source_for(&target);
-                let Some(approval) = self.approval() else {
-                    return escalate(
-                        state,
-                        &target,
-                        &id,
-                        &held,
-                        &gate.call.id,
-                        source,
-                        self.note(),
-                    );
-                };
-                let note_submission = self.note_submission();
-                let decider = Decider::default()
-                    .with_source(Some(source.clone()))
-                    .with_note_submission(note_submission.clone());
-                if !target.resolve_approval(&gate.call.id, approval, decider) {
-                    return Err(moved(&target.status_view(&id, &target.status())));
-                }
-                if let (Some(note), Some(submission_id)) = (self.note(), note_submission) {
-                    let turn = crate::frontend::SubmittedTurn::new(note, submission_id)
-                        .sourced(Some(source));
-                    if let Err(refusal) = target.submit_named_turn(turn, None) {
-                        return Err(anyhow!(
-                            "{}; your note was not delivered: {}",
-                            answers::decided(&id, &held, true, None),
-                            refusal.message(&id, Some(caller))
-                        ));
-                    }
-                }
-                Ok(answers::decided(&id, &held, self.allow(), self.note()))
+            return Ok(answers::escalated(&view.id, &held, None, self.note()));
+        };
+        let note_submission = self.note_submission();
+        if !client
+            .decide(
+                &held.call_id,
+                &approval,
+                source.as_deref(),
+                note_submission.as_deref(),
+            )
+            .await?
+        {
+            return Err(moved(&status_in(&state_of(&client).await?)?));
+        }
+        if let (Some(note), Some(submission_id)) = (self.note(), note_submission)
+            && let Err(refusal) = client
+                .submit(
+                    &crate::frontend::SubmittedTurn::new(note, submission_id)
+                        .sourced(source.clone()),
+                    None,
+                )
+                .await?
+        {
+            return Err(anyhow!(
+                "{}; your note was not delivered: {refusal}",
+                answers::decided(&view.id, &held, true, None)
+            ));
+        }
+        Ok(answers::decided(&view.id, &held, self.allow(), self.note()))
+    }
+
+    async fn host(self, state: &HostExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let now = super::now();
+        // Only the target's supervisor, or the session the held call was escalated to,
+        // decides in-session (docs/permissions.md).
+        let (target, id) = state.resolve_decided(Some(self.agent.id()), &self.seq)?;
+        let caller = state.caller();
+        let moved = |view: &StatusView| {
+            let relation = session_relation(state, view, true);
+            let reader = Reader::read(relation, &Moves::IN_SESSION, Some(caller));
+            anyhow!(answers::gate_moved(&self.seq, view, &reader, now))
+        };
+        let view = target.status_view(&id, &target.status());
+        let gate = target
+            .pending_gate()
+            .filter(|gate| names_held(gate.handle.as_deref(), &self.seq));
+        let (Some(gate), Some(held)) = (gate, held_named(&view, &self.seq)) else {
+            return Err(moved(&view));
+        };
+        // Decided by the calling session, as its messages are sent (docs/tools.md).
+        let source = state.source_for(&target);
+        let Some(approval) = self.approval() else {
+            return escalate(
+                state,
+                &target,
+                &id,
+                &held,
+                &gate.call.id,
+                source,
+                self.note(),
+            );
+        };
+        let note_submission = self.note_submission();
+        let decider = Decider::default()
+            .with_source(Some(source.clone()))
+            .with_note_submission(note_submission.clone());
+        if !target.resolve_approval(&gate.call.id, approval, decider) {
+            return Err(moved(&target.status_view(&id, &target.status())));
+        }
+        if let (Some(note), Some(submission_id)) = (self.note(), note_submission) {
+            let turn =
+                crate::frontend::SubmittedTurn::new(note, submission_id).sourced(Some(source));
+            if let Err(refusal) = target.submit_named_turn(turn, None) {
+                return Err(anyhow!(
+                    "{}; your note was not delivered: {}",
+                    answers::decided(&id, &held, true, None),
+                    refusal.message(&id, Some(caller))
+                ));
             }
         }
+        Ok(answers::decided(&id, &held, self.allow(), self.note()))
     }
 }
 
@@ -213,7 +208,7 @@ impl Tool<Control> for Decide {
 /// routed to passes it on, to its own supervisor while that one is hosted, else to the
 /// operator.
 fn escalate(
-    state: &super::HostExecutor,
+    state: &HostExecutor,
     target: &crate::daemon::Session,
     id: &str,
     held: &HeldCall,

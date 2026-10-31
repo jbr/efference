@@ -1,9 +1,8 @@
-use super::{Control, Executor};
+use super::ClientExecutor;
+use super::args::AgentOrHere;
+use super::verb::{ControlVerb, VerbCall};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// File an ambient message in a session's inbox under a label of your choosing. It
@@ -26,10 +25,9 @@ pub struct Notify {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub slot: Option<String>,
-    /// The agent's id. Defaults to the one session live here.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for Notify {
@@ -57,20 +55,15 @@ fn answer(seq: Option<u64>) -> String {
     }
 }
 
-impl Tool<Control> for Notify {
+impl ControlVerb for Notify {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                let body = self.body.join(" ");
-                let seq = client
-                    .notify(&self.source, &body, self.slot.as_deref())
-                    .await?;
-                Ok(answer(seq))
-            }
-            Executor::Host(_) => Err(super::operator_verb("notify")),
-        }
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let client = state.client(self.agent.id()).await?;
+        let body = self.body.join(" ");
+        let seq = client
+            .notify(&self.source, &body, self.slot.as_deref())
+            .await?;
+        Ok(answer(seq))
     }
 }

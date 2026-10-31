@@ -140,17 +140,19 @@ async fn a_session_in_another_project_is_reached_by_its_id() {
     let fixture = Fixture::new().await;
     let control = fixture.control("parent");
     let read = Status {
-        agent: Some("stranger".into()),
+        agent: "stranger".into(),
     }
     .execute(control.clone(), RequestContext::default())
     .await
     .expect("stranger is on this host");
     assert!(read.starts_with("stranger"), "{read}");
 
-    let overview = Status { agent: None }
-        .execute(control.clone(), RequestContext::default())
-        .await
-        .unwrap();
+    let overview = Status {
+        agent: Default::default(),
+    }
+    .execute(control.clone(), RequestContext::default())
+    .await
+    .unwrap();
     assert!(!overview.contains("stranger"), "{overview}");
 
     let said = message("stranger", "the brief is in NOTES.md", None)
@@ -200,7 +202,7 @@ async fn a_session_in_another_project_is_reached_by_its_id() {
     );
 
     let err = Status {
-        agent: Some("ghost".into()),
+        agent: "ghost".into(),
     }
     .execute(control, RequestContext::default())
     .await

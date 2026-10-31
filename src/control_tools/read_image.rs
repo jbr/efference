@@ -1,9 +1,8 @@
-use super::{Control, Executor, ImageResult};
+use super::args::AgentOrHere;
+use super::verb::{ControlVerb, VerbCall};
+use super::{ClientExecutor, ImageResult};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Fetch an image the session actually saw: the bytes stored on a logged tool
@@ -27,10 +26,9 @@ pub struct Image {
     #[schemars(skip)]
     #[arg(long, short)]
     pub out: Option<std::path::PathBuf>,
-    /// The agent's id. Defaults to the one session live here.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for Image {
@@ -51,23 +49,17 @@ impl ToolMeta for Image {
     }
 }
 
-impl Tool<Control> for Image {
+impl ControlVerb for Image {
     type Output = ImageResult;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<ImageResult> {
-        let cli = control.is_cli();
-        let bytes = match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                client.log_image(self.seq, self.idx).await?
-            }
-            Executor::Host(_) => return Err(super::operator_verb("image")),
-        };
+    async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<ImageResult> {
+        let client = state.client(self.agent.id()).await?;
+        let bytes = client.log_image(self.seq, self.idx).await?;
         // The encoding comes from the bytes rather than from a media type the caller
         // would have to re-request: the image was realized into one of a handful of
         // encodings, and guessing wrong names a file no viewer opens.
         let format = image::guess_format(&bytes).ok();
-        if !cli {
+        if !call.cli {
             return Ok(ImageResult::inline(&bytes, format));
         }
         let extension = format

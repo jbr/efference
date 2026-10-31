@@ -201,7 +201,7 @@ async fn a_driver_that_does_not_supervise_cannot_decide() {
         let agent = agent.to_string();
         async move {
             Decide {
-                agent,
+                agent: agent.into(),
                 ..decide(&seq, decision, None)
             }
             .execute(control, RequestContext::default())

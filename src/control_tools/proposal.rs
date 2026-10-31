@@ -1,9 +1,8 @@
-use super::{Control, Executor};
+use super::ClientExecutor;
+use super::args::AgentOrHere;
+use super::verb::{ControlVerb, VerbCall};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Resolve a pending config-edit proposal — the spotter's prefix-promotion, filed
@@ -29,10 +28,9 @@ pub struct Proposal {
     /// The rationale for the decision, addressed to the session and kept as the
     /// audit record of why the perimeter did or did not move.
     pub note: String,
-    /// The agent's id. Defaults to the one session live here.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for Proposal {
@@ -53,26 +51,21 @@ impl ToolMeta for Proposal {
     }
 }
 
-impl Tool<Control> for Proposal {
+impl ControlVerb for Proposal {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
         let verb = if self.cancel {
             "cancelled"
         } else {
             "committed"
         };
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                if self.cancel {
-                    client.cancel_proposal(self.seq, &self.note).await?;
-                } else {
-                    client.commit_proposal(self.seq, &self.note).await?;
-                }
-                Ok(format!("{verb} {}", self.seq))
-            }
-            Executor::Host(_) => Err(super::operator_verb("proposal")),
+        let client = state.client(self.agent.id()).await?;
+        if self.cancel {
+            client.cancel_proposal(self.seq, &self.note).await?;
+        } else {
+            client.commit_proposal(self.seq, &self.note).await?;
         }
+        Ok(format!("{verb} {}", self.seq))
     }
 }

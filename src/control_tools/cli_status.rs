@@ -5,12 +5,10 @@
 use super::args::reader_name;
 use super::executor::{state_of, status_in};
 use super::follow::follow_status;
-use super::{Control, Executor, Status};
+use super::verb::{ControlVerb, VerbCall};
+use super::{ClientExecutor, HostExecutor, Status};
 use anyhow::{Result, anyhow};
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// How `status` prints.
@@ -68,36 +66,24 @@ impl ToolMeta for CliStatus {
     }
 }
 
-impl Tool<Control> for CliStatus {
-    type Output = String;
-
-    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+impl CliStatus {
+    /// The agent a single read names, refusing `--follow` beside `--output json` and a
+    /// repeated `--agent` without `--follow`.
+    fn read_agent(&self) -> Result<Option<String>> {
         if self.follow && self.output == Output::Json {
             return Err(anyhow!(
                 "`--follow` prints rendered blocks; `--output json` is for one read"
             ));
         }
-        if self.follow {
-            return self.follow(&control, &context).await;
-        }
-        if self.agent.len() > 1 {
+        if self.agent.len() > 1 && !self.follow {
             return Err(anyhow!("`--agent` repeats only with `--follow`"));
         }
-        let agent = self.agent.into_iter().next();
-        match self.output {
-            Output::Text => Status { agent }.execute(control, context).await,
-            Output::Json => json(&control, agent.as_deref()).await,
-        }
+        Ok(self.agent.first().cloned())
     }
-}
 
-impl CliStatus {
     /// Print the followed agents' blocks on stdout as they arrive; nothing is left to
     /// print when this returns.
-    async fn follow(self, control: &Control, context: &RequestContext) -> Result<String> {
-        let Executor::Client(state) = &control.executor else {
-            return Err(anyhow!("`--follow` is served by `efference control`"));
-        };
+    async fn follow(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
         let agents = match self.agent {
             agents if !agents.is_empty() => agents,
             _ if state.host_wide() => {
@@ -114,7 +100,7 @@ impl CliStatus {
                     })?,
             ],
         };
-        let me = reader_name(context);
+        let me = reader_name(call.context);
         follow_status(
             &state.host_client()?,
             &agents,
@@ -126,11 +112,46 @@ impl CliStatus {
     }
 }
 
+impl ControlVerb for CliStatus {
+    type Output = String;
+
+    async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
+        let agent = self.read_agent()?;
+        if self.follow {
+            return self.follow(state, call).await;
+        }
+        match self.output {
+            Output::Text => {
+                Status {
+                    agent: agent.into(),
+                }
+                .client(state, call)
+                .await
+            }
+            Output::Json => json(state, agent.as_deref()).await,
+        }
+    }
+
+    async fn host(self, state: &HostExecutor, call: &VerbCall<'_>) -> Result<String> {
+        let agent = self.read_agent()?;
+        if self.follow {
+            return Err(anyhow!("`--follow` is served by `efference control`"));
+        }
+        match self.output {
+            Output::Text => {
+                Status {
+                    agent: agent.into(),
+                }
+                .host(state, call)
+                .await
+            }
+            Output::Json => Err(anyhow!("`--output json` is served by `efference control`")),
+        }
+    }
+}
+
 /// The status view of `agent` as JSON, or an array of every session the host holds.
-async fn json(control: &Control, agent: Option<&str>) -> Result<String> {
-    let Executor::Client(state) = &control.executor else {
-        return Err(anyhow!("`--output json` is served by `efference control`"));
-    };
+async fn json(state: &ClientExecutor, agent: Option<&str>) -> Result<String> {
     if agent.is_none() && state.host_wide() {
         let host = state.host_client()?;
         let mut views = Vec::new();

@@ -1,0 +1,804 @@
+$ efference control --help
+Drive a running session from a script: message it, decide its gates, read it.
+
+The agent verbs (`create`, `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`) and `settle`, then the operator's route verbs (`state`, `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor`, `notify`, `entries`, `image`). `efference control --help` lists them.
+
+Usage: efference control [OPTIONS] <COMMAND>
+
+Commands:
+  create        Start an agent: a new session on this host, optionally with its first message. Answers with its id, model, working directory, where its gates go, and its status. The model is `<connection>/<model>`; omitted, it takes past picks
+  message       Send an agent a message. From a session that drives it — the one that created it, its supervisor, or the operator — the message is its next user message, and an empty one continues it; from anyone else it is a note the agent may set aside. The answer says which happened
+  decide        Decide the call an agent is holding for a decision. `allow` runs it, and a message rides with its result; `deny` refuses it — with a message the agent goes on under it, and a bare deny ends its turn; `escalate` leaves it held and passes it to whoever decides above you, with a message as a note to them
+  interrupt     Stop what an agent is doing now. A running tool is stopped (a command with its process group) and the agent's turn ends; its next turn reads that you interrupted it. A generation in flight ends and the agent goes idle
+  archive       End an agent, and the agents it created that end with it. Their logs stay on disk
+  status        Where an agent stands and the call that answers it. With no agent, one line for each agent in view
+  transcript    Read what an agent said and did: its messages in full, and each call on one line with what became of it. By default, what is new since your last read; `seq` reads one entry in full
+  settle        Wait until an agent reaches its next decision point — a held call, a question, its turn ending, or a stop that waits on someone — and print its `/state`. Returns at once if it is already there
+  state         Print a session's whole `/state` body, without waiting: where the loop is (`loop_phase`), what is in flight (`current_operations`), what each loop verb would answer now (`verbs`), the pending gate and question, the inbox, the running background processes, its usage, and its `status`
+  pace          Set the operator's pace dial: how long the session waits between turns, and whether it is held at the next between-turns juncture. Transparent to the agent — the pace is never logged and never sent to the model. `hold` pauses without losing the speed underneath it; `resume` releases at that retained speed
+  title         Set the session's title: the one line the session list, the TUI sidebar, and the web top bar show for it. The triage model keeps a title current on its own; this overrides it, and the next model-written title starts from what you set. The session's id (its address) never changes
+  background    Detach the tool the session is running into the background process monitor: it keeps running as a `p#<n>` process and stops blocking the turn. The alternative to `interrupt` for a command that should finish but should not be waited on. No-op when nothing is mid-tool, and it lands only while the call is still running
+  proposal      Resolve a pending config-edit proposal — the spotter's prefix-promotion, filed non-blocking and inert until an orchestrator-above decides it. Ids and the proposed change come from `state.proposals`. With no `cancel`, the proposal commits: its change folds into the effective config, and for a session-visible key (`scope`, `paths`) the session is notified. `cancel` drops it from the queue instead, audit-only, touching nothing
+  review-level  Set who reviews a tool call the permission fast path did not clear
+  supervisor    Set which session supervises a session, or clear it. A session's supervisor answers its gates when its review level is `supervisor` (a session at `spotter_human` moves there when given one), drives it with `message`, `decide`, and `interrupt`, and is woken by its status. By default it is the session that created it; a session the operator created has none. Clearing hands its gates to the operator, and a gate already held is re-routed rather than dropped
+  notify        File an ambient message in a session's inbox under a label of your choosing. It does not interrupt: it waits for the session's next triage point and is delivered there — a build result, a review comment, a change upstream. The operator's verb for scripts; an agent's note is `message` from a session that does not drive its target
+  entries       Fetch whole log entries by `seq` — the full record behind a `transcript` line: a result's complete body, a call's exact arguments, a verdict's every field. Each entry can be large; ask for the ones you need, not a range. An image on a result is referenced, not inlined; `image` fetches its bytes
+  image         Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result carried the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control create --help
+Start an agent: a new session on this host, optionally with its first message. Answers with its id, model, working directory, where its gates go, and its status. The model is `<connection>/<model>`; omitted, it takes past picks
+
+Usage: efference control create [OPTIONS]
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --cwd <CWD>
+          The working directory, relative to yours; defaults to yours
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --name <NAME>
+          The id, a single path segment. Minted (`adjective-noun`) when omitted
+
+      --message <MESSAGE>
+          Its first message
+
+      --model <MODEL>
+          The main model, `<connection>/<model>`
+
+      --spotter-model <SPOTTER_MODEL>
+          The spotter model, `<connection>/<model>`
+
+      --config <CONFIG>
+          A config file to seed the session's `config.toml` from, instead of the project template
+
+      --effort <EFFORT>
+          Reasoning effort for the main model, as the provider names its levels
+
+      --temperature <TEMPERATURE>
+          Sampling temperature, 0–100 (percent). 0 is (near-)deterministic; omitted uses the provider default
+
+      --autonomous
+          Run without anyone at the gate: calls the permission rungs do not clear are declined rather than held
+
+      --upstream <UPSTREAM>
+          Pin an OpenRouter session to these endpoints, in order (`google-ai-studio`, `google-vertex/global`); the request fails rather than falling back past them. Repeatable
+
+      --detached
+          Let it outlive you. By default an agent ends when the session that created it ends
+
+      --worktree
+          Give it its own checkout and branch to commit on, so its edits do not land in your tree. Without it, it works where you work (in your worktree, if you have one)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control create -h
+Start an agent: a new session on this host, optionally with its first message. Answers with its id, model, working directory, where its gates go, and its status. The model is `<connection>/<model>`; omitted, it takes past picks
+
+Usage: efference control create [OPTIONS]
+
+Options:
+      --bind <ADDR:PORT>               Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --cwd <CWD>                      The working directory, relative to yours; defaults to yours
+      --host-socket <PATH>             The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --name <NAME>                    The id, a single path segment. Minted (`adjective-noun`) when omitted
+      --message <MESSAGE>              Its first message
+      --model <MODEL>                  The main model, `<connection>/<model>`
+      --spotter-model <SPOTTER_MODEL>  The spotter model, `<connection>/<model>`
+      --config <CONFIG>                A config file to seed the session's `config.toml` from, instead of the project template
+      --effort <EFFORT>                Reasoning effort for the main model, as the provider names its levels
+      --temperature <TEMPERATURE>      Sampling temperature, 0–100 (percent). 0 is (near-)deterministic; omitted uses the provider default
+      --autonomous                     Run without anyone at the gate: calls the permission rungs do not clear are declined rather than held
+      --upstream <UPSTREAM>            Pin an OpenRouter session to these endpoints, in order (`google-ai-studio`, `google-vertex/global`); the request fails rather than falling back past them. Repeatable
+      --detached                       Let it outlive you. By default an agent ends when the session that created it ends
+      --worktree                       Give it its own checkout and branch to commit on, so its edits do not land in your tree. Without it, it works where you work (in your worktree, if you have one)
+  -h, --help                           Print help (see more with '--help')
+
+$ efference control message --help
+Send an agent a message. From a session that drives it — the one that created it, its supervisor, or the operator — the message is its next user message, and an empty one continues it; from anyone else it is a note the agent may set aside. The answer says which happened
+
+Usage: efference control message [OPTIONS] --agent <AGENT> [WORDS]...
+
+Arguments:
+  [WORDS]...
+          The message's words, joined with spaces. Command-line only; an MCP or in-session call sends `text`
+
+Options:
+      --agent <AGENT>
+          The agent's id
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --reply-to <REPLY_TO>
+          The seq of the question this answers, as the agent's status gives it
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control message -h
+Send an agent a message. From a session that drives it — the one that created it, its supervisor, or the operator — the message is its next user message, and an empty one continues it; from anyone else it is a note the agent may set aside. The answer says which happened
+
+Usage: efference control message [OPTIONS] --agent <AGENT> [WORDS]...
+
+Arguments:
+  [WORDS]...  The message's words, joined with spaces. Command-line only; an MCP or in-session call sends `text`
+
+Options:
+      --agent <AGENT>        The agent's id
+      --bind <ADDR:PORT>     Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>   The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --reply-to <REPLY_TO>  The seq of the question this answers, as the agent's status gives it
+  -h, --help                 Print help (see more with '--help')
+
+$ efference control decide --help
+Decide the call an agent is holding for a decision. `allow` runs it, and a message rides with its result; `deny` refuses it — with a message the agent goes on under it, and a bare deny ends its turn; `escalate` leaves it held and passes it to whoever decides above you, with a message as a note to them
+
+Usage: efference control decide [OPTIONS] --agent <AGENT> <SEQ> <DECISION>
+
+Arguments:
+  <SEQ>
+          The held call's seq, as the agent's status gives it (`8`, or `8.2` for one of several calls)
+
+  <DECISION>
+          `allow`, `deny`, or `escalate`
+          
+          [possible values: allow, deny, escalate]
+
+Options:
+      --agent <AGENT>
+          The agent's id
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --message <MESSAGE>
+          With `allow`, a note the agent reads with the call's result; with `deny`, the message it goes on under; with `escalate`, a note to whoever decides next
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control decide -h
+Decide the call an agent is holding for a decision. `allow` runs it, and a message rides with its result; `deny` refuses it — with a message the agent goes on under it, and a bare deny ends its turn; `escalate` leaves it held and passes it to whoever decides above you, with a message as a note to them
+
+Usage: efference control decide [OPTIONS] --agent <AGENT> <SEQ> <DECISION>
+
+Arguments:
+  <SEQ>       The held call's seq, as the agent's status gives it (`8`, or `8.2` for one of several calls)
+  <DECISION>  `allow`, `deny`, or `escalate` [possible values: allow, deny, escalate]
+
+Options:
+      --agent <AGENT>       The agent's id
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --message <MESSAGE>   With `allow`, a note the agent reads with the call's result; with `deny`, the message it goes on under; with `escalate`, a note to whoever decides next
+  -h, --help                Print help (see more with '--help')
+
+$ efference control interrupt --help
+Stop what an agent is doing now. A running tool is stopped (a command with its process group) and the agent's turn ends; its next turn reads that you interrupted it. A generation in flight ends and the agent goes idle
+
+Usage: efference control interrupt [OPTIONS] --agent <AGENT>
+
+Options:
+      --agent <AGENT>
+          The agent's id
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control interrupt -h
+Stop what an agent is doing now. A running tool is stopped (a command with its process group) and the agent's turn ends; its next turn reads that you interrupted it. A generation in flight ends and the agent goes idle
+
+Usage: efference control interrupt [OPTIONS] --agent <AGENT>
+
+Options:
+      --agent <AGENT>       The agent's id
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+  -h, --help                Print help (see more with '--help')
+
+$ efference control archive --help
+End an agent, and the agents it created that end with it. Their logs stay on disk
+
+Usage: efference control archive [OPTIONS] <AGENT>
+
+Arguments:
+  <AGENT>
+          The agent's id
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control archive -h
+End an agent, and the agents it created that end with it. Their logs stay on disk
+
+Usage: efference control archive [OPTIONS] <AGENT>
+
+Arguments:
+  <AGENT>  The agent's id
+
+Options:
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+  -h, --help                Print help (see more with '--help')
+
+$ efference control status --help
+Where an agent stands and the call that answers it. With no agent, one line for each agent in view
+
+Usage: efference control status [OPTIONS]
+
+Options:
+      --agent <AGENT>
+          The agent's id; omitted, every agent in view. With `--follow` it repeats, one per followed agent
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --follow
+          Print each followed agent's status, then each new decision point, until every one has ended; exits non-zero when the host stops answering
+
+      --output <OUTPUT>
+          `text` (default) or `json`
+
+          Possible values:
+          - text: The rendered status
+          - json: The status view as JSON: one object for an agent, an array for the overview
+          
+          [default: text]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control status -h
+Where an agent stands and the call that answers it. With no agent, one line for each agent in view
+
+Usage: efference control status [OPTIONS]
+
+Options:
+      --agent <AGENT>       The agent's id; omitted, every agent in view. With `--follow` it repeats, one per followed agent
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --follow              Print each followed agent's status, then each new decision point, until every one has ended; exits non-zero when the host stops answering
+      --output <OUTPUT>     `text` (default) or `json` [default: text] [possible values: text, json]
+  -h, --help                Print help (see more with '--help')
+
+$ efference control transcript --help
+Read what an agent said and did: its messages in full, and each call on one line with what became of it. By default, what is new since your last read; `seq` reads one entry in full
+
+Usage: efference control transcript [OPTIONS] --agent <AGENT>
+
+Options:
+      --agent <AGENT>
+          The agent's id
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --seq <SEQ>
+          One entry in full, by its seq (`8`, or `8.2` for one of several calls)
+
+      --since <SINCE>
+          Read from this seq on
+
+      --tail <TAIL>
+          Read only the last this many conversation lines (a call and its outcome are one line), extended back so no result shows without its call. `audit` counts log entries
+
+      --audit
+          Read entry by entry, the mechanism included, instead of the conversation; a window with neither `--since` nor `--tail` is the whole log. Command-line only
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control transcript -h
+Read what an agent said and did: its messages in full, and each call on one line with what became of it. By default, what is new since your last read; `seq` reads one entry in full
+
+Usage: efference control transcript [OPTIONS] --agent <AGENT>
+
+Options:
+      --agent <AGENT>       The agent's id
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --seq <SEQ>           One entry in full, by its seq (`8`, or `8.2` for one of several calls)
+      --since <SINCE>       Read from this seq on
+      --tail <TAIL>         Read only the last this many conversation lines (a call and its outcome are one line), extended back so no result shows without its call. `audit` counts log entries
+      --audit               Read entry by entry, the mechanism included, instead of the conversation; a window with neither `--since` nor `--tail` is the whole log. Command-line only
+  -h, --help                Print help (see more with '--help')
+
+$ efference control settle --help
+Wait until an agent reaches its next decision point — a held call, a question, its turn ending, or a stop that waits on someone — and print its `/state`. Returns at once if it is already there
+
+Usage: efference control settle [OPTIONS]
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --timeout-s <TIMEOUT_S>
+          Seconds to wait before answering with where it is then. Omitted, the wait has no bound
+
+      --agent <AGENT>
+          The agent's id
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control settle -h
+Wait until an agent reaches its next decision point — a held call, a question, its turn ending, or a stop that waits on someone — and print its `/state`. Returns at once if it is already there
+
+Usage: efference control settle [OPTIONS]
+
+Options:
+      --bind <ADDR:PORT>       Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>     The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --timeout-s <TIMEOUT_S>  Seconds to wait before answering with where it is then. Omitted, the wait has no bound
+      --agent <AGENT>          The agent's id
+  -h, --help                   Print help (see more with '--help')
+
+$ efference control state --help
+Print a session's whole `/state` body, without waiting: where the loop is (`loop_phase`), what is in flight (`current_operations`), what each loop verb would answer now (`verbs`), the pending gate and question, the inbox, the running background processes, its usage, and its `status`
+
+Usage: efference control state [OPTIONS]
+
+Options:
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control state -h
+Print a session's whole `/state` body, without waiting: where the loop is (`loop_phase`), what is in flight (`current_operations`), what each loop verb would answer now (`verbs`), the pending gate and question, the inbox, the running background processes, its usage, and its `status`
+
+Usage: efference control state [OPTIONS]
+
+Options:
+      --agent <AGENT>       The agent's id. Defaults to the one session live here
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+  -h, --help                Print help (see more with '--help')
+
+$ efference control pace --help
+Set the operator's pace dial: how long the session waits between turns, and whether it is held at the next between-turns juncture. Transparent to the agent — the pace is never logged and never sent to the model. `hold` pauses without losing the speed underneath it; `resume` releases at that retained speed
+
+Usage: efference control pace [OPTIONS]
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --speed-ms <SPEED_MS>
+          Between-turns delay in milliseconds. 0 is as fast as possible
+
+      --hold
+          Pause at the next between-turns juncture
+
+      --resume
+          Release a hold
+
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control pace -h
+Set the operator's pace dial: how long the session waits between turns, and whether it is held at the next between-turns juncture. Transparent to the agent — the pace is never logged and never sent to the model. `hold` pauses without losing the speed underneath it; `resume` releases at that retained speed
+
+Usage: efference control pace [OPTIONS]
+
+Options:
+      --bind <ADDR:PORT>     Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>   The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --speed-ms <SPEED_MS>  Between-turns delay in milliseconds. 0 is as fast as possible
+      --hold                 Pause at the next between-turns juncture
+      --resume               Release a hold
+      --agent <AGENT>        The agent's id. Defaults to the one session live here
+  -h, --help                 Print help (see more with '--help')
+
+$ efference control title --help
+Set the session's title: the one line the session list, the TUI sidebar, and the web top bar show for it. The triage model keeps a title current on its own; this overrides it, and the next model-written title starts from what you set. The session's id (its address) never changes
+
+Usage: efference control title [OPTIONS] <TITLE>
+
+Arguments:
+  <TITLE>
+          The title, one line
+
+Options:
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control title -h
+Set the session's title: the one line the session list, the TUI sidebar, and the web top bar show for it. The triage model keeps a title current on its own; this overrides it, and the next model-written title starts from what you set. The session's id (its address) never changes
+
+Usage: efference control title [OPTIONS] <TITLE>
+
+Arguments:
+  <TITLE>  The title, one line
+
+Options:
+      --agent <AGENT>       The agent's id. Defaults to the one session live here
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+  -h, --help                Print help (see more with '--help')
+
+$ efference control background --help
+Detach the tool the session is running into the background process monitor: it keeps running as a `p#<n>` process and stops blocking the turn. The alternative to `interrupt` for a command that should finish but should not be waited on. No-op when nothing is mid-tool, and it lands only while the call is still running
+
+Usage: efference control background [OPTIONS]
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --note <NOTE>
+          A message delivered to the model as the next user turn, alongside the handoff — what it should do while the process runs
+
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control background -h
+Detach the tool the session is running into the background process monitor: it keeps running as a `p#<n>` process and stops blocking the turn. The alternative to `interrupt` for a command that should finish but should not be waited on. No-op when nothing is mid-tool, and it lands only while the call is still running
+
+Usage: efference control background [OPTIONS]
+
+Options:
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --note <NOTE>         A message delivered to the model as the next user turn, alongside the handoff — what it should do while the process runs
+      --agent <AGENT>       The agent's id. Defaults to the one session live here
+  -h, --help                Print help (see more with '--help')
+
+$ efference control proposal --help
+Resolve a pending config-edit proposal — the spotter's prefix-promotion, filed non-blocking and inert until an orchestrator-above decides it. Ids and the proposed change come from `state.proposals`. With no `cancel`, the proposal commits: its change folds into the effective config, and for a session-visible key (`scope`, `paths`) the session is notified. `cancel` drops it from the queue instead, audit-only, touching nothing.
+
+A session can file a proposal but never resolve its own — the caller here is the orchestrator-above, one level up from whoever's perimeter is changing.
+
+Usage: efference control proposal [OPTIONS] <SEQ> <NOTE>
+
+Arguments:
+  <SEQ>
+          The proposal's id — the `Proposed` log entry's `seq`, from `state.proposals`
+
+  <NOTE>
+          The rationale for the decision, addressed to the session and kept as the audit record of why the perimeter did or did not move
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --cancel
+          Drop the proposal instead of committing it. Audit-only: the queue empties, nothing else changes
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control proposal -h
+Resolve a pending config-edit proposal — the spotter's prefix-promotion, filed non-blocking and inert until an orchestrator-above decides it. Ids and the proposed change come from `state.proposals`. With no `cancel`, the proposal commits: its change folds into the effective config, and for a session-visible key (`scope`, `paths`) the session is notified. `cancel` drops it from the queue instead, audit-only, touching nothing
+
+Usage: efference control proposal [OPTIONS] <SEQ> <NOTE>
+
+Arguments:
+  <SEQ>   The proposal's id — the `Proposed` log entry's `seq`, from `state.proposals`
+  <NOTE>  The rationale for the decision, addressed to the session and kept as the audit record of why the perimeter did or did not move
+
+Options:
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --cancel              Drop the proposal instead of committing it. Audit-only: the queue empties, nothing else changes
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --agent <AGENT>       The agent's id. Defaults to the one session live here
+  -h, --help                Print help (see more with '--help')
+
+$ efference control review-level --help
+Set who reviews a tool call the permission fast path did not clear
+
+Usage: efference control review-level [OPTIONS] <LEVEL>
+
+Arguments:
+  <LEVEL>
+          `autonomous` — the spotter hands an unclear call back to the model with a pointer at its config file, so nothing blocks on an absent human. `supervisor` — the spotter judges first and escalates to this session's supervisor (by default the session that created it), which answers the gate with `decide`; with no live supervisor this reviews as `spotter_human`. The default for a session another session created, and `spotter_human` is how you hand one back to the operator. `spotter_human` — the spotter judges first and escalates to a human gate. `human_only` — skip the spotter; every uncleared call gates
+
+Options:
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control review-level -h
+Set who reviews a tool call the permission fast path did not clear
+
+Usage: efference control review-level [OPTIONS] <LEVEL>
+
+Arguments:
+  <LEVEL>  `autonomous` — the spotter hands an unclear call back to the model with a pointer at its config file, so nothing blocks on an absent human. `supervisor` — the spotter judges first and escalates to this session's supervisor (by default the session that created it), which answers the gate with `decide`; with no live supervisor this reviews as `spotter_human`. The default for a session another session created, and `spotter_human` is how you hand one back to the operator. `spotter_human` — the spotter judges first and escalates to a human gate. `human_only` — skip the spotter; every uncleared call gates
+
+Options:
+      --agent <AGENT>       The agent's id. Defaults to the one session live here
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+  -h, --help                Print help (see more with '--help')
+
+$ efference control supervisor --help
+Set which session supervises a session, or clear it. A session's supervisor answers its gates when its review level is `supervisor` (a session at `spotter_human` moves there when given one), drives it with `message`, `decide`, and `interrupt`, and is woken by its status. By default it is the session that created it; a session the operator created has none. Clearing hands its gates to the operator, and a gate already held is re-routed rather than dropped
+
+Usage: efference control supervisor [OPTIONS] --agent <AGENT> [SUPERVISOR]
+
+Arguments:
+  [SUPERVISOR]
+          The session to supervise it, by id. Omitted with `clear`
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --clear
+          Clear the supervisor instead of setting one
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --agent <AGENT>
+          The agent whose supervisor is being set, by id
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control supervisor -h
+Set which session supervises a session, or clear it. A session's supervisor answers its gates when its review level is `supervisor` (a session at `spotter_human` moves there when given one), drives it with `message`, `decide`, and `interrupt`, and is woken by its status. By default it is the session that created it; a session the operator created has none. Clearing hands its gates to the operator, and a gate already held is re-routed rather than dropped
+
+Usage: efference control supervisor [OPTIONS] --agent <AGENT> [SUPERVISOR]
+
+Arguments:
+  [SUPERVISOR]  The session to supervise it, by id. Omitted with `clear`
+
+Options:
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --clear               Clear the supervisor instead of setting one
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --agent <AGENT>       The agent whose supervisor is being set, by id
+  -h, --help                Print help (see more with '--help')
+
+$ efference control notify --help
+File an ambient message in a session's inbox under a label of your choosing. It does not interrupt: it waits for the session's next triage point and is delivered there — a build result, a review comment, a change upstream. The operator's verb for scripts; an agent's note is `message` from a session that does not drive its target
+
+Usage: efference control notify [OPTIONS] <SOURCE> <BODY>...
+
+Arguments:
+  <SOURCE>
+          Where it came from, shown with the message — e.g. `test-watch`, `operator`, `agent:reviewer`
+
+  <BODY>...
+          The notification text. Fragments are joined with spaces, so a single-element array is the ordinary call
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+      --slot <SLOT>
+          Bind to a logical slot: a later notification on the same slot supersedes this one instead of piling up beside it
+
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control notify -h
+File an ambient message in a session's inbox under a label of your choosing. It does not interrupt: it waits for the session's next triage point and is delivered there — a build result, a review comment, a change upstream. The operator's verb for scripts; an agent's note is `message` from a session that does not drive its target
+
+Usage: efference control notify [OPTIONS] <SOURCE> <BODY>...
+
+Arguments:
+  <SOURCE>   Where it came from, shown with the message — e.g. `test-watch`, `operator`, `agent:reviewer`
+  <BODY>...  The notification text. Fragments are joined with spaces, so a single-element array is the ordinary call
+
+Options:
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --slot <SLOT>         Bind to a logical slot: a later notification on the same slot supersedes this one instead of piling up beside it
+      --agent <AGENT>       The agent's id. Defaults to the one session live here
+  -h, --help                Print help (see more with '--help')
+
+$ efference control entries --help
+Fetch whole log entries by `seq` — the full record behind a `transcript` line: a result's complete body, a call's exact arguments, a verdict's every field. Each entry can be large; ask for the ones you need, not a range. An image on a result is referenced, not inlined; `image` fetches its bytes
+
+Usage: efference control entries [OPTIONS] <SEQS>...
+
+Arguments:
+  <SEQS>...
+          The `seq`s to fetch, as `transcript` lines show them
+
+Options:
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control entries -h
+Fetch whole log entries by `seq` — the full record behind a `transcript` line: a result's complete body, a call's exact arguments, a verdict's every field. Each entry can be large; ask for the ones you need, not a range. An image on a result is referenced, not inlined; `image` fetches its bytes
+
+Usage: efference control entries [OPTIONS] <SEQS>...
+
+Arguments:
+  <SEQS>...  The `seq`s to fetch, as `transcript` lines show them
+
+Options:
+      --agent <AGENT>       The agent's id. Defaults to the one session live here
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+  -h, --help                Print help (see more with '--help')
+
+$ efference control image --help
+Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result carried the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
+
+Usage: efference control image [OPTIONS] <SEQ> [IDX]
+
+Arguments:
+  <SEQ>
+          The `seq` of the log entry whose result carried the image
+
+  [IDX]
+          Which image on that result, when it carried several
+          
+          [default: 0]
+
+Options:
+      --bind <ADDR:PORT>
+          Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says.
+          
+          Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
+
+      --host-socket <PATH>
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+
+  -o, --out <OUT>
+          Where to write the bytes. Command-line only; over MCP the image is returned inline and nothing is written. Defaults to `image-<seq>-<idx>.<ext>` in the current directory
+
+      --agent <AGENT>
+          The agent's id. Defaults to the one session live here
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+$ efference control image -h
+Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result carried the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
+
+Usage: efference control image [OPTIONS] <SEQ> [IDX]
+
+Arguments:
+  <SEQ>  The `seq` of the log entry whose result carried the image
+  [IDX]  Which image on that result, when it carried several [default: 0]
+
+Options:
+      --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+  -o, --out <OUT>           Where to write the bytes. Command-line only; over MCP the image is returned inline and nothing is written. Defaults to `image-<seq>-<idx>.<ext>` in the current directory
+      --agent <AGENT>       The agent's id. Defaults to the one session live here
+  -h, --help                Print help (see more with '--help')
+

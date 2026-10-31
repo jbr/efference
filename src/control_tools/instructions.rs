@@ -1,29 +1,10 @@
-//! The `efference mcp` set (docs/operating.md): the agent verbs, served over
-//! stdin/stdout, and the server instructions a mounting harness is given. The tools are
-//! the shared structs, but for `status`, whose MCP struct adds `follow`.
-
-use super::{
-    Archive, Control, Create, Decide, Interrupt, McpStatus as Status, Message, Transcript, Wait,
-};
-
-mcplease::tools!(
-    cli = false,
-    modules = false,
-    Control,
-    (Create, "create"),
-    (Message, "message"),
-    (Decide, "decide"),
-    (Interrupt, "interrupt"),
-    (Archive, "archive"),
-    (Status, "status"),
-    (Transcript, "transcript"),
-    (Wait, "wait")
-);
+//! What a harness mounting `efference mcp` is told about the server (docs/operating.md),
+//! in its `initialize` answer.
 
 /// What a mounting harness is told about this server (docs/operating.md): what the
 /// tools drive, what driving means, and which call answers each thing an agent can be
 /// waiting on.
-pub const INSTRUCTIONS: &str = "\
+pub const MCP_INSTRUCTIONS: &str = "\
 Drive the agents on one efference host. Each agent is a session on this host running \
 its own agent loop; its id names both. `create` starts one in a working directory; \
 every other tool takes the id as `agent`, which only `status` and `wait` leave out.

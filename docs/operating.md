@@ -42,7 +42,8 @@ whether a newer version is out and prints the install command when one is;
   (as on `mcp`); without it the host is the first live of `.efference/host.sock` here and
   `~/.efference/host.sock`. A named session (`--agent`) resolves through that host, from
   any directory; the verbs that act on an agent (`message`, `decide`, `interrupt`,
-  `archive`, `transcript`) require `--agent`, and a verb that takes it optionally and gets
+  `transcript`) require `--agent`, `archive` takes the id as its argument, and a verb that
+  takes it optionally and gets
   none drives the one session the host lists in this directory. `status --output json`
   prints the `StatusView` instead of the rendered text: one object for an agent, an array
   for the overview. `status --follow [--agent <id>]…` prints each followed agent's status

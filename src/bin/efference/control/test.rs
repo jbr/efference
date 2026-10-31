@@ -23,7 +23,7 @@ fn message_takes_words_and_an_agent() {
     else {
         panic!("message")
     };
-    assert_eq!(message.agent, "child");
+    assert_eq!(message.agent.id(), "child");
     assert_eq!(message.words, ["do", "the", "thing"]);
     let Tools::Message(empty) = parse(&["message", "--agent", "child"]).unwrap() else {
         panic!("message")
@@ -192,4 +192,62 @@ fn host_socket_follow_and_output_parse() {
     assert_eq!(json.output, Output::Json);
     assert!(parse(&["status", "--output", "yaml"]).is_err());
     assert!(parse(&["state", "--output", "json"]).is_err());
+}
+
+/// What `efference control --help` prints, and each verb's `--help` and `-h`, pinned whole
+/// in `help.txt` (docs/operating.md): the verbs are declared once for every surface, so a
+/// change to that declaration that moves a byte of the command line's text fails here. A
+/// deliberate change updates the pin with `EFFERENCE_WRITE_PINS=1 cargo test help_is_pinned`.
+#[test]
+fn control_help_is_pinned() {
+    use clap::CommandFactory;
+    let command = Cli::command();
+    let control = command
+        .find_subcommand("control")
+        .expect("`control` is a subcommand");
+    let mut invocations = vec![vec!["--help".to_string()]];
+    for verb in control.get_subcommands() {
+        for flag in ["--help", "-h"] {
+            invocations.push(vec![verb.get_name().to_string(), flag.to_string()]);
+        }
+    }
+    let mut generated = String::new();
+    for argv in invocations {
+        let full = ["efference", "control"]
+            .into_iter()
+            .chain(argv.iter().map(String::as_str));
+        let shown = match Cli::try_parse_from(full) {
+            Err(e) if e.kind() == clap::error::ErrorKind::DisplayHelp => e.render().to_string(),
+            other => panic!("{argv:?} printed no help: {:?}", other.err()),
+        };
+        generated.push_str(&format!(
+            "$ efference control {}\n{shown}\n",
+            argv.join(" ")
+        ));
+    }
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/bin/efference/control/help.txt");
+    if std::env::var_os("EFFERENCE_WRITE_PINS").is_some() {
+        std::fs::write(&path, &generated).unwrap();
+        return;
+    }
+    let committed = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    if let Some((line, (was, now))) = committed
+        .lines()
+        .zip(generated.lines())
+        .enumerate()
+        .find(|(_, (was, now))| was != now)
+    {
+        panic!(
+            "{} moved at line {}:\npinned:    {was}\ngenerated: {now}",
+            path.display(),
+            line + 1
+        );
+    }
+    assert!(
+        committed == generated,
+        "{} differs from the generated help past its common lines",
+        path.display()
+    );
 }

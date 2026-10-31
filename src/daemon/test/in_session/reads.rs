@@ -6,7 +6,7 @@ use crate::control_tools::Transcript;
 
 fn status(agent: Option<&str>) -> Status {
     Status {
-        agent: agent.map(str::to_string),
+        agent: agent.map(str::to_string).into(),
     }
 }
 

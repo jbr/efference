@@ -1,9 +1,8 @@
-use super::{Control, Executor};
+use super::ClientExecutor;
+use super::args::AgentOrHere;
+use super::verb::{ControlVerb, VerbCall};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Set the operator's pace dial: how long the session waits between turns, and
@@ -25,10 +24,9 @@ pub struct Pace {
     #[serde(default)]
     #[arg(long)]
     pub resume: bool,
-    /// The agent's id. Defaults to the one session live here.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for Pace {
@@ -47,10 +45,10 @@ impl ToolMeta for Pace {
     }
 }
 
-impl Tool<Control> for Pace {
+impl ControlVerb for Pace {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
         // `hold`/`resume` move the held overlay; absent both, only the speed dial (if
         // given) moves. The clap path already rejects `--hold --resume`.
         let held = match (self.hold, self.resume) {
@@ -58,16 +56,11 @@ impl Tool<Control> for Pace {
             (_, true) => Some(false),
             _ => None,
         };
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                let (speed, held) = client.pace(self.speed_ms, held).await?;
-                Ok(format!(
-                    "pace: speed {speed}ms, {}",
-                    if held { "HELD" } else { "running" }
-                ))
-            }
-            Executor::Host(_) => Err(super::operator_verb("pace")),
-        }
+        let client = state.client(self.agent.id()).await?;
+        let (speed, held) = client.pace(self.speed_ms, held).await?;
+        Ok(format!(
+            "pace: speed {speed}ms, {}",
+            if held { "HELD" } else { "running" }
+        ))
     }
 }

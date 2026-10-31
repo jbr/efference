@@ -1,9 +1,8 @@
-use super::{Control, Executor};
+use super::ClientExecutor;
+use super::args::AgentOrHere;
+use super::verb::{ControlVerb, VerbCall};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Set the session's title: the one line the session list, the TUI sidebar, and
@@ -15,10 +14,9 @@ use serde::{Deserialize, Serialize};
 pub struct Title {
     /// The title, one line.
     pub title: String,
-    /// The agent's id. Defaults to the one session live here.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for Title {
@@ -37,21 +35,16 @@ impl ToolMeta for Title {
     }
 }
 
-impl Tool<Control> for Title {
+impl ControlVerb for Title {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                let identity = client.set_title(&self.title).await?;
-                Ok(format!(
-                    "{}: {}",
-                    identity["id"].as_str().unwrap_or("session"),
-                    identity["title"].as_str().unwrap_or_default()
-                ))
-            }
-            Executor::Host(_) => Err(super::operator_verb("title")),
-        }
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let client = state.client(self.agent.id()).await?;
+        let identity = client.set_title(&self.title).await?;
+        Ok(format!(
+            "{}: {}",
+            identity["id"].as_str().unwrap_or("session"),
+            identity["title"].as_str().unwrap_or_default()
+        ))
     }
 }

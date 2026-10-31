@@ -180,7 +180,7 @@ async fn escalate_over_mcp_goes_to_the_operator() {
         )]
     );
     let status = crate::control_tools::Status {
-        agent: Some("child".into()),
+        agent: "child".into(),
     }
     .execute(control, claude_code())
     .await

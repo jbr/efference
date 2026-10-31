@@ -224,15 +224,45 @@ fully reversible) that exposes its modules, `Tools` enum, and state struct, whos
 `new(root)` constructor takes the session's cwd.
 
 This section is about efference *consuming* MCP servers. It also serves one: the
-session-control verbs are written once as mcplease tools (`src/control_tools.rs`) and
+session-control verbs are declared once as mcplease tools (`src/control_tools.rs`) and
 listed by three tool sets, each its own `tools!` enum: `control_tools::in_session`,
-mounted inside a hosted session's own toolbox; `control_tools::mcp`, served by the
-stdio server `efference mcp`; and `control_tools::cli`, the `efference control <verb>`
-subcommands ([operating.md](operating.md)). mcplease's macro declares a module for each
-tool it lists, so each set's directory holds a one-line module per tool re-exporting
-the shared struct; the MCP set's `status` module re-exports its own struct
-(`McpStatus`), so `follow` is in that set's schema alone. A set is an allow-list: the
-stdio mount serves its whole enum, and mcplease has no way to hide a tool from it.
+mounted inside a hosted session's own toolbox; `control_tools::mcp`, served by the stdio
+server `efference mcp`; and `control_tools::cli`, the `efference control <verb>`
+subcommands ([operating.md](operating.md)). A verb is a tool struct in a file of its own
+— its arguments, its title and behaviour hints, and a `ControlVerb` impl with a method
+per executor (`client` over the control channel, `host` in-process; below) — and a row
+of the verb table, which names the struct, the name it is advertised under, and the sets
+that list it. From the table, `verbs!` (`src/control_tools/verb.rs`) writes each
+struct's mcplease `Tool` impl, which hands the call to the method for the executor its
+mount holds, and the three enums, each in table order. A verb the in-session set does
+not list writes no `host` method: the trait's default answers that it is an operator
+verb, not mounted in a session. `status` has a struct per set: the MCP set's
+(`McpStatus`) adds `follow`, so `follow` is in that set's schema alone, and the command
+line's repeats `--agent` and prints JSON on request. A set is an allow-list: the stdio
+mount serves its whole enum, and mcplease has no way to hide a tool from it.
+
+The `agent` argument is declared once for each form it takes
+(`src/control_tools/args.rs`): required (`message`, `decide`, `interrupt`,
+`transcript`), optional with the one session live in the command's directory as the
+default (the operator's route verbs), and optional with every agent in view as the
+default (`status` in a session and over MCP). Each form is a newtype that serde reads as
+the bare id, that the schema describes from the form's own field — its description
+included — and that the command line flattens in as `--agent`; the verb holds it as its
+`agent` field, which deserializes exactly as a plain `String` or `Option<String>` field
+does. A form `#[serde(flatten)]`ed in instead would be read after the verb's own fields,
+so a call missing several arguments would be told about another one first — a `decide`
+with no arguments about `seq` rather than `agent` — and the newtype keeps the plain
+field's reading while sharing its declaration. `archive`, whose command line takes the
+id positionally, and `settle`, `wait`, `supervisor` and the command line's `status`,
+whose descriptions or shapes differ, declare their own.
+
+The bytes each set advertises are pinned whole (`src/control_tools/test/tool_bytes.rs`):
+the in-session set as a session's `tools[]` carries it and as its tool table holds it,
+and `efference mcp`'s `tools/list`; the command line's `--help` for each verb is pinned
+in `src/bin/efference/control/help.txt`. The tool definitions sit in the cached prefix
+of every session that mounts them ([log-and-projection.md](log-and-projection.md)), so a
+change that moves them fails there before it moves a cache; one that means to updates
+the pins with `EFFERENCE_WRITE_PINS=1`.
 
 | set | verbs |
 |---|---|

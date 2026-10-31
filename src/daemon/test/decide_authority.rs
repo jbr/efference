@@ -98,12 +98,10 @@ fn decide(seq: &str, decision: Decision) -> Decide {
 }
 
 async fn status_of_c(fixture: &Fixture, caller: &str) -> String {
-    Status {
-        agent: Some("c".into()),
-    }
-    .execute(fixture.control(caller), RequestContext::default())
-    .await
-    .unwrap()
+    Status { agent: "c".into() }
+        .execute(fixture.control(caller), RequestContext::default())
+        .await
+        .unwrap()
 }
 
 /// `c`'s gate decisions, in order.

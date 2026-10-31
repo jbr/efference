@@ -1,9 +1,8 @@
-use super::{Control, Executor};
+use super::ClientExecutor;
+use super::args::AgentOrHere;
+use super::verb::{ControlVerb, VerbCall};
 use anyhow::Result;
-use mcplease::{
-    traits::{Tool, ToolMeta},
-    types::{RequestContext, ToolAnnotations},
-};
+use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
 /// Set who reviews a tool call the permission fast path did not clear.
@@ -20,10 +19,9 @@ pub struct ReviewLevel {
     /// `spotter_human` — the spotter judges first and escalates to a human gate.
     /// `human_only` — skip the spotter; every uncleared call gates.
     pub level: String,
-    /// The agent's id. Defaults to the one session live here.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for ReviewLevel {
@@ -42,17 +40,12 @@ impl ToolMeta for ReviewLevel {
     }
 }
 
-impl Tool<Control> for ReviewLevel {
+impl ControlVerb for ReviewLevel {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
-        match &control.executor {
-            Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
-                let set = client.review_level(&self.level).await?;
-                Ok(format!("review level: {set}"))
-            }
-            Executor::Host(_) => Err(super::operator_verb("review_level")),
-        }
+    async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
+        let client = state.client(self.agent.id()).await?;
+        let set = client.review_level(&self.level).await?;
+        Ok(format!("review level: {set}"))
     }
 }
