@@ -21,7 +21,7 @@ mod test;
 mod wire;
 
 pub(crate) use args::*;
-pub(crate) use command::DevCommand;
+pub(crate) use command::{DevCommand, PrimerLadderArgs, SpotterArgs, SpotterEvalArgs, TriageArgs};
 pub(crate) use run::run;
 
 use display::ImagesArg;

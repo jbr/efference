@@ -328,9 +328,7 @@ impl Client {
     /// failure: the moment simply had no continue in it, and the daemon's message
     /// says which case. Errors are reserved for a request that didn't get an answer.
     pub async fn continue_loop(&self, source: Option<&str>) -> Result<ContinueOutcome> {
-        let origin = crate::log::ContinueOrigin {
-            source: source.map(str::to_string),
-        };
+        let origin = crate::log::ContinueOrigin::default().with_source(source.map(str::to_string));
         let body = serde_json::to_string(&origin)?;
         Ok(
             match self

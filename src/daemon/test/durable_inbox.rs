@@ -70,7 +70,7 @@ async fn a_resume_over_two_unshown_messages_waits_and_then_offers_both_with_the_
     assert!(triages(&session).is_empty());
 
     let third = session
-        .notify("agent:peer".into(), "new notice".into(), None)
+        .notify(Notification::new("agent:peer", "new notice", None))
         .unwrap();
     session
         .wait_until("the idle triage ran", || !triages(&session).is_empty())
@@ -105,7 +105,7 @@ async fn an_arrival_during_a_triage_request_is_shown_by_the_next_one() {
 
     // The restored notification does not open a triage; one arriving now does.
     let opening = session
-        .notify("agent:peer".into(), "opening notice".into(), None)
+        .notify(Notification::new("agent:peer", "opening notice", None))
         .unwrap();
     session
         .wait_until_with(&upstream, "the first triage request is open", || {
@@ -113,7 +113,7 @@ async fn an_arrival_during_a_triage_request_is_shown_by_the_next_one() {
         })
         .await;
     let late = session
-        .notify("agent:peer".into(), "late notice".into(), None)
+        .notify(Notification::new("agent:peer", "late notice", None))
         .unwrap();
     request.open();
 
@@ -149,7 +149,7 @@ async fn a_must_wake_message_still_pins_after_a_restart() {
     let session = Arc::clone(runtime.session());
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(upstream.count(), 0, "the resume starts nothing");
-    session.notify("ci".into(), "unrelated".into(), None);
+    session.notify(Notification::new("ci", "unrelated", None));
 
     session
         .wait_until_with(&upstream, "the pin woke a turn", || upstream.count() >= 2)
@@ -189,7 +189,7 @@ async fn a_result_triage_marks_what_its_rider_held() {
         })
         .await;
     let early = session
-        .notify("ci".into(), "early notice".into(), None)
+        .notify(Notification::new("ci", "early notice", None))
         .unwrap();
     model.open();
     session
@@ -198,7 +198,7 @@ async fn a_result_triage_marks_what_its_rider_held() {
         })
         .await;
     let late = session
-        .notify("agent:peer".into(), "late notice".into(), None)
+        .notify(Notification::new("agent:peer", "late notice", None))
         .unwrap();
     triage.open();
 

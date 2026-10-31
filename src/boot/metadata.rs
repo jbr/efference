@@ -44,13 +44,14 @@ pub(super) fn metadata(request: &SessionRequest) -> SessionMetadata {
     if working != request.directories.project() {
         metadata.working = Some(working.to_path_buf());
     }
-    metadata.temperature = request.temperature;
-    metadata.effort = request.effort.clone();
-    metadata.upstream = request.upstream.clone();
+    let create = &request.create;
+    metadata.temperature = create.options.temperature;
+    metadata.effort = create.options.effort.clone();
+    metadata.upstream = create.upstream.clone();
     metadata.created_by = request.lineage.created_by.clone();
     metadata.succeeds = request.lineage.succeeds.clone();
-    metadata.autonomous = request.autonomous;
-    metadata.keep_scratch = request.keep_scratch;
-    metadata.detached = request.detached;
+    metadata.autonomous = create.autonomous;
+    metadata.keep_scratch = create.keep_scratch;
+    metadata.detached = create.detached;
     metadata
 }

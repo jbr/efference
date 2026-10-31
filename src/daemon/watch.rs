@@ -94,8 +94,8 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             // the file parses again, which is the whole condition (docs/permissions.md).
             shared.clear_config_repair();
             log::debug!("config: edit did not parse, reverted to last good: {error}");
-            shared.notify(
-                "config".to_string(),
+            shared.notify(Notification::new(
+                "config",
                 format!(
                     "Your config edit did not take effect — it did not parse, so the file has been \
                      restored to the last valid config and the effective policy is unchanged. \
@@ -104,7 +104,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
                      Error: {error}"
                 ),
                 Some("config-parse-error".to_string()),
-            );
+            ));
             return Some(outcome);
         }
         Refreshed::RevertFailed { ref error, ref io } => {
@@ -116,8 +116,8 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             shared.warn(format_args!(
                 "config: edit did not parse AND the revert failed: {error} / {io}"
             ));
-            shared.notify(
-                "config".to_string(),
+            shared.notify(Notification::new(
+                "config",
                 format!(
                     "Your config edit did not parse, and restoring the last valid config also \
                      failed — the file on disk is currently invalid and the effective policy is \
@@ -126,7 +126,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
                      Parse error: {error}. Restore error: {io}"
                 ),
                 Some("config-parse-error".to_string()),
-            );
+            ));
             shared.require_config_repair(ConfigRepair {
                 path: shared
                     .config_path()
@@ -162,8 +162,8 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             .collect::<Vec<_>>()
             .join("; ");
         log::debug!("config: unresolved [env] reference: {detail}");
-        shared.notify(
-            "config".to_string(),
+        shared.notify(Notification::new(
+            "config",
             format!(
                 "An `[env]` reference in your config did not resolve, so no value was fetched \
                  for it: {detail}. The rest of the edit took effect. Values are injected into \
@@ -171,7 +171,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
                  the next session either way."
             ),
             Some("config-env-resolve".to_string()),
-        );
+        ));
     }
     let changes = crate::config::diff_changes(&shared.effective_config(), &file_config);
     if changes.is_empty() {

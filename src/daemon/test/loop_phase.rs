@@ -308,7 +308,7 @@ async fn an_idle_triage_reads_requesting_and_settle_waits_through_it() {
     let upstream = ScriptedUpstream::new(move |_| Canned::stream(end_turn()).held(&held));
     let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
-    session.notify("ci".into(), "the build finished".into(), None);
+    session.notify(Notification::new("ci", "the build finished", None));
 
     session
         .wait_until("the idle triage is in flight", || {

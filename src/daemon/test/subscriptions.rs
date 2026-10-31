@@ -124,7 +124,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
         "toolu_leaf",
         serde_json::json!({ "path": "/Users/x/code", "intent": "locating siblings" }),
     );
-    let _rx = child.register_pending(&leaf, None, None);
+    let _rx = child.register_pending(&leaf, Default::default());
     let is_gate = |source: &str, body: &str, slot: Option<&str>| {
         source == "child"
             && slot == Some("session:child")
@@ -156,7 +156,11 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
         })
         .await;
 
-    assert!(child.resolve_approval(&CallId("toolu_leaf".into()), Approval::Abort, None, None));
+    assert!(child.resolve_approval(
+        &CallId("toolu_leaf".into()),
+        Approval::Abort,
+        Default::default()
+    ));
     // The abort unwinds the turn, and the trajectory ends.
     child.going_idle();
     parent
@@ -224,7 +228,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
             ),
         )
         .unwrap();
-    let _rx = child.register_pending(&curl, None, None);
+    let _rx = child.register_pending(&curl, Default::default());
     let gate = format!(
         "waiting for your decision on bash `curl -sI https://example.com` (seq \
          {issued})\nintent: fetch only the response headers\nheld because: its reviewer is \
@@ -245,7 +249,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
         })
         .await;
 
-    assert!(child.resolve_approval(&curl.id, Approval::Approve, None, None));
+    assert!(child.resolve_approval(&curl.id, Approval::Approve, Default::default()));
     let report = format!(
         "The headers came back.\n\n{}",
         "Each header is listed here in full, with what it says about the server. ".repeat(8)

@@ -203,64 +203,7 @@ pub(crate) enum DevCommand {
     /// replaying one is a single warm prefix read, so a whole session is an eval set.
     /// Sends real requests unless `--dry-run`.
     // docs/triage.md
-    Triage {
-        /// Path to a session dir or a `log.jsonl` whose triages to replay.
-        path: PathBuf,
-        /// Replay only the triage covering this result `seq` (as `Triage.for_result`
-        /// names it, and as the listing prints it); repeat the flag for several. Omit to
-        /// sweep every triage.
-        #[arg(long)]
-        seq: Vec<u64>,
-        /// Draws per triage. A triage is sampled, not deterministic, so one draw per triage
-        /// resolves only large differences; repeats buy a per-triage rate instead of a
-        /// coin flip.
-        #[arg(long, default_value = "3")]
-        repeat: usize,
-        /// Sample this many triages instead of sweeping all of them — for pricing a new
-        /// model before committing to a full run. Sampled **evenly across the session**,
-        /// never the first N: first-attempt failures climb with session depth, so a
-        /// prefix of the triages measures the easy end and reads as a better rate than the
-        /// model earns.
-        #[arg(long)]
-        limit: Option<usize>,
-        /// Print the triage's trailing message instead of sending it — what makes an
-        /// instruction change reviewable without spending a request.
-        #[arg(long)]
-        dry_run: bool,
-        /// Model to replay against. Match the session's own model or the numbers
-        /// aren't comparable to its record.
-        #[arg(long, default_value = "claude-haiku-4-5")]
-        model: String,
-        /// Replay under the separate-model triage instead: this model on its own client,
-        /// the same shape `--triage-model` boots. Every draw's verdict is
-        /// compared line-for-line against the session's recorded verdict — what the
-        /// agent chose to see — and the summary reports kept fractions, over- and
-        /// under-retention, and a table of the triages that disagreed most.
-        #[arg(long)]
-        triage_model: Option<String>,
-        /// With --triage-model: let it think.
-        #[arg(long)]
-        triage_thinking: bool,
-        /// With --triage-model: `tool_choice: auto` instead of forcing the triage tool.
-        #[arg(long)]
-        triage_auto_choice: bool,
-        /// With --triage-model: its reasoning level (implies thinking on).
-        #[arg(long, value_name = "LEVEL")]
-        triage_effort: Option<String>,
-        /// The history the triage request reads: `transcript` (the shared triage's view),
-        /// `text` (the separate triage's text view: digest, triaged tail, current step),
-        /// or an experiment arm: `tail:N` (the digest of the last N assistant turns before
-        /// the triage's own), `intent` (none). Omitted, the view the replayed
-        /// configuration reads live: `text` with --triage-model, else `transcript`.
-        #[arg(long)]
-        view: Option<String>,
-        /// Write every compared result-draw as a JSON line to this file.
-        #[arg(long)]
-        out: Option<PathBuf>,
-        /// Rows in the disagreement table.
-        #[arg(long, default_value = "15")]
-        table: usize,
-    },
+    Triage(TriageArgs),
     /// Plant triage primers at controlled gaps against one recorded triage and replay
     /// the recorded triage per rung, reporting cache reads. Decides eviction vs
     /// write-visibility lag vs envelope keying: a back-to-back primer pair that
@@ -269,42 +212,7 @@ pub(crate) enum DevCommand {
     /// requests unless `--dry-run`. An experiment verb; remove it once the question
     /// it answers is settled.
     // docs/transport.md
-    PrimerLadder {
-        /// Path to a session dir or a `log.jsonl` holding the triage to plant before.
-        path: PathBuf,
-        /// Plant before the triage covering this result `seq`. Omit for the deepest
-        /// triage, where a cold prefix hurts most.
-        #[arg(long)]
-        seq: Option<u64>,
-        /// Seconds between primer pairs per ladder rung, comma-separated.
-        #[arg(long, default_value = "0,120,300,480")]
-        gaps: String,
-        /// Print the planned arms instead of sending them.
-        #[arg(long)]
-        dry_run: bool,
-        /// Model to replay against. Match the session's own model or the numbers
-        /// aren't comparable to its record.
-        #[arg(long, default_value = "claude-haiku-4-5")]
-        model: String,
-        /// The separate triage model whose lineage the ladder plants: this model on
-        /// its own client, the same shape `--triage-model` boots. Required — the
-        /// ladder is meaningless on a shared triage.
-        #[arg(long)]
-        triage_model: Option<String>,
-        /// With --triage-model: let it think.
-        #[arg(long)]
-        triage_thinking: bool,
-        /// With --triage-model: `tool_choice: auto` on the replayed triage instead of
-        /// forcing the triage tool.
-        #[arg(long)]
-        triage_auto_choice: bool,
-        /// With --triage-model: its reasoning level (implies thinking on).
-        #[arg(long, value_name = "LEVEL")]
-        triage_effort: Option<String>,
-        /// Write every report line as JSON to this file instead of stdout.
-        #[arg(long)]
-        out: Option<PathBuf>,
-    },
+    PrimerLadder(PrimerLadderArgs),
     /// Point it at a session JSONL log and print the wire request — the deterministic projection
     /// the assistant actually sees. Reconstructs the full envelope (`system` +
     /// `tools` + `messages`) exactly as a real turn POSTs it: `project(log)` with
@@ -350,56 +258,7 @@ pub(crate) enum DevCommand {
     /// `--tool` move is judged against the server's real tool definition (the same
     /// brief a session's spotter would see). Requires ANTHROPIC_API_KEY.
     // docs/permissions.md
-    Spotter {
-        /// The scope (perimeter prose) to judge against. Omit to test the no-scope frame.
-        #[arg(long)]
-        scope: Option<String>,
-        /// A spotter-only "thing to watch for". Repeatable.
-        #[arg(long = "watch-for")]
-        watch_for: Vec<String>,
-        /// An allowed path grant, repeatable. Format: `<path>:rw` (read+write),
-        /// `<path>:r` (read), or bare `<path>` (no access). E.g. `--path .:rw --path /refs:r`.
-        #[arg(long = "path")]
-        paths: Vec<String>,
-        /// Spotter model, as `<connection>/<native model>`. Defaults to the configured spotter.
-        #[arg(long)]
-        model: Option<String>,
-        /// Simulate a prefix-promotion probe riding this call: ask whether `<prefix>` is safe for all
-        /// arguments. The verdict's `clear_always` stance is
-        /// the safe-vote; the tester reports whether it would queue a promotion.
-        // docs/permissions.md
-        #[arg(long)]
-        probe: Option<String>,
-        /// Judge a structured tool call instead of a bash command. Takes the tool name
-        /// in either spelling (`ferritin.get` or `ferritin__get`); its input comes from
-        /// `--input`. The tool must be one the toolbox mounts — a built-in, or a tool
-        /// from a server declared in `--config` — because the point is to judge it
-        /// against its *real* definition.
-        // docs/permissions.md
-        #[arg(long, conflicts_with = "command")]
-        tool: Option<String>,
-        /// The `--tool` call's input, as JSON. Defaults to no arguments.
-        #[arg(long, default_value = "{}")]
-        input: String,
-        /// A config file to take the mission from, and — the reason this exists — to
-        /// mount the `[mcp.servers.<name>]` declarations from, so `--tool` can name a
-        /// real connected tool. `--scope`/`--watch-for`/`--path` override what it
-        /// supplies. Omit to judge against the flags alone (no servers mounted).
-        #[arg(long)]
-        config: Option<PathBuf>,
-        /// Print the exact move block sent to the spotter before the verdict. Implied by
-        /// `--tool`, where seeing the rendered brief is usually the point.
-        #[arg(long = "show-move")]
-        show_move: bool,
-        /// Withhold the tool's brief, judging a `--tool` move on its name and input alone
-        /// — what the spotter saw before briefs existed. The A/B: run the same call with
-        /// and without, and the stance difference is the brief's effect.
-        #[arg(long = "no-brief")]
-        no_brief: bool,
-        /// The bash command to judge. Multiple words are joined with spaces.
-        #[arg(required_unless_present = "tool", num_args = 1..)]
-        command: Vec<String>,
-    },
+    Spotter(SpotterArgs),
     /// Survey the recorded spotter verdicts across sessions — read every `Payload::Spot` back out
     /// of the session logs and print a health summary (stance distribution,
     /// fail-closed rate) followed by each verdict: the tool call it judged, its
@@ -438,58 +297,215 @@ pub(crate) enum DevCommand {
     /// OpenRouter — the provider-billed cost per generation id. Per-attempt
     /// detail lands in a results jsonl for offline cross-tabs.
     // docs/permissions.md
-    SpotterEval {
-        /// A corpus file (jsonl), repeatable. A case missing an inline
-        /// `expected` is joined against `--labels` by id; still-unlabeled cases
-        /// are skipped and counted.
-        #[arg(long = "cases", required = true)]
-        cases: Vec<PathBuf>,
-        /// A labels file (jsonl of `{id, expected, …}`) joined onto `--cases`
-        /// rows that carry no inline label.
-        #[arg(long)]
-        labels: Option<PathBuf>,
-        /// Spotter model under test, as `<connection>/<native model>`. Defaults to
-        /// the spotter a session would get: `[defaults].spotter`, else the chain
-        /// ending in the newest model in the main connection's cheap band.
-        #[arg(long)]
-        model: Option<String>,
-        /// Attempts per case — the spotter is sampled behavior, so per-case
-        /// consistency (the flip rate) is its own quality axis.
-        #[arg(long, default_value_t = 3)]
-        runs: usize,
-        /// Results path. Defaults to `eval/spotter/results-<model>.jsonl`.
-        #[arg(long)]
-        out: Option<PathBuf>,
-        /// Run only the first N cases (after `--filter`) — the smoke-test knob.
-        #[arg(long)]
-        limit: Option<usize>,
-        /// Run only cases whose id contains this substring (e.g. `syn/` for the
-        /// synthetics, a session id for one session's cases).
-        #[arg(long)]
-        filter: Option<String>,
-        /// Concurrent in-flight requests.
-        #[arg(long, default_value_t = 4)]
-        concurrency: usize,
-        /// A replacement persona file — the ablation knob: measure a persona
-        /// edit against the same corpus instead of by ad-hoc replays.
-        #[arg(long)]
-        persona: Option<PathBuf>,
-        /// Skip the per-generation cost lookup.
-        #[arg(long = "no-cost")]
-        no_cost: bool,
-        /// Compare against what the spotter of the day actually said, rather
-        /// than against a label, and print only the cases that diverge. Runs
-        /// unlabeled cases too — every case carrying a `recorded` stance is in.
-        /// Not a score: the recorded stance is a prior, so the dump is a review
-        /// queue.
-        // eval/spotter/README.md
-        #[arg(long = "against-recorded")]
-        against_recorded: bool,
-        /// Write the decision rung's request state for every case to this path,
-        /// labeled or not, and send nothing — the starting point for experiments
-        /// that vary what else the state carries.
-        // docs/permissions.md
-        #[arg(long = "dump-states")]
-        dump_states: Option<PathBuf>,
-    },
+    SpotterEval(SpotterEvalArgs),
+}
+
+// The flags of `dev triage`; the variant that holds them carries the command's help text.
+#[derive(clap::Args)]
+pub(crate) struct TriageArgs {
+    /// Path to a session dir or a `log.jsonl` whose triages to replay.
+    pub(crate) path: PathBuf,
+    /// Replay only the triage covering this result `seq` (as `Triage.for_result`
+    /// names it, and as the listing prints it); repeat the flag for several. Omit to
+    /// sweep every triage.
+    #[arg(long)]
+    pub(crate) seq: Vec<u64>,
+    /// Draws per triage. A triage is sampled, not deterministic, so one draw per triage
+    /// resolves only large differences; repeats buy a per-triage rate instead of a
+    /// coin flip.
+    #[arg(long, default_value = "3")]
+    pub(crate) repeat: usize,
+    /// Sample this many triages instead of sweeping all of them — for pricing a new
+    /// model before committing to a full run. Sampled **evenly across the session**,
+    /// never the first N: first-attempt failures climb with session depth, so a
+    /// prefix of the triages measures the easy end and reads as a better rate than the
+    /// model earns.
+    #[arg(long)]
+    pub(crate) limit: Option<usize>,
+    /// Print the triage's trailing message instead of sending it — what makes an
+    /// instruction change reviewable without spending a request.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
+    /// Model to replay against. Match the session's own model or the numbers
+    /// aren't comparable to its record.
+    #[arg(long, default_value = "claude-haiku-4-5")]
+    pub(crate) model: String,
+    /// Replay under the separate-model triage instead: this model on its own client,
+    /// the same shape `--triage-model` boots. Every draw's verdict is
+    /// compared line-for-line against the session's recorded verdict — what the
+    /// agent chose to see — and the summary reports kept fractions, over- and
+    /// under-retention, and a table of the triages that disagreed most.
+    #[arg(long)]
+    pub(crate) triage_model: Option<String>,
+    /// With --triage-model: let it think.
+    #[arg(long)]
+    pub(crate) triage_thinking: bool,
+    /// With --triage-model: `tool_choice: auto` instead of forcing the triage tool.
+    #[arg(long)]
+    pub(crate) triage_auto_choice: bool,
+    /// With --triage-model: its reasoning level (implies thinking on).
+    #[arg(long, value_name = "LEVEL")]
+    pub(crate) triage_effort: Option<String>,
+    /// The history the triage request reads: `transcript` (the shared triage's view),
+    /// `text` (the separate triage's text view: digest, triaged tail, current step),
+    /// or an experiment arm: `tail:N` (the digest of the last N assistant turns before
+    /// the triage's own), `intent` (none). Omitted, the view the replayed
+    /// configuration reads live: `text` with --triage-model, else `transcript`.
+    #[arg(long)]
+    pub(crate) view: Option<String>,
+    /// Write every compared result-draw as a JSON line to this file.
+    #[arg(long)]
+    pub(crate) out: Option<PathBuf>,
+    /// Rows in the disagreement table.
+    #[arg(long, default_value = "15")]
+    pub(crate) table: usize,
+}
+
+// The flags of `dev primer-ladder`; the variant that holds them carries the command's help text.
+#[derive(clap::Args)]
+pub(crate) struct PrimerLadderArgs {
+    /// Path to a session dir or a `log.jsonl` holding the triage to plant before.
+    pub(crate) path: PathBuf,
+    /// Plant before the triage covering this result `seq`. Omit for the deepest
+    /// triage, where a cold prefix hurts most.
+    #[arg(long)]
+    pub(crate) seq: Option<u64>,
+    /// Seconds between primer pairs per ladder rung, comma-separated.
+    #[arg(long, default_value = "0,120,300,480")]
+    pub(crate) gaps: String,
+    /// Print the planned arms instead of sending them.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
+    /// Model to replay against. Match the session's own model or the numbers
+    /// aren't comparable to its record.
+    #[arg(long, default_value = "claude-haiku-4-5")]
+    pub(crate) model: String,
+    /// The separate triage model whose lineage the ladder plants: this model on
+    /// its own client, the same shape `--triage-model` boots. Required — the
+    /// ladder is meaningless on a shared triage.
+    #[arg(long)]
+    pub(crate) triage_model: Option<String>,
+    /// With --triage-model: let it think.
+    #[arg(long)]
+    pub(crate) triage_thinking: bool,
+    /// With --triage-model: `tool_choice: auto` on the replayed triage instead of
+    /// forcing the triage tool.
+    #[arg(long)]
+    pub(crate) triage_auto_choice: bool,
+    /// With --triage-model: its reasoning level (implies thinking on).
+    #[arg(long, value_name = "LEVEL")]
+    pub(crate) triage_effort: Option<String>,
+    /// Write every report line as JSON to this file instead of stdout.
+    #[arg(long)]
+    pub(crate) out: Option<PathBuf>,
+}
+
+// The flags of `dev spotter`; the variant that holds them carries the command's help text.
+#[derive(clap::Args)]
+pub(crate) struct SpotterArgs {
+    /// The scope (perimeter prose) to judge against. Omit to test the no-scope frame.
+    #[arg(long)]
+    pub(crate) scope: Option<String>,
+    /// A spotter-only "thing to watch for". Repeatable.
+    #[arg(long = "watch-for")]
+    pub(crate) watch_for: Vec<String>,
+    /// An allowed path grant, repeatable. Format: `<path>:rw` (read+write),
+    /// `<path>:r` (read), or bare `<path>` (no access). E.g. `--path .:rw --path /refs:r`.
+    #[arg(long = "path")]
+    pub(crate) paths: Vec<String>,
+    /// Spotter model, as `<connection>/<native model>`. Defaults to the configured spotter.
+    #[arg(long)]
+    pub(crate) model: Option<String>,
+    /// Simulate a prefix-promotion probe riding this call: ask whether `<prefix>` is safe for all
+    /// arguments. The verdict's `clear_always` stance is
+    /// the safe-vote; the tester reports whether it would queue a promotion.
+    // docs/permissions.md
+    #[arg(long)]
+    pub(crate) probe: Option<String>,
+    /// Judge a structured tool call instead of a bash command. Takes the tool name
+    /// in either spelling (`ferritin.get` or `ferritin__get`); its input comes from
+    /// `--input`. The tool must be one the toolbox mounts — a built-in, or a tool
+    /// from a server declared in `--config` — because the point is to judge it
+    /// against its *real* definition.
+    // docs/permissions.md
+    #[arg(long, conflicts_with = "command")]
+    pub(crate) tool: Option<String>,
+    /// The `--tool` call's input, as JSON. Defaults to no arguments.
+    #[arg(long, default_value = "{}")]
+    pub(crate) input: String,
+    /// A config file to take the mission from, and — the reason this exists — to
+    /// mount the `[mcp.servers.<name>]` declarations from, so `--tool` can name a
+    /// real connected tool. `--scope`/`--watch-for`/`--path` override what it
+    /// supplies. Omit to judge against the flags alone (no servers mounted).
+    #[arg(long)]
+    pub(crate) config: Option<PathBuf>,
+    /// Print the exact move block sent to the spotter before the verdict. Implied by
+    /// `--tool`, where seeing the rendered brief is usually the point.
+    #[arg(long = "show-move")]
+    pub(crate) show_move: bool,
+    /// Withhold the tool's brief, judging a `--tool` move on its name and input alone
+    /// — what the spotter saw before briefs existed. The A/B: run the same call with
+    /// and without, and the stance difference is the brief's effect.
+    #[arg(long = "no-brief")]
+    pub(crate) no_brief: bool,
+    /// The bash command to judge. Multiple words are joined with spaces.
+    #[arg(required_unless_present = "tool", num_args = 1..)]
+    pub(crate) command: Vec<String>,
+}
+
+// The flags of `dev spotter-eval`; the variant that holds them carries the command's help text.
+#[derive(clap::Args)]
+pub(crate) struct SpotterEvalArgs {
+    /// A corpus file (jsonl), repeatable. A case missing an inline
+    /// `expected` is joined against `--labels` by id; still-unlabeled cases
+    /// are skipped and counted.
+    #[arg(long = "cases", required = true)]
+    pub(crate) cases: Vec<PathBuf>,
+    /// A labels file (jsonl of `{id, expected, …}`) joined onto `--cases`
+    /// rows that carry no inline label.
+    #[arg(long)]
+    pub(crate) labels: Option<PathBuf>,
+    /// Spotter model under test, as `<connection>/<native model>`. Defaults to
+    /// the spotter a session would get: `[defaults].spotter`, else the chain
+    /// ending in the newest model in the main connection's cheap band.
+    #[arg(long)]
+    pub(crate) model: Option<String>,
+    /// Attempts per case — the spotter is sampled behavior, so per-case
+    /// consistency (the flip rate) is its own quality axis.
+    #[arg(long, default_value_t = 3)]
+    pub(crate) runs: usize,
+    /// Results path. Defaults to `eval/spotter/results-<model>.jsonl`.
+    #[arg(long)]
+    pub(crate) out: Option<PathBuf>,
+    /// Run only the first N cases (after `--filter`) — the smoke-test knob.
+    #[arg(long)]
+    pub(crate) limit: Option<usize>,
+    /// Run only cases whose id contains this substring (e.g. `syn/` for the
+    /// synthetics, a session id for one session's cases).
+    #[arg(long)]
+    pub(crate) filter: Option<String>,
+    /// Concurrent in-flight requests.
+    #[arg(long, default_value_t = 4)]
+    pub(crate) concurrency: usize,
+    /// A replacement persona file — the ablation knob: measure a persona
+    /// edit against the same corpus instead of by ad-hoc replays.
+    #[arg(long)]
+    pub(crate) persona: Option<PathBuf>,
+    /// Skip the per-generation cost lookup.
+    #[arg(long = "no-cost")]
+    pub(crate) no_cost: bool,
+    /// Compare against what the spotter of the day actually said, rather
+    /// than against a label, and print only the cases that diverge. Runs
+    /// unlabeled cases too — every case carrying a `recorded` stance is in.
+    /// Not a score: the recorded stance is a prior, so the dump is a review
+    /// queue.
+    // eval/spotter/README.md
+    #[arg(long = "against-recorded")]
+    pub(crate) against_recorded: bool,
+    /// Write the decision rung's request state for every case to this path,
+    /// labeled or not, and send nothing — the starting point for experiments
+    /// that vary what else the state carries.
+    // docs/permissions.md
+    #[arg(long = "dump-states")]
+    pub(crate) dump_states: Option<PathBuf>,
 }

@@ -24,14 +24,14 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
 
     // A gate is a decision point — settled.
     let call = bash_call("npm install");
-    let _gate = shared.register_pending(&call, None, None);
+    let _gate = shared.register_pending(&call, Default::default());
     assert!(
         shared.is_settled(),
         "a pending gate is a settled decision point"
     );
 
     // Resolving the gate while the turn continues — busy again.
-    shared.resolve_approval(&call.id, Approval::Approve, None, None);
+    shared.resolve_approval(&call.id, Approval::Approve, Default::default());
     assert!(!shared.is_settled(), "post-gate, mid-turn is busy");
 
     // The loop parks — idle, settled.

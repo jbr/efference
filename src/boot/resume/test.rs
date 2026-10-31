@@ -516,7 +516,7 @@ async fn an_archived_worktree_is_restored_on_resume() {
     let root = Root::new("resume-worktree");
     crate::worktree::testing::repository(root.path());
     let mut req = request(root.path(), "wt-fox", None);
-    req.worktree = true;
+    req.create.worktree = true;
     let boot = prepare(req).await.unwrap();
     let worktree = crate::worktree::path(root.path(), "wt-fox");
     assert!(worktree.is_dir());

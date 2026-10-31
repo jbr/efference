@@ -100,7 +100,7 @@ impl Host {
             if let Some(inbox) = self.session(next) {
                 // No slot: on `session:<id>` this notice and a gate the watcher
                 // re-routes here could supersede each other in either order.
-                inbox.notify_wake(id.to_string(), supervising_body(id), None);
+                inbox.notify(Notification::new(id, supervising_body(id), None).waking());
             }
         }
         // Republishes the `supervisor` topic, and wakes the status watcher so a held

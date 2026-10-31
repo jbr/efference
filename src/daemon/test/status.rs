@@ -26,7 +26,7 @@ fn the_status_follows_the_loop_phase() {
         serde_json::json!({ "command": "ls ~", "intent": "look around" }),
     );
     shared.set_phase(LoopPhase::Executing);
-    let _rx = shared.register_pending(&call, None, None);
+    let _rx = shared.register_pending(&call, Default::default());
     assert_eq!(
         shared.status(),
         SessionStatus::Gated {
@@ -36,7 +36,11 @@ fn the_status_follows_the_loop_phase() {
             reason: None,
         }
     );
-    assert!(shared.resolve_approval(&CallId("toolu_1".into()), Approval::Abort, None, None));
+    assert!(shared.resolve_approval(
+        &CallId("toolu_1".into()),
+        Approval::Abort,
+        Default::default()
+    ));
     assert_eq!(
         shared.status(),
         SessionStatus::Running,

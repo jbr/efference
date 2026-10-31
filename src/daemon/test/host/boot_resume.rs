@@ -246,7 +246,7 @@ async fn a_resume_over_an_unshown_notification_appends_nothing() {
     left(&root, "quiet", None, false, |log| {
         log.append(
             1,
-            Payload::Ambient(crate::log::Notification::new("ci", "build failed", None)),
+            Payload::Ambient(Notification::new("ci", "build failed", None)),
         )
         .unwrap();
     })

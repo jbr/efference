@@ -91,7 +91,7 @@ async fn a_blank_turn_does_not_resolve_the_ask() {
 async fn a_notification_does_not_resolve_the_ask() {
     let shared = session();
     let task = start(&shared, ask_call("ask_1", "Ready?"), ONE).await;
-    shared.notify("ci".into(), "build finished".into(), None);
+    shared.notify(Notification::new("ci", "build finished", None));
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert!(!task.is_finished(), "still waiting");
     assert!(shared.asking().is_some());
@@ -196,12 +196,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
         async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
             unreachable!()
         }
-        async fn approve(
-            &mut self,
-            call: &ToolCall,
-            _: Option<&crate::protocol::agents::BoundAction>,
-            _: Option<policy::GateGrant>,
-        ) -> Approval {
+        async fn approve(&mut self, call: &ToolCall, _: GateOptions<'_>) -> Approval {
             panic!("an ask reached the human gate: {}", call.name)
         }
         async fn interrupted(&mut self) -> crate::frontend::Interrupt {

@@ -207,7 +207,7 @@ fn own_triage_sends_its_own_client_and_only_the_triage_tools() {
         None,
     )
     .unwrap();
-    let agent = Client::new(endpoint.clone(), "big", "sys", None);
+    let agent = Client::new(endpoint.clone(), "big", "sys");
     let agent_tools = vec![json!({"name": "read"}), retain_tool(), triage_tool()];
 
     let shared = Triager::shared();
@@ -216,7 +216,7 @@ fn own_triage_sends_its_own_client_and_only_the_triage_tools() {
     assert_eq!(shared.client(&agent, RequestOrigin::Triage).model(), "big");
     assert_eq!(shared.tools(&agent_tools).len(), 3);
 
-    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona", None));
+    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona"));
     assert!(own.is_own());
     assert_eq!(own.own_model(), Some("small"));
     assert_eq!(own.client(&agent, RequestOrigin::Triage).model(), "small");
@@ -247,9 +247,9 @@ fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
         None,
     )
     .unwrap();
-    let agent = Client::new(endpoint.clone(), "big", "sys", None);
+    let agent = Client::new(endpoint.clone(), "big", "sys");
     let agent_tools = vec![json!({"name": "read"}), retain_tool(), triage_tool()];
-    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona", None));
+    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona"));
 
     let (client, tools, choice) = own.idle_envelope(&agent, &agent_tools);
     assert_eq!(client.model(), "big");

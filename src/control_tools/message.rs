@@ -2,6 +2,7 @@ use super::args::{optional_handle, turn_source};
 use super::executor::{state_of, status_in};
 use super::{Control, Executor};
 use crate::daemon::status::answers;
+use crate::log::Notification;
 use crate::protocol::turns::mint_submission_id;
 use anyhow::{Result, anyhow};
 use mcplease::{
@@ -112,13 +113,17 @@ impl Tool<Control> for Message {
                     }
                     // A note from a session that does not drive the target, under the
                     // caller's id, and its project when that is another (docs/inbox.md).
-                    target.notify(state.note_source_for(&target), text, None);
+                    target.notify(Notification::new(
+                        state.note_source_for(&target),
+                        text,
+                        None,
+                    ));
                     return Ok(answers::left_in_inbox(&id));
                 }
                 if blank && self.reply_to.is_none() {
-                    return match target.request_continue(crate::log::ContinueOrigin {
-                        source: Some(state.source_for(&target)),
-                    }) {
+                    let origin = crate::log::ContinueOrigin::default()
+                        .with_source(Some(state.source_for(&target)));
+                    return match target.request_continue(origin) {
                         Ok(()) => Ok(answers::continuing(&id)),
                         Err(why) => Err(anyhow!("not continued: {}", why.message())),
                     };

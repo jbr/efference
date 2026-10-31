@@ -1,7 +1,6 @@
 //! The notification queue and the pending view (docs/inbox.md).
 
 use super::*;
-use crate::log::{Notification, Seq};
 use crate::protocol::state::PendingNotification;
 
 /// Notifications that wait in memory: those bound to a `slot`, which a later one on the
@@ -19,24 +18,12 @@ impl Session {
     /// one on the same slot — archived-and-replaced, never edited (records are immutable,
     /// docs/log-and-projection.md); it reaches the log only when a triage first shows it,
     /// and the answer is `None`.
-    pub(crate) fn notify(&self, source: String, body: String, slot: Option<String>) -> Option<Seq> {
-        self.enqueue(Notification::new(source, body, slot))
-    }
-
-    /// [`notify`](Self::notify) for a notification the agent must get a turn for
-    /// (docs/inbox.md): the loop pins it at first show regardless of the triage's
-    /// verdict. The harness's own channel — a delegated child's status
+    ///
+    /// A notification the agent must get a turn for (docs/inbox.md) is built
+    /// [`waking`](Notification::waking): the loop pins it at first show regardless of the
+    /// triage's verdict. That is the harness's own channel — a delegated child's status
     /// (docs/tools.md) — not a client's.
-    pub(crate) fn notify_wake(
-        &self,
-        source: String,
-        body: String,
-        slot: Option<String>,
-    ) -> Option<Seq> {
-        self.enqueue(Notification::new(source, body, slot).waking())
-    }
-
-    fn enqueue(&self, notification: Notification) -> Option<Seq> {
+    pub(crate) fn notify(&self, notification: Notification) -> Option<Seq> {
         let mut seq = None;
         let queued = if notification.slot.is_some() {
             Some(notification)

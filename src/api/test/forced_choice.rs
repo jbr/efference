@@ -49,7 +49,6 @@ pub(super) fn scripted(replies: Vec<(u16, &'static str)>) -> (Client, Replies) {
         upstream.endpoint(Provider::Anthropic, "/v1/messages"),
         "claude-sonnet-5-5",
         "sys",
-        None,
     )
     .with_thinking(ThinkingSupport {
         adaptive: true,

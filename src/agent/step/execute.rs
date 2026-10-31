@@ -137,7 +137,7 @@ pub(super) async fn run_approved<F: Frontend>(
                 // the same enqueue every other notification source
                 // uses, superseding on the server's slot.
                 |notification| {
-                    shared.notify(notification.source, notification.body, notification.slot);
+                    shared.notify(notification);
                 },
             )
             .await;

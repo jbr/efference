@@ -295,7 +295,7 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
                 Ok("refreshed".into())
             }),
         ));
-    let client = Client::new(endpoint, "m", "sys", None);
+    let client = Client::new(endpoint, "m", "sys");
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await

@@ -370,7 +370,7 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
         }]);
 
         let endpoint = upstream.endpoint(provider, "/v1/messages");
-        let client = Client::new(endpoint, "claude-opus-5", "sys", None)
+        let client = Client::new(endpoint, "claude-opus-5", "sys")
             .with_thinking(ThinkingSupport {
                 adaptive: true,
                 off: ThinkingOff::Disabled,
@@ -449,8 +449,7 @@ fn thinking_off_takes_the_models_spelling() {
             .map(|r| serde_json::to_string(&r).unwrap());
         (thinking, reasoning)
     };
-    let off =
-        |endpoint: &Endpoint| Client::new(endpoint.clone(), "m", "sys", None).without_thinking();
+    let off = |endpoint: &Endpoint| Client::new(endpoint.clone(), "m", "sys").without_thinking();
     // Mandatory or undeclared reasoning on OpenRouter: omitted, and the switch rides.
     assert_eq!(
         sent(&off(&openrouter), ThinkingOff::Omit),
@@ -470,7 +469,7 @@ fn thinking_off_takes_the_models_spelling() {
         sent(&off(&anthropic), ThinkingOff::Omit),
         (Thinking::Omit, None)
     );
-    let unasked = Client::new(openrouter, "m", "sys", None);
+    let unasked = Client::new(openrouter, "m", "sys");
     assert!(matches!(
         sent(&unasked, ThinkingOff::Omit),
         (Thinking::Adaptive { .. }, None)

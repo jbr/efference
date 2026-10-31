@@ -146,14 +146,14 @@ pub(super) struct FrozenPreamble {
 /// once at boot: the `[context]` block (files read + exec sections run now, frozen —
 /// docs/context.md; orientation rides here as a config exec entry), the role's
 /// brief, and the config note.
+///
+/// `inputs` carries what the boot already knows; the `[context]` block and the role
+/// section come from `loaded`, resolved here.
 pub(super) fn freeze_preamble(
     loaded: &LoadedConfig,
-    whereabouts: crate::env::Whereabouts<'_>,
     env_policy: &EnvPolicy,
-    model: &str,
-    session_id: &str,
-    lineage: &crate::env::Lineage,
-    unmounted_section: Option<&str>,
+    project: &Path,
+    inputs: crate::env::PromptInputs<'_>,
 ) -> Result<FrozenPreamble, Error> {
     let role_section = loaded.role.preamble_section();
     // The [context] preamble builder (docs/context.md): resolve the operator's listed
@@ -162,7 +162,7 @@ pub(super) fn freeze_preamble(
     // than silently vanishing.
     let mut resolved = match crate::context::resolve_with_child_env(
         &loaded.role.context,
-        whereabouts.project,
+        project,
         &env_policy.child_env(),
     ) {
         Ok(resolved) => resolved,
@@ -181,13 +181,9 @@ pub(super) fn freeze_preamble(
     env_policy.mask_context(&mut resolved);
     let context_block = resolved.render();
     let crate::env::SystemPrompt { identity, body } = crate::env::system_prompt_parts(
-        model,
-        session_id,
-        lineage,
-        Some(whereabouts),
-        context_block.as_deref(),
-        role_section.as_deref(),
-        unmounted_section,
+        inputs
+            .with_context_block(context_block.as_deref())
+            .with_role_section(role_section.as_deref()),
     );
     Ok(FrozenPreamble {
         identity: env_policy.mask(&identity),
@@ -228,7 +224,8 @@ pub(super) fn build_client(
     if let Some(pin) = &upstream {
         log::debug!("upstream: {} (fallbacks disabled)", pin.order.join(", "));
     }
-    let mut client = Client::new(endpoint.clone(), model, system, temperature)
+    let mut client = Client::new(endpoint.clone(), model, system)
+        .with_temperature(temperature)
         .with_upstream(upstream.clone())
         // `[transport] stream-ceiling` (docs/transport.md): the bound on a stream
         // that stays open without finalizing. It rides the agent client, which

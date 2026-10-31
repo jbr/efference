@@ -2,23 +2,10 @@ use super::*;
 
 #[test]
 fn system_prompt_appends_role_section_when_present() {
-    let without = system_prompt(
-        "m",
-        "sample-session",
-        &Lineage::default(),
-        None,
-        None,
-        None,
-        None,
-    );
+    let without = system_prompt(PromptInputs::new("m", "sample-session"));
     let with = system_prompt(
-        "m",
-        "sample-session",
-        &Lineage::default(),
-        None,
-        None,
-        Some("Your role for this session:\n\nStay put."),
-        None,
+        PromptInputs::new("m", "sample-session")
+            .with_role_section(Some("Your role for this session:\n\nStay put.")),
     );
     // The role section is appended verbatim after the env block; without a role the
     // prompt is exactly the preamble + env (no trailing role text).
@@ -32,29 +19,14 @@ fn system_prompt_appends_role_section_when_present() {
 #[test]
 fn system_prompt_splices_context_block_before_the_role() {
     let s = system_prompt(
-        "m",
-        "sample-session",
-        &Lineage::default(),
-        None,
-        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
-        Some("Your role for this session:\n\nDo it."),
-        None,
+        PromptInputs::new("m", "sample-session")
+            .with_context_block(Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"))
+            .with_role_section(Some("Your role for this session:\n\nDo it.")),
     );
     assert!(s.contains("<CLAUDE.md>\nhi\n</CLAUDE.md>"));
     assert!(s.find("<CLAUDE.md>").unwrap() < s.find("Your role").unwrap());
     // No block → nothing spliced.
-    assert!(
-        !system_prompt(
-            "m",
-            "sample-session",
-            &Lineage::default(),
-            None,
-            None,
-            None,
-            None
-        )
-        .contains("<CLAUDE.md>")
-    );
+    assert!(!system_prompt(PromptInputs::new("m", "sample-session")).contains("<CLAUDE.md>"));
 }
 
 /// The session's config file is never named in the system prompt: the permission perimeter
@@ -63,13 +35,9 @@ fn system_prompt_splices_context_block_before_the_role() {
 #[test]
 fn system_prompt_never_names_the_config_file() {
     let full = system_prompt(
-        "m",
-        "sample-session",
-        &Lineage::default(),
-        None,
-        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
-        Some("Your role for this session:\n\nDo it."),
-        None,
+        PromptInputs::new("m", "sample-session")
+            .with_context_block(Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"))
+            .with_role_section(Some("Your role for this session:\n\nDo it.")),
     );
     assert!(!full.contains(".toml"));
     assert!(!full.to_lowercase().contains("permission"));
@@ -83,26 +51,19 @@ fn system_prompt_never_names_the_config_file() {
 fn system_prompt_appends_the_unmounted_section_last() {
     let unmounted = "# Declared but unavailable\n\n- `sentry` — needs authorization";
     let full = system_prompt(
-        "m",
-        "sample-session",
-        &Lineage::default(),
-        None,
-        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
-        Some("Your role for this session:\n\nDo it."),
-        Some(unmounted),
+        PromptInputs::new("m", "sample-session")
+            .with_context_block(Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"))
+            .with_role_section(Some("Your role for this session:\n\nDo it."))
+            .with_unmounted(Some(unmounted)),
     );
     assert!(full.ends_with(unmounted));
     assert!(full.find("Your role").unwrap() < full.find("Declared but unavailable").unwrap());
 
     // Nothing unmounted → byte-identical to the prompt without the parameter.
     let without = system_prompt(
-        "m",
-        "sample-session",
-        &Lineage::default(),
-        None,
-        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
-        Some("Your role for this session:\n\nDo it."),
-        None,
+        PromptInputs::new("m", "sample-session")
+            .with_context_block(Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"))
+            .with_role_section(Some("Your role for this session:\n\nDo it.")),
     );
     assert!(!without.contains("Declared but unavailable"));
 }
@@ -120,13 +81,8 @@ fn system_prompt_appends_the_unmounted_section_last() {
 #[test]
 fn system_prompt_states_the_model_identity_and_the_session_id() {
     let s = system_prompt(
-        "anthropic/claude-sonnet-5",
-        "burgundy-skink",
-        &Lineage::default(),
-        None,
-        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
-        None,
-        None,
+        PromptInputs::new("anthropic/claude-sonnet-5", "burgundy-skink")
+            .with_context_block(Some("<CLAUDE.md>\nhi\n</CLAUDE.md>")),
     );
     assert!(s.starts_with(concat!(
         "You are anthropic/claude-sonnet-5. ",
@@ -150,16 +106,12 @@ fn system_prompt_states_the_model_identity_and_the_session_id() {
 #[test]
 fn system_prompt_names_the_creating_session_when_there_is_one() {
     let child = system_prompt(
-        "anthropic/claude-sonnet-5",
-        "eager-meadow",
-        &Lineage {
-            created_by: Some(String::from("lucid-lark")),
-            ..Lineage::default()
-        },
-        None,
-        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
-        None,
-        None,
+        PromptInputs::new("anthropic/claude-sonnet-5", "eager-meadow")
+            .with_lineage(Lineage {
+                created_by: Some(String::from("lucid-lark")),
+                ..Lineage::default()
+            })
+            .with_context_block(Some("<CLAUDE.md>\nhi\n</CLAUDE.md>")),
     );
     assert!(child.starts_with(concat!(
         "You are anthropic/claude-sonnet-5. ",
@@ -178,13 +130,8 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
     // A root: the sentence is absent, and the rest is byte-identical to the
     // child's prompt with that one sentence removed.
     let root = system_prompt(
-        "anthropic/claude-sonnet-5",
-        "eager-meadow",
-        &Lineage::default(),
-        None,
-        Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
-        None,
-        None,
+        PromptInputs::new("anthropic/claude-sonnet-5", "eager-meadow")
+            .with_context_block(Some("<CLAUDE.md>\nhi\n</CLAUDE.md>")),
     );
     assert!(!root.contains("created by"));
     assert_eq!(
@@ -201,16 +148,12 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
     assert_eq!(
         child,
         system_prompt(
-            "anthropic/claude-sonnet-5",
-            "eager-meadow",
-            &Lineage {
-                created_by: Some(String::from("lucid-lark")),
-                ..Lineage::default()
-            },
-            None,
-            Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
-            None,
-            None,
+            PromptInputs::new("anthropic/claude-sonnet-5", "eager-meadow")
+                .with_lineage(Lineage {
+                    created_by: Some(String::from("lucid-lark")),
+                    ..Lineage::default()
+                })
+                .with_context_block(Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"))
         )
     );
 }
@@ -234,18 +177,10 @@ fn triage_system_prompt_names_both_models_and_carries_the_context() {
 /// (docs/tools.md).
 #[test]
 fn a_successor_is_told_whom_it_succeeds() {
-    let prompt = system_prompt(
-        "m",
-        "new-leaf",
-        &Lineage {
-            created_by: None,
-            succeeds: Some("old-leaf".into()),
-        },
-        None,
-        None,
-        None,
-        None,
-    );
+    let prompt = system_prompt(PromptInputs::new("m", "new-leaf").with_lineage(Lineage {
+        created_by: None,
+        succeeds: Some("old-leaf".into()),
+    }));
     assert!(prompt.contains("It succeeds `old-leaf`"), "{prompt}");
     assert!(prompt.contains("the first message is that session's brief"));
     assert!(prompt.contains("not the operator's instruction"));
@@ -259,22 +194,16 @@ fn a_successor_is_told_whom_it_succeeds() {
 /// (docs/context.md).
 #[test]
 fn system_prompt_names_the_working_directory_when_it_is_not_the_project_root() {
-    let at_root = system_prompt("m", "new-leaf", &Lineage::default(), None, None, None, None);
+    let at_root = system_prompt(PromptInputs::new("m", "new-leaf"));
     let project = Path::new("/p");
     let working = Path::new("/p/.efference/worktrees/new-leaf");
     let render = |created_branch| {
         system_prompt(
-            "m",
-            "new-leaf",
-            &Lineage::default(),
-            Some(Whereabouts {
+            PromptInputs::new("m", "new-leaf").with_whereabouts(Whereabouts {
                 project,
                 working,
                 created_branch,
             }),
-            None,
-            None,
-            None,
         )
     };
     let sentence = " Your working directory is `/p/.efference/worktrees/new-leaf`, inside the project at `/p`.";

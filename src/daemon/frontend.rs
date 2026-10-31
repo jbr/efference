@@ -3,8 +3,6 @@
 
 use super::*;
 
-use crate::protocol::agents::BoundAction;
-
 /// The loop's [`Frontend`], backed entirely by [`Session`]: every input arrives
 /// over HTTP. The loop is pull-shaped — it blocks at `read_user_turn` / `approve`
 /// — and each pull resolves when a client pushes.
@@ -50,13 +48,8 @@ impl Frontend for RemoteFrontend {
         turns
     }
 
-    async fn approve(
-        &mut self,
-        call: &ToolCall,
-        bound: Option<&BoundAction>,
-        grant: Option<crate::policy::GateGrant>,
-    ) -> Approval {
-        let rx = self.shared.register_pending(call, bound, grant);
+    async fn approve(&mut self, call: &ToolCall, gate: GateOptions<'_>) -> Approval {
+        let rx = self.shared.register_pending(call, gate);
         // A dropped sender (shouldn't happen on the live daemon) defaults to abort
         // — never run a call we couldn't get a decision for.
         let approval = rx.await.unwrap_or(Approval::Abort);

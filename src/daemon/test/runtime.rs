@@ -39,7 +39,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
     let scratch = cwd.join("scratch");
     let endpoint = crate::testing::refusing_endpoint(Provider::Anthropic, "/v1/messages");
     SessionBoot {
-        client: Client::new(endpoint, "m", "sys", None),
+        client: Client::new(endpoint, "m", "sys"),
         toolbox: Toolbox::bash_and_mcps(cwd.to_path_buf(), Some(scratch)).unwrap(),
         triager: Triager::shared(),
         spotter: StaticSpotter {

@@ -424,9 +424,7 @@ fn a_continue_reads_as_its_sender() {
     log.user("go on when ready", None);
     log.add(turn("Done.", vec![]));
     log.add(Payload::Telemetry(Telemetry::Continue(
-        crate::log::ContinueOrigin {
-            source: Some("mcp[claude-code]".into()),
-        },
+        crate::log::ContinueOrigin::default().with_source(Some("mcp[claude-code]".into())),
     )));
     assert!(whole(&log, &child(None)).contains("2  claude-code continued it\n"));
 }

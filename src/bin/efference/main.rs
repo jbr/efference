@@ -51,12 +51,7 @@ async fn run() -> CliResult {
     let cli = Cli::parse().checked().unwrap_or_else(|error| error.exit());
     let Some(command) = cli.command else {
         if cli.host.run {
-            return serve::host(
-                cli.host.bind_flags(cli.bind),
-                cli.host.socket,
-                cli.host.island,
-            )
-            .await;
+            return serve::host(cli.host, cli.bind).await;
         }
         // An explicit name is an answer already; the picker is for the
         // invocation that named nothing (docs/operating.md).

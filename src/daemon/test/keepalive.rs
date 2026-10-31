@@ -282,7 +282,7 @@ pub(super) fn pinged_session(
     let endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
     (
         shared,
-        Arc::new(Client::new(endpoint, "claude-opus-5", "sys", None)),
+        Arc::new(Client::new(endpoint, "claude-opus-5", "sys")),
     )
 }
 

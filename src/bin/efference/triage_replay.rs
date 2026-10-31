@@ -14,6 +14,7 @@ mod layout;
 mod record;
 
 use super::*;
+use crate::dev::TriageArgs;
 use efference::log::Payload;
 use efference::project::Reader;
 use efference::triage::{Pending, TriageModel, TriageView, Triager, triage_request};
@@ -22,20 +23,47 @@ use std::io::Write;
 use compare::*;
 pub(crate) use record::{Recorded, recorded_triages, session_model};
 
+impl TriageArgs {
+    /// The separate-model triage the `--triage-*` flags describe, when `--triage-model`
+    /// names one.
+    fn triage_model(&self) -> Option<TriageModel> {
+        self.triage_model.clone().map(|model| TriageModel {
+            model,
+            thinking: self.triage_thinking,
+            auto_choice: self.triage_auto_choice,
+            effort: self.triage_effort.clone(),
+        })
+    }
+
+    /// The history the replayed triage reads: `--view`, else the view the replayed
+    /// configuration reads live, which is the text view under a separate triage model.
+    fn view(&self, separate: bool) -> Result<TriageView, CliError> {
+        match &self.view {
+            Some(view) => TriageView::parse(view).ok_or_else(|| {
+                format!("--view {view}: expected transcript, text, tail:N or intent").into()
+            }),
+            None if separate => Ok(TriageView::Text),
+            None => Ok(TriageView::Transcript),
+        }
+    }
+}
+
 /// Replay one triage or every triage in a recorded session, `repeat` draws each.
-#[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
-pub(crate) async fn triage(
-    path: PathBuf,
-    seq: Vec<u64>,
-    repeat: usize,
-    limit: Option<usize>,
-    dry_run: bool,
-    model: &str,
-    triage: Option<TriageModel>,
-    view: TriageView,
-    out: Option<PathBuf>,
-    table: usize,
-) -> CliResult {
+pub(crate) async fn triage(args: TriageArgs) -> CliResult {
+    let triage = args.triage_model();
+    let view = args.view(triage.is_some())?;
+    let TriageArgs {
+        path,
+        seq,
+        repeat,
+        limit,
+        dry_run,
+        model,
+        out,
+        table,
+        ..
+    } = args;
+    let model = model.as_str();
     // A `log.jsonl`, or a session dir / name that resolves to one — the same target
     // grammar the other reader verbs take.
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
@@ -243,7 +271,7 @@ pub(crate) async fn triage(
         }
         None => (Triager::shared(), model),
     };
-    let client = Client::new(endpoint, model, system, None);
+    let client = Client::new(endpoint, model, system);
     let mut sink = match &out {
         Some(path) => Some(std::io::BufWriter::new(std::fs::File::create(path)?)),
         None => None,

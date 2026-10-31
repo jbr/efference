@@ -70,7 +70,11 @@ async fn a_wait_with_nothing_new_blocks_until_the_next_decision_point() {
 
     let pending = tokio::spawn(wait(&control, None, 30));
     let session = host.session("child").unwrap();
-    assert!(session.resolve_approval(&CallId("toolu_1".into()), Approval::Approve, None, None));
+    assert!(session.resolve_approval(
+        &CallId("toolu_1".into()),
+        Approval::Approve,
+        Default::default()
+    ));
     assert_eq!(
         session.status(),
         crate::daemon::status::SessionStatus::Running

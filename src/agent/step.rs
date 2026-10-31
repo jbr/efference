@@ -91,7 +91,9 @@ impl Step {
 /// (docs/permissions.md, docs/tools.md). Appends only the audit entries the cascade
 /// itself owns — the `Spot` verdict and any `ConfigEdit` — never the result, which the
 /// caller captures the moment this returns (docs/triage.md).
-#[allow(clippy::too_many_arguments)] // each is a distinct party to the one call
+// One production caller, `run_calls`, which holds the loop's collaborators and the call's
+// inputs as separate borrows and passes each once; none is optional but the primer's signal.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn run_call<F: Frontend, S: Spotter>(
     frontend: &mut F,
     shared: &Arc<Session>,
@@ -198,7 +200,9 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // Neither offers a grant: no change to the policy table would clear either, since
     // both bypass the cascade that reads it.
     let approval = if config_write || hand_off {
-        frontend.approve(call, bound.as_ref(), None).await
+        frontend
+            .approve(call, GateOptions::default().with_bound(bound.as_ref()))
+            .await
     } else {
         judge(
             frontend,

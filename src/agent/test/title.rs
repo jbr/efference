@@ -55,7 +55,7 @@ fn mock(line: &str, hold: Option<&Turnstile>) -> (Client, ScriptedUpstream) {
         }
     });
     let endpoint = upstream.endpoint(Provider::OpenAICodex, "/backend-api/codex/responses");
-    (Client::new(endpoint, "m", "sys", None), upstream)
+    (Client::new(endpoint, "m", "sys"), upstream)
 }
 
 fn titles(shared: &Session) -> Vec<String> {

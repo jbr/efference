@@ -78,7 +78,7 @@ async fn decide_maps_the_seq_and_records_the_client() {
         serde_json::json!({ "command": "curl -sI https://example.com" }),
     );
     let seq = issue(&shared, &call);
-    let gate = shared.register_pending(&call, None, None);
+    let gate = shared.register_pending(&call, Default::default());
     let control = mounted(&shared).await;
 
     let err = Decide {
@@ -136,7 +136,7 @@ async fn escalate_over_mcp_goes_to_the_operator() {
         serde_json::json!({ "command": "curl -sI https://example.com" }),
     );
     let seq = issue(&shared, &call);
-    let mut gate = shared.register_pending(&call, None, None);
+    let mut gate = shared.register_pending(&call, Default::default());
     let control = mounted(&shared).await;
 
     let said = Decide {

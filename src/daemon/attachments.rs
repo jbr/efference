@@ -113,6 +113,5 @@ fn announce(shared: &Session, display_dir: &Path, path: &Path) {
     let Ok(arrival) = crate::attachments::inspect(&display, path) else {
         return;
     };
-    let (source, body, slot) = crate::attachments::notification(&arrival);
-    shared.notify(source, body, slot);
+    shared.notify(crate::attachments::notification(&arrival));
 }

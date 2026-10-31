@@ -210,12 +210,9 @@ impl Client {
         self.endpoint.provider.breakpoint_placement(&self.model)
     }
 
-    pub fn new(
-        endpoint: Endpoint,
-        model: impl Into<String>,
-        system: impl Into<String>,
-        temperature: Option<u8>,
-    ) -> Self {
+    /// A client for `model` on `endpoint`, sending `system`. Every other setting starts at
+    /// its default, and a `with_*` call sets the ones a caller has a value for.
+    pub fn new(endpoint: Endpoint, model: impl Into<String>, system: impl Into<String>) -> Self {
         let upstream_failure = upstream_failure_state();
         let upstream_attempts = upstream_attempt_queue();
         let turn_routing = endpoint
@@ -279,7 +276,7 @@ impl Client {
             endpoint,
             model: model.into(),
             system: system.into(),
-            temperature,
+            temperature: None,
             thinking: ThinkingSupport::UNKNOWN,
             thinking_off: false,
             max_tokens: MAX_TOKENS,
@@ -573,6 +570,14 @@ impl Client {
 
     pub fn with_upstream(mut self, upstream: Option<Upstream>) -> Self {
         self.upstream = upstream;
+        self
+    }
+
+    /// Set the session's sampling temperature (`--temperature`, in whole hundredths;
+    /// docs/transport.md). `None` leaves it out of the request, so the API's default
+    /// applies.
+    pub fn with_temperature(mut self, temperature: Option<u8>) -> Self {
+        self.temperature = temperature;
         self
     }
 

@@ -169,7 +169,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
     .await;
 
     let seq = issue(&a);
-    let gate = a.register_pending(&leaf(), None, None);
+    let gate = a.register_pending(&leaf(), Default::default());
     b.wait_until("the gate reached b", || {
         heard(&b, |n| {
             n.source == "a"
@@ -335,7 +335,7 @@ async fn clearing_or_moving_the_pointer_reroutes_a_held_call() {
     let a = fixture.session("a");
     let c = fixture.session("c");
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
-    let _gate = a.register_pending(&leaf(), None, None);
+    let _gate = a.register_pending(&leaf(), Default::default());
     fixture
         .session("b")
         .wait_until("the gate reached b", || {
@@ -392,7 +392,7 @@ async fn a_set_supervisor_ending_hands_the_gate_to_the_operator() {
     let fixture = Fixture::new().await;
     let a = fixture.session("a");
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
-    let _gate = a.register_pending(&leaf(), None, None);
+    let _gate = a.register_pending(&leaf(), Default::default());
 
     fixture.host.end("b").unwrap().await;
     fixture
@@ -418,7 +418,7 @@ async fn a_child_with_no_setting_answers_to_its_creator() {
     assert!(supervisor_records(&kid).is_empty());
 
     let seq = issue(&kid);
-    let gate = kid.register_pending(&leaf(), None, None);
+    let gate = kid.register_pending(&leaf(), Default::default());
     fixture
         .session("a")
         .wait_until("the gate reached the creator", || {

@@ -134,7 +134,7 @@ async fn a_message_queues_behind_a_gate() {
     let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let seq = issue(&child, vec![curl()]);
-    let _gate = child.register_pending(&curl(), None, None);
+    let _gate = child.register_pending(&curl(), Default::default());
     let said = message("child", "also check the logs", None)
         .execute(fixture.control("parent"), RequestContext::default())
         .await

@@ -37,9 +37,10 @@ use crate::api::{
 };
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
-use crate::frontend::{Frontend, Interrupt, SubmittedTurn};
+use crate::frontend::{Frontend, GateOptions, Interrupt, SubmittedTurn};
 use crate::log::{
-    Approval, CallId, EditState, LogEntry, Payload, RawResult, RequestOrigin, Seq, ToolCall, Turn,
+    Approval, CallId, EditState, LogEntry, Notification, Payload, RawResult, RequestOrigin, Seq,
+    ToolCall, Turn,
 };
 use crate::persist::Log;
 use crate::process_monitor::{BgView, ProcessMonitor};
@@ -662,6 +663,7 @@ pub use handler::{App, Transport, handler};
 pub(crate) use person::PersonAction;
 pub(crate) use watch::refresh_and_emit;
 
+pub(crate) use approvals::Decider;
 use approvals::Pending;
 
 use config_edits::session_visible_notice;

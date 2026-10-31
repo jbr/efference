@@ -3,6 +3,7 @@ use super::executor::{state_of, status_in};
 use super::host_executor::names_held;
 use super::status::{operator_relation, session_relation};
 use super::{Control, Executor};
+use crate::daemon::Decider;
 use crate::daemon::status::{Moves, Reader, answers};
 use crate::log::Approval;
 use crate::protocol::agents::Decision;
@@ -185,12 +186,10 @@ impl Tool<Control> for Decide {
                     );
                 };
                 let note_submission = self.note_submission();
-                if !target.resolve_approval(
-                    &gate.call.id,
-                    approval,
-                    Some(source.clone()),
-                    note_submission.clone(),
-                ) {
+                let decider = Decider::default()
+                    .with_source(Some(source.clone()))
+                    .with_note_submission(note_submission.clone());
+                if !target.resolve_approval(&gate.call.id, approval, decider) {
                     return Err(moved(&target.status_view(&id, &target.status())));
                 }
                 if let (Some(note), Some(submission_id)) = (self.note(), note_submission) {

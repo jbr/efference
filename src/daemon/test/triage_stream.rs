@@ -59,9 +59,9 @@ async fn run(own: bool) -> (Vec<(&'static str, Vec<String>, String)>, Arc<Sessio
     let mut boot = boot(&cwd);
     let endpoint =
         |upstream: &ScriptedUpstream| upstream.endpoint(Provider::Anthropic, "/v1/messages");
-    boot.client = Client::new(endpoint(&main), "m", "sys", None);
+    boot.client = Client::new(endpoint(&main), "m", "sys");
     if let Some(triage) = &triage {
-        boot.triager = Triager::own(Client::new(endpoint(triage), "t", "sys", None));
+        boot.triager = Triager::own(Client::new(endpoint(triage), "t", "sys"));
     }
     let host = Swansong::new();
     let runtime = started(boot, &host).await;

@@ -85,7 +85,7 @@ fn hold(c: &Session) -> (String, oneshot::Receiver<Approval>) {
         )
         .unwrap()
         .to_string();
-    (seq, c.register_pending(&leaf(), None, None))
+    (seq, c.register_pending(&leaf(), Default::default()))
 }
 
 fn decide(seq: &str, decision: Decision) -> Decide {

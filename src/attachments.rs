@@ -24,6 +24,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::log::Notification;
 use crate::log::attachment::{Arrival, Kind, Shape, describe};
 
 mod store;
@@ -260,14 +261,13 @@ fn image_metadata(full: &Path) -> Option<(String, u32, u32)> {
     Some((format!("{format:?}").to_uppercase(), width, height))
 }
 
-/// The notification an arrival enqueues: `(source, body, slot)` for [`crate::daemon`]'s
-/// `notify` (docs/inbox.md). The body is [`describe`].
+/// The notification an arrival enqueues (docs/inbox.md). The body is [`describe`].
 ///
 /// The slot is the file's path, so a second arrival at the same name supersedes the first
 /// notice rather than stacking a second one for the same bytes.
-pub fn notification(arrival: &Arrival) -> (String, String, Option<String>) {
-    (
-        "attachment".to_string(),
+pub fn notification(arrival: &Arrival) -> Notification {
+    Notification::new(
+        "attachment",
         describe(arrival),
         Some(format!("attachment:{}", arrival.path)),
     )

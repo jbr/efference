@@ -112,7 +112,7 @@ async fn a_supervised_sessions_moments_push_nothing() {
     let (boss, kid) = (fixture.session("boss"), fixture.session("kid"));
     let sent = capture(&kid);
 
-    let _gate = kid.register_pending(&curl("toolu_1"), None, None);
+    let _gate = kid.register_pending(&curl("toolu_1"), Default::default());
     boss.wait_until("the gate reached boss", || {
         heard(&boss, |n| {
             n.source == "kid" && n.body.starts_with("waiting for your decision")
@@ -120,7 +120,7 @@ async fn a_supervised_sessions_moments_push_nothing() {
         .is_some()
     })
     .await;
-    assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, None, None));
+    assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, Default::default()));
 
     let wait = kid.begin_ask("ask_1", "Which branch?".into(), 1, 1);
     boss.wait_until("the question reached boss", || {
@@ -163,7 +163,7 @@ async fn the_operators_dial_pushes_gates_but_not_settles() {
     let kid = fixture.session("kid");
     let sent = capture(&kid);
 
-    let _gate = kid.register_pending(&curl("toolu_1"), None, None);
+    let _gate = kid.register_pending(&curl("toolu_1"), Default::default());
     kid.set_review_level(ReviewLevel::SpotterHuman);
     kid.wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1)
         .await;
@@ -171,10 +171,10 @@ async fn the_operators_dial_pushes_gates_but_not_settles() {
         sent.lock().unwrap()[0].body,
         "bash — fetch only the response headers"
     );
-    assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, None, None));
+    assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, Default::default()));
 
-    let _gate = kid.register_pending(&curl("toolu_2"), None, None);
-    assert!(kid.resolve_approval(&"toolu_2".into(), Approval::Approve, None, None));
+    let _gate = kid.register_pending(&curl("toolu_2"), Default::default());
+    assert!(kid.resolve_approval(&"toolu_2".into(), Approval::Approve, Default::default()));
     drop(kid.begin_ask("ask_1", "Which branch?".into(), 1, 1));
     settle(&kid);
 
@@ -207,8 +207,8 @@ async fn a_session_with_no_supervisor_pushes_every_moment() {
     let solo = fixture.session("solo");
     let sent = capture(&solo);
 
-    let _gate = solo.register_pending(&curl("toolu_1"), None, None);
-    assert!(solo.resolve_approval(&"toolu_1".into(), Approval::Approve, None, None));
+    let _gate = solo.register_pending(&curl("toolu_1"), Default::default());
+    assert!(solo.resolve_approval(&"toolu_1".into(), Approval::Approve, Default::default()));
     drop(solo.begin_ask("ask_1", "Which branch?".into(), 1, 1));
     settle(&solo);
 
@@ -235,11 +235,11 @@ async fn clearing_the_pointer_pushes_the_held_gate_and_resumes_pushes() {
     let sent = capture(&kid);
 
     settle(&kid);
-    let _gate = kid.register_pending(&curl("toolu_1"), None, None);
+    let _gate = kid.register_pending(&curl("toolu_1"), Default::default());
     fixture.host.set_supervisor("kid", None).unwrap();
     kid.wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1)
         .await;
-    assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, None, None));
+    assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, Default::default()));
     settle(&kid);
 
     assert_eq!(
@@ -263,7 +263,7 @@ async fn a_supervisor_ending_pushes_its_childs_held_gate() {
     let stray = fixture.session("stray");
     let sent = capture(&stray);
 
-    let _gate = stray.register_pending(&curl("toolu_1"), None, None);
+    let _gate = stray.register_pending(&curl("toolu_1"), Default::default());
     fixture.host.end("boss").unwrap().await;
     stray
         .wait_until("the held gate pushed", || sent.lock().unwrap().len() == 1)
@@ -289,7 +289,7 @@ async fn a_gate_escalated_to_a_session_that_ends_pushes_the_operator() {
     let sent = capture(&leaf);
 
     let call = curl("toolu_1");
-    let _gate = leaf.register_pending(&call, None, None);
+    let _gate = leaf.register_pending(&call, Default::default());
     assert!(leaf.escalate(
         &call.id,
         Some("session[mid]".into()),

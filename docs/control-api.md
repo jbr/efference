@@ -431,7 +431,7 @@ form and the socket-root form are the same client code with a different base.
 In the Rust client that base is `Client::at(socket, "/sessions/<id>")`: the
 prefix joins onto `/v1/…` only, while `POST /sessions` and the `/auth/*` family
 are addressed at the socket root under either base, as the web client's base
-joining does. The creation body is one type, `daemon::CreateSession`, serialized
+joining does. The creation body is one type, `protocol::sessions::CreateSession`, serialized
 by the client and deserialized by the host, so a new session knob is one field;
 it has no Debug, because it carries the environment.
 

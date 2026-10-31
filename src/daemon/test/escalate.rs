@@ -107,7 +107,7 @@ fn hold(holder: &Session, call: &ToolCall) -> (String, oneshot::Receiver<Approva
         )
         .unwrap()
         .to_string();
-    (seq, holder.register_pending(call, None, None))
+    (seq, holder.register_pending(call, Default::default()))
 }
 
 fn decide(agent: &str, seq: &str, decision: Decision, message: Option<&str>) -> Decide {

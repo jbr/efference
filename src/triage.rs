@@ -427,7 +427,9 @@ impl Triager {
     /// Taking `pending` as a slice rather than one result is what makes the triage valid for a
     /// multi-call completion: the trailing assistant message carries N `tool_use` blocks, so
     /// the triage's tail must answer all N (docs/triage.md). One triage, N verdicts.
-    #[allow(clippy::too_many_arguments)] // the turn's results, the shown riders, and the stream sink
+    // One caller, the landing's retry loop, sends every input on each attempt, and none is
+    // optional, so an options value would be the parameter list under another name.
+    #[allow(clippy::too_many_arguments)]
     pub async fn triage_results(
         &self,
         agent: &Client,

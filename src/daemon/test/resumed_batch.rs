@@ -76,7 +76,6 @@ pub(super) async fn start(
         upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
-        None,
     );
     boot.spotter = StaticSpotter {
         stance: Stance::Gate,
@@ -108,7 +107,7 @@ async fn approve_the_gate(session: &Session, id: &str) {
     session
         .wait_until("the gate reappears", || session.pending_gate().is_some())
         .await;
-    assert!(session.resolve_approval(&CallId(id.into()), Approval::Approve, None, None));
+    assert!(session.resolve_approval(&CallId(id.into()), Approval::Approve, Default::default()));
 }
 
 fn results_of(log: &[LogEntry], id: &str) -> usize {
@@ -290,7 +289,7 @@ async fn an_event_wake_leaves_the_batch_alone() {
         .wait_until("the loop parks", || session.is_settled())
         .await;
 
-    session.notify("watcher".into(), "something happened".into(), None);
+    session.notify(Notification::new("watcher", "something happened", None));
     tokio::time::sleep(Duration::from_millis(800)).await;
     host.shut_down().await;
 

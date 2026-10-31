@@ -29,7 +29,7 @@ pub(crate) async fn drain_background(
             // must neither replace nor be replaced by (docs/inbox.md).
             for hit in hits {
                 let (source, body) = hit.notification();
-                shared.notify(source, body, None);
+                shared.notify(Notification::new(source, body, None));
             }
             // The live process tail on the stream's ephemeral `output` class — lossy
             // and best-effort; a client seeds itself from the process resource and
@@ -57,7 +57,11 @@ pub(crate) async fn drain_background(
             kind: crate::log::ProcessEventKind::Exited(finished.exit),
         });
         let slot = crate::process_monitor::handle(id);
-        shared.notify(finished.source, finished.body, Some(slot));
+        shared.notify(Notification::new(
+            finished.source,
+            finished.body,
+            Some(slot),
+        ));
     }
 }
 
@@ -138,7 +142,7 @@ impl Session {
         let hits = self.process_monitor.lock().unwrap().push_chunk(id, chunk);
         for hit in hits {
             let (source, body) = hit.notification();
-            self.notify(source, body, None);
+            self.notify(Notification::new(source, body, None));
         }
     }
 
@@ -226,7 +230,7 @@ impl Session {
     }
 
     /// Snapshot a process's current tail for a pin — `(source, body)` ready to wrap
-    /// in a [`Notification`](crate::log::Notification) (docs/process-monitor.md). The
+    /// in a [`Notification`] (docs/process-monitor.md). The
     /// handle string is the model's vocabulary; an unparseable one answers like an
     /// unknown process.
     pub fn bg_pin_snapshot(&self, handle: &str) -> Option<(String, String)> {

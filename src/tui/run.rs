@@ -3,7 +3,7 @@
 use super::attention::Attender;
 use super::senders::Submission;
 use super::*;
-use crate::inference::ImageMode;
+use crate::inference::TuiConfig;
 use crate::protocol::turns::QueuedTurn;
 
 /// Attach to a session and stay there until the operator leaves it.
@@ -15,24 +15,10 @@ use crate::protocol::turns::QueuedTurn;
 /// once (docs/control-api.md). `client` is re-based onto the new prefix over the
 /// same transport, so the socket is dialled once per attach and nothing has to be
 /// re-resolved.
-pub async fn run(
-    client: Client,
-    theme: Option<String>,
-    images: ImageMode,
-    frame_cost: bool,
-    mut attached: Attached,
-) -> Result<()> {
+pub async fn run(client: Client, display: TuiConfig, mut attached: Attached) -> Result<()> {
     let mut client = client;
     loop {
-        match attach(
-            client.clone(),
-            theme.clone(),
-            images,
-            frame_cost,
-            attached.clone(),
-        )
-        .await?
-        {
+        match attach(client.clone(), display.clone(), attached.clone()).await? {
             Exit::Quit => return Ok(()),
             // The terminal is restored by now, so the line lands on the shell.
             Exit::Closed => {
@@ -65,16 +51,10 @@ pub struct Attached {
 
 /// One attach: open the stream, run the UI, and tear every task down on the way
 /// out. Returns why the loop ended.
-async fn attach(
-    client: Client,
-    theme: Option<String>,
-    images: ImageMode,
-    frame_cost: bool,
-    attached: Attached,
-) -> Result<Exit> {
+async fn attach(client: Client, display: TuiConfig, attached: Attached) -> Result<Exit> {
     // Validate the theme up front, before the alt-screen takes over, so a bad
     // name surfaces a clean error (with the list) instead of a silent fallback.
-    let theme = resolve_theme(theme)?;
+    let display = resolved(display)?;
     // Open the event stream up front for the same reason: a socket nobody is
     // listening on, or a host prefix that names no session, is a plain error
     // here rather than an empty screen whose turns go nowhere.
@@ -364,16 +344,7 @@ async fn attach(
 
     // The crossterm UI loop is blocking — run it off the async runtime.
     let ui = tokio::task::spawn_blocking(move || {
-        ui_loop(
-            rx,
-            senders,
-            &theme,
-            images,
-            None,
-            frame_cost,
-            &attached,
-            Some(attender),
-        )
+        ui_loop(rx, senders, &display, None, &attached, Some(attender))
     });
 
     let result = ui.await.context("the TUI thread panicked")?;
@@ -402,21 +373,10 @@ async fn attach(
 /// the session on a timer (`gallery/stream.rs`), which is how the animation-rate
 /// render behaviours get driven without an upstream.
 pub async fn run_gallery(
-    theme: Option<String>,
-    images: ImageMode,
+    display: TuiConfig,
     stream: Option<gallery::stream::Script>,
-    frame_cost: bool,
 ) -> Result<()> {
-    run_offline(
-        gallery::log(),
-        None,
-        theme,
-        images,
-        stream,
-        frame_cost,
-        false,
-    )
-    .await
+    run_offline(gallery::log(), None, display, stream, false).await
 }
 
 /// Launch the TUI **read-only** on a recorded session's log (`efference dev view`,
@@ -424,13 +384,13 @@ pub async fn run_gallery(
 /// loaded from a jsonl file rather than a daemon's event stream. `label` names the
 /// session in the status bar. Nothing here can write — the log is read once, and
 /// the read-only state renders no composer and carries no loop verbs.
-pub async fn run_view(
-    entries: Vec<LogEntry>,
-    label: String,
-    theme: Option<String>,
-    images: ImageMode,
-) -> Result<()> {
-    run_offline(entries, Some(label), theme, images, None, false, false).await
+pub async fn run_view(entries: Vec<LogEntry>, label: String, display: TuiConfig) -> Result<()> {
+    // The read-only view does not time its paints, whatever `[tui] frame-cost` says.
+    let display = TuiConfig {
+        frame_cost: false,
+        ..display
+    };
+    run_offline(entries, Some(label), display, None, false).await
 }
 
 /// The shared offline runner behind [`run_gallery`] and [`run_view`]: seed the
@@ -442,13 +402,11 @@ pub async fn run_view(
 async fn run_offline(
     entries: Vec<LogEntry>,
     viewing: Option<String>,
-    theme: Option<String>,
-    images: ImageMode,
+    display: TuiConfig,
     stream: Option<gallery::stream::Script>,
-    frame_cost: bool,
     form_prototype: bool,
 ) -> Result<()> {
-    let theme = resolve_theme(theme)?;
+    let display = resolved(display)?;
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
     // The far ends are held for the run's life rather than consumed: an offline
@@ -477,16 +435,7 @@ async fn run_offline(
     });
 
     let ui = tokio::task::spawn_blocking(move || {
-        ui_loop(
-            rx,
-            senders,
-            &theme,
-            images,
-            viewing,
-            frame_cost,
-            &Attached::default(),
-            None,
-        )
+        ui_loop(rx, senders, &display, viewing, &Attached::default(), None)
     });
     let result = ui.await.context("the TUI thread panicked")?;
 
@@ -512,6 +461,14 @@ async fn run_offline(
 /// The default theme — nicer than `THEME_NAMES[0]` ("1337", which only wins by
 /// sort order). Overridable with `[tui] theme` in the user configuration.
 pub(super) const DEFAULT_THEME: &str = "Catppuccin Frappe";
+
+/// `display` with its theme resolved ([`resolve_theme`]), which is what [`ui_loop()`] reads.
+fn resolved(display: TuiConfig) -> Result<TuiConfig> {
+    Ok(TuiConfig {
+        theme: Some(resolve_theme(display.theme)?),
+        ..display
+    })
+}
 
 /// Resolve the theme to apply. An explicit name must exist in the built-in set
 /// (or be a `.tmTheme` path) — an unknown one is a hard error listing the
@@ -541,14 +498,9 @@ pub(super) fn resolve_theme(theme: Option<String>) -> Result<String> {
 /// Offline Sessions container for the shared form experiment (docs/tui.md).
 #[cfg(feature = "dev")]
 pub async fn run_session_form_prototype() -> Result<()> {
-    run_offline(
-        gallery::log(),
-        None,
-        None,
-        ImageMode::Off,
-        None,
-        false,
-        true,
-    )
-    .await
+    let display = TuiConfig {
+        images: crate::inference::ImageMode::Off,
+        ..TuiConfig::default()
+    };
+    run_offline(gallery::log(), None, display, None, true).await
 }

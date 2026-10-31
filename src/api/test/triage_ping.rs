@@ -21,8 +21,8 @@ const CACHED: &str = "event: response.completed\ndata: {\"type\":\"response.comp
 async fn the_triage_ping_body_is_the_primers_body() {
     let upstream = ScriptedUpstream::answering([Canned::stream(CACHED), Canned::stream(CACHED)]);
     let endpoint = upstream.endpoint(Provider::OpenAICodex, "/backend-api/codex/responses");
-    let client = Client::new(endpoint, "gpt-6.1-sol", "sys", None)
-        .with_prompt_cache(PromptCachePolicy::Implicit);
+    let client =
+        Client::new(endpoint, "gpt-6.1-sol", "sys").with_prompt_cache(PromptCachePolicy::Implicit);
     let turns = vec![crate::project::WireTurn::text("hello")];
     let tools = vec![serde_json::json!({"type": "function", "name": "retain"})];
     let choice = ToolChoice::force("retain");

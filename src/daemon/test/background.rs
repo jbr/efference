@@ -179,7 +179,7 @@ async fn kill_bg_and_inbox_summary() {
 
     // The exit notice the reaper posts, then a notification beside it.
     exit_notice(&shared, &h).await;
-    shared.notify("ci".into(), "build failed".into(), None);
+    shared.notify(Notification::new("ci", "build failed", None));
     let summary = shared.inbox_listing();
     assert!(
         summary.contains(&h) && summary.contains("ci") && summary.contains("build failed"),

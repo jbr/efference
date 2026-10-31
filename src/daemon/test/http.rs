@@ -270,7 +270,7 @@ async fn put_approvals_enforces_the_gate_precondition() {
 
     // A gate for toolu_x: addressing a different id is the moved-gate race, and the
     // body hands back the gate that *is* pending.
-    let _rx = shared.register_pending(&bash_call("cargo test"), None, None);
+    let _rx = shared.register_pending(&bash_call("cargo test"), Default::default());
     let conn = app
         .put("/v1/approvals/toolu_stale")
         .with_body(r#"{"decision":"approve"}"#)

@@ -82,21 +82,15 @@ pub(super) async fn minting<T>(attempt: impl Future<Output = T>) -> (T, Vec<Path
 pub(crate) fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionRequest {
     let registry = codex_registry(root, id);
     let inference = registry.resolve(Some("oai/gpt-5.6"), None, None).unwrap();
+    let mut create = CreateSession::new(root.to_path_buf());
+    create.options.effort = effort.map(str::to_string);
     SessionRequest {
+        create,
         directories: crate::policy::Directories::at(root),
         base_env: base_env(),
         session_dir: root.join(SESSION_BASE).join(id),
-        config: None,
         inference,
-        temperature: None,
-        effort: effort.map(str::to_string),
-        upstream: Vec::new(),
-        autonomous: false,
-        reauth: Vec::new(),
         authorization: Default::default(),
-        keep_scratch: false,
-        detached: false,
-        worktree: false,
         host: None,
         lineage: crate::env::Lineage::default(),
     }
@@ -201,27 +195,15 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
     .unwrap()
     .resolve(Some("edge/m"), None, None)
     .unwrap();
+    let mut create = CreateSession::new(root.to_path_buf());
+    create.options.temperature = temperature;
     SessionRequest {
+        create,
         directories: crate::policy::Directories::at(root),
-        base_env: crate::env_table::EnvSnapshot::new(
-            ["HOME", "PATH"]
-                .into_iter()
-                .filter_map(|name| Some((name.to_string(), std::env::var(name).ok()?)))
-                .collect(),
-        )
-        .unwrap(),
+        base_env: base_env(),
         session_dir: root.join(SESSION_BASE).join(id),
-        config: None,
         inference,
-        temperature,
-        effort: None,
-        upstream: Vec::new(),
-        autonomous: false,
-        reauth: Vec::new(),
         authorization: Default::default(),
-        keep_scratch: false,
-        detached: false,
-        worktree: false,
         host: None,
         lineage: crate::env::Lineage::default(),
     }
@@ -340,7 +322,7 @@ async fn a_worktree_request_outside_git_is_refused_with_nothing_minted() {
     let root = Root::new("worktree-refused");
     let dir = root.session_dir("plain-fox");
     let mut req = request(root.path(), "plain-fox", None);
-    req.worktree = true;
+    req.create.worktree = true;
 
     let error = failure(prepare(req).await, "no git work tree must fail creation");
     assert!(error.to_string().contains("git work tree"), "{error}");
@@ -360,7 +342,7 @@ async fn a_late_failure_removes_the_worktree_it_made() {
     git(root.path(), &["add", "efference.toml"]);
     commit(root.path(), "one");
     let mut req = request(root.path(), "late-fox", None);
-    req.worktree = true;
+    req.create.worktree = true;
 
     failure(prepare(req).await, "unreadable [context] must fail");
     assert!(!crate::worktree::path(root.path(), "late-fox").exists());
@@ -481,6 +463,6 @@ fn the_header_records_detached() {
     let root = Root::new("detached-header");
     let mut detached = request(root.path(), "free", None);
     assert!(!metadata::metadata(&detached).detached);
-    detached.detached = true;
+    detached.create.detached = true;
     assert!(metadata::metadata(&detached).detached);
 }

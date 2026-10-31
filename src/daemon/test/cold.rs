@@ -226,7 +226,7 @@ async fn an_approval_releases_the_next_check_and_no_park_follows() {
     let (shared, _rx) = cold_session();
     let server = test_server(&shared).await;
     let call = bash_call("cargo build");
-    let _gate = shared.register_pending(&call, None, None);
+    let _gate = shared.register_pending(&call, Default::default());
 
     let conn = server
         .put(&format!("/v1/approvals/{}", call.id.0))
@@ -307,7 +307,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
     warm.set_cache_ttl(Duration::from_secs(300));
     let server = test_server(&warm).await;
     let call = bash_call("ls");
-    let _gate = warm.register_pending(&call, None, None);
+    let _gate = warm.register_pending(&call, Default::default());
     server
         .put(&format!("/v1/approvals/{}", call.id.0))
         .with_body(r#"{"decision":"approve"}"#)
@@ -319,7 +319,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
     let (shared, _rx) = cold_session();
     let server = test_server(&shared).await;
     let call = bash_call("ls");
-    let _gate = shared.register_pending(&call, None, None);
+    let _gate = shared.register_pending(&call, Default::default());
     server
         .put(&format!("/v1/approvals/{}", call.id.0))
         .with_body(r#"{"decision":"abort"}"#)
@@ -328,7 +328,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
     assert!(!shared.person_acted.load(Ordering::SeqCst), "abort");
 
     let call = bash_call("pwd");
-    let _gate = shared.register_pending(&call, None, None);
+    let _gate = shared.register_pending(&call, Default::default());
     server
         .put(&format!("/v1/approvals/{}", call.id.0))
         .with_body(r#"{"decision":"redirect","message":"no"}"#)
@@ -378,7 +378,7 @@ async fn an_answer_to_an_ask_is_recorded_as_an_answer() {
 #[tokio::test(start_paused = true)]
 async fn an_inbox_wake_while_cold_waits_for_a_person() {
     let (shared, _rx) = cold_session();
-    shared.notify("ci".into(), "build failed".into(), None);
+    shared.notify(Notification::new("ci", "build failed", None));
     let wake = tokio::spawn({
         let shared = Arc::clone(&shared);
         async move { shared.inbox_wake_while_warm().await }

@@ -20,7 +20,7 @@ use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
 use crate::daemon::Session;
-use crate::frontend::{Frontend, SubmittedTurn};
+use crate::frontend::{Frontend, GateOptions, SubmittedTurn};
 use crate::inbox::ShownNotification;
 use crate::log::{
     Approval, AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState,
@@ -575,14 +575,13 @@ pub async fn run<F: Frontend, S: Spotter>(
             // the cap leaves the session sitting idle, reading as a hang.
             if hit_cap {
                 log::debug!("turn ended at the output-token cap");
-                shared.notify(
-                    "turn".to_string(),
+                shared.notify(Notification::new(
+                    "turn",
                     "The last model turn ended at the output-token cap — what it \
                      produced before the cap (possibly only thinking) is committed. \
-                     Send a turn to continue."
-                        .to_string(),
+                     Send a turn to continue.",
                     Some("max-tokens".to_string()),
-                );
+                ));
             }
 
             if calls.is_empty() {

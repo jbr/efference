@@ -16,7 +16,7 @@ async fn a_bound_decide_resolves_the_childs_held_move() {
         serde_json::json!({ "command": "rm -rf build", "intent": "clean the tree" }),
     );
     let seq = issue(&child, vec![leaf.clone()]);
-    let _gate = child.register_pending(&leaf, None, None);
+    let _gate = child.register_pending(&leaf, Default::default());
 
     let decide = ToolCall::new(
         crate::protocol::agents::DECIDE_WIRE_NAME,
@@ -50,7 +50,7 @@ async fn a_decide_of_a_decide_carries_a_two_hop_chain() {
         serde_json::json!({ "command": "cargo test" }),
     );
     let leaf_seq = issue(&grandchild, vec![leaf.clone()]);
-    let _leaf_gate = grandchild.register_pending(&leaf, None, None);
+    let _leaf_gate = grandchild.register_pending(&leaf, Default::default());
 
     let inner = ToolCall::new(
         crate::protocol::agents::DECIDE_WIRE_NAME,
@@ -61,7 +61,7 @@ async fn a_decide_of_a_decide_carries_a_two_hop_chain() {
     );
     let child = fixture.session("child");
     let inner_seq = issue(&child, vec![inner.clone()]);
-    let _inner_gate = child.register_pending(&inner, None, None);
+    let _inner_gate = child.register_pending(&inner, Default::default());
 
     let outer = ToolCall::new(
         crate::protocol::agents::DECIDE_WIRE_NAME,
@@ -92,7 +92,7 @@ async fn a_stale_absent_or_unnamed_gate_is_refused() {
     let child = fixture.session("child");
     let real = ToolCall::new("bash", "toolu_real", serde_json::json!({ "command": "ls" }));
     let seq = issue(&child, vec![real.clone()]);
-    let _gate = child.register_pending(&real, None, None);
+    let _gate = child.register_pending(&real, Default::default());
     let decide = |agent: &str, seq: Option<String>| {
         let mut input = serde_json::json!({ "agent": agent, "decision": "allow" });
         if let Some(seq) = seq {
@@ -174,7 +174,7 @@ async fn the_target_rules_apply_to_a_bound_decide() {
     let child = fixture.session("child");
     let inner = decide("peer", "1");
     let inner_seq = issue(&child, vec![inner.clone()]);
-    let _gate = child.register_pending(&inner, None, None);
+    let _gate = child.register_pending(&inner, Default::default());
     let err = control
         .resolve_bound_action(&decide("child", &inner_seq.to_string()))
         .unwrap_err()

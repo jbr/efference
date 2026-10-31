@@ -13,7 +13,7 @@ fn session() -> Arc<Session> {
 /// A client nothing is sent through.
 fn client() -> Client {
     let endpoint = Endpoint::at(Provider::Anthropic, "http://127.0.0.1:9/v1/messages");
-    Client::new(endpoint, "m", "sys", None)
+    Client::new(endpoint, "m", "sys")
 }
 
 fn refusals(shared: &Session) -> Vec<String> {

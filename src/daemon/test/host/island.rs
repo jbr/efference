@@ -175,7 +175,6 @@ async fn an_islands_exit_archives_a_session_mid_turn() {
         upstream.endpoint(Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
-        None,
     );
     let host = Host::new(one_connection_registry(), baseline_env());
     host.adopt("busy".into(), runtime::started(boot, host.swansong()).await)

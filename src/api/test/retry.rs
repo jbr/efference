@@ -220,7 +220,6 @@ async fn a_terminal_429_body_is_answered_once() {
         upstream.endpoint(Provider::OpenAICodex, "/backend-api/codex/responses"),
         "gpt-5.6-sol",
         "sys",
-        None,
     );
     let outcome = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
     assert!(outcome.is_err(), "a 429 that never clears is an error");
@@ -238,7 +237,6 @@ async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
         upstream.endpoint(Provider::OpenAI, "/v1/responses"),
         "gpt-5.6-luna",
         "sys",
-        None,
     );
     let error = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -277,7 +275,6 @@ async fn a_503_open_is_retried_and_the_attempt_is_queued() {
         upstream.endpoint(Provider::OpenAI, "/v1/responses"),
         "gpt-5.6-luna",
         "sys",
-        None,
     );
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})

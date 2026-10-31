@@ -45,7 +45,7 @@ async fn run(script: Vec<Canned>, source: &'static str) -> Run {
                 Ok(source.into())
             }),
         ));
-    let client = Client::new(endpoint, "m", "sys", None);
+    let client = Client::new(endpoint, "m", "sys");
     let result = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await

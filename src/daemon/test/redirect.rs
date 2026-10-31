@@ -51,8 +51,7 @@ async fn a_supervisors_deny_names_the_supervisor() {
     assert!(session.resolve_approval(
         &CallId("toolu_1".into()),
         Approval::Redirect("use trash instead".into()),
-        Some("session[parent]".into()),
-        None,
+        Decider::default().with_source(Some("session[parent]".into())),
     ));
     session
         .wait_until("the redirect has landed", || {

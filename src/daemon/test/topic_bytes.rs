@@ -465,7 +465,7 @@ fn the_gate_topic_keeps_its_bytes() {
     let (shared, _turns) = Session::in_memory();
     assert_eq!(bytes(&shared, Topic::Gate), "null");
     let call = bash_call("ls");
-    let _held = shared.register_pending(&call, None, None);
+    let _held = shared.register_pending(&call, Default::default());
     assert_eq!(
         bytes(&shared, Topic::Gate),
         r#"{"call_id":"toolu_x","input":{"command":"ls"},"name":"bash"}"#
@@ -498,7 +498,12 @@ fn the_gate_topic_keeps_its_bytes() {
         },
         label: "always allow git push".into(),
     };
-    let _held = shared.register_pending(&call, Some(&bound), Some(grant));
+    let _held = shared.register_pending(
+        &call,
+        GateOptions::default()
+            .with_bound(Some(&bound))
+            .with_grant(Some(grant)),
+    );
     shared.escalate(
         &call.id,
         Some("session[calm-finch]".into()),
@@ -521,13 +526,13 @@ fn the_inbox_topics_keep_their_bytes() {
     let (shared, _turns) = Session::in_memory();
     assert_eq!(bytes(&shared, Topic::Notifications), "[]");
     assert_eq!(bytes(&shared, Topic::Proposals), "[]");
-    shared.notify("ci".into(), "build failed".into(), None);
-    shared.notify(
-        "ci".into(),
-        "flaky test".into(),
+    shared.notify(Notification::new("ci", "build failed", None));
+    shared.notify(Notification::new(
+        "ci",
+        "flaky test",
         Some("ci:main".to_string()),
-    );
-    shared.notify_wake("session[child]".into(), "child is idle".into(), None);
+    ));
+    shared.notify(Notification::new("session[child]", "child is idle", None).waking());
     shared
         .append(
             1,

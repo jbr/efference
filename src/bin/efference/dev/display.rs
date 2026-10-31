@@ -33,16 +33,18 @@ impl From<ImagesArg> for efference::inference::ImageMode {
     }
 }
 
-/// `config` (the `[tui]` table) with each given flag laid over its key.
+/// `config` (the `[tui]` table) with each given flag laid over its key. A key no flag
+/// names keeps its configured value.
 pub(crate) fn over(
-    config: TuiConfig,
+    mut config: TuiConfig,
     theme: Option<String>,
     images: Option<ImagesArg>,
     frame_cost: bool,
 ) -> TuiConfig {
-    TuiConfig {
-        theme: theme.or(config.theme),
-        images: images.map_or(config.images, Into::into),
-        frame_cost: frame_cost || config.frame_cost,
+    config.theme = theme.or(config.theme);
+    if let Some(images) = images {
+        config.images = images.into();
     }
+    config.frame_cost |= frame_cost;
+    config
 }

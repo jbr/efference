@@ -169,21 +169,22 @@ fn available_tools(toolbox: &Toolbox) -> Vec<String> {
 /// that could drift from what the server actually advertises.
 ///
 /// [`ToolCall`]: efference::log::ToolCall
-#[allow(clippy::too_many_arguments)] // a dev tester: every knob is one flag
 #[cfg(feature = "dev")]
-pub(crate) async fn spotter_check(
-    scope: Option<String>,
-    watch_for: Vec<String>,
-    paths: Vec<String>,
-    model: Option<&str>,
-    probe: Option<String>,
-    tool: Option<String>,
-    input: String,
-    config: Option<PathBuf>,
-    show_move: bool,
-    no_brief: bool,
-    command: String,
-) -> CliResult {
+pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
+    let dev::SpotterArgs {
+        scope,
+        watch_for,
+        paths,
+        model,
+        probe,
+        tool,
+        input,
+        config,
+        show_move,
+        no_brief,
+        command,
+    } = args;
+    let command = command.join(" ");
     // `--config` supplies the mission and the server declarations; the individual flags
     // override it, so a config can be borrowed for its servers while the perimeter under
     // test is varied from the command line.
@@ -279,7 +280,7 @@ pub(crate) async fn spotter_check(
     // missing key. They come before the preview because what gets previewed depends on
     // which rung the model is: the prose spotter reads a rendered move block, the
     // decision model reads a JSON state (docs/permissions.md).
-    let (model, endpoint) = inference::spotter_endpoint(model)?;
+    let (model, endpoint) = inference::spotter_endpoint(model.as_deref())?;
     let kind = endpoint.spotter_kind(&model).await?;
     let thinking = endpoint.spotter_thinking(&model, kind).await?;
     // The tester has one directory, so it stands as both.
@@ -347,15 +348,14 @@ pub(crate) async fn spotter_check(
 /// binds elsewhere — `.efference/host.sock` for a project-local host
 /// (docs/control-channel.md).
 ///
-/// `island` binds the host's life to the process that launched it: stdin is the
+/// `flags.island` binds the host's life to the process that launched it: stdin is the
 /// ownership connection, watched from before anything else initializes
 /// ([`efference::daemon::island`]). When it closes, the island archives its
-/// sessions and exits.
-pub(crate) async fn host(
-    bind_flags: BindFlags,
-    socket: Option<PathBuf>,
-    island: bool,
-) -> CliResult {
+/// sessions and exits. `bind` is the global `--bind`, which the bind flags lay over the
+/// `[host]` table.
+pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
+    let bind_flags = flags.bind_flags(bind);
+    let HostFlags { socket, island, .. } = flags;
     let socket = match socket {
         Some(socket) => socket,
         None => user_host_socket().ok_or("no HOME to place ~/.efference/host.sock under")?,

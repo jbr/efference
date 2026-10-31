@@ -71,7 +71,7 @@ async fn the_routes_that_answer_with_a_word_keep_their_bytes() {
     let (shared, _turns_rx) = Session::in_memory();
     let app = test_server(&shared).await;
     let call = bash_call("rm -rf build");
-    let _gate = shared.register_pending(&call, None, None);
+    let _gate = shared.register_pending(&call, Default::default());
     let escalated = app
         .post("/v1/approvals/toolu_x/escalate")
         .with_json_body(&serde_json::json!({ "source": "web", "note": "over to you" }))

@@ -9,12 +9,7 @@ impl Frontend for NeverGates {
     async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
         unreachable!("the loop is not running")
     }
-    async fn approve(
-        &mut self,
-        call: &ToolCall,
-        _bound: Option<&crate::protocol::agents::BoundAction>,
-        _grant: Option<policy::GateGrant>,
-    ) -> Approval {
+    async fn approve(&mut self, call: &ToolCall, _gate: GateOptions<'_>) -> Approval {
         panic!(
             "a call naming no tool reached the human gate: {}",
             call.name
@@ -69,14 +64,10 @@ impl Frontend for RecordingFrontend {
     async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
         unreachable!("the loop is not running")
     }
-    async fn approve(
-        &mut self,
-        call: &ToolCall,
-        bound: Option<&crate::protocol::agents::BoundAction>,
-        grant: Option<policy::GateGrant>,
-    ) -> Approval {
-        self.decisions.push((call.name.clone(), bound.cloned()));
-        self.grants.push(grant);
+    async fn approve(&mut self, call: &ToolCall, gate: GateOptions<'_>) -> Approval {
+        self.decisions
+            .push((call.name.clone(), gate.bound.cloned()));
+        self.grants.push(gate.grant);
         self.decision.clone()
     }
     async fn interrupted(&mut self) -> crate::frontend::Interrupt {

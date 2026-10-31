@@ -41,7 +41,6 @@ async fn consecutive_turns_name_each_others_responses() {
         upstream.endpoint(Provider::Anthropic, "/v1/messages"),
         "m",
         "SYS",
-        None,
     )
     .with_origin(crate::log::RequestOrigin::Turn);
 
@@ -74,7 +73,6 @@ async fn a_provider_without_the_field_is_sent_no_object() {
         upstream.endpoint(Provider::OpenRouter, "/v1/messages"),
         "m",
         "SYS",
-        None,
     )
     .with_origin(crate::log::RequestOrigin::Turn);
 
@@ -107,7 +105,6 @@ async fn a_triage_neither_opts_in_nor_extends_the_chain() {
         upstream.endpoint(Provider::Anthropic, "/v1/messages"),
         "m",
         "SYS",
-        None,
     )
     .with_origin(crate::log::RequestOrigin::Turn);
 

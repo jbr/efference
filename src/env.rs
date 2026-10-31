@@ -71,26 +71,71 @@ pub fn identity_line(model: &str) -> String {
     format!("You are {model}.")
 }
 
+/// What a system prompt is assembled from (docs/context.md): the model and session it
+/// names, and the parts a session may lack. [`PromptInputs::new`] is a prompt with none of
+/// them, and each `with_*` supplies one.
+#[derive(Clone, Debug)]
+pub struct PromptInputs<'a> {
+    model: &'a str,
+    session_id: &'a str,
+    lineage: Lineage,
+    whereabouts: Option<Whereabouts<'a>>,
+    context_block: Option<&'a str>,
+    role_section: Option<&'a str>,
+    unmounted: Option<&'a str>,
+}
+
+impl<'a> PromptInputs<'a> {
+    /// The prompt of session `session_id` on `model`: a root session, working at its
+    /// project, with no `[context]` block, role section or unmounted list.
+    pub fn new(model: &'a str, session_id: &'a str) -> Self {
+        Self {
+            model,
+            session_id,
+            lineage: Lineage::default(),
+            whereabouts: None,
+            context_block: None,
+            role_section: None,
+            unmounted: None,
+        }
+    }
+
+    /// Where the session came from: its creator and its predecessor.
+    pub fn with_lineage(mut self, lineage: Lineage) -> Self {
+        self.lineage = lineage;
+        self
+    }
+
+    /// Where the session works, named on the identity line when that is not its
+    /// project root.
+    pub fn with_whereabouts(mut self, whereabouts: Whereabouts<'a>) -> Self {
+        self.whereabouts = Some(whereabouts);
+        self
+    }
+
+    /// The rendered `[context]` block ([`crate::log::context::Resolved::render`]).
+    pub fn with_context_block(mut self, block: Option<&'a str>) -> Self {
+        self.context_block = block;
+        self
+    }
+
+    /// The config's preamble section ([`crate::config::Config::preamble_section`]).
+    pub fn with_role_section(mut self, section: Option<&'a str>) -> Self {
+        self.role_section = section;
+        self
+    }
+
+    /// The section naming what the config declares and the session does not have
+    /// ([`crate::mcp::unmounted_section`]).
+    pub fn with_unmounted(mut self, unmounted: Option<&'a str>) -> Self {
+        self.unmounted = unmounted;
+        self
+    }
+}
+
 /// [`system_prompt_parts`], assembled.
-pub fn system_prompt(
-    model: &str,
-    session_id: &str,
-    lineage: &Lineage,
-    whereabouts: Option<Whereabouts<'_>>,
-    context_block: Option<&str>,
-    role_section: Option<&str>,
-    unmounted: Option<&str>,
-) -> String {
-    system_prompt_parts(
-        model,
-        session_id,
-        lineage,
-        whereabouts,
-        context_block,
-        role_section,
-        unmounted,
-    )
-    .assemble()
+pub fn system_prompt(inputs: PromptInputs<'_>) -> String {
+    system_prompt_parts(inputs).assemble()
 }
 
 /// The full system prompt sent in the request's `system` field (docs/log-and-projection.md): the
@@ -116,15 +161,16 @@ pub fn system_prompt(
 ///
 /// Returned as the identity line and the body after it, which a resume on another main
 /// model recombines with a new identity line (docs/resumption.md).
-pub fn system_prompt_parts(
-    model: &str,
-    session_id: &str,
-    lineage: &Lineage,
-    whereabouts: Option<Whereabouts<'_>>,
-    context_block: Option<&str>,
-    role_section: Option<&str>,
-    unmounted: Option<&str>,
-) -> SystemPrompt {
+pub fn system_prompt_parts(inputs: PromptInputs<'_>) -> SystemPrompt {
+    let PromptInputs {
+        model,
+        session_id,
+        lineage,
+        whereabouts,
+        context_block,
+        role_section,
+        unmounted,
+    } = inputs;
     let mut prompt = String::new();
     // Identity, unconditionally (docs/context.md): an untold model answers "which
     // model are you" from its training priors, and a log that mixes models needs

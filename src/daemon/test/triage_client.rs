@@ -43,8 +43,8 @@ async fn a_separate_triage_clients_429_shows_on_its_own_topic() {
     let mut boot = boot(&cwd);
     let endpoint =
         |upstream: &ScriptedUpstream| upstream.endpoint(Provider::Anthropic, "/v1/messages");
-    boot.client = Client::new(endpoint(&main), "m", "sys", None);
-    boot.triager = Triager::own(Client::new(endpoint(&triage), "t", "sys", None));
+    boot.client = Client::new(endpoint(&main), "m", "sys");
+    boot.triager = Triager::own(Client::new(endpoint(&triage), "t", "sys"));
     let host = Swansong::new();
     let runtime = started(boot, &host).await;
     let session = Arc::clone(runtime.session());

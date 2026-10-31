@@ -114,10 +114,10 @@ fn the_notification_states_what_arrived_and_nothing_else() {
             first_line: "{\"a\": 1,".into(),
         },
     };
-    let (source, body, slot) = notification(&arrival);
-    assert_eq!(source, "attachment");
+    let notice = notification(&arrival);
+    assert_eq!(notice.source, "attachment");
     assert_eq!(
-        body,
+        notice.body,
         "paste.txt — text, 40 lines, 2.0 KB, looks like JSON — at \
          .efference/s1/attachments/paste.txt\n\
          first line: {\"a\": 1,"
@@ -129,7 +129,7 @@ fn the_notification_states_what_arrived_and_nothing_else() {
         "a turn's attachment is the harness's note"
     );
     assert_eq!(
-        slot.as_deref(),
+        notice.slot.as_deref(),
         Some("attachment:.efference/s1/attachments/paste.txt")
     );
 }

@@ -18,7 +18,9 @@ use std::path::PathBuf;
 
 use crate::api::Error;
 use crate::daemon::SessionBoot;
+use crate::inference::SessionOptions;
 use crate::persist::Log;
+use crate::protocol::sessions::CreateSession;
 use crate::session_dir::LOG_NAME;
 use crate::spotter::MountedSpotter;
 
@@ -41,10 +43,15 @@ pub const CONFIG_NAME: &str = "config.toml";
 
 /// What a session's creator supplies. Paths are absolute; nothing here is read
 /// from the process environment or working directory by `prepare`.
-// The creator's options are independent flags (`CreateSession` carries them as JSON
-// keys), so every combination is a valid request.
-#[allow(clippy::struct_excessive_bools)]
 pub struct SessionRequest {
+    /// What the creator asked for, as it arrived (docs/control-api.md): the origin
+    /// `config`, the `upstream` pin, `autonomous`, `reauth`, `keep_scratch`, `detached`
+    /// (recorded in the header so a resume reads it back), `worktree`, and the
+    /// `temperature` and `effort` among its options. A new creation option is read from
+    /// here where it is used. Its `name`, `cwd`, `env`, `refuse_authorization` and the
+    /// role selections in its options are spent: the fields below hold what they
+    /// resolved to, and `env` has been taken.
+    pub create: CreateSession,
     /// The session's project (config, grants, the session base) and working directory
     /// (tools, MCP mounts, children) (docs/control-channel.md).
     pub directories: crate::policy::Directories,
@@ -52,24 +59,11 @@ pub struct SessionRequest {
     pub base_env: crate::env_table::EnvSnapshot,
     /// The session dir to mint: `<project>/.efference/<id>`.
     pub session_dir: PathBuf,
-    /// `--config`: the origin config to snapshot, or `None` for the default probe.
-    pub config: Option<PathBuf>,
     /// The resolved role selections: each role's endpoint and native model, and
     /// the credential needles the session masker absorbs (docs/transport.md).
     pub inference: crate::inference::SessionInference,
-    pub temperature: Option<u8>,
-    pub effort: Option<String>,
-    pub upstream: Vec<String>,
-    pub autonomous: bool,
-    pub reauth: Vec<String>,
     /// What an MCP server asking for authorization meets (docs/mcp-auth.md).
     pub authorization: mcp_mount::AuthorizationHandling,
-    pub keep_scratch: bool,
-    /// Whether the session outlives its creator (docs/tools.md); recorded in the
-    /// header so a resume reads it back.
-    pub detached: bool,
-    /// Create the session's own git worktree and start it there (docs/worktrees.md).
-    pub worktree: bool,
     /// The host this session is created on, when it is: the in-session
     /// `sessions` mount reaches it directly (docs/tools.md). `None` for a
     /// standalone session, which has no host to address.
@@ -92,7 +86,7 @@ pub struct SessionRequest {
 /// killed when the toolbox holding it drops, which the error return does.
 pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<MountedSpotter>, Error> {
     let mut minted = Minted::default();
-    minted.keep_scratch = request.keep_scratch;
+    minted.keep_scratch = request.create.keep_scratch;
     // On an error, and when this future is dropped mid-await, `minted` rolls back as
     // it drops.
     let boot = prepare_minting(request, &mut minted).await?;
@@ -114,24 +108,30 @@ async fn prepare_minting(
 ) -> Result<SessionBoot<MountedSpotter>, Error> {
     let mut metadata = metadata::metadata(&request);
     let SessionRequest {
+        create,
         mut directories,
         base_env,
         session_dir,
-        config,
         inference,
-        temperature,
-        effort,
-        upstream,
-        autonomous,
-        reauth,
         authorization,
-        keep_scratch,
-        // Already in `metadata`, which carries it to the header.
-        detached: _,
-        worktree,
         host,
         lineage,
     } = request;
+    let CreateSession {
+        config,
+        options:
+            SessionOptions {
+                temperature,
+                effort,
+                ..
+            },
+        upstream,
+        autonomous,
+        reauth,
+        keep_scratch,
+        worktree,
+        ..
+    } = create;
     assert!(
         directories.project().is_absolute() && directories.working().is_absolute(),
         "session directories must be absolute"
@@ -280,16 +280,16 @@ async fn prepare_minting(
 
     let preamble = parts::freeze_preamble(
         &loaded,
-        crate::env::Whereabouts {
-            project: directories.project(),
-            working: directories.working(),
-            created_branch: worktree_added.as_ref().map(|added| added.branch.as_str()),
-        },
         &env_policy,
-        model,
-        &session_id,
-        &lineage,
-        unmounted_section.as_deref(),
+        directories.project(),
+        crate::env::PromptInputs::new(model, &session_id)
+            .with_lineage(lineage)
+            .with_whereabouts(crate::env::Whereabouts {
+                project: directories.project(),
+                working: directories.working(),
+                created_branch: worktree_added.as_ref().map(|added| added.branch.as_str()),
+            })
+            .with_unmounted(unmounted_section.as_deref()),
     )?;
     let parts::FrozenPreamble {
         identity,

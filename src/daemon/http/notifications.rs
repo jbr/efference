@@ -13,7 +13,7 @@ pub(super) async fn notify(mut conn: Conn) -> Conn {
     let body = conn.request_body_string().await.unwrap_or_default();
     match serde_json::from_str::<NotifyBody>(&body) {
         Ok(n) => {
-            let seq = shared.notify(n.source, n.body, n.slot);
+            let seq = shared.notify(Notification::new(n.source, n.body, n.slot));
             views::answer(conn, 202, FiledNotification { seq })
         }
         Err(e) => fail(

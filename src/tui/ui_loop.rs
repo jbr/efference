@@ -2,7 +2,7 @@
 
 use super::*;
 
-use crate::inference::ImageMode;
+use crate::inference::{ImageMode, TuiConfig};
 use crate::terminal_title::{self, TerminalTitle};
 use crate::tui::frame_cost::FrameCost;
 use ratatui::prelude::Backend;
@@ -12,23 +12,18 @@ use std::io::Write;
 /// and a crossterm event-reader thread; renders each frame from the projected
 /// transcript. Adapted from ferritin's `ui_thread_loop` (the request-thread
 /// plumbing is gone; inbound data is [`TuiEvent`]s from the bridge).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "two call sites (attach, offline) each supply every input once; a bundling struct would be built at both only to be taken apart here"
-)]
 pub(super) fn ui_loop(
     events: Receiver<TuiEvent>,
     senders: Senders,
-    theme_name: &str,
-    // How to pick the graphics protocol for result images (docs/tui.md).
-    images: ImageMode,
+    // How the UI draws (docs/tui.md): its theme, already resolved by `resolve_theme`; how
+    // to pick the graphics protocol for result images; and `frame_cost`, which times each
+    // paint and prints the distribution on exit (`frame_cost.rs`). The timing is off in
+    // every normal run; the readout is not reproducible, so nothing that snapshots can
+    // turn it on.
+    display: &TuiConfig,
     // `Some(label)` runs the loop as a read-only view of a recorded log
     // (docs/tui.md): no composer, no loop verbs, nothing that can send.
     viewing: Option<String>,
-    // Time each paint and print the distribution on exit (`frame_cost.rs`). Off in
-    // every normal run; the readout is not reproducible, so nothing that snapshots
-    // can turn it on.
-    frame_cost: bool,
     // The default for a run with no session behind it — the gallery and the
     // read-only view.
     attached: &Attached,
@@ -56,6 +51,7 @@ pub(super) fn ui_loop(
         .with_terminal_width(width);
     // `resolve_theme` already validated the name; a `.tmTheme` path could still
     // fail to load, so fall back to the default rather than abort the UI.
+    let theme_name = display.theme.as_deref().unwrap_or(DEFAULT_THEME);
     if render_context.set_theme_name(theme_name).is_err() {
         let _ = render_context.set_theme_name(DEFAULT_THEME);
     }
@@ -115,7 +111,7 @@ pub(super) fn ui_loop(
     if let Some(label) = viewing {
         state.set_viewing(label);
     }
-    if frame_cost {
+    if display.frame_cost {
         state.frame_cost = Some(Default::default());
     }
 
@@ -123,7 +119,7 @@ pub(super) fn ui_loop(
     // query writes escapes and reads their answers off stdin, which the reader
     // is about to own for the session (docs/tui.md — detection is a startup
     // act; capability is then a plain parameter of rendering).
-    let picker = build_picker(images);
+    let picker = build_picker(display.images);
     if let Some(picker) = &picker {
         // Name the resolved protocol on the status line at launch — detection
         // is invisible otherwise, and "which protocol did auto pick" is the

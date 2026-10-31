@@ -106,7 +106,7 @@ async fn a_wait_that_cannot_succeed_fails_with_where_the_session_stood() {
     let (session, _rx) = Session::in_memory();
     session.append(1, Payload::user("first words")).unwrap();
     session.submit_turn(SubmittedTurn::new("queued words", "s1"));
-    let _gate = session.register_pending(&bash_call("echo held"), None, None);
+    let _gate = session.register_pending(&bash_call("echo held"), Default::default());
     let task = tokio::spawn(async move {
         session
             .wait_until("a thing that never happens", || false)

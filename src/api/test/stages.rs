@@ -58,7 +58,6 @@ fn client(upstream: &ScriptedUpstream, recorder: &Arc<Recorder>) -> Client {
         upstream.endpoint(Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
-        None,
     );
     client.set_stage_sink(Arc::clone(recorder) as StageSink);
     client
@@ -234,7 +233,7 @@ async fn a_truncated_primer_ends_and_an_empty_one_fails() {
         let recorder = Arc::new(Recorder::default());
         let mut endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
         endpoint.provider = Provider::OpenAICodex;
-        let mut client = Client::new(endpoint, "gpt-6-luna", "sys", None)
+        let mut client = Client::new(endpoint, "gpt-6-luna", "sys")
             .with_prompt_cache(PromptCachePolicy::Implicit);
         client.set_stage_sink(Arc::clone(&recorder) as StageSink);
         let turns = vec![crate::project::WireTurn::text("hello")];

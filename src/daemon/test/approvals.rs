@@ -20,7 +20,7 @@ fn the_gate_carries_the_spotter_reason() {
             )),
         )
         .unwrap();
-    let _gate = shared.register_pending(&call, None, None);
+    let _gate = shared.register_pending(&call, Default::default());
     assert!(
         shared
             .state_json()
@@ -49,7 +49,7 @@ fn the_gate_carries_the_bound_leaf_action() {
         session: "child".into(),
         chain: vec!["child".into()],
     };
-    let _gate = shared.register_pending(&approve, Some(&bound), None);
+    let _gate = shared.register_pending(&approve, GateOptions::default().with_bound(Some(&bound)));
 
     let state = shared.state_json();
     assert!(state.contains("\"acting_on\""), "{state}");
@@ -73,7 +73,7 @@ async fn the_gate_carries_its_grant_and_takes_it_back_verbatim() {
         serde_json::json!({ "paths": ["/elsewhere/codex/README.md"] }),
     );
     let grant = shared.gate_grant(&shared.effective_config(), &call);
-    let _gate = shared.register_pending(&call, None, grant);
+    let _gate = shared.register_pending(&call, GateOptions::default().with_grant(grant));
 
     let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
     let offered = &state["gate"]["grant"];
@@ -89,7 +89,7 @@ async fn the_gate_carries_its_grant_and_takes_it_back_verbatim() {
         .await
         .assert_status(200);
 
-    let _gate = shared.register_pending(&bash_call("ls"), None, None);
+    let _gate = shared.register_pending(&bash_call("ls"), Default::default());
     let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(state["gate"].get("grant").is_none(), "{state}");
 }
@@ -114,13 +114,13 @@ async fn a_decision_over_http_is_recorded_with_its_decider() {
     let (shared, _rx) = Session::in_memory();
     let server = test_server(&shared).await;
 
-    let _gate = shared.register_pending(&bash_call("ls"), None, None);
+    let _gate = shared.register_pending(&bash_call("ls"), Default::default());
     server
         .put("/v1/approvals/toolu_x")
         .with_body(r#"{"decision":"approve","source":"web"}"#)
         .await
         .assert_status(200);
-    let _gate = shared.register_pending(&bash_call("rm -rf tmp"), None, None);
+    let _gate = shared.register_pending(&bash_call("rm -rf tmp"), Default::default());
     server
         .put("/v1/approvals/toolu_x")
         .with_body(r#"{"decision":"redirect","message":"use trash"}"#)
@@ -172,7 +172,7 @@ async fn the_transcript_names_who_decided() {
         )
         .unwrap();
     let server = test_server(&shared).await;
-    let _gate = shared.register_pending(&call, None, None);
+    let _gate = shared.register_pending(&call, Default::default());
     let held = server.get("/v1/transcript").await;
     held.assert_ok();
     assert_eq!(
@@ -201,7 +201,7 @@ async fn an_escalation_over_http_keeps_the_gate_and_is_recorded() {
     let (shared, _rx) = Session::in_memory();
     let server = test_server(&shared).await;
 
-    let mut gate = shared.register_pending(&bash_call("curl -sI x"), None, None);
+    let mut gate = shared.register_pending(&bash_call("curl -sI x"), Default::default());
     server
         .post("/v1/approvals/toolu_x/escalate")
         .with_body(r#"{"source":"mcp[claude-code]","note":"your call"}"#)

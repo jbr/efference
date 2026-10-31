@@ -112,6 +112,6 @@ fn the_view_follows_the_triage_configuration() {
     )
     .unwrap();
     assert_eq!(Triager::shared().view(), TriageView::Transcript);
-    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona", None));
+    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona"));
     assert_eq!(own.view(), TriageView::Text);
 }

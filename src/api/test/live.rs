@@ -37,7 +37,7 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
     // ceiling is what ends the read.
     let upstream = ScriptedUpstream::answering([Canned::stream(FIRST_EVENT).left_open()]);
     let endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
-    let client = Client::new(endpoint, "m", "sys", None).with_stream_ceiling(CEILING);
+    let client = Client::new(endpoint, "m", "sys").with_stream_ceiling(CEILING);
     let started = tokio::time::Instant::now();
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -63,8 +63,8 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
     let upstream = ScriptedUpstream::answering([Canned::stream(FIRST_EVENT).left_open()]);
     let endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
     let interrupt = std::sync::Arc::new(tokio::sync::Notify::new());
-    let mut client = Client::new(endpoint, "m", "sys", None)
-        .with_stream_ceiling(std::time::Duration::from_secs(30));
+    let mut client =
+        Client::new(endpoint, "m", "sys").with_stream_ceiling(std::time::Duration::from_secs(30));
     client.set_abort(std::sync::Arc::clone(&interrupt));
     let presser = std::sync::Arc::clone(&interrupt);
     tokio::spawn(async move {
@@ -113,7 +113,7 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
     .with_header("x-generation-id", "gen-abc123")
     .with_header("set-cookie", "session=nope")]);
     let endpoint = upstream.endpoint(Provider::OpenRouter, "/api/v1/messages");
-    let client = Client::new(endpoint, "m", "sys", None);
+    let client = Client::new(endpoint, "m", "sys");
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
@@ -178,12 +178,7 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
                  \"output_tokens\":0}}",
             )
         }]);
-        let client = Client::new(
-            upstream.endpoint(provider, "/v1/messages"),
-            "m",
-            "sys",
-            None,
-        );
+        let client = Client::new(upstream.endpoint(provider, "/v1/messages"), "m", "sys");
         if sse {
             client
                 .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -252,7 +247,7 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
     )
     .left_open()]);
     let endpoint = upstream.endpoint(Provider::OpenAI, "/v1/responses");
-    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None).with_stream_ceiling(CEILING);
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys").with_stream_ceiling(CEILING);
     let mut streamed = Vec::new();
     let started = tokio::time::Instant::now();
     let completion = client
@@ -277,7 +272,7 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
 async fn a_foreign_dialect_turn_list_never_becomes_a_request() {
     use crate::project::WireTurn;
     let endpoint = Endpoint::at(Provider::Anthropic, "http://127.0.0.1:1/v1/messages");
-    let client = Client::new(endpoint, "m", "sys", None);
+    let client = Client::new(endpoint, "m", "sys");
     let turns = vec![
         WireTurn::text("hello"),
         WireTurn::Assistant(AssistantOutput::Responses(vec![

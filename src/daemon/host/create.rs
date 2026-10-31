@@ -212,21 +212,15 @@ impl Host {
             triage_pick,
             launch,
         } = plan;
+        let detached = body.detached;
         let request = crate::boot::SessionRequest {
             session_dir: project.join(SESSION_BASE).join(&id),
             directories,
             base_env,
-            config: body.config,
             inference,
-            temperature: body.options.temperature,
-            effort: body.options.effort,
-            upstream: body.upstream,
-            autonomous: body.autonomous,
-            reauth: body.reauth,
             authorization: authorization_for(starting, body.refuse_authorization),
-            keep_scratch: body.keep_scratch,
-            detached: body.detached,
-            worktree: body.worktree,
+            // The request travels whole: boot reads the options it uses from the body.
+            create: body,
             // The new session's toolbox mounts the `sessions` provider against
             // this host, with the new session itself as the caller (docs/tools.md).
             host: Some(Arc::clone(self)),
@@ -247,7 +241,7 @@ impl Host {
             id.clone(),
             runtime,
             lineage.created_by,
-            body.detached,
+            detached,
             Some(starting),
         )?;
         self.record_options(&id, options);

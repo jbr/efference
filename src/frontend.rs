@@ -216,6 +216,34 @@ pub enum Interrupt {
     Detach,
 }
 
+/// What a gate carries beyond the held call (docs/permissions.md): the optional inputs of
+/// [`Frontend::approve`], which the session registers on the gate it publishes. The
+/// default is a plain gate, with no bound action and no grant on offer.
+#[derive(Clone, Debug, Default)]
+pub struct GateOptions<'a> {
+    /// The leaf action an `agents__decide` authorizes, when the held call is one — the
+    /// gate view and the child's own held action, so the operator sees the move rather
+    /// than an id.
+    pub bound: Option<&'a BoundAction>,
+    /// The one config change the gate offers as "always allow", decided by the rung that
+    /// held the call.
+    pub grant: Option<crate::policy::GateGrant>,
+}
+
+impl<'a> GateOptions<'a> {
+    /// This gate, for the leaf action `bound` authorizes.
+    pub fn with_bound(mut self, bound: Option<&'a BoundAction>) -> Self {
+        self.bound = bound;
+        self
+    }
+
+    /// This gate, offering `grant`.
+    pub fn with_grant(mut self, grant: Option<crate::policy::GateGrant>) -> Self {
+        self.grant = grant;
+        self
+    }
+}
+
 /// The interaction boundary. Used generically by the loop (`<F: Frontend>`); not
 /// object-safe, and it needn't be — there's one mounted backend at a time. The
 /// futures are `Send` so the loop can run on the host's multi-thread runtime
@@ -236,16 +264,13 @@ pub trait Frontend {
         Vec::new()
     }
 
-    /// Gate a pending tool call: approve, abort, or redirect. `bound` is the leaf
-    /// action a `agents__decide` authorizes, when the call is one
-    /// (docs/permissions.md) — the gate view and the child's own held action, so
-    /// the operator sees the move rather than an id. `grant` is the one config change
-    /// the gate offers as "always allow", decided by the rung that held the call.
+    /// Gate a pending tool call: approve, abort, or redirect. `gate` carries what the
+    /// gate shows beside the call: the leaf action an `agents__decide` authorizes and
+    /// the grant on offer (docs/permissions.md).
     fn approve(
         &mut self,
         call: &ToolCall,
-        bound: Option<&BoundAction>,
-        grant: Option<crate::policy::GateGrant>,
+        gate: GateOptions<'_>,
     ) -> impl Future<Output = Approval> + Send;
 
     /// Resolve when the user interrupts a *running* tool, with the intent: kill

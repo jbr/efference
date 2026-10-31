@@ -58,7 +58,6 @@ async fn a_triage_ping_sends_the_stored_request() {
             messages_endpoint(&upstream),
             "claude-haiku-5",
             "sys",
-            None,
         )),
         tools: Vec::new(),
         ping_at: Duration::ZERO,
@@ -100,7 +99,6 @@ fn the_triage_keepalive_arms_on_an_own_model_with_a_prompt_cache() {
                 Endpoint::at(Provider::Anthropic, "http://127.0.0.1:9/v1/messages"),
                 "claude-haiku-5",
                 "sys",
-                None,
             )
             .with_prompt_cache(policy),
         )
@@ -124,8 +122,7 @@ fn the_triage_keepalive_arms_on_an_own_model_with_a_prompt_cache() {
         "http://127.0.0.1:9/backend-api/codex/responses",
     );
     let triage = Triager::own(
-        Client::new(codex, "gpt-6.1-sol", "sys", None)
-            .with_prompt_cache(PromptCachePolicy::Implicit),
+        Client::new(codex, "gpt-6.1-sol", "sys").with_prompt_cache(PromptCachePolicy::Implicit),
     );
     let armed = KeepaliveSpec::triage(&triage, None, None)
         .expect("an implicit Responses lineage is kept warm");
@@ -217,15 +214,10 @@ async fn start_with_triage_model(
 ) -> (Swansong, SessionRuntime, TempDir) {
     let (cwd, dir) = workdir("triage-keepalive");
     let mut boot = runtime::boot(&cwd);
-    boot.client = Client::new(messages_endpoint(upstream), "m", "sys", None);
+    boot.client = Client::new(messages_endpoint(upstream), "m", "sys");
     boot.triager = Triager::own(
-        Client::new(
-            messages_endpoint(upstream),
-            TRIAGE_MODEL,
-            "triage sys",
-            None,
-        )
-        .with_prompt_cache(PromptCachePolicy::Explicit),
+        Client::new(messages_endpoint(upstream), TRIAGE_MODEL, "triage sys")
+            .with_prompt_cache(PromptCachePolicy::Explicit),
     );
     boot.role.role.transport.keepalive_interval = Some(PING_AT);
     let host = Swansong::new();

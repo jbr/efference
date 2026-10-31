@@ -15,6 +15,7 @@
 //! totals are reported either way.
 
 use super::*;
+use crate::dev::SpotterEvalArgs;
 use efference::config::Perms;
 use efference::log::{Origin, Stance};
 use efference::spotter::{MountedSpotter, Spotter};
@@ -234,20 +235,21 @@ pub(crate) fn dump_states(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)] // a dev tester: every knob is one flag
-pub(crate) async fn spotter_eval(
-    cases_files: Vec<PathBuf>,
-    labels_file: Option<PathBuf>,
-    model: Option<String>,
-    runs: usize,
-    out: Option<PathBuf>,
-    limit: Option<usize>,
-    filter: Option<String>,
-    concurrency: usize,
-    persona: Option<PathBuf>,
-    no_cost: bool,
-    against_recorded: bool,
-) -> CliResult {
+pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
+    let SpotterEvalArgs {
+        cases: cases_files,
+        labels: labels_file,
+        model,
+        runs,
+        out,
+        limit,
+        filter,
+        concurrency,
+        persona,
+        no_cost,
+        against_recorded,
+        dump_states: _,
+    } = args;
     let runs = runs.max(1);
     let labels: BTreeMap<String, LabelIn> = match &labels_file {
         Some(path) => std::fs::read_to_string(path)?

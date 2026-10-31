@@ -50,21 +50,11 @@ impl Tool<Control> for HandOff {
                 // child environment as its base — the same as `create` — and
                 // resolves the project's config afresh, which is the point.
                 let caller = state.caller_session()?;
+                // The host substitutes the caller's own options and sets `detached` from the
+                // caller's own placement.
                 let request = crate::protocol::sessions::CreateSession {
-                    name: None,
-                    cwd: caller.cwd().to_path_buf(),
-                    config: None,
-                    // The host substitutes the caller's own options.
-                    options: crate::inference::SessionOptions::default(),
-                    upstream: Vec::new(),
-                    autonomous: false,
-                    reauth: Vec::new(),
-                    refuse_authorization: false,
-                    keep_scratch: false,
-                    worktree: false,
-                    // The host sets this from the caller's own placement.
-                    detached: false,
                     env: Some(caller.child_env().resolved()),
+                    ..crate::protocol::sessions::CreateSession::new(caller.cwd().to_path_buf())
                 };
                 let successor = state.hand_off(request, self.brief).await?;
                 Ok(format!(

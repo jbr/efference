@@ -93,87 +93,9 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             println!("{rendered}");
             Ok(())
         }
-        DevCommand::Triage {
-            path,
-            seq,
-            repeat,
-            limit,
-            dry_run,
-            model,
-            triage_model,
-            triage_thinking,
-            triage_auto_choice,
-            triage_effort,
-            view,
-            out,
-            table,
-        } => {
-            let triage = triage_model.map(|model| efference::triage::TriageModel {
-                model,
-                thinking: triage_thinking,
-                auto_choice: triage_auto_choice,
-                effort: triage_effort,
-            });
-            let view = match view {
-                Some(view) => efference::triage::TriageView::parse(&view).ok_or_else(|| {
-                    format!("--view {view}: expected transcript, text, tail:N or intent")
-                })?,
-                None if triage.is_some() => efference::triage::TriageView::Text,
-                None => efference::triage::TriageView::Transcript,
-            };
-            triage_replay::triage(
-                path, seq, repeat, limit, dry_run, &model, triage, view, out, table,
-            )
-            .await
-        }
-        DevCommand::PrimerLadder {
-            path,
-            seq,
-            gaps,
-            dry_run,
-            model,
-            triage_model,
-            triage_thinking,
-            triage_auto_choice,
-            triage_effort,
-            out,
-        } => {
-            let triage = triage_model.map(|model| efference::triage::TriageModel {
-                model,
-                thinking: triage_thinking,
-                auto_choice: triage_auto_choice,
-                effort: triage_effort,
-            });
-            primer_ladder::ladder(path, seq, &gaps, dry_run, &model, triage, out).await
-        }
-        DevCommand::Spotter {
-            scope,
-            watch_for,
-            paths,
-            model,
-            probe,
-            tool,
-            input,
-            config,
-            show_move,
-            no_brief,
-            command,
-        } => {
-            serve::spotter_check(
-                scope,
-                watch_for,
-                paths,
-                model.as_deref(),
-                probe,
-                tool,
-                input,
-                config,
-                show_move,
-                no_brief,
-                command.join(" "),
-            )
-            .await
-        }
+        DevCommand::Triage(args) => triage_replay::triage(args).await,
+        DevCommand::PrimerLadder(args) => primer_ladder::ladder(args).await,
+        DevCommand::Spotter(args) => serve::spotter_check(args).await,
         DevCommand::SpotterLog {
             path,
             stances,
@@ -181,37 +103,16 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             list,
             no_fallback,
         } => spot_report::spotter_log(path, &stances, summary, list, no_fallback),
-        DevCommand::SpotterEval {
-            cases,
-            labels,
-            model,
-            runs,
-            out,
-            limit,
-            filter,
-            concurrency,
-            persona,
-            no_cost,
-            against_recorded,
-            dump_states,
-        } => {
-            if let Some(out) = dump_states {
-                return spotter_eval::dump_states(&cases, filter.as_deref(), limit, &out);
+        DevCommand::SpotterEval(args) => {
+            if let Some(out) = &args.dump_states {
+                return spotter_eval::dump_states(
+                    &args.cases,
+                    args.filter.as_deref(),
+                    args.limit,
+                    out,
+                );
             }
-            spotter_eval::spotter_eval(
-                cases,
-                labels,
-                model,
-                runs,
-                out,
-                limit,
-                filter,
-                concurrency,
-                persona,
-                no_cost,
-                against_recorded,
-            )
-            .await
+            spotter_eval::spotter_eval(args).await
         }
     }
 }

@@ -15,7 +15,7 @@ pub(crate) async fn gallery(
         chunk,
         interval: std::time::Duration::from_millis(interval),
     });
-    efference::tui::run_gallery(display.theme, display.images, script, display.frame_cost).await?;
+    efference::tui::run_gallery(display, script).await?;
     Ok(())
 }
 
@@ -56,6 +56,6 @@ pub(super) async fn view(
     if entries.is_empty() {
         return Err(format!("{} holds no entries", path.display()).into());
     }
-    efference::tui::run_view(entries, label, display.theme, display.images).await?;
+    efference::tui::run_view(entries, label, display).await?;
     Ok(())
 }

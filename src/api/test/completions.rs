@@ -18,7 +18,7 @@ async fn a_described_completions_connection_round_trips() {
     )
     .unwrap()
     .with_http(upstream.http());
-    let client = Client::new(endpoint, "mistral-small-latest", "PRE", None);
+    let client = Client::new(endpoint, "mistral-small-latest", "PRE");
     let tools = [serde_json::json!({
         "name": "bash",
         "description": "run",
@@ -74,7 +74,7 @@ async fn a_connection_without_a_credential_sends_no_auth_header() {
         ScriptedUpstream::url("/v1"),
     )
     .with_http(upstream.http());
-    let client = Client::new(endpoint, "local", "PRE", None);
+    let client = Client::new(endpoint, "local", "PRE");
     client
         .complete(
             &[crate::project::WireTurn::text("hi")],

@@ -117,7 +117,7 @@ fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, oneshot::Receiver<Appro
         )
         .unwrap();
     session.set_phase(LoopPhase::Executing);
-    (seq, session.register_pending(call, None, None))
+    (seq, session.register_pending(call, Default::default()))
 }
 
 /// With no agent, the MCP mount reads one line per session the host holds.

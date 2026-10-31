@@ -58,7 +58,9 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
             if shared.autonomous() {
                 Ok(shared.review_redirect(&call.id, denied_gate_message(shared.config_path())))
             } else {
-                Ok(frontend.approve(call, bound, None).await)
+                Ok(frontend
+                    .approve(call, GateOptions::default().with_bound(bound))
+                    .await)
             }
         }
         // HumanOnly (docs/permissions.md): the human takes the spotter's role
@@ -67,7 +69,12 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
         // committing the grant the gate offers.
         Verdict::Gate if shared.review_level() == ReviewLevel::HumanOnly => {
             let grant = gate_grant(shared, &role, call, bound);
-            Ok(frontend.approve(call, bound, grant).await)
+            Ok(frontend
+                .approve(
+                    call,
+                    GateOptions::default().with_bound(bound).with_grant(grant),
+                )
+                .await)
         }
         Verdict::Gate => {
             // Prefix-promotion probe (docs/permissions.md): on a bash move, observe
@@ -180,7 +187,12 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
                         // Asked after the `Spot` and its vote are recorded, so the probe
                         // this very call carried is evidence for the grant it offers.
                         let grant = gate_grant(shared, &role, call, bound);
-                        Ok(frontend.approve(call, bound, grant).await)
+                        Ok(frontend
+                            .approve(
+                                call,
+                                GateOptions::default().with_bound(bound).with_grant(grant),
+                            )
+                            .await)
                     }
                 }
             }

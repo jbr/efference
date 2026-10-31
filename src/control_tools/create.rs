@@ -103,7 +103,6 @@ impl Create {
         });
         CreateSession {
             name: self.name.clone(),
-            cwd,
             config: self.config.clone(),
             // The agent-facing surface takes one opaque model slug; `connection`
             // stays absent so it resolves as one (docs/control-api.md).
@@ -116,12 +115,10 @@ impl Create {
             },
             upstream: self.upstream.clone(),
             autonomous: self.autonomous,
-            reauth: Vec::new(),
-            refuse_authorization: false,
-            keep_scratch: false,
             worktree: self.worktree,
             detached: self.detached,
             env: Some(env),
+            ..CreateSession::new(cwd)
         }
     }
 

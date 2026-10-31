@@ -117,7 +117,10 @@ pub(super) fn call_now(tool: &str) -> String {
 /// reasoning is what says whether the nudge landed. Text only: the fork's transcript,
 /// signatures included, stays throwaway, and this is a record rather than a replay input
 /// (docs/triage.md).
-#[allow(clippy::too_many_arguments)] // each is a distinct input of the one round-trip
+// Called by the result triage, the idle triage and the title ask, each of which supplies
+// every input once and none of which leaves one optional, so an options value would be the
+// parameter list under another name.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn triage_with_retries<T>(
     client: &Client,
     retry: &UpstreamRetryCell,
@@ -192,7 +195,9 @@ pub(super) async fn triage_with_retries<T>(
 /// leaves an attempt-stamped breadcrumb in `record.retries`, so a recovered failure is
 /// still visible in the corpus rather than silently absorbed. The wait is published on
 /// `retry` and ends early on the operator's "retry now".
-#[allow(clippy::too_many_arguments)] // each is a distinct input of the one round-trip
+// Called only by `triage_with_retries`, which holds every input except the attempt's
+// messages fixed across its loop and passes them through.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn triage_completion(
     client: &Client,
     retry: &UpstreamRetryCell,

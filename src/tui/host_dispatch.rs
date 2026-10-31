@@ -226,21 +226,13 @@ async fn create_session(
     let env = crate::env_table::EnvSnapshot::capture()
         .map_err(|e| format!("capturing the environment: {e}"))?
         .into_entries();
+    // A session created by a person at a keyboard has no creator to end with, so it
+    // is not `detached` (docs/tools.md).
     let request = crate::protocol::sessions::CreateSession {
-        name: None,
-        cwd,
-        config: None,
         options,
-        upstream: Vec::new(),
-        autonomous: false,
-        reauth: Vec::new(),
-        refuse_authorization: false,
-        keep_scratch: false,
         worktree,
-        // A session created by a person at a keyboard has no creator to end with
-        // (docs/tools.md).
-        detached: false,
         env: Some(env),
+        ..crate::protocol::sessions::CreateSession::new(cwd)
     };
     client
         .create_session(&request)

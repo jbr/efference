@@ -26,9 +26,7 @@ pub(crate) async fn attach_created(
 ) -> CliResult {
     efference::tui::run(
         ControlClient::at(host_socket.to_path_buf(), &format!("/sessions/{id}")),
-        display.theme,
-        display.images,
-        display.frame_cost,
+        display,
         efference::tui::Attached {
             owns_host,
             ..Default::default()
@@ -44,9 +42,7 @@ pub(crate) async fn attach_created(
 pub(crate) async fn tui(target: ClientTarget, display: TuiConfig) -> CliResult {
     efference::tui::run(
         target.client(),
-        display.theme,
-        display.images,
-        display.frame_cost,
+        display,
         efference::tui::Attached::default(),
     )
     .await?;

@@ -85,7 +85,7 @@ async fn wait_wakes_for_a_notification_and_returns_its_body() {
     let sender = Arc::clone(&shared);
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-        sender.notify("ci".into(), "build completed".into(), None);
+        sender.notify(Notification::new("ci", "build completed", None));
     });
 
     let result = tokio::time::timeout(

@@ -34,6 +34,32 @@ impl Pending {
     }
 }
 
+/// Who is deciding a held call, and the turn that carries their note: the optional inputs
+/// of [`Session::resolve_approval`] (docs/permissions.md). The default is the operator's own
+/// command line or TUI, deciding without a note.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Decider {
+    /// The decider, spelled as a turn's `source` is (`None` for the operator).
+    pub(crate) source: Option<String>,
+    /// The submission id of the turn carrying an allow's note, which the decider submits
+    /// after the decision lands (`decide`, docs/tools.md).
+    pub(crate) note_submission: Option<String>,
+}
+
+impl Decider {
+    /// This decision, sent by `source`.
+    pub(crate) fn with_source(mut self, source: Option<String>) -> Self {
+        self.source = source;
+        self
+    }
+
+    /// This decision, with its note riding the turn `submission_id`.
+    pub(crate) fn with_note_submission(mut self, submission_id: Option<String>) -> Self {
+        self.note_submission = submission_id;
+        self
+    }
+}
+
 /// A session's held call, as its parent's `agents__decide` reads it
 /// (docs/permissions.md): the call the model wrote, its transcript handle, and the
 /// directories its action is classified against.
@@ -89,14 +115,12 @@ impl Session {
     }
 
     /// Register an approval gate and surface it to `GET /state`. Returns the
-    /// receiver the loop awaits. `bound` is the leaf action an `agents__decide`
-    /// authorizes, when the held call is one; `grant` is the grant the gate offers
-    /// (docs/permissions.md).
+    /// receiver the loop awaits. `gate` carries the leaf action an `agents__decide`
+    /// authorizes and the grant the gate offers (docs/permissions.md).
     pub(super) fn register_pending(
         &self,
         call: &ToolCall,
-        bound: Option<&crate::protocol::agents::BoundAction>,
-        grant: Option<crate::policy::GateGrant>,
+        gate: GateOptions<'_>,
     ) -> oneshot::Receiver<Approval> {
         let (tx, rx) = oneshot::channel();
         self.approvals.lock().unwrap().insert(call.id.clone(), tx);
@@ -110,8 +134,8 @@ impl Session {
                 name: call.name.clone(),
                 input: call.input.clone(),
                 reason,
-                acting_on: bound.cloned(),
-                grant,
+                acting_on: gate.bound.cloned(),
+                grant: gate.grant,
                 escalations: Vec::new(),
             },
             moment_to: reviewer.clone(),
@@ -234,24 +258,22 @@ impl Session {
     /// known to be this one and before the decision reaches the loop, so the cold check
     /// that follows finds it.
     ///
-    /// `source` is the decider, spelled as a turn's `source` is (`None` for the
-    /// operator). The decision is recorded as a `Telemetry::GateDecision` at the same
+    /// `decider` says who decided, spelled as a turn's `source` is, and the turn carrying
+    /// an allow's note. The decision is recorded as a `Telemetry::GateDecision` at the same
     /// moment, so it precedes what the loop does with it (docs/log-and-projection.md).
-    /// `note_submission` is the submission id of the turn carrying an allow's note,
-    /// which the decider submits after the decision lands (`decide`, docs/tools.md).
     pub(crate) fn resolve_approval(
         &self,
         id: &CallId,
         decision: Approval,
-        source: Option<String>,
-        note_submission: Option<String>,
+        decider: Decider,
     ) -> bool {
         let sender = self.approvals.lock().unwrap().remove(id);
         let Some(tx) = sender else { return false };
         // A loop that already moved on dropped its receiver: nothing was decided.
         if !tx.is_closed() {
-            let mut record = crate::log::GateDecision::new(id.clone(), decision.clone(), source);
-            record.note_submission = note_submission;
+            let mut record =
+                crate::log::GateDecision::new(id.clone(), decision.clone(), decider.source);
+            record.note_submission = decider.note_submission;
             let entry = Payload::Telemetry(crate::log::Telemetry::GateDecision(record));
             // The record must not stop what it describes.
             if let Err(e) = self.append(self.latest_turn(), entry) {

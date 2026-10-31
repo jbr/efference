@@ -40,7 +40,6 @@ pub(super) async fn start_with(
         upstream.endpoint(Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
-        None,
     );
     adjust(&mut boot);
     let host = Swansong::new();

@@ -36,7 +36,6 @@ async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_n
         upstream.endpoint(Provider::OpenAICodex, CODEX),
         "gpt-5.6-sol",
         "sys",
-        None,
     );
     assert_eq!(client.turn_routing_token(), None);
     client
@@ -90,7 +89,7 @@ async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_n
 #[test]
 fn a_client_without_turn_routing_holds_no_token() {
     let endpoint = Endpoint::at(Provider::OpenAICodex, "http://127.0.0.1:1/x");
-    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None).without_turn_routing();
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys").without_turn_routing();
     client.begin_turn();
     assert_eq!(client.turn_routing_token(), None);
 }
@@ -141,7 +140,6 @@ async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent
         upstream.endpoint(Provider::OpenAICodex, CODEX),
         "gpt-5.6-sol",
         "sys",
-        None,
     );
     let plan = client.plan_state();
     assert!(plan.lock().unwrap().is_none());
@@ -214,7 +212,6 @@ async fn plan_windows_are_ignored_off_the_codex_backend() {
         upstream.endpoint(Provider::OpenRouter, "/api/v1/messages"),
         "m",
         "sys",
-        None,
     );
     let _ = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
     assert_eq!(upstream.count(), 1);
@@ -232,7 +229,7 @@ async fn a_codex_request_carries_its_headers_and_no_anthropic_version() {
         .endpoint(Provider::OpenAICodex, CODEX)
         .with_auth_value("Bearer tok".into())
         .with_extra_headers(vec![("ChatGPT-Account-ID".into(), "acct-1".into())]);
-    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
+    let client = Client::new(endpoint, "gpt-5.6-luna", "sys");
     client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
@@ -256,7 +253,6 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
         upstream.endpoint(Provider::OpenAICodex, CODEX),
         "gpt-6.1-sol",
         "sys",
-        None,
     );
     client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -295,7 +291,6 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
         upstream.endpoint(Provider::OpenAICodex, CODEX),
         "gpt-6.1-sol",
         "sys",
-        None,
     )
     .with_prompt_cache(PromptCachePolicy::Implicit);
     let turns = vec![crate::project::WireTurn::text("hello")];
@@ -352,7 +347,6 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
         Endpoint::without_url(Provider::Anthropic),
         "claude-haiku-4-5",
         "sys",
-        None,
     );
     assert!(
         messages.prime(&[], &[], ToolChoice::auto()).await.is_none(),
@@ -363,7 +357,6 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
         Endpoint::without_url(Provider::OpenAICodex),
         "gpt-6.1-sol",
         "sys",
-        None,
     )
     .with_prompt_cache(PromptCachePolicy::Explicit);
     assert!(
@@ -387,8 +380,8 @@ async fn primer_plants_despite_truncated_output() {
          \"usage\":{\"input_tokens\":1000,\"output_tokens\":16}}}\n\n",
     )]);
     let endpoint = upstream.endpoint(Provider::OpenAICodex, CODEX);
-    let client = Client::new(endpoint, "gpt-6-luna", "sys", None)
-        .with_prompt_cache(PromptCachePolicy::Implicit);
+    let client =
+        Client::new(endpoint, "gpt-6-luna", "sys").with_prompt_cache(PromptCachePolicy::Implicit);
     let turns = vec![crate::project::WireTurn::text("hello")];
     let primer = client
         .prime(&turns, &[], ToolChoice::auto())

@@ -161,7 +161,7 @@ fn a_running_or_gated_loop_declines() {
     );
 
     let call = bash_call("ls");
-    let _gate = shared.register_pending(&call, None, None);
+    let _gate = shared.register_pending(&call, Default::default());
     assert_eq!(
         shared
             .request_continue(Default::default())
@@ -298,9 +298,7 @@ fn an_accepted_continue_records_who_sent_it() {
 
     shared.append(1, user("hello")).unwrap();
     let wire = serde_json::to_string(&shared.project_messages()).unwrap();
-    let origin = crate::log::ContinueOrigin {
-        source: Some("mcp[claude-code]".into()),
-    };
+    let origin = crate::log::ContinueOrigin::default().with_source(Some("mcp[claude-code]".into()));
     assert!(shared.request_continue(origin).is_ok());
     assert_eq!(
         continues(&shared),

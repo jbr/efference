@@ -49,7 +49,6 @@ fn client(upstream: &ScriptedUpstream) -> Client {
         upstream.endpoint(Provider::OpenRouter, "/v1/messages"),
         "m",
         "sys",
-        None,
     )
     .with_max_output(65_536)
     .with_context_window(Some(131_072))

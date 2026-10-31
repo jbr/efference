@@ -39,7 +39,7 @@ pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -
     // reasoning model's thinking bills against it, and the client's small default
     // would end the summary early.
     let caps = endpoint.fetch_capabilities(&model, &[]).await?;
-    let client = Client::new(endpoint, &model, system, None)
+    let client = Client::new(endpoint, &model, system)
         .with_thinking(caps.thinking)
         .with_prompt_cache(caps.prompt_cache)
         .with_max_output(caps.max_output_tokens.unwrap_or(UNKNOWN_OUTPUT_CAP))

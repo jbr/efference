@@ -73,7 +73,6 @@ async fn start(
         upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
-        None,
     );
     boot.env_policy = env;
     let host = Swansong::new();

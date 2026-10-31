@@ -128,6 +128,14 @@ pub struct ContinueOrigin {
     pub source: Option<String>,
 }
 
+impl ContinueOrigin {
+    /// This continue, sent by `source`.
+    pub fn with_source(mut self, source: Option<String>) -> Self {
+        self.source = source;
+        self
+    }
+}
+
 /// One accepted gate decision ([`Telemetry::GateDecision`]).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]

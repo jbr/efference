@@ -84,7 +84,10 @@ impl Triager {
     /// as the live triage under this configuration (shared or own), same validity rule
     /// (`parse_retain` plus [`require_coverage`] and [`require_in_bounds`]) — only the
     /// retry loop is absent, because the first attempt is the measurement.
-    #[allow(clippy::too_many_arguments)] // the triage's own inputs plus the view under test
+    // The replay builds its request through `triage_request`, from the arguments the live
+    // triage passes it, so its inputs are `triage_results`' less the sink plus the view under
+    // test; a bundle of them would belong to `triage_request` and its callees as well.
+    #[allow(clippy::too_many_arguments)]
     pub async fn attempt(
         &self,
         agent: &Client,

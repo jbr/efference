@@ -51,7 +51,7 @@ impl Triager {
         if let Some(effort) = &triage.effort {
             caps.check_effort(effort, &triage.model)?;
         }
-        let mut client = Client::new(endpoint.for_triage(), &triage.model, system, None)
+        let mut client = Client::new(endpoint.for_triage(), &triage.model, system)
             .with_stream_ceiling(stream_ceiling)
             .with_prompt_cache(caps.prompt_cache)
             .with_effort(triage.effort.clone());

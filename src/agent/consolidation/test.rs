@@ -96,7 +96,6 @@ fn mock(text: &str, fail: bool) -> (ScriptedUpstream, Client) {
         upstream.endpoint(Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
-        None,
     );
     (upstream, client)
 }

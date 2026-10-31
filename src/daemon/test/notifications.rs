@@ -8,15 +8,15 @@ use super::*;
 #[test]
 fn slot_notifications_queue_and_supersede_and_the_rest_are_logged_at_arrival() {
     let (shared, _turns_rx) = Session::in_memory();
-    let a = shared.notify(
-        "test-watch".into(),
-        "running 5min".into(),
+    let a = shared.notify(Notification::new(
+        "test-watch",
+        "running 5min",
         Some("bash#7".into()),
-    );
+    ));
     assert_eq!(a, None, "a slot notification has no entry yet");
     assert!(shared.snapshot().is_empty(), "nothing logged for a slot");
     let b = shared
-        .notify("reviewer".into(), "nit at L40".into(), None)
+        .notify(Notification::new("reviewer", "nit at L40", None))
         .expect("an arrival answers with its seq");
     let logged = shared.snapshot();
     assert_eq!(logged.len(), 1);
@@ -25,11 +25,11 @@ fn slot_notifications_queue_and_supersede_and_the_rest_are_logged_at_arrival() {
     assert_eq!(shared.pending_notifications().len(), 2);
 
     // Same slot → replace, not append (the "running 5min" → "finished" case).
-    shared.notify(
-        "test-watch".into(),
-        "finished".into(),
+    shared.notify(Notification::new(
+        "test-watch",
+        "finished",
         Some("bash#7".into()),
-    );
+    ));
     let pending = shared.pending_notifications();
     assert_eq!(pending.len(), 2, "slot supersession replaced, didn't add");
     assert!(pending.iter().any(|n| n.body == "finished"));
@@ -50,9 +50,9 @@ fn slot_notifications_queue_and_supersede_and_the_rest_are_logged_at_arrival() {
 #[test]
 fn a_wake_notification_keeps_its_flag() {
     let (shared, _turns_rx) = Session::in_memory();
-    shared.notify("op".into(), "fyi".into(), None);
-    shared.notify_wake("child".into(), "stuck".into(), None);
-    shared.notify_wake("child".into(), "gated".into(), Some("session:child".into()));
+    shared.notify(Notification::new("op", "fyi", None));
+    shared.notify(Notification::new("child", "stuck", None).waking());
+    shared.notify(Notification::new("child", "gated", Some("session:child".into())).waking());
     let json = serde_json::to_value(shared.pending_notifications()).unwrap();
     assert_eq!(json[0].get("wake"), None, "absent unless set: {json}");
     assert_eq!(json[1]["wake"], true, "{json}");
@@ -69,7 +69,7 @@ fn a_wake_notification_keeps_its_flag() {
     assert_eq!(logged, [false, true], "the flag is on the arrival entry");
 
     // Supersession on the slot keeps the replacement's own terms.
-    shared.notify_wake("child".into(), "idle".into(), Some("session:child".into()));
+    shared.notify(Notification::new("child", "idle", Some("session:child".into())).waking());
     let drained = shared.drain_inbox();
     assert_eq!(drained.len(), 1);
     assert!(drained[0].wake);
@@ -86,7 +86,7 @@ async fn inbox_wake_fires_on_unshown_not_on_shown() {
 
     // Already arrived → resolves at once.
     let seq = shared
-        .notify("ci".into(), "failed".into(), None)
+        .notify(Notification::new("ci", "failed", None))
         .expect("logged at arrival");
     tokio::time::timeout(Duration::from_secs(2), shared.inbox_wake())
         .await
@@ -112,7 +112,7 @@ async fn inbox_wake_fires_on_unshown_not_on_shown() {
     let s2 = Arc::clone(&shared);
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(50)).await;
-        s2.notify("op".into(), "nudge".into(), None);
+        s2.notify(Notification::new("op", "nudge", None));
     });
     tokio::time::timeout(Duration::from_secs(2), shared.inbox_wake())
         .await
@@ -161,10 +161,10 @@ fn arrived_notifications_survive_a_reload_and_slot_ones_do_not() {
     let kept = {
         let (shared, _turns_rx) = Session::from_log(Log::create(&path, None).expect("create log"));
         let kept = shared
-            .notify("agent:reviewer".into(), "please look".into(), None)
+            .notify(Notification::new("agent:reviewer", "please look", None))
             .unwrap();
-        shared.notify_wake("child".into(), "stuck".into(), None);
-        shared.notify("ci".into(), "running 19s".into(), Some("p#5".into()));
+        shared.notify(Notification::new("child", "stuck", None).waking());
+        shared.notify(Notification::new("ci", "running 19s", Some("p#5".into())));
         shared.close_log();
         kept
     };
@@ -189,7 +189,7 @@ async fn the_idle_wake_ignores_a_restored_notification_until_a_new_one_arrives()
     let mut log = Log::in_memory();
     log.append(
         0,
-        Payload::Ambient(crate::log::Notification::new("ci", "restored", None)),
+        Payload::Ambient(Notification::new("ci", "restored", None)),
     )
     .unwrap();
     let (shared, _turns_rx) = Session::from_log(log);
@@ -207,7 +207,7 @@ async fn the_idle_wake_ignores_a_restored_notification_until_a_new_one_arrives()
     let arriving = Arc::clone(&shared);
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(50)).await;
-        arriving.notify("op".into(), "new".into(), None);
+        arriving.notify(Notification::new("op", "new", None));
     });
     tokio::time::timeout(Duration::from_secs(2), shared.new_notification_wake())
         .await
@@ -216,7 +216,11 @@ async fn the_idle_wake_ignores_a_restored_notification_until_a_new_one_arrives()
 
     // A slot notification is in memory only, so it is always new.
     let (slotted, _rx) = Session::in_memory();
-    slotted.notify("child".into(), "idle".into(), Some("session:child".into()));
+    slotted.notify(Notification::new(
+        "child",
+        "idle",
+        Some("session:child".into()),
+    ));
     tokio::time::timeout(Duration::from_secs(2), slotted.new_notification_wake())
         .await
         .expect("a slot notification wakes it");

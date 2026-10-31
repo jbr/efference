@@ -169,7 +169,7 @@ impl ForkSpot {
         persona: impl Into<String>,
     ) -> Self {
         ForkSpot {
-            client: Client::new(endpoint, model, persona, None)
+            client: Client::new(endpoint, model, persona)
                 .without_turn_routing()
                 .with_origin(crate::log::RequestOrigin::Spot),
             scratch: None,

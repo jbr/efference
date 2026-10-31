@@ -274,7 +274,7 @@ async fn a_compaction_streams_its_writers_deltas() {
     // The compaction loop runs on the session's own client; the test starts it directly,
     // without a runtime around it.
     let endpoint = upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages");
-    let client = Arc::new(Client::new(endpoint, "m", "sys", None));
+    let client = Arc::new(Client::new(endpoint, "m", "sys"));
     let (session, _rx) = Session::in_memory();
     tokio::spawn(crate::daemon::compact::compact_loop(
         client,

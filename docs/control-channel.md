@@ -93,8 +93,9 @@ by cancellation — and yields its outcome. `serve_host` creates the parent
 one runtime under it; the two-runtimes test in `src/daemon/test/runtime.rs` pins
 the isolation.
 
-Session preparation — from a `SessionRequest` (root, base environment, session
-dir, config path, model and flags) to a `SessionBoot` — is `boot::prepare`
+Session preparation — from a `SessionRequest` (the creation body whole, with the
+root, base environment, session dir and model selections the host resolved from
+it) to a `SessionBoot` — is `boot::prepare`
 (`src/boot.rs`): the origin config and its `[env]` references, the provider and
 capability lookup, minting the session dir and snapshotting the config, scratch,
 the `[env]` policy, the log, the toolbox and MCP mounts (`src/boot/mcp_mount.rs`,
@@ -168,7 +169,7 @@ the body's `model`, `spotter_model`, and `triage` selections (each optional) aga
 the host's `InferenceRegistry` ([transport.md](transport.md)) before anything is
 minted, reserves the id as a starting entry in the host's map and answers, then — on
 a task of its own — establishes the environment, builds a `SessionRequest` carrying
-the resolved endpoints, runs `boot::prepare`, starts the runtime, and adopts it in
+the body and the resolved endpoints, runs `boot::prepare`, starts the runtime, and adopts it in
 place of the starting entry ([control-api.md](control-api.md), "A starting session").
 The `Host` is constructed with the registry its launch loaded; the sessions mutex is
 not held across preparation. An MCP authorization opens a browser on the host's
@@ -259,12 +260,12 @@ The agent loop and the log know only the `Frontend` trait. Swapping the client �
 ```rust
 trait Frontend {
     async fn read_user_turn(&mut self) -> Option<String>;
-    async fn approve(&mut self, call: &ToolCall, bound: Option<&BoundAction>) -> Approval;
+    async fn approve(&mut self, call: &ToolCall, gate: GateOptions<'_>) -> Approval;
     async fn interrupted(&mut self) -> Interrupt;
 }
 ```
 
-`read_user_turn` returns the next user turn, or `None` to end the loop. `approve` is a gate on a pending tool call, not a general line-edit surface — it has its own four-valued return (approve / abort / redirect / config_edit) and is conceptually separate from turn input. `interrupted` resolves when the user signals interrupt while a tool is running, carrying the intent — `Kill` (abort the tool, process group killed) or `Detach` (hand the live child to the background process monitor, see [process-monitor.md](process-monitor.md)).
+`read_user_turn` returns the next user turn, or `None` to end the loop. `approve` is a gate on a pending tool call, not a general line-edit surface — it has its own four-valued return (approve / abort / redirect / config_edit) and is conceptually separate from turn input. `GateOptions` carries what the gate shows beside the call, each part optional: the leaf action an `agents__decide` authorizes and the grant the gate offers ([permissions.md](permissions.md)); `register_pending` takes the same value. `interrupted` resolves when the user signals interrupt while a tool is running, carrying the intent — `Kill` (abort the tool, process group killed) or `Detach` (hand the live child to the background process monitor, see [process-monitor.md](process-monitor.md)).
 
 The loop is pull-shaped and stays that way. It blocks at `read_user_turn()` and `approve()`, and these map cleanly onto request/response: the pull resolves when a client pushes. `RemoteFrontend` implements all three against `Session` — `read_user_turn` awaits the turn inbox, `approve` registers a gate and awaits its oneshot, `interrupted` selects over the kill and detach notifiers.
 

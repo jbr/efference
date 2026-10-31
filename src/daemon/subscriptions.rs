@@ -134,7 +134,7 @@ impl Host {
         for sender in returned_to {
             if let Some(inbox) = self.session(&sender) {
                 let body = body(Relation::Driver, &sender);
-                inbox.notify_wake(id.to_string(), body, Some(status_slot(id)));
+                inbox.notify(Notification::new(id, body, Some(status_slot(id))).waking());
             }
         }
         // A gate the operator is asked, or one escalated past its subscribers, asks
@@ -155,19 +155,23 @@ impl Host {
             let supervises = supervisor.as_deref() == Some(subscriber.as_str());
             let relation = Relation::of_session(&view, &subscriber, supervises, terms.wake);
             let body = body(relation, &subscriber);
-            if terms.wake && !asks_another {
-                inbox.notify_wake(id.to_string(), body, Some(status_slot(id)));
+            let status = Notification::new(id, body, Some(status_slot(id)));
+            inbox.notify(if terms.wake && !asks_another {
+                status.waking()
             } else {
-                inbox.notify(id.to_string(), body, Some(status_slot(id)));
-            }
+                status
+            });
         }
         if let Some(reviewer) = reviewer
             && let Some(inbox) = self.session(&reviewer)
         {
-            inbox.notify_wake(
-                id.to_string(),
-                body(Relation::Reviewer, &reviewer),
-                Some(status_slot(id)),
+            inbox.notify(
+                Notification::new(
+                    id,
+                    body(Relation::Reviewer, &reviewer),
+                    Some(status_slot(id)),
+                )
+                .waking(),
             );
         }
     }

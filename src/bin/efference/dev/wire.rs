@@ -177,13 +177,9 @@ pub(crate) async fn wire(
         // one carried. Sessions logged since the boot-preamble snapshot read
         // back the recorded `system` instead and are unaffected.
         efference::env::system_prompt(
-            &model,
-            &session_id,
-            &efference::env::Lineage::default(),
-            None,
-            context_block.as_deref(),
-            role_section.as_deref(),
-            None,
+            efference::env::PromptInputs::new(&model, &session_id)
+                .with_context_block(context_block.as_deref())
+                .with_role_section(role_section.as_deref()),
         )
     };
     // The full tools[] a real turn sends — world tools + the harness tools

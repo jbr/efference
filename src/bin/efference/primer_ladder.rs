@@ -8,6 +8,7 @@
 //! primer is the v1.1 verdict live. Sends real requests unless `--dry-run`.
 
 use super::*;
+use crate::dev::PrimerLadderArgs;
 use efference::log::Payload;
 use efference::triage::{Pending, TriageModel, TriageView, Triager};
 use std::io::Write;
@@ -50,19 +51,34 @@ async fn plant(
     }))
 }
 
+impl PrimerLadderArgs {
+    /// The separate-model triage the `--triage-*` flags describe, when `--triage-model`
+    /// names one.
+    fn triage_model(&self) -> Option<TriageModel> {
+        self.triage_model.clone().map(|model| TriageModel {
+            model,
+            thinking: self.triage_thinking,
+            auto_choice: self.triage_auto_choice,
+            effort: self.triage_effort.clone(),
+        })
+    }
+}
+
 /// Run the ladder against one recorded triage: the deepest triage by default, which is
 /// where a cold prefix hurts most.
-#[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
-pub(crate) async fn ladder(
-    path: PathBuf,
-    seq: Option<u64>,
-    gaps: &str,
-    dry_run: bool,
-    model: &str,
-    triage: Option<TriageModel>,
-    out: Option<PathBuf>,
-) -> CliResult {
-    let gaps = parse_gaps(gaps)?;
+pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
+    let triage = args.triage_model();
+    let PrimerLadderArgs {
+        path,
+        seq,
+        gaps,
+        dry_run,
+        model,
+        out,
+        ..
+    } = args;
+    let model = model.as_str();
+    let gaps = parse_gaps(&gaps)?;
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
     let entries = efference::persist::load(&path)?;
     let inference = inference::resolve(
@@ -161,7 +177,7 @@ pub(crate) async fn ladder(
         std::time::Duration::from_secs(600),
     )
     .await?;
-    let client = Client::new(endpoint, model, system, None);
+    let client = Client::new(endpoint, model, system);
 
     // Arm A: two auto primers back-to-back — the control. Same shape, no gap for
 
