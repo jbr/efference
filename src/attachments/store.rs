@@ -3,7 +3,7 @@
 //! A composer attaches a file by uploading it (`POST /attachments`), and the turn that carries it
 //! names the upload. Everything a client can say about a stored file goes through a bare name, so
 //! this is where "a name is one path component inside this directory" is enforced: a name that
-//! [`sanitize`](super::sanitize) would change is not one this store handed out, and is refused
+//! [`sanitize`] would change is not one this store handed out, and is refused
 //! rather than resolved.
 
 use super::{Arrival, inspect, sanitize, store};

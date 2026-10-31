@@ -118,7 +118,7 @@ impl<'a> InteractiveState<'a> {
 
     /// Toggle the pause overlay and push it to the daemon (docs/tui.md —
     /// the hold/resume key). The speed dial is retained underneath (resume returns to it).
-    /// Optimistic like [`nudge_pace_speed`](Self::nudge_pace_speed).
+    /// Optimistic like [`esc_hold`](Self::esc_hold).
     pub(in crate::tui) fn toggle_pace_hold(&mut self) {
         let cur = self.pace.unwrap_or(PaceView {
             speed_ms: 0,

@@ -12,7 +12,7 @@ use super::*;
 ///
 /// Additive by construction: because it projects to nothing, growing this struct
 /// cannot perturb the byte-stability pin (docs/log-and-projection.md) — the same
-/// property [`Mark`] has.
+/// property every [`Telemetry`] entry has.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolTelemetry {
     /// The `tool_use` id — the join back to the call and its [`Payload::ToolResult`].

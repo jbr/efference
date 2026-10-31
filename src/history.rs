@@ -169,8 +169,9 @@ fn canonicalize(path: &Path) -> PathBuf {
 }
 
 /// The history store: a path to `state.db`, opened per operation. A store with
-/// no path is disabled — what [`InferenceRegistry::from_config`] carries, since
-/// a config value alone names no home directory.
+/// no path is disabled — what
+/// [`InferenceRegistry::from_config`](crate::inference::InferenceRegistry::from_config)
+/// carries, since a config value alone names no home directory.
 #[derive(Clone, Debug, Default)]
 pub struct History {
     path: Option<PathBuf>,

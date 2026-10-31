@@ -75,7 +75,7 @@ pub(crate) enum ErrorCode {
     /// instead of rendering: no retry helps, and no other body is coming. 415.
     UnsupportedContent,
     /// `/files` was asked for a file past the view limit
-    /// ([`files::MAX_BYTES`](super::files::MAX_BYTES)). Distinct from
+    /// ([`files::MAX_BYTES`]). Distinct from
     /// [`UnsupportedContent`](Self::UnsupportedContent) because the file *is* text
     /// and a client says something different about it. 413.
     TooLarge,

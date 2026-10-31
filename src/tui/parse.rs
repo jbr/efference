@@ -33,8 +33,9 @@ struct WireProcess {
 /// transcript's in-flight block, so both are dropped.
 ///
 /// Tail and last-chunk are left empty here: the topic does not carry them, and
-/// [`State::handle_event`](crate::tui::State::handle_event) merges each process's
-/// locally-accumulated tail back in so a topic replacement can't wipe it.
+/// [`InteractiveState::handle_event`](crate::tui::state::InteractiveState::handle_event)
+/// merges each process's locally-accumulated tail back in so a topic replacement can't
+/// wipe it.
 pub(super) fn parse_processes(value: &serde_json::Value) -> Vec<BgProc> {
     serde_json::from_value::<Vec<WireProcess>>(value.clone())
         .unwrap_or_default()

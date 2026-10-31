@@ -334,6 +334,8 @@ impl Provider {
     /// part of the choice because the failure is the upstream's, not the skin's —
     /// it reproduces on the provider's OpenAI-shaped endpoint too — so it follows
     /// the slug rather than the provider.
+    ///
+    /// [`ImagePlacement::AfterInterposedTurn`]: crate::project::ImagePlacement::AfterInterposedTurn
     pub fn image_placement(&self, model: &str) -> crate::project::ImagePlacement {
         match self {
             Self::Anthropic | Self::OpenAI | Self::OpenAICodex => {

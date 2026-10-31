@@ -1,7 +1,7 @@
 //! The session-control tools: one definition per verb, three tool sets over them
 //! (docs/tools.md, docs/operating.md).
 //!
-//! Each verb is written once here as an [mcplease](mcplease) tool struct, and three
+//! Each verb is written once here as an [mcplease] tool struct, and three
 //! `tools!` invocations list them:
 //!
 //! - [`in_session`], mounted in a hosted session's toolbox under `agents__<verb>`

@@ -5,7 +5,7 @@
 //! markdown prose (headings, lists, quote, table, code, rule, inline styles), a
 //! `bash` call rendered as a shell block, an edit tool's colored diff, a long
 //! result collapsed under the disclosure triangle, an error result, a triaged
-//! result, and a summary — then runs the real [`ui_loop`](super::ui_loop)
+//! result, and a summary — then runs the real [`ui_loop`](fn@super::ui_loop)
 //! against it with no daemon behind it. The snapshot harness (`harness.rs`) covers
 //! the same shapes headlessly; this is for seeing them live, in color, scrollable.
 

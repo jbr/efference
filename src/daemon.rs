@@ -722,7 +722,7 @@ mod views;
 mod watch;
 
 /// The one handler construction (docs/web-bind.md): every listener mounts
-/// [`handler`], keyed on its [`Transport`] and [`App`]. Public so a client of the
+/// [`handler()`], keyed on its [`Transport`] and [`App`]. Public so a client of the
 /// control channel can mount the socket-shaped stack on an in-memory transport and
 /// exercise a real request/response cycle without binding anything.
 pub use handler::{App, Transport, handler};

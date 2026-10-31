@@ -45,7 +45,7 @@ impl ProbeLedger {
     }
 
     /// Whether a fresh spotter has voted `prefix` not safe for all arguments: the evidence a
-    /// gate's grant descends past to a longer prefix ([`super::gate_grant`]).
+    /// gate's grant descends past to a longer prefix ([`super::gate_grant()`]).
     pub fn refuted(&self, prefix: &str) -> bool {
         self.votes
             .get(prefix)

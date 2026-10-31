@@ -4,7 +4,7 @@
 //! [`project`](super::project) rebuilds the whole document from the whole log and
 //! stays the reference definition; this type keeps the document between repaints and
 //! touches only what changed. It rests on one property of
-//! [`entry_nodes`](super::entry_nodes): a committed entry's nodes are a pure function
+//! [`entry_nodes`]: a committed entry's nodes are a pure function
 //! of that entry, the annotations indexed against the calls it makes, and the human's
 //! per-call view toggles — never of its neighbours. So the invalidation rule is a
 //! single sentence:

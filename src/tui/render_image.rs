@@ -1,7 +1,8 @@
-//! Rendering a [`DocumentNode::Image`] (docs/tui.md).
+//! Rendering a [`DocumentNode::Image`](crate::tui::document::DocumentNode::Image) (docs/tui.md).
 //!
 //! The node reserves a fixed rectangle — a pure function of its pixel metadata
-//! and the render width, via [`ImageStore::footprint`] — and what paints *into*
+//! and the render width, via
+//! [`ImageStore::footprint`](crate::tui::image::ImageStore::footprint) — and what paints *into*
 //! that rectangle depends on where the bytes have gotten to and how much of the
 //! rectangle is on screen. Fully visible → the native protocol's escape (the
 //! crisp render). Partially scrolled, top or bottom → a row-slice of the

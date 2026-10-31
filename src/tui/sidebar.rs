@@ -24,7 +24,7 @@ pub(super) enum SidebarVerb {
     /// Jump the transcript focus to the entry whose call spawned this process
     /// (docs/process-monitor.md, the call↔process mapping). Chrome-only: it moves this
     /// client's focus and touches no daemon state, so unlike `kill` it never
-    /// travels over [`SidebarCmd`](super::SidebarCmd).
+    /// travels over [`SidebarCmd`].
     View,
     Commit,
     Cancel,

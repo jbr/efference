@@ -84,7 +84,7 @@ pub struct Host {
     session_ids: crate::session_ids::SessionIds,
     /// Every session on this host, starting or hosted (`entries.rs`).
     sessions: Mutex<Sessions>,
-    /// Starting sessions whose preparation failed, kept for [`FAILURE_KEPT`] after
+    /// Starting sessions whose preparation failed, kept for `FAILURE_KEPT` after
     /// they left the map so a client that attaches after the failure still reads it
     /// (`preparation.rs`). Served on `/state` and `/events` only; neither listed nor
     /// holding an id.

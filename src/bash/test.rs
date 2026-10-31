@@ -163,6 +163,7 @@ async fn tmpdir_is_overridden_when_set() {
 #[tokio::test]
 async fn stripped_variables_do_not_reach_the_child() {
     // SAFETY: names unique to this test; the process env is read at spawn.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("EFFERENCE_TEST_STRIPPED", "gone");
         std::env::set_var("EFFERENCE_TEST_KEPT", "here");
@@ -181,6 +182,8 @@ async fn stripped_variables_do_not_reach_the_child() {
         .await,
     );
     assert_eq!(result.content.trim(), "[unset][here]");
+    // SAFETY: as for the set above.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::remove_var("EFFERENCE_TEST_STRIPPED");
         std::env::remove_var("EFFERENCE_TEST_KEPT");

@@ -3,10 +3,12 @@
 use super::*;
 
 /// One async config edit awaiting an orchestrator decision
-/// (docs/permissions.md). Filed by a `Proposed` [`ConfigEdit`] append (the
+/// (docs/permissions.md). Filed by a `Proposed` [`ConfigEdit`](crate::log::ConfigEdit) append (the
 /// session's `propose_scope`, the spotter's prefix-promotion); the orchestrator-above commits or
-/// cancels it, which drops it from the queue. Unlike [`PendingNotification`], the proposal **already
-/// has a durable `seq`** (the `Proposed` entry's), so that *is* its id — no queue-local counter.
+/// cancels it, which drops it from the queue. Unlike
+/// [`PendingNotification`](super::notifications::PendingNotification), the proposal
+/// **already has a durable `seq`** (the `Proposed` entry's), so that *is* its id — no
+/// queue-local counter.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct PendingProposal {
     /// The `seq` of the `Proposed` log entry — the proposal's id, which the orchestrator's
@@ -64,11 +66,12 @@ impl Session {
 
     /// Resolve a pending proposal by `seq` — the orchestrator-above's commit/cancel decision over
     /// `PATCH /proposals/:seq` (docs/permissions.md). **Commit** appends a
-    /// `Committed` [`ConfigEdit`] carrying the proposal's `change`, which `append`'s fold applies to
-    /// the effective config (and notifies the session for `scope`/`paths`); **cancel** appends a
-    /// `Cancelled` entry (audit-only). Both reference the proposal by `seq`, so the fold drops it
-    /// from the pending queue. Returns `false` if no pending proposal has that `seq`. The commit is
-    /// session-effective only: unlike the synchronous gate path
+    /// `Committed` [`ConfigEdit`](crate::log::ConfigEdit) carrying the proposal's `change`, which
+    /// `append`'s fold applies to the effective config (and notifies the session for
+    /// `scope`/`paths`); **cancel** appends a `Cancelled` entry (audit-only). Both
+    /// reference the proposal by `seq`, so the fold drops it from the pending queue. Returns
+    /// `false` if no pending proposal has that `seq`. The commit is session-effective only:
+    /// unlike the synchronous gate path
     /// ([`apply_config_change`](Self::apply_config_change)), it is not written back to the
     /// config file.
     pub(crate) fn resolve_proposal_decision(
@@ -101,11 +104,12 @@ impl Session {
         Ok(true)
     }
 
-    /// Edit a committed [`ConfigChange`] into the config file, preserving its formatting
-    /// (docs/permissions.md). Every committed grant goes through here, so the file
-    /// stays a complete record of the perimeter the session ran under — the file an operator
-    /// reads, and copies grants up to the origin template from. A session with no config file (the
-    /// built-in default role) is a no-op: there is no file to diverge from.
+    /// Edit a committed [`ConfigChange`](crate::log::ConfigChange) into the config file,
+    /// preserving its formatting (docs/permissions.md). Every committed grant goes through
+    /// here, so the file stays a complete record of the perimeter the session ran under —
+    /// the file an operator reads, and copies grants up to the origin template from. A
+    /// session with no config file (the built-in default role) is a no-op: there is no file
+    /// to diverge from.
     pub fn apply_config_change(&self, change: &crate::log::ConfigChange) -> io::Result<()> {
         match self.config_file.lock().unwrap().as_mut() {
             Some(file) => file.apply(change),

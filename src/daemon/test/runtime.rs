@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::api::{Endpoint, ModelCapabilities, Provider};
+use crate::bash::group_alive;
 use crate::daemon::{SessionBoot, SessionRuntime};
 use crate::log::Stance;
 use crate::spotter::StaticSpotter;
@@ -90,11 +91,6 @@ pub(super) async fn started(boot: SessionBoot<StaticSpotter>, parent: &Swansong)
     runtime
 }
 
-fn alive(pgid: u32) -> bool {
-    // SAFETY: signal 0 checks existence and permission only; no memory effects.
-    unsafe { libc::killpg(pgid as libc::pid_t, 0) == 0 }
-}
-
 async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
     tokio::time::timeout(Duration::from_secs(5), async {
         while !ready() {
@@ -109,7 +105,7 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 /// removes its scratch while the other keeps serving; ending the parent ends
 /// the rest. Shutdown completion means teardown has run, not merely begun.
 ///
-/// `alive` is `killpg(pgid, 0)`, which stays true for a killed process until it
+/// `group_alive` is `killpg(pgid, 0)`, which stays true for a killed process until it
 /// is waited — so asserting it directly after a shutdown is asserting that
 /// teardown waited for the reap, not merely that it sent the signal. That is
 /// the invariant (`reap_all_bg`, docs/process-monitor.md), and this test was
@@ -128,11 +124,14 @@ async fn one_runtime_stops_without_touching_its_sibling() {
     };
     let child_one = pgid_of(&one);
     let child_two = pgid_of(&two);
-    assert!(alive(child_one) && alive(child_two));
+    assert!(group_alive(child_one) && group_alive(child_two));
 
     one.swansong().shut_down().await;
-    assert!(!alive(child_one), "the stopped session's child was reaped");
-    assert!(alive(child_two), "the sibling's child kept running");
+    assert!(
+        !group_alive(child_one),
+        "the stopped session's child was reaped"
+    );
+    assert!(group_alive(child_two), "the sibling's child kept running");
     assert!(
         !roots.0.join("one/scratch").exists(),
         "scratch removed at end"
@@ -157,7 +156,7 @@ async fn one_runtime_stops_without_touching_its_sibling() {
 
     host.shut_down().await;
     assert!(
-        !alive(child_two),
+        !group_alive(child_two),
         "host shutdown reaps every session's children"
     );
     assert!(!roots.0.join("two/scratch").exists());

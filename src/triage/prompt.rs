@@ -80,7 +80,7 @@ described above; the result's `keep` and `note` are about the result alone.";
 /// - **A single-result triage should not ask for a label at all.** Naming the result when
 ///   only one is in question is transcription with no decision in it. The flat top-level
 ///   `keep`/`note` is asked for instead; the `results` array is for triages that genuinely
-///   carry several, keyed by the short labels of [`labels`](super::labels) rather than
+///   carry several, keyed by the short labels of [`labels`] rather than
 ///   provider call ids, which models copied back with characters dropped. The labels
 ///   are interpolated in that case — the triage's tail is thrown
 ///   away, so nothing here is cache-keyed (docs/log-and-projection.md), unlike the
@@ -280,7 +280,7 @@ fn margin_lines(lines: &[&str]) -> String {
 }
 
 /// One result's block in a triage view (docs/triage.md): a header naming the
-/// result's label ([`labels`](super::labels)) and tool, then the capped, line-numbered
+/// result's label ([`labels`]) and tool, then the capped, line-numbered
 /// output.
 ///
 /// Numbering restarts at 1 in every block, and the header is what the `retain`

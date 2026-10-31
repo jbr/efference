@@ -83,12 +83,12 @@ impl Session {
     /// Notify about one moment, in the background (docs/web-push.md).
     ///
     /// When no client is attending the host ([`Session::attentive_clients`]) the
-    /// push is sent now. Otherwise it is held for [`PUSH_DELAY`] and sent
-    /// only if neither resolution nor a sighting cancelled it
-    /// ([`Session::cancel_delayed_push`]) — a push that fires is one nobody
-    /// attended to. The decision lives here rather than at the call sites, so a
-    /// gate, an `ask`, and a settle are delayed identically. Each step is appended
-    /// to the log as a [`Telemetry::Push`].
+    /// push is sent now. Otherwise it is held for
+    /// [`PUSH_DELAY`](super::delayed_push::PUSH_DELAY) and sent only if neither
+    /// resolution nor a sighting cancelled it ([`Session::cancel_delayed_push`]) — a
+    /// push that fires is one nobody attended to. The decision lives here rather than
+    /// at the call sites, so a gate, an `ask`, and a settle are delayed identically.
+    /// Each step is appended to the log as a [`Telemetry::Push`].
     pub(super) fn push(&self, kind: MomentKind, body: String) {
         let moment = self.pushes.next.fetch_add(1, Ordering::Relaxed);
         let mut message = crate::push::Message::new(self.push_title(kind.title()), body);

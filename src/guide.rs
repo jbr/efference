@@ -31,7 +31,7 @@ pub const MOUNT: &str = "efference://guide/";
 
 /// The `[context]` value that lists this mount: `Label = { builtin = "guide" }`.
 /// `guide/<slug>` names one document, which rides in full rather than as a stub
-/// ([`inline`]).
+/// ([`builtin_section`]).
 pub const BUILTIN: &str = "guide";
 
 /// Whether a `builtin = "…"` value names something this binary ships: the mount,

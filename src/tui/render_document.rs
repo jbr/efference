@@ -93,16 +93,18 @@ impl<'a> InteractiveState<'a> {
         self.document.laid_out = 0;
         self.document.highlighted = 0;
 
-        // Use raw pointer to avoid borrow checker issues when calling render_node
-        let nodes_ptr = self.document.document.nodes.as_ptr();
-        let node_count = self.document.document.nodes.len();
+        // The nodes are held apart from `self` for the walk: `render_node` borrows one
+        // while it mutates the rest of `self`. Nothing under `render_node` reads
+        // `document.nodes`, so the emptied field is not observable until they go back.
+        let nodes = std::mem::take(&mut self.document.document.nodes);
+        let node_count = nodes.len();
 
-        for idx in 0..node_count {
+        for (idx, node) in nodes.iter().enumerate() {
             // A blank line between consecutive top-level nodes — except where the
             // node is a *continuation* of the one above it. A tool call, what the
             // spotter made of it, and what came back are three entries that read as
             // one unit, so nothing separates them (docs/tui.md).
-            if idx > 0 && starts_group(&self.document.document.nodes[idx]) {
+            if idx > 0 && starts_group(node) {
                 self.layout.pos.y += 1;
             }
             let start = self.layout.pos.y;
@@ -129,7 +131,7 @@ impl<'a> InteractiveState<'a> {
                         self.render_cache.actions.push((rect, action.clone()));
                     }
                     self.layout.pos.y = end;
-                    self.note_item(idx, start, end);
+                    self.note_item(node, start, end);
                     continue;
                 }
             }
@@ -141,8 +143,6 @@ impl<'a> InteractiveState<'a> {
             let action_base = self.render_cache.actions.len();
             self.document.laid_out += 1;
 
-            // SAFETY: idx is bounded by node_count, and nodes_ptr is valid for the duration of this method
-            let node = unsafe { &*nodes_ptr.add(idx) };
             self.render_node(node, buf);
 
             // Record what this node cost, so a later frame that scrolls it out of
@@ -161,8 +161,9 @@ impl<'a> InteractiveState<'a> {
                 actions,
                 level,
             });
-            self.note_item(idx, start, self.layout.pos.y);
+            self.note_item(node, start, self.layout.pos.y);
         }
+        self.document.document.nodes = nodes;
 
         self.viewport.cached_layout = Some(DocumentLayoutCache {
             render_width: self.layout.area.width,
@@ -174,10 +175,10 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Record a foldable item's rows for hover and click (docs/tui.md).
-    fn note_item(&mut self, idx: usize, start: u16, end: u16) {
+    fn note_item(&mut self, node: &DocumentNode<'_>, start: u16, end: u16) {
         if matches!(
-            self.document.document.nodes.get(idx),
-            Some(DocumentNode::CallItem { .. } | DocumentNode::ThinkingItem { .. })
+            node,
+            DocumentNode::CallItem { .. } | DocumentNode::ThinkingItem { .. }
         ) {
             self.render_cache.items.push((start, end));
         }

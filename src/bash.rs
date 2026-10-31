@@ -357,8 +357,21 @@ pub(crate) async fn drain_pipes<T>(
 pub(crate) fn kill_group(pgid: u32) {
     // SAFETY: an FFI call with no memory effects; a stale/invalid pgid is a
     // benign `ESRCH`, which we intentionally ignore (best-effort teardown).
+    #[allow(unsafe_code)]
     unsafe {
         libc::killpg(pgid as libc::pid_t, libc::SIGKILL);
+    }
+}
+
+/// Test probe: whether group `pgid` still has a member. `killpg` with signal 0 checks
+/// existence and permission only, so a killed process still answers until its parent
+/// waits it (docs/process-monitor.md).
+#[cfg(test)]
+pub(crate) fn group_alive(pgid: u32) -> bool {
+    // SAFETY: signal 0 checks existence and permission only; no memory effects.
+    #[allow(unsafe_code)]
+    unsafe {
+        libc::killpg(pgid as libc::pid_t, 0) == 0
     }
 }
 

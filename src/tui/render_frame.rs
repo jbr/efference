@@ -303,7 +303,8 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Render the current state to an off-screen [`TestBackend`] and encode it as
+    /// Render the current state to an off-screen
+    /// [`TestBackend`](ratatui::backend::TestBackend) and encode it as
     /// the same framed character grid the snapshot harness commits (docs/tui.md) —
     /// the live "dev screenshot" capture (`Ctrl+S`). It draws a *fresh* frame
     /// rather than reading the real backend's buffer, so the capture is independent

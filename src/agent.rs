@@ -5,10 +5,10 @@
 //! until the model stops calling tools, then read the next user turn.
 //!
 //! Every input — including the first turn — arrives over the `Frontend`, which is
-//! the daemon's HTTP-fed [`RemoteFrontend`] (docs/control-channel.md): the
-//! control socket is the singular authoritative input source. The log lives in the
-//! shared daemon state ([`Session`]); the loop appends through it, which both
-//! persists the JSONL line and wakes any SSE tailers.
+//! the daemon's HTTP-fed [`RemoteFrontend`](crate::daemon::RemoteFrontend)
+//! (docs/control-channel.md): the control socket is the singular authoritative input
+//! source. The log lives in the shared daemon state ([`Session`]); the loop appends
+//! through it, which both persists the JSONL line and wakes any SSE tailers.
 
 use std::path::Path;
 use std::sync::Arc;

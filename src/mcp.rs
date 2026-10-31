@@ -741,8 +741,8 @@ fn render_block(block: &ContentBlock, images: &mut Vec<crate::log::ResultImage>)
 }
 
 /// Decode a base64 image block, size it through [`crate::vision::prepare`] at
-/// the transcript default, push the realized [`ResultImage`], and return the
-/// header line the model reads alongside it. A server sends whatever
+/// the transcript default, push the realized [`ResultImage`](crate::log::ResultImage),
+/// and return the header line the model reads alongside it. A server sends whatever
 /// resolution it likes; the same cap `read_image` defaults to is what keeps an
 /// unsolicited screenshot from costing native-tier tokens. There is no
 /// re-request knob here — the model cannot re-call an MCP tool "larger" — so

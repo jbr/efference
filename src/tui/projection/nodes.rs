@@ -63,7 +63,7 @@ fn attachment_spans(attachments: &[crate::attachments::Arrival]) -> Vec<Span<'st
 /// Keyed by the `call_id` the call's result will key on, which binds the live block to
 /// its call before commit — what any per-entry view state needs to survive the next
 /// streamed fragment. What may be claimed from a prefix is decided positionally; see
-/// [`calling_tool_blocks`] and `projection/partial.rs`.
+/// [`calling_tool_entry`] and `projection/partial.rs`.
 pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> {
     let entry = calling_tool_entry(&call.name, &call.input).unwrap_or_else(|| {
         // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a `code_block`:

@@ -210,7 +210,8 @@ pub(super) async fn triage_and_record(
 /// Dismiss the notifications that [`MAX_UNMENTIONED_SHOWS`](crate::inbox::MAX_UNMENTIONED_SHOWS)
 /// triages have shown without any verdict mentioning them (docs/inbox.md). Each gets a
 /// `Telemetry::InboxExpired` entry, which projects to nothing and takes the notification
-/// out of [`active_shown`]. Run after a triage's entries are written, so the count includes it.
+/// out of [`active_shown`](crate::inbox::active_shown). Run after a triage's entries are
+/// written, so the count includes it.
 pub(super) fn expire_unmentioned(shared: &Arc<Session>, turn: Turn) -> Result<(), Error> {
     for (seq, shows) in crate::inbox::unmentioned_past_cap(&shared.snapshot()) {
         shared.append(

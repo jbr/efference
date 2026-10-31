@@ -22,7 +22,7 @@ pub struct Endpoint {
     /// `None` for a provider that serves no turns (`Provider::messages_url`) —
     /// a decision-model connection has only `Provider::decisions_url`. Resolution
     /// refuses such a provider for every role that would build a
-    /// [`Client`](crate::api::Client), so a client's url is always present.
+    /// [`Client`], so a client's url is always present.
     pub url: Option<String>,
     /// The auth header **name** — `x-api-key` for Anthropic, `authorization`
     /// for OpenRouter's `Bearer` scheme. Derived from `provider`. Empty for a

@@ -367,7 +367,7 @@ fn assistant(output: &AssistantOutput) -> (Vec<String>, Vec<ToolCall>) {
 }
 
 /// What a held call does, in one line for its status (`status/view.rs`): a `bash`
-/// call's command, any other call's arguments as [`call_line`] writes them. `None`
+/// call's command, any other call's arguments as `audit::call_line` writes them. `None`
 /// for a call with nothing but its intent.
 pub(crate) fn call_summary(call: &ToolCall) -> Option<String> {
     if call.name == crate::bash::NAME
@@ -381,7 +381,7 @@ pub(crate) fn call_summary(call: &ToolCall) -> Option<String> {
 }
 
 /// ` key=value key=value` — every argument but the intent, each with a leading
-/// space, cut as [`call_line`] describes.
+/// space, cut as `audit::call_line` describes.
 fn arguments(call: &ToolCall) -> String {
     let mut line = String::new();
     match &call.input {

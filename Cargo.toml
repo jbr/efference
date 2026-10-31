@@ -280,7 +280,13 @@ syntect = { version = "5.3", default-features = false, features = [
 
 # Beyond rustc's and clippy's defaults. The bar is zero warnings, so a lint is enabled in the change that clears it.
 [lints.rust]
+unsafe_code = "deny"
 unused_qualifications = "warn"
+
+# Doc comments link to private items on purpose: efference publishes no rustdoc, and the
+# docs are read with `--document-private-items`, which is the only way these links resolve.
+[lints.rustdoc]
+private_intra_doc_links = "allow"
 
 [lints.clippy]
 dbg_macro = "warn"

@@ -33,7 +33,7 @@ impl<'a> TuiAction<'a> {
 }
 
 /// Path to a node in the document tree using indices
-/// Example: [2, 3, 1] means nodes[2].children[3].children[1]
+/// Example: `[2, 3, 1]` means `nodes[2].children[3].children[1]`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NodePath {
     indices: [u16; 8], // 8 levels deep should be enough

@@ -4,7 +4,7 @@
 //! A decision model is an LLM with generation replaced by a classifier head: it
 //! reads a `state` and answers named `questions` with a calibrated probability
 //! each. There is no system prompt, no tool call, no token stream, and no
-//! response text — so none of [`Client`](super::Client) applies. One POST of
+//! response text — so none of [`Client`] applies. One POST of
 //! `{model, state, questions}`, one JSON body back:
 //!
 //! ```text

@@ -810,8 +810,8 @@ fn result_entry(
 }
 
 /// The triager's note on a result, and the breadcrumb for lines the triage cap
-/// dropped before triage ever saw them — each as its own [`Annotation`] entry
-/// beside the result (docs/tui.md).
+/// dropped before triage ever saw them — each as its own
+/// [`Annotation`](EntryKind::Annotation) entry beside the result (docs/tui.md).
 ///
 /// The wire has to fold these into the result text, because a tool result is one
 /// string there; the transcript does not. Empty while the result is flipped to raw:

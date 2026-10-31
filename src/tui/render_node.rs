@@ -498,10 +498,10 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// A call's signature at the width it has (docs/tui.md): the prompt, then the
-    /// rows [`layout_signature`] breaks it into, continuation rows hung under the
-    /// first. An argument too long to sit in it at this width renders beneath it,
-    /// under its key, as a plain block.
+    /// A call's signature at the width it has (docs/tui.md): the prompt, then the rows
+    /// [`layout_signature`](crate::tui::projection::signature::layout_signature) breaks
+    /// it into, continuation rows hung under the first. An argument too long to sit in
+    /// it at this width renders beneath it, under its key, as a plain block.
     fn render_signature(
         &mut self,
         view: &crate::tui::projection::signature::CallView,

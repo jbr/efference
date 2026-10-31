@@ -1,6 +1,6 @@
 //! `POST /sessions`: minting a session (docs/control-api.md).
 //!
-//! The counterpart of [`resume`](super::resume), and the same shape of work: the
+//! The counterpart of [`resume`], and the same shape of work: the
 //! caller supplies what a log cannot hold, the host prepares a session and starts
 //! it, and the id comes back. Creation mints; resume reopens. The two differ most in
 //! what they record — a launch and an explicit model pick in history, or nothing —

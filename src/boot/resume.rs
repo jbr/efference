@@ -9,7 +9,7 @@
 //! A log whose last completion is clean (no calls, or every call answered and decided)
 //! resumes after its last entry, and one with calls that never ran resumes at that batch
 //! (`Resumed.pending_calls`); a call that started and has no result rolls back to just
-//! before the completion ([`resume_point`](crate::recovery::resume_point)), and the
+//! before the completion ([`resume_point`]), and the
 //! `Resumed` entry records where. The reopen itself is the last fallible
 //! step: everything before it reads the log without writing, so a refusal or a failed boot
 //! leaves the session directory as it was found. The directory is never in [`Minted`]; only

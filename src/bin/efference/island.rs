@@ -59,6 +59,7 @@ impl Island {
             .stdout(log_file.try_clone()?)
             .stderr(log_file);
         // SAFETY: `setsid` is async-signal-safe, and the closure allocates nothing.
+        #[allow(unsafe_code)]
         unsafe {
             command.pre_exec(|| {
                 if libc::setsid() == -1 {

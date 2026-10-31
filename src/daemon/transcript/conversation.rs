@@ -252,7 +252,7 @@ impl<'a, 'r> Out<'a, 'r> {
         }
     }
 
-    /// `bash \`cmd\` — intent → allowed by you → ok, 12 lines, it saw 1`, with each
+    /// ``bash `cmd` — intent → allowed by you → ok, 12 lines, it saw 1``, with each
     /// escalation before the decision: `→ escalated by p to you: "<note>" →`.
     fn call_line(&self, call: &ToolCall) -> String {
         let id = call.id.0.as_str();

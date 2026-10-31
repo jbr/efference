@@ -12,15 +12,16 @@
 //! (structural simplicity, [`brush_parser`]) *before* stage 2 (prefix match,
 //! [`commands::command_stance`]), so a trusted `git diff` prefix can never clear
 //! `git diff > /etc/hosts`. The narrow shapes that survive a stage-1 rejection are
-//! [`is_safe_fd_dup`], the leading `cd <dir> &&` ([`commands::bash_tokens_in`]), and the
-//! redirection carve-out ([`commands::classify_redirect_write`]).
+//! [`is_safe_fd_dup`](commands::is_safe_fd_dup), the leading `cd <dir> &&`
+//! ([`commands::bash_tokens_in`]), and the redirection carve-out
+//! (`commands::classify_redirect_write`).
 //!
 //! Structured tools clear on a name grant ([`tool_granted`]) plus, where the tool names a
 //! path, a `[paths]` grant carrying the needed permission. Mapping a tool to "which input
 //! field holds the path, and is it a read or a write" means reaching into each built-in's
 //! JSON input by known key — a wart with no way around it until an MCP superset can carry
 //! permission metadata alongside the tool schema. The string literals are centralized in
-//! [`path_check`] so the coupling is in one place.
+//! [`path_spec`] so the coupling is in one place.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Component, Path, PathBuf};
@@ -76,7 +77,7 @@ pub enum ReviewLevel {
     SpotterHuman,
     /// The human takes the spotter's role **entirely** — skip the spotter (pay no tokens, log no
     /// `Spot`); every call the fast-path didn't clear goes straight to the human, who both gates it
-    /// and grows the allowlist by committing the grant the gate offers ([`gate_grant`]).
+    /// and grows the allowlist by committing the grant the gate offers ([`gate_grant()`]).
     HumanOnly,
 }
 
@@ -175,7 +176,7 @@ pub fn bash_tokens(dirs: &Directories, role: &Config, command: &str) -> Option<V
 /// Only the write-class tools that *name* a path qualify (`write`→`path`, `edit`→`file_path`).
 /// `undo_edit` carries no path, but it can only revert a previously-`edit`ed target — and
 /// an `edit` of the config is caught here — so the review point is the naming step, exactly
-/// where write permission is already enforced (the acknowledged per-tool wart in `path_check`).
+/// where write permission is already enforced (the acknowledged per-tool wart in `path_spec`).
 pub fn is_config_write(dirs: &Directories, call: &ToolCall, protected: &Path) -> bool {
     is_config_write_in(call, protected, dirs)
 }

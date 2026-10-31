@@ -4,7 +4,7 @@
 //! `GET /v1/models?limit=100` answers `id`, `display_name`, `created_at` (RFC
 //! 3339), `max_input_tokens`, and a `capabilities` object. The image fact reads
 //! the same `capabilities.image_input.supported` key the boot-time metadata
-//! lookup (`GET /v1/models/{id}`, [`capabilities`]) does, and is left absent
+//! lookup (`GET /v1/models/{id}`, [`capabilities()`]) does, and is left absent
 //! when the entry omits it.
 
 use super::row::{ListedModel, arrange, unix_from_rfc3339};

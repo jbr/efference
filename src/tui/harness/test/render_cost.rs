@@ -251,3 +251,23 @@ fn a_streaming_write_colours_only_the_lines_that_arrived() {
         );
     }
 }
+
+/// **A frame gives the document's nodes back.** A walk takes the nodes out of the
+/// state while it lays them out, so that `render_node` can borrow one and mutate the
+/// rest of the state (`walk_document`). A frame is two walks, measure and paint, and
+/// what reads the nodes between frames (focus, the block menu) has to find the same
+/// list after it.
+#[test]
+fn a_frame_leaves_the_document_nodes_in_place() {
+    let mut play = session(5);
+    let _ = play.draw();
+    let count = play.state.document.document.nodes.len();
+    assert!(count > 0, "a drawn transcript has top-level nodes");
+
+    let _ = play.draw();
+    assert_eq!(
+        play.state.document.document.nodes.len(),
+        count,
+        "a repaint changed the document's nodes"
+    );
+}

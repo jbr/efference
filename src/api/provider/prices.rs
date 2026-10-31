@@ -2,7 +2,8 @@
 
 /// What a prompt cache saves and what output costs, in USD per token — the three
 /// prices the keepalive's affordability check needs (`daemon/keepalive.rs`).
-/// Transport-only: carried on [`ModelCapabilities`], never logged or projected.
+/// Transport-only: carried on [`ModelCapabilities`](super::ModelCapabilities), never
+/// logged or projected.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TokenPrices {
     /// An uncached prompt token.

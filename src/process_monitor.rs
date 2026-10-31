@@ -162,9 +162,10 @@ struct Process {
     /// once and is removed; an entry that never matches dies with the process.
     watches: Vec<String>,
     /// How far into the *logical* stream (total bytes ever received, dropped
-    /// included) the watches have been scanned. Advanced by [`push_chunk`] whether
-    /// or not any watch is registered, which is what makes a watch forward-only:
-    /// output already printed when the model registers is already behind this mark.
+    /// included) the watches have been scanned. Advanced by
+    /// [`push_chunk`](ProcessMonitor::push_chunk) whether or not any watch is registered,
+    /// which is what makes a watch forward-only: output already printed when the model
+    /// registers is already behind this mark.
     scanned: u64,
 }
 

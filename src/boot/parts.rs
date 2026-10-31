@@ -143,7 +143,7 @@ pub(super) struct FrozenPreamble {
 /// Build the system prompt once, here at startup, and freeze it into the cached
 /// prefix — it must stay byte-stable for the whole session or it would invalidate
 /// the cache every turn (docs/log-and-projection.md). Everything it folds in is resolved
-/// once at boot: the [context] block (files read + exec sections run now, frozen —
+/// once at boot: the `[context]` block (files read + exec sections run now, frozen —
 /// docs/context.md; orientation rides here as a config exec entry), the role's
 /// brief, and the config note.
 pub(super) fn freeze_preamble(

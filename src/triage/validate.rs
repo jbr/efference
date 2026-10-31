@@ -48,7 +48,7 @@ pub(super) fn shown_line_count(raw: &RawResult) -> usize {
 }
 
 /// Each offered label's shown line count, the bound table [`require_in_bounds`] checks
-/// against. `labels` is [`labels`](super::labels) for the same `pending`.
+/// against. `labels` is [`labels`] for the same `pending`.
 pub(super) fn shown_lines(
     pending: &[Pending<'_>],
     labels: &[Option<String>],

@@ -323,7 +323,7 @@ async fn remove_device(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
     }
 }
 
-/// [`Surface::spa_route`] as the fn pointer [`frontend`] takes, one per surface.
+/// [`Surface::spa_route`] as the fn pointer [`frontend()`] takes, one per surface.
 fn session_spa_route(conn: &Conn) -> bool {
     Surface::Session.spa_route(conn.path())
 }

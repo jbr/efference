@@ -75,10 +75,10 @@ pub(super) fn surfaced_schema_field() -> Value {
 /// top-level `keep`/`note`: naming the one call whose result is right there is
 /// transcription work with no decision in it, and the id it asks for is the id most
 /// likely to come back wrong. A triage carrying several is answered with the `results`
-/// array, where a `result` label per entry (`r1`, `r2` — [`labels`](super::labels)) is
+/// array, where a `result` label per entry (`r1`, `r2` — [`labels`]) is
 /// what makes the verdicts attributable.
 /// Neither is `required`: the schema can't know the triage size, so the triage's tail
-/// instruction ([`retain_instruction`](super::retain_instruction)) names the shape.
+/// instruction ([`retain_instruction`]) names the shape.
 pub fn retain_tool() -> Value {
     json!({
         "name": RETAIN,

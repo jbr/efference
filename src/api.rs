@@ -277,8 +277,8 @@ pub enum CacheMissReason {
     /// carry the object, or it aged out of the provider's retention.
     PreviousMessageNotFound,
     /// No comparison was produced: a prompt-affecting parameter outside model/system/
-    /// tools/messages differs ([`Self::changes_the_prompt`]), or the divergence sits
-    /// beyond the provider's comparison horizon.
+    /// tools/messages differs (docs/transport.md), or the divergence sits beyond the
+    /// provider's comparison horizon.
     Unavailable,
     /// A reason this build does not know. Kept so a new provider value reads as an
     /// unnamed miss rather than failing the whole response.
@@ -317,7 +317,6 @@ impl std::fmt::Display for CacheMissReason {
     }
 }
 
-/// Deserialize a `u64` that a provider may send as an explicit JSON `null` (or omit
 /// Deserialize a `u64` that a provider may send as an explicit JSON `null` (or omit
 /// entirely, when paired with `#[serde(default)]`), folding both to 0 — see
 /// [`Usage`]. Not part of any wire-byte pin: `Usage` is response telemetry, never

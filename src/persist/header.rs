@@ -2,8 +2,8 @@
 //! metadata boot records beside it (docs/log-and-projection.md).
 //!
 //! The header is one JSON object and nothing else. It is **not** a
-//! [`LogEntry`]: it takes no `seq`, `project` never sees it, and the entries
-//! behind it are numbered from 0 exactly as they would be without it.
+//! [`LogEntry`](crate::log::LogEntry): it takes no `seq`, `project` never sees it,
+//! and the entries behind it are numbered from 0 exactly as they would be without it.
 //!
 //! Readers require it. A file whose first line is an entry is an unversioned
 //! log, not a v1 log missing a field, and the two are told apart by an error
@@ -15,7 +15,7 @@
 //! the live configuration or registry types: those describe what a host will
 //! do next, while a header records what a *past* run did, and the two drift
 //! apart as either side grows fields. Boot copies values in once, the way it
-//! already does for [`LoggedInference`](crate::log::LoggedInference).
+//! already does for [`LoggedInference`].
 
 use std::io::{self, Write};
 use std::path::PathBuf;

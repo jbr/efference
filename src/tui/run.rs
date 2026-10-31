@@ -436,7 +436,7 @@ pub async fn run_view(
 }
 
 /// The shared offline runner behind [`run_gallery`] and [`run_view`]: seed the
-/// events channel with a fixed entry list and run the real [`ui_loop`] over it with
+/// events channel with a fixed entry list and run the real [`ui_loop()`] over it with
 /// no daemon behind it. The events sender is held for the session's life so the UI
 /// never sees a `Disconnected` (which would exit immediately); the
 /// submit/approve/pace/interrupt far-ends are likewise held so a send from inside

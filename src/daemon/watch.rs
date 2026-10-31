@@ -10,7 +10,8 @@ use super::*;
 /// We watch the **parent directory** and filter to the filename, not the file inode: editors
 /// save-via-rename (write a temp, rename over the original), which orphans an inode-level watch.
 /// Events are debounced (one save fires several raw events). The harness's own auto-persist
-/// write-back echoes back through here harmlessly — [`config::diff_changes`] is additive and the
+/// write-back echoes back through here harmlessly —
+/// [`config::diff_changes`](crate::config::diff_changes) is additive and the
 /// file already matches the effective config, so the echo diffs to nothing.
 ///
 /// The debouncer runs `notify` on its own thread and invokes the handler there; we forward each

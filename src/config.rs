@@ -9,9 +9,10 @@
 //! ## The file is TOML, and it is a materialized table
 //!
 //! The file is TOML, parsed by [`toml_edit`]. We decode through a two-layer path: serde
-//! deserializes the file into a [`RawConfig`] (the literal TOML shape), then [`validate`]
-//! folds it into the [`Config`] the cascade actually consults — lexing every command key,
-//! expanding the path sugar, and failing the whole file on any unsound entry.
+//! deserializes the file into a [`RawConfig`] (the literal TOML shape), then
+//! [`validate`](raw::validate) folds it into the [`Config`] the cascade actually
+//! consults — lexing every command key, expanding the path sugar, and failing the whole
+//! file on any unsound entry.
 //!
 //! The schema is **string-keyed maps**, not lists, because the policy is a *table* the
 //! config-edit loop mutates by key (docs/permissions.md): a later edit
@@ -192,9 +193,10 @@ impl CommandStance {
 }
 
 /// The materialized policy table (docs/permissions.md). Built from the TOML
-/// file by [`validate`]-ing a [`RawConfig`]; every field is optional/empty so a minimal — or
-/// absent — file yields [`Config::default`]. This is what the cascade consults; the config-edit
-/// fold mutates it by key ([`crate::policy::apply_config_change`]).
+/// file by [`validate`](raw::validate)-ing a [`RawConfig`]; every field is optional/empty
+/// so a minimal — or absent — file yields [`Config::default`]. This is what the cascade
+/// consults; the config-edit fold mutates it by key
+/// ([`crate::policy::apply_config_change`]).
 #[derive(Debug, Default, Clone)]
 pub struct Config {
     /// Positive scope, shared with the acting session (self-alignment). Projects into the
@@ -225,9 +227,9 @@ pub struct Config {
     /// it carries (docs/permissions.md). `cargo` addresses the whole program, `git diff` only
     /// that sub-verb, and resolution is **longest-prefix-wins**, so a longer key carves its
     /// subtree out of a broader one (`git = "clear"`, `"git push" = "deny"`). Each key is
-    /// guaranteed (at [`validate`] time) to lex to a single simple-command token vector;
-    /// [`crate::policy`] re-lexes at match time to compare token-prefixes. TOML `[commands]`
-    /// table; a `bool` value is sugar (`true` = `clear`, `false` = `deny`).
+    /// guaranteed (at [`validate`](raw::validate) time) to lex to a single simple-command
+    /// token vector; [`crate::policy`] re-lexes at match time to compare token-prefixes.
+    /// TOML `[commands]` table; a `bool` value is sugar (`true` = `clear`, `false` = `deny`).
     pub commands: BTreeMap<String, CommandStance>,
 
     /// The `[tools]` table (docs/tools.md): which tools the session mounts
@@ -301,7 +303,7 @@ pub struct McpServerEntry {
 /// How to reach one declared MCP server ([`McpServerEntry`]). The shape of the
 /// stanza picks the transport: `command` (+ optional `args`/`env`) spawns a
 /// stdio subprocess; `url` connects over streamable HTTP. Exactly one of the two
-/// is required — [`validate`] rejects a stanza with both or neither.
+/// is required — [`validate`](raw::validate) rejects a stanza with both or neither.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpTransport {
     Stdio {
@@ -338,7 +340,8 @@ pub struct ContextEntry {
     pub exclude: Vec<String>,
     /// A prose hint for the model about how to use this entry's files — e.g. how to read or write
     /// a memory. Rendered inside the group's tag as a `<description>` element. Group-only; a bare
-    /// path carrying `description` is rejected in [`validate_context_entry`].
+    /// path carrying `description` is rejected in
+    /// [`validate_context_entry`](raw::validate_context_entry).
     pub description: Option<String>,
 }
 

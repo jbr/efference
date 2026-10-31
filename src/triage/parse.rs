@@ -3,7 +3,7 @@
 use super::*;
 
 /// The verdict on one result of a triage: which result it addresses (by its label —
-/// [`labels`](super::labels)), the structured
+/// [`labels`]), the structured
 /// `keep`, the optional `note`, and the model's exact pre-parse `keep` string (for
 /// that result's [`Triage`] audit entry).
 ///

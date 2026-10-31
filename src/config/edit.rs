@@ -7,7 +7,8 @@ use super::*;
 /// `from` is the current effective config, `to` the freshly-reloaded file, so only genuinely-new
 /// deltas surface (the harness's own auto-persist write-back diffs to nothing — the idempotent echo).
 ///
-/// **Additive only**, by the shape of [`apply_config_change`]: it can add a command/tool, set a
+/// **Additive only**, by the shape of
+/// [`apply_config_change`](crate::policy::apply_config_change): it can add a command/tool, set a
 /// path's perms, or replace the scope text — it cannot *remove* a set member or clear scope. So a
 /// key deleted from the file is **not** propagated live (the effective config keeps it); tightening
 /// by file edit takes effect on the next boot, which reloads the file as the base. This is the
