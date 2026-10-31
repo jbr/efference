@@ -164,12 +164,17 @@ impl Host {
         source: Option<String>,
     ) -> Ended {
         starting.cancel();
-        if starting.finished().await.is_ok()
-            && let Some(Entry::Hosted(hosted)) = self.entry(starting.id())
-        {
-            return self
-                .end_hosted(hosted, starting.id().to_string(), source)
-                .await;
+        if starting.finished().await.is_ok() {
+            // Found and its end counted in one critical section of the map lock (`end.rs`).
+            let end = self
+                .sessions
+                .lock()
+                .unwrap()
+                .hosted(starting.id())
+                .map(|hosted| self.end_hosted(hosted, starting.id().to_string(), source));
+            if let Some(end) = end {
+                return end.await;
+            }
         }
         Ended {
             retired: None,

@@ -415,11 +415,9 @@ async fn an_end_is_posted_and_cascades_to_non_detached_children() {
     );
 
     fixture.host.end("parent").unwrap().await;
-    fixture
-        .host
-        .wait_until("parent gone", || fixture.host.session("parent").is_none())
-        .await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // The end resolves once the parent and the sessions that end with it have left
+    // (docs/control-channel.md), so one still hosted now outlives it.
+    assert!(fixture.host.session("parent").is_none());
     assert!(
         fixture.host.session("loner").is_some(),
         "detached: outlives its creator"

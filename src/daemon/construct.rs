@@ -260,6 +260,8 @@ impl Session {
             between_reads: Mutex::new(None),
             #[cfg(test)]
             between_pushes: Mutex::new(None),
+            #[cfg(test)]
+            before_archived: Mutex::new(None),
             queue: Mutex::new(std::collections::VecDeque::new()),
             ask: Mutex::new(None),
             settle_changed: Notify::new(),

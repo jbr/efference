@@ -56,6 +56,7 @@ mod preparation;
 mod boot_resume;
 
 mod end;
+use end::Departure;
 pub use end::Ended;
 
 mod island_exit;
@@ -152,6 +153,9 @@ pub(super) struct Hosted {
     session: Arc<Session>,
     swansong: Swansong,
     files: Files,
+    /// How the entry leaves the map (`end.rs`): an end under way holds the removal back
+    /// until it has recorded the session, and resolves once the entry has gone.
+    departure: Departure,
     /// The session that commissioned this one, when a session did (docs/tools.md).
     /// Control state only: never logged, never projected.
     pub(super) created_by: Option<String>,
@@ -289,8 +293,9 @@ impl Host {
 
     /// Register a started runtime under `id` and watch for its end: a session
     /// that finishes on its own — end of input, a failed loop, or its own
-    /// `Swansong` — leaves the map when its teardown has run. The runtime must
-    /// have been started under [`swansong`](Self::swansong).
+    /// `Swansong` — leaves the map when its teardown has run, and one that
+    /// [`end`](Self::end) stops leaves once that end has recorded it. The runtime
+    /// must have been started under [`swansong`](Self::swansong).
     pub fn adopt(self: &Arc<Self>, id: String, runtime: SessionRuntime) -> Result<(), String> {
         self.adopt_with(id, runtime, None, false)
     }
@@ -328,10 +333,12 @@ impl Host {
         if let Some(origin) = self.artifact_origin() {
             session.set_artifact_origin(origin.to_owned());
         }
+        let departure = Departure::default();
         let hosted = Hosted {
             files: Files::rooted_at(session.cwd()),
             session: Arc::clone(&session),
             swansong: runtime.swansong().clone(),
+            departure: departure.clone(),
             created_by: created_by.clone(),
             supervisor: created_by.clone(),
             detached,
@@ -401,8 +408,9 @@ impl Host {
                     done.await;
                 }
             }
-            host.sessions.lock().unwrap().remove_hosted(&id);
-            host.touch_listing();
+            // An end under way on this session has its record written first, and
+            // resolves once the entry has gone (`end.rs`).
+            host.remove_when_recorded(&id, &departure).await;
             // A session this one supervised now has nothing to resolve its `supervisor`
             // position to, so it reviews as `spotter_human` from here
             // (docs/permissions.md). The resolution is read fresh at every routing, so

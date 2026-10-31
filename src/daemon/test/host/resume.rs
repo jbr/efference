@@ -369,14 +369,15 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
     )
     .unwrap();
     host.end("one").unwrap().await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // The end resolves after the sessions that end with it have left
+    // (docs/control-channel.md), so one still hosted now outlives it.
     assert!(host.session("kept").is_some());
 
     host.swansong().shut_down().await;
 }
 
 /// A session hosted over a fresh file log at `<roots>/<name>/log.jsonl`.
-async fn adopt_logged(
+pub(super) async fn adopt_logged(
     host: &Arc<Host>,
     roots: &Roots,
     name: &str,
@@ -397,13 +398,14 @@ async fn adopt_logged(
     path
 }
 
-fn last_payload(path: &Path) -> Payload {
+pub(super) fn last_payload(path: &Path) -> Payload {
     let recording = crate::persist::load_recording(path).expect("the log loads");
     recording.entries.last().expect("an entry").payload.clone()
 }
 
 /// An archive is recorded as the log's last entry, and so is the end of a child that
-/// ends with its creator (docs/resumption.md).
+/// ends with its creator (docs/resumption.md). The archive resolves once both have left
+/// the map, each after its record (docs/control-channel.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_archive_and_a_cascaded_child_end_log_archived() {
     let roots = Roots::new();
@@ -416,12 +418,10 @@ async fn an_archive_and_a_cascaded_child_end_log_archived() {
         .unwrap();
 
     host.end("creator").expect("hosted").await;
-    for _ in 0..100 {
-        if host.session("child").is_none() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    assert!(
+        host.session("child").is_none(),
+        "the child left before the archive resolved"
+    );
 
     for path in [&creator, &child] {
         let recording = crate::persist::load_recording(path).unwrap();
@@ -439,21 +439,33 @@ async fn an_archive_and_a_cascaded_child_end_log_archived() {
 }
 
 /// A host shutdown stops its sessions without archiving them: they are what a
-/// restarted host resumes.
+/// restarted host resumes. A child its creator's end cascades to is stopped the same
+/// way, and both leave the map: the cascade's end holds the child's removal back only
+/// until it has closed the log.
 #[tokio::test(start_paused = true)]
 async fn a_host_shutdown_does_not_log_archived() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
-    let path = adopt_logged(&host, &roots, "open", None).await;
-    host.session("open")
-        .unwrap()
-        .append(0, Payload::User(vec![]))
-        .unwrap();
+    let open = adopt_logged(&host, &roots, "open", None).await;
+    let child = adopt_logged(&host, &roots, "child", Some("open")).await;
+    for id in ["open", "child"] {
+        host.session(id)
+            .unwrap()
+            .append(0, Payload::User(vec![]))
+            .unwrap();
+    }
 
     host.swansong().shut_down().await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    host.wait_until("every session left the map", || host.ids().is_empty())
+        .await;
 
-    assert!(matches!(last_payload(&path), Payload::User(_)));
+    for path in [&open, &child] {
+        assert!(
+            matches!(last_payload(path), Payload::User(_)),
+            "{}",
+            path.display()
+        );
+    }
 }
 
 /// A dormant directory whose id the register holds under another root is a

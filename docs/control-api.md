@@ -330,11 +330,14 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `PATCH {"state": "archived"}`. The optional body `{"source"}` (and the same field on
   the patch) names the caller as a turn's `source` is spelled; it is recorded on the
   `Archived` entry and absent for the operator's own command line or TUI. Answers `200 {"id", "state": "archived"}` once
-  its teardown has run (background children reaped, scratch removed), with
-  `ended_with` naming the sessions that end with it — its non-detached descendants,
-  read before the end starts — when there are any; the id leaves
-  the list once the loop has returned. The directory and log stay, so the session
-  is resumable by patching it `active` again. `404` for an id that is not hosted.
+  its teardown has run (background children reaped, scratch removed) and the id has
+  left the list, with `ended_with` naming the sessions that end with it — its
+  non-detached descendants, read before the end starts — when there are any; those
+  have left the list by then too. An archived session leaves the list only after its
+  `Archived` entry is written and its log closed, so a client that no longer finds it
+  listed finds the record ([control-channel.md](control-channel.md)). The directory and
+  log stay, so the session is resumable by patching it `active` again. `404` for an id
+  that is not hosted.
   A session whose log holds no `User` and no `Assistant` entry is discarded instead:
   its directory is removed, its id is free again, and the answer is `200 {"id",
   "state": "discarded"}` ([resumption.md](resumption.md)); a worktree it kept makes it an

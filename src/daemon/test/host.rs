@@ -13,6 +13,7 @@ mod bodies;
 mod boot_resume;
 mod control;
 mod creation;
+mod departure;
 mod discard;
 mod files;
 mod island;
@@ -818,13 +819,11 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
         "teardown ran before the answer"
     );
     assert!(roots.0.join("two/scratch").exists());
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while host.ids() != ["two"] {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("the ended session leaves the list once its loop has returned");
+    assert_eq!(
+        host.ids(),
+        ["two"],
+        "the archive answers once the session has left the list"
+    );
     server
         .get("/sessions/one/v1/state")
         .await

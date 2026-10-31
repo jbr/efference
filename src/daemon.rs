@@ -62,8 +62,8 @@ pub(crate) fn session_id_prefix(id: Option<&str>) -> String {
     id.map_or_default(|id| format!("session {id}: "))
 }
 
-/// Code a test interleaves at one point inside a session method, run once there
-/// (`between_reads`, `between_pushes`).
+/// Code a test interleaves at one point in a session's work, run once there
+/// (`between_reads`, `between_pushes`, `before_archived`).
 #[cfg(test)]
 type Interleaving = Box<dyn FnOnce(&Session) + Send>;
 
@@ -202,6 +202,10 @@ pub struct Session {
     /// hold's decision: a test's stand-in for a reader landing there.
     #[cfg(test)]
     between_pushes: Mutex<Option<Interleaving>>,
+    /// Run once by the next archive of this session (`Host::end`), just before its
+    /// `Archived` entry is appended: a test's stand-in for the host's watcher landing there.
+    #[cfg(test)]
+    before_archived: Mutex<Option<Interleaving>>,
     /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
     /// the **authority** on what is pending, mirroring what was pushed into `turns_tx`. It closes
     /// the cross-task race in [`Session::is_settled`] (a turn exists even in the instant before the

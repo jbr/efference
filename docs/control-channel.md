@@ -132,6 +132,20 @@ entry once the runtime has finished, whether by `DELETE /sessions/:id`, its own
 end of input, or host shutdown. That watcher is the host's supervision of session
 completion.
 
+An archive (`Host::end`, `src/daemon/host/end.rs`) and the watcher run at once: the
+end initiates the shutdown, and the watcher wakes when the loop returns, posts the end
+to subscribers, and ends the session's non-detached children while the end retires the
+worktree and records the archive. The watcher's removal is ordered after the end's
+record, and the end's resolution after the removal, by the entry's `Departure`: an
+end is counted on the entry in the critical section of the map lock that finds the
+entry, until it has appended `Archived` (or discarded the session) and closed the log;
+the watcher removes the entry only in a critical section that finds no end counted,
+and otherwise waits for the count to reach zero; and an end resolves once the entry
+has gone. A client that no longer finds a session in the listing finds `Archived` in
+its log, and an archive answers after the sessions that end with it have left, since
+the watcher's cascade awaits their ends. With no end under way, as when a session's
+loop fails, the watcher removes the entry as soon as its cascade has run.
+
 Routing is per-conn state: the `/sessions/:session/*` stage looks the id up, puts
 the session's `Arc<Session>` (and its `Files` view) into conn state, and dispatches
 into the unchanged control routes, whose one accessor reads conn state first and

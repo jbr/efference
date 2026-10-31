@@ -114,10 +114,16 @@ impl Sessions {
         ours
     }
 
-    /// Remove the hosted session under `id`.
-    pub(crate) fn remove_hosted(&mut self, id: &str) {
-        if matches!(self.0.get(id), Some(Entry::Hosted(_))) {
-            self.0.remove(id);
+    /// Remove the hosted session under `id`, unless an end under way on it holds the
+    /// removal back (`Departure`, `end.rs`): then the entry stays, and this is `false`.
+    pub(crate) fn remove_hosted(&mut self, id: &str) -> bool {
+        match self.0.get(id) {
+            Some(Entry::Hosted(hosted)) if hosted.departure.held() => false,
+            Some(Entry::Hosted(_)) => {
+                self.0.remove(id);
+                true
+            }
+            _ => true,
         }
     }
 }

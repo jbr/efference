@@ -249,14 +249,12 @@ async fn archive_records_the_calling_session() {
     .execute(fixture.control("parent"), RequestContext::default())
     .await
     .unwrap();
-    // The cascade appends `Archived` after the session leaves the host's map, so the
-    // entry is what is waited for rather than the departure.
-    grandchild
-        .wait_until("the cascade archived grandchild", || {
-            matches!(
-                grandchild.snapshot().last().map(|entry| &entry.payload),
-                Some(Payload::Archived { .. })
-            )
+    // A session leaves the host's map once its archive is recorded, so its departure is
+    // what a client waits for (docs/control-channel.md).
+    fixture
+        .host
+        .wait_until("the cascade ended grandchild", || {
+            fixture.host.listed("grandchild").is_none()
         })
         .await;
 
