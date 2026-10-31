@@ -5,30 +5,24 @@ use crate::client::ContinueOutcome;
 
 /// An assistant turn with prose and no calls — a finished turn's wire tail.
 fn assistant_text(text: &str) -> Payload {
-    Payload::Assistant {
-        output: crate::log::AssistantOutput::from_legacy_messages(
-            vec![],
-            vec![ContentBlock::Text(text.into())],
-            vec![],
-        ),
-        excluded: None,
-    }
+    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![ContentBlock::Text(text.into())],
+        vec![],
+    ))
 }
 
 /// An assistant turn carrying one unanswered tool call.
 fn assistant_calling(call_id: &str) -> Payload {
-    Payload::Assistant {
-        output: crate::log::AssistantOutput::from_legacy_messages(
-            vec![],
-            vec![],
-            vec![ToolCall::new(
-                crate::bash::NAME,
-                call_id,
-                serde_json::json!({ "command": "ls" }),
-            )],
-        ),
-        excluded: None,
-    }
+    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![],
+        vec![ToolCall::new(
+            crate::bash::NAME,
+            call_id,
+            serde_json::json!({ "command": "ls" }),
+        )],
+    ))
 }
 
 /// The paired result — a `tool_result` tail, which projects as a **user** message.
@@ -40,10 +34,10 @@ fn tool_result(call_id: &str) -> Payload {
 /// It projects to nothing (docs/log-and-projection.md), so it must not change what
 /// the tail looks like to the continue precondition.
 fn aborted_attempt() -> Payload {
-    Payload::Assistant {
-        output: crate::log::AssistantOutput::Messages(vec![]),
-        excluded: Some(crate::log::Exclusion::Upstream("stream aborted".into())),
-    }
+    Payload::record_only(
+        crate::log::AssistantOutput::Messages(vec![]),
+        crate::log::Exclusion::Upstream("stream aborted".into()),
+    )
 }
 
 /// The continuable-tail precondition reads the **wire**, not the log: a tool_result
@@ -51,7 +45,7 @@ fn aborted_attempt() -> Payload {
 /// `tool_use` do not.
 #[test]
 fn continuable_tail_is_a_question_about_the_wire() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     // An empty log has no wire to re-prompt.
     assert_eq!(
         shared
@@ -117,17 +111,9 @@ fn a_finished_turn_declines_in_every_dialect() {
     };
     let completions_text = AssistantOutput::Completions(CompletionsMessage::from_map(message));
     for output in [responses_text, completions_text] {
-        let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+        let (shared, _rx) = Session::in_memory();
         shared.append(1, user("hello")).unwrap();
-        shared
-            .append(
-                1,
-                Payload::Assistant {
-                    output,
-                    excluded: None,
-                },
-            )
-            .unwrap();
+        shared.append(1, Payload::assistant(output)).unwrap();
         assert_eq!(
             shared
                 .request_continue(Default::default())
@@ -143,7 +129,7 @@ fn a_finished_turn_declines_in_every_dialect() {
 /// stalled session continuable rather than "completed".
 #[test]
 fn record_only_entries_do_not_move_the_tail() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.append(1, user("hello")).unwrap();
     shared.append(2, aborted_attempt()).unwrap();
     shared.append(3, aborted_attempt()).unwrap();
@@ -157,7 +143,7 @@ fn record_only_entries_do_not_move_the_tail() {
 /// neither state is control the operator's to hand back.
 #[test]
 fn a_running_or_gated_loop_declines() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.append(1, user("hello")).unwrap();
 
     shared.submit_turn(SubmittedTurn::new("hi", "sub-test"));
@@ -189,7 +175,7 @@ fn a_running_or_gated_loop_declines() {
 /// point until the loop has consumed it.
 #[test]
 fn a_pending_continue_is_not_settled() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.append(1, user("hello")).unwrap();
     assert!(shared.is_settled());
     shared.request_continue(Default::default()).unwrap();
@@ -204,7 +190,7 @@ fn a_pending_continue_is_not_settled() {
 /// lands before the waiter registers, which the flag (not the notify) carries.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn continue_wake_resolves_on_request() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.append(1, user("hello")).unwrap();
 
     let waiter = {
@@ -224,7 +210,7 @@ async fn continue_wake_resolves_on_request() {
 /// wire is byte-identical either side of the request, which is what "zero-token" means.
 #[test]
 fn a_continue_appends_only_its_record() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.append(1, user("hello")).unwrap();
     let before = shared.snapshot();
     let wire = serde_json::to_string(&shared.project_messages()).unwrap();
@@ -249,7 +235,7 @@ fn a_continue_appends_only_its_record() {
 /// in the envelope's `message`.
 #[tokio::test]
 async fn the_route_accepts_and_declines() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.append(1, user("hello")).unwrap();
     let client = test_client(&shared).await;
 
@@ -273,7 +259,7 @@ async fn the_route_accepts_and_declines() {
 /// than on prose.
 #[tokio::test]
 async fn a_decline_carries_the_typed_envelope() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let server = test_server(&shared).await;
     let conn = server.post("/v1/loop/continue").await;
     conn.assert_status(409);
@@ -290,7 +276,7 @@ async fn a_decline_carries_the_typed_envelope() {
 /// the wire does not move; a declined one writes nothing (docs/control-api.md).
 #[test]
 fn an_accepted_continue_records_who_sent_it() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let continues = |shared: &Session| -> Vec<Option<String>> {
         shared
             .snapshot()

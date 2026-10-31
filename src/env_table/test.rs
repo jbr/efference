@@ -451,7 +451,7 @@ fn every_text_bearing_payload_path_is_masked() {
     let masker = policy.masker();
     let leak = || "before leaked-secret-value after".to_string();
 
-    let mut user_turn = Payload::User(vec![ContentBlock::Text(leak())]);
+    let mut user_turn = Payload::user(leak());
     masker.mask_payload(&mut user_turn);
     let Payload::User(blocks) = &user_turn else {
         unreachable!()
@@ -468,8 +468,8 @@ fn every_text_bearing_payload_path_is_masked() {
     };
     assert!(!raw.content.contains("leaked-secret-value"));
 
-    let mut assistant = Payload::Assistant {
-        output: crate::log::AssistantOutput::from_legacy_messages(
+    let mut assistant = Payload::record_only(
+        crate::log::AssistantOutput::from_legacy_messages(
             vec![ContentBlock::Thinking {
                 text: leak(),
                 signature: "sig".into(),
@@ -481,8 +481,8 @@ fn every_text_bearing_payload_path_is_masked() {
                 serde_json::json!({ "command": leak() }),
             )],
         ),
-        excluded: Some(crate::log::Exclusion::Upstream(leak().into())),
-    };
+        crate::log::Exclusion::Upstream(leak().into()),
+    );
     masker.mask_payload(&mut assistant);
     let Payload::Assistant { output, excluded } = &assistant else {
         unreachable!()
@@ -542,21 +542,19 @@ fn captured_stream_diagnostics_are_masked() {
     let masker = policy.masker();
     let leak = || "before leaked-secret-value after".to_string();
 
-    let mut payload = Payload::Assistant {
-        output: crate::log::AssistantOutput::Messages(Vec::new()),
-        excluded: Some(crate::log::Exclusion::Upstream(
-            crate::log::UpstreamFailureRecord {
-                why: "stream finalized with no content and no usage".into(),
-                stream: Some(crate::log::StreamDiagnostics {
-                    status: 200,
-                    headers: BTreeMap::from([("x-generation-id".to_string(), leak())]),
-                    message_start: Some(leak()),
-                    frames: leak(),
-                    frames_truncated: false,
-                }),
-            },
-        )),
-    };
+    let mut payload = Payload::record_only(
+        crate::log::AssistantOutput::Messages(Vec::new()),
+        crate::log::Exclusion::Upstream(crate::log::UpstreamFailureRecord {
+            why: "stream finalized with no content and no usage".into(),
+            stream: Some(crate::log::StreamDiagnostics {
+                status: 200,
+                headers: BTreeMap::from([("x-generation-id".to_string(), leak())]),
+                message_start: Some(leak()),
+                frames: leak(),
+                frames_truncated: false,
+            }),
+        }),
+    );
     masker.mask_payload(&mut payload);
     let Payload::Assistant {
         excluded: Some(crate::log::Exclusion::Upstream(failure)),
@@ -583,11 +581,8 @@ fn the_log_append_choke_point_filters_every_entry() {
         EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "choke-point-secret")])).policy;
     let mut log = crate::persist::Log::in_memory();
     log.set_masker(policy.masker());
-    log.append(
-        1,
-        Payload::User(vec![ContentBlock::Text("here: choke-point-secret".into())]),
-    )
-    .unwrap();
+    log.append(1, Payload::user("here: choke-point-secret"))
+        .unwrap();
     let serialized = serde_json::to_string(&log.entries()[0]).unwrap();
     assert!(!serialized.contains("choke-point-secret"));
     assert!(serialized.contains("A_KEY"));
@@ -625,15 +620,16 @@ fn a_responses_function_call_is_masked_on_append_and_replayed_as_logged() {
     let mut log = Log::in_memory();
     log.set_masker(policy.masker());
 
-    let call = |call_id: &str, arguments: &str| Payload::Assistant {
-        output: AssistantOutput::Responses(vec![ResponsesOutputItem::FunctionCall {
-            id: None,
-            call_id: CallId(call_id.into()),
-            name: "bash".into(),
-            arguments: arguments.into(),
-            status: None,
-        }]),
-        excluded: None,
+    let call = |call_id: &str, arguments: &str| {
+        Payload::assistant(AssistantOutput::Responses(vec![
+            ResponsesOutputItem::FunctionCall {
+                id: None,
+                call_id: CallId(call_id.into()),
+                name: "bash".into(),
+                arguments: arguments.into(),
+                status: None,
+            },
+        ]))
     };
     let result =
         |call_id: &str| Payload::tool_result(call_id, RawResult::text("ok"), WireState::Raw);

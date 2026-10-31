@@ -181,14 +181,7 @@ fn assembles_and_projects_interleaved_blocks_in_provider_order() {
         ]
     );
 
-    let log = vec![crate::log::LogEntry {
-        seq: 0,
-        turn: 0,
-        at: crate::log::Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload: completion.assistant.clone(),
-    }];
+    let log = vec![crate::log::LogEntry::new(0, completion.assistant.clone())];
     let wire = crate::project::project(&log);
     let kinds: Vec<&str> = wire[0]
         .content

@@ -199,15 +199,11 @@ impl Screenplay<'_> {
     /// entry the spotter logs for *every* judged call, cleared ones included, not only the
     /// gated ones a human ever sees a prompt for.
     pub(crate) fn spot(&mut self, call_id: &str, stance: Stance, reason: &str) -> &mut Self {
-        self.commit(Payload::Spot(crate::log::Spot {
-            call_id: CallId(call_id.into()),
+        self.commit(Payload::Spot(crate::log::Spot::new(
+            CallId(call_id.into()),
             stance,
-            reason: reason.into(),
-            origin: crate::log::Origin::Model,
-            model: None,
-            probed_prefix: None,
-            axes: None,
-        }))
+            reason,
+        )))
     }
 
     /// A committed tool result for `call_id`, projected at its `wire` state.

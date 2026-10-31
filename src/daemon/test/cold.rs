@@ -8,7 +8,7 @@ use crate::log::Telemetry;
 /// A session whose cache is already believed cold: a zero lifetime and one turn on
 /// the record, a moment ago.
 async fn cold_session() -> (Arc<Session>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-    let (shared, rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::ZERO);
     append_compactable_history(&shared);
     shared.record_request(RequestOrigin::Turn, RequestUsage::new(Usage::default()));
@@ -32,7 +32,7 @@ fn a_shared_triage_refreshes_the_cold_belief_and_an_own_triage_does_not() {
         format!("{{\"at_ms\":{stale},\"origin\":\"turn\"}}\n"),
     )
     .unwrap();
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::from_secs(300));
     append_compactable_history(&shared);
     shared.attach_usage_log(&usage_path);
@@ -172,7 +172,7 @@ async fn a_fold_leaves_the_park_folded() {
 /// request on the record yet) leaves nothing for a later cold moment to consume.
 #[tokio::test]
 async fn a_person_acting_on_a_warm_session_is_not_kept() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::ZERO);
     shared.release_cold(crate::log::ReleasedBy::Turn);
     assert!(!shared.person_acted.load(Ordering::SeqCst));
@@ -194,11 +194,9 @@ async fn the_client_sends_to_a_cold_session_without_a_flag() {
 /// put, so its next send is not a cold read.
 #[tokio::test]
 async fn nothing_to_fold_is_not_cold() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::ZERO);
-    shared
-        .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
-        .unwrap();
+    shared.append(1, Payload::user("hi")).unwrap();
     shared.record_request(RequestOrigin::Turn, RequestUsage::new(Usage::default()));
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert_eq!(shared.cold_since(), None);
@@ -304,7 +302,7 @@ async fn every_person_action_releases_a_park_and_is_recorded() {
 /// the turn go on, is. A decision on a warm session records nothing.
 #[tokio::test]
 async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
-    let (warm, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (warm, _rx) = Session::in_memory();
     warm.set_cache_ttl(Duration::from_secs(300));
     let server = test_server(&warm).await;
     let call = bash_call("ls");
@@ -402,13 +400,13 @@ fn a_main_switch_starts_the_session_cold() {
     )
     .unwrap();
 
-    let (kept, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (kept, _rx) = Session::in_memory();
     kept.set_cache_ttl(Duration::from_secs(300));
     append_compactable_history(&kept);
     kept.attach_usage_log(&usage_path);
     assert_eq!(kept.cold_since(), None, "a minute-old turn is still warm");
 
-    let (switched, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (switched, _rx) = Session::in_memory();
     switched.set_cache_ttl(Duration::from_secs(300));
     append_compactable_history(&switched);
     let lost = crate::log::Timestamp::now();

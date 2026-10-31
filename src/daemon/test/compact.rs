@@ -6,39 +6,28 @@ use crate::daemon::keepalive::CacheLineage;
 use crate::log::{AssistantOutput, LogEntry, RawResult, Summary, Timestamp, WireState};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(1_000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(1_000 + seq))
 }
 
 /// A user message of about `tokens` tokens of recorded size.
 fn user(seq: u64, tokens: usize) -> LogEntry {
-    entry(
-        seq,
-        Payload::User(vec![ContentBlock::Text("x".repeat(tokens * 4))]),
-    )
+    entry(seq, Payload::user("x".repeat(tokens * 4)))
 }
 
 fn call(seq: u64, id: &str) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![ToolCall::new(
-                    crate::bash::NAME,
-                    id,
-                    serde_json::json!({"command": "ls"}),
-                )],
-            ),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![],
+            vec![ToolCall::new(
+                crate::bash::NAME,
+                id,
+                serde_json::json!({"command": "ls"}),
+            )],
+        )),
     )
 }
 
@@ -99,7 +88,7 @@ fn nothing_to_compact_when_the_tail_holds_it_all() {
 /// and nothing for the keepalive to ping.
 #[tokio::test]
 async fn a_compaction_resets_the_cold_belief_and_the_keepalive() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::ZERO);
     append_compactable_history(&shared);
     shared.record_request(RequestOrigin::Turn, RequestUsage::new(Usage::default()));
@@ -118,7 +107,7 @@ async fn a_compaction_resets_the_cold_belief_and_the_keepalive() {
 /// an uncached read.
 #[test]
 fn a_compaction_needs_a_cold_session() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     assert_eq!(
         shared.request_compaction(false),
         Err(NotCompactable::NotCold)
@@ -129,7 +118,7 @@ fn a_compaction_needs_a_cold_session() {
 /// not believed expired; the progress shows in `current_operations`, not the `cold` topic.
 #[tokio::test]
 async fn a_warm_compaction_is_accepted_on_request_and_reports_on_its_topic() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::from_secs(3_600));
     append_compactable_history(&shared);
     assert_eq!(shared.cold_since(), None);
@@ -157,7 +146,7 @@ async fn a_warm_compaction_is_accepted_on_request_and_reports_on_its_topic() {
 /// "the loop is running" left a cold read or an archive as the only ways forward.
 #[test]
 fn a_held_triage_accepts_a_compaction() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::from_secs(3_600));
     append_compactable_history(&shared);
     shared.set_phase(LoopPhase::Requesting);
@@ -182,7 +171,7 @@ fn a_held_triage_accepts_a_compaction() {
 /// guard.
 #[test]
 fn a_warm_compaction_still_needs_something_to_compact() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::from_secs(3_600));
     assert_eq!(
         shared.request_compaction(true),
@@ -194,7 +183,7 @@ fn a_warm_compaction_still_needs_something_to_compact() {
 /// failure is a log entry, so it is what a reopened session reports too.
 #[test]
 fn a_failed_compaction_clears_when_a_turn_starts() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared
         .append(
             1,
@@ -230,7 +219,7 @@ fn a_failed_compaction_clears_when_a_turn_starts() {
 /// flag (docs/summary.md), so the request is in the session's record.
 #[tokio::test]
 async fn an_accepted_compaction_is_logged_with_its_cut() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::from_secs(3_600));
     append_compactable_history(&shared);
     let expected = compaction_cut(&shared.snapshot(), COMPACTION_TAIL_TOKENS).unwrap();
@@ -252,7 +241,7 @@ async fn an_accepted_compaction_is_logged_with_its_cut() {
 /// The client reads a refusal as a decline with the daemon's message, not an error.
 #[tokio::test]
 async fn the_client_reads_a_compaction_refusal_as_a_decline() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     let client = test_client(&shared).await;
     assert_eq!(
         client.compact().await.unwrap(),
@@ -285,18 +274,12 @@ async fn a_compaction_streams_its_writers_deltas() {
     });
     // The compaction loop runs on the session's own client; the test starts it directly,
     // without a runtime around it.
-    let endpoint = crate::api::Endpoint {
-        provider: crate::log::Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = crate::api::Endpoint::at(
+        crate::log::Provider::Anthropic,
+        format!("http://{addr}/v1/messages"),
+    );
     let client = Arc::new(Client::new(endpoint, "m", "sys", None));
-    let (session, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (session, _rx) = Session::in_memory();
     tokio::spawn(crate::daemon::compact::compact_loop(
         client,
         Arc::clone(&session),

@@ -181,16 +181,10 @@ async fn an_islands_exit_archives_a_session_mid_turn() {
     });
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.client = Client::new(
-        crate::api::Endpoint {
-            provider: crate::log::Provider::Anthropic,
-            url: Some(format!("http://{addr}/v1/messages")),
-            auth_header: "x-api-key".into(),
-            auth_value: "k".into(),
-            session_id: None,
-            extra_headers: Vec::new(),
-            request: Default::default(),
-            base: None,
-        },
+        crate::api::Endpoint::at(
+            crate::log::Provider::Anthropic,
+            format!("http://{addr}/v1/messages"),
+        ),
         "m",
         "sys",
         None,

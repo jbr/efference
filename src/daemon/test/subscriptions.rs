@@ -218,28 +218,23 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     let issued = child
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![curl.clone()],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![curl.clone()],
+            )),
         )
         .unwrap();
     child
         .append(
             1,
-            Payload::Spot(crate::log::Spot {
-                call_id: curl.id.clone(),
-                stance: crate::log::Stance::Gate,
-                reason: "level 2 (scope fit, 21%): needs 1 approved call like it, found none."
-                    .into(),
-                origin: crate::log::Origin::Model,
-                model: None,
-                probed_prefix: None,
-                axes: Some(crate::log::Axes {
+            Payload::Spot(
+                crate::log::Spot::new(
+                    curl.id.clone(),
+                    crate::log::Stance::Gate,
+                    "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
+                )
+                .with_axes(Some(crate::log::Axes {
                     in_scope: 0.21,
                     precedent: Some(crate::log::Precedent {
                         candidates: 0,
@@ -249,8 +244,8 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
                         compared: Vec::new(),
                     }),
                     ..Default::default()
-                }),
-            }),
+                })),
+            ),
         )
         .unwrap();
     let _rx = child.register_pending(&curl, None, None);
@@ -281,14 +276,11 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     let said = child
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text(report.clone())],
-                    vec![],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text(report.clone())],
+                vec![],
+            )),
         )
         .unwrap();
     child.going_idle();

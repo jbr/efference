@@ -248,16 +248,10 @@ async fn a_terminal_429_body_is_answered_once() {
             }
             served
         });
-        let endpoint = Endpoint {
-            provider: Provider::OpenAICodex,
-            url: Some(format!("http://{addr}/backend-api/codex/responses")),
-            auth_header: "authorization".into(),
-            auth_value: "Bearer k".into(),
-            session_id: None,
-            extra_headers: Vec::new(),
-            request: Default::default(),
-            base: None,
-        };
+        let endpoint = Endpoint::at(
+            Provider::OpenAICodex,
+            format!("http://{addr}/backend-api/codex/responses"),
+        );
         let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
         let outcome = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
         assert!(outcome.is_err(), "a 429 that never clears is an error");
@@ -308,16 +302,7 @@ async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
         }
         served
     });
-    let endpoint = Endpoint {
-        provider: Provider::OpenAI,
-        url: Some(format!("http://{addr}/v1/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::OpenAI, format!("http://{addr}/v1/responses"));
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
     let error = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -375,16 +360,7 @@ async fn a_503_open_is_retried_and_the_attempt_is_queued() {
             .unwrap();
         }
     });
-    let endpoint = Endpoint {
-        provider: Provider::OpenAI,
-        url: Some(format!("http://{addr}/v1/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::OpenAI, format!("http://{addr}/v1/responses"));
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})

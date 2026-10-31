@@ -192,16 +192,10 @@ pub(super) fn start_with(
     std::fs::create_dir_all(cwd.join("scratch")).unwrap();
     let cwd = cwd.canonicalize().unwrap();
     let mut boot = boot(&cwd);
-    let endpoint = crate::api::Endpoint {
-        provider: crate::log::Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = crate::api::Endpoint::at(
+        crate::log::Provider::Anthropic,
+        format!("http://{addr}/v1/messages"),
+    );
     boot.client = Client::new(endpoint, "m", "sys", None);
     adjust(&mut boot);
     let host = Swansong::new();

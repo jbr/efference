@@ -126,14 +126,11 @@ fn issue(session: &Session) -> String {
     session
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![leaf()],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![leaf()],
+            )),
         )
         .unwrap()
         .to_string()

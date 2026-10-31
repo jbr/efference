@@ -8,14 +8,9 @@ use crate::project::{BreakpointPlacement, ImagePlacement, encode_messages};
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(1_700_000_000_000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(1_700_000_000_000 + seq))
 }
 
 fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
@@ -25,10 +20,7 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     };
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(vec![], text, calls),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(vec![], text, calls)),
     )
 }
 
@@ -44,10 +36,7 @@ fn call(n: u64) -> ToolCall {
 /// A session of `steps` steps, each a call whose result of `size` bytes was kept whole,
 /// then the triage's own turn: the log, and the call the triage covers.
 fn session(steps: u64, size: usize) -> (Vec<LogEntry>, ToolCall) {
-    let mut log = vec![entry(
-        1,
-        Payload::User(vec![ContentBlock::Text("do the steps".into())]),
-    )];
+    let mut log = vec![entry(1, Payload::user("do the steps"))];
     let mut seq = 1;
     for n in 1..=steps {
         seq += 1;
@@ -56,13 +45,11 @@ fn session(steps: u64, size: usize) -> (Vec<LogEntry>, ToolCall) {
         let body = format!("output of step {n}\n").repeat(size / 16);
         log.push(entry(
             seq,
-            Payload::ToolResult {
-                call_id: call(n).id,
-                raw: RawResult::text(body),
-                wire: WireState::Triaged(
-                    Triaged::new(Keep::All).with_note(format!("step {n} ran")),
-                ),
-            },
+            Payload::tool_result(
+                call(n).id,
+                RawResult::text(body),
+                WireState::Triaged(Triaged::new(Keep::All).with_note(format!("step {n} ran"))),
+            ),
         ));
     }
     let triaged = call(steps + 1);
@@ -144,11 +131,11 @@ fn entries_after_the_triages_own_turn_stay_out_of_the_history() {
     let before = request(&log, &triaged, Reader::Triage);
     log.push(entry(
         99,
-        Payload::ToolResult {
-            call_id: triaged.id.clone(),
-            raw: RawResult::text("final output"),
-            wire: WireState::Pending,
-        },
+        Payload::tool_result(
+            triaged.id.clone(),
+            RawResult::text("final output"),
+            WireState::Pending,
+        ),
     ));
     assert_eq!(request(&log, &triaged, Reader::Triage), before);
 }

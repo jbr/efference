@@ -1,29 +1,21 @@
 use super::*;
 use crate::log::Telemetry;
 use crate::log::{
-    AssistantOutput, ConfigEdit, ContentBlock, Disposition, Keep, Notification, Origin, Timestamp,
+    AssistantOutput, ConfigEdit, ContentBlock, Disposition, Keep, Notification, Timestamp,
     ToolTelemetry, Triage, Triaged,
 };
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(1_700_000_000_000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(1_700_000_000_000 + seq))
 }
 
 /// A sourced `User` entry opens its line with the same `source:` address the
 /// wire carries (docs/control-api.md); the unsourced line above stays bare.
 #[test]
 fn a_sourced_user_line_shows_the_source() {
-    let mut user = entry(
-        1,
-        Payload::User(vec![ContentBlock::Text("please look".into())]),
-    );
+    let mut user = entry(1, Payload::user("please look"));
     user.source = Some("mcp[claude-code]".into());
     assert_eq!(
         render(&[user]),
@@ -37,10 +29,7 @@ fn assistant(text: &str, calls: Vec<ToolCall>) -> Payload {
     } else {
         vec![ContentBlock::Text(text.into())]
     };
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(vec![], text, calls),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(vec![], text, calls))
 }
 
 #[test]
@@ -50,10 +39,7 @@ fn a_turn_renders_prose_calls_and_verdicts_without_bodies() {
         .collect::<Vec<_>>()
         .join("\n");
     let log = [
-        entry(
-            1,
-            Payload::User(vec![ContentBlock::Text("find the enum".into())]),
-        ),
+        entry(1, Payload::user("find the enum")),
         entry(
             2,
             assistant(
@@ -137,16 +123,7 @@ fn errors_raw_and_images_are_named_not_shown() {
 
 #[test]
 fn silent_entries_render_to_nothing_and_verdicts_on_the_inbox_do_not() {
-    let quiet = Triage {
-        for_result: Some(3),
-        origin: Origin::Model,
-        raw_keep: "all".into(),
-        inbox: vec![],
-        surfaced: vec![],
-        retries: vec![],
-        thinking: vec![],
-        shown_through: None,
-    };
+    let quiet = Triage::new(Some(3), "all");
     let mut loud = quiet.clone();
     loud.inbox = vec![(9, Disposition::Dismiss)];
     loud.retries = vec!["attempt 1 of 3: triage called bash".into()];
@@ -187,25 +164,27 @@ fn a_config_proposal_names_its_change_and_its_resolution() {
     let log = [
         entry(
             5,
-            Payload::ConfigEdit(ConfigEdit {
-                state: EditState::Proposed,
-                resolves: None,
-                change: ConfigChange::Command {
-                    command: "grep -n".into(),
-                },
-                note: "spotter: judged safe".into(),
-            }),
+            Payload::ConfigEdit(
+                ConfigEdit::new(
+                    EditState::Proposed,
+                    ConfigChange::Command {
+                        command: "grep -n".into(),
+                    },
+                )
+                .with_note("spotter: judged safe".into()),
+            ),
         ),
         entry(
             6,
-            Payload::ConfigEdit(ConfigEdit {
-                state: EditState::Committed,
-                resolves: Some(5),
-                change: ConfigChange::Command {
-                    command: "grep -n".into(),
-                },
-                note: String::new(),
-            }),
+            Payload::ConfigEdit(
+                ConfigEdit::new(
+                    EditState::Committed,
+                    ConfigChange::Command {
+                        command: "grep -n".into(),
+                    },
+                )
+                .with_resolves(Some(5)),
+            ),
         ),
     ];
     assert_eq!(
@@ -241,10 +220,10 @@ fn a_command_gets_room_where_a_body_does_not() {
 #[test]
 fn a_title_shows_when_it_moves_and_not_when_it_is_kept() {
     let title = |text: &str| {
-        Payload::Title(crate::log::Title {
-            text: text.into(),
-            author: crate::log::TitleAuthor::Triage,
-        })
+        Payload::Title(crate::log::Title::new(
+            text,
+            crate::log::TitleAuthor::Triage,
+        ))
     };
     let log = [
         entry(1, title("Testing the harness")),

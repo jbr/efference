@@ -31,7 +31,7 @@ fn between_reads(
 
 /// An idle loop with a submitted turn it has not claimed yet.
 fn idle_with_a_turn_queued() -> Arc<Session> {
-    let (session, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (session, _rx) = Session::in_memory();
     session.append(1, user("hello")).unwrap();
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     session
@@ -80,7 +80,7 @@ fn a_submit_and_a_turn_ending_between_the_reads_are_not_settled() {
 /// continue pending or taken, not an idle loop with nothing pending.
 #[test]
 fn a_continue_taken_between_the_reads_is_not_settled() {
-    let (session, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (session, _rx) = Session::in_memory();
     session.append(1, user("hello")).unwrap();
     session.request_continue(Default::default()).unwrap();
     let reached = between_reads(&session, Session::take_continue);
@@ -130,7 +130,7 @@ fn a_claim_between_the_reads_declines_a_continue() {
 /// pace lock and then the queue lock, so it lands there only if both are free.
 #[test]
 fn an_agents_turn_is_held_back_as_it_is_queued() {
-    let (session, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (session, _rx) = Session::in_memory();
     session.set_pace(None, Some(true));
     let seen = Arc::new(Mutex::new(None));
     let slot = Arc::clone(&seen);

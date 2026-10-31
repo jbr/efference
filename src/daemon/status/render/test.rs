@@ -43,15 +43,9 @@ fn rendered(view: &StatusView, reader: &Reader) -> String {
 
 /// The spotter's verdict on `toolu_1`, from the decision rung when `axes` is given.
 fn spot(origin: Origin, reason: &str, axes: Option<Axes>) -> Spot {
-    Spot {
-        call_id: CallId("toolu_1".into()),
-        stance: Stance::Gate,
-        reason: reason.into(),
-        origin,
-        model: None,
-        probed_prefix: None,
-        axes,
-    }
+    Spot::new(CallId("toolu_1".into()), Stance::Gate, reason)
+        .with_origin(origin)
+        .with_axes(axes)
 }
 
 /// Answers clean on every axis but the ones a case sets.

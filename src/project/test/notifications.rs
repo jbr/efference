@@ -16,14 +16,11 @@ fn pinned_notification_projects_at_triage_position() {
         entry(
             0,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "t", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "t", json!({}))],
+            )),
         ),
         entry(1, 0, notification("test-watch", "3 failures")), // pinned
         entry(2, 0, notification("reviewer", "a nit")),        // dismissed
@@ -35,16 +32,10 @@ fn pinned_notification_projects_at_triage_position() {
         entry(
             4,
             0,
-            Payload::Triage(Triage {
-                for_result: Some(3),
-                origin: Origin::Model,
-                raw_keep: "all".into(),
-                inbox: vec![(1, Disposition::Pin), (2, Disposition::Dismiss)],
-                surfaced: Vec::new(),
-                retries: Vec::new(),
-                thinking: Vec::new(),
-                shown_through: None,
-            }),
+            Payload::Triage(
+                Triage::new(Some(3), "all")
+                    .with_inbox(vec![(1, Disposition::Pin), (2, Disposition::Dismiss)]),
+            ),
         ),
     ];
     let messages = project(&log);
@@ -88,14 +79,11 @@ fn surfaced_context_item_projects_at_triage_position() {
         entry(
             1,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("grep", "t", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("grep", "t", json!({}))],
+            )),
         ),
         entry(
             2,
@@ -105,17 +93,11 @@ fn surfaced_context_item_projects_at_triage_position() {
         entry(
             3,
             0,
-            Payload::Triage(Triage {
-                for_result: Some(2),
-                origin: Origin::Model,
-                raw_keep: "all".into(),
-                inbox: Vec::new(),
-                // "unknown" isn't in the listing → drops; only ferritin renders.
-                surfaced: vec!["ferritin".into(), "unknown".into()],
-                retries: Vec::new(),
-                thinking: Vec::new(),
-                shown_through: None,
-            }),
+            Payload::Triage(
+                Triage::new(Some(2), "all")
+                    // "unknown" isn't in the listing → drops; only ferritin renders.
+                    .with_surfaced(vec!["ferritin".into(), "unknown".into()]),
+            ),
         ),
     ];
     let messages = project(&log);
@@ -136,7 +118,7 @@ fn surfaced_context_item_projects_at_triage_position() {
 #[test]
 fn unpinned_ambient_projects_to_nothing() {
     let log = vec![
-        entry(0, 0, Payload::User(vec![ContentBlock::Text("hi".into())])),
+        entry(0, 0, Payload::user("hi")),
         entry(1, 0, notification("src", "left notice")),
     ];
     let messages = project(&log);
@@ -160,14 +142,11 @@ fn recorded_triage_thinking_projects_to_identical_bytes() {
             entry(
                 0,
                 0,
-                Payload::Assistant {
-                    output: AssistantOutput::from_legacy_messages(
-                        vec![],
-                        vec![],
-                        vec![ToolCall::new("bash", "t", json!({}))],
-                    ),
-                    excluded: None,
-                },
+                Payload::assistant(AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall::new("bash", "t", json!({}))],
+                )),
             ),
             entry(1, 0, notification("test-watch", "3 failures")),
             entry(
@@ -178,16 +157,11 @@ fn recorded_triage_thinking_projects_to_identical_bytes() {
             entry(
                 3,
                 0,
-                Payload::Triage(Triage {
-                    for_result: Some(2),
-                    origin: Origin::Model,
-                    raw_keep: "all".into(),
-                    inbox: vec![(1, Disposition::Pin)],
-                    surfaced: Vec::new(),
-                    retries: Vec::new(),
-                    thinking,
-                    shown_through: None,
-                }),
+                Payload::Triage(
+                    Triage::new(Some(2), "all")
+                        .with_inbox(vec![(1, Disposition::Pin)])
+                        .with_thinking(thinking),
+                ),
             ),
         ]
     };

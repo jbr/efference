@@ -95,16 +95,7 @@ fn roster_excludes_already_surfaced_names() {
         preamble_with(vec![listed("ferritin"), listed("jsonl-prose")]),
         entry(
             1,
-            Payload::Triage(Triage {
-                for_result: Some(1),
-                origin: Origin::Model,
-                raw_keep: "all".into(),
-                inbox: Vec::new(),
-                surfaced: vec!["ferritin".into()],
-                retries: Vec::new(),
-                thinking: Vec::new(),
-                shown_through: None,
-            }),
+            Payload::Triage(Triage::new(Some(1), "all").with_surfaced(vec!["ferritin".into()])),
         ),
     ];
     assert_eq!(

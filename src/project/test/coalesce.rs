@@ -12,14 +12,11 @@ fn tool_result_omits_false_is_error_but_keeps_true() {
         entry(
             0,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "x", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "x", json!({}))],
+            )),
         ),
         entry(
             1,
@@ -41,17 +38,14 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
         entry(
             0,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![
-                        ToolCall::new("bash", "a", json!({})),
-                        ToolCall::new("bash", "b", json!({})),
-                    ],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![
+                    ToolCall::new("bash", "a", json!({})),
+                    ToolCall::new("bash", "b", json!({})),
+                ],
+            )),
         ),
         entry(
             1,
@@ -90,14 +84,11 @@ fn user_turn_after_tool_result_merges_into_one_message() {
         entry(
             0,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "a", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "a", json!({}))],
+            )),
         ),
         entry(
             1,
@@ -106,11 +97,7 @@ fn user_turn_after_tool_result_merges_into_one_message() {
         ),
         // Injected mid-trajectory (or a redirect steer): a user turn right after
         // the result, with no assistant between.
-        entry(
-            2,
-            1,
-            Payload::User(vec![ContentBlock::Text("actually, do X instead".into())]),
-        ),
+        entry(2, 1, Payload::user("actually, do X instead")),
     ];
     let messages = project(&log);
     // assistant(tool_use) · ONE user message carrying [tool_result, text].

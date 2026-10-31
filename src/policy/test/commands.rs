@@ -1,6 +1,7 @@
 //! Bash-command classification: lexing, structural checks, and prefix grants.
 
 use super::*;
+use crate::config::testing::ConfigFixture;
 
 #[test]
 fn simple_commands_lex_to_their_tokens() {
@@ -94,19 +95,14 @@ fn fd_dup_carve_out_does_not_leak_to_file_redirections() {
 /// [`sample_role`]'s allowlist plus `[paths]` grants — cwd read+write, `/refs` read-only — so the
 /// `cd` tolerance can be exercised against both a writable and a read-only granted directory.
 fn cd_role() -> Config {
-    role(
-        r#"
-        [commands]
-        cargo = true
-        rg = true
-        "git diff" = true
-        "git status" = true
-
-        [paths]
-        "." = true
-        "/refs" = { read = true }
-        "#,
-    )
+    ConfigFixture::new()
+        .with_command("cargo", CommandStance::Clear)
+        .with_command("rg", CommandStance::Clear)
+        .with_command("git diff", CommandStance::Clear)
+        .with_command("git status", CommandStance::Clear)
+        .with_path(".", true, true)
+        .with_path("/refs", true, false)
+        .build()
 }
 
 fn cd_verdict(command: &str) -> Verdict {
@@ -224,20 +220,14 @@ fn promotable_command_rejects_unlexable_or_redundant_prefixes() {
 /// A role whose `[commands]` table is given as explicit `(key, stance)` pairs, with the same
 /// `[paths]` grants as [`cd_role`] so the `cd` tolerance can be exercised against it.
 fn stance_role(entries: &[(&str, CommandStance)]) -> Config {
-    let mut commands = String::new();
-    for (key, stance) in entries {
-        commands.push_str(&format!("\"{key}\" = \"{}\"\n", stance.as_str()));
-    }
-    role(&format!(
-        r#"
-        [commands]
-        {commands}
-
-        [paths]
-        "." = true
-        "/refs" = {{ read = true }}
-        "#
-    ))
+    entries
+        .iter()
+        .fold(ConfigFixture::new(), |fixture, (key, stance)| {
+            fixture.with_command(key, *stance)
+        })
+        .with_path(".", true, true)
+        .with_path("/refs", true, false)
+        .build()
 }
 
 fn stance_verdict(role: &Config, command: &str) -> Verdict {

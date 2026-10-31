@@ -109,14 +109,11 @@ fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, oneshot::Receiver<Appro
     let seq = session
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call.clone()],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         )
         .unwrap();
     session.set_phase(LoopPhase::Executing);

@@ -7,14 +7,9 @@ use crate::log::{CallId, ExitOutcome, ProcessEventKind, ProcessSpawn, RawResult,
 
 /// One log entry carrying `payload`, at `seq`.
 fn entry(seq: Seq, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(1_754_300_000_000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(1_754_300_000_000 + seq))
 }
 
 fn spawned(id: u64) -> Payload {
@@ -45,10 +40,7 @@ fn exited(id: u64) -> Payload {
 #[test]
 fn a_log_with_no_process_records_answers_nothing() {
     let entries = vec![
-        entry(
-            0,
-            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
-        ),
+        entry(0, Payload::user("go")),
         entry(
             1,
             Payload::tool_result(

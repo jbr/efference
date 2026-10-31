@@ -1,6 +1,7 @@
 //! Prefix-promotion probe descent and the vote ledger.
 
 use super::*;
+use crate::config::testing::ConfigFixture;
 
 fn toks(command: &str) -> Vec<String> {
     simple_command_tokens(command).expect("lexes")
@@ -53,7 +54,9 @@ fn descent_picks_shortest_then_descends_past_a_vote() {
 /// coverage check is a defensive guard — when all prefixes are covered it probes nothing.
 #[test]
 fn descent_probes_nothing_when_every_prefix_is_covered() {
-    let role = role("[commands]\ncargo = true\n");
+    let role = ConfigFixture::new()
+        .with_command("cargo", CommandStance::Clear)
+        .build();
     let mut ledger = ProbeLedger::default();
     let t = toks("cargo test --workspace");
     ledger.observe(&t);
@@ -65,47 +68,31 @@ fn descent_probes_nothing_when_every_prefix_is_covered() {
 /// model verdicts only) so a resumed daemon picks up exactly where it left off.
 #[test]
 fn probe_ledger_folds_seen_and_votes_from_the_log() {
-    use crate::log::{CallId, Origin, Spot, Stance};
+    use crate::log::{CallId, Spot, Stance};
 
     // Two `cargo test` invocations, the second carrying a `clear_always` probe vote for `cargo`.
     fn assistant(id: &str, command: &str) -> LogEntry {
-        LogEntry {
-            seq: 0,
-            turn: 0,
-            at: Timestamp(0),
-            submission_id: None,
-            source: None,
-            payload: Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new(
-                        bash::NAME,
-                        id,
-                        serde_json::json!({ "command": command }),
-                    )],
-                ),
-                excluded: None,
-            },
-        }
+        LogEntry::new(
+            0,
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new(
+                    bash::NAME,
+                    id,
+                    serde_json::json!({ "command": command }),
+                )],
+            )),
+        )
     }
     fn spot(id: &str, stance: Stance, probed: Option<&str>) -> LogEntry {
-        LogEntry {
-            seq: 0,
-            turn: 0,
-            at: Timestamp(0),
-            submission_id: None,
-            source: None,
-            payload: Payload::Spot(Spot {
-                call_id: CallId(id.into()),
-                stance,
-                reason: String::new(),
-                origin: Origin::Model,
-                model: None,
-                probed_prefix: probed.map(str::to_string),
-                axes: None,
-            }),
-        }
+        LogEntry::new(
+            0,
+            Payload::Spot(
+                Spot::new(CallId(id.into()), stance, String::new())
+                    .with_probed_prefix(probed.map(str::to_string)),
+            ),
+        )
     }
 
     let log = [
@@ -114,7 +101,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
         assistant("b", "cargo test"),
         spot("b", Stance::ClearAlways, Some("cargo")), // 2nd sighting + safe vote
     ];
-    let rooted_role = role("[paths]\n'.' = true\n");
+    let rooted_role = ConfigFixture::new().with_path(".", true, true).build();
     let rooted_log = [
         assistant("c", "cd /work/sub && cargo test"),
         spot("c", Stance::Clear, None),
@@ -160,22 +147,18 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
 #[test]
 fn probe_ledger_ignores_fallback_verdicts() {
     use crate::log::{CallId, Origin, Spot, Stance};
-    let log = [LogEntry {
-        seq: 0,
-        turn: 0,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload: Payload::Spot(Spot {
-            call_id: CallId("x".into()),
-            stance: Stance::ClearAlways, // would be a safe vote — but origin is Fallback
-            reason: String::new(),
-            origin: Origin::Fallback,
-            model: None,
-            probed_prefix: Some("cargo".into()),
-            axes: None,
-        }),
-    }];
+    let log = [LogEntry::new(
+        0,
+        Payload::Spot(
+            Spot::new(
+                CallId("x".into()),
+                Stance::ClearAlways, // would be a safe vote — but origin is Fallback
+                String::new(),
+            )
+            .with_origin(Origin::Fallback)
+            .with_probed_prefix(Some("cargo".into())),
+        ),
+    )];
     let ledger = probe_ledger(&Directories::at(Path::new(CWD)), &Config::default(), &log);
     assert!(
         !ledger.ready_to_promote("cargo"),

@@ -130,14 +130,11 @@ fn hold(holder: &Session, call: &ToolCall) -> (String, oneshot::Receiver<Approva
     let seq = holder
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call.clone()],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         )
         .unwrap()
         .to_string();

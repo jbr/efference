@@ -1,16 +1,11 @@
 use super::*;
+use crate::config::testing::ConfigFixture;
 use crate::log::Stance;
 use questions::{Reading, decide, level_of};
 use serde_json::json;
 
 mod plain;
 mod stages;
-
-/// Parse a config from TOML for a test that needs one as an *input* — the
-/// operator's own vocabulary, checked by the real parser.
-fn role(toml: &str) -> Config {
-    Config::from_toml(toml).expect("valid config")
-}
 
 /// A sketch distribution putting 0.8 on `level` and the rest spread evenly.
 fn sketch_at(level: usize) -> Vec<f64> {
@@ -496,7 +491,7 @@ fn the_state_withholds_the_harness_injected_intent() {
         json!({ "path": "src/lib.rs", crate::log::INTENT: "just looking, honest" }),
     );
     let state = state::state(
-        &role("scope = \"work here\""),
+        &ConfigFixture::new().with_scope("work here").build(),
         &call,
         None,
         &[],
@@ -520,12 +515,11 @@ fn the_state_withholds_the_harness_injected_intent() {
 #[test]
 fn grants_render_resolved_with_the_denies_kept() {
     let state = state::state(
-        &role(
-            "scope = \"work here\"\n\
-             [paths]\n\
-             \".\" = true\n\
-             \".efference\" = false\n",
-        ),
+        &ConfigFixture::new()
+            .with_scope("work here")
+            .with_path(".", true, true)
+            .with_path(".efference", false, false)
+            .build(),
         &ToolCall::new(crate::bash::NAME, "c1", json!({ "command": "ls" })),
         None,
         &[],
@@ -552,7 +546,7 @@ fn grants_render_resolved_with_the_denies_kept() {
 #[test]
 fn the_probe_and_the_chain_ride_only_when_present() {
     let call = ToolCall::new(crate::bash::NAME, "c1", json!({ "command": "cargo test" }));
-    let config = role("scope = \"work here\"");
+    let config = ConfigFixture::new().with_scope("work here").build();
     let plain = state::state(&config, &call, None, &[], None, None, None);
     assert!(plain.get("promotion_probe").is_none());
     assert!(plain.get("approval_chain").is_none());
@@ -580,7 +574,7 @@ fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
         "c1",
         json!({ "command": "cd /work/proj && cargo test" }),
     );
-    let config = role("scope = \"work here\"");
+    let config = ConfigFixture::new().with_scope("work here").build();
     let cwd = std::path::Path::new("/work/proj");
     let state = state::state(
         &config,
@@ -599,13 +593,10 @@ fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
 /// rather than dropped (docs/permissions.md).
 #[test]
 fn a_shell_move_carries_its_resolved_paths() {
-    let config = role(
-        r#"
-[paths]
-"." = true
-".efference" = false
-"#,
-    );
+    let config = ConfigFixture::new()
+        .with_path(".", true, true)
+        .with_path(".efference", false, false)
+        .build();
     let cwd = std::path::Path::new("/work/proj");
     let call = ToolCall::new(
         crate::bash::NAME,
@@ -655,13 +646,10 @@ fn a_shell_move_carries_its_resolved_paths() {
 /// (docs/worktrees.md).
 #[test]
 fn a_worktree_move_is_shown_as_its_project_counterpart() {
-    let config = role(
-        r#"
-[paths]
-"." = true
-".efference" = false
-"#,
-    );
+    let config = ConfigFixture::new()
+        .with_path(".", true, true)
+        .with_path(".efference", false, false)
+        .build();
     let dirs = crate::policy::Directories::new(
         "/work/proj".into(),
         "/work/proj/.efference/worktrees/w".into(),

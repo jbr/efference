@@ -6,6 +6,7 @@
 //! have to still exist, so a rename breaks the build rather than the reader.
 
 use super::*;
+use crate::config::testing::ConfigFixture;
 use serde_json::json;
 use std::path::Path;
 
@@ -268,9 +269,10 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
     );
     // A batch mixing a granted file and a document clears; the ungranted file still
     // poisons it, exactly as any other mixed batch.
-    let granted = crate::config::parse_text(
-        "[tools]\nefference = { enabled = true }\n\"efference.read\" = { granted = true }\n[paths]\n\"/work\" = true\n",
-    );
+    let granted = ConfigFixture::new()
+        .with_tool("read")
+        .with_path("/work", true, true)
+        .build();
     assert_eq!(
         crate::policy::classify(
             &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
@@ -291,9 +293,10 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
         crate::policy::Verdict::Gate
     );
     // No config can grant a write to the mount; there is nothing on disk to write.
-    let permissive = crate::config::parse_text(
-        "[tools]\nefference = { enabled = true }\n\"efference.write\" = { granted = true }\n[paths]\n\"/\" = true\n",
-    );
+    let permissive = ConfigFixture::new()
+        .with_tool("write")
+        .with_path("/", true, true)
+        .build();
     assert_eq!(
         crate::policy::classify(
             &crate::policy::Directories::at(&std::env::current_dir().unwrap()),

@@ -232,14 +232,11 @@ async fn the_reviewer_resolves_the_routed_gate_through_decide() {
     let issued = child
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![leaf()],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![leaf()],
+            )),
         )
         .unwrap();
     let gate = child.register_pending(&leaf(), None, None);

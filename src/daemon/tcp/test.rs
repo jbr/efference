@@ -5,7 +5,6 @@
 
 use super::*;
 use crate::daemon::{App, Transport, handler};
-use crate::persist::Log;
 use trillium::Method;
 use trillium_testing::TestServer;
 
@@ -59,7 +58,7 @@ fn init(shared: Arc<Session>) -> impl trillium::Handler {
 pub(super) async fn tcp_server(
     auth: &Arc<TcpAuth>,
 ) -> (TestServer<impl trillium::Handler>, TurnsGuard) {
-    let (shared, turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, turns_rx) = Session::in_memory();
     let server = TestServer::new((
         init(shared),
         handler(

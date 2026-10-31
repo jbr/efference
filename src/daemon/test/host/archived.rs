@@ -5,7 +5,7 @@
 //! recorded selections and context size.
 
 use super::*;
-use crate::log::{ContentBlock, Payload, Title, TitleAuthor};
+use crate::log::{Payload, Title, TitleAuthor};
 use crate::persist::Log;
 
 /// A resumable titled log for session `id` under `root`.
@@ -15,16 +15,9 @@ pub(super) fn write_session(root: &Path, id: &str, title: &str) {
     let mut log = Log::create(dir.join("log.jsonl"), None).unwrap();
     log.append(0, Payload::preamble("", "system", Default::default(), None))
         .unwrap();
-    log.append(0, Payload::User(vec![ContentBlock::Text("hi".into())]))
+    log.append(0, Payload::user("hi")).unwrap();
+    log.append(0, Payload::Title(Title::new(title, TitleAuthor::Operator)))
         .unwrap();
-    log.append(
-        0,
-        Payload::Title(Title {
-            text: title.into(),
-            author: TitleAuthor::Operator,
-        }),
-    )
-    .unwrap();
 }
 
 fn encode(path: &Path) -> String {
@@ -284,8 +277,7 @@ fn write_recorded_session(root: &Path, id: &str) -> PathBuf {
     let mut log = Log::create(dir.join("log.jsonl"), Some(metadata)).unwrap();
     let preamble = Payload::preamble("", "system", Default::default(), Some(inference("main")));
     log.append(0, preamble.clone()).unwrap();
-    log.append(0, Payload::User(vec![ContentBlock::Text("hi".into())]))
-        .unwrap();
+    log.append(0, Payload::user("hi")).unwrap();
     let switched = preamble.with_roles(RecordedRoles {
         spotter: inference("spot-2"),
         triage: TriageModel::separate(inference("tri")),
@@ -421,7 +413,7 @@ fn adopt_in_root(host: &Arc<Host>, root: &Path, id: &str) {
         .expect("the id is free in this test");
     host.session(id)
         .unwrap()
-        .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
+        .append(1, Payload::user("hi"))
         .unwrap();
 }
 

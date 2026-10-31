@@ -17,16 +17,14 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         ToolCall::new("bash", "bash_3", json!({})),
     ];
     let prefix = vec![
-        entry(
-            1,
-            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
-        ),
+        entry(1, Payload::user("go")),
         entry(
             2,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.clone()),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                calls.clone(),
+            )),
         ),
     ];
     let raws = [RawResult::text("alpha\nbeta"), RawResult::text("gamma")];
@@ -162,16 +160,14 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
         RawResult::text("alpha\nbeta\n"),
     ];
     let prefix = vec![
-        entry(
-            1,
-            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
-        ),
+        entry(1, Payload::user("go")),
         entry(
             2,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.to_vec()),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                calls.to_vec(),
+            )),
         ),
     ];
     let pending: Vec<Pending<'_>> = calls
@@ -243,20 +239,14 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
 fn a_bypassed_result_reaches_the_wire_verbatim() {
     let verdict = bypass_verdict("fs-mcp write retry token");
     let log = vec![
-        entry(
-            1,
-            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
-        ),
+        entry(1, Payload::user("go")),
         entry(
             2,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("write", "write_1", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("write", "write_1", json!({}))],
+            )),
         ),
         entry(
             3,
@@ -293,10 +283,11 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
     ];
     let prefix = vec![entry(
         1,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.clone()),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![],
+            calls.clone(),
+        )),
     )];
     let raws = [RawResult::text("do it"), RawResult::text("alpha\nbeta")];
     let pending: Vec<Pending<'_>> = calls

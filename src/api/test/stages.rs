@@ -79,16 +79,7 @@ fn serve(responses: Vec<String>) -> (String, std::thread::JoinHandle<()>) {
 }
 
 fn endpoint(url: String) -> Endpoint {
-    Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(url),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    }
+    Endpoint::at(Provider::Anthropic, url)
 }
 
 fn client(url: String, recorder: &Arc<Recorder>) -> Client {

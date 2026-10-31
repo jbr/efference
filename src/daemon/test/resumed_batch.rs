@@ -32,33 +32,24 @@ fn stopped_log(calls: Vec<ToolCall>, pending: &[&str], extra: impl FnOnce(&mut L
     log.append(1, user("go")).unwrap();
     log.append(
         1,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(vec![], vec![], calls),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(vec![], vec![], calls)),
     )
     .unwrap();
     extra(&mut log);
     log.append(
         1,
-        Payload::Resumed(Resumed {
-            gap_ms: 60_000,
-            lost_processes: vec![],
-            resumes_after: None,
-            pending_calls: pending.iter().map(|id| CallId((*id).into())).collect(),
-            tools_changed: Default::default(),
-        }),
+        Payload::Resumed(
+            Resumed::new(60_000)
+                .with_pending_calls(pending.iter().map(|id| CallId((*id).into())).collect()),
+        ),
     )
     .unwrap();
     log
 }
 
 fn captured(log: &mut Log, id: &str, output: &str) -> u64 {
-    log.append(
-        1,
-        Payload::Telemetry(Telemetry::CallStarted { call_id: id.into() }),
-    )
-    .unwrap();
+    log.append(1, Payload::Telemetry(Telemetry::call_started(id)))
+        .unwrap();
     log.append(
         1,
         Payload::tool_result(id, RawResult::text(output), WireState::Pending),
@@ -69,15 +60,7 @@ fn captured(log: &mut Log, id: &str, output: &str) -> u64 {
 fn gated(log: &mut Log, id: &str) {
     log.append(
         1,
-        Payload::Spot(Spot {
-            call_id: id.into(),
-            stance: Stance::Gate,
-            reason: "out of scope".into(),
-            origin: crate::log::Origin::Model,
-            model: None,
-            probed_prefix: None,
-            axes: None,
-        }),
+        Payload::Spot(Spot::new(id, Stance::Gate, "out of scope")),
     )
     .unwrap();
 }
@@ -90,16 +73,10 @@ pub(super) fn start(addr: SocketAddr, log: Log) -> (Swansong, SessionRuntime) {
     std::fs::create_dir_all(cwd.join("scratch")).unwrap();
     let mut boot = boot(&cwd.canonicalize().unwrap());
     boot.client = Client::new(
-        crate::api::Endpoint {
-            provider: crate::log::Provider::Anthropic,
-            url: Some(format!("http://{addr}/v1/messages")),
-            auth_header: "x-api-key".into(),
-            auth_value: "k".into(),
-            session_id: None,
-            extra_headers: Vec::new(),
-            request: Default::default(),
-            base: None,
-        },
+        crate::api::Endpoint::at(
+            crate::log::Provider::Anthropic,
+            format!("http://{addr}/v1/messages"),
+        ),
         "m",
         "sys",
         None,

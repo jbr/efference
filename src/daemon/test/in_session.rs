@@ -74,10 +74,11 @@ fn issue(session: &Session, calls: Vec<ToolCall>) -> Seq {
     session
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(vec![], vec![], calls),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                calls,
+            )),
         )
         .unwrap()
 }

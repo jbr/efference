@@ -20,7 +20,7 @@ async fn drain(rx: &mut broadcast::Receiver<StateUpdate>) -> HashMap<Topic, Stat
 /// rather than the reason that subscription exists.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn publishes_the_full_set_once_then_only_changes() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
 
@@ -54,7 +54,7 @@ async fn publishes_the_full_set_once_then_only_changes() {
 /// the source: both sides come from `topic_json`, so they cannot drift.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_published_value_equals_that_key_of_get_state() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
 
@@ -81,7 +81,7 @@ async fn a_published_value_equals_that_key_of_get_state() {
 /// the failure the read-values-then-`last_seq` order exists to prevent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn updates_are_stamped_with_the_log_position_they_reflect() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
 
@@ -95,12 +95,7 @@ async fn updates_are_stamped_with_the_log_position_they_reflect() {
     // Append, then move a topic. The update reflects a log that has three entries, so it
     // must not claim to predate them.
     for i in 0..3 {
-        shared
-            .append(
-                1,
-                Payload::User(vec![crate::log::ContentBlock::Text(format!("e{i}"))]),
-            )
-            .unwrap();
+        shared.append(1, Payload::user(format!("e{i}"))).unwrap();
     }
     shared.set_review_level(crate::policy::ReviewLevel::Autonomous);
 
@@ -140,12 +135,7 @@ async fn an_append_alone_wakes_the_diff() {
     diagnostic.count = 2;
     *failure.lock().unwrap() = Some(diagnostic);
     // Then append, as a request that failed and retried would.
-    shared
-        .append(
-            1,
-            Payload::User(vec![crate::log::ContentBlock::Text("x".into())]),
-        )
-        .unwrap();
+    shared.append(1, Payload::user("x")).unwrap();
 
     let changed = drain(&mut rx).await;
     assert!(
@@ -209,7 +199,7 @@ async fn a_retry_publishes_without_an_append() {
 /// carries under `status`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_status_republishes_when_it_moves() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));
     let first = drain(&mut rx).await;

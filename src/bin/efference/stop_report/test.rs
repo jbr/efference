@@ -2,32 +2,24 @@
 //! and the run length that tells a stalled session from a few scattered pauses.
 
 use super::*;
-use efference::log::{AssistantOutput, ContentBlock, Payload, Timestamp};
+use efference::log::{AssistantOutput, ContentBlock, Payload};
 
 fn entry(seq: u64, source: Option<&str>, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: seq as u32,
-        at: Timestamp(0),
-        submission_id: None,
-        source: source.map(str::to_string),
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(seq as u32)
+        .with_source(source.map(str::to_string))
 }
 
 fn said(text: &str) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            Vec::new(),
-            vec![ContentBlock::Text(text.to_string())],
-            Vec::new(),
-        ),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        Vec::new(),
+        vec![ContentBlock::Text(text.to_string())],
+        Vec::new(),
+    ))
 }
 
 fn replied(text: &str) -> Payload {
-    Payload::User(vec![ContentBlock::Text(text.to_string())])
+    Payload::user(text.to_string())
 }
 
 /// A run is per session and resets on any other ending, so two sessions of two
@@ -110,8 +102,8 @@ fn sessions_are_counted_by_whether_they_stalled_at_all() {
 #[test]
 fn asks_are_counted_beside_endings_and_leave_them_alone() {
     use efference::log::{RawResult, ToolCall, WireState};
-    let ask = |id: &str| Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
+    let ask = |id: &str| {
+        Payload::assistant(AssistantOutput::from_legacy_messages(
             Vec::new(),
             Vec::new(),
             vec![ToolCall::new(
@@ -119,8 +111,7 @@ fn asks_are_counted_beside_endings_and_leave_them_alone() {
                 id,
                 serde_json::json!({ "question": "OK?" }),
             )],
-        ),
-        excluded: None,
+        ))
     };
     let result =
         |id: &str, text: &str| Payload::tool_result(id, RawResult::text(text), WireState::Raw);

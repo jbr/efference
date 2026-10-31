@@ -193,21 +193,15 @@ fn view_resolves_a_path_a_dir_or_a_name() {
 /// reads back exactly what `wire` would see.
 pub(crate) fn write_fixture_log(path: &Path) {
     let mut log = Log::create(path, None).unwrap();
-    log.append(
-        0,
-        efference::log::Payload::User(vec![efference::log::ContentBlock::Text("hello".into())]),
-    )
-    .unwrap();
+    log.append(0, efference::log::Payload::user("hello"))
+        .unwrap();
     log.append(
         1,
-        efference::log::Payload::Assistant {
-            output: efference::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![efference::log::ContentBlock::Text("hi there".into())],
-                vec![],
-            ),
-            excluded: None,
-        },
+        efference::log::Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![efference::log::ContentBlock::Text("hi there".into())],
+            vec![],
+        )),
     )
     .unwrap();
 }

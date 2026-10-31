@@ -6,7 +6,7 @@ use crate::daemon::{BlockedReason, LoopPhase};
 use crate::log::Approval;
 
 fn session() -> Arc<Session> {
-    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
+    Session::in_memory().0
 }
 
 /// The status reads the loop phase: a request is running, a held call is gated, a

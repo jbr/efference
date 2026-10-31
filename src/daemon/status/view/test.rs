@@ -2,23 +2,19 @@
 
 use super::*;
 use crate::log::{AssistantOutput, Axes, ContentBlock, Precedent, Stance, Telemetry};
-use crate::persist::Log;
 
 fn session() -> Arc<Session> {
-    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
+    Session::in_memory().0
 }
 
 fn assistant(text: &[&str], calls: Vec<ToolCall>) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            vec![],
-            text.iter()
-                .map(|text| ContentBlock::Text(text.to_string()))
-                .collect(),
-            calls,
-        ),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        vec![],
+        text.iter()
+            .map(|text| ContentBlock::Text(text.to_string()))
+            .collect(),
+        calls,
+    ))
 }
 
 /// A held call carries the handle the transcript gives it, what it does, and why it
@@ -43,15 +39,13 @@ fn a_gate_names_its_handle_summary_and_plain_reason() {
     shared
         .append(
             1,
-            Payload::Spot(Spot {
-                call_id: CallId("toolu_1".into()),
-                stance: Stance::Gate,
-                reason: "level 2 (scope fit, 21%): needs 1 approved call like it, found none."
-                    .into(),
-                origin: Origin::Model,
-                model: None,
-                probed_prefix: None,
-                axes: Some(Axes {
+            Payload::Spot(
+                Spot::new(
+                    CallId("toolu_1".into()),
+                    Stance::Gate,
+                    "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
+                )
+                .with_axes(Some(Axes {
                     in_scope: 0.21,
                     precedent: Some(Precedent {
                         candidates: 0,
@@ -61,8 +55,8 @@ fn a_gate_names_its_handle_summary_and_plain_reason() {
                         compared: Vec::new(),
                     }),
                     ..Axes::default()
-                }),
-            }),
+                })),
+            ),
         )
         .unwrap();
     shared.set_phase(LoopPhase::Executing);
@@ -140,9 +134,7 @@ fn a_running_tool_is_the_working_activity() {
     shared
         .append(
             1,
-            Payload::Telemetry(Telemetry::CallStarted {
-                call_id: CallId("toolu_1".into()),
-            }),
+            Payload::Telemetry(Telemetry::call_started(CallId("toolu_1".into()))),
         )
         .unwrap();
     shared.set_phase(LoopPhase::Executing);

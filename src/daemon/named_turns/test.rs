@@ -2,10 +2,9 @@
 
 use super::*;
 use crate::log::{AssistantOutput, ContentBlock, RawResult, WireState};
-use crate::persist::Log;
 
 fn session() -> Arc<Session> {
-    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
+    Session::in_memory().0
 }
 
 fn turn(text: &str) -> SubmittedTurn {
@@ -22,14 +21,11 @@ fn asks(shared: &Session, call_id: &str, question: &str) -> Seq {
     shared
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text("one question".into())],
-                    vec![call],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("one question".into())],
+                vec![call],
+            )),
         )
         .unwrap()
 }
@@ -115,18 +111,15 @@ async fn a_reply_to_a_non_question_or_a_blank_reply_is_refused() {
     let seq = shared
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new(
-                        crate::bash::NAME,
-                        "toolu_b",
-                        serde_json::json!({ "command": "ls" }),
-                    )],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new(
+                    crate::bash::NAME,
+                    "toolu_b",
+                    serde_json::json!({ "command": "ls" }),
+                )],
+            )),
         )
         .unwrap();
     let refusal = shared

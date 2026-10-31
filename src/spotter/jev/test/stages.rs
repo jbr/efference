@@ -65,7 +65,8 @@ async fn assess(endpoint: Endpoint, recorder: &Arc<Recorder>) -> Spotting {
     let mut spot = JevSpot::new(endpoint, "jev");
     spot.set_stage_sink(Arc::clone(recorder) as StageSink);
     let call = ToolCall::new(crate::bash::NAME, "c1", json!({ "command": "ls" }));
-    spot.assess(&role(""), &call, None, &[], None, &[]).await
+    spot.assess(&Config::default(), &call, None, &[], None, &[])
+        .await
 }
 
 fn recorded(recorder: &Recorder) -> Vec<(u64, RequestOrigin, RequestStageKind)> {

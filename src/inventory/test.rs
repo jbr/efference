@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{ContentBlock, Title, TitleAuthor};
+use crate::log::{Title, TitleAuthor};
 use crate::persist::Log;
 use std::io::Write;
 use std::time::Duration;
@@ -53,20 +53,13 @@ fn append_preamble(log: &mut Log) {
 }
 
 fn append_user(log: &mut Log) {
-    log.append(0, Payload::User(vec![ContentBlock::Text("hi".into())]))
-        .unwrap();
+    log.append(0, Payload::user("hi")).unwrap();
 }
 
 fn title(log: &mut Log, text: &str) {
     tick();
-    log.append(
-        0,
-        Payload::Title(Title {
-            text: text.into(),
-            author: TitleAuthor::Triage,
-        }),
-    )
-    .unwrap();
+    log.append(0, Payload::Title(Title::new(text, TitleAuthor::Triage)))
+        .unwrap();
 }
 
 fn row<'a>(rows: &'a [InventoryRow], id: &str) -> &'a InventoryRow {
@@ -109,15 +102,10 @@ fn a_title_is_found_across_chunk_boundaries() {
     title(&mut log, "Early title");
     let filler = "x".repeat(10_000);
     for _ in 0..30 {
-        log.append(0, Payload::User(vec![ContentBlock::Text(filler.clone())]))
-            .unwrap();
+        log.append(0, Payload::user(filler.clone())).unwrap();
     }
     // A later entry that mentions the marker without being a title.
-    log.append(
-        0,
-        Payload::User(vec![ContentBlock::Text("\"Title\"".into())]),
-    )
-    .unwrap();
+    log.append(0, Payload::user("\"Title\"")).unwrap();
     drop(log);
 
     let rows = Inventory::new().refresh(&root.0);
@@ -286,17 +274,8 @@ fn a_refresh_rescans_only_the_log_that_grew() {
 
 fn resumed(log: &mut Log) {
     tick();
-    log.append(
-        0,
-        Payload::Resumed(crate::log::Resumed {
-            gap_ms: 1,
-            lost_processes: Vec::new(),
-            resumes_after: None,
-            pending_calls: Vec::new(),
-            tools_changed: Default::default(),
-        }),
-    )
-    .unwrap();
+    log.append(0, Payload::Resumed(crate::log::Resumed::new(1)))
+        .unwrap();
 }
 
 #[test]
@@ -343,11 +322,8 @@ fn the_last_lifecycle_entry_says_whether_a_session_was_interrupted() {
 fn a_lifecycle_word_inside_text_is_not_a_lifecycle_entry() {
     let root = Root::new("lifecycle-text");
     let mut log = root.session("quoted");
-    log.append(
-        0,
-        Payload::User(vec![ContentBlock::Text("\"Archived\" {\"Resumed\"".into())]),
-    )
-    .unwrap();
+    log.append(0, Payload::user("\"Archived\" {\"Resumed\""))
+        .unwrap();
     drop(log);
 
     let rows = Inventory::new().refresh(&root.0);

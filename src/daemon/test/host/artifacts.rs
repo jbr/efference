@@ -7,16 +7,13 @@ use crate::log::{AssistantOutput, ContentBlock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn assistant(text: Vec<&str>) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            Vec::new(),
-            text.into_iter()
-                .map(|text| ContentBlock::Text(text.to_string()))
-                .collect(),
-            Vec::new(),
-        ),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        Vec::new(),
+        text.into_iter()
+            .map(|text| ContentBlock::Text(text.to_string()))
+            .collect(),
+        Vec::new(),
+    ))
 }
 
 /// A raw GET against the loopback listener, which no test server fronts.

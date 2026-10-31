@@ -54,28 +54,11 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
 /// the text turn is replayed and the renewed ask follows — no `tool_result` to pair.
 #[test]
 fn a_prose_only_response_retries_with_just_the_renewed_ask() {
-    let completion = Completion {
-        receipt: Default::default(),
-        assistant: Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![crate::log::ContentBlock::Text("hmm, let me think".into())],
-                vec![],
-            ),
-            excluded: None,
-        },
-        id: None,
-        model: "test".into(),
-        finish: None,
-        usage: Usage {
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-        },
-        cache_miss: None,
-        failure_class: crate::api::FailureClass::Transient,
-    };
+    let completion = Completion::new(AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![crate::log::ContentBlock::Text("hmm, let me think".into())],
+        vec![],
+    ));
     let mut messages = Vec::new();
     assert!(extend_with_retry(
         &mut messages,
@@ -94,10 +77,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
 /// (empty-content) message on the wire.
 #[test]
 fn an_empty_response_is_terminal_not_an_invalid_retry() {
-    let empty = Payload::Assistant {
-        output: AssistantOutput::Messages(vec![]),
-        excluded: None,
-    };
+    let empty = Payload::assistant(AssistantOutput::Messages(vec![]));
     let mut messages = Vec::new();
     assert!(!extend_with_retry(
         &mut messages,

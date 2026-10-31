@@ -84,25 +84,22 @@ fn malformed_responses_arguments_put_nothing_in_flight() {
 fn a_multi_call_step_reports_its_first_call_in_either_dialect() {
     let mut play = Screenplay::new(80, 12);
     play.user("do both");
-    play.commit(Payload::Assistant {
-        output: AssistantOutput::Responses(vec![
-            ResponsesOutputItem::FunctionCall {
-                id: None,
-                call_id: CallId("call_1".into()),
-                name: "read".into(),
-                arguments: r#"{"path":"a"}"#.into(),
-                status: None,
-            },
-            ResponsesOutputItem::FunctionCall {
-                id: None,
-                call_id: CallId("call_2".into()),
-                name: "read".into(),
-                arguments: r#"{"path":"b"}"#.into(),
-                status: None,
-            },
-        ]),
-        excluded: None,
-    });
+    play.commit(Payload::assistant(AssistantOutput::Responses(vec![
+        ResponsesOutputItem::FunctionCall {
+            id: None,
+            call_id: CallId("call_1".into()),
+            name: "read".into(),
+            arguments: r#"{"path":"a"}"#.into(),
+            status: None,
+        },
+        ResponsesOutputItem::FunctionCall {
+            id: None,
+            call_id: CallId("call_2".into()),
+            name: "read".into(),
+            arguments: r#"{"path":"b"}"#.into(),
+            status: None,
+        },
+    ])));
     assert_eq!(in_flight(&play), Some(("call_1".into(), "read".into())));
     play.tool_result("call_1", "…", false, WireState::Raw);
     assert_eq!(

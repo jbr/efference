@@ -9,10 +9,7 @@ use super::*;
 async fn review_level_over_the_router() {
     let log_path = temp_file("review-level.jsonl");
 
-    let (shared, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::create(&log_path, None).expect("create log"),
-    );
+    let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let client = test_client(&shared).await;
     assert_eq!(
         client.review_level("human_only").await.unwrap(),
@@ -49,7 +46,7 @@ async fn review_level_over_the_router() {
 /// without enqueueing anything.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn turn_submission_ids_adopt_or_mint() {
-    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, mut turns_rx) = Session::in_memory();
     let client = test_client(&shared).await;
 
     // Client-minted: adopted verbatim, and on the queued turn.
@@ -83,7 +80,7 @@ async fn turn_submission_ids_adopt_or_mint() {
 /// none.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn turn_source_reaches_the_queued_turn() {
-    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, mut turns_rx) = Session::in_memory();
     let client = test_client(&shared).await;
 
     client
@@ -109,7 +106,7 @@ async fn turn_source_reaches_the_queued_turn() {
 /// neither, and a body that is not an origin is refused without signalling.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_interrupt_over_http_records_its_origin() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let app = test_server(&shared).await;
     let recorded = |shared: &Session| -> Vec<crate::log::InterruptOrigin> {
         shared
@@ -164,7 +161,7 @@ async fn an_interrupt_over_http_records_its_origin() {
 /// it out of the transcript, so a client claiming it is refused (docs/context.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_kickoff_source_is_reserved() {
-    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, mut turns_rx) = Session::in_memory();
     let client = test_client(&shared).await;
     let err = client
         .turn_with(
@@ -196,7 +193,7 @@ async fn the_kickoff_source_is_reserved() {
 /// and an id the loop already consumed pops nothing rather than erroring.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn withdraw_turns_pops_a_suffix_and_reports_what_it_popped() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let client = test_client(&shared).await;
 
     client
@@ -260,7 +257,7 @@ fn config_edit_decision_body_decodes() {
 /// second round-trip. The old ambiguous 404 is gone.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn put_approvals_enforces_the_gate_precondition() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let app = test_server(&shared).await;
 
     // No gate at all: the precondition fails, and the detail says "none pending".
@@ -300,7 +297,7 @@ async fn put_approvals_enforces_the_gate_precondition() {
 /// and a part-bad request moves nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn loop_resource_moves_both_dials_in_one_call() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let app = test_server(&shared).await;
 
     let read: Value = serde_json::from_str(app.get("/v1/loop").await.body()).unwrap();
@@ -345,7 +342,7 @@ async fn loop_resource_moves_both_dials_in_one_call() {
 /// at the `Session` level.)
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn state_wait_takes_a_predicate() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let app = test_server(&shared).await;
 
     let conn = app.get("/v1/state?wait=settled").await;
@@ -371,7 +368,7 @@ async fn state_wait_takes_a_predicate() {
 async fn a_turn_carries_the_attachments_it_names() {
     let dir = std::env::temp_dir().join(format!("efference-upload-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, mut turns_rx) = Session::in_memory();
     shared.set_attachment_store(crate::attachments::Store::new(&dir, "att"));
     let client = test_client(&shared).await;
 

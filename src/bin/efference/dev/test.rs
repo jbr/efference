@@ -142,10 +142,7 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
     .unwrap();
     log.append(
         1,
-        Payload::Assistant {
-            output: efference::log::AssistantOutput::Responses(vec![]),
-            excluded: None,
-        },
+        Payload::assistant(efference::log::AssistantOutput::Responses(vec![])),
     )
     .unwrap();
     drop(log);
@@ -184,25 +181,18 @@ fn write_openrouter_image_log(path: &Path) {
         Payload::preamble("", "sys", Default::default(), Some(identity)),
     )
     .unwrap();
-    log.append(
-        1,
-        Payload::User(vec![ContentBlock::Text("look at the image".into())]),
-    )
-    .unwrap();
+    log.append(1, Payload::user("look at the image")).unwrap();
     log.append(
         2,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![ContentBlock::Text("let me check".into())],
-                vec![ToolCall::new(
-                    "read_image",
-                    "toolu_img",
-                    serde_json::json!({ "path": "image.png" }),
-                )],
-            ),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text("let me check".into())],
+            vec![ToolCall::new(
+                "read_image",
+                "toolu_img",
+                serde_json::json!({ "path": "image.png" }),
+            )],
+        )),
     )
     .unwrap();
     log.append(
@@ -357,14 +347,7 @@ async fn wire_full_uses_recorded_identity_without_loading_config() {
 // ---- spotter-log survey ----
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: efference::log::Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload).with_turn(1)
 }
 
 /// A log with one bash call, a `Gate`(model) verdict on it, and a `Clear`(fallback)
@@ -374,42 +357,34 @@ fn spot_fixture() -> Vec<LogEntry> {
     vec![
         entry(
             1,
-            Payload::Assistant {
-                output: efference::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new(
-                        "bash",
-                        "toolu_a",
-                        serde_json::json!({ "command": "rm  -rf\n ./build" }),
-                    )],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_a",
+                    serde_json::json!({ "command": "rm  -rf\n ./build" }),
+                )],
+            )),
         ),
         entry(
             2,
-            Payload::Spot(Spot {
-                call_id: CallId("toolu_a".into()),
-                stance: Stance::Gate,
-                reason: "deletes outside the sanctioned scope".into(),
-                origin: Origin::Model,
-                model: None,
-                probed_prefix: None,
-                axes: None,
-            }),
+            Payload::Spot(Spot::new(
+                CallId("toolu_a".into()),
+                Stance::Gate,
+                "deletes outside the sanctioned scope",
+            )),
         ),
         entry(
             3,
-            Payload::Spot(Spot {
-                call_id: CallId("toolu_gone".into()),
-                stance: Stance::Clear,
-                reason: "spotter unavailable".into(),
-                origin: Origin::Fallback,
-                model: None,
-                probed_prefix: None,
-                axes: None,
-            }),
+            Payload::Spot(
+                Spot::new(
+                    CallId("toolu_gone".into()),
+                    Stance::Clear,
+                    "spotter unavailable",
+                )
+                .with_origin(Origin::Fallback),
+            ),
         ),
     ]
 }
@@ -469,7 +444,7 @@ fn describe_call_prefers_the_obvious_field() {
 // ---- `triage` triage reconstruction (docs/triage.md) ----
 
 use crate::triage_replay::recorded_triages;
-use efference::log::{LogEntry, Origin, Payload, RawResult, ToolCall, Triage, WireState};
+use efference::log::{LogEntry, Payload, RawResult, ToolCall, Triage, WireState};
 
 fn call(id: &str) -> ToolCall {
     ToolCall::new("bash", id, serde_json::json!({"command": "ls"}))
@@ -485,16 +460,7 @@ fn result(seq: u64, id: &str) -> LogEntry {
 fn triage(seq: u64, for_result: u64, retries: Vec<String>) -> LogEntry {
     entry(
         seq,
-        Payload::Triage(Triage {
-            for_result: Some(for_result),
-            origin: Origin::Model,
-            raw_keep: "all".into(),
-            inbox: Vec::new(),
-            surfaced: Vec::new(),
-            retries,
-            thinking: Vec::new(),
-            shown_through: None,
-        }),
+        Payload::Triage(Triage::new(Some(for_result), "all").with_retries(retries)),
     )
 }
 
@@ -507,14 +473,11 @@ fn a_triage_carries_a_completions_results_and_a_prefix_that_stops_short_of_them(
     let log = vec![
         entry(
             1,
-            Payload::Assistant {
-                output: efference::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call("a"), call("b")],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call("a"), call("b")],
+            )),
         ),
         result(2, "a"),
         result(3, "b"),
@@ -537,14 +500,11 @@ fn a_triage_carries_its_recorded_first_attempt() {
     let log = vec![
         entry(
             1,
-            Payload::Assistant {
-                output: efference::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call("a")],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call("a")],
+            )),
         ),
         result(2, "a"),
         triage(
@@ -554,14 +514,11 @@ fn a_triage_carries_its_recorded_first_attempt() {
         ),
         entry(
             4,
-            Payload::Assistant {
-                output: efference::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call("b")],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call("b")],
+            )),
         ),
         result(5, "b"),
         triage(6, 5, vec![]),
@@ -598,14 +555,11 @@ fn a_triage_carries_the_inbox_it_was_shown() {
     let assistant = |seq, id| {
         entry(
             seq,
-            Payload::Assistant {
-                output: efference::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call(id)],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call(id)],
+            )),
         )
     };
     let log = vec![
@@ -632,14 +586,11 @@ fn a_triage_carries_the_inbox_it_was_shown() {
 fn a_completion_with_no_results_opens_no_triage() {
     let log = vec![entry(
         1,
-        Payload::Assistant {
-            output: efference::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![call("a")],
-            ),
-            excluded: None,
-        },
+        Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![],
+            vec![call("a")],
+        )),
     )];
     assert!(recorded_triages(&log).is_empty());
 }

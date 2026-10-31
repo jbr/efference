@@ -31,16 +31,10 @@ fn thinking_verdict() -> String {
 }
 
 fn endpoint(addr: std::net::SocketAddr) -> crate::api::Endpoint {
-    crate::api::Endpoint {
-        provider: crate::log::Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    }
+    crate::api::Endpoint::at(
+        crate::log::Provider::Anthropic,
+        format!("http://{addr}/v1/messages"),
+    )
 }
 
 /// Run one turn whose single bash call is triaged by `triage_script`'s upstream, and

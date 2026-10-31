@@ -7,7 +7,7 @@ use super::*;
 /// a log entry from its arrival and answers with that entry's seq.
 #[test]
 fn slot_notifications_queue_and_supersede_and_the_rest_are_logged_at_arrival() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let a = shared.notify(
         "test-watch".into(),
         "running 5min".into(),
@@ -49,7 +49,7 @@ fn slot_notifications_queue_and_supersede_and_the_rest_are_logged_at_arrival() {
 /// view (present only when set), slot supersession, and the drain.
 #[test]
 fn a_wake_notification_keeps_its_flag() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared.notify("op".into(), "fyi".into(), None);
     shared.notify_wake("child".into(), "stuck".into(), None);
     shared.notify_wake("child".into(), "gated".into(), Some("session:child".into()));
@@ -82,7 +82,7 @@ fn a_wake_notification_keeps_its_flag() {
 /// loop.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn inbox_wake_fires_on_unshown_not_on_shown() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
 
     // Already arrived → resolves at once.
     let seq = shared
@@ -96,16 +96,9 @@ async fn inbox_wake_fires_on_unshown_not_on_shown() {
     shared
         .append(
             0,
-            Payload::Triage(crate::log::Triage {
-                for_result: None,
-                origin: crate::log::Origin::Model,
-                raw_keep: String::new(),
-                inbox: Vec::new(),
-                surfaced: Vec::new(),
-                retries: Vec::new(),
-                thinking: Vec::new(),
-                shown_through: Some(seq),
-            }),
+            Payload::Triage(
+                crate::log::Triage::new(None, String::new()).with_shown_through(Some(seq)),
+            ),
         )
         .unwrap();
     assert!(
@@ -132,10 +125,7 @@ async fn inbox_wake_fires_on_unshown_not_on_shown() {
 async fn notify_and_supersede_over_the_router() {
     let log_path = temp_file("notify-test.jsonl");
 
-    let (shared, _turns_rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        Log::create(&log_path, None).expect("create log"),
-    );
+    let (shared, _turns_rx) = Session::from_log(Log::create(&log_path, None).expect("create log"));
     let client = test_client(&shared).await;
     let first = client
         .notify("test-watch", "running 5min", Some("bash#7"))
@@ -171,10 +161,7 @@ async fn notify_and_supersede_over_the_router() {
 fn arrived_notifications_survive_a_reload_and_slot_ones_do_not() {
     let path = temp_file("durable-inbox-test.jsonl");
     let kept = {
-        let (shared, _turns_rx) = Session::new(
-            std::env::current_dir().unwrap(),
-            Log::create(&path, None).expect("create log"),
-        );
+        let (shared, _turns_rx) = Session::from_log(Log::create(&path, None).expect("create log"));
         let kept = shared
             .notify("agent:reviewer".into(), "please look".into(), None)
             .unwrap();
@@ -185,7 +172,7 @@ fn arrived_notifications_survive_a_reload_and_slot_ones_do_not() {
     };
 
     let opened = Log::open(&path).expect("reopen");
-    let (reloaded, _turns_rx) = Session::new(std::env::current_dir().unwrap(), opened.log);
+    let (reloaded, _turns_rx) = Session::from_log(opened.log);
     let pending = reloaded.pending_notifications();
     assert_eq!(pending.len(), 2, "{pending:?}");
     assert_eq!(pending[0].seq, Some(kept));
@@ -208,7 +195,7 @@ async fn the_idle_wake_ignores_a_restored_notification_until_a_new_one_arrives()
         Payload::Ambient(crate::log::Notification::new("ci", "restored", None)),
     )
     .unwrap();
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), log);
+    let (shared, _turns_rx) = Session::from_log(log);
 
     tokio::time::timeout(Duration::from_secs(2), shared.inbox_wake())
         .await
@@ -231,7 +218,7 @@ async fn the_idle_wake_ignores_a_restored_notification_until_a_new_one_arrives()
     assert_eq!(shared.pending_notifications().len(), 2);
 
     // A slot notification is in memory only, so it is always new.
-    let (slotted, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (slotted, _rx) = Session::in_memory();
     slotted.notify("child".into(), "idle".into(), Some("session:child".into()));
     tokio::time::timeout(Duration::from_secs(2), slotted.new_notification_wake())
         .await

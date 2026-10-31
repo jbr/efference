@@ -25,16 +25,7 @@ fn prompt_usage(prefix: u64) -> RequestUsage {
 
 /// The Messages endpoint a canned upstream at `addr` answers on.
 fn messages_endpoint(addr: std::net::SocketAddr) -> Endpoint {
-    Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    }
+    Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"))
 }
 
 /// The triage tools and forced `retain` a stored request carries.
@@ -125,16 +116,10 @@ fn the_triage_keepalive_arms_on_an_own_model_with_a_prompt_cache() {
         keepalive_interval(Duration::from_secs(5 * 60))
     );
 
-    let codex = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some("http://127.0.0.1:9/backend-api/codex/responses".into()),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let codex = Endpoint::at(
+        Provider::OpenAICodex,
+        "http://127.0.0.1:9/backend-api/codex/responses",
+    );
     let triage = Triager::own(
         Client::new(codex, "gpt-6.1-sol", "sys", None)
             .with_prompt_cache(PromptCachePolicy::Implicit),
@@ -153,7 +138,7 @@ fn the_triage_keepalive_arms_on_an_own_model_with_a_prompt_cache() {
 /// triage clock's compaction filter empties the ping's prefix, as it does the main loop's.
 #[tokio::test]
 async fn a_fold_drops_the_stored_request() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.store_triage_request(
         stored(vec![WireTurn::text("input")]),
         Timestamp::now(),
@@ -174,7 +159,7 @@ async fn a_fold_drops_the_stored_request() {
 /// it; the ping's own prompt tokens replace them.
 #[tokio::test]
 async fn a_triage_ping_measures_the_stored_prefix() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.store_triage_request(
         stored(vec![WireTurn::text("input")]),
         Timestamp::now(),
@@ -189,7 +174,7 @@ async fn a_triage_ping_measures_the_stored_prefix() {
 /// ping stamps that clock and not the real-turn clock, so it cannot reset the give-up cap.
 #[tokio::test]
 async fn idle_triage_is_no_touch_and_a_triage_ping_keeps_the_cap() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.record_request(RequestOrigin::Triage, prompt_usage(1_000));
     assert_eq!(shared.keepalive_clocks(CacheLineage::Triage).0, None);
 

@@ -6,25 +6,13 @@ use crate::api::Endpoint;
 use crate::log::Provider;
 
 fn session() -> Arc<Session> {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     shared
 }
 
 /// A client nothing is sent through.
 fn client() -> Client {
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some("http://127.0.0.1:9/v1/messages".into()),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::Anthropic, "http://127.0.0.1:9/v1/messages");
     Client::new(endpoint, "m", "sys", None)
 }
 

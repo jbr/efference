@@ -57,12 +57,12 @@ fn a_two_call_batch_reads_as_two_lines_with_their_outcomes() {
         RawResult::text(lines(40)),
         WireState::Pending,
     ));
-    log.add(Payload::ResultVerdict {
-        for_result: big,
-        wire: Triaged::new(Keep::Ranges(vec![(10, 14)]))
+    log.add(Payload::result_verdict(
+        big,
+        Triaged::new(Keep::Ranges(vec![(10, 14)]))
             .with_note("the enum")
             .into(),
-    });
+    ));
     log.add(turn("Four variants.", vec![]));
     assert_eq!(
         whole(&log, &child(None)),
@@ -302,10 +302,10 @@ fn a_question_reads_with_its_reply() {
 fn notes_and_summaries_are_one_line_and_mechanism_is_hidden() {
     let mut log = Fixture::new();
     log.user("Introduce yourself.", Some(crate::frontend::KICKOFF_SOURCE));
-    log.add(Payload::Title(crate::log::Title {
-        text: "Fixing the build".into(),
-        author: crate::log::TitleAuthor::Triage,
-    }));
+    log.add(Payload::Title(crate::log::Title::new(
+        "Fixing the build",
+        crate::log::TitleAuthor::Triage,
+    )));
     log.add(Payload::Ambient(Notification::new(
         "session[parent]",
         "tests pass on main\n",
@@ -316,14 +316,12 @@ fn notes_and_summaries_are_one_line_and_mechanism_is_hidden() {
         2,
         "the opening, summarized",
     )));
-    log.add(Payload::ConfigEdit(crate::log::ConfigEdit {
-        state: EditState::Proposed,
-        resolves: None,
-        change: ConfigChange::Command {
+    log.add(Payload::ConfigEdit(crate::log::ConfigEdit::new(
+        EditState::Proposed,
+        ConfigChange::Command {
             command: "grep -n".into(),
         },
-        note: String::new(),
-    }));
+    )));
     assert_eq!(
         whole(&log, &child(None)),
         "transcript of child, seq 0–4\n\
@@ -364,12 +362,12 @@ fn a_window_cut_between_a_call_and_its_result() {
         RawResult::text(lines(12)),
         WireState::Pending,
     ));
-    log.add(Payload::ResultVerdict {
-        for_result: result,
-        wire: Triaged::new(Keep::Ranges(vec![(1, 1)]))
+    log.add(Payload::result_verdict(
+        result,
+        Triaged::new(Keep::Ranges(vec![(1, 1)]))
             .with_note("1 failure")
             .into(),
-    });
+    ));
     log.add(Payload::tool_result(
         "toolu_2",
         RawResult::text(lines(3)),

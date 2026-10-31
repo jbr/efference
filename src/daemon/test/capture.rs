@@ -67,16 +67,10 @@ pub(super) fn verdict(keeps: &[&str]) -> String {
 fn start(addr: SocketAddr, env: crate::env_table::EnvPolicy) -> (Swansong, SessionRuntime) {
     let mut boot = boot(&cwd());
     boot.client = Client::new(
-        crate::api::Endpoint {
-            provider: crate::log::Provider::Anthropic,
-            url: Some(format!("http://{addr}/v1/messages")),
-            auth_header: "x-api-key".into(),
-            auth_value: "k".into(),
-            session_id: None,
-            extra_headers: Vec::new(),
-            request: Default::default(),
-            base: None,
-        },
+        crate::api::Endpoint::at(
+            crate::log::Provider::Anthropic,
+            format!("http://{addr}/v1/messages"),
+        ),
         "m",
         "sys",
         None,
@@ -243,30 +237,27 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
     }
 
     // The same two calls, logged the way a session before capture wrote them.
-    let (direct, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (direct, _rx) = Session::in_memory();
     direct.append(1, user("go")).expect("an append succeeds");
     direct
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![
-                        ToolCall::new(
-                            crate::bash::NAME,
-                            "toolu_1",
-                            serde_json::json!({ "command": "printf 'first\\nsecond\\nthird\\n'" }),
-                        ),
-                        ToolCall::new(
-                            crate::bash::NAME,
-                            "toolu_2",
-                            serde_json::json!({ "command": "printf 'alpha\\nbeta\\n'" }),
-                        ),
-                    ],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![
+                    ToolCall::new(
+                        crate::bash::NAME,
+                        "toolu_1",
+                        serde_json::json!({ "command": "printf 'first\\nsecond\\nthird\\n'" }),
+                    ),
+                    ToolCall::new(
+                        crate::bash::NAME,
+                        "toolu_2",
+                        serde_json::json!({ "command": "printf 'alpha\\nbeta\\n'" }),
+                    ),
+                ],
+            )),
         )
         .expect("an append succeeds");
     let mut logged_directly = Vec::new();
@@ -295,14 +286,11 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
     direct
         .append(
             2,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![ContentBlock::Text("ok".into())],
-                    vec![],
-                    vec![],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![ContentBlock::Text("ok".into())],
+                vec![],
+                vec![],
+            )),
         )
         .expect("an append succeeds");
 

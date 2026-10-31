@@ -8,10 +8,9 @@ use crate::daemon::attention::{Attention, AttentionReport};
 use crate::log::Telemetry;
 use crate::log::{Approval, MomentKind};
 use crate::log::{CallId, ToolCall};
-use crate::persist::Log;
 
 fn session() -> Arc<Session> {
-    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
+    Session::in_memory().0
 }
 
 /// A session whose host has one client reporting `active`.

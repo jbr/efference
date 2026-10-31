@@ -339,21 +339,10 @@ pub(super) fn pinged_session(
 ) -> (Arc<Session>, Arc<Client>) {
     use crate::api::{Client, Endpoint};
     use crate::log::Provider;
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    shared
-        .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
-        .unwrap();
+    let (shared, _rx) = Session::in_memory();
+    shared.append(1, Payload::user("hi")).unwrap();
     record_turn(&shared, prefix);
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
     (
         shared,
         Arc::new(Client::new(endpoint, "claude-opus-5", "sys", None)),

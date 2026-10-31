@@ -15,7 +15,7 @@ use std::time::Duration;
 /// `child` and served at `/sessions/child`, as a host serves it; the client is at the
 /// root.
 async fn session_over(log: Log) -> (Arc<crate::daemon::Session>, Client) {
-    let (shared, _turns) = crate::daemon::Session::new(std::env::current_dir().unwrap(), log);
+    let (shared, _turns) = crate::daemon::Session::from_log(log);
     shared.set_identity(crate::daemon::SessionIdentity {
         id: "child".into(),
         title: None,
@@ -176,9 +176,7 @@ async fn the_mcp_mount_reads_what_is_new_with_its_own_cursor() {
     let mut log = Log::in_memory();
     log.append_submission(
         1,
-        crate::log::Payload::User(vec![crate::log::ContentBlock::Text(
-            "hello transcript".into(),
-        )]),
+        crate::log::Payload::user("hello transcript"),
         Some("sub-1".into()),
         Some("mcp[claude-code]".into()),
     )
@@ -211,10 +209,7 @@ async fn the_mcp_mount_reads_what_is_new_with_its_own_cursor() {
     assert!(zoom.contains("hello transcript"), "{zoom}");
 
     shared
-        .append(
-            1,
-            crate::log::Payload::User(vec![crate::log::ContentBlock::Text("later".into())]),
-        )
+        .append(1, crate::log::Payload::user("later"))
         .unwrap();
     let later = read(None).execute(control.clone(), me()).await.unwrap();
     assert_eq!(
@@ -235,13 +230,8 @@ async fn the_mcp_mount_reads_what_is_new_with_its_own_cursor() {
 #[tokio::test]
 async fn the_command_line_reads_the_audit_grain_on_request() {
     let mut log = Log::in_memory();
-    log.append(
-        1,
-        crate::log::Payload::User(vec![crate::log::ContentBlock::Text(
-            "hello transcript".into(),
-        )]),
-    )
-    .unwrap();
+    log.append(1, crate::log::Payload::user("hello transcript"))
+        .unwrap();
     let (_shared, client) = session_over(log).await;
     let control = mounted(client, true);
     let text = Transcript {
@@ -276,14 +266,12 @@ async fn the_command_line_reads_the_audit_grain_on_request() {
 /// A `Proposed` config edit as a `Payload` — the spotter's prefix-promotion shape,
 /// inert until an orchestrator resolves it (docs/permissions.md).
 fn proposed_edit(command: &str) -> crate::log::Payload {
-    crate::log::Payload::ConfigEdit(crate::log::ConfigEdit {
-        state: crate::log::EditState::Proposed,
-        resolves: None,
-        change: crate::log::ConfigChange::Command {
+    crate::log::Payload::ConfigEdit(crate::log::ConfigEdit::new(
+        crate::log::EditState::Proposed,
+        crate::log::ConfigChange::Command {
             command: command.into(),
         },
-        note: String::new(),
-    })
+    ))
 }
 
 /// `proposal` over the real router: committing folds the queued change into the

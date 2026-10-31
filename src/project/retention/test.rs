@@ -7,14 +7,11 @@ fn result(seq: u64, lines: usize, wire: WireState) -> LogEntry {
         .map(|i| format!("line {i}"))
         .collect::<Vec<_>>()
         .join("\n");
-    LogEntry {
+    LogEntry::new(
         seq,
-        turn: 0,
-        at: Timestamp(1000 + seq),
-        submission_id: None,
-        source: None,
-        payload: Payload::tool_result(format!("call_{seq}"), RawResult::text(content), wire),
-    }
+        Payload::tool_result(format!("call_{seq}"), RawResult::text(content), wire),
+    )
+    .with_at(Timestamp(1000 + seq))
 }
 
 /// The two shapes of one session's log (docs/triage.md): a result whose
@@ -67,14 +64,7 @@ fn a_result_awaiting_its_verdict_counts_as_nothing() {
 
 /// The `ResultVerdict` a captured result waits for (docs/triage.md).
 fn verdict_for(seq: u64, for_result: u64, wire: WireState) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 0,
-        at: Timestamp(1000 + seq),
-        submission_id: None,
-        source: None,
-        payload: Payload::ResultVerdict { for_result, wire },
-    }
+    LogEntry::new(seq, Payload::result_verdict(for_result, wire)).with_at(Timestamp(1000 + seq))
 }
 
 #[test]

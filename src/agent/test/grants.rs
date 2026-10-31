@@ -1,5 +1,6 @@
 //! Tests for grants, the config file, and the messages a refusal carries.
 use super::*;
+use crate::config::testing::ConfigFixture;
 
 /// A committed grant reaches the **file**, not just the log fold
 /// (docs/permissions.md). The session's `config.toml` is the
@@ -13,14 +14,10 @@ pub(super) fn a_committed_grant_is_written_to_the_config_file() {
     let path =
         std::env::temp_dir().join(format!("efference-writeback-{}.toml", std::process::id()));
     std::fs::write(&path, "# my perimeter\nscope = \"stay in src/\"\n").unwrap();
-    let (shared, _rx) = Session::with_role(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-        crate::config::LoadedConfig {
-            role: crate::config::Config::default(),
-            source: crate::config::ConfigSource::Path(path.clone()),
-        },
-    );
+    let (shared, _rx) = Session::in_memory_with_role(crate::config::LoadedConfig {
+        source: crate::config::ConfigSource::Path(path.clone()),
+        ..crate::config::LoadedConfig::default()
+    });
     let call = bash_call("npm install");
 
     let approval = commit_config_edit(
@@ -59,10 +56,7 @@ pub(super) fn a_committed_grant_is_written_to_the_config_file() {
 #[test]
 pub(super) fn legislate_grants_then_approves_a_covered_call() {
     use crate::log::ConfigChange;
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let call = bash_call("npm install");
     assert_eq!(
         policy::classify(
@@ -100,10 +94,7 @@ pub(super) fn legislate_grants_then_approves_a_covered_call() {
 #[test]
 pub(super) fn legislate_does_not_let_an_uncovered_call_ride_along() {
     use crate::log::ConfigChange;
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let call = bash_call("npm install");
 
     let approval = commit_config_edit(
@@ -223,7 +214,7 @@ pub(super) fn the_missing_grant_message_names_only_what_is_missing() {
 /// *diagnosis*). `bash` has no such decomposition — its answer is a `[commands]` stance.
 #[test]
 pub(super) fn missing_grants_reports_the_two_halves_independently() {
-    let role = crate::config::parse_text("[paths]\n\".\" = true\n");
+    let role = ConfigFixture::new().with_path(".", true, true).build();
     let call = |name: &str, input| ToolCall::new(name, "toolu_x", input);
     // Path granted, name not: only the name is reported.
     let missing = policy::missing_grants(
@@ -260,14 +251,10 @@ pub(super) fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_
     ));
     let good = "# schema in this header\nscope = \"stay in src/\"\n";
     std::fs::write(&path, good).unwrap();
-    let (shared, _rx) = Session::with_role(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-        crate::config::LoadedConfig {
-            role: crate::config::Config::default(),
-            source: crate::config::ConfigSource::Path(path.clone()),
-        },
-    );
+    let (shared, _rx) = Session::in_memory_with_role(crate::config::LoadedConfig {
+        source: crate::config::ConfigSource::Path(path.clone()),
+        ..crate::config::LoadedConfig::default()
+    });
 
     // The model writes the footgun and the tool reports success, as it truthfully did write.
     std::fs::write(&path, "[scope]\ndefault = \"read\"\n").unwrap();

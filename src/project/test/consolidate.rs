@@ -32,48 +32,34 @@ fn summary_replaces_its_range() {
     // seq 5: Summary(from:0, upto:2, text:"summary of old task")
     // seq 6: ToolResult("consolidated") ← consolidate result (kept, projects normally)
     let log = vec![
-        entry(
-            0,
-            0,
-            Payload::User(vec![ContentBlock::Text("old task".into())]),
-        ),
+        entry(0, 0, Payload::user("old task")),
         entry(
             1,
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "t1", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "t1", json!({}))],
+            )),
         ),
         entry(
             2,
             1,
             Payload::tool_result("t1", RawResult::text("old output"), WireState::Raw),
         ),
-        entry(
-            3,
-            2,
-            Payload::User(vec![ContentBlock::Text("new task".into())]),
-        ),
+        entry(3, 2, Payload::user("new task")),
         entry(
             4,
             3,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new(
-                        "consolidate",
-                        "c1",
-                        json!({"summary": "summary of old task"}),
-                    )],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new(
+                    "consolidate",
+                    "c1",
+                    json!({"summary": "summary of old task"}),
+                )],
+            )),
         ),
         entry(5, 3, Payload::Summary(compacted(2, "summary of old task"))),
         entry(
@@ -120,62 +106,41 @@ fn multiple_summaries_each_replace_their_own_range() {
     // After the second summary, only the live task (seq 9+) projects.
     let log = vec![
         // First task
-        entry(
-            0,
-            0,
-            Payload::User(vec![ContentBlock::Text("task A".into())]),
-        ),
+        entry(0, 0, Payload::user("task A")),
         entry(
             1,
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text("done A".into())],
-                    vec![],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("done A".into())],
+                vec![],
+            )),
         ),
         // First consolidation: upto=1
-        entry(
-            2,
-            2,
-            Payload::User(vec![ContentBlock::Text("task B".into())]),
-        ),
+        entry(2, 2, Payload::user("task B")),
         entry(3, 2, Payload::Summary(compacted(1, "summary A"))),
         // Task B turns
         entry(
             4,
             3,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text("working on B".into())],
-                    vec![],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("working on B".into())],
+                vec![],
+            )),
         ),
         // Second consolidation: upto=4
-        entry(
-            5,
-            4,
-            Payload::User(vec![ContentBlock::Text("task C".into())]),
-        ),
+        entry(5, 4, Payload::user("task C")),
         entry(6, 4, Payload::Summary(compacted(4, "summary B"))),
         // Live task C
         entry(
             7,
             5,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text("working on C".into())],
-                    vec![],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("working on C".into())],
+                vec![],
+            )),
         ),
     ];
     let messages = project(&log);
@@ -205,7 +170,7 @@ fn multiple_summaries_each_replace_their_own_range() {
 #[test]
 fn summary_at_tail_injects_text() {
     let log = vec![
-        entry(0, 0, Payload::User(vec![ContentBlock::Text("old".into())])),
+        entry(0, 0, Payload::user("old")),
         entry(1, 0, Payload::Summary(compacted(0, "tail summary"))),
     ];
     let messages = project(&log);
@@ -230,14 +195,11 @@ fn summary_replaces_named_range_and_injects_text() {
         entry(
             0,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "a", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "a", json!({}))],
+            )),
         ),
         entry(
             1,
@@ -245,11 +207,7 @@ fn summary_replaces_named_range_and_injects_text() {
             Payload::tool_result("a", RawResult::text("out-a"), WireState::Raw),
         ),
         entry(99, 0, Payload::Summary(compacted(1, "replacement text"))),
-        entry(
-            2,
-            1,
-            Payload::User(vec![ContentBlock::Text("continue".into())]),
-        ),
+        entry(2, 1, Payload::user("continue")),
     ];
     let messages = project(&log);
     // Seqs 0, 1 elided; summary entry elided; seq 99 injects summary; seq 2 keeps.
@@ -272,42 +230,31 @@ fn a_responses_summary_replaces_whole_replay_units() {
     use crate::log::ResponsesOutputItem;
 
     fn call(call_id: &str, encrypted: &str) -> Payload {
-        Payload::Assistant {
-            output: AssistantOutput::Responses(vec![
-                ResponsesOutputItem::Reasoning {
-                    id: format!("rs_{call_id}"),
-                    status: None,
-                    summary: Vec::new(),
-                    content: Vec::new(),
-                    encrypted_content: Some(encrypted.into()),
-                },
-                ResponsesOutputItem::FunctionCall {
-                    id: None,
-                    call_id: CallId(call_id.into()),
-                    name: "bash".into(),
-                    arguments: r#"{"command":"ls"}"#.into(),
-                    status: None,
-                },
-            ]),
-            excluded: None,
-        }
+        Payload::assistant(AssistantOutput::Responses(vec![
+            ResponsesOutputItem::Reasoning {
+                id: format!("rs_{call_id}"),
+                status: None,
+                summary: Vec::new(),
+                content: Vec::new(),
+                encrypted_content: Some(encrypted.into()),
+            },
+            ResponsesOutputItem::FunctionCall {
+                id: None,
+                call_id: CallId(call_id.into()),
+                name: "bash".into(),
+                arguments: r#"{"command":"ls"}"#.into(),
+                status: None,
+            },
+        ]))
     }
     fn result(call_id: &str, out: &str) -> Payload {
         Payload::tool_result(call_id, RawResult::text(out), WireState::Raw)
     }
     let log = vec![
-        entry(
-            0,
-            0,
-            Payload::User(vec![ContentBlock::Text("task A".into())]),
-        ),
+        entry(0, 0, Payload::user("task A")),
         entry(1, 0, call("call_a", "ENC-A")),
         entry(2, 0, result("call_a", "out-a")),
-        entry(
-            3,
-            1,
-            Payload::User(vec![ContentBlock::Text("task B".into())]),
-        ),
+        entry(3, 1, Payload::user("task B")),
         entry(4, 1, call("consolidate_1", "ENC-C")),
         entry(
             5,
@@ -365,20 +312,19 @@ fn a_summary_inside_a_responses_step_orphans_its_output() {
     use crate::api::{PromptCachePolicy, encode_responses};
     use crate::log::ResponsesOutputItem;
     let log = vec![
-        entry(0, 0, Payload::User(vec![ContentBlock::Text("go".into())])),
+        entry(0, 0, Payload::user("go")),
         entry(
             1,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::Responses(vec![ResponsesOutputItem::FunctionCall {
+            Payload::assistant(AssistantOutput::Responses(vec![
+                ResponsesOutputItem::FunctionCall {
                     id: None,
                     call_id: CallId("call_x".into()),
                     name: "bash".into(),
                     arguments: "{}".into(),
                     status: None,
-                }]),
-                excluded: None,
-            },
+                },
+            ])),
         ),
         entry(
             2,
@@ -386,7 +332,7 @@ fn a_summary_inside_a_responses_step_orphans_its_output() {
             Payload::tool_result("call_x", RawResult::text("out"), WireState::Raw),
         ),
         entry(3, 0, Payload::Summary(Summary::consolidation(0, 1, "cut"))),
-        entry(4, 1, Payload::User(vec![ContentBlock::Text("on".into())])),
+        entry(4, 1, Payload::user("on")),
     ];
     assert_eq!(
         crate::consolidate::split_calls(&log, 1),
@@ -410,33 +356,22 @@ fn a_summary_inside_a_responses_step_orphans_its_output() {
 /// A log of two user turns around one tool call, the shape the audience tests replace over.
 fn two_turn_log() -> Vec<LogEntry> {
     vec![
-        entry(
-            0,
-            0,
-            Payload::User(vec![ContentBlock::Text("old task".into())]),
-        ),
+        entry(0, 0, Payload::user("old task")),
         entry(
             1,
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "t1", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "t1", json!({}))],
+            )),
         ),
         entry(
             2,
             1,
             Payload::tool_result("t1", RawResult::text("old output"), WireState::Raw),
         ),
-        entry(
-            3,
-            2,
-            Payload::User(vec![ContentBlock::Text("new task".into())]),
-        ),
+        entry(3, 2, Payload::user("new task")),
     ]
 }
 

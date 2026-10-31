@@ -21,7 +21,7 @@ use base64::Engine;
 /// reads that variable, so one test owning it for its duration is sound.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn push_key_is_the_derived_vapid_public_key() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let server = test_server(&shared).await;
 
     crate::auth::Root::install(Some(crate::auth::Root::new("a test root")));
@@ -50,7 +50,7 @@ async fn push_key_is_the_derived_vapid_public_key() {
 /// so nothing partial reaches the store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_malformed_subscription_is_refused() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let server = test_server(&shared).await;
     for body in [
         "{}",
@@ -70,7 +70,7 @@ async fn a_malformed_subscription_is_refused() {
 /// subscription's identity, so there is nothing to act on without one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unsubscribe_without_an_endpoint_is_refused() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let server = test_server(&shared).await;
     let conn = server
         .delete("/v1/push/subscriptions")
@@ -89,35 +89,25 @@ mod settle_body {
     use crate::log::{ContentBlock, LogEntry, Payload, Timestamp, ToolCall};
 
     fn entry(seq: u64, payload: Payload) -> LogEntry {
-        LogEntry {
-            seq,
-            turn: 0,
-            at: Timestamp(1000 + seq),
-            submission_id: None,
-            source: None,
-            payload,
-        }
+        LogEntry::new(seq, payload).with_at(Timestamp(1000 + seq))
     }
 
     fn assistant(text: &[&str]) -> Payload {
-        Payload::Assistant {
-            output: crate::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                text.iter()
-                    .map(|t| ContentBlock::Text((*t).to_string()))
-                    .collect(),
-                vec![],
-            ),
-            excluded: None,
-        }
+        Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            vec![],
+            text.iter()
+                .map(|t| ContentBlock::Text((*t).to_string()))
+                .collect(),
+            vec![],
+        ))
     }
 
     #[test]
     fn the_tail_assistant_prose_and_only_it() {
         let entries = vec![
-            entry(0, Payload::User(vec![ContentBlock::Text("hi".into())])),
+            entry(0, Payload::user("hi")),
             entry(1, assistant(&["an earlier turn"])),
-            entry(2, Payload::User(vec![ContentBlock::Text("go on".into())])),
+            entry(2, Payload::user("go on")),
             entry(3, assistant(&["two blocks", "join with a space"])),
         ];
         assert_eq!(settle_body(&entries), "two blocks join with a space");
@@ -129,17 +119,17 @@ mod settle_body {
             entry(0, assistant(&["a finished earlier turn"])),
             entry(
                 1,
-                Payload::Assistant {
-                    output: crate::log::AssistantOutput::from_legacy_messages(
+                Payload::record_only(
+                    crate::log::AssistantOutput::from_legacy_messages(
                         vec![],
                         vec![ContentBlock::Text("a partial".into())],
                         vec![],
                     ),
-                    excluded: Some(crate::log::Exclusion::Upstream(UpstreamFailureRecord {
+                    crate::log::Exclusion::Upstream(UpstreamFailureRecord {
                         why: "stream died".into(),
                         stream: None,
-                    })),
-                },
+                    }),
+                ),
             ),
         ];
         assert_eq!(settle_body(&entries), "");
@@ -150,14 +140,11 @@ mod settle_body {
         assert_eq!(settle_body(&[]), "");
         let calls_only = entry(
             0,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "toolu_1", serde_json::json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "toolu_1", serde_json::json!({}))],
+            )),
         );
         assert_eq!(settle_body(&[calls_only]), "");
     }

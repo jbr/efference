@@ -51,16 +51,7 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
         }
     });
 
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
     let client = Client::new(endpoint, "m", "sys", None)
         .with_stream_ceiling(std::time::Duration::from_millis(200));
     let completion = client
@@ -114,16 +105,7 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
         }
     });
 
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
     let interrupt = std::sync::Arc::new(tokio::sync::Notify::new());
     let mut client = Client::new(endpoint, "m", "sys", None)
         .with_stream_ceiling(std::time::Duration::from_secs(30));
@@ -193,16 +175,10 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
         sock.flush().unwrap();
     });
 
-    let endpoint = Endpoint {
-        provider: Provider::OpenRouter,
-        url: Some(format!("http://{addr}/api/v1/messages")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenRouter,
+        format!("http://{addr}/api/v1/messages"),
+    );
     let client = Client::new(endpoint, "m", "sys", None);
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -297,16 +273,7 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
             request
         });
 
-        let endpoint = Endpoint {
-            provider,
-            url: Some(format!("http://{addr}/v1/messages")),
-            auth_header: "x-api-key".into(),
-            auth_value: "k".into(),
-            session_id: None,
-            extra_headers: Vec::new(),
-            request: Default::default(),
-            base: None,
-        };
+        let endpoint = Endpoint::at(provider, format!("http://{addr}/v1/messages"));
         let client = Client::new(endpoint, "m", "sys", None);
         if sse {
             client
@@ -391,16 +358,7 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
             let _ = sock.read(&mut buf);
         }
     });
-    let endpoint = Endpoint {
-        provider: Provider::OpenAI,
-        url: Some(format!("http://{addr}/v1/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::OpenAI, format!("http://{addr}/v1/responses"));
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None)
         .with_stream_ceiling(std::time::Duration::from_millis(200));
     let mut streamed = Vec::new();
@@ -426,16 +384,7 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
 #[tokio::test]
 async fn a_foreign_dialect_turn_list_never_becomes_a_request() {
     use crate::project::WireTurn;
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some("http://127.0.0.1:1/v1/messages".into()),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::Anthropic, "http://127.0.0.1:1/v1/messages");
     let client = Client::new(endpoint, "m", "sys", None);
     let turns = vec![
         WireTurn::text("hello"),

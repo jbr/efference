@@ -2,8 +2,8 @@ use super::*;
 use crate::log::Telemetry;
 use crate::log::context::Item;
 use crate::log::{
-    AssistantOutput, CallId, ContentBlock, Disposition, Keep, LogEntry, Notification, Origin,
-    Payload, RawResult, Summary, Timestamp, ToolCall, Triage, Triaged, WireState,
+    AssistantOutput, CallId, ContentBlock, Disposition, Keep, LogEntry, Notification, Payload,
+    RawResult, Summary, Timestamp, ToolCall, Triage, Triaged, WireState,
 };
 use serde_json::json;
 

@@ -3,43 +3,31 @@
 //! untouched entries alone.
 
 use super::*;
-use crate::log::{
-    ContentBlock, LogEntry, Payload, RawResult, Timestamp, ToolCall, Triaged, WireState,
-};
+use crate::log::{ContentBlock, LogEntry, Payload, RawResult, ToolCall, Triaged, WireState};
 use crate::tui::document::Document;
 use crate::tui::projection::project;
 use crate::tui::state::DocumentState;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload).with_turn(1)
 }
 
 fn user(seq: u64, text: &str) -> LogEntry {
-    entry(seq, Payload::User(vec![ContentBlock::Text(text.into())]))
+    entry(seq, Payload::user(text))
 }
 
 fn assistant_call(seq: u64, text: &str, call_id: &str, command: &str) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: crate::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![ContentBlock::Text(text.into())],
-                vec![ToolCall::new(
-                    crate::bash::NAME,
-                    call_id,
-                    serde_json::json!({ "command": command }),
-                )],
-            ),
-            excluded: None,
-        },
+        Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text(text.into())],
+            vec![ToolCall::new(
+                crate::bash::NAME,
+                call_id,
+                serde_json::json!({ "command": command }),
+            )],
+        )),
     )
 }
 
@@ -111,16 +99,13 @@ fn an_artifact_url_reprojects_only_its_committed_assistant_entry() {
         user(6, "before"),
         entry(
             7,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text(
-                        "Chart:\n\n```html-artifact\n<svg>chart</svg>\n```".into(),
-                    )],
-                    vec![],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text(
+                    "Chart:\n\n```html-artifact\n<svg>chart</svg>\n```".into(),
+                )],
+                vec![],
+            )),
         ),
         user(8, "after"),
     ];
@@ -340,17 +325,14 @@ fn a_shrinking_log_rebuilds_from_scratch() {
 fn the_ask_topic_moving_rebuilds_the_marks() {
     let asks = entry(
         0,
-        Payload::Assistant {
-            output: crate::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![
-                    ToolCall::new("ask", "q1", serde_json::json!({ "question": "First?" })),
-                    ToolCall::new("ask", "q2", serde_json::json!({ "question": "Second?" })),
-                ],
-            ),
-            excluded: None,
-        },
+        Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![],
+            vec![
+                ToolCall::new("ask", "q1", serde_json::json!({ "question": "First?" })),
+                ToolCall::new("ask", "q2", serde_json::json!({ "question": "Second?" })),
+            ],
+        )),
     );
     let log = vec![asks];
     let mut view = ViewState::default();

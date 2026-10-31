@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::boot::test::{Root, codex_registry, drop_boot, request};
-use crate::log::{ContentBlock, Payload};
+use crate::log::Payload;
 
 /// A session left on disk as a host that stopped would leave it: a turn said, and
 /// `archived` when it was archived on purpose.
@@ -23,9 +23,7 @@ async fn left(
     let mut boot = crate::boot::prepare(asked)
         .await
         .expect("the session mints");
-    boot.log
-        .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
-        .unwrap();
+    boot.log.append(1, Payload::user("hi")).unwrap();
     extra(&mut boot.log);
     if archived {
         boot.log.append(1, Payload::archived(None)).unwrap();

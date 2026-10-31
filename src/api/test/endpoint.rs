@@ -265,23 +265,15 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
 
     let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counted = std::sync::Arc::clone(&reads);
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: AuthValue::reloadable(
+    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"))
+        .with_auth_value(AuthValue::reloadable(
             Provider::Anthropic,
             "stale".into(),
             sync_reload(move || {
                 counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok("refreshed".into())
             }),
-        ),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+        ));
     let client = Client::new(endpoint, "m", "sys", None);
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})

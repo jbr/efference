@@ -34,16 +34,7 @@ impl Drop for Roots {
 /// until shutdown, which is the state a hosted idle session sits in.
 pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
     let scratch = cwd.join("scratch");
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some("http://127.0.0.1:9/v1/messages".into()),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::Anthropic, "http://127.0.0.1:9/v1/messages");
     SessionBoot {
         client: Client::new(endpoint, "m", "sys", None),
         toolbox: Toolbox::bash_and_mcps(cwd.to_path_buf(), Some(scratch)).unwrap(),
@@ -191,14 +182,9 @@ async fn a_first_turn_is_not_repeated_on_a_log_that_has_begun() {
     let host = Swansong::new();
     let mut boot = boot(&roots.0.join("one"));
     boot.role.role.first_turn = Some("say hello".into());
-    boot.log = Log::in_memory_with(vec![LogEntry {
-        seq: 0,
-        turn: 1,
-        at: crate::log::Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload: Payload::User(vec![ContentBlock::Text("earlier".into())]),
-    }]);
+    boot.log = Log::in_memory_with(vec![
+        LogEntry::new(0, Payload::user("earlier")).with_turn(1),
+    ]);
     let runtime = SessionRuntime::start(boot, &host);
     assert!(runtime.session().queued_turns().is_empty());
     tokio::time::sleep(Duration::from_millis(100)).await;

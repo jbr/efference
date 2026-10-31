@@ -1,17 +1,19 @@
 use super::*;
+use crate::config::testing::ConfigFixture;
 use crate::daemon::SessionParts;
 use crate::log::{AssistantOutput, ContentBlock, Exclusion};
 use crate::persist::Log;
 use trillium_testing::TestServer;
 
 fn assistant(text: &str, excluded: Option<Exclusion>) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            Vec::new(),
-            vec![ContentBlock::Text(text.to_string())],
-            Vec::new(),
-        ),
-        excluded,
+    let output = AssistantOutput::from_legacy_messages(
+        Vec::new(),
+        vec![ContentBlock::Text(text.to_string())],
+        Vec::new(),
+    );
+    match excluded {
+        Some(why) => Payload::record_only(output, why),
+        None => Payload::assistant(output),
     }
 }
 
@@ -46,12 +48,7 @@ const TWO_FENCES: &str =
 fn links_belong_to_committed_assistant_text_of_an_addressable_session() {
     let work = session(Some("work"));
     let assistant_seq = work.append(1, assistant(TWO_FENCES, None)).unwrap();
-    let user_seq = work
-        .append(
-            1,
-            Payload::User(vec![ContentBlock::Text(TWO_FENCES.into())]),
-        )
-        .unwrap();
+    let user_seq = work.append(1, Payload::user(TWO_FENCES)).unwrap();
     let excluded_seq = work
         .append(1, assistant(TWO_FENCES, Some(Exclusion::Empty)))
         .unwrap();
@@ -199,22 +196,15 @@ async fn an_artifact_gets_a_file_only_as_its_session_could_read_it() {
     std::fs::create_dir(scratch.0.join("dir")).unwrap();
     std::fs::write(scratch.0.join("binary.dat"), [0xff, 0xfe, 0x00]).unwrap();
     // A role that grants reading the working directory, as a project config would.
-    let role = crate::config::Config::from_toml(
-        r#"
-        [tools]
-        efference = { enabled = true }
-        "efference.read" = { granted = true }
-
-        [paths]
-        "." = { read = true }
-        "#,
-    )
-    .unwrap();
+    let role = ConfigFixture::new()
+        .with_tool("read")
+        .with_path(".", true, false)
+        .build();
     let work = Session::full(SessionParts {
         id: Some("work".into()),
         role: crate::config::LoadedConfig {
             role,
-            source: crate::config::ConfigSource::Default,
+            ..crate::config::LoadedConfig::default()
         },
         ..SessionParts::new(crate::policy::Directories::at(&scratch.0), Log::in_memory())
     })

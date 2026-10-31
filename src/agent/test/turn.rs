@@ -16,18 +16,16 @@ use super::*;
 #[test]
 pub(super) fn an_interrupted_call_is_paired_says_who_stopped_it_and_the_operator_speaks_next() {
     use crate::project::ApiBlock;
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let call = bash_call("cat enormous.log");
     shared
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         )
         .unwrap();
     shared
@@ -46,10 +44,7 @@ pub(super) fn an_interrupted_call_is_paired_says_who_stopped_it_and_the_operator
         .unwrap();
     // The turn ended; the operator's message opens the next one.
     shared
-        .append(
-            2,
-            Payload::User(vec![ContentBlock::Text("read the test instead".into())]),
-        )
+        .append(2, Payload::user("read the test instead"))
         .unwrap();
 
     let messages = shared.project_messages();
@@ -106,23 +101,17 @@ pub(super) fn an_interrupted_call_is_paired_says_who_stopped_it_and_the_operator
 #[test]
 pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
     use crate::project::ApiBlock;
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let first = ToolCall::new("search", "search_2", serde_json::json!({}));
     let second = ToolCall::new(bash::NAME, "bash_3", serde_json::json!({ "command": "ls" }));
     shared
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![first.clone(), second.clone()],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![first.clone(), second.clone()],
+            )),
         )
         .unwrap();
     for (call, content) in [(&first, "hits"), (&second, "listing")] {
@@ -170,30 +159,17 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
 fn title_is_solicited_after_a_user_turn_and_on_the_fallback() {
     use crate::log::{LogEntry, Timestamp, Title, TitleAuthor};
     fn entry(seq: u64, payload: Payload) -> LogEntry {
-        LogEntry {
-            seq,
-            turn: 0,
-            at: Timestamp(seq),
-            submission_id: None,
-            source: None,
-            payload,
-        }
+        LogEntry::new(seq, payload).with_at(Timestamp(seq))
     }
-    let user = || Payload::User(vec![ContentBlock::Text("go".into())]);
-    let assistant = || Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
+    let user = || Payload::user("go");
+    let assistant = || {
+        Payload::assistant(AssistantOutput::from_legacy_messages(
             vec![],
             vec![ContentBlock::Text("done".into())],
             vec![],
-        ),
-        excluded: None,
+        ))
     };
-    let title = || {
-        Payload::Title(Title {
-            text: "t".into(),
-            author: TitleAuthor::Triage,
-        })
-    };
+    let title = || Payload::Title(Title::new("t", TitleAuthor::Triage));
 
     // Never titled: ask.
     let mut log = vec![entry(0, user()), entry(1, assistant())];

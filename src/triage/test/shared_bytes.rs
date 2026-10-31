@@ -8,14 +8,11 @@ use crate::log::{ContentBlock, Keep, Triaged};
 fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![ContentBlock::Text(text.into())],
-                calls,
-            ),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text(text.into())],
+            calls,
+        )),
     )
 }
 
@@ -25,15 +22,15 @@ fn the_shared_triage_request_is_pinned() {
     let triaged =
         ToolCall::new("bash", "c2", json!({"command": "cargo test"})).with_intent("run the tests");
     let prefix = vec![
-        entry(1, Payload::User(vec![ContentBlock::Text("fix it".into())])),
+        entry(1, Payload::user("fix it")),
         assistant(2, "Looking around first.", vec![first]),
         entry(
             3,
-            Payload::ToolResult {
-                call_id: "c1".into(),
-                raw: RawResult::text("a.rs\nb.rs"),
-                wire: WireState::Triaged(Triaged::new(Keep::All).with_note("Two files.")),
-            },
+            Payload::tool_result(
+                "c1",
+                RawResult::text("a.rs\nb.rs"),
+                WireState::Triaged(Triaged::new(Keep::All).with_note("Two files.")),
+            ),
         ),
         assistant(4, "Now the tests.", vec![triaged.clone()]),
     ];

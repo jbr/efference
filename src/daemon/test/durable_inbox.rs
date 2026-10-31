@@ -16,14 +16,11 @@ fn quiet_log() -> Log {
     log.append(1, user("go")).unwrap();
     log.append(
         1,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![ContentBlock::Text("done".into())],
-                vec![],
-            ),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text("done".into())],
+            vec![],
+        )),
     )
     .unwrap();
     log

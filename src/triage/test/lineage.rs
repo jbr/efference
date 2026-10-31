@@ -10,13 +10,12 @@ use super::*;
 fn triage_thinking_joins_thinking_text_only() {
     use crate::log::ContentBlock;
 
-    let assistant = |thinking: Vec<ContentBlock>| Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
+    let assistant = |thinking: Vec<ContentBlock>| {
+        Payload::assistant(AssistantOutput::from_legacy_messages(
             thinking,
             vec![ContentBlock::Text("prose the triage never reads".into())],
             Vec::new(),
-        ),
-        excluded: None,
+        ))
     };
 
     assert_eq!(triage_thinking(&assistant(Vec::new())), None);
@@ -58,31 +57,25 @@ fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_o
 
     let call = ToolCall::new("bash", "call_1", json!({ "command": "ls" }));
     let prefix = vec![
-        entry(
-            1,
-            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
-        ),
+        entry(1, Payload::user("go")),
         entry(
             2,
-            Payload::Assistant {
-                output: AssistantOutput::Responses(vec![
-                    ResponsesOutputItem::Reasoning {
-                        id: "rs_1".into(),
-                        status: Some("completed".into()),
-                        summary: Vec::new(),
-                        content: Vec::new(),
-                        encrypted_content: Some("ENC==".into()),
-                    },
-                    ResponsesOutputItem::FunctionCall {
-                        id: Some("fc_1".into()),
-                        call_id: call.id.clone(),
-                        name: call.name.clone(),
-                        arguments: r#"{"command":"ls"}"#.into(),
-                        status: Some("completed".into()),
-                    },
-                ]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::Responses(vec![
+                ResponsesOutputItem::Reasoning {
+                    id: "rs_1".into(),
+                    status: Some("completed".into()),
+                    summary: Vec::new(),
+                    content: Vec::new(),
+                    encrypted_content: Some("ENC==".into()),
+                },
+                ResponsesOutputItem::FunctionCall {
+                    id: Some("fc_1".into()),
+                    call_id: call.id.clone(),
+                    name: call.name.clone(),
+                    arguments: r#"{"command":"ls"}"#.into(),
+                    status: Some("completed".into()),
+                },
+            ])),
         ),
     ];
     let raw = RawResult::text("alpha\nbeta\ngamma");

@@ -667,16 +667,9 @@ fn a_recovered_retry_surfaces_as_an_annotation() {
         )],
     );
     play.tool_result("toolu_rt", "file.txt", false, WireState::Raw);
-    play.commit(Payload::Triage(Triage {
-        for_result: Some(3),
-        origin: crate::log::Origin::Model,
-        raw_keep: "all".into(),
-        inbox: Vec::new(),
-        surfaced: Vec::new(),
-        retries: vec!["attempt 1 of 3: triage called bash instead of retain".into()],
-        thinking: Vec::new(),
-        shown_through: None,
-    }));
+    play.commit(Payload::Triage(Triage::new(Some(3), "all").with_retries(
+        vec!["attempt 1 of 3: triage called bash instead of retain".into()],
+    )));
     assert!(
         play.find("⚠ triage retry").is_some(),
         "the non-compliant attempt is on screen despite the recovery"

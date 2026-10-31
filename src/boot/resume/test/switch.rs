@@ -33,8 +33,7 @@ fn preambles(entries: &[LogEntry]) -> Vec<&LogEntry> {
 async fn a_resume_switches_spotter_and_triage_and_the_next_keeps_them() {
     let root = Root::new("resume-switch");
     left_behind(&root, "sw", |log| {
-        log.append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
-            .unwrap();
+        log.append(1, Payload::user("hi")).unwrap();
     })
     .await;
     let registry = codex_registry(root.path(), "sw");
@@ -171,10 +170,7 @@ auth = { kind = "env", key = "EFFERENCE_SWITCH_TEST_KEY" }
 }
 
 fn assistant_turn() -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::Responses(Vec::new()),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::Responses(Vec::new()))
 }
 
 /// A main switch within the dialect replaces the identity line over the same body and
@@ -184,8 +180,7 @@ fn assistant_turn() -> Payload {
 async fn a_resume_switches_the_main_model_within_a_dialect() {
     let root = Root::new("resume-switch-main");
     left_behind(&root, "mn", |log| {
-        log.append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
-            .unwrap();
+        log.append(1, Payload::user("hi")).unwrap();
         log.append(1, assistant_turn()).unwrap();
     })
     .await;

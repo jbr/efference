@@ -8,10 +8,7 @@ use crate::daemon::SessionIdentity;
 use crate::log::{Provider, Title, TitleAuthor};
 
 fn session() -> Arc<Session> {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     // The identity carries the title: without it `set_title` records nothing
     // (a session read with no daemon behind it). `None` inference is the
     // not-booted shape tests build.
@@ -102,16 +99,10 @@ fn mock(
             sock.flush().unwrap();
         }
     });
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some(format!("http://{addr}/backend-api/codex/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenAICodex,
+        format!("http://{addr}/backend-api/codex/responses"),
+    );
     (Client::new(endpoint, "m", "sys", None), requests)
 }
 
@@ -132,16 +123,15 @@ fn titles(shared: &Session) -> Vec<String> {
 async fn the_title_ask_compresses_an_over_budget_title() {
     let shared = session();
     shared
-        .set_title(Title {
-            text: "Implementing result-before-triage capture with later verdicts and a long tail"
-                .into(),
-            author: TitleAuthor::Triage,
-        })
+        .set_title(Title::new(
+            "Implementing result-before-triage capture with later verdicts and a long tail",
+            TitleAuthor::Triage,
+        ))
         .unwrap();
     shared
         .append_submission(
             1,
-            Payload::User(vec![ContentBlock::Text("new scope".into())]),
+            Payload::user("new scope"),
             "sub".into(),
             Some("web".into()),
         )
@@ -163,10 +153,7 @@ async fn the_title_ask_compresses_an_over_budget_title() {
 async fn the_title_ask_stays_silent_while_the_title_answers_the_check() {
     let shared = session();
     shared
-        .set_title(Title {
-            text: "Fix title cadence".into(),
-            author: TitleAuthor::Triage,
-        })
+        .set_title(Title::new("Fix title cadence", TitleAuthor::Triage))
         .unwrap();
     let client = mock_client("A different line");
     let ask = TitleAsk::new(&client, &[], &Triager::shared());
@@ -196,12 +183,7 @@ async fn eventually(done: impl Fn() -> bool) -> bool {
 
 fn user_turn(shared: &Session, text: &str) {
     shared
-        .append_submission(
-            1,
-            Payload::User(vec![ContentBlock::Text(text.into())]),
-            "sub".into(),
-            None,
-        )
+        .append_submission(1, Payload::user(text), "sub".into(), None)
         .unwrap();
 }
 

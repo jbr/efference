@@ -11,7 +11,7 @@ fn appending_a_config_edit_updates_the_effective_config() {
     let call = bash_call("npm install");
 
     // Empty base role → npm gates.
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     assert_eq!(
         classify(
             &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
@@ -41,7 +41,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
     let edit = committed_edit;
 
     // A scope edit notifies.
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     assert!(!shared.has_pending_notifications());
     shared
         .append(
@@ -57,7 +57,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
     );
 
     // A path edit notifies.
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared
         .append(
             0,
@@ -74,7 +74,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
     );
 
     // A command edit does not — its effect reaches the model only through the classifier.
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
     shared.append(0, allow_grant("npm")).unwrap();
     assert!(
         !shared.has_pending_notifications(),
@@ -90,7 +90,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
 fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
     use crate::policy::{Verdict, classify};
     let call = bash_call("npm install");
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
 
     // Propose: inert in policy, but queued.
     let proposal_seq = shared
@@ -121,14 +121,15 @@ fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
     shared
         .append(
             0,
-            Payload::ConfigEdit(crate::log::ConfigEdit {
-                state: EditState::Committed,
-                resolves: Some(proposal_seq),
-                change: crate::log::ConfigChange::Command {
-                    command: "npm".into(),
-                },
-                note: String::new(),
-            }),
+            Payload::ConfigEdit(
+                crate::log::ConfigEdit::new(
+                    EditState::Committed,
+                    crate::log::ConfigChange::Command {
+                        command: "npm".into(),
+                    },
+                )
+                .with_resolves(Some(proposal_seq)),
+            ),
         )
         .unwrap();
     assert_eq!(
@@ -162,11 +163,7 @@ fn reload_emits_committed_edits_for_file_deltas() {
 
     // The file is opened at construction, but effective policy still starts at the base role —
     // the fold happens on refresh, exactly as it does for an edit arriving mid-session.
-    let (shared, _rx) = Session::with_role(
-        std::env::current_dir().unwrap(),
-        Log::in_memory(),
-        file_role(&path),
-    );
+    let (shared, _rx) = Session::in_memory_with_role(file_role(&path));
     assert_eq!(
         classify(
             &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
@@ -221,11 +218,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
     // here to prove the revert restores bytes, not a re-render of the parsed config.
     let good = "# my config\nscope = \"stay in src/\"\n[commands]\ncargo = true\n";
     std::fs::write(&path, good).unwrap();
-    let (shared, _rx) = Session::with_role(
-        std::env::current_dir().unwrap(),
-        Log::in_memory(),
-        file_role(&path),
-    );
+    let (shared, _rx) = Session::in_memory_with_role(file_role(&path));
     refresh_and_emit(&shared);
     assert_eq!(
         classify(
@@ -278,7 +271,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
 fn cancelling_a_proposal_drains_the_queue_without_applying() {
     use crate::policy::{Verdict, classify};
     let call = bash_call("npm install");
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
 
     let proposal_seq = shared
         .append(
@@ -293,14 +286,15 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
     shared
         .append(
             0,
-            Payload::ConfigEdit(crate::log::ConfigEdit {
-                state: EditState::Cancelled,
-                resolves: Some(proposal_seq),
-                change: crate::log::ConfigChange::Command {
-                    command: "npm".into(),
-                },
-                note: String::new(),
-            }),
+            Payload::ConfigEdit(
+                crate::log::ConfigEdit::new(
+                    EditState::Cancelled,
+                    crate::log::ConfigChange::Command {
+                        command: "npm".into(),
+                    },
+                )
+                .with_resolves(Some(proposal_seq)),
+            ),
         )
         .unwrap();
     assert!(
@@ -324,7 +318,7 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
 #[test]
 fn resolve_proposal_decision_commits_and_cancels() {
     use crate::policy::{Verdict, classify};
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _rx) = Session::in_memory();
 
     assert!(
         !shared
@@ -408,7 +402,7 @@ fn resumed_log_edits_fold_into_the_initial_effective_config() {
     let mut log = Log::in_memory();
     log.append(0, allow_grant("npm")).unwrap();
 
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), log);
+    let (shared, _rx) = Session::from_log(log);
     assert_eq!(
         classify(
             &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
@@ -435,11 +429,7 @@ async fn an_unrepairable_config_parks_the_loop_until_the_file_parses() {
     let good = "# my config\nscope = \"stay in src/\"\n";
     std::fs::write(&path, good).unwrap();
 
-    let (shared, _rx) = Session::with_role(
-        std::env::current_dir().unwrap(),
-        Log::in_memory(),
-        file_role(&path),
-    );
+    let (shared, _rx) = Session::in_memory_with_role(file_role(&path));
     refresh_and_emit(&shared);
     assert!(
         shared.config_repair().is_none(),

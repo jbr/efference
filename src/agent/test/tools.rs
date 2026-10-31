@@ -59,10 +59,7 @@ fn only_the_toolbox_half_of_the_catalog_carries_injected_intent() {
 
 #[tokio::test]
 async fn wait_refuses_when_no_known_source_can_wake_it() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let result = process_monitor_tool_result(&shared, &call(process_monitor::WAIT))
         .await
         .expect("wait is a process monitor tool");
@@ -81,10 +78,7 @@ async fn wait_refuses_when_no_known_source_can_wake_it() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn wait_wakes_for_a_notification_and_returns_its_body() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let handle = shared
         .spawn_background("sleep 1".into(), None)
         .expect("background process makes wait safe");
@@ -113,10 +107,7 @@ async fn wait_wakes_for_a_notification_and_returns_its_body() {
 /// juncture after the result delivers it, so a wait can no longer sleep through it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn wait_wakes_when_a_turn_is_queued() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let handle = shared
         .spawn_background("sleep 5".into(), None)
         .expect("background process makes wait safe");
@@ -144,10 +135,7 @@ async fn wait_wakes_when_a_turn_is_queued() {
 /// of the refusal, which here would otherwise answer (no other wake source).
 #[tokio::test]
 async fn wait_returns_at_once_for_a_turn_already_queued() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     shared.submit_turn(SubmittedTurn::new("are you there?", "sub-1"));
     let result = process_monitor_tool_result(&shared, &call(process_monitor::WAIT))
         .await
@@ -160,10 +148,7 @@ async fn wait_returns_at_once_for_a_turn_already_queued() {
 /// juncture, so it does not end a wait; the release that sends it does.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_held_back_turn_wakes_wait_only_when_released() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let handle = shared
         .spawn_background("sleep 5".into(), None)
         .expect("background process makes wait safe");
@@ -195,10 +180,7 @@ async fn a_held_back_turn_wakes_wait_only_when_released() {
 
 #[test]
 pub(super) fn cap_passes_through_results_under_the_limit() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let r = RawResult::text("a".repeat(MAX_TOOL_RESULT_BYTES));
     let capped = cap_tool_result(&shared, &call("search"), r);
     assert!(!capped.is_error);
@@ -207,10 +189,7 @@ pub(super) fn cap_passes_through_results_under_the_limit() {
 
 #[test]
 pub(super) fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let huge = "x".repeat(MAX_TOOL_RESULT_BYTES + 1);
     let capped = cap_tool_result(&shared, &call("search"), RawResult::text(huge));
     assert!(capped.is_error, "over-cap result must be a hard error");
@@ -234,10 +213,7 @@ pub(super) fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
 #[test]
 pub(super) fn cap_head_is_char_boundary_safe() {
     // 4-byte chars straddling the 1KB head boundary.
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let huge = "🦀".repeat(MAX_TOOL_RESULT_BYTES); // 4 bytes each → well over the cap
     let capped = cap_tool_result(&shared, &call("read"), RawResult::text(huge));
     assert!(capped.is_error);

@@ -87,9 +87,7 @@ async fn a_peers_message_is_a_notification() {
 async fn an_empty_message_continues_or_says_why_not() {
     let fixture = Fixture::new();
     let child = fixture.session("child");
-    child
-        .append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
-        .unwrap();
+    child.append(1, Payload::user("go")).unwrap();
     child.set_stall(Stall {
         reason: StallReason::RetriesExhausted,
         attempts: Some(12),
@@ -104,20 +102,15 @@ async fn an_empty_message_continues_or_says_why_not() {
     assert_eq!(said, "continuing: child goes on from where it stopped");
 
     let grandchild = fixture.session("grandchild");
-    grandchild
-        .append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
-        .unwrap();
+    grandchild.append(1, Payload::user("go")).unwrap();
     grandchild
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![ContentBlock::Text("done".into())],
-                    vec![],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("done".into())],
+                vec![],
+            )),
         )
         .unwrap();
     let err = message("grandchild", "  ", None)

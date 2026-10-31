@@ -249,8 +249,8 @@ fn committed_thinking_stays_readable_in_the_transcript() {
         .map(|n| format!("Step {n} of the reasoning."))
         .collect::<Vec<_>>()
         .join("\n\n");
-    play.commit(Payload::Assistant {
-        output: crate::log::AssistantOutput::from_legacy_messages(
+    play.commit(Payload::assistant(
+        crate::log::AssistantOutput::from_legacy_messages(
             vec![ContentBlock::Thinking {
                 text: reasoning,
                 signature: "sig".into(),
@@ -258,8 +258,7 @@ fn committed_thinking_stays_readable_in_the_transcript() {
             vec![ContentBlock::Text("The preamble was re-rendered.".into())],
             vec![],
         ),
-        excluded: None,
-    });
+    ));
 
     assert!(play.find("✻ thinking").is_some(), "the record is present");
     assert!(
@@ -282,16 +281,15 @@ fn redacted_thinking_says_so_rather_than_rendering_nothing() {
 
     let mut play = Screenplay::new(80, 12);
     play.user("Go.");
-    play.commit(Payload::Assistant {
-        output: crate::log::AssistantOutput::from_legacy_messages(
+    play.commit(Payload::assistant(
+        crate::log::AssistantOutput::from_legacy_messages(
             vec![ContentBlock::RedactedThinking {
                 data: "encrypted-blob".into(),
             }],
             vec![ContentBlock::Text("Done.".into())],
             vec![],
         ),
-        excluded: None,
-    });
+    ));
     assert!(play.find("✻ thinking").is_some());
     assert!(
         play.find("encrypted").is_some(),

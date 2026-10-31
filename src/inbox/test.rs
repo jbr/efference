@@ -2,14 +2,7 @@ use super::*;
 use crate::log::{Disposition, Notification, Timestamp, Triage};
 
 fn entry(seq: Seq, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 0,
-        at: Timestamp(seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload).with_at(Timestamp(seq))
 }
 fn ambient(seq: Seq, body: &str) -> LogEntry {
     entry(seq, Payload::Ambient(Notification::new("src", body, None)))
@@ -17,16 +10,7 @@ fn ambient(seq: Seq, body: &str) -> LogEntry {
 fn triage(seq: Seq, inbox: Vec<(Seq, Disposition)>) -> LogEntry {
     entry(
         seq,
-        Payload::Triage(Triage {
-            for_result: None,
-            origin: crate::log::Origin::Model,
-            raw_keep: "all".into(),
-            inbox,
-            surfaced: Vec::new(),
-            retries: Vec::new(),
-            thinking: Vec::new(),
-            shown_through: None,
-        }),
+        Payload::Triage(Triage::new(None, "all").with_inbox(inbox)),
     )
 }
 
@@ -66,10 +50,9 @@ fn active_shown_ignores_non_ambient_and_unresolved_stay() {
 fn assistant(seq: Seq) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: crate::log::AssistantOutput::empty(crate::log::WireDialect::Messages),
-            excluded: None,
-        },
+        Payload::assistant(crate::log::AssistantOutput::empty(
+            crate::log::WireDialect::Messages,
+        )),
     )
 }
 fn result_triage(seq: Seq, for_result: Seq) -> LogEntry {

@@ -62,16 +62,7 @@ pub(super) fn scripted(
         }
         bodies
     });
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
     let client =
         Client::new(endpoint, "claude-sonnet-5-5", "sys", None).with_thinking(ThinkingSupport {
             adaptive: true,

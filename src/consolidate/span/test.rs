@@ -1,34 +1,20 @@
 use super::*;
 use crate::log::MessagesOutputBlock;
-use crate::log::{
-    AssistantOutput, ContentBlock, RawResult, Summary, Timestamp, ToolCall, Triaged, WireState,
-};
+use crate::log::{AssistantOutput, RawResult, Summary, Timestamp, ToolCall, Triaged, WireState};
 use serde_json::json;
 
 fn entry(seq: Seq, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 0,
-        at: Timestamp(seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload).with_at(Timestamp(seq))
 }
 fn user(seq: Seq, text: &str) -> LogEntry {
-    entry(seq, Payload::User(vec![ContentBlock::Text(text.into())]))
+    entry(seq, Payload::user(text))
 }
 fn call(seq: Seq, id: &str, name: &str) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::Messages(vec![MessagesOutputBlock::ToolUse(ToolCall::new(
-                name,
-                id,
-                json!({"path":"source.rs"}),
-            ))]),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::Messages(vec![
+            MessagesOutputBlock::ToolUse(ToolCall::new(name, id, json!({"path":"source.rs"}))),
+        ])),
     )
 }
 fn result(seq: Seq, id: &str, text: &str) -> LogEntry {
@@ -40,10 +26,9 @@ fn result(seq: Seq, id: &str, text: &str) -> LogEntry {
 fn report(seq: Seq, text: &str) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::Messages(vec![MessagesOutputBlock::Text(text.into())]),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::Messages(vec![MessagesOutputBlock::Text(
+            text.into(),
+        )])),
     )
 }
 fn work() -> Vec<LogEntry> {
@@ -124,17 +109,10 @@ fn ask_waits_for_all_sibling_results_and_keeps_question_reply() {
     let mut log = work()[..3].to_vec();
     log.push(entry(
         3,
-        Payload::Assistant {
-            output: AssistantOutput::Messages(vec![
-                MessagesOutputBlock::ToolUse(ToolCall::new(
-                    "ask",
-                    "q",
-                    json!({"question":"next?"}),
-                )),
-                MessagesOutputBlock::ToolUse(ToolCall::new("read", "sibling", json!({}))),
-            ]),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::Messages(vec![
+            MessagesOutputBlock::ToolUse(ToolCall::new("ask", "q", json!({"question":"next?"}))),
+            MessagesOutputBlock::ToolUse(ToolCall::new("read", "sibling", json!({}))),
+        ])),
     ));
     assert!(candidate(&log).is_none());
     log.push(result(4, "q", "answer"));
@@ -165,10 +143,10 @@ fn budget_counts_projected_verdict_text_and_json_not_raw_output() {
     assert_eq!(tool_bytes(&log, span), 0);
     log.push(entry(
         5,
-        Payload::ResultVerdict {
-            for_result: 2,
-            wire: WireState::Triaged(Triaged::new(crate::log::Keep::None).with_note("short")),
-        },
+        Payload::result_verdict(
+            2,
+            WireState::Triaged(Triaged::new(crate::log::Keep::None).with_note("short")),
+        ),
     ));
     let projected = project_semantic(&log);
     let text_len = projected
@@ -215,13 +193,12 @@ fn a_thinking_only_completion_is_not_a_report() {
         result(2, "r", "listing"),
         entry(
             3,
-            Payload::Assistant {
-                output: AssistantOutput::Messages(vec![MessagesOutputBlock::Thinking {
+            Payload::assistant(AssistantOutput::Messages(vec![
+                MessagesOutputBlock::Thinking {
                     text: "let me read more".into(),
                     signature: String::new(),
-                }]),
-                excluded: None,
-            },
+                },
+            ])),
         ),
     ];
     assert_eq!(candidate(&log), None);

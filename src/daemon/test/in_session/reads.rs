@@ -128,9 +128,7 @@ fn read(seq: Option<&str>) -> Transcript {
 async fn each_reader_has_its_own_cursor() {
     let fixture = Fixture::new();
     let child = fixture.session("child");
-    child
-        .append(1, Payload::User(vec![ContentBlock::Text("first".into())]))
-        .unwrap();
+    child.append(1, Payload::user("first")).unwrap();
     let parent = fixture.control("parent");
     let ctx = RequestContext::default;
 
@@ -145,9 +143,7 @@ async fn each_reader_has_its_own_cursor() {
         "{again}"
     );
 
-    let next = child
-        .append(1, Payload::User(vec![ContentBlock::Text("second".into())]))
-        .unwrap();
+    let next = child.append(1, Payload::user("second")).unwrap();
     let zoom = read(Some(&next.to_string()))
         .execute(parent.clone(), ctx())
         .await
@@ -237,15 +233,13 @@ async fn archive_names_what_ended_with_it() {
 /// it records none.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn archive_records_the_calling_session() {
-    use crate::log::{ContentBlock, Payload};
+    use crate::log::Payload;
 
     let fixture = Fixture::new();
     let child = fixture.host.session("child").unwrap();
     let grandchild = fixture.host.session("grandchild").unwrap();
     for session in [&child, &grandchild] {
-        session
-            .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
-            .unwrap();
+        session.append(1, Payload::user("hi")).unwrap();
     }
     Archive {
         agent: "child".into(),

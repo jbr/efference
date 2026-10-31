@@ -1,6 +1,5 @@
 use super::*;
 use crate::daemon::starting::{Starting, StartingParts};
-use crate::persist::Log;
 use trillium_testing::TestServer;
 
 const CAP: Duration = Duration::from_millis(40);
@@ -14,7 +13,7 @@ fn query_value_decodes_the_named_value() {
 }
 
 fn session() -> Arc<Session> {
-    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
+    Session::in_memory().0
 }
 
 fn starting() -> Arc<Starting> {

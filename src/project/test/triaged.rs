@@ -261,14 +261,11 @@ fn triaged_projects_the_verdict_not_raw() {
         entry(
             0,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "x", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "x", json!({}))],
+            )),
         ),
         entry(
             1,
@@ -302,14 +299,11 @@ fn triage_failed_projects_an_error_never_the_raw() {
         entry(
             0,
             0,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![ToolCall::new("bash", "x", json!({}))],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new("bash", "x", json!({}))],
+            )),
         ),
         entry(
             1,

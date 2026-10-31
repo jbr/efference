@@ -184,16 +184,10 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     let open = Arc::new(AtomicBool::new(true));
     let addr = scripted_upstream(Arc::clone(&requests), Arc::clone(&release), open);
     let mut boot = boot(&cwd);
-    let endpoint = crate::api::Endpoint {
-        provider: crate::log::Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = crate::api::Endpoint::at(
+        crate::log::Provider::Anthropic,
+        format!("http://{addr}/v1/messages"),
+    );
     boot.client = Client::new(endpoint, "m", "sys", None);
 
     let host = Swansong::new();
@@ -296,16 +290,10 @@ async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
         Arc::clone(&open),
     );
     let mut boot = boot(&cwd);
-    let endpoint = crate::api::Endpoint {
-        provider: crate::log::Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = crate::api::Endpoint::at(
+        crate::log::Provider::Anthropic,
+        format!("http://{addr}/v1/messages"),
+    );
     boot.client = Client::new(endpoint, "m", "sys", None);
 
     let host = Swansong::new();

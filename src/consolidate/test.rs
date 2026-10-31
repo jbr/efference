@@ -1,18 +1,11 @@
 use super::*;
-use crate::log::{AssistantOutput, ContentBlock, LogEntry, Payload, Timestamp};
+use crate::log::{AssistantOutput, LogEntry, Payload, Timestamp};
 
 fn at(seq: Seq, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 0,
-        at: Timestamp(seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload).with_at(Timestamp(seq))
 }
 fn user(seq: Seq) -> LogEntry {
-    at(seq, Payload::User(vec![ContentBlock::Text("u".into())]))
+    at(seq, Payload::user("u"))
 }
 
 #[test]
@@ -57,16 +50,15 @@ fn responses_call(seq: Seq, call_id: &str) -> LogEntry {
     use crate::log::{CallId, ResponsesOutputItem};
     at(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::Responses(vec![ResponsesOutputItem::FunctionCall {
+        Payload::assistant(AssistantOutput::Responses(vec![
+            ResponsesOutputItem::FunctionCall {
                 id: None,
                 call_id: CallId(call_id.into()),
                 name: "bash".into(),
                 arguments: "{}".into(),
                 status: None,
-            }]),
-            excluded: None,
-        },
+            },
+        ])),
     )
 }
 

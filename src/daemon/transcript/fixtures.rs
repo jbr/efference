@@ -1,8 +1,8 @@
 //! Logs for the conversation and zoom tests, built through the production appenders.
 
 use crate::log::{
-    Approval, AssistantOutput, ContentBlock, GateDecision, Origin, Payload, Seq, Spot, Stance,
-    Telemetry, ToolCall,
+    Approval, AssistantOutput, ContentBlock, GateDecision, Payload, Seq, Spot, Stance, Telemetry,
+    ToolCall,
 };
 use crate::persist::Log;
 
@@ -85,15 +85,7 @@ pub(super) fn ask(id: &str, question: &str) -> ToolCall {
 
 /// A prose-rung spotter verdict, as the cascade logs it before the gate.
 pub(super) fn spot(id: &str, stance: Stance, reason: &str) -> Payload {
-    Payload::Spot(Spot {
-        call_id: id.into(),
-        stance,
-        reason: reason.into(),
-        origin: Origin::Model,
-        model: None,
-        probed_prefix: None,
-        axes: None,
-    })
+    Payload::Spot(Spot::new(id, stance, reason))
 }
 
 /// A gate decision's record, as `resolve_approval` appends it.

@@ -6,10 +6,7 @@ use crate::log::Telemetry;
 use crate::frontend::SubmittedTurn;
 
 fn session() -> Arc<Session> {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     shared
 }
 
@@ -308,10 +305,11 @@ fn the_reply_projects_as_a_result_with_the_submitters_label() {
     shared
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         )
         .unwrap();
     shared
@@ -336,10 +334,11 @@ fn the_reply_projects_as_a_result_with_the_submitters_label() {
     plain
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         )
         .unwrap();
     plain
@@ -360,10 +359,11 @@ fn the_reply_projects_as_a_result_with_the_submitters_label() {
     unanswered
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         )
         .unwrap();
     unanswered

@@ -1,6 +1,6 @@
 use super::super::fixtures::*;
 use super::*;
-use crate::log::{Approval, Axes, Keep, Origin, Precedent, Triaged};
+use crate::log::{Approval, Axes, Keep, Precedent, Triaged};
 
 fn child<'a>(me: Option<&'a str>) -> Reading<'a> {
     Reading {
@@ -31,14 +31,13 @@ fn a_gated_call_shows_its_decision_trail_and_raw_result() {
             ),
         ],
     ));
-    log.add(Payload::Spot(Spot {
-        call_id: "toolu_1".into(),
-        stance: Stance::Gate,
-        reason: "level 2 (scope fit, 21%): needs 1 approved call like it, found none.".into(),
-        origin: Origin::Model,
-        model: None,
-        probed_prefix: None,
-        axes: Some(Axes {
+    log.add(Payload::Spot(
+        Spot::new(
+            "toolu_1",
+            Stance::Gate,
+            "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
+        )
+        .with_axes(Some(Axes {
             in_scope: 0.21,
             precedent: Some(Precedent {
                 candidates: 0,
@@ -48,8 +47,8 @@ fn a_gated_call_shows_its_decision_trail_and_raw_result() {
                 compared: Vec::new(),
             }),
             ..Axes::default()
-        }),
-    }));
+        })),
+    ));
     log.add(decision(
         "toolu_1",
         Approval::Approve,

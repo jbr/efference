@@ -2,18 +2,13 @@
 
 use super::*;
 use crate::log::Telemetry;
-use crate::log::{AssistantOutput, ContentBlock, RawResult, Resumed, ToolCall, WireState};
+use crate::log::{AssistantOutput, RawResult, Resumed, ToolCall, WireState};
 use crate::persist::Log;
 
 fn entry(seq: u64, at: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(at),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(at))
 }
 
 fn stage(request: u64, origin: RequestOrigin, stage: RequestStageKind) -> Payload {
@@ -23,20 +18,15 @@ fn stage(request: u64, origin: RequestOrigin, stage: RequestStageKind) -> Payloa
 }
 
 fn assistant_calling(call: ToolCall) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call]),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![],
+        vec![call],
+    ))
 }
 
 fn resumed() -> Payload {
-    Payload::Resumed(Resumed {
-        gap_ms: 5,
-        lost_processes: Vec::new(),
-        resumes_after: None,
-        pending_calls: Vec::new(),
-        tools_changed: Default::default(),
-    })
+    Payload::Resumed(Resumed::new(5))
 }
 
 fn fold(payloads: Vec<(u64, Payload)>) -> Operations {
@@ -143,12 +133,7 @@ fn a_resumed_entry_closes_everything_before_it() {
             20,
             assistant_calling(ToolCall::new("bash", "t1", json!({"command": "ls"}))),
         ),
-        (
-            30,
-            Payload::Telemetry(Telemetry::CallStarted {
-                call_id: "t1".into(),
-            }),
-        ),
+        (30, Payload::Telemetry(Telemetry::call_started("t1"))),
         (40, resumed()),
     ]);
     assert_eq!(ops.json(), Value::Null);
@@ -170,12 +155,7 @@ fn a_started_call_is_running_until_its_result() {
         ToolCall::new("bash", "t1", json!({"command": "cargo test"})).with_intent("run the suite");
     let started = vec![
         (10, assistant_calling(call)),
-        (
-            20,
-            Payload::Telemetry(Telemetry::CallStarted {
-                call_id: "t1".into(),
-            }),
-        ),
+        (20, Payload::Telemetry(Telemetry::call_started("t1"))),
     ];
     let ops = fold(started.clone());
     assert_eq!(
@@ -200,12 +180,7 @@ fn only_a_bash_call_carries_its_command() {
             10,
             assistant_calling(ToolCall::new("read", "t1", json!({"command": "x"}))),
         ),
-        (
-            20,
-            Payload::Telemetry(Telemetry::CallStarted {
-                call_id: "t1".into(),
-            }),
-        ),
+        (20, Payload::Telemetry(Telemetry::call_started("t1"))),
     ]);
     assert!(ops.json()["tools"][0].get("command").is_none());
 }
@@ -228,13 +203,8 @@ fn a_user_entry_clears_running_calls() {
             10,
             assistant_calling(ToolCall::new("bash", "t1", json!({"command": "sleep 99"}))),
         ),
-        (
-            20,
-            Payload::Telemetry(Telemetry::CallStarted {
-                call_id: "t1".into(),
-            }),
-        ),
-        (30, Payload::User(vec![ContentBlock::Text("stop".into())])),
+        (20, Payload::Telemetry(Telemetry::call_started("t1"))),
+        (30, Payload::user("stop")),
     ]);
     assert_eq!(ops.json(), Value::Null);
 }
@@ -243,7 +213,7 @@ fn a_user_entry_clears_running_calls() {
 /// stay unique, appends the stages, and reports through `GET /state`.
 #[test]
 fn the_session_view_follows_appends() {
-    let (session, _turns) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (session, _turns) = Session::in_memory();
     let state = |session: &Session| -> Value {
         serde_json::from_str::<Value>(&session.state_json()).unwrap()["current_operations"].clone()
     };
@@ -282,7 +252,7 @@ fn a_session_opened_from_a_log_folds_it() {
     let mut log = Log::in_memory();
     log.append(1, stage(0, RequestOrigin::Turn, RequestStageKind::Sent))
         .unwrap();
-    let (session, _turns) = Session::new(std::env::current_dir().unwrap(), log);
+    let (session, _turns) = Session::from_log(log);
     let state = |session: &Session| -> Value {
         serde_json::from_str::<Value>(&session.state_json()).unwrap()["current_operations"].clone()
     };

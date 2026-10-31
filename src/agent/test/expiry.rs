@@ -5,24 +5,12 @@ use crate::inbox::MAX_UNMENTIONED_SHOWS;
 use crate::log::Telemetry;
 
 fn idle_triage() -> Payload {
-    Payload::Triage(Triage {
-        for_result: None,
-        origin: Origin::Model,
-        raw_keep: String::new(),
-        inbox: Vec::new(),
-        surfaced: Vec::new(),
-        retries: Vec::new(),
-        thinking: Vec::new(),
-        shown_through: None,
-    })
+    Payload::Triage(Triage::new(None, String::new()))
 }
 
 #[test]
 fn an_unmentioned_notification_expires_with_a_log_entry_after_the_cap() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let seq = shared
         .append(
             0,

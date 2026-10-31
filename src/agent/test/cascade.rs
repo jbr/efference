@@ -120,14 +120,10 @@ impl Spotter for RecordingSpotter {
 
 /// A session whose effective policy is `role` — the parent in a bound-approve test.
 pub(super) fn parent_with(role: crate::config::Config) -> Arc<Session> {
-    let (shared, _rx) = Session::with_role(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-        crate::config::LoadedConfig {
-            role,
-            source: crate::config::ConfigSource::Default,
-        },
-    );
+    let (shared, _rx) = Session::in_memory_with_role(crate::config::LoadedConfig {
+        role,
+        ..crate::config::LoadedConfig::default()
+    });
     shared
 }
 
@@ -315,10 +311,7 @@ async fn the_spotter_judges_the_leaf_with_the_chain() {
 /// asked a question it has no way to answer (docs/permissions.md, docs/tools.md).
 #[tokio::test]
 async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let toolbox = Toolbox::bash_only();
     let call = call("ferritin");
     let decision = run_call(
@@ -444,10 +437,7 @@ async fn a_deny_or_an_escalate_clears_on_the_fast_path() {
 /// where the verb itself refuses the target (docs/permissions.md).
 #[tokio::test]
 async fn only_an_allow_is_bound() {
-    let (shared, _rx) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _rx) = Session::in_memory();
     let toolbox = with_agent_verbs("parent");
     let run = async |call: &ToolCall| {
         run_call(

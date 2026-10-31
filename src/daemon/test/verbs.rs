@@ -10,18 +10,15 @@ use crate::frontend::SubmittedTurn;
 use serde_json::json;
 
 fn session() -> Arc<Session> {
-    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
+    Session::in_memory().0
 }
 
 fn assistant(text: &str) -> Payload {
-    Payload::Assistant {
-        output: crate::log::AssistantOutput::from_legacy_messages(
-            vec![],
-            vec![ContentBlock::Text(text.into())],
-            vec![],
-        ),
-        excluded: None,
-    }
+    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![ContentBlock::Text(text.into())],
+        vec![],
+    ))
 }
 
 /// A session whose last turn is unanswered: the idle loop has a continue in it.

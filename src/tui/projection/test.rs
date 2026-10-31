@@ -1,32 +1,19 @@
 use super::*;
-use crate::log::{Keep, RawResult, Timestamp, ToolCall, Triaged};
+use crate::log::{Keep, RawResult, ToolCall, Triaged};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload).with_turn(1)
 }
 
 fn assistant(text: Vec<ContentBlock>, calls: Vec<ToolCall>) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(vec![], text, calls),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(vec![], text, calls))
 }
 
 /// A user turn, an assistant turn with markdown + a tool call, and a tool
 /// result — the three shapes the transcript is built from.
 fn sample_log() -> Vec<LogEntry> {
     vec![
-        entry(
-            1,
-            Payload::User(vec![ContentBlock::Text("hello there".into())]),
-        ),
+        entry(1, Payload::user("hello there")),
         entry(
             2,
             assistant(
@@ -515,15 +502,9 @@ fn an_elided_result_names_the_elision_in_its_header() {
 /// (docs/context.md). Any other sourced turn still renders.
 #[test]
 fn the_kickoff_turn_is_not_drawn() {
-    let mut kickoff = entry(
-        0,
-        Payload::User(vec![ContentBlock::Text("greet them".into())]),
-    );
+    let mut kickoff = entry(0, Payload::user("greet them"));
     kickoff.source = Some(crate::frontend::KICKOFF_SOURCE.to_string());
-    let mut sourced = entry(
-        2,
-        Payload::User(vec![ContentBlock::Text("from web".into())]),
-    );
+    let mut sourced = entry(2, Payload::user("from web"));
     sourced.source = Some("web".to_string());
     let log = vec![
         kickoff,
@@ -551,10 +532,7 @@ fn the_kickoff_turn_is_not_drawn() {
 /// turn.
 #[test]
 fn a_handoff_brief_is_drawn_as_the_predecessors_note() {
-    let mut brief = entry(
-        0,
-        Payload::User(vec![ContentBlock::Text("carry on".into())]),
-    );
+    let mut brief = entry(0, Payload::user("carry on"));
     brief.source = Some(crate::frontend::handoff_source("old-leaf"));
     let doc = project(
         &[brief],
@@ -571,10 +549,7 @@ fn a_handoff_brief_is_drawn_as_the_predecessors_note() {
 /// brackets.
 #[test]
 fn a_sourced_turn_keeps_its_source_verbatim() {
-    let mut turn = entry(
-        1,
-        Payload::User(vec![ContentBlock::Text("Groom the backlog.".into())]),
-    );
+    let mut turn = entry(1, Payload::user("Groom the backlog."));
     turn.source = Some("mcp[claude-code]".into());
     let doc = project(
         &[turn],
@@ -663,16 +638,7 @@ fn a_worktree_entry_renders_as_a_notice_line() {
 /// wire notice and already opens with `⟢`, so the annotation supplies none.
 #[test]
 fn a_resumed_notice_carries_one_glyph() {
-    let log = [entry(
-        1,
-        Payload::Resumed(crate::log::Resumed {
-            gap_ms: 45_000,
-            lost_processes: Vec::new(),
-            resumes_after: None,
-            pending_calls: Vec::new(),
-            tools_changed: Default::default(),
-        }),
-    )];
+    let log = [entry(1, Payload::Resumed(crate::log::Resumed::new(45_000)))];
     let doc = project(
         &log,
         &LiveTail::default(),

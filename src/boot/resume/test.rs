@@ -3,8 +3,8 @@ use super::*;
 use crate::boot::prepare;
 use crate::log::Telemetry;
 use crate::log::{
-    AssistantOutput, CallId, ContentBlock, ExitOutcome, ProcessEvent, ProcessEventKind,
-    ProcessExit, ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,
+    AssistantOutput, CallId, ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit,
+    ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,
 };
 use crate::recovery::{CallState, last_live_completion, pending_batch};
 use crate::session_dir::SESSION_BASE;
@@ -48,18 +48,15 @@ async fn left_behind(root: &Root, id: &str, extra: impl FnOnce(&mut Log)) {
 }
 
 fn call_assistant(call: &str) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            vec![],
-            vec![],
-            vec![ToolCall::new(
-                "bash",
-                call,
-                serde_json::json!({"command": "ls"}),
-            )],
-        ),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![],
+        vec![ToolCall::new(
+            "bash",
+            call,
+            serde_json::json!({"command": "ls"}),
+        )],
+    ))
 }
 
 fn spawned(id: u64) -> Payload {
@@ -97,8 +94,7 @@ fn dir_contents(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
 async fn a_clean_log_resumes_with_its_state() {
     let root = Root::new("resume-clean");
     left_behind(&root, "clean", |log| {
-        log.append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
-            .unwrap();
+        log.append(1, Payload::user("hi")).unwrap();
         log.append(1, call_assistant("call_1")).unwrap();
         log.append(
             1,
@@ -121,10 +117,7 @@ async fn a_clean_log_resumes_with_its_state() {
         .unwrap();
         log.append(
             3,
-            Payload::Title(Title {
-                text: "Listing things".into(),
-                author: TitleAuthor::Operator,
-            }),
+            Payload::Title(Title::new("Listing things", TitleAuthor::Operator)),
         )
         .unwrap();
     })
@@ -183,8 +176,7 @@ async fn a_clean_log_resumes_with_its_state() {
 async fn a_mid_batch_log_rolls_back() {
     let root = Root::new("resume-mid");
     left_behind(&root, "mid", |log| {
-        log.append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
-            .unwrap();
+        log.append(1, Payload::user("go")).unwrap();
         log.append(1, call_assistant("call_9")).unwrap();
         log.append(1, spawned(4)).unwrap();
     })
@@ -245,13 +237,8 @@ async fn a_started_call_rolls_back_once() {
     let root = Root::new("resume-started");
     left_behind(&root, "started", |log| {
         log.append(1, call_assistant("call_2")).unwrap();
-        log.append(
-            1,
-            Payload::Telemetry(Telemetry::CallStarted {
-                call_id: "call_2".into(),
-            }),
-        )
-        .unwrap();
+        log.append(1, Payload::Telemetry(Telemetry::call_started("call_2")))
+            .unwrap();
     })
     .await;
     let registry = codex_registry(root.path(), "started");
@@ -285,8 +272,7 @@ async fn a_started_call_rolls_back_once() {
 async fn a_gate_held_log_resumes_at_the_gate() {
     let root = Root::new("resume-gate");
     left_behind(&root, "gate", |log| {
-        log.append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
-            .unwrap();
+        log.append(1, Payload::user("go")).unwrap();
         log.append(1, call_assistant("call_5")).unwrap();
         log.append(1, gate_spot("call_5")).unwrap();
     })
@@ -318,47 +304,35 @@ async fn a_gate_held_log_resumes_at_the_gate() {
 }
 
 fn at(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(seq))
 }
 
 fn user(seq: u64) -> LogEntry {
-    at(seq, Payload::User(vec![ContentBlock::Text("hi".into())]))
+    at(seq, Payload::user("hi"))
 }
 
 fn calls_assistant(ids: &[&str]) -> Payload {
-    Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(
-            vec![],
-            vec![],
-            ids.iter()
-                .map(|id| ToolCall::new("bash", *id, serde_json::json!({"command": "ls"})))
-                .collect(),
-        ),
-        excluded: None,
-    }
+    Payload::assistant(AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![],
+        ids.iter()
+            .map(|id| ToolCall::new("bash", *id, serde_json::json!({"command": "ls"})))
+            .collect(),
+    ))
 }
 
 fn started(id: &str) -> Payload {
-    Payload::Telemetry(Telemetry::CallStarted { call_id: id.into() })
+    Payload::Telemetry(Telemetry::call_started(id))
 }
 
 fn gate_spot(id: &str) -> Payload {
-    Payload::Spot(crate::log::Spot {
-        call_id: id.into(),
-        stance: crate::log::Stance::Gate,
-        reason: "out of scope".into(),
-        origin: crate::log::Origin::Model,
-        model: None,
-        probed_prefix: None,
-        axes: None,
-    })
+    Payload::Spot(crate::log::Spot::new(
+        id,
+        crate::log::Stance::Gate,
+        "out of scope",
+    ))
 }
 
 fn result(id: &str, wire: WireState) -> Payload {
@@ -388,13 +362,7 @@ fn calls_classify_by_what_the_log_holds() {
         at(3, result("a", WireState::Raw)),
         at(4, started("b")),
         at(5, result("b", WireState::Pending)),
-        at(
-            6,
-            Payload::ResultVerdict {
-                for_result: 5,
-                wire: WireState::Raw,
-            },
-        ),
+        at(6, Payload::result_verdict(5, WireState::Raw)),
         at(7, started("c")),
         at(8, result("c", WireState::Pending)),
         at(9, started("e")),

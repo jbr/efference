@@ -5,19 +5,7 @@ use super::*;
 /// One config edit in a given lifecycle state, as a log entry (seq/turn/at are irrelevant to
 /// the fold — only `state` gates whether the change takes effect).
 fn edit_entry(state: EditState, change: ConfigChange) -> LogEntry {
-    LogEntry {
-        seq: 0,
-        turn: 0,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload: Payload::ConfigEdit(ConfigEdit {
-            state,
-            resolves: None,
-            change,
-            note: String::new(),
-        }),
-    }
+    LogEntry::new(0, Payload::ConfigEdit(ConfigEdit::new(state, change)))
 }
 
 /// The common case: a committed change (the fold applies it).

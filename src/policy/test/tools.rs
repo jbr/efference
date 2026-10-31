@@ -1,6 +1,7 @@
 //! Structured-tool classification: name grants and filesystem path perms.
 
 use super::*;
+use crate::config::testing::ConfigFixture;
 
 #[test]
 fn structured_tool_gates_without_a_name_grant() {
@@ -8,12 +9,7 @@ fn structured_tool_gates_without_a_name_grant() {
     let c = call("read", serde_json::json!({ "paths": ["src/main.rs"] }));
     assert_eq!(structured(&Config::default(), &c), Verdict::Gate);
     // Even with a path grant, an un-granted *name* gates.
-    let role = role(
-        r#"
-        [paths]
-        "." = true
-        "#,
-    );
+    let role = ConfigFixture::new().with_path(".", true, true).build();
     assert_eq!(structured(&role, &c), Verdict::Gate);
 }
 
@@ -124,19 +120,13 @@ fn a_nested_deny_carves_an_exclusion_out_of_an_allowed_parent() {
     // The self-surface stack the harness injects in `serve`: allow `.`, deny the whole
     // `.efference/` base, re-allow read-only on *this* session's `config.toml`. Resolution
     // is longest-prefix-wins, so each target is judged by its most specific grant.
-    let role = role(
-        r#"
-        [tools]
-        efference = { enabled = true }
-        "efference.read" = { granted = true }
-        "efference.write" = { granted = true }
-
-        [paths]
-        "." = true
-        ".efference" = false
-        ".efference/sess/config.toml" = { read = true }
-        "#,
-    );
+    let role = ConfigFixture::new()
+        .with_tool("read")
+        .with_tool("write")
+        .with_path(".", true, true)
+        .with_path(".efference", false, false)
+        .with_path(".efference/sess/config.toml", true, false)
+        .build();
     let read = |p: &str| structured(&role, &call("read", serde_json::json!({ "paths": [p] })));
     let write = |p: &str| structured(&role, &call("write", serde_json::json!({ "path": p })));
 

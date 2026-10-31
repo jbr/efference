@@ -6,7 +6,7 @@ use crate::daemon::status::SessionStatus;
 use crate::log::Approval;
 
 fn session() -> Arc<Session> {
-    Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0
+    Session::in_memory().0
 }
 
 /// A reply answers a held session's question and releases the hold, as any submit does

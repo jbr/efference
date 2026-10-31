@@ -97,16 +97,7 @@ fn serve(
 
 /// A Messages client against `addr` with a 131072-token window and a 65536 output cap.
 fn client(addr: std::net::SocketAddr) -> Client {
-    let endpoint = Endpoint {
-        provider: Provider::OpenRouter,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::OpenRouter, format!("http://{addr}/v1/messages"));
     Client::new(endpoint, "m", "sys", None)
         .with_max_output(65_536)
         .with_context_window(Some(131_072))

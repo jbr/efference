@@ -1,6 +1,6 @@
 use super::*;
 use crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES;
-use crate::log::{ContentBlock, RawResult, WireState};
+use crate::log::{RawResult, WireState};
 
 fn one_entry(payload: Payload) -> LogEntry {
     let mut log = Log::in_memory();
@@ -9,7 +9,7 @@ fn one_entry(payload: Payload) -> LogEntry {
 }
 
 fn user(text: &str) -> Payload {
-    Payload::User(vec![ContentBlock::Text(text.into())])
+    Payload::user(text)
 }
 
 /// A verdict frame states the line counts of the result it decides, read through the
@@ -30,16 +30,16 @@ fn a_verdict_frame_carries_the_counts_of_the_result_it_names() {
     .expect("in-memory append");
     log.append(
         1,
-        Payload::ResultVerdict {
-            for_result: 0,
-            wire: WireState::from(crate::log::Triaged::new(crate::log::Keep::Ranges(vec![(
+        Payload::result_verdict(
+            0,
+            WireState::from(crate::log::Triaged::new(crate::log::Keep::Ranges(vec![(
                 1, 6,
             )]))),
-        },
+        ),
     )
     .expect("in-memory append");
     let entries = log.entries().to_vec();
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), log);
+    let (shared, _turns_rx) = Session::from_log(log);
 
     // What the tail resolves for this entry, and what the `/log` window serves for it.
     let resolved = stream::result_raw(&entries[1], &shared);

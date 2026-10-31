@@ -18,16 +18,14 @@ fn tail_with_riders() -> (Vec<String>, Vec<String>) {
     let call = ToolCall::new("read", "read_1", json!({}));
     let raw = RawResult::text("alpha\nbeta");
     let prefix = vec![
-        entry(
-            1,
-            Payload::User(vec![crate::log::ContentBlock::Text("go".into())]),
-        ),
+        entry(1, Payload::user("go")),
         entry(
             2,
-            Payload::Assistant {
-                output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         ),
     ];
     let pending = [Pending {

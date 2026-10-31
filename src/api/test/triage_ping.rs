@@ -62,16 +62,10 @@ fn two_request_backend() -> (std::net::SocketAddr, std::thread::JoinHandle<Vec<S
 #[tokio::test]
 async fn the_triage_ping_body_is_the_primers_body() {
     let (addr, server) = two_request_backend();
-    let endpoint = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some(format!("http://{addr}/backend-api/codex/responses")),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(
+        Provider::OpenAICodex,
+        format!("http://{addr}/backend-api/codex/responses"),
+    );
     let client = Client::new(endpoint, "gpt-6.1-sol", "sys", None)
         .with_prompt_cache(PromptCachePolicy::Implicit);
     let turns = vec![crate::project::WireTurn::text("hello")];

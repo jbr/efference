@@ -23,10 +23,10 @@ fn say(log: &mut Fixture, text: &str) -> Seq {
 fn chatter(log: &mut Fixture, count: usize) {
     for i in 0..count {
         say(log, &format!("message {i}"));
-        log.add(Payload::Title(Title {
-            text: format!("title {i}"),
-            author: TitleAuthor::Triage,
-        }));
+        log.add(Payload::Title(Title::new(
+            format!("title {i}"),
+            TitleAuthor::Triage,
+        )));
     }
 }
 
@@ -88,12 +88,12 @@ fn a_cut_does_not_open_on_a_verdict() {
     ));
     say(&mut log, "one");
     say(&mut log, "two");
-    log.add(Payload::ResultVerdict {
-        for_result: result,
-        wire: Triaged::new(Keep::Ranges(vec![(1, 1)]))
+    log.add(Payload::result_verdict(
+        result,
+        Triaged::new(Keep::Ranges(vec![(1, 1)]))
             .with_note("1 failure")
             .into(),
-    });
+    ));
     say(&mut log, "three");
     // The verdict (seq 5) lands before "three", so a window of "three" alone holds none.
     assert_eq!(

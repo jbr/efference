@@ -45,25 +45,20 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 fn session() -> Arc<Session> {
-    let (shared, _) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _) = Session::in_memory();
     shared
-        .append(
-            0,
-            Payload::User(vec![ContentBlock::Text("inspect this source".into())]),
-        )
+        .append(0, Payload::user("inspect this source"))
         .unwrap();
     shared
         .append(
             0,
-            Payload::Assistant {
-                output: AssistantOutput::Messages(vec![crate::log::MessagesOutputBlock::ToolUse(
-                    ToolCall::new("read", "r", serde_json::json!({"path":"source.rs"})),
-                )]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::Messages(vec![
+                crate::log::MessagesOutputBlock::ToolUse(ToolCall::new(
+                    "read",
+                    "r",
+                    serde_json::json!({"path":"source.rs"}),
+                )),
+            ])),
         )
         .unwrap();
     shared
@@ -79,10 +74,7 @@ fn session() -> Arc<Session> {
     shared
         .append(
             0,
-            Payload::Assistant {
-                output: response("the investigation is complete"),
-                excluded: None,
-            },
+            Payload::assistant(response("the investigation is complete")),
         )
         .unwrap();
     shared
@@ -148,16 +140,7 @@ fn mock(text: &str, fail: bool) -> Mock {
             sock.write_all(reply.as_bytes()).unwrap();
         }
     });
-    let endpoint = Endpoint {
-        provider: Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: vec![],
-        request: Default::default(),
-        base: None,
-    };
+    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
     Mock {
         client: Client::new(endpoint, "m", "sys", None),
         requests,
@@ -184,12 +167,7 @@ async fn unchanged_skip_not_rechecked_but_new_forward_context_is() {
             .iter()
             .any(|e| matches!(e.payload, Payload::Summary(_)))
     );
-    shared
-        .append(
-            1,
-            Payload::User(vec![ContentBlock::Text("next task".into())]),
-        )
-        .unwrap();
+    shared.append(1, Payload::user("next task")).unwrap();
     if let Some(task) = check.check(&shared) {
         task.await.unwrap();
     }
@@ -247,12 +225,7 @@ async fn adopts_account_then_waits_for_new_tool_work() {
             .iter()
             .any(|e| matches!(e.payload, Payload::Summary(_)))
     );
-    shared
-        .append(
-            1,
-            Payload::User(vec![ContentBlock::Text("new task".into())]),
-        )
-        .unwrap();
+    shared.append(1, Payload::user("new task")).unwrap();
     if let Some(task) = check.check(&shared) {
         task.await.unwrap();
     }
@@ -264,12 +237,7 @@ fn frozen_adoption_preserves_new_messages_and_rejects_new_folds() {
     let shared = session();
     let frozen = shared.snapshot();
     let span = consolidate::candidate(&frozen).unwrap();
-    shared
-        .append(
-            1,
-            Payload::User(vec![ContentBlock::Text("new direction".into())]),
-        )
-        .unwrap();
+    shared.append(1, Payload::user("new direction")).unwrap();
     assert!(
         shared
             .adopt_consolidation(&frozen, span, "account".into())
@@ -302,18 +270,17 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
     let span = consolidate::candidate(&frozen).unwrap();
     // Work the trajectory did while the account was being written: a call still
     // waiting for its result, and a verdict on a result after the snapshot.
-    shared
-        .append(1, Payload::User(vec![ContentBlock::Text("go on".into())]))
-        .unwrap();
+    shared.append(1, Payload::user("go on")).unwrap();
     shared
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::Messages(vec![crate::log::MessagesOutputBlock::ToolUse(
-                    ToolCall::new("read", "later", serde_json::json!({"path":"other.rs"})),
-                )]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::Messages(vec![
+                crate::log::MessagesOutputBlock::ToolUse(ToolCall::new(
+                    "read",
+                    "later",
+                    serde_json::json!({"path":"other.rs"}),
+                )),
+            ])),
         )
         .unwrap();
     let later = shared
@@ -323,13 +290,7 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
         )
         .unwrap();
     shared
-        .append(
-            1,
-            Payload::ResultVerdict {
-                for_result: later,
-                wire: WireState::Elided,
-            },
-        )
+        .append(1, Payload::result_verdict(later, WireState::Elided))
         .unwrap();
     assert!(
         shared
@@ -343,13 +304,7 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
     let frozen = shared.snapshot();
     let span = consolidate::candidate(&frozen).unwrap();
     shared
-        .append(
-            1,
-            Payload::ResultVerdict {
-                for_result: span.upto,
-                wire: WireState::Elided,
-            },
-        )
+        .append(1, Payload::result_verdict(span.upto, WireState::Elided))
         .unwrap();
     assert!(
         !shared
@@ -364,16 +319,13 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
     shared
         .append(
             1,
-            Payload::Assistant {
-                output: AssistantOutput::Messages(vec![crate::log::MessagesOutputBlock::ToolUse(
-                    ToolCall::new(
-                        consolidate::NAME,
-                        "manual",
-                        serde_json::json!({"summary":"s"}),
-                    ),
-                )]),
-                excluded: None,
-            },
+            Payload::assistant(AssistantOutput::Messages(vec![
+                crate::log::MessagesOutputBlock::ToolUse(ToolCall::new(
+                    consolidate::NAME,
+                    "manual",
+                    serde_json::json!({"summary":"s"}),
+                )),
+            ])),
         )
         .unwrap();
     assert!(
@@ -392,17 +344,12 @@ fn instruction_names_what_follows_the_range() {
 
     // An operator message that arrived mid-work, with no report before it,
     // anchors the range instead.
-    let (shared, _) = Session::new(
-        std::env::current_dir().unwrap(),
-        crate::persist::Log::in_memory(),
-    );
+    let (shared, _) = Session::in_memory();
     for payload in entries
         .iter()
         .take_while(|e| e.seq <= span.upto)
         .map(|e| e.payload.clone())
-        .chain([Payload::User(vec![ContentBlock::Text(
-            "actually, the ui".into(),
-        )])])
+        .chain([Payload::user("actually, the ui")])
     {
         shared.append(0, payload).unwrap();
     }

@@ -71,20 +71,9 @@ fn serve(responses: Vec<String>) -> (String, mpsc::Receiver<String>) {
     (base, rx)
 }
 
-/// An endpoint that points `provider` at a local server. A literal because
-/// `Endpoint::from_credentials` resolves a named provider's own URL, which is the one
-/// thing this test must not have.
+/// An endpoint that points `provider` at a local server.
 fn endpoint(base: &str, provider: Provider) -> Endpoint {
-    Endpoint {
-        provider,
-        url: Some(format!("{base}/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    }
+    Endpoint::at(provider, format!("{base}/messages"))
 }
 
 /// Two turns on a native Anthropic client: the first opts in with an explicit `null`, the

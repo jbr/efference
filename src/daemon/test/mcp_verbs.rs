@@ -11,7 +11,7 @@ use mcplease::types::RequestContext;
 
 /// A session named `child`, as a host names it.
 fn child() -> Arc<Session> {
-    let (shared, _turns) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns) = Session::in_memory();
     shared.set_identity(SessionIdentity {
         id: "child".into(),
         title: None,
@@ -48,14 +48,11 @@ fn issue(shared: &Session, call: &ToolCall) -> String {
     shared
         .append(
             1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call.clone()],
-                ),
-                excluded: None,
-            },
+            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call.clone()],
+            )),
         )
         .unwrap()
         .to_string()
@@ -260,9 +257,7 @@ async fn every_sender_names_the_question() {
 #[tokio::test]
 async fn post_turns_holds_every_client_to_naming_its_question() {
     let shared = child();
-    shared
-        .append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
-        .unwrap();
+    shared.append(1, Payload::user("go")).unwrap();
     let ask = ToolCall::new(
         crate::log::ASK,
         "toolu_q",

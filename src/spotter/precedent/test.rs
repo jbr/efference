@@ -1,24 +1,18 @@
 use super::*;
 use crate::log::Telemetry;
-use crate::log::{AssistantOutput, Origin, Spot, Timestamp, ToolOutcome, ToolTelemetry};
+use crate::log::{AssistantOutput, Spot, ToolOutcome, ToolTelemetry};
 use serde_json::json;
 
 fn entry(payload: Payload) -> LogEntry {
-    LogEntry {
-        seq: 0,
-        turn: 1,
-        at: Timestamp(0),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(0, payload).with_turn(1)
 }
 
 fn assistant(calls: Vec<ToolCall>) -> LogEntry {
-    entry(Payload::Assistant {
-        output: AssistantOutput::from_legacy_messages(vec![], vec![], calls),
-        excluded: None,
-    })
+    entry(Payload::assistant(AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![],
+        calls,
+    )))
 }
 
 fn call(id: &str, command: &str) -> ToolCall {
@@ -39,15 +33,7 @@ fn ran(id: &str) -> LogEntry {
 }
 
 fn spot(id: &str, stance: Stance) -> LogEntry {
-    entry(Payload::Spot(Spot {
-        call_id: id.into(),
-        stance,
-        reason: String::new(),
-        origin: Origin::Model,
-        model: None,
-        probed_prefix: None,
-        axes: None,
-    }))
+    entry(Payload::Spot(Spot::new(id, stance, String::new())))
 }
 
 fn ids(calls: &[ToolCall]) -> Vec<&str> {

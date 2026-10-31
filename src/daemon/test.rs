@@ -17,7 +17,7 @@ fn temp_file(name: &str) -> PathBuf {
 }
 
 fn user(text: &str) -> Payload {
-    Payload::User(vec![ContentBlock::Text(text.into())])
+    Payload::user(text)
 }
 
 /// The launch baseline a test host is built with (docs/env.md): the environment a
@@ -42,8 +42,8 @@ fn bash_call(command: &str) -> ToolCall {
 /// stays default: the file's contents reach effective policy through a refresh, like any edit.
 fn file_role(path: &std::path::Path) -> LoadedConfig {
     LoadedConfig {
-        role: crate::config::Config::default(),
         source: ConfigSource::Path(path.to_path_buf()),
+        ..LoadedConfig::default()
     }
 }
 
@@ -56,22 +56,12 @@ fn allow_grant(program: &str) -> Payload {
 /// A committed config edit (the synchronous/direct commit path) as a `Payload` — no prior
 /// proposal to resolve.
 fn committed_edit(change: crate::log::ConfigChange) -> Payload {
-    Payload::ConfigEdit(crate::log::ConfigEdit {
-        state: EditState::Committed,
-        resolves: None,
-        change,
-        note: String::new(),
-    })
+    Payload::ConfigEdit(crate::log::ConfigEdit::new(EditState::Committed, change))
 }
 
 /// A `Proposed` edit as a `Payload`, for driving the lifecycle in tests.
 fn proposed_edit(change: crate::log::ConfigChange) -> Payload {
-    Payload::ConfigEdit(crate::log::ConfigEdit {
-        state: EditState::Proposed,
-        resolves: None,
-        change,
-        note: String::new(),
-    })
+    Payload::ConfigEdit(crate::log::ConfigEdit::new(EditState::Proposed, change))
 }
 
 /// A [`ControlClient`] speaking to the real [`router`] over an in-memory transport.
@@ -175,9 +165,7 @@ async fn next_event(
 fn append_compactable_history(shared: &Session) {
     let long = "x".repeat(crate::daemon::compact::COMPACTION_TAIL_TOKENS * 4);
     for _ in 0..2 {
-        shared
-            .append(1, Payload::User(vec![ContentBlock::Text(long.clone())]))
-            .unwrap();
+        shared.append(1, Payload::user(long.clone())).unwrap();
     }
 }
 

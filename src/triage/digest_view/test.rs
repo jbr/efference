@@ -3,27 +3,19 @@ use crate::log::{AssistantOutput, ContentBlock, Keep, RawResult, Timestamp, Tool
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    LogEntry {
-        seq,
-        turn: 1,
-        at: Timestamp(1_700_000_000_000 + seq),
-        submission_id: None,
-        source: None,
-        payload,
-    }
+    LogEntry::new(seq, payload)
+        .with_turn(1)
+        .with_at(Timestamp(1_700_000_000_000 + seq))
 }
 
 fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     entry(
         seq,
-        Payload::Assistant {
-            output: AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![ContentBlock::Text(text.into())],
-                calls,
-            ),
-            excluded: None,
-        },
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text(text.into())],
+            calls,
+        )),
     )
 }
 
@@ -34,15 +26,15 @@ fn session() -> (Vec<LogEntry>, ToolCall) {
     let triage =
         ToolCall::new("bash", "c2", json!({"command": "cargo test"})).with_intent("run the tests");
     let prefix = vec![
-        entry(1, Payload::User(vec![ContentBlock::Text("fix it".into())])),
+        entry(1, Payload::user("fix it")),
         assistant(2, "Looking around first.", vec![first]),
         entry(
             3,
-            Payload::ToolResult {
-                call_id: "c1".into(),
-                raw: RawResult::text("a.rs\nb.rs"),
-                wire: WireState::Triaged(Triaged::new(Keep::All).with_note("Two files.")),
-            },
+            Payload::tool_result(
+                "c1",
+                RawResult::text("a.rs\nb.rs"),
+                WireState::Triaged(Triaged::new(Keep::All).with_note("Two files.")),
+            ),
         ),
         assistant(4, "Now the tests.", vec![triage.clone()]),
     ];

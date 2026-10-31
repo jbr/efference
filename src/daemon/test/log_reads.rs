@@ -4,29 +4,26 @@
 use super::*;
 
 fn user(text: &str) -> Payload {
-    Payload::User(vec![ContentBlock::Text(text.into())])
+    Payload::user(text)
 }
 
 /// An assistant turn carrying one tool call — the shape `/tool_calls/:call_id` addresses
 /// into, since a call is embedded in an entry rather than being one.
 fn assistant_calling(call_id: &str, command: &str) -> Payload {
-    Payload::Assistant {
-        output: crate::log::AssistantOutput::from_legacy_messages(
-            vec![],
-            vec![],
-            vec![ToolCall::new(
-                crate::bash::NAME,
-                call_id,
-                serde_json::json!({ "command": command }),
-            )],
-        ),
-        excluded: None,
-    }
+    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+        vec![],
+        vec![],
+        vec![ToolCall::new(
+            crate::bash::NAME,
+            call_id,
+            serde_json::json!({ "command": command }),
+        )],
+    ))
 }
 
 /// A log of `n` user entries, seq 0..n.
 fn log_of(n: u64) -> Arc<Session> {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     for i in 0..n {
         shared.append(1, user(&format!("entry {i}"))).unwrap();
     }
@@ -193,7 +190,7 @@ async fn one_entry_by_seq_validates_with_an_etag() {
 /// its result harmless.
 #[tokio::test]
 async fn a_tool_call_resolves_by_its_call_id() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared.append(1, user("run the tests")).unwrap();
     shared
         .append(1, assistant_calling("toolu_9", "cargo test"))
@@ -241,7 +238,7 @@ const IMAGE_BYTES: &[u8] = &[0x52, 0x49, 0x46, 0x46, 0x00, 0x01, 0x02, 0x03];
 /// through `GET /log/:seq/images/:idx` (entry_view.rs, docs/control-api.md).
 #[tokio::test]
 async fn log_reads_reference_images_instead_of_inlining_them() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared.append(1, user("look at this")).unwrap();
     shared.append(1, result_with_image()).unwrap();
     let app = test_server(&shared).await;
@@ -263,7 +260,7 @@ async fn log_reads_reference_images_instead_of_inlining_them() {
 /// malformed addresses are 400s.
 #[tokio::test]
 async fn an_image_resolves_by_seq_and_index() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     shared.append(1, user("look at this")).unwrap();
     shared.append(1, result_with_image()).unwrap();
     let app = test_server(&shared).await;
@@ -300,7 +297,7 @@ async fn an_image_resolves_by_seq_and_index() {
 /// its slot from that one frame states the same numbers.
 #[tokio::test]
 async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let content = (1..=40)
         .map(|i| format!("line {i}"))
         .collect::<Vec<_>>()
@@ -318,12 +315,12 @@ async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
     let verdict_seq = shared
         .append(
             1,
-            Payload::ResultVerdict {
-                for_result: result_seq,
-                wire: crate::log::WireState::from(crate::log::Triaged::new(
-                    crate::log::Keep::Ranges(vec![(1, 6)]),
-                )),
-            },
+            Payload::result_verdict(
+                result_seq,
+                crate::log::WireState::from(crate::log::Triaged::new(crate::log::Keep::Ranges(
+                    vec![(1, 6)],
+                ))),
+            ),
         )
         .unwrap();
     let app = test_server(&shared).await;
@@ -356,7 +353,7 @@ async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
 /// is what every log and fixture written the old way still serves.
 #[tokio::test]
 async fn a_result_logged_with_its_verdict_serves_the_counts_on_itself() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let content = (1..=40)
         .map(|i| format!("line {i}"))
         .collect::<Vec<_>>()
@@ -385,7 +382,7 @@ async fn a_result_logged_with_its_verdict_serves_the_counts_on_itself() {
 
 #[tokio::test]
 async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, _turns_rx) = Session::in_memory();
     let big = "z".repeat(entry_view::MAX_INLINE_RESULT_BYTES * 2);
     let result = |call_id: &str, content: &str| {
         Payload::tool_result(
