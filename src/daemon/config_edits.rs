@@ -90,16 +90,14 @@ impl Session {
         else {
             return Ok(false);
         };
-        let edit = crate::log::ConfigEdit {
-            state: if commit {
-                EditState::Committed
-            } else {
-                EditState::Cancelled
-            },
-            resolves: Some(seq),
-            change,
-            note,
+        let state = if commit {
+            EditState::Committed
+        } else {
+            EditState::Cancelled
         };
+        let edit = crate::log::ConfigEdit::new(state, change)
+            .with_resolves(Some(seq))
+            .with_note(note);
         self.append(self.latest_turn(), Payload::ConfigEdit(edit))?;
         Ok(true)
     }

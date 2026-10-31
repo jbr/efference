@@ -145,15 +145,13 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
             {
                 shared.append(
                     turn,
-                    Payload::ConfigEdit(ConfigEdit {
-                        state: EditState::Proposed,
-                        resolves: None,
-                        change: ConfigChange::Command { command },
-                        note: format!(
-                            "spotter: `{prefix}` judged safe for all arguments — \
-                             proposed for the allowlist"
-                        ),
-                    }),
+                    Payload::ConfigEdit(
+                        ConfigEdit::new(EditState::Proposed, ConfigChange::Command { command })
+                            .with_note(format!(
+                                "spotter: `{prefix}` judged safe for all arguments — \
+                                 proposed for the allowlist"
+                            )),
+                    ),
                 )?;
             }
             match stance {

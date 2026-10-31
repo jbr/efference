@@ -71,6 +71,18 @@ impl Session {
         Self::new(std::env::current_dir().expect("a working directory"), log)
     }
 
+    /// [`Session::in_memory`] under `role` rather than the default one.
+    #[cfg(test)]
+    pub(crate) fn in_memory_with_role(
+        role: LoadedConfig,
+    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        Self::with_role(
+            std::env::current_dir().expect("a working directory"),
+            Log::in_memory(),
+            role,
+        )
+    }
+
     /// Build the shared state under a resolved role and hand back the turn-inbox
     /// receiver for the loop.
     pub fn with_role(

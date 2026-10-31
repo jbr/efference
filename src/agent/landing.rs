@@ -231,13 +231,7 @@ pub(super) async fn land(
                         (WireState::Elided, Origin::Fallback, String::new())
                     }
                 };
-                shared.append(
-                    turn,
-                    Payload::ResultVerdict {
-                        for_result: result_seq,
-                        wire,
-                    },
-                )?;
+                shared.append(turn, Payload::result_verdict(result_seq, wire))?;
                 let last = index == last_ran;
                 shared.append(
                     turn,

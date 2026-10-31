@@ -182,12 +182,8 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
         // The file edit *is* the commit, and it lives in the file by definition → `Persist` (the
         // audit answer to "survives a reboot?" is yes). It does not go through `commit_config_edit`,
         // so it is *not* written back — that would loop against the very write that triggered us.
-        let edit = crate::log::ConfigEdit {
-            state: EditState::Committed,
-            resolves: None,
-            change,
-            note: "config file edited".into(),
-        };
+        let edit = crate::log::ConfigEdit::new(EditState::Committed, change)
+            .with_note("config file edited".into());
         if let Err(e) = shared.append(turn, Payload::ConfigEdit(edit)) {
             shared.warn(format_args!("config-watch: append failed: {e}"));
         }

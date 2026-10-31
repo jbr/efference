@@ -35,10 +35,7 @@ pub(super) async fn put_title(mut conn: Conn) -> Conn {
             ),
         );
     }
-    let title = crate::log::Title {
-        text: text.to_string(),
-        author: crate::log::TitleAuthor::Operator,
-    };
+    let title = crate::log::Title::new(text, crate::log::TitleAuthor::Operator);
     match shared.set_title(title) {
         Ok(Some(_)) => conn
             .with_status(200)

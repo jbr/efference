@@ -178,12 +178,7 @@ pub(super) fn commit_config_edit(
     // proposal to resolve (docs/permissions.md).
     shared.append(
         turn,
-        Payload::ConfigEdit(ConfigEdit {
-            state: EditState::Committed,
-            resolves: None,
-            change,
-            note,
-        }),
+        Payload::ConfigEdit(ConfigEdit::new(EditState::Committed, change).with_note(note)),
     )?;
     let role = shared.effective_config();
     Ok(

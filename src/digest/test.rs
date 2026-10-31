@@ -97,21 +97,15 @@ fn a_verdict_resolves_a_pending_result_and_resumption_skips_are_omitted() {
         ),
         entry(
             3,
-            Payload::ResultVerdict {
-                for_result: 2,
-                wire: WireState::Triaged(Triaged::new(Keep::All).with_note("late note")),
-            },
+            Payload::result_verdict(
+                2,
+                WireState::Triaged(Triaged::new(Keep::All).with_note("late note")),
+            ),
         ),
         user(4, "set aside"),
         entry(
             5,
-            Payload::Resumed(Resumed {
-                gap_ms: 1,
-                lost_processes: vec![],
-                resumes_after: Some(3),
-                pending_calls: vec![],
-                tools_changed: Default::default(),
-            }),
+            Payload::Resumed(Resumed::new(1).with_resumes_after(Some(3))),
         ),
         entry(6, Payload::Summary(Summary::consolidation(0, 3, "summary"))),
     ];
@@ -195,10 +189,10 @@ fn the_cut_marks_the_first_rendered_block_past_it() {
         // Past the cut, but renders nothing: the marker waits for the next block.
         entry(
             4,
-            Payload::ResultVerdict {
-                for_result: 3,
-                wire: WireState::Triaged(Triaged::new(Keep::All).with_note("Defined in a.rs.")),
-            },
+            Payload::result_verdict(
+                3,
+                WireState::Triaged(Triaged::new(Keep::All).with_note("Defined in a.rs.")),
+            ),
         ),
         assistant(5, "It is in a.rs.", vec![]),
     ];

@@ -23,9 +23,7 @@ pub(super) async fn run_approved<F: Frontend>(
     // result is the one a resumed session drops rather than reruns.
     shared.append(
         turn,
-        Payload::Telemetry(Telemetry::CallStarted {
-            call_id: call.id.clone(),
-        }),
+        Payload::Telemetry(Telemetry::call_started(call.id.clone())),
     )?;
     // Approved, so a result triage handles will follow short of an
     // interrupt — fire the primer over the execution window

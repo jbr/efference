@@ -255,13 +255,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
 /// failed.
 fn undecided(shared: &Session, turn: Turn, captured: &[crate::log::Seq]) -> std::io::Result<()> {
     for seq in captured {
-        shared.append(
-            turn,
-            Payload::ResultVerdict {
-                for_result: *seq,
-                wire: WireState::Elided,
-            },
-        )?;
+        shared.append(turn, Payload::result_verdict(*seq, WireState::Elided))?;
     }
     Ok(())
 }

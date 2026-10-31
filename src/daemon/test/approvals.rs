@@ -13,15 +13,11 @@ fn the_gate_carries_the_spotter_reason() {
     shared
         .append(
             0,
-            Payload::Spot(crate::log::Spot {
-                call_id: call.id.clone(),
-                stance: crate::log::Stance::Gate,
-                reason: "deletes outside the git tree — not reversible".into(),
-                origin: crate::log::Origin::Model,
-                model: None,
-                probed_prefix: None,
-                axes: None,
-            }),
+            Payload::Spot(crate::log::Spot::new(
+                call.id.clone(),
+                crate::log::Stance::Gate,
+                "deletes outside the git tree — not reversible",
+            )),
         )
         .unwrap();
     let _gate = shared.register_pending(&call, None, None);
@@ -67,14 +63,10 @@ fn the_gate_carries_the_bound_leaf_action() {
 /// key. The change is accepted back verbatim as the `config_edit` decision.
 #[tokio::test]
 async fn the_gate_carries_its_grant_and_takes_it_back_verbatim() {
-    let (shared, _rx) = Session::with_role(
-        std::env::current_dir().unwrap(),
-        Log::in_memory(),
-        LoadedConfig {
-            role: ConfigFixture::new().with_tool("read").build(),
-            ..LoadedConfig::default()
-        },
-    );
+    let (shared, _rx) = Session::in_memory_with_role(LoadedConfig {
+        role: ConfigFixture::new().with_tool("read").build(),
+        ..LoadedConfig::default()
+    });
     let call = ToolCall::new(
         "read",
         "toolu_x",

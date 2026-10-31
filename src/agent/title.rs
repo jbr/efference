@@ -144,10 +144,7 @@ async fn solicit_title(shared: &Session, ask: &TitleAsk, force: bool) -> bool {
     if current.as_deref() != Some(text.as_str()) {
         log::debug!("title: {text}");
     }
-    let seq = match shared.set_title(Title {
-        text,
-        author: TitleAuthor::Triage,
-    }) {
+    let seq = match shared.set_title(Title::new(text, TitleAuthor::Triage)) {
         Ok(Some(seq)) => seq,
         Ok(None) => return false,
         Err(e) => {

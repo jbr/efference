@@ -273,16 +273,9 @@ fn triage_thinking_round_trips() {
         "attempt 1: the ask wants a verdict, not a work tool".into(),
         "attempt 2: keep the failing assertion, drop the build noise".into(),
     ];
-    let line = serde_json::to_string(&Payload::Triage(crate::log::Triage {
-        for_result: Some(7),
-        origin: crate::log::Origin::Model,
-        raw_keep: "40-52".into(),
-        inbox: Vec::new(),
-        surfaced: Vec::new(),
-        retries: Vec::new(),
-        thinking: thinking.clone(),
-        shown_through: None,
-    }))
+    let line = serde_json::to_string(&Payload::Triage(
+        crate::log::Triage::new(Some(7), "40-52").with_thinking(thinking.clone()),
+    ))
     .unwrap();
 
     match serde_json::from_str::<Payload>(&line).unwrap() {

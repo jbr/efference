@@ -112,18 +112,12 @@ fn latest_title_latest_entry_wins() {
     let entries = vec![
         LogEntry::new(
             1,
-            Payload::Title(Title {
-                text: "First Title".to_string(),
-                author: TitleAuthor::Triage,
-            }),
+            Payload::Title(Title::new("First Title".to_string(), TitleAuthor::Triage)),
         )
         .with_at(Timestamp::now()),
         LogEntry::new(
             2,
-            Payload::Title(Title {
-                text: "Second Title".to_string(),
-                author: TitleAuthor::Triage,
-            }),
+            Payload::Title(Title::new("Second Title".to_string(), TitleAuthor::Triage)),
         )
         .with_at(Timestamp::now()),
     ];
@@ -140,15 +134,9 @@ fn a_spot_carries_the_decision_axes_and_old_entries_still_read() {
         sketch: Some(vec![0.9, 0.05, 0.03, 0.01, 0.01]),
         ..Default::default()
     };
-    let spot = Spot {
-        call_id: CallId("c1".into()),
-        stance: Stance::Clear,
-        reason: "routine (level 0).".into(),
-        origin: Origin::Model,
-        model: Some("jev-1.13.0".into()),
-        probed_prefix: None,
-        axes: Some(axes.clone()),
-    };
+    let spot = Spot::new(CallId("c1".into()), Stance::Clear, "routine (level 0).")
+        .with_model(Some("jev-1.13.0".into()))
+        .with_axes(Some(axes.clone()));
     let json = serde_json::to_string(&spot).unwrap();
     assert!(json.contains(r#""axes":{"in_scope":0.94,"#), "{json}");
     let back: Spot = serde_json::from_str(&json).unwrap();
@@ -164,9 +152,7 @@ fn a_spot_carries_the_decision_axes_and_old_entries_still_read() {
 /// is a log-format change: every recorded log would stop reading.
 #[test]
 fn telemetry_nests_under_one_key() {
-    let payload = Payload::Telemetry(Telemetry::CallStarted {
-        call_id: "toolu_a".into(),
-    });
+    let payload = Payload::Telemetry(Telemetry::call_started("toolu_a"));
     let json = serde_json::to_string(&payload).unwrap();
     assert_eq!(
         json,

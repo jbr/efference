@@ -563,14 +563,15 @@ fn config_edit_projects_to_nothing() {
         with.push(entry(
             3,
             1,
-            Payload::ConfigEdit(ConfigEdit {
-                state,
-                resolves: None,
-                change: ConfigChange::Command {
-                    command: "cargo nextest".into(),
-                },
-                note: "promoted: standing-safe in scope".into(),
-            }),
+            Payload::ConfigEdit(
+                ConfigEdit::new(
+                    state,
+                    ConfigChange::Command {
+                        command: "cargo nextest".into(),
+                    },
+                )
+                .with_note("promoted: standing-safe in scope".into()),
+            ),
         ));
         let with = serde_json::to_string(&project(&with)).unwrap();
         assert_eq!(
@@ -621,13 +622,7 @@ fn resumed_projects_a_notice_after_the_prefix() {
     log.push(entry(
         3,
         2,
-        Payload::Resumed(crate::log::Resumed {
-            gap_ms: 90_000,
-            lost_processes: vec!["p#1".into()],
-            resumes_after: None,
-            pending_calls: vec![],
-            tools_changed: Default::default(),
-        }),
+        Payload::Resumed(crate::log::Resumed::new(90_000).with_lost_processes(vec!["p#1".into()])),
     ));
     let after = serde_json::to_string(&project(&log)).unwrap();
     let prefix = before.trim_end_matches(']');
@@ -662,13 +657,7 @@ fn a_pending_batch_notice_follows_its_results() {
         entry(
             3,
             1,
-            Payload::Resumed(crate::log::Resumed {
-                gap_ms: 5_000,
-                lost_processes: vec![],
-                resumes_after: None,
-                pending_calls: vec!["b".into()],
-                tools_changed: Default::default(),
-            }),
+            Payload::Resumed(crate::log::Resumed::new(5_000).with_pending_calls(vec!["b".into()])),
         ),
     ];
     // Still waiting on `b`: the notice is not on the wire.
@@ -728,13 +717,7 @@ fn a_rolled_back_range_is_not_projected() {
     log.push(entry(
         6,
         2,
-        Payload::Resumed(crate::log::Resumed {
-            gap_ms: 5_000,
-            lost_processes: vec![],
-            resumes_after: Some(3),
-            pending_calls: vec![],
-            tools_changed: Default::default(),
-        }),
+        Payload::Resumed(crate::log::Resumed::new(5_000).with_resumes_after(Some(3))),
     ));
     let wire = project(&log);
     let bytes = serde_json::to_string(&wire).unwrap();
@@ -772,13 +755,7 @@ fn a_rolled_back_range_is_not_projected() {
     log.push(entry(
         9,
         3,
-        Payload::Resumed(crate::log::Resumed {
-            gap_ms: 1_000,
-            lost_processes: vec![],
-            resumes_after: Some(7),
-            pending_calls: vec![],
-            tools_changed: Default::default(),
-        }),
+        Payload::Resumed(crate::log::Resumed::new(1_000).with_resumes_after(Some(7))),
     ));
     let bytes = serde_json::to_string(&project(&log)).unwrap();
     assert!(
