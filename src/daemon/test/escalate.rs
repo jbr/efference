@@ -63,27 +63,6 @@ impl Fixture {
     }
 }
 
-/// The must-wake flag of the latest notification from `source` whose body matches,
-/// pending or already logged as an `Ambient`; `None` when `session` has heard none.
-fn heard(session: &Session, source: &str, matches: impl Fn(&str) -> bool) -> Option<bool> {
-    if let Some(n) = session
-        .pending_notifications()
-        .iter()
-        .rev()
-        .find(|n| n.source == source && matches(&n.body))
-    {
-        return Some(n.wake);
-    }
-    session
-        .snapshot()
-        .iter()
-        .rev()
-        .find_map(|e| match &e.payload {
-            Payload::Ambient(n) if n.source == source && matches(&n.body) => Some(n.wake),
-            _ => None,
-        })
-}
-
 /// The latest notification body from `source`, pending or logged.
 fn latest_from(session: &Session, source: &str) -> Option<String> {
     let logged = session
@@ -191,9 +170,10 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
         Reviewer::Supervisor { id: "p".into() }
     );
     p.wait_until("the gate reached p as its reviewer", || {
-        heard(&p, "c", |body| {
-            body.starts_with("waiting for your decision")
-        }) == Some(true)
+        heard(&p, |n| {
+            n.source == "c" && n.body.starts_with("waiting for your decision")
+        })
+        .is_some_and(|n| n.wake)
     })
     .await;
 
@@ -232,14 +212,18 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
          {seq})\nescalated: by p to you: \"{NOTE}\"\nintent: fetch only the response headers"
     );
     g.wait_until("the escalated gate reached g as its reviewer", || {
-        heard(&g, "c", |body| body.starts_with(&reviewer)) == Some(true)
+        heard(&g, |n| n.source == "c" && n.body.starts_with(&reviewer)).is_some_and(|n| n.wake)
     })
     .await;
     p.wait_until("p heard the gate went to g", || {
-        heard(&p, "c", |body| {
-            body.starts_with("waiting for a decision from g or you on bash")
-                && body.contains(&format!("\nescalated: by you to g: \"{NOTE}\""))
-        }) == Some(false)
+        heard(&p, |n| {
+            n.source == "c"
+                && n.body
+                    .starts_with("waiting for a decision from g or you on bash")
+                && n.body
+                    .contains(&format!("\nescalated: by you to g: \"{NOTE}\""))
+        })
+        .is_some_and(|n| !n.wake)
     })
     .await;
     let status = Status {
@@ -381,9 +365,10 @@ async fn a_one_level_chain_reaches_the_operator_with_a_push() {
 
     // `q` escalated it, so the operator is asked and `q` is not woken by it.
     q.wait_until("q heard the gate went to the operator", || {
-        heard(&q, "k", |body| {
-            body.contains("\nescalated: by you to the operator")
-        }) == Some(false)
+        heard(&q, |n| {
+            n.source == "k" && n.body.contains("\nescalated: by you to the operator")
+        })
+        .is_some_and(|n| !n.wake)
     })
     .await;
     // A session it did not reach cannot pass it on again.
@@ -418,9 +403,10 @@ async fn the_dial_does_not_route_an_escalated_gate_back() {
         .await
         .unwrap();
     g.wait_until("the escalated gate reached g", || {
-        heard(&g, "c", |body| {
-            body.starts_with("waiting for your decision")
-        }) == Some(true)
+        heard(&g, |n| {
+            n.source == "c" && n.body.starts_with("waiting for your decision")
+        })
+        .is_some_and(|n| n.wake)
     })
     .await;
 

@@ -3,8 +3,7 @@
 //! model request, a submitted turn waits behind it, and an event does not replay it.
 
 use super::capture::verdict;
-use super::runtime::boot;
-use super::upstream_hold::{Answer, end_turn, recording};
+use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
@@ -12,9 +11,8 @@ use crate::log::{Approval, Telemetry};
 use crate::log::{AssistantOutput, CallId, RawResult, Resumed, Spot, Stance, WireState};
 use crate::project::{ApiBlock, Role};
 use crate::spotter::StaticSpotter;
-use std::net::SocketAddr;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn};
+use tempfile::TempDir;
 use trillium_tokio::Swansong;
 
 fn call(id: &str, command: &str) -> ToolCall {
@@ -65,18 +63,17 @@ fn gated(log: &mut Log, id: &str) {
     .unwrap();
 }
 
-/// A resumed session whose spotter gates every call, pointed at `addr`.
-pub(super) fn start(addr: SocketAddr, log: Log) -> (Swansong, SessionRuntime) {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let nonce = RandomState::new().build_hasher().finish();
-    let cwd = std::env::temp_dir().join(format!("efference-resumed-{nonce:016x}"));
-    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
-    let mut boot = boot(&cwd.canonicalize().unwrap());
+/// A resumed session over `log` whose spotter gates every call, pointed at `upstream`
+/// and returned once its loop has gone idle, in a working directory of its own that goes
+/// when the returned guard drops.
+pub(super) async fn start(
+    upstream: &ScriptedUpstream,
+    log: Log,
+) -> (Swansong, SessionRuntime, TempDir) {
+    let (cwd, dir) = workdir("resumed");
+    let mut boot = boot(&cwd);
     boot.client = Client::new(
-        crate::api::Endpoint::at(
-            crate::log::Provider::Anthropic,
-            format!("http://{addr}/v1/messages"),
-        ),
+        upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
         None,
@@ -87,23 +84,14 @@ pub(super) fn start(addr: SocketAddr, log: Log) -> (Swansong, SessionRuntime) {
     };
     boot.log = log;
     let host = Swansong::new();
-    let runtime = SessionRuntime::start(boot, &host);
-    (host, runtime)
+    let runtime = started(boot, &host).await;
+    (host, runtime, dir)
 }
 
-pub(super) fn requests_script(
-    script: fn(usize) -> Answer,
-) -> (Arc<AtomicUsize>, Arc<Mutex<Vec<String>>>, SocketAddr) {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let bodies = Arc::new(Mutex::new(Vec::new()));
-    let addr = recording(Arc::clone(&requests), script, &bodies);
-    (requests, bodies, addr)
-}
-
-fn two_verdicts_then_done(n: usize) -> Answer {
+fn two_verdicts_then_done(n: usize) -> Canned {
     match n {
-        0 => Answer::Stream(verdict(&["all", "all"])),
-        _ => Answer::Stream(end_turn()),
+        0 => Canned::stream(verdict(&["all", "all"])),
+        _ => Canned::stream(end_turn()),
     }
 }
 
@@ -143,20 +131,20 @@ async fn a_continue_replays_the_batch_through_the_gate() {
             gated(log, "c2");
         },
     );
-    let (requests, bodies, addr) = requests_script(two_verdicts_then_done);
-    let (host, runtime) = start(addr, log);
+    let upstream = ScriptedUpstream::new(two_verdicts_then_done);
+    let (host, runtime, _dir) = start(&upstream, log).await;
     let session = Arc::clone(runtime.session());
 
     // Opening the session did nothing.
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(requests.load(Ordering::SeqCst), 0);
+    assert_eq!(upstream.count(), 0);
     assert!(session.pending_gate().is_none());
 
     continue_when_parked(&session).await;
     approve_the_gate(&session, "c2").await;
     session
-        .poll_until("the turn finishes", || {
-            requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
+        .wait_until_with(&upstream, "the turn finishes", || {
+            upstream.count() >= 2 && session.loop_phase() == LoopPhase::Idle
         })
         .await;
     host.shut_down().await;
@@ -173,7 +161,7 @@ async fn a_continue_replays_the_batch_through_the_gate() {
         .filter(|e| matches!(e.payload, Payload::ResultVerdict { .. }))
         .count();
     assert_eq!(verdicts, 2, "both results were decided at the one triage");
-    let triage = bodies.lock().unwrap()[0].clone();
+    let triage = upstream.requests()[0].body.clone();
     assert!(
         triage.contains("one") && triage.contains("two"),
         "the first request is the triage over both results: {triage}"
@@ -200,17 +188,17 @@ async fn a_captured_result_is_triaged_without_running_again() {
     let log = stopped_log(vec![call("c1", "printf one")], &["c1"], |log| {
         captured(log, "c1", "one");
     });
-    let (requests, bodies, addr) = requests_script(|n| match n {
-        0 => Answer::Stream(verdict(&["all"])),
-        _ => Answer::Stream(end_turn()),
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(verdict(&["all"])),
+        _ => Canned::stream(end_turn()),
     });
-    let (host, runtime) = start(addr, log);
+    let (host, runtime, _dir) = start(&upstream, log).await;
     let session = Arc::clone(runtime.session());
 
     continue_when_parked(&session).await;
     session
-        .poll_until("the turn finishes", || {
-            requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
+        .wait_until_with(&upstream, "the turn finishes", || {
+            upstream.count() >= 2 && session.loop_phase() == LoopPhase::Idle
         })
         .await;
     host.shut_down().await;
@@ -233,7 +221,7 @@ async fn a_captured_result_is_triaged_without_running_again() {
         &e.payload,
         Payload::ResultVerdict { for_result, .. } if *for_result == captured_at
     )));
-    assert!(bodies.lock().unwrap()[0].contains("one"));
+    assert!(upstream.requests()[0].body.contains("one"));
 }
 
 /// **A submitted turn waits behind the batch.** It is not appended before the calls'
@@ -249,8 +237,8 @@ async fn a_submitted_turn_is_delivered_after_the_batch() {
             gated(log, "c2");
         },
     );
-    let (requests, bodies, addr) = requests_script(two_verdicts_then_done);
-    let (host, runtime) = start(addr, log);
+    let upstream = ScriptedUpstream::new(two_verdicts_then_done);
+    let (host, runtime, _dir) = start(&upstream, log).await;
     let session = Arc::clone(runtime.session());
     session
         .wait_until("the loop parks", || session.is_settled())
@@ -259,8 +247,8 @@ async fn a_submitted_turn_is_delivered_after_the_batch() {
     session.submit_turn(SubmittedTurn::new("carry on", "s1"));
     approve_the_gate(&session, "c2").await;
     session
-        .poll_until("the turn finishes", || {
-            requests.load(Ordering::SeqCst) >= 2 && session.loop_phase() == LoopPhase::Idle
+        .wait_until_with(&upstream, "the turn finishes", || {
+            upstream.count() >= 2 && session.loop_phase() == LoopPhase::Idle
         })
         .await;
     host.shut_down().await;
@@ -277,13 +265,13 @@ async fn a_submitted_turn_is_delivered_after_the_batch() {
         said > last_verdict && said > last_result,
         "the turn follows the batch: {said} vs {last_result}, {last_verdict}"
     );
-    let bodies = bodies.lock().unwrap();
+    let requests = upstream.requests();
     assert!(
-        !bodies[0].contains("carry on"),
+        !requests[0].body.contains("carry on"),
         "the triage is not shown it"
     );
     assert!(
-        bodies[1].contains("carry on"),
+        requests[1].body.contains("carry on"),
         "the next request carries it"
     );
 }
@@ -295,8 +283,8 @@ async fn an_event_wake_leaves_the_batch_alone() {
     let log = stopped_log(vec![call("c1", "printf one")], &["c1"], |log| {
         gated(log, "c1");
     });
-    let (requests, _bodies, addr) = requests_script(|_| Answer::Stream(end_turn()));
-    let (host, runtime) = start(addr, log);
+    let upstream = ScriptedUpstream::new(|_| Canned::stream(end_turn()));
+    let (host, runtime, _dir) = start(&upstream, log).await;
     let session = Arc::clone(runtime.session());
     session
         .wait_until("the loop parks", || session.is_settled())
@@ -306,7 +294,7 @@ async fn an_event_wake_leaves_the_batch_alone() {
     tokio::time::sleep(Duration::from_millis(800)).await;
     host.shut_down().await;
 
-    assert_eq!(requests.load(Ordering::SeqCst), 0, "no request of any kind");
+    assert_eq!(upstream.count(), 0, "no request of any kind");
     assert!(session.pending_gate().is_none(), "no call reached the gate");
     assert_eq!(results_of(&session.snapshot(), "c1"), 0);
     assert!(session.has_pending_notifications(), "the event waits");

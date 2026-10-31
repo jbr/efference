@@ -2,6 +2,7 @@ use super::scaffold::self_surface_grants;
 use super::*;
 use crate::config::testing::ConfigFixture;
 use crate::session_dir::{LOG_NAME, SESSION_BASE};
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 use crate::worktree::testing::{commit, git};
 use std::path::Path;
 
@@ -152,82 +153,17 @@ auth = { kind = "codex-cache" }
     .unwrap()
 }
 
-/// A listing served from a loopback listener, for a connection whose base URL a
-/// test names. The named providers own their routes, so a described endpoint is
-/// the only one a test can point at itself. Answers every request with the same
-/// body — a boot reads the listing once per role that resolves capabilities — and
-/// `stop` ends the thread.
-struct ListingEndpoint {
-    url: String,
-    stop: Box<dyn FnOnce() + Send>,
-}
-
-impl ListingEndpoint {
-    fn url(&self) -> &str {
-        &self.url
-    }
-
-    fn stop(self) {
-        (self.stop)();
-    }
-}
-
-fn listing_endpoint(body: &'static str) -> ListingEndpoint {
-    use std::io::{Read, Write};
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap().to_string();
-    let url = format!("http://{address}/v1");
-    // Non-blocking with a stop flag, so one client that hangs up mid-response
-    // cannot end the server for the next read — a refused boot closes its
-    // connection as soon as it has the answer, which is exactly the case here.
-    listener.set_nonblocking(true).unwrap();
-    let stopping = Arc::new(AtomicBool::new(false));
-    let flag = Arc::clone(&stopping);
-    let server = std::thread::spawn(move || {
-        while !flag.load(Ordering::Relaxed) {
-            match listener.accept() {
-                Ok((mut sock, _)) => {
-                    // Read the whole header block before answering: a socket
-                    // closed with request bytes still unread sends the client an
-                    // RST, which under load loses the response it was sent.
-                    let mut buf = Vec::new();
-                    let mut chunk = [0u8; 1024];
-                    while !buf.windows(4).any(|window| window == b"\r\n\r\n") {
-                        match sock.read(&mut chunk) {
-                            Ok(0) | Err(_) => break,
-                            Ok(read) => buf.extend_from_slice(&chunk[..read]),
-                        }
-                    }
-                    // `connection: close` because the socket is shut after this
-                    // one response: without it the client pools the connection,
-                    // and a later read that reuses it before the close is seen
-                    // gets a reset instead of an answer.
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
-                         connection: close\r\ncontent-length: {}\r\n\r\n{body}",
-                        body.len()
-                    );
-                    let _ = sock.write_all(response.as_bytes());
-                    let _ = sock.flush();
-                    let _ = sock.shutdown(std::net::Shutdown::Both);
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                }
-                Err(_) => break,
-            }
-        }
-    });
-    ListingEndpoint {
-        url,
-        stop: Box::new(move || {
-            stopping.store(true, Ordering::Relaxed);
-            let _ = server.join();
-        }),
-    }
+/// An upstream serving a listing on a loopback port, for a connection whose base URL a
+/// test names: a boot resolves its client from the configuration, so the listing is
+/// reached over a socket (`ScriptedUpstream::bind`). The named providers own their
+/// routes, so a described endpoint is the only one a test can point at itself. Answers
+/// every request with the same body — a boot reads the listing once per role that
+/// resolves capabilities. Returns the upstream, which closes the port when it drops,
+/// and the base URL.
+fn listing_endpoint(body: &'static str) -> (ScriptedUpstream, String) {
+    let upstream = ScriptedUpstream::new(move |_| Canned::json(200, body));
+    let base = format!("{}/v1", upstream.bind());
+    (upstream, base)
 }
 
 /// A session request against a described endpoint at `base`, whose capabilities
@@ -329,19 +265,13 @@ pub(super) fn failure(result: Result<SessionBoot<MountedSpotter>, Error>, what: 
 async fn a_rejected_parameter_reserves_no_name() {
     let root = Root::new("parameter");
     let dir = root.session_dir("file-nomination");
-    let endpoint = listing_endpoint(
+    let (_listing, base) = listing_endpoint(
         r#"{"data":[{"id":"m","max_input_tokens":1000,"max_tokens":100,
              "supported_parameters":["top_p"]}]}"#,
     );
 
     let refused = failure(
-        prepare(request_for(
-            endpoint.url(),
-            root.path(),
-            "file-nomination",
-            Some(50),
-        ))
-        .await,
+        prepare(request_for(&base, root.path(), "file-nomination", Some(50))).await,
         "a refused parameter must fail preparation",
     );
     assert!(
@@ -354,18 +284,12 @@ async fn a_rejected_parameter_reserves_no_name() {
         dir.display()
     );
 
-    let boot = prepare(request_for(
-        endpoint.url(),
-        root.path(),
-        "file-nomination",
-        None,
-    ))
-    .await
-    .expect("the corrected retry mints the same name");
+    let boot = prepare(request_for(&base, root.path(), "file-nomination", None))
+        .await
+        .expect("the corrected retry mints the same name");
     assert!(dir.join(LOG_NAME).is_file(), "the retry opened its log");
     assert!(dir.join(CONFIG_NAME).is_file(), "and its config snapshot");
     drop_boot(boot);
-    endpoint.stop();
 }
 
 /// A failure after the mint rolls back what the attempt minted: the session dir

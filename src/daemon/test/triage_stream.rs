@@ -2,13 +2,13 @@
 //! `triage_delta` and `triage_thinking_delta`, naming the results being triaged, from the
 //! shared triage and the separate-model triage alike, and never in the log.
 
-use super::runtime::boot;
-use super::upstream_hold::{Answer, end_turn, events, scripted, tool_call};
+use super::runtime::{boot, started, workdir};
 use super::*;
-use crate::daemon::{SessionRuntime, StreamDelta};
+use crate::daemon::StreamDelta;
 use crate::frontend::SubmittedTurn;
+use crate::log::Provider;
+use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, events, tool_call};
 use crate::triage::Triager;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use trillium_tokio::Swansong;
 
 /// A completion that thinks, writes a line of text, then makes the `retain` call.
@@ -30,58 +30,47 @@ fn thinking_verdict() -> String {
     ])
 }
 
-fn endpoint(addr: std::net::SocketAddr) -> crate::api::Endpoint {
-    crate::api::Endpoint::at(
-        crate::log::Provider::Anthropic,
-        format!("http://{addr}/v1/messages"),
-    )
-}
-
-/// Run one turn whose single bash call is triaged by `triage_script`'s upstream, and
-/// return every triage delta the stream carried as `(kind, call_ids, text)`, plus the
-/// session for log assertions. `own` puts the triage on its own client.
+/// Run one turn whose single bash call is triaged on the main upstream or, with `own`,
+/// on a triage client of its own against a second upstream, and return every triage
+/// delta the stream carried as `(kind, call_ids, text)`, plus the session for log
+/// assertions.
 async fn run(own: bool) -> (Vec<(&'static str, Vec<String>, String)>, Arc<Session>) {
-    let main_requests = Arc::new(AtomicUsize::new(0));
-    let triage_requests = Arc::new(AtomicUsize::new(0));
-    let (main_addr, triage_addr) = if own {
+    let (main, triage) = if own {
         (
-            scripted(Arc::clone(&main_requests), |n| match n {
-                0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
-                _ => Answer::Stream(end_turn()),
+            ScriptedUpstream::new(|n| match n {
+                0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+                _ => Canned::stream(end_turn()),
             }),
-            Some(scripted(Arc::clone(&triage_requests), |_| {
-                Answer::Stream(thinking_verdict())
-            })),
+            Some(ScriptedUpstream::new(
+                |_| Canned::stream(thinking_verdict()),
+            )),
         )
     } else {
         (
-            scripted(Arc::clone(&main_requests), |n| match n {
-                0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
-                1 => Answer::Stream(thinking_verdict()),
-                _ => Answer::Stream(end_turn()),
+            ScriptedUpstream::new(|n| match n {
+                0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+                1 => Canned::stream(thinking_verdict()),
+                _ => Canned::stream(end_turn()),
             }),
             None,
         )
     };
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let nonce = RandomState::new().build_hasher().finish();
-    let cwd = std::env::temp_dir().join(format!("efference-triage-stream-{nonce:016x}"));
-    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
-    let cwd = cwd.canonicalize().unwrap();
+    let (cwd, _dir) = workdir("triage-stream");
     let mut boot = boot(&cwd);
-    boot.client = Client::new(endpoint(main_addr), "m", "sys", None);
-    if let Some(addr) = triage_addr {
-        boot.triager = Triager::own(Client::new(endpoint(addr), "t", "sys", None));
+    let endpoint =
+        |upstream: &ScriptedUpstream| upstream.endpoint(Provider::Anthropic, "/v1/messages");
+    boot.client = Client::new(endpoint(&main), "m", "sys", None);
+    if let Some(triage) = &triage {
+        boot.triager = Triager::own(Client::new(endpoint(triage), "t", "sys", None));
     }
     let host = Swansong::new();
-    let runtime = SessionRuntime::start(boot, &host);
+    let runtime = started(boot, &host).await;
     let session = Arc::clone(runtime.session());
     let mut rx = session.subscribe_stream();
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     session
-        .poll_until("the turn finishes", || {
-            main_requests.load(Ordering::SeqCst) >= if own { 2 } else { 3 }
-                && session.loop_phase() == LoopPhase::Idle
+        .wait_until_with(&main, "the turn finishes", || {
+            main.count() >= if own { 2 } else { 3 } && session.loop_phase() == LoopPhase::Idle
         })
         .await;
     host.shut_down().await;

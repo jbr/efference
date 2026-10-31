@@ -1,6 +1,9 @@
-//! Scratch space for tests that need a real filesystem.
+//! Scratch space for tests that need a real filesystem, and the scripted upstream tests
+//! stand in for a provider with.
 
 use tempfile::TempDir;
+
+pub(crate) mod upstream;
 
 /// A directory of its own under the OS temp dir, named `efference-<label>-` and a random
 /// suffix, that is removed when the returned guard drops, a panicking test's included.

@@ -256,10 +256,9 @@ async fn the_client_reads_a_compaction_refusal_as_a_decline() {
 /// (docs/summary.md), never as the main loop's response.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_compaction_streams_its_writers_deltas() {
-    use super::upstream_hold::{Answer, events, scripted};
-    let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |_| {
-        Answer::Stream(events(&[
+    use crate::testing::upstream::{Canned, ScriptedUpstream, events};
+    let upstream = ScriptedUpstream::new(|_| {
+        Canned::stream(events(&[
             r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
             r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}"#.to_string(),
             r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"weighing it"}}"#.to_string(),
@@ -274,10 +273,7 @@ async fn a_compaction_streams_its_writers_deltas() {
     });
     // The compaction loop runs on the session's own client; the test starts it directly,
     // without a runtime around it.
-    let endpoint = crate::api::Endpoint::at(
-        crate::log::Provider::Anthropic,
-        format!("http://{addr}/v1/messages"),
-    );
+    let endpoint = upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages");
     let client = Arc::new(Client::new(endpoint, "m", "sys", None));
     let (session, _rx) = Session::in_memory();
     tokio::spawn(crate::daemon::compact::compact_loop(
@@ -313,14 +309,11 @@ async fn a_compaction_streams_its_writers_deltas() {
 /// machinery (the cache lifetime the cold watcher reads, the keepalive) stays off.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
-    use super::upstream_hold::{Answer, end_turn, scripted, start};
-    let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |_| Answer::Stream(end_turn()));
-    let (host, runtime) = start(addr);
+    use super::upstream_hold::start;
+    use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn};
+    let upstream = ScriptedUpstream::new(|_| Canned::stream(end_turn()));
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
-    session
-        .wait_until("the loop went idle", || session.loop_idled())
-        .await;
     assert!(
         !crate::api::ModelCapabilities::unknown()
             .prompt_cache
@@ -383,7 +376,7 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
         "the compaction did not fail"
     );
     assert_eq!(
-        requests.load(Ordering::SeqCst),
+        upstream.count(),
         1,
         "the compaction's request is the only one the upstream saw"
     );

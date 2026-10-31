@@ -73,11 +73,21 @@ pub(super) fn boot_in(cwd: &Path, session_dir: &Path) -> SessionBoot<StaticSpott
     boot
 }
 
+/// A working directory of a session's own, holding the `scratch` directory [`boot`]
+/// names, and the guard that removes both when it drops (`crate::testing::temp_dir`).
+/// The path is canonical, as a session's working directory is.
+pub(super) fn workdir(label: &str) -> (PathBuf, tempfile::TempDir) {
+    let dir = crate::testing::temp_dir(label);
+    std::fs::create_dir_all(dir.path().join("scratch")).unwrap();
+    (dir.path().canonicalize().unwrap(), dir)
+}
+
 /// [`SessionRuntime::start`], returned once the loop has gone idle. A test that stands in
 /// for the loop afterwards — setting a phase, holding a gate — would otherwise race the
-/// loop's first idle, which writes the phase over whatever the test set. This is how a
-/// fixture gets a runtime it hosts and then drives; a test whose subject is the runtime's
-/// own start, or the live loop against a scripted upstream, calls `start` itself.
+/// loop's first idle, which writes the phase over whatever the test set; a test that
+/// lets the loop run against a scripted upstream submits its first turn to a loop
+/// already waiting for one. This is how a fixture gets a runtime, whichever it does; a
+/// test whose subject is the runtime's own start calls `start` itself.
 pub(super) async fn started(boot: SessionBoot<StaticSpotter>, parent: &Swansong) -> SessionRuntime {
     let runtime = SessionRuntime::start(boot, parent);
     runtime

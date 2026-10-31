@@ -1,158 +1,26 @@
 //! The interrupt against a real turn loop and a scripted upstream
 //! (docs/control-channel.md).
 
-use super::runtime::boot;
-use super::upstream_hold::is_title_ask;
+use super::upstream_hold::start;
 use super::*;
-use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
 use crate::log::WireState;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, AtomicUsize};
-use trillium_tokio::Swansong;
+use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile, end_turn, events, tool_call};
 
-/// The first request's answer: one bash call, so the loop runs it and opens a triage.
-const TOOL_CALL: &[(&str, &str)] = &[
-    (
-        "message_start",
-        r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#,
-    ),
-    (
-        "content_block_start",
-        r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash","input":{}}}"#,
-    ),
-    (
-        "content_block_delta",
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"echo hi\"}"}}"#,
-    ),
-    (
-        "content_block_stop",
-        r#"{"type":"content_block_stop","index":0}"#,
-    ),
-    (
-        "message_delta",
-        r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}"#,
-    ),
-    ("message_stop", r#"{"type":"message_stop"}"#),
-];
-
-/// Any later request's answer: a plain end of turn.
-const END_TURN: &[(&str, &str)] = &[
-    (
-        "message_start",
-        r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#,
-    ),
-    (
-        "content_block_start",
-        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
-    ),
-    (
-        "content_block_delta",
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}"#,
-    ),
-    (
-        "content_block_stop",
-        r#"{"type":"content_block_stop","index":0}"#,
-    ),
-    (
-        "message_delta",
-        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#,
-    ),
-    ("message_stop", r#"{"type":"message_stop"}"#),
-];
-
-fn chunk(sock: &mut TcpStream, events: &[(&str, &str)]) {
-    let body: String = events
-        .iter()
-        .map(|(kind, data)| format!("event: {kind}\ndata: {data}\n\n"))
-        .collect();
-    write!(sock, "{:x}\r\n{body}\r\n", body.len()).unwrap();
-    sock.flush().unwrap();
-}
-
-/// Read one request off a kept-alive connection — its body, `None` once the
-/// client closed it.
-fn read_request(reader: &mut BufReader<TcpStream>) -> Option<String> {
-    let mut length = 0;
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line).unwrap_or(0) == 0 {
-            return None;
-        }
-        if line == "\r\n" {
-            break;
-        }
-        if let Some((name, value)) = line.split_once(':')
-            && name.eq_ignore_ascii_case("content-length")
-        {
-            length = value.trim().parse().unwrap();
-        }
-    }
-    let mut body = vec![0; length];
-    reader.read_exact(&mut body).ok()?;
-    Some(String::from_utf8_lossy(&body).into_owned())
-}
-
-/// A Messages upstream that answers by arrival order: request 0 calls a tool,
-/// request 1 (the triage) opens its stream once `open` is set and then sends nothing
-/// until `release`, and every later request ends the turn. `requests` counts
-/// arrivals.
-fn scripted_upstream(
-    requests: Arc<AtomicUsize>,
-    release: Arc<AtomicBool>,
-    open: Arc<AtomicBool>,
-) -> std::net::SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    std::thread::spawn(move || {
-        for sock in listener.incoming() {
-            let Ok(sock) = sock else { return };
-            let (requests, release, open) = (
-                Arc::clone(&requests),
-                Arc::clone(&release),
-                Arc::clone(&open),
-            );
-            std::thread::spawn(move || {
-                let mut reader = BufReader::new(sock.try_clone().unwrap());
-                let mut sock = sock;
-                while let Some(body) = read_request(&mut reader) {
-                    // The title ask rides its own detached task
-                    // (docs/session-title.md) and lands between the scripted
-                    // requests: answered out of band, before the script, and not
-                    // counted — the arrival indexing describes the main and fork
-                    // traffic only.
-                    if is_title_ask(&body) {
-                        chunk(&mut sock, END_TURN);
-                        let _ = write!(sock, "0\r\n\r\n");
-                        let _ = sock.flush();
-                        continue;
-                    }
-                    let n = requests.fetch_add(1, Ordering::SeqCst);
-                    while n == 1 && !open.load(Ordering::SeqCst) {
-                        std::thread::sleep(Duration::from_millis(5));
-                    }
-                    write!(
-                        sock,
-                        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                         transfer-encoding: chunked\r\n\r\n"
-                    )
-                    .unwrap();
-                    if n == 1 {
-                        chunk(&mut sock, &TOOL_CALL[..1]);
-                        while !release.load(Ordering::SeqCst) {
-                            std::thread::sleep(Duration::from_millis(20));
-                        }
-                        return;
-                    }
-                    chunk(&mut sock, if n == 0 { TOOL_CALL } else { END_TURN });
-                    let _ = write!(sock, "0\r\n\r\n");
-                    let _ = sock.flush();
-                }
-            });
-        }
-    });
-    addr
+/// A Messages upstream that answers by arrival order: request 0 calls a tool, so the loop
+/// runs it and opens a triage; request 1, the triage, waits at `open`, then sends its
+/// first event and nothing after it; every later request ends the turn.
+fn scripted_upstream(open: &Turnstile) -> ScriptedUpstream {
+    let open = open.clone();
+    let first_event = events(&[
+        r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#
+            .to_string(),
+    ]);
+    ScriptedUpstream::new(move |n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        1 => Canned::stream(first_event.clone()).left_open().held(&open),
+        _ => Canned::stream(end_turn()),
+    })
 }
 
 /// **An interrupt during the triage ends the turn there.** The press ends the triage's
@@ -163,32 +31,16 @@ fn scripted_upstream(
 /// answer to whatever the operator queued to explain the press.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let nonce = RandomState::new().build_hasher().finish();
-    let cwd = std::env::temp_dir().join(format!("efference-interrupt-{nonce:016x}"));
-    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
-    let cwd = cwd.canonicalize().unwrap();
-
-    let requests = Arc::new(AtomicUsize::new(0));
-    let release = Arc::new(AtomicBool::new(false));
-    let open = Arc::new(AtomicBool::new(true));
-    let addr = scripted_upstream(Arc::clone(&requests), Arc::clone(&release), open);
-    let mut boot = boot(&cwd);
-    let endpoint = crate::api::Endpoint::at(
-        crate::log::Provider::Anthropic,
-        format!("http://{addr}/v1/messages"),
-    );
-    boot.client = Client::new(endpoint, "m", "sys", None);
-
-    let host = Swansong::new();
-    let runtime = SessionRuntime::start(boot, &host);
+    // The triage's stream opens as soon as its request arrives.
+    let open = Turnstile::new();
+    open.open();
+    let upstream = scripted_upstream(&open);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
     session
-        .poll_until("the triage is open", || {
-            requests.load(Ordering::SeqCst) == 2
-        })
+        .wait_until_with(&upstream, "the triage is open", || upstream.count() == 2)
         .await;
     session.interrupt(crate::log::InterruptOrigin {
         source: Some("web".into()),
@@ -201,10 +53,9 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
         .await;
     // Room for a request the loop should not make.
     tokio::time::sleep(Duration::from_millis(300)).await;
-    release.store(true, Ordering::SeqCst);
 
     assert_eq!(
-        requests.load(Ordering::SeqCst),
+        upstream.count(),
         2,
         "the turn ended at the triage: no request after the interrupted triage"
     );
@@ -257,7 +108,6 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
 
     host.shut_down().await;
     runtime.finished().await.unwrap();
-    let _ = std::fs::remove_dir_all(&cwd);
 }
 
 /// The press lands after the triage's request reached the upstream but before its
@@ -267,52 +117,30 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
 /// forced rather than left to scheduling: the loop must still end the turn.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let nonce = RandomState::new().build_hasher().finish();
-    let cwd = std::env::temp_dir().join(format!("efference-interrupt-open-{nonce:016x}"));
-    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
-    let cwd = cwd.canonicalize().unwrap();
-
-    let requests = Arc::new(AtomicUsize::new(0));
-    let release = Arc::new(AtomicBool::new(false));
-    let open = Arc::new(AtomicBool::new(false));
-    let addr = scripted_upstream(
-        Arc::clone(&requests),
-        Arc::clone(&release),
-        Arc::clone(&open),
-    );
-    let mut boot = boot(&cwd);
-    let endpoint = crate::api::Endpoint::at(
-        crate::log::Provider::Anthropic,
-        format!("http://{addr}/v1/messages"),
-    );
-    boot.client = Client::new(endpoint, "m", "sys", None);
-
-    let host = Swansong::new();
-    let runtime = SessionRuntime::start(boot, &host);
+    let open = Turnstile::new();
+    let upstream = scripted_upstream(&open);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
     session
-        .poll_until("the triage request reached the upstream", || {
-            requests.load(Ordering::SeqCst) == 2
+        .wait_until_with(&upstream, "the triage request reached the upstream", || {
+            upstream.count() == 2
         })
         .await;
     session.interrupt(Default::default());
-    open.store(true, Ordering::SeqCst);
+    open.open();
     session
         .wait_until("the loop is idle", || {
             session.loop_phase() == LoopPhase::Idle
         })
         .await;
-    release.store(true, Ordering::SeqCst);
     assert_eq!(
-        requests.load(Ordering::SeqCst),
+        upstream.count(),
         2,
         "no request after the interrupted triage"
     );
 
     host.shut_down().await;
     runtime.finished().await.unwrap();
-    let _ = std::fs::remove_dir_all(&cwd);
 }

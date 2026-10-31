@@ -49,7 +49,7 @@ async fn a_refusal_cured_by_withholding_images_is_remembered() {
         .complete(&turns, &[], ToolChoice::auto(), |_| {})
         .await
         .unwrap();
-    let bodies = server.join().unwrap();
+    let bodies = server.bodies();
 
     assert!(carries_image(&bodies[0]));
     for body in &bodies[1..] {
@@ -80,7 +80,7 @@ async fn a_400_withholding_does_not_cure_is_returned_and_not_learned() {
         .complete(&turns, &[], ToolChoice::auto(), |_| {})
         .await
         .unwrap();
-    let bodies = server.join().unwrap();
+    let bodies = server.bodies();
     assert!(carries_image(&bodies[2]));
 }
 
@@ -100,7 +100,7 @@ async fn a_400_after_images_were_accepted_is_not_retried() {
             .await
             .is_err()
     );
-    assert_eq!(server.join().unwrap().len(), 2);
+    assert_eq!(server.bodies().len(), 2);
     assert_eq!(client.images_refused(), None);
 }
 
@@ -119,7 +119,7 @@ async fn openrouters_404_for_an_unroutable_image_is_recovered_from() {
             .images_refused()
             .is_some_and(|r| r.contains("No endpoints"))
     );
-    assert!(!carries_image(&server.join().unwrap()[1]));
+    assert!(!carries_image(&server.bodies()[1]));
 }
 
 /// A rate limit is about the caller, not the content: nothing is withheld.
@@ -148,7 +148,7 @@ async fn a_400_without_images_is_not_retried() {
             .await
             .is_err()
     );
-    assert_eq!(server.join().unwrap().len(), 1);
+    assert_eq!(server.bodies().len(), 1);
 }
 
 /// A refusal restored from the log withholds images from the first request.
@@ -160,5 +160,5 @@ async fn a_restored_refusal_withholds_from_the_first_request() {
         .complete(&with_image(), &[], ToolChoice::auto(), |_| {})
         .await
         .unwrap();
-    assert!(!carries_image(&server.join().unwrap()[0]));
+    assert!(!carries_image(&server.bodies()[0]));
 }

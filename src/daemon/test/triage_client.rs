@@ -1,21 +1,13 @@
 //! A separate triage client's own readings on `GET /state` (docs/control-api.md):
 //! `triage_upstream_failure`, `usage.triage_plan`, and `usage.triage_cold_streak`.
 
-use super::runtime::boot;
-use super::upstream_hold::{Answer, end_turn, scripted, tool_call};
+use super::runtime::{boot, started, workdir};
 use super::*;
-use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
+use crate::log::Provider;
+use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 use crate::triage::Triager;
-use std::sync::atomic::AtomicUsize;
 use trillium_tokio::Swansong;
-
-fn endpoint(addr: std::net::SocketAddr) -> crate::api::Endpoint {
-    crate::api::Endpoint::at(
-        crate::log::Provider::Anthropic,
-        format!("http://{addr}/v1/messages"),
-    )
-}
 
 fn state(session: &Session) -> Value {
     serde_json::from_str(&session.state_json()).unwrap()
@@ -36,29 +28,25 @@ fn read_of(cache_read: u64) -> RequestUsage {
 /// status while the agent's `upstream_failure` stays clear.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_separate_triage_clients_429_shows_on_its_own_topic() {
-    let main_requests = Arc::new(AtomicUsize::new(0));
-    let main_addr = scripted(Arc::clone(&main_requests), |n| match n {
-        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
-        _ => Answer::Stream(end_turn()),
+    let main = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        _ => Canned::stream(end_turn()),
     });
-    let triage_requests = Arc::new(AtomicUsize::new(0));
-    let triage_addr = scripted(Arc::clone(&triage_requests), |_| {
-        Answer::Status(
+    let triage = ScriptedUpstream::new(|_| {
+        Canned::json(
             429,
             r#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"#,
         )
     });
 
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let nonce = RandomState::new().build_hasher().finish();
-    let cwd = std::env::temp_dir().join(format!("efference-triage-client-{nonce:016x}"));
-    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
-    let cwd = cwd.canonicalize().unwrap();
+    let (cwd, _dir) = workdir("triage-client");
     let mut boot = boot(&cwd);
-    boot.client = Client::new(endpoint(main_addr), "m", "sys", None);
-    boot.triager = Triager::own(Client::new(endpoint(triage_addr), "t", "sys", None));
+    let endpoint =
+        |upstream: &ScriptedUpstream| upstream.endpoint(Provider::Anthropic, "/v1/messages");
+    boot.client = Client::new(endpoint(&main), "m", "sys", None);
+    boot.triager = Triager::own(Client::new(endpoint(&triage), "t", "sys", None));
     let host = Swansong::new();
-    let runtime = SessionRuntime::start(boot, &host);
+    let runtime = started(boot, &host).await;
     let session = Arc::clone(runtime.session());
 
     let before = state(&session);
@@ -70,8 +58,10 @@ async fn a_separate_triage_clients_429_shows_on_its_own_topic() {
     assert_eq!(before["usage"]["triage_cold_streak"], 0);
 
     session.submit_turn(SubmittedTurn::new("go", "s1"));
+    // The failure cell is written by the triage client's own handler, which signals
+    // nothing; the transport's next attempt, an arrival, follows the write.
     session
-        .poll_until("the triage client reports its 429", || {
+        .wait_until_with(&triage, "the triage client reports its 429", || {
             !state(&session)["triage_upstream_failure"].is_null()
         })
         .await;

@@ -1,11 +1,11 @@
 //! Tests for the one re-read of a credential's source on any rejected credential
-//! (docs/transport.md), over a loopback server that answers each request from a
-//! script and records the credential each carried.
+//! (docs/transport.md), against an upstream that answers each request from a script and
+//! records the credential each carried.
 
 use super::*;
-use std::io::{Read, Write};
+use crate::testing::upstream::{Canned, ScriptedUpstream};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 /// A stream that finalizes with one line of text.
 const ANSWER: &str = "event: message_start\n\
@@ -21,9 +21,6 @@ const UNRECOGNIZED: &str = "{\"error\":{\"code\":\"grant_unknown\",\"message\":\
 const NOT_JSON: &str = "<html>forbidden by the gateway</html>";
 const QUOTA: &str = "{\"error\":{\"type\":\"insufficient_quota\",\"message\":\"out of credit\"}}";
 
-/// One canned answer: a status line and a body, JSON unless it is the event stream.
-struct Reply(&'static str, &'static str);
-
 /// What one scripted call did: its result, the `x-api-key` each request carried,
 /// and how many times the credential's source was read.
 struct Run {
@@ -32,46 +29,14 @@ struct Run {
     reads: usize,
 }
 
-/// A client whose cell holds `stale` and whose source yields `source`, against a
-/// server that answers each request from `script` and then stops listening.
-async fn run(script: Vec<Reply>, source: &'static str) -> Run {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let sent = Arc::new(Mutex::new(Vec::new()));
-    let seen = Arc::clone(&sent);
-    let server = std::thread::spawn(move || {
-        for Reply(status, body) in script {
-            let Ok((mut sock, _)) = listener.accept() else {
-                return;
-            };
-            let mut buf = [0u8; 8192];
-            let n = sock.read(&mut buf).unwrap_or(0);
-            let request = String::from_utf8_lossy(&buf[..n]).to_string();
-            let key = request
-                .lines()
-                .find_map(|line| line.strip_prefix("x-api-key: "))
-                .unwrap_or_default()
-                .to_string();
-            seen.lock().unwrap().push(key);
-            let content_type = if status.starts_with("200") {
-                "text/event-stream"
-            } else {
-                "application/json"
-            };
-            sock.write_all(
-                format!(
-                    "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\n\
-                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-        }
-    });
+/// A client whose cell holds `stale` and whose source yields `source`, against an
+/// upstream that answers each request with the next of `script`.
+async fn run(script: Vec<Canned>, source: &'static str) -> Run {
+    let upstream = ScriptedUpstream::answering(script);
     let reads = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&reads);
-    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"))
+    let endpoint = upstream
+        .endpoint(Provider::Anthropic, "/v1/messages")
         .with_auth_value(AuthValue::reloadable(
             Provider::Anthropic,
             "stale".into(),
@@ -86,10 +51,11 @@ async fn run(script: Vec<Reply>, source: &'static str) -> Run {
         .await
         .map(|_| ())
         .map_err(|e| e.to_string());
-    // Unblocks a server still waiting on a request that never came.
-    let _ = std::net::TcpStream::connect(addr);
-    server.join().unwrap();
-    let sent = sent.lock().unwrap().clone();
+    let sent = upstream
+        .requests()
+        .iter()
+        .map(|request| request.header("x-api-key").unwrap_or_default().to_string())
+        .collect();
     Run {
         result,
         sent,
@@ -102,7 +68,7 @@ async fn run(script: Vec<Reply>, source: &'static str) -> Run {
 #[tokio::test]
 async fn a_revoked_key_is_re_read_and_the_attempt_retried() {
     let run = run(
-        vec![Reply("401 Unauthorized", REVOKED), Reply("200 OK", ANSWER)],
+        vec![Canned::json(401, REVOKED), Canned::stream(ANSWER)],
         "fresh",
     )
     .await;
@@ -115,7 +81,7 @@ async fn a_revoked_key_is_re_read_and_the_attempt_retried() {
 /// carries the provider's words and says what was tried, and nothing loops.
 #[tokio::test]
 async fn a_revoked_key_the_source_still_holds_fails_once() {
-    let run = run(vec![Reply("401 Unauthorized", REVOKED)], "stale").await;
+    let run = run(vec![Canned::json(401, REVOKED)], "stale").await;
     let error = run.result.unwrap_err();
     assert!(error.contains("invalid_api_key"), "{error}");
     assert!(error.contains("credential re-read"), "{error}");
@@ -128,14 +94,14 @@ async fn a_revoked_key_the_source_still_holds_fails_once() {
 async fn an_unrecognized_401_is_re_read_once() {
     for body in [UNRECOGNIZED, NOT_JSON] {
         let replaced = run(
-            vec![Reply("401 Unauthorized", body), Reply("200 OK", ANSWER)],
+            vec![Canned::json(401, body), Canned::stream(ANSWER)],
             "fresh",
         )
         .await;
         assert_eq!(replaced.result, Ok(()), "{body}");
         assert_eq!(replaced.sent, ["stale", "fresh"], "{body}");
 
-        let unchanged = run(vec![Reply("401 Unauthorized", body)], "stale").await;
+        let unchanged = run(vec![Canned::json(401, body)], "stale").await;
         assert!(unchanged.result.is_err(), "{body}");
         assert_eq!(unchanged.sent, ["stale"], "{body}");
         assert_eq!(unchanged.reads, 1, "{body}");
@@ -146,7 +112,7 @@ async fn an_unrecognized_401_is_re_read_once() {
 #[tokio::test]
 async fn a_403_is_re_read_once() {
     let run = run(
-        vec![Reply("403 Forbidden", NOT_JSON), Reply("200 OK", ANSWER)],
+        vec![Canned::json(403, NOT_JSON), Canned::stream(ANSWER)],
         "fresh",
     )
     .await;
@@ -158,10 +124,7 @@ async fn a_403_is_re_read_once() {
 /// not read the source: a new value could not change it.
 #[tokio::test]
 async fn a_refusal_that_is_not_the_credentials_does_not_read_the_source() {
-    for reply in [
-        Reply("403 Forbidden", QUOTA),
-        Reply("401 Unauthorized", QUOTA),
-    ] {
+    for reply in [Canned::json(403, QUOTA), Canned::json(401, QUOTA)] {
         let run = run(vec![reply], "fresh").await;
         assert!(run.result.is_err());
         assert_eq!(run.sent, ["stale"]);

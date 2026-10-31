@@ -2,64 +2,22 @@
 //! `{base}/chat/completions` with a bearer credential, and folds a recorded vendor
 //! stream into a Completions turn (docs/transport.md).
 
-use std::io::{Read, Write};
-
 use super::*;
-
-/// Serve one recorded SSE capture and hand back the request it answered.
-fn serve(capture: &'static str) -> (String, std::thread::JoinHandle<String>) {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let base = format!("http://{}/v1", listener.local_addr().unwrap());
-    let server = std::thread::spawn(move || {
-        let (mut sock, _) = listener.accept().unwrap();
-        sock.set_read_timeout(Some(std::time::Duration::from_secs(5)))
-            .unwrap();
-        // Read until the body named by `content-length` is in.
-        let mut request = Vec::new();
-        let mut buf = [0u8; 65536];
-        loop {
-            let read = sock.read(&mut buf).unwrap_or(0);
-            if read == 0 {
-                break;
-            }
-            request.extend_from_slice(&buf[..read]);
-            let text = String::from_utf8_lossy(&request);
-            if let Some((head, body)) = text.split_once("\r\n\r\n") {
-                let length = head
-                    .lines()
-                    .find_map(|line| {
-                        let (name, value) = line.split_once(':')?;
-                        name.eq_ignore_ascii_case("content-length")
-                            .then(|| value.trim().parse::<usize>().ok())?
-                    })
-                    .unwrap_or(0);
-                if body.len() >= length {
-                    break;
-                }
-            }
-        }
-        let response = format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\
-             content-length: {}\r\n\r\n{capture}",
-            capture.len()
-        );
-        sock.write_all(response.as_bytes()).unwrap();
-        let _ = sock.flush();
-        String::from_utf8_lossy(&request).into_owned()
-    });
-    (base, server)
-}
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 #[tokio::test]
 async fn a_described_completions_connection_round_trips() {
-    let (base, server) = serve(include_str!("../completions/mistral_tool.sse"));
+    let upstream = ScriptedUpstream::answering([Canned::stream(include_str!(
+        "../completions/mistral_tool.sse"
+    ))]);
     let endpoint = Endpoint::from_credentials(
         Provider::Custom(WireDialect::Completions),
         "KEY",
         None,
-        Some(base),
+        Some(ScriptedUpstream::url("/v1")),
     )
-    .unwrap();
+    .unwrap()
+    .with_http(upstream.http());
     let client = Client::new(endpoint, "mistral-small-latest", "PRE", None);
     let tools = [serde_json::json!({
         "name": "bash",
@@ -75,16 +33,14 @@ async fn a_described_completions_connection_round_trips() {
         )
         .await
         .unwrap();
-    let request = server.join().unwrap();
+    let request = &upstream.requests()[0];
 
-    let (head, body) = request.split_once("\r\n\r\n").unwrap();
-    assert!(head.starts_with("POST /v1/chat/completions "), "{head}");
-    assert!(
-        head.lines()
-            .any(|line| line.eq_ignore_ascii_case("authorization: Bearer KEY")),
-        "{head}"
+    assert_eq!(
+        (request.method.as_str(), request.target.as_str()),
+        ("POST", "/v1/chat/completions")
     );
-    let body: Value = serde_json::from_str(body).unwrap();
+    assert_eq!(request.header("authorization"), Some("Bearer KEY"));
+    let body = request.json();
     assert_eq!(body["model"], "mistral-small-latest");
     assert_eq!(
         body["messages"][0],
@@ -110,8 +66,14 @@ async fn a_described_completions_connection_round_trips() {
 /// `Bearer`.
 #[tokio::test]
 async fn a_connection_without_a_credential_sends_no_auth_header() {
-    let (base, server) = serve(include_str!("../completions/mistral_text.sse"));
-    let endpoint = Endpoint::without_credential(Provider::Custom(WireDialect::Completions), base);
+    let upstream = ScriptedUpstream::answering([Canned::stream(include_str!(
+        "../completions/mistral_text.sse"
+    ))]);
+    let endpoint = Endpoint::without_credential(
+        Provider::Custom(WireDialect::Completions),
+        ScriptedUpstream::url("/v1"),
+    )
+    .with_http(upstream.http());
     let client = Client::new(endpoint, "local", "PRE", None);
     client
         .complete(
@@ -122,10 +84,11 @@ async fn a_connection_without_a_credential_sends_no_auth_header() {
         )
         .await
         .unwrap();
-    let request = server.join().unwrap();
-    let (head, _) = request.split_once("\r\n\r\n").unwrap();
-    assert!(
-        !head.to_ascii_lowercase().contains("authorization"),
-        "{head}"
+    let request = &upstream.requests()[0];
+    assert_eq!(
+        request.header("authorization"),
+        None,
+        "{:?}",
+        request.headers
     );
 }

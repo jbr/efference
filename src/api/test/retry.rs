@@ -2,6 +2,7 @@
 //! bounded attempt queue, and the open-failure statuses (400, 429, 503).
 
 use super::*;
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// Consecutive equal statuses increment the diagnostic counter; a different
 /// status starts a new run (docs/transport.md).
@@ -210,62 +211,20 @@ fn the_attempt_queue_is_bounded() {
 
 /// The transport's own retry gate reads the non-2xx body (docs/transport.md): a
 /// 429 whose body names an exhausted plan is answered once, where the status
-/// alone would be retried. The mock counts connections; each closes after one
-/// response.
+/// alone would be retried. The upstream counts the requests.
 #[tokio::test]
 async fn a_terminal_429_body_is_answered_once() {
-    use std::io::{Read, Write};
-
-    async fn attempts_for(body: &'static str) -> usize {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = std::thread::spawn(move || {
-            let mut served = 0;
-            loop {
-                let Ok((mut sock, _)) = listener.accept() else {
-                    break;
-                };
-                let mut buf = vec![0u8; 65536];
-                let n = sock.read(&mut buf).unwrap_or(0);
-                // The unblocking connect below sends nothing: it ends the loop.
-                if !buf[..n].starts_with(b"POST") {
-                    break;
-                }
-                sock.write_all(
-                    format!(
-                        "HTTP/1.1 429 Too Many Requests\r\ncontent-type: application/json\r\n\
-                         connection: close\r\ncontent-length: {}\r\n\r\n{body}",
-                        body.len()
-                    )
-                    .as_bytes(),
-                )
-                .unwrap();
-                sock.flush().unwrap();
-                served += 1;
-                if served == 12 {
-                    break;
-                }
-            }
-            served
-        });
-        let endpoint = Endpoint::at(
-            Provider::OpenAICodex,
-            format!("http://{addr}/backend-api/codex/responses"),
-        );
-        let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
-        let outcome = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
-        assert!(outcome.is_err(), "a 429 that never clears is an error");
-        drop(client);
-        // Unblock the accept loop if it is still waiting.
-        let _ = std::net::TcpStream::connect(addr);
-        server.join().unwrap()
-    }
-
-    let terminal = attempts_for(
-        r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_at":1788744444,"resets_in_seconds":15805}}"#,
-    )
-    .await;
-    assert_eq!(terminal, 1, "an exhausted plan is answered once");
+    let terminal = r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_at":1788744444,"resets_in_seconds":15805}}"#;
+    let upstream = ScriptedUpstream::new(move |_| Canned::json(429, terminal));
+    let client = Client::new(
+        upstream.endpoint(Provider::OpenAICodex, "/backend-api/codex/responses"),
+        "gpt-5.6-sol",
+        "sys",
+        None,
+    );
+    let outcome = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
+    assert!(outcome.is_err(), "a 429 that never clears is an error");
+    assert_eq!(upstream.count(), 1, "an exhausted plan is answered once");
 }
 
 /// A non-2xx open outside the transient set is not retried: the body comes back
@@ -273,37 +232,14 @@ async fn a_terminal_429_body_is_answered_once() {
 /// (docs/transport.md).
 #[tokio::test]
 async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
-    use std::io::{Read, Write};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let server = std::thread::spawn(move || {
-        let mut served = 0;
-        loop {
-            let Ok((mut sock, _)) = listener.accept() else {
-                break;
-            };
-            let mut buf = vec![0u8; 65536];
-            let n = sock.read(&mut buf).unwrap_or(0);
-            if !buf[..n].starts_with(b"POST") {
-                break;
-            }
-            let body = r#"{"error":{"type":"invalid_request_error","code":"invalid_prompt","message":"bad input"}}"#;
-            sock.write_all(
-                format!(
-                    "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
-                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-            served += 1;
-        }
-        served
-    });
-    let endpoint = Endpoint::at(Provider::OpenAI, format!("http://{addr}/v1/responses"));
-    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
+    let body = r#"{"error":{"type":"invalid_request_error","code":"invalid_prompt","message":"bad input"}}"#;
+    let upstream = ScriptedUpstream::new(move |_| Canned::json(400, body));
+    let client = Client::new(
+        upstream.endpoint(Provider::OpenAI, "/v1/responses"),
+        "gpt-5.6-luna",
+        "sys",
+        None,
+    );
     let error = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
@@ -311,8 +247,7 @@ async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
     let diagnostic = client.upstream_failure().lock().unwrap().clone().unwrap();
     assert_eq!(diagnostic.status, Some(400));
     assert!(diagnostic.detail.contains("bad input"));
-    let _ = std::net::TcpStream::connect(addr);
-    assert_eq!(server.join().unwrap(), 1, "not retried");
+    assert_eq!(upstream.count(), 1, "not retried");
     let text = error.to_string();
     assert!(text.contains("400"), "{text}");
     assert!(text.contains("bad input"), "{text}");
@@ -327,46 +262,28 @@ async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
 /// is queued with its body for the loop's record (docs/transport.md).
 #[tokio::test]
 async fn a_503_open_is_retried_and_the_attempt_is_queued() {
-    use std::io::{Read, Write};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let server = std::thread::spawn(move || {
-        let responses = [
-            (
-                "503 Service Unavailable",
-                r#"{"error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"busy"}}"#.to_string(),
-            ),
-            (
-                "200 OK",
-                "event: response.completed\ndata: {\"type\":\"response.completed\",\
-                 \"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[],\
-                 \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
-                    .to_string(),
-            ),
-        ];
-        for (status, body) in responses {
-            let (mut sock, _) = listener.accept().unwrap();
-            let mut buf = vec![0u8; 65536];
-            let _ = sock.read(&mut buf);
-            sock.write_all(
-                format!(
-                    "HTTP/1.1 {status}\r\ncontent-type: text/event-stream\r\n\
-                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-        }
-    });
-    let endpoint = Endpoint::at(Provider::OpenAI, format!("http://{addr}/v1/responses"));
-    let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
+    let upstream = ScriptedUpstream::answering([
+        Canned::json(
+            503,
+            r#"{"error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"busy"}}"#,
+        ),
+        Canned::stream(
+            "event: response.completed\ndata: {\"type\":\"response.completed\",\
+             \"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[],\
+             \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n",
+        ),
+    ]);
+    let client = Client::new(
+        upstream.endpoint(Provider::OpenAI, "/v1/responses"),
+        "gpt-5.6-luna",
+        "sys",
+        None,
+    );
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect("the second attempt completes");
-    server.join().unwrap();
+    assert_eq!(upstream.count(), 2);
     assert!(completion.upstream_failure().is_none());
     let attempts = client.drain_upstream_attempts();
     assert_eq!(attempts.len(), 1);

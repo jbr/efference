@@ -213,59 +213,31 @@ fn triage_endpoint_takes_a_distinct_key_under_the_cap() {
 /// the token was copied into the endpoint at host launch, so every session held
 /// its own dead copy and `codex login` in another terminal changed nothing.
 ///
-/// The server here demands the *new* token on the second request, so the test
-/// fails if the retry re-sends the rejected one.
+/// The second request must carry the *new* token, so the test fails if the retry
+/// re-sends the rejected one.
 #[tokio::test]
 async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
-    use std::io::{Read, Write};
+    use crate::testing::upstream::{Canned, ScriptedUpstream};
 
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let server = std::thread::spawn(move || {
-        let expired = "{\"error\":{\"message\":\"Provided authentication token is expired. \
-                       Please try signing in again.\",\"type\":null,\"code\":\"token_expired\"},\
-                       \"status\":401,\"detail\":{\"code\":\"token_expired\"}}";
-        let (mut sock, _) = listener.accept().unwrap();
-        let mut buf = [0u8; 8192];
-        let read = sock.read(&mut buf).unwrap();
-        let first = String::from_utf8_lossy(&buf[..read]).to_string();
-        sock.write_all(
-            format!(
-                "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\n\
-                 content-length: {}\r\n\r\n{expired}",
-                expired.len()
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-        sock.flush().unwrap();
-        drop(sock);
-
-        let (mut sock, _) = listener.accept().unwrap();
-        let read = sock.read(&mut buf).unwrap();
-        let second = String::from_utf8_lossy(&buf[..read]).to_string();
-        let body = "event: message_start\ndata: {\"type\":\"message_start\",\
-                    \"message\":{\"id\":\"gen-1\",\"model\":\"m\",\
-                    \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n\
-                    event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"end_turn\"},\
-                    \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}\n\n\
-                    event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
-        sock.write_all(
-            format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                 content-length: {}\r\n\r\n{body}",
-                body.len()
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-        sock.flush().unwrap();
-        (first, second)
-    });
+    let expired = "{\"error\":{\"message\":\"Provided authentication token is expired. \
+                   Please try signing in again.\",\"type\":null,\"code\":\"token_expired\"},\
+                   \"status\":401,\"detail\":{\"code\":\"token_expired\"}}";
+    let upstream = ScriptedUpstream::answering([
+        Canned::json(401, expired),
+        Canned::stream(
+            "event: message_start\ndata: {\"type\":\"message_start\",\
+             \"message\":{\"id\":\"gen-1\",\"model\":\"m\",\
+             \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n\
+             event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"end_turn\"},\
+             \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}\n\n\
+             event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        ),
+    ]);
 
     let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counted = std::sync::Arc::clone(&reads);
-    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"))
+    let endpoint = upstream
+        .endpoint(Provider::Anthropic, "/v1/messages")
         .with_auth_value(AuthValue::reloadable(
             Provider::Anthropic,
             "stale".into(),
@@ -289,11 +261,12 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
         1,
         "the source is read once, not once per attempt"
     );
-    let (first, second) = server.join().unwrap();
-    assert!(first.contains("x-api-key: stale"), "{first}");
-    assert!(
-        second.contains("x-api-key: refreshed"),
-        "the retry carries the re-read value: {second}"
+    let requests = upstream.requests();
+    assert_eq!(requests[0].header("x-api-key"), Some("stale"));
+    assert_eq!(
+        requests[1].header("x-api-key"),
+        Some("refreshed"),
+        "the retry carries the re-read value"
     );
 }
 
@@ -306,47 +279,21 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
 /// out, and Anthropic answered 400 "header is required").
 #[tokio::test]
 async fn a_probe_reports_a_refusal_and_carries_the_turns_identity() {
-    use std::io::{Read, Write};
+    use crate::testing::upstream::{Canned, ScriptedUpstream};
 
-    /// One request, one canned answer: the URL to read, and the request text the
-    /// server saw. `status` and `body` are assembled here so the declared
-    /// content-length cannot drift from the bytes.
-    fn serve(
-        status: &str,
-        etag: Option<&str>,
-        body: &'static str,
-    ) -> (String, std::thread::JoinHandle<String>) {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        // The head is assembled line by line: an ETag line that is present but
-        // empty is a header the server did not send.
-        let mut head = format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n");
-        if let Some(etag) = etag {
-            head.push_str(&format!("etag: {etag}\r\n"));
-        }
-        head.push_str(&format!("content-length: {}\r\n\r\n", body.len()));
-        let response = format!("{head}{body}");
-        let server = std::thread::spawn(move || {
-            let (mut sock, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 8192];
-            let read = sock.read(&mut buf).unwrap();
-            sock.write_all(response.as_bytes()).unwrap();
-            sock.flush().unwrap();
-            String::from_utf8_lossy(&buf[..read]).to_string()
-        });
-        (format!("http://{addr}/backend-api/codex/models"), server)
-    }
+    const LISTING: &str = "/backend-api/codex/models";
 
     let refusal = r#"{"error":{"message":"Missing scopes: api.model.read"}}"#;
-    let (url, server) = serve("403 Forbidden", None, refusal);
+    let upstream = ScriptedUpstream::answering([Canned::json(403, refusal)]);
     let codex = Endpoint::from_credentials(
         Provider::OpenAICodex,
         "tok-secret",
         Some("acct-1".into()),
         None,
     )
-    .unwrap();
-    let response = codex.probe(&url).await.unwrap();
+    .unwrap()
+    .with_http(upstream.http());
+    let response = codex.probe(&ScriptedUpstream::url(LISTING)).await.unwrap();
     assert_eq!(response.status, Some(403));
     assert!(
         response.body.contains("api.model.read"),
@@ -354,30 +301,31 @@ async fn a_probe_reports_a_refusal_and_carries_the_turns_identity() {
         response.body
     );
     assert_eq!(response.etag, None);
-    // Header names reach the wire in their canonical spelling, so the lookups
-    // are case-insensitive rather than betting on how a name is capitalized.
-    let request = server.join().unwrap().to_lowercase();
-    assert!(
-        request.contains("authorization: bearer tok-secret"),
-        "{request}"
-    );
-    assert!(request.contains("chatgpt-account-id: acct-1"), "{request}");
-    assert!(request.contains("originator: efference"), "{request}");
+    let request = &upstream.requests()[0];
+    assert_eq!(request.header("authorization"), Some("Bearer tok-secret"));
+    assert_eq!(request.header("chatgpt-account-id"), Some("acct-1"));
+    assert_eq!(request.header("originator"), Some("efference"));
 
     let listing = r#"{"data":[{"id":"m"}]}"#;
-    let (url, server) = serve("200 OK", Some("W/\"abc\""), listing);
-    let anthropic =
-        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-x", None, None).unwrap();
-    let response = anthropic.probe(&url).await.unwrap();
+    let upstream =
+        ScriptedUpstream::answering([Canned::json(200, listing).with_header("etag", "W/\"abc\"")]);
+    let anthropic = Endpoint::from_credentials(Provider::Anthropic, "sk-ant-x", None, None)
+        .unwrap()
+        .with_http(upstream.http());
+    let response = anthropic
+        .probe(&ScriptedUpstream::url(LISTING))
+        .await
+        .unwrap();
     assert_eq!(response.status, Some(200));
     assert_eq!(response.etag.as_deref(), Some("W/\"abc\""));
     assert_eq!(response.body, listing);
-    let request = server.join().unwrap().to_lowercase();
-    assert!(request.contains("x-api-key: sk-ant-x"), "{request}");
-    assert!(request.contains("anthropic-version:"), "{request}");
-    assert!(
-        !request.contains("originator:"),
-        "a provider with no attribution sends none: {request}"
+    let request = &upstream.requests()[0];
+    assert_eq!(request.header("x-api-key"), Some("sk-ant-x"));
+    assert!(request.header("anthropic-version").is_some(), "{request:?}");
+    assert_eq!(
+        request.header("originator"),
+        None,
+        "a provider with no attribution sends none"
     );
 }
 

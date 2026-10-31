@@ -22,7 +22,7 @@ impl Endpoint {
     /// headers, and its attribution. Nothing per-turn rides along — there is no
     /// conversation to route or cache-key on a listing read.
     pub async fn probe(&self, url: &str) -> Result<ProbeResponse, Error> {
-        let http = crate::http::client();
+        let http = self.http();
         let auth = self.auth_value.current().await;
         // Every header is set before the request is sent: a header added to an
         // in-flight connection is not part of the request that went out.

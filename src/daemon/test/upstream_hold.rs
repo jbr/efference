@@ -4,193 +4,38 @@
 //! its results rather than showing the agent an error, and the operator's
 //! continue retries either wait now.
 
-use super::runtime::boot;
+use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::{SessionRuntime, StallReason};
 use crate::frontend::SubmittedTurn;
-use crate::log::{Origin, WireState};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::Mutex;
-use std::sync::atomic::AtomicUsize;
+use crate::log::{Origin, Provider, WireState};
+use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
+use tempfile::TempDir;
 use trillium_tokio::Swansong;
 
-/// A `tool_use` completion calling `name` with `input` (JSON text).
-pub(super) fn tool_call(id: &str, name: &str, input: &str) -> String {
-    let input = serde_json::to_string(input).unwrap();
-    events(&[
-        r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
-        format!(
-            r#"{{"type":"content_block_start","index":0,"content_block":{{"type":"tool_use","id":"{id}","name":"{name}","input":{{}}}}}}"#
-        ),
-        format!(
-            r#"{{"type":"content_block_delta","index":0,"delta":{{"type":"input_json_delta","partial_json":{input}}}}}"#
-        ),
-        r#"{"type":"content_block_stop","index":0}"#.to_string(),
-        r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}"#.to_string(),
-        r#"{"type":"message_stop"}"#.to_string(),
-    ])
-}
-
-/// A plain end of turn.
-pub(super) fn end_turn() -> String {
-    events(&[
-        r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
-        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#.to_string(),
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}"#.to_string(),
-        r#"{"type":"content_block_stop","index":0}"#.to_string(),
-        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#.to_string(),
-        r#"{"type":"message_stop"}"#.to_string(),
-    ])
-}
-
-pub(super) fn events(data: &[String]) -> String {
-    data.iter()
-        .map(|d| {
-            let kind: Value = serde_json::from_str(d).unwrap();
-            format!("event: {}\ndata: {d}\n\n", kind["type"].as_str().unwrap())
-        })
-        .collect()
-}
-
-/// The title ask, recognizable by the one phrase no other request carries
-/// (docs/session-title.md): the peek's tail instruction.
-pub(super) fn is_title_ask(body: &str) -> bool {
-    body.contains("say what this session is for")
-}
-
-/// One scripted answer.
-pub(super) enum Answer {
-    /// A 200 event stream with this body.
-    Stream(String),
-    /// A non-2xx with this JSON body.
-    Status(u16, &'static str),
-}
-
-/// Read one request off a kept-alive connection; `false` once the client closed it.
-/// Read one request off a kept-alive connection, with its body; `None` once the
-/// client closed it.
-fn read_request(reader: &mut BufReader<TcpStream>) -> Option<String> {
-    let mut length = 0;
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line).unwrap_or(0) == 0 {
-            return None;
-        }
-        if line == "\r\n" {
-            break;
-        }
-        if let Some((name, value)) = line.split_once(':')
-            && name.eq_ignore_ascii_case("content-length")
-        {
-            length = value.trim().parse().unwrap();
-        }
-    }
-    let mut body = vec![0; length];
-    reader.read_exact(&mut body).ok()?;
-    String::from_utf8(body).ok()
-}
-
-/// A Messages upstream answering request *n* with `script(n)`; `requests` counts
-/// arrivals.
-pub(super) fn scripted(requests: Arc<AtomicUsize>, script: fn(usize) -> Answer) -> SocketAddr {
-    serve(requests, script, None)
-}
-
-/// [`scripted`] keeping every request body it read, for a test that asserts what the
-/// fork was shown (docs/triage.md).
-pub(super) fn recording(
-    requests: Arc<AtomicUsize>,
-    script: fn(usize) -> Answer,
-    bodies: &Arc<Mutex<Vec<String>>>,
-) -> SocketAddr {
-    serve(requests, script, Some(Arc::clone(bodies)))
-}
-
-/// The one upstream both harnesses are: `bodies`, when given, collects each request
-/// before it is answered.
-fn serve(
-    requests: Arc<AtomicUsize>,
-    script: fn(usize) -> Answer,
-    bodies: Option<Arc<Mutex<Vec<String>>>>,
-) -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    std::thread::spawn(move || {
-        for sock in listener.incoming() {
-            let Ok(sock) = sock else { return };
-            let requests = Arc::clone(&requests);
-            let bodies = bodies.clone();
-            std::thread::spawn(move || {
-                let mut reader = BufReader::new(sock.try_clone().unwrap());
-                let mut sock = sock;
-                while let Some(body) = read_request(&mut reader) {
-                    // The title ask rides its own detached task (docs/session-title.md)
-                    // and lands between the scripted requests: answered out of band,
-                    // before the script, and not counted — the scripts and their
-                    // count assertions describe the main and fork traffic only.
-                    // `end_turn` answers it; the triage's parse takes the text line.
-                    if is_title_ask(&body) {
-                        let body = end_turn();
-                        let _ = write!(
-                            sock,
-                            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                             content-length: {}\r\n\r\n{body}",
-                            body.len()
-                        );
-                        let _ = sock.flush();
-                        continue;
-                    }
-                    if let Some(bodies) = &bodies {
-                        bodies.lock().unwrap().push(body);
-                    }
-                    let n = requests.fetch_add(1, Ordering::SeqCst);
-                    let _ = match script(n) {
-                        Answer::Stream(body) => write!(
-                            sock,
-                            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                             content-length: {}\r\n\r\n{body}",
-                            body.len()
-                        ),
-                        Answer::Status(status, body) => write!(
-                            sock,
-                            "HTTP/1.1 {status} Error\r\ncontent-type: application/json\r\n\
-                             content-length: {}\r\n\r\n{body}",
-                            body.len()
-                        ),
-                    };
-                    let _ = sock.flush();
-                }
-            });
-        }
-    });
-    addr
-}
-
-pub(super) fn start(addr: SocketAddr) -> (Swansong, SessionRuntime) {
-    start_with(addr, |_| {})
+/// A live loop against `upstream`, in a working directory of its own, returned once it
+/// has gone idle (`runtime::started`); the directory goes when the returned guard drops.
+pub(super) async fn start(upstream: &ScriptedUpstream) -> (Swansong, SessionRuntime, TempDir) {
+    start_with(upstream, |_| {}).await
 }
 
 /// [`start`], with the boot adjusted first: a review level, a spotter's stance.
-pub(super) fn start_with(
-    addr: SocketAddr,
+pub(super) async fn start_with(
+    upstream: &ScriptedUpstream,
     adjust: impl FnOnce(&mut SessionBoot<crate::spotter::StaticSpotter>),
-) -> (Swansong, SessionRuntime) {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let nonce = RandomState::new().build_hasher().finish();
-    let cwd = std::env::temp_dir().join(format!("efference-upstream-{nonce:016x}"));
-    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
-    let cwd = cwd.canonicalize().unwrap();
+) -> (Swansong, SessionRuntime, TempDir) {
+    let (cwd, dir) = workdir("upstream");
     let mut boot = boot(&cwd);
-    let endpoint = crate::api::Endpoint::at(
-        crate::log::Provider::Anthropic,
-        format!("http://{addr}/v1/messages"),
+    boot.client = Client::new(
+        upstream.endpoint(Provider::Anthropic, "/v1/messages"),
+        "m",
+        "sys",
+        None,
     );
-    boot.client = Client::new(endpoint, "m", "sys", None);
     adjust(&mut boot);
     let host = Swansong::new();
-    let runtime = SessionRuntime::start(boot, &host);
-    (host, runtime)
+    let runtime = started(boot, &host).await;
+    (host, runtime, dir)
 }
 
 const REFUSED: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"no"}}"#;
@@ -203,14 +48,13 @@ const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","
 /// verdict lands, and the held attempt's breadcrumb rides the `Triage`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_gate_without_a_verdict_holds_until_continue() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |n| match n {
-        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
-        1 => Answer::Status(400, REFUSED),
-        2 => Answer::Stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
-        _ => Answer::Stream(end_turn()),
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        1 => Canned::json(400, REFUSED),
+        2 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
+        _ => Canned::stream(end_turn()),
     });
-    let (host, runtime) = start(addr);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
@@ -321,19 +165,13 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
 /// unfolded prefix, which is the cold read the compaction exists to avoid.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_fold_during_a_hold_is_what_the_retry_triages() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let bodies = Arc::new(Mutex::new(Vec::new()));
-    let addr = recording(
-        Arc::clone(&requests),
-        |n| match n {
-            0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
-            1 => Answer::Status(400, REFUSED),
-            2 => Answer::Stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
-            _ => Answer::Stream(end_turn()),
-        },
-        &bodies,
-    );
-    let (host, runtime) = start(addr);
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        1 => Canned::json(400, REFUSED),
+        2 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
+        _ => Canned::stream(end_turn()),
+    });
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("zebra history to compact away", "s1"));
 
@@ -362,9 +200,9 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
         })
         .await;
 
-    let bodies = bodies.lock().unwrap().clone();
-    let held = &bodies[1];
-    let retried = &bodies[2];
+    let requests = upstream.requests();
+    let held = &requests[1].body;
+    let retried = &requests[2].body;
     assert!(
         held.contains("zebra history"),
         "the held triage read the history"
@@ -382,13 +220,12 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
 /// wait short.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
-    let requests = Arc::new(AtomicUsize::new(0));
     // The transport makes four attempts before the loop sees the failure.
-    let addr = scripted(Arc::clone(&requests), |n| match n {
-        0..4 => Answer::Status(503, OVERLOADED),
-        _ => Answer::Stream(end_turn()),
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0..4 => Canned::json(503, OVERLOADED),
+        _ => Canned::stream(end_turn()),
     });
-    let (host, runtime) = start(addr);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
@@ -433,13 +270,12 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
     use crate::triage::TRIAGE_RESTARTS;
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |n| match n {
-        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
         // Prose, not a verdict: unusable every time.
-        _ => Answer::Stream(end_turn()),
+        _ => Canned::stream(end_turn()),
     });
-    let (host, runtime) = start(addr);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
@@ -448,7 +284,7 @@ async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
         .await;
     assert_eq!(session.stall().unwrap().reason, StallReason::TriageDefect);
     // The tool call, then three attempts in each fork.
-    assert_eq!(requests.load(Ordering::SeqCst), 1 + 3 * TRIAGE_RESTARTS);
+    assert_eq!(upstream.count(), 1 + 3 * TRIAGE_RESTARTS);
     // Every fork is spent and the result is still undecided: durable in the log, since
     // it was captured before the triage opened, and absent from the wire, since no fork
     // answered for it.

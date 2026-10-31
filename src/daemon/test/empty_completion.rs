@@ -1,11 +1,11 @@
 //! A completion with neither prose nor a call is asked again (docs/transport.md): kept
 //! record-only as an empty completion, and the next request re-sends the same bytes.
 
-use super::upstream_hold::{Answer, end_turn, events, is_title_ask, recording, start};
+use super::upstream_hold::start;
 use super::*;
 use crate::frontend::SubmittedTurn;
 use crate::log::Exclusion;
-use std::sync::atomic::AtomicUsize;
+use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, events};
 
 /// A finalized turn that only thinks.
 fn thinking_only() -> String {
@@ -21,17 +21,11 @@ fn thinking_only() -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_thinking_only_completion_is_asked_again() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let bodies = Arc::new(Mutex::new(Vec::new()));
-    let addr = recording(
-        Arc::clone(&requests),
-        |n| match n {
-            0 => Answer::Stream(thinking_only()),
-            _ => Answer::Stream(end_turn()),
-        },
-        &bodies,
-    );
-    let (_host, runtime) = start(addr);
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(thinking_only()),
+        _ => Canned::stream(end_turn()),
+    });
+    let (_host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
@@ -61,13 +55,8 @@ async fn a_thinking_only_completion_is_asked_again() {
         vec![Exclusion::Empty],
         "kept as an empty completion"
     );
-    let turns: Vec<String> = bodies
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|body| !is_title_ask(body))
-        .cloned()
-        .collect();
+    // The upstream answers title asks aside, so every recorded request is the turn's.
+    let turns: Vec<String> = upstream.requests().into_iter().map(|r| r.body).collect();
     assert!(turns.len() >= 2, "asked again");
     assert_eq!(
         turns[0], turns[1],

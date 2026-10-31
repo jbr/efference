@@ -5,7 +5,7 @@
 use super::*;
 use crate::api::{StageRecorder, StageSink};
 use crate::log::{Provider, RequestStage, RequestStageKind, WireDialect};
-use std::io::{Read, Write};
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -24,24 +24,18 @@ impl StageRecorder for Recorder {
     }
 }
 
-/// An endpoint answering its one request with `status` and `body`.
-fn scripted(status: &str, body: String) -> Endpoint {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let base = format!("http://{}/v1/decisions", listener.local_addr().unwrap());
-    let status = status.to_string();
-    std::thread::spawn(move || {
-        let (mut sock, _) = listener.accept().unwrap();
-        let mut buf = [0u8; 65536];
-        let _ = sock.read(&mut buf);
-        let _ = write!(
-            sock,
-            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\nconnection: close\r\n\
-             content-length: {}\r\n\r\n{body}",
-            body.len()
-        );
-        let _ = sock.flush();
-    });
-    Endpoint::without_credential(Provider::Custom(WireDialect::SystemOne), base)
+/// An upstream answering its one request with `status` and the JSON `body`.
+fn scripted(status: u16, body: String) -> ScriptedUpstream {
+    ScriptedUpstream::answering([Canned::json(status, body)])
+}
+
+/// The decisions endpoint `upstream` answers on.
+fn endpoint(upstream: &ScriptedUpstream) -> Endpoint {
+    Endpoint::without_credential(
+        Provider::Custom(WireDialect::SystemOne),
+        ScriptedUpstream::url("/v1/decisions"),
+    )
+    .with_http(upstream.http())
 }
 
 /// Every unconditional axis answered, sketch at level 0.
@@ -82,7 +76,8 @@ fn recorded(recorder: &Recorder) -> Vec<(u64, RequestOrigin, RequestStageKind)> 
 #[tokio::test]
 async fn a_decision_records_sent_first_byte_ended() {
     let recorder = Arc::new(Recorder::default());
-    let spotting = assess(scripted("200 OK", clean_answers()), &recorder).await;
+    let upstream = scripted(200, clean_answers());
+    let spotting = assess(endpoint(&upstream), &recorder).await;
     assert_eq!(spotting.origin, Origin::Model);
     assert_eq!(
         recorded(&recorder),
@@ -99,11 +94,8 @@ async fn a_decision_records_sent_first_byte_ended() {
 #[tokio::test]
 async fn a_refused_decision_records_failed() {
     let recorder = Arc::new(Recorder::default());
-    let spotting = assess(
-        scripted("400 Bad Request", r#"{"error":"nope"}"#.into()),
-        &recorder,
-    )
-    .await;
+    let upstream = scripted(400, r#"{"error":"nope"}"#.into());
+    let spotting = assess(endpoint(&upstream), &recorder).await;
     assert_eq!(spotting.origin, Origin::Fallback);
     let stages = recorded(&recorder);
     assert_eq!(stages.len(), 3, "{stages:?}");

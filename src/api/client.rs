@@ -253,14 +253,14 @@ impl Client {
             .with_max_elapsed(None)
             .with_max_retry_after(RETRY_AFTER_CAP);
         Self {
-            // The process-wide client (`http.rs`), so every `Client` in a process
-            // — the agent's, the fork's spotter, one per case in a spotter eval —
-            // shares one pool to the provider. TLS over the tokio TCP connector;
+            // The process-wide client (`http.rs`, through `Endpoint::http`), so every
+            // `Client` in a process — the agent's, the fork's spotter, one per case in
+            // a spotter eval — shares one pool to the provider. TLS over the tokio TCP connector;
             // ALPN negotiates HTTP/2 — Anthropic's Cloudflare front advertises no
             // `alt-svc: h3`, so HTTP/3 is not a live option (docs/transport.md).
             // Retry remains outermost: reverse response handling records a failed
             // attempt before retry schedules the next one (docs/transport.md).
-            http: crate::http::client().with_handler((
+            http: endpoint.http().with_handler((
                 retry,
                 UpstreamStatusHandler {
                     failure: Arc::clone(&upstream_failure),

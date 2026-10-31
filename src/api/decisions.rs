@@ -438,7 +438,7 @@ impl Endpoint {
                 .then_some(self.session_id.as_deref())
                 .flatten(),
         })?;
-        let http = crate::http::client().with_handler(decisions_retry());
+        let http = self.http().with_handler(decisions_retry());
         let auth = self.auth_value.current().await;
         let conn = self
             .authorize(http.post(url.as_str()), auth)

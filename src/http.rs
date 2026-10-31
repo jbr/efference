@@ -36,7 +36,8 @@
 //! so a process-wide client is only safe across `#[tokio::test]` runtimes because
 //! the pool is keyed by origin and each test binds a fresh ephemeral port. A test
 //! that reused a fixed port across runtimes could be handed a connection whose
-//! reactor is gone.
+//! reactor is gone. A test's in-process upstream (`testing/upstream.rs`) has a pool
+//! of its own instead, from a client `client_over` builds.
 
 use std::sync::{LazyLock, OnceLock};
 
@@ -69,11 +70,21 @@ pub fn user_agent() -> &'static str {
 pub fn client() -> Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT
-        .get_or_init(|| {
-            Client::new(RustlsConfig::<ClientConfig>::default())
-                .with_default_header(KnownHeaderName::UserAgent, user_agent())
-        })
+        .get_or_init(|| configured(Client::new(RustlsConfig::<ClientConfig>::default())))
         .clone()
+}
+
+/// A client over `connector`, configured as [`client`] is: a test's in-process
+/// upstream (`testing/upstream.rs`), which takes the place of the network, sees the
+/// requests production would send it.
+#[cfg(test)]
+pub(crate) fn client_over(connector: impl trillium_client::Connector) -> Client {
+    configured(Client::new(connector))
+}
+
+/// What every request this process sends carries, whatever it is sent over.
+fn configured(client: Client) -> Client {
+    client.with_default_header(KnownHeaderName::UserAgent, user_agent())
 }
 
 #[cfg(test)]

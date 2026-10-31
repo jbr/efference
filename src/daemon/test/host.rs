@@ -1,7 +1,7 @@
 //! One process hosting several sessions behind `/sessions/<id>/…` (docs/control-channel.md).
 
 use super::*;
-use crate::daemon::{Host, SessionRuntime};
+use crate::daemon::Host;
 use serde_json::Value;
 use std::path::Path;
 use trillium::KnownHeaderName;
@@ -25,23 +25,18 @@ mod terminal_title;
 mod update_check;
 mod worktree;
 
-struct Roots(PathBuf);
+/// A scratch root holding the working directories `one` and `two`, each with its
+/// `scratch`: the canonical path, and the guard that removes it all when the roots drop
+/// (`crate::testing::temp_dir`). The guard is never read; it is held for its drop.
+struct Roots(PathBuf, #[allow(dead_code)] tempfile::TempDir);
 
 impl Roots {
     fn new() -> Self {
-        use std::hash::{BuildHasher, Hasher, RandomState};
-        let nonce = RandomState::new().build_hasher().finish();
-        let root = std::env::temp_dir().join(format!("efference-host-{nonce:016x}"));
+        let dir = crate::testing::temp_dir("host");
         for label in ["one", "two"] {
-            std::fs::create_dir_all(root.join(label).join("scratch")).unwrap();
+            std::fs::create_dir_all(dir.path().join(label).join("scratch")).unwrap();
         }
-        Self(root.canonicalize().unwrap())
-    }
-}
-
-impl Drop for Roots {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        Self(dir.path().canonicalize().unwrap(), dir)
     }
 }
 

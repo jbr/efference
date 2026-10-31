@@ -38,11 +38,9 @@ fn rejects_skip_short_tools_failures_and_caps() {
     assert_eq!(account(&called, None, None).unwrap_err(), "tool call");
 }
 
-use crate::api::Endpoint;
 use crate::log::{RawResult, Summary, WireState};
-use std::io::{Read, Write};
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 fn session() -> Arc<Session> {
     let (shared, _) = Session::in_memory();
@@ -80,87 +78,41 @@ fn session() -> Arc<Session> {
     shared
 }
 
-struct Mock {
-    client: Client,
-    requests: Arc<AtomicUsize>,
-    stop: Arc<AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-impl Drop for Mock {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::SeqCst);
-        let _ = self.thread.take().unwrap().join();
-    }
-}
-fn mock(text: &str, fail: bool) -> Mock {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let requests = Arc::new(AtomicUsize::new(0));
-    let stop = Arc::new(AtomicBool::new(false));
+/// An upstream answering every consolidation request with an account whose text is
+/// `text`, after a line of thinking, or with a 400 when `fail`; and a client against it.
+fn mock(text: &str, fail: bool) -> (ScriptedUpstream, Client) {
     let body = format!(
         "event: message_start\ndata: {{\"type\":\"message_start\",\"message\":{{\"id\":\"m\",\"model\":\"m\",\"usage\":{{\"input_tokens\":1,\"output_tokens\":0}}}}}}\n\nevent: content_block_start\ndata: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{{\"type\":\"thinking\",\"thinking\":\"\"}}}}\n\nevent: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{{\"type\":\"thinking_delta\",\"thinking\":\"reviewing\"}}}}\n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":0}}\n\nevent: content_block_start\ndata: {{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{{\"type\":\"text\",\"text\":\"\"}}}}\n\nevent: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{{\"type\":\"text_delta\",\"text\":{}}}}}\n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":1}}\n\nevent: message_delta\ndata: {{\"type\":\"message_delta\",\"delta\":{{\"stop_reason\":\"end_turn\"}},\"usage\":{{\"output_tokens\":100}}}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n",
         serde_json::to_string(text).unwrap()
     );
-    let reply = if fail {
-        "HTTP/1.1 400 Bad Request\r\ncontent-length: 3\r\nconnection: close\r\n\r\nbad".into()
-    } else {
-        format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-            body.len()
-        )
-    };
-    let count = requests.clone();
-    let done = stop.clone();
-    let thread = std::thread::spawn(move || {
-        while !done.load(Ordering::SeqCst) {
-            let (mut sock, _) = match listener.accept() {
-                Ok(s) => s,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                    continue;
-                }
-                Err(e) => panic!("{e}"),
-            };
-            sock.set_nonblocking(false).unwrap();
-            sock.set_read_timeout(Some(std::time::Duration::from_secs(5)))
-                .unwrap();
-            let mut request = Vec::new();
-            let mut buf = [0; 8192];
-            while !String::from_utf8_lossy(&request).contains("Reply with the account text or") {
-                match sock.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => request.extend_from_slice(&buf[..n]),
-                }
-            }
-            if !String::from_utf8_lossy(&request).contains("Reply with the account text or") {
-                continue;
-            }
-            count.fetch_add(1, Ordering::SeqCst);
-            sock.write_all(reply.as_bytes()).unwrap();
+    let upstream = ScriptedUpstream::new(move |_| {
+        if fail {
+            Canned::json(400, "bad").without_content_type()
+        } else {
+            Canned::stream(body.clone())
         }
     });
-    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
-    Mock {
-        client: Client::new(endpoint, "m", "sys", None),
-        requests,
-        stop,
-        thread: Some(thread),
-    }
+    let client = Client::new(
+        upstream.endpoint(Provider::Anthropic, "/v1/messages"),
+        "m",
+        "sys",
+        None,
+    );
+    (upstream, client)
 }
 
 #[tokio::test]
 async fn unchanged_skip_not_rechecked_but_new_forward_context_is() {
     let shared = session();
-    let server = mock("skip", false);
-    let check = ConsolidationCheck::new(&server.client, &[]);
+    let (upstream, client) = mock("skip", false);
+    let check = ConsolidationCheck::new(&client, &[]);
     if let Some(task) = check.check(&shared) {
         task.await.unwrap();
     }
     if let Some(task) = check.check(&shared) {
         task.await.unwrap();
     }
-    assert_eq!(server.requests.load(Ordering::SeqCst), 1);
+    assert_eq!(upstream.count(), 1);
     assert!(
         !shared
             .snapshot()
@@ -171,14 +123,14 @@ async fn unchanged_skip_not_rechecked_but_new_forward_context_is() {
     if let Some(task) = check.check(&shared) {
         task.await.unwrap();
     }
-    assert_eq!(server.requests.load(Ordering::SeqCst), 2);
+    assert_eq!(upstream.count(), 2);
 }
 
 #[tokio::test]
 async fn a_failed_request_changes_nothing() {
     let shared = session();
-    let server = mock("", true);
-    let check = ConsolidationCheck::new(&server.client, &[]);
+    let (_upstream, client) = mock("", true);
+    let check = ConsolidationCheck::new(&client, &[]);
     if let Some(task) = check.check(&shared) {
         task.await.unwrap();
     }
@@ -198,8 +150,8 @@ async fn a_failed_request_changes_nothing() {
 #[tokio::test]
 async fn adopts_account_then_waits_for_new_tool_work() {
     let shared = session();
-    let server = mock(&"supported outcome ".repeat(60), false);
-    let check = ConsolidationCheck::new(&server.client, &[]);
+    let (upstream, client) = mock(&"supported outcome ".repeat(60), false);
+    let check = ConsolidationCheck::new(&client, &[]);
     let mut output = shared.subscribe_stream();
     let before = shared.project_turns();
     if let Some(task) = check.check(&shared) {
@@ -229,7 +181,7 @@ async fn adopts_account_then_waits_for_new_tool_work() {
     if let Some(task) = check.check(&shared) {
         task.await.unwrap();
     }
-    assert_eq!(server.requests.load(Ordering::SeqCst), 1);
+    assert_eq!(upstream.count(), 1);
 }
 
 #[test]
@@ -362,9 +314,9 @@ fn instruction_names_what_follows_the_range() {
 #[tokio::test]
 async fn a_juncture_reached_during_a_check_is_not_checked() {
     let shared = session();
-    let server = mock("skip", false);
-    let check = ConsolidationCheck::new(&server.client, &[]);
+    let (upstream, client) = mock("skip", false);
+    let check = ConsolidationCheck::new(&client, &[]);
     check.flight.lock().unwrap().running = true;
     assert!(check.check(&shared).is_none());
-    assert_eq!(server.requests.load(Ordering::SeqCst), 0);
+    assert_eq!(upstream.count(), 0);
 }

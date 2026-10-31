@@ -2,10 +2,8 @@
 //! it, so the provider can compare two prompts and say what moved — and a provider that
 //! does not read the field is sent nothing.
 
-use std::io::{Read, Write};
-use std::sync::mpsc;
-
 use super::*;
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// One finalized text turn that named `id` for itself.
 fn stream(id: &str) -> String {
@@ -21,59 +19,15 @@ fn stream(id: &str) -> String {
     )
 }
 
-/// Serve one response per entry of `responses`, in order, on one listener, handing back
-/// the base URL and each request as it arrives. Sequential because the chain is: what the
-/// second request names depends on what the first response said.
-fn serve(responses: Vec<String>) -> (String, mpsc::Receiver<String>) {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let base = format!("http://{}/v1", listener.local_addr().unwrap());
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for capture in responses {
-            let (mut sock, _) = listener.accept().unwrap();
-            sock.set_read_timeout(Some(std::time::Duration::from_secs(5)))
-                .unwrap();
-            // Read until the body `content-length` named is in.
-            let mut request = Vec::new();
-            let mut buf = [0u8; 65536];
-            loop {
-                let read = sock.read(&mut buf).unwrap_or(0);
-                if read == 0 {
-                    break;
-                }
-                request.extend_from_slice(&buf[..read]);
-                let text = String::from_utf8_lossy(&request);
-                if let Some((head, body)) = text.split_once("\r\n\r\n") {
-                    let length = head
-                        .lines()
-                        .find_map(|line| {
-                            let (name, value) = line.split_once(':')?;
-                            name.eq_ignore_ascii_case("content-length")
-                                .then(|| value.trim().parse::<usize>().ok())?
-                        })
-                        .unwrap_or(0);
-                    if body.len() >= length {
-                        break;
-                    }
-                }
-            }
-            let response = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\
-                 content-length: {}\r\n\r\n{capture}",
-                capture.len()
-            );
-            sock.write_all(response.as_bytes()).unwrap();
-            let _ = sock.flush();
-            tx.send(String::from_utf8_lossy(&request).into_owned())
-                .unwrap();
-        }
-    });
-    (base, rx)
+/// An upstream answering each request with the next of `streams`: what the second
+/// request names depends on what the first response said.
+fn serve(streams: Vec<String>) -> ScriptedUpstream {
+    ScriptedUpstream::answering(streams.into_iter().map(Canned::stream))
 }
 
-/// An endpoint that points `provider` at a local server.
-fn endpoint(base: &str, provider: Provider) -> Endpoint {
-    Endpoint::at(provider, format!("{base}/messages"))
+/// The bodies `upstream` was sent, in arrival order.
+fn bodies(upstream: &ScriptedUpstream) -> Vec<String> {
+    upstream.requests().into_iter().map(|r| r.body).collect()
 }
 
 /// Two turns on a native Anthropic client: the first opts in with an explicit `null`, the
@@ -82,9 +36,14 @@ fn endpoint(base: &str, provider: Provider) -> Endpoint {
 /// (docs/transport.md) — and it is also what keeps the chain off every other provider.
 #[tokio::test]
 async fn consecutive_turns_name_each_others_responses() {
-    let (base, requests) = serve(vec![stream("msg_a"), stream("msg_b")]);
-    let client = Client::new(endpoint(&base, Provider::Anthropic), "m", "SYS", None)
-        .with_origin(crate::log::RequestOrigin::Turn);
+    let upstream = serve(vec![stream("msg_a"), stream("msg_b")]);
+    let client = Client::new(
+        upstream.endpoint(Provider::Anthropic, "/v1/messages"),
+        "m",
+        "SYS",
+        None,
+    )
+    .with_origin(crate::log::RequestOrigin::Turn);
 
     for _ in 0..2 {
         client
@@ -93,12 +52,11 @@ async fn consecutive_turns_name_each_others_responses() {
             .expect("the mock stream finalizes");
     }
 
-    let opening = requests.recv().unwrap();
+    let [opening, second] = <[String; 2]>::try_from(bodies(&upstream)).unwrap();
     assert!(
         opening.contains(r#""diagnostics":{"previous_message_id":null}"#),
         "the first request opts in with nothing to compare: {opening}"
     );
-    let second = requests.recv().unwrap();
     assert!(
         second.contains(r#""diagnostics":{"previous_message_id":"msg_a"}"#),
         "the second names the first response: {second}"
@@ -111,9 +69,14 @@ async fn consecutive_turns_name_each_others_responses() {
 /// apart from "no divergence" (docs/transport.md), so it is left off.
 #[tokio::test]
 async fn a_provider_without_the_field_is_sent_no_object() {
-    let (base, requests) = serve(vec![stream("msg_a"), stream("msg_b")]);
-    let client = Client::new(endpoint(&base, Provider::OpenRouter), "m", "SYS", None)
-        .with_origin(crate::log::RequestOrigin::Turn);
+    let upstream = serve(vec![stream("msg_a"), stream("msg_b")]);
+    let client = Client::new(
+        upstream.endpoint(Provider::OpenRouter, "/v1/messages"),
+        "m",
+        "SYS",
+        None,
+    )
+    .with_origin(crate::log::RequestOrigin::Turn);
 
     for _ in 0..2 {
         client
@@ -122,8 +85,9 @@ async fn a_provider_without_the_field_is_sent_no_object() {
             .expect("the mock stream finalizes");
     }
 
-    for _ in 0..2 {
-        let body = requests.recv().unwrap();
+    let bodies = bodies(&upstream);
+    assert_eq!(bodies.len(), 2);
+    for body in bodies {
         assert!(!body.contains("diagnostics"), "{body}");
     }
 }
@@ -134,14 +98,18 @@ async fn a_provider_without_the_field_is_sent_no_object() {
 /// (docs/transport.md).
 #[tokio::test]
 async fn a_triage_neither_opts_in_nor_extends_the_chain() {
-    let (base, requests) = serve(vec![
+    let upstream = serve(vec![
         stream("msg_turn"),
         stream("msg_triage"),
         stream("msg_a"),
     ]);
-    let endpoint = endpoint(&base, Provider::Anthropic);
-    let client = Client::new(endpoint.clone(), "m", "SYS", None)
-        .with_origin(crate::log::RequestOrigin::Turn);
+    let client = Client::new(
+        upstream.endpoint(Provider::Anthropic, "/v1/messages"),
+        "m",
+        "SYS",
+        None,
+    )
+    .with_origin(crate::log::RequestOrigin::Turn);
 
     client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -158,13 +126,11 @@ async fn a_triage_neither_opts_in_nor_extends_the_chain() {
         .await
         .expect("the mock stream finalizes");
 
-    let _turn = requests.recv().unwrap();
-    let triage = requests.recv().unwrap();
+    let [_turn, triage, next] = <[String; 3]>::try_from(bodies(&upstream)).unwrap();
     assert!(
         !triage.contains("diagnostics"),
         "a triage sends its own prompt, so it neither opts in nor is compared: {triage}"
     );
-    let next = requests.recv().unwrap();
     assert!(
         next.contains(r#""diagnostics":{"previous_message_id":"msg_turn"}"#),
         "the turn after the triage still names the last *turn*: {next}"

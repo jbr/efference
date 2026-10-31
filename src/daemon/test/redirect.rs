@@ -1,16 +1,16 @@
 //! A redirect names who decided it (docs/permissions.md): the stub the model reads, the
 //! user turn carrying the message, and the gate decision on the log.
 
-use super::upstream_hold::{Answer, end_turn, scripted, start_with, tool_call};
+use super::upstream_hold::start_with;
 use super::*;
 use crate::frontend::SubmittedTurn;
 use crate::log::{Approval, ContentBlock, Stance, Telemetry};
-use std::sync::atomic::AtomicUsize;
+use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 
-fn script(n: usize) -> Answer {
+fn script(n: usize) -> Canned {
     match n {
-        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"rm -rf tmp"}"#)),
-        _ => Answer::Stream(end_turn()),
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"rm -rf tmp"}"#)),
+        _ => Canned::stream(end_turn()),
     }
 }
 
@@ -37,12 +37,12 @@ fn stub_and_steer(session: &Session) -> Option<(String, Option<String>, String)>
 /// carrying its message carries its source, and the wire opens that turn `<id> (agent):`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_supervisors_deny_names_the_supervisor() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), script);
-    let (_host, runtime) = start_with(addr, |boot| {
+    let upstream = ScriptedUpstream::new(script);
+    let (_host, runtime, _dir) = start_with(&upstream, |boot| {
         boot.spotter.stance = Stance::Gate;
         boot.spotter.reason = "level 3: destructive".into();
-    });
+    })
+    .await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     session
@@ -75,13 +75,13 @@ async fn a_supervisors_deny_names_the_supervisor() {
 /// under `review[autonomous]`, its stub says so, and its turn carries no source.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_autonomous_redirect_is_the_reviews() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), script);
-    let (_host, runtime) = start_with(addr, |boot| {
+    let upstream = ScriptedUpstream::new(script);
+    let (_host, runtime, _dir) = start_with(&upstream, |boot| {
         boot.autonomous = true;
         boot.spotter.stance = Stance::Watch;
         boot.spotter.reason = "watch-for: rm".into();
-    });
+    })
+    .await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     session

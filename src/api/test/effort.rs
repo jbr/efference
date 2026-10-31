@@ -340,74 +340,36 @@ fn auto_turns_send_thinking_off_only_without_adaptive_and_when_spelled() {
     assert!(!support(true, ThinkingOff::BetweenTools).auto_turns_send_thinking_off());
 }
 
-/// The keepalive sends the turn's envelope, over a real socket: the same
-/// thinking and the same effort, differing only in `max_tokens` and `stream`
-/// (docs/transport.md). On Anthropic a ping whose thinking differs from the
-/// turn's misses the message-level cache and writes a fresh entry instead of
-/// refreshing the live one.
+/// The keepalive sends the turn's envelope: the same thinking and the same effort,
+/// differing only in `max_tokens` and `stream` (docs/transport.md). On Anthropic a ping
+/// whose thinking differs from the turn's misses the message-level cache and writes a
+/// fresh entry instead of refreshing the live one.
 ///
 /// A client that was never given an effort — the spotter's — sends the field on
 /// neither path, which the second half asserts.
 #[tokio::test]
 async fn the_keepalive_sends_the_turns_thinking_and_effort() {
-    use std::io::{Read, Write};
+    use crate::testing::upstream::{Canned, ScriptedUpstream};
 
-    /// One request/response over a fresh socket; returns the request bytes the
-    /// client sent. `sse` picks the canned reply: an empty stream for `complete`,
-    /// a usage-only JSON body for `keepalive`.
+    /// One request and its answer; returns the body the client sent. `sse` picks the
+    /// canned answer: an empty stream for `complete`, a usage-only JSON body for
+    /// `keepalive`.
     async fn round_trip(provider: Provider, effort: Option<&str>, sse: bool) -> String {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = std::thread::spawn(move || {
-            let (mut sock, _) = listener.accept().unwrap();
-            // Read until the whole POST body has arrived: one `read` can return the
-            // headers alone, and the assertion below is about the body.
-            let mut request = String::new();
-            let mut buf = [0u8; 16384];
-            loop {
-                let read = sock.read(&mut buf).unwrap();
-                request.push_str(&String::from_utf8_lossy(&buf[..read]));
-                let complete = request.split_once("\r\n\r\n").is_some_and(|(head, body)| {
-                    head.to_ascii_lowercase()
-                        .split("\r\n")
-                        .find_map(|line| line.strip_prefix("content-length: ").map(str::to_string))
-                        .and_then(|n| n.trim().parse::<usize>().ok())
-                        .is_some_and(|n| body.len() >= n)
-                });
-                if read == 0 || complete {
-                    break;
-                }
-            }
-            let (content_type, body) = if sse {
-                (
-                    "text/event-stream",
-                    "event: message_start\ndata: {\"message\":{\"id\":\"gen-1\",\
-                     \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
-                     event: data\ndata: [DONE]\n\n"
-                        .to_string(),
-                )
-            } else {
-                (
-                    "application/json",
-                    "{\"id\":\"msg-1\",\"model\":\"m\",\"usage\":{\"input_tokens\":1,\
-                     \"output_tokens\":0}}"
-                        .to_string(),
-                )
-            };
-            sock.write_all(
-                format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\n\
-                     content-length: {}\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
+        let upstream = ScriptedUpstream::answering([if sse {
+            Canned::stream(
+                "event: message_start\ndata: {\"message\":{\"id\":\"gen-1\",\
+                 \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
+                 event: data\ndata: [DONE]\n\n",
             )
-            .unwrap();
-            sock.flush().unwrap();
-            request
-        });
+        } else {
+            Canned::json(
+                200,
+                "{\"id\":\"msg-1\",\"model\":\"m\",\"usage\":{\"input_tokens\":1,\
+                 \"output_tokens\":0}}",
+            )
+        }]);
 
-        let endpoint = Endpoint::at(provider, format!("http://{addr}/v1/messages"));
+        let endpoint = upstream.endpoint(provider, "/v1/messages");
         let client = Client::new(endpoint, "claude-opus-5", "sys", None)
             .with_thinking(ThinkingSupport {
                 adaptive: true,
@@ -428,12 +390,11 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
                 .await
                 .expect("the canned body parses");
         }
-        server.join().unwrap()
+        upstream.requests()[0].body.clone()
     }
 
     /// The request body as JSON, without the two keys a ping differs by.
-    fn envelope(request: &str) -> Value {
-        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+    fn envelope(body: &str) -> Value {
         let mut body: Value = serde_json::from_str(body).unwrap();
         let object = body.as_object_mut().unwrap();
         object.remove("max_tokens");
@@ -458,10 +419,8 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
 
     // The output cap is the provider's (docs/transport.md): Anthropic honours zero;
     // OpenRouter reads zero as unset, so its ping sends a positive cap.
-    let max_tokens = |request: &str| {
-        let (_, body) = request.split_once("\r\n\r\n").unwrap();
-        serde_json::from_str::<Value>(body).unwrap()["max_tokens"].clone()
-    };
+    let max_tokens =
+        |body: &str| serde_json::from_str::<Value>(body).unwrap()["max_tokens"].clone();
     assert_eq!(max_tokens(&ping), 0);
     let ping = round_trip(Provider::OpenRouter, None, false).await;
     assert_eq!(max_tokens(&ping), 16);

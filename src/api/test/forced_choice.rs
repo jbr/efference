@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::project::WireTurn;
-use std::io::{Read, Write};
+use crate::testing::upstream::{Canned, Request, ScriptedUpstream};
 
 /// The refusal Sonnet 5.5 answers a forced `tool_choice` with.
 const REFUSAL: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"tool_choice: type \"tool\" and \"any\" are not supported for this model."}}"#;
@@ -14,61 +14,48 @@ pub(super) const STREAM: &str = "event: message_start\ndata: {\"message\":{\"id\
      \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
      event: data\ndata: [DONE]\n\n";
 
-/// Serve `replies` in order, one connection each, as `(status, body)`; the
-/// returned handle yields the request bodies received.
-pub(super) fn scripted(
-    replies: Vec<(u16, &'static str)>,
-) -> (Client, std::thread::JoinHandle<Vec<Value>>) {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let server = std::thread::spawn(move || {
-        let mut bodies = Vec::new();
-        for (status, reply) in replies {
-            let (mut sock, _) = listener.accept().unwrap();
-            let mut request = String::new();
-            let mut buf = [0u8; 16384];
-            let body = loop {
-                let read = sock.read(&mut buf).unwrap();
-                request.push_str(&String::from_utf8_lossy(&buf[..read]));
-                let complete = request.split_once("\r\n\r\n").and_then(|(head, body)| {
-                    let length = head
-                        .to_ascii_lowercase()
-                        .split("\r\n")
-                        .find_map(|line| line.strip_prefix("content-length: ").map(str::to_string))
-                        .and_then(|n| n.trim().parse::<usize>().ok())?;
-                    (body.len() >= length).then(|| body.to_string())
-                });
-                if let Some(body) = complete {
-                    break body;
-                }
-                assert!(read > 0, "the request ended early: {request}");
-            };
-            bodies.push(serde_json::from_str(&body).unwrap());
-            let content_type = if status == 200 {
-                "text/event-stream"
-            } else {
-                "application/json"
-            };
-            sock.write_all(
-                format!(
-                    "HTTP/1.1 {status} X\r\ncontent-type: {content_type}\r\n\
-                     connection: close\r\ncontent-length: {}\r\n\r\n{reply}",
-                    reply.len()
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-            sock.flush().unwrap();
-        }
+/// An upstream answering a list of replies, and how many the list holds ([`scripted`]).
+pub(super) struct Replies {
+    upstream: ScriptedUpstream,
+    count: usize,
+}
+
+impl Replies {
+    /// The bodies of the requests the replies answered, as JSON, in arrival order: one
+    /// per reply, each having been asked for.
+    pub(super) fn bodies(&self) -> Vec<Value> {
+        let bodies: Vec<Value> = self.upstream.requests().iter().map(Request::json).collect();
+        assert_eq!(
+            bodies.len(),
+            self.count,
+            "every scripted reply was asked for"
+        );
         bodies
+    }
+}
+
+/// A client against an upstream answering `replies` in order, as `(status, body)`: an
+/// event stream for a 200, JSON for anything else.
+pub(super) fn scripted(replies: Vec<(u16, &'static str)>) -> (Client, Replies) {
+    let count = replies.len();
+    let upstream = ScriptedUpstream::answering(replies.into_iter().map(|(status, body)| {
+        if status == 200 {
+            Canned::stream(body)
+        } else {
+            Canned::json(status, body)
+        }
+    }));
+    let client = Client::new(
+        upstream.endpoint(Provider::Anthropic, "/v1/messages"),
+        "claude-sonnet-5-5",
+        "sys",
+        None,
+    )
+    .with_thinking(ThinkingSupport {
+        adaptive: true,
+        off: ThinkingOff::BetweenTools,
     });
-    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
-    let client =
-        Client::new(endpoint, "claude-sonnet-5-5", "sys", None).with_thinking(ThinkingSupport {
-            adaptive: true,
-            off: ThinkingOff::BetweenTools,
-        });
-    (client, server)
+    (client, Replies { upstream, count })
 }
 
 fn last_user_text(body: &Value) -> String {
@@ -90,7 +77,7 @@ async fn a_refused_forced_choice_falls_back_to_auto_and_is_remembered() {
     let forced = ToolChoice::force("spot");
     client.complete(&turns, &[], forced, |_| {}).await.unwrap();
     client.complete(&turns, &[], forced, |_| {}).await.unwrap();
-    let bodies = server.join().unwrap();
+    let bodies = server.bodies();
 
     assert_eq!(bodies[0]["tool_choice"]["type"], "tool");
     assert_eq!(bodies[0]["thinking"]["type"], "between_tools");
@@ -118,7 +105,7 @@ async fn the_forced_choice_fallback_stays_off_the_cache_chain() {
     let forced = ToolChoice::force("spot");
     client.complete(&turns, &[], forced, |_| {}).await.unwrap();
     client.complete(&turns, &[], forced, |_| {}).await.unwrap();
-    let bodies = server.join().unwrap();
+    let bodies = server.bodies();
 
     assert_eq!(
         bodies[0]["diagnostics"]["previous_message_id"],
@@ -149,7 +136,7 @@ async fn a_400_the_fallback_does_not_cure_is_returned_and_not_learned() {
         .unwrap_err();
     assert!(error.to_string().contains("not supported"), "{error}");
     client.complete(&turns, &[], forced, |_| {}).await.unwrap();
-    let bodies = server.join().unwrap();
+    let bodies = server.bodies();
     assert_eq!(bodies[2]["tool_choice"]["type"], "tool");
 }
 
@@ -169,7 +156,7 @@ async fn an_unforced_400_is_not_retried() {
         .complete(&turns, &[], ToolChoice::auto(), |_| {})
         .await
         .unwrap();
-    let bodies = server.join().unwrap();
+    let bodies = server.bodies();
     assert_eq!(bodies.len(), 2);
     assert!(!last_user_text(&bodies[1]).contains("calling the"));
 }
@@ -192,7 +179,7 @@ async fn the_sent_form_follows_the_learned_fallback() {
     assert!(sent.unforced);
     assert_eq!(sent.choice, ToolChoice::auto());
     assert_eq!(sent.turns.len(), 2, "the instruction rides after the turns");
-    server.join().unwrap();
+    server.bodies();
 }
 
 /// A ping of a request the fallback sent goes out as the fallback did: `auto`, thinking
@@ -210,7 +197,7 @@ async fn a_keepalive_of_an_unforced_request_sends_the_fallbacks_envelope() {
         .keepalive(crate::log::RequestOrigin::TriageKeepalive, &sent)
         .await
         .unwrap();
-    let bodies = server.join().unwrap();
+    let bodies = server.bodies();
     let (fallback, ping) = (&bodies[1], &bodies[2]);
     assert_eq!(ping["tool_choice"], fallback["tool_choice"]);
     assert_eq!(ping["thinking"], fallback["thinking"]);

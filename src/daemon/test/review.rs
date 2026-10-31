@@ -59,19 +59,6 @@ impl Fixture {
     }
 }
 
-/// Whether `session` has heard a notification whose body matches — pending, or
-/// already logged as an `Ambient` by its live loop's first show.
-fn heard(session: &Session, matches: impl Fn(&str) -> bool) -> bool {
-    session
-        .pending_notifications()
-        .iter()
-        .any(|n| matches(&n.body))
-        || session.snapshot().iter().any(|e| match &e.payload {
-            Payload::Ambient(n) => matches(&n.body),
-            _ => false,
-        })
-}
-
 fn leaf() -> ToolCall {
     ToolCall::new(
         "fs__list",
@@ -130,7 +117,7 @@ async fn supervisor_resolves_when_a_call_is_routed_not_when_the_session_is_creat
 
     let _gate = outliver.register_pending(&leaf(), None, None);
     root.wait_until("the gate reached its supervisor", || {
-        heard(&root, |body| body.contains("waiting for your decision"))
+        heard(&root, |n| n.body.contains("waiting for your decision")).is_some()
     })
     .await;
     assert_eq!(outliver.resolved_review_level(), ReviewLevel::Supervisor);
@@ -185,9 +172,11 @@ async fn a_level_change_reroutes_a_pending_gate() {
     child.set_review_level(ReviewLevel::SpotterHuman);
     let _gate = child.register_pending(&leaf(), None, None);
     root.wait_until("the creator observed the gate", || {
-        heard(&root, |body| {
-            body.starts_with("waiting for a decision from the operator or you on fs.list")
+        heard(&root, |n| {
+            n.body
+                .starts_with("waiting for a decision from the operator or you on fs.list")
         })
+        .is_some()
     })
     .await;
 
@@ -195,9 +184,10 @@ async fn a_level_change_reroutes_a_pending_gate() {
     child.set_review_level(ReviewLevel::Supervisor);
 
     root.wait_until("the held call was re-routed to the creator", || {
-        heard(&root, |body| {
-            body.contains("waiting for your decision") && body.contains("fs.list")
+        heard(&root, |n| {
+            n.body.contains("waiting for your decision") && n.body.contains("fs.list")
         })
+        .is_some()
     })
     .await;
     assert!(
@@ -233,7 +223,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_decide() {
         .unwrap();
     let gate = child.register_pending(&leaf(), None, None);
     root.wait_until("the gate reached its reviewer", || {
-        heard(&root, |body| body.contains("waiting for your decision"))
+        heard(&root, |n| n.body.contains("waiting for your decision")).is_some()
     })
     .await;
 
@@ -268,7 +258,7 @@ async fn an_unsubscribed_creator_still_receives_the_gate_it_reviews() {
 
     let _gate = child.register_pending(&leaf(), None, None);
     root.wait_until("the gate reached its reviewer regardless", || {
-        heard(&root, |body| body.contains("waiting for your decision"))
+        heard(&root, |n| n.body.contains("waiting for your decision")).is_some()
     })
     .await;
 

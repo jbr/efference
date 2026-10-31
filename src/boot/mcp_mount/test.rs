@@ -1,4 +1,5 @@
 use super::*;
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// The visible text of the hyperlink is the URL itself, so a terminal that
 /// ignores OSC 8 still prints something copy-pasteable — which is the whole
@@ -15,51 +16,32 @@ fn an_osc8_link_still_reads_as_a_url_when_the_escape_is_stripped() {
     assert_eq!(rendered.matches(url).count(), 2);
 }
 
-/// A server that answers every request `401`, as one that wants authorization does.
-fn unauthorized_server() -> std::net::SocketAddr {
-    use std::io::{BufRead, BufReader, Read, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { return };
-            std::thread::spawn(move || {
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut length = 0;
-                let mut line = String::new();
-                while reader.read_line(&mut line).is_ok_and(|n| n > 0) {
-                    if line == "\r\n" {
-                        break;
-                    }
-                    if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                        length = value.trim().parse().unwrap_or(0);
-                    }
-                    line.clear();
-                }
-                let mut body = vec![0; length];
-                let _ = reader.read_exact(&mut body);
-                let _ = stream.write_all(
-                    b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Bearer\r\n\
-                      Content-Length: 0\r\nConnection: close\r\n\r\n",
-                );
-            });
-        }
+/// An upstream that answers every request `401`, as a server that wants authorization
+/// does. The MCP client is resolved from the server's configured URL, so the upstream is
+/// reached over a loopback port (`ScriptedUpstream::bind`); it closes the port when it
+/// drops. Returns it with its origin.
+fn unauthorized_server() -> (ScriptedUpstream, String) {
+    let upstream = ScriptedUpstream::new(|_| {
+        Canned::json(401, "")
+            .without_content_type()
+            .with_header("www-authenticate", "Bearer")
     });
-    addr
+    let origin = upstream.bind();
+    (upstream, origin)
 }
 
 /// A preparation that refuses authorization fails the mount of a server asking for
 /// it, naming why, and never enters the dance: nothing is told of a wait.
 #[tokio::test]
 async fn a_refused_authorization_fails_the_mount_without_the_dance() {
-    let addr = unauthorized_server();
+    let (_server, origin) = unauthorized_server();
     let cwd = std::env::temp_dir();
     let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), None).unwrap();
     let servers = std::collections::BTreeMap::from([(
         "guarded".to_string(),
         crate::config::McpServerEntry {
             transport: crate::config::McpTransport::Http {
-                url: format!("http://{addr}/mcp"),
+                url: format!("{origin}/mcp"),
             },
             optional: false,
         },
@@ -167,11 +149,12 @@ async fn a_stdio_server_mounts_when_the_secret_store_fails_every_operation() {
     );
     assert_eq!(unusable.loads.load(std::sync::atomic::Ordering::SeqCst), 0);
 
+    let (_server, origin) = unauthorized_server();
     let http = std::collections::BTreeMap::from([(
         "remote".to_string(),
         crate::config::McpServerEntry {
             transport: crate::config::McpTransport::Http {
-                url: format!("http://{}/mcp", unauthorized_server()),
+                url: format!("{origin}/mcp"),
             },
             optional: false,
         },

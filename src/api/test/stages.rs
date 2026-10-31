@@ -2,13 +2,13 @@
 //! the stages a request passes, in order, for a normal request, a retried one, an
 //! interrupted one, a cancelled one, and two that overlap.
 
-use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::*;
 use crate::log::{RequestOrigin, RequestStage, RequestStageKind};
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 #[derive(Default)]
 struct Recorder {
@@ -45,45 +45,21 @@ const FINALIZED: &str = "event: message_start\ndata: {\"type\":\"message_start\"
     \"usage\":{\"input_tokens\":1,\"output_tokens\":1}}\n\n\
     event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
 
-fn ok_response() -> String {
-    format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\
-         content-length: {}\r\n\r\n{FINALIZED}",
-        FINALIZED.len()
-    )
+fn finalized() -> Canned {
+    Canned::stream(FINALIZED)
 }
 
-fn unavailable() -> String {
-    let body = "{\"error\":{\"message\":\"overloaded\"}}";
-    format!(
-        "HTTP/1.1 503 Service Unavailable\r\ncontent-type: application/json\r\n\
-         connection: close\r\ncontent-length: {}\r\n\r\n{body}",
-        body.len()
-    )
+fn unavailable() -> Canned {
+    Canned::json(503, "{\"error\":{\"message\":\"overloaded\"}}")
 }
 
-/// A server that answers each accepted connection with the next scripted response.
-fn serve(responses: Vec<String>) -> (String, std::thread::JoinHandle<()>) {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/v1/messages", listener.local_addr().unwrap());
-    let server = std::thread::spawn(move || {
-        for response in responses {
-            let (mut sock, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 16384];
-            let _ = sock.read(&mut buf);
-            sock.write_all(response.as_bytes()).unwrap();
-            let _ = sock.flush();
-        }
-    });
-    (url, server)
-}
-
-fn endpoint(url: String) -> Endpoint {
-    Endpoint::at(Provider::Anthropic, url)
-}
-
-fn client(url: String, recorder: &Arc<Recorder>) -> Client {
-    let mut client = Client::new(endpoint(url), "m", "sys", None);
+fn client(upstream: &ScriptedUpstream, recorder: &Arc<Recorder>) -> Client {
+    let mut client = Client::new(
+        upstream.endpoint(Provider::Anthropic, "/v1/messages"),
+        "m",
+        "sys",
+        None,
+    );
     client.set_stage_sink(Arc::clone(recorder) as StageSink);
     client
 }
@@ -91,14 +67,13 @@ fn client(url: String, recorder: &Arc<Recorder>) -> Client {
 /// A request that completes records sent, first byte, ended.
 #[tokio::test]
 async fn a_normal_request_records_sent_first_byte_ended() {
-    let (url, server) = serve(vec![ok_response()]);
+    let upstream = ScriptedUpstream::answering([finalized()]);
     let recorder = Arc::new(Recorder::default());
-    client(url, &recorder)
+    client(&upstream, &recorder)
         .with_origin(RequestOrigin::Turn)
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .unwrap();
-    server.join().unwrap();
 
     assert_eq!(
         recorder.kinds(0),
@@ -132,14 +107,14 @@ async fn a_normal_request_records_sent_first_byte_ended() {
 /// byte, and the request still ends once.
 #[tokio::test]
 async fn a_retried_request_records_the_refused_attempt() {
-    let (url, server) = serve(vec![unavailable(), ok_response()]);
+    let upstream = ScriptedUpstream::answering([unavailable(), finalized()]);
     let recorder = Arc::new(Recorder::default());
-    client(url, &recorder)
+    client(&upstream, &recorder)
         .with_origin(RequestOrigin::Triage)
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .unwrap();
-    server.join().unwrap();
+    assert_eq!(upstream.count(), 2);
 
     assert_eq!(
         recorder.kinds(0),
@@ -158,34 +133,12 @@ async fn a_retried_request_records_the_refused_attempt() {
 /// The operator's interrupt closes the request as `failed: interrupted`.
 #[tokio::test]
 async fn an_interrupted_request_records_failed_interrupted() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/v1/messages", listener.local_addr().unwrap());
-    let done = Arc::new(AtomicBool::new(false));
-    let held = Arc::clone(&done);
-    let server = std::thread::spawn(move || {
-        let (mut sock, _) = listener.accept().unwrap();
-        let mut buf = [0u8; 8192];
-        let _ = sock.read(&mut buf);
-        let event = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
-                     \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
-        sock.write_all(
-            format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                 transfer-encoding: chunked\r\n\r\n{:x}\r\n{event}\r\n",
-                event.len()
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-        sock.set_read_timeout(Some(Duration::from_millis(50)))
-            .unwrap();
-        while !held.load(Ordering::SeqCst) {
-            let _ = sock.read(&mut buf);
-        }
-    });
+    let event = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
+                 \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
+    let upstream = ScriptedUpstream::answering([Canned::stream(event).left_open()]);
     let recorder = Arc::new(Recorder::default());
     let interrupt = Arc::new(tokio::sync::Notify::new());
-    let mut client = client(url, &recorder);
+    let mut client = client(&upstream, &recorder);
     client.set_abort(Arc::clone(&interrupt));
     let presser = Arc::clone(&interrupt);
     tokio::spawn(async move {
@@ -197,8 +150,6 @@ async fn an_interrupted_request_records_failed_interrupted() {
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .unwrap();
-    done.store(true, Ordering::SeqCst);
-    server.join().unwrap();
 
     assert_eq!(
         recorder.kinds(0),
@@ -215,30 +166,16 @@ async fn an_interrupted_request_records_failed_interrupted() {
 /// A request whose future is dropped before it finishes does not stay open.
 #[tokio::test]
 async fn a_cancelled_request_closes_as_interrupted() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/v1/messages", listener.local_addr().unwrap());
-    let done = Arc::new(AtomicBool::new(false));
-    let held = Arc::clone(&done);
-    let server = std::thread::spawn(move || {
-        // Accept and say nothing until the client gives up.
-        let (mut sock, _) = listener.accept().unwrap();
-        sock.set_read_timeout(Some(Duration::from_millis(50)))
-            .unwrap();
-        let mut buf = [0u8; 8192];
-        while !held.load(Ordering::SeqCst) {
-            let _ = sock.read(&mut buf);
-        }
-    });
+    // The upstream takes the request and says nothing until the client gives up.
+    let upstream = ScriptedUpstream::answering([Canned::silent()]);
     let recorder = Arc::new(Recorder::default());
-    let client = client(url, &recorder).with_origin(RequestOrigin::Title);
+    let client = client(&upstream, &recorder).with_origin(RequestOrigin::Title);
     let cancelled = tokio::time::timeout(
         Duration::from_millis(200),
         client.complete(&[], &[], ToolChoice::auto(), |_| {}),
     )
     .await;
-    assert!(cancelled.is_err(), "the server never answers");
-    done.store(true, Ordering::SeqCst);
-    server.join().unwrap();
+    assert!(cancelled.is_err(), "the upstream never answers");
 
     assert_eq!(
         recorder.kinds(0),
@@ -255,9 +192,9 @@ async fn a_cancelled_request_closes_as_interrupted() {
 /// interleave in the order they happened.
 #[tokio::test]
 async fn concurrent_requests_interleave_by_id() {
-    let (url, server) = serve(vec![ok_response(), ok_response()]);
+    let upstream = ScriptedUpstream::answering([finalized(), finalized()]);
     let recorder = Arc::new(Recorder::default());
-    let base = client(url, &recorder);
+    let base = client(&upstream, &recorder);
     let triage = base.with_origin(RequestOrigin::Triage);
     let title = base.with_origin(RequestOrigin::Title);
     let (a, b) = tokio::join!(
@@ -266,7 +203,6 @@ async fn concurrent_requests_interleave_by_id() {
     );
     a.unwrap();
     b.unwrap();
-    server.join().unwrap();
 
     let stages = recorder.stages.lock().unwrap().clone();
     assert_eq!(stages.len(), 6);
@@ -294,14 +230,9 @@ async fn a_truncated_primer_ends_and_an_empty_one_fails() {
              \"name\":\"retain\",\"arguments\":\"{{not json\"}}],\
              \"usage\":{{\"input_tokens\":{input_tokens},\"output_tokens\":16}}}}}}\n\n"
         );
-        let response = format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\
-             content-length: {}\r\n\r\n{body}",
-            body.len()
-        );
-        let (url, server) = serve(vec![response]);
+        let upstream = ScriptedUpstream::answering([Canned::stream(body)]);
         let recorder = Arc::new(Recorder::default());
-        let mut endpoint = endpoint(url);
+        let mut endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
         endpoint.provider = Provider::OpenAICodex;
         let mut client = Client::new(endpoint, "gpt-6-luna", "sys", None)
             .with_prompt_cache(PromptCachePolicy::Implicit);
@@ -311,7 +242,7 @@ async fn a_truncated_primer_ends_and_an_empty_one_fails() {
             .prime(&turns, &[], ToolChoice::auto())
             .await
             .expect("an implicit Responses lineage takes a primer");
-        server.join().unwrap();
+        assert_eq!(upstream.count(), 1);
 
         assert_eq!(primed.is_ok(), planted);
         let stages = recorder.stages.lock().unwrap().clone();

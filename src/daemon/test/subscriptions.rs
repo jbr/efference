@@ -96,46 +96,6 @@ async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// Where a notification to `session` is now: still pending (a queued slot
-/// notification answers `u64::MAX`), or logged as an `Ambient` (the parent's live loop
-/// drains its inbox after the idle debounce, so a test cannot count on catching it
-/// pending).
-fn heard(session: &Session, matches: impl Fn(&str, &str, Option<&str>) -> bool) -> Option<Seq> {
-    if let Some(n) = session
-        .pending_notifications()
-        .iter()
-        .find(|n| matches(&n.source, &n.body, n.slot.as_deref()))
-    {
-        return Some(n.seq.unwrap_or(u64::MAX));
-    }
-    session.snapshot().iter().find_map(|e| match &e.payload {
-        Payload::Ambient(n) if matches(&n.source, &n.body, n.slot.as_deref()) => Some(e.seq),
-        _ => None,
-    })
-}
-
-/// Every notification `session` has been told, in arrival order: the ones its loop has
-/// drained are `Ambient` entries in its log, with the slot and the wake they arrived
-/// with, and a slot notification still queued is held in memory only.
-fn told(session: &Session) -> Vec<crate::log::Notification> {
-    let logged = session
-        .snapshot()
-        .into_iter()
-        .filter_map(|e| match e.payload {
-            Payload::Ambient(n) => Some(n),
-            _ => None,
-        });
-    let queued = session
-        .pending_notifications()
-        .into_iter()
-        .filter(|n| n.seq.is_none())
-        .map(|n| {
-            let note = crate::log::Notification::new(n.source, n.body, n.slot);
-            if n.wake { note.waking() } else { note }
-        });
-    logged.chain(queued).collect()
-}
-
 /// Whether the parent's log holds a `Triage` that pinned `seq`.
 fn pinned(session: &Session, seq: Seq) -> bool {
     session.snapshot().iter().any(|e| match &e.payload {
@@ -173,7 +133,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
     };
     parent
         .wait_until("the gate reached the parent", || {
-            heard(&parent, is_gate).is_some()
+            heard(&parent, |n| is_gate(&n.source, &n.body, n.slot.as_deref())).is_some()
         })
         .await;
     assert!(fixture.session("peer").pending_notifications().is_empty());
@@ -200,10 +160,10 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
     child.going_idle();
     parent
         .wait_until("the idle reached the parent", || {
-            heard(&parent, |source, body, slot| {
-                source == "child"
-                    && slot == Some("session:child")
-                    && body.starts_with("idle, its turn is done")
+            heard(&parent, |n| {
+                n.source == "child"
+                    && n.slot.as_deref() == Some("session:child")
+                    && n.body.starts_with("idle, its turn is done")
             })
             .is_some()
         })
@@ -277,8 +237,8 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     );
     parent
         .wait_until("the gate reached the parent as its reviewer", || {
-            heard(&parent, |source, body, slot| {
-                source == "child" && slot == Some("session:child") && body == gate
+            heard(&parent, |n| {
+                n.source == "child" && n.slot.as_deref() == Some("session:child") && n.body == gate
             })
             .is_some()
         })
@@ -308,7 +268,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     );
     parent
         .wait_until("the idle reached the parent with the whole message", || {
-            heard(&parent, |source, body, _| source == "child" && body == idle).is_some()
+            heard(&parent, |n| n.source == "child" && n.body == idle).is_some()
         })
         .await;
 
@@ -328,12 +288,13 @@ async fn a_childs_question_wakes_the_parent() {
     let mut wait = child.begin_ask("ask_1", "Which branch?".into(), 1, 1);
     parent
         .wait_until("the question reached the parent", || {
-            heard(&parent, |source, body, slot| {
-                source == "child"
-                    && slot == Some("session:child")
-                    && body.starts_with("asking a question")
-                    && body.contains("Which branch?")
-                    && body.contains("agents__message(agent: \"child\", text: \"<answer>\"")
+            heard(&parent, |n| {
+                n.source == "child"
+                    && n.slot.as_deref() == Some("session:child")
+                    && n.body.starts_with("asking a question")
+                    && n.body.contains("Which branch?")
+                    && n.body
+                        .contains("agents__message(agent: \"child\", text: \"<answer>\"")
             })
             .is_some()
         })
@@ -349,10 +310,10 @@ async fn a_childs_question_wakes_the_parent() {
     child.going_idle();
     parent
         .wait_until("the parent heard the child move on", || {
-            heard(&parent, |source, body, slot| {
-                source == "child"
-                    && slot == Some("session:child")
-                    && body.starts_with("idle, its turn is done")
+            heard(&parent, |n| {
+                n.source == "child"
+                    && n.slot.as_deref() == Some("session:child")
+                    && n.body.starts_with("idle, its turn is done")
             })
             .is_some()
         })
@@ -382,9 +343,9 @@ async fn a_question_tells_a_driver_its_message_came_back() {
     let _wait = grandchild.begin_ask("ask_1", "Which branch?".into(), 1, 1);
     parent
         .wait_until("the parent heard its message came back", || {
-            heard(&parent, |source, body, _| {
-                source == "grandchild"
-                    && body.contains(
+            heard(&parent, |n| {
+                n.source == "grandchild"
+                    && n.body.contains(
                         "returned: your message \"try the other branch\" was returned undelivered",
                     )
             })
@@ -393,10 +354,10 @@ async fn a_question_tells_a_driver_its_message_came_back() {
         .await;
     child
         .wait_until("the subscribed child heard the question", || {
-            heard(&child, |source, body, _| {
-                source == "grandchild"
-                    && body.starts_with("asking a question")
-                    && !body.contains("returned:")
+            heard(&child, |n| {
+                n.source == "grandchild"
+                    && n.body.starts_with("asking a question")
+                    && !n.body.contains("returned:")
             })
             .is_some()
         })

@@ -60,23 +60,6 @@ impl Fixture {
     }
 }
 
-/// The must-wake flag of the notification from `c` whose body matches, pending or
-/// already logged as an `Ambient` by the live loop's first show; `None` when `session`
-/// has heard none.
-fn heard_from_c(session: &Session, matches: impl Fn(&str) -> bool) -> Option<bool> {
-    if let Some(n) = session
-        .pending_notifications()
-        .iter()
-        .find(|n| n.source == "c" && matches(&n.body))
-    {
-        return Some(n.wake);
-    }
-    session.snapshot().iter().find_map(|e| match &e.payload {
-        Payload::Ambient(n) if n.source == "c" && matches(&n.body) => Some(n.wake),
-        _ => None,
-    })
-}
-
 fn leaf() -> ToolCall {
     ToolCall::new(
         crate::bash::NAME,
@@ -159,7 +142,7 @@ async fn the_supervisor_may_decide_a_gate_routed_to_the_operator_and_is_not_woke
     let wake = {
         let mut wake = None;
         p.wait_until("the gate reached p's inbox", || {
-            wake = heard_from_c(&p, |body| body.starts_with(&first));
+            wake = heard(&p, |n| n.source == "c" && n.body.starts_with(&first)).map(|n| n.wake);
             wake.is_some()
         })
         .await;

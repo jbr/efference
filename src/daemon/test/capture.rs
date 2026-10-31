@@ -3,23 +3,21 @@
 //! the log holds, and a completed batch projects the same wire whether its results were
 //! captured first or logged with their verdicts.
 
-use super::runtime::boot;
-use super::upstream_hold::{Answer, end_turn, recording, tool_call};
+use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
 use crate::log::Telemetry;
 use crate::log::{AssistantOutput, ContentBlock, Keep, RawResult, Triaged, WireState};
+use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, events, tool_call};
 use std::collections::BTreeMap;
-use std::net::SocketAddr;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use tempfile::TempDir;
 use trillium_tokio::Swansong;
 
 /// A completion making `calls` bash calls in one turn — the shape that forces a
 /// multi-result triage.
 fn completion(calls: &[(&str, &str)]) -> String {
-    let events: Vec<String> = calls
+    let blocks: Vec<String> = calls
         .iter()
         .enumerate()
         .flat_map(|(index, (id, command))| {
@@ -39,13 +37,13 @@ fn completion(calls: &[(&str, &str)]) -> String {
         })
         .collect();
     let mut data = vec![r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string()];
-    data.extend(events);
+    data.extend(blocks);
     data.push(
         r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}"#
             .to_string(),
     );
     data.push(r#"{"type":"message_stop"}"#.to_string());
-    upstream_hold::events(&data)
+    events(&data)
 }
 
 /// A `retain` call answering for each label of a multi-result triage.
@@ -62,31 +60,25 @@ pub(super) fn verdict(keeps: &[&str]) -> String {
     )
 }
 
-/// A session on a fresh directory, pointed at `addr`. `env` is the session's `[env]`
-/// table, which is what installs the masker over the session's appends.
-fn start(addr: SocketAddr, env: crate::env_table::EnvPolicy) -> (Swansong, SessionRuntime) {
-    let mut boot = boot(&cwd());
+/// A session in a working directory of its own, pointed at `upstream` and returned once
+/// its loop has gone idle; the directory goes when the returned guard drops. `env` is the
+/// session's `[env]` table, which is what installs the masker over the session's appends.
+async fn start(
+    upstream: &ScriptedUpstream,
+    env: crate::env_table::EnvPolicy,
+) -> (Swansong, SessionRuntime, TempDir) {
+    let (cwd, dir) = workdir("capture");
+    let mut boot = boot(&cwd);
     boot.client = Client::new(
-        crate::api::Endpoint::at(
-            crate::log::Provider::Anthropic,
-            format!("http://{addr}/v1/messages"),
-        ),
+        upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
         None,
     );
     boot.env_policy = env;
     let host = Swansong::new();
-    let runtime = SessionRuntime::start(boot, &host);
-    (host, runtime)
-}
-
-fn cwd() -> PathBuf {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let nonce = RandomState::new().build_hasher().finish();
-    let dir = std::env::temp_dir().join(format!("efference-capture-{nonce:016x}"));
-    std::fs::create_dir_all(dir.join("scratch")).unwrap();
-    dir.canonicalize().unwrap()
+    let runtime = started(boot, &host).await;
+    (host, runtime, dir)
 }
 
 /// An `[env]` table masking one literal value.
@@ -109,40 +101,31 @@ fn masking(value: &str) -> crate::env_table::EnvPolicy {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn triage_is_shown_the_masked_result() {
     let secret = "s3cr3t-token-value";
-    let requests = Arc::new(AtomicUsize::new(0));
-    let bodies = Arc::new(Mutex::new(Vec::new()));
-    let addr = recording(
-        Arc::clone(&requests),
-        |n| match n {
-            0 => Answer::Stream(completion(&[(
-                "toolu_1",
-                "printf 'token=%s\\n' \"$API_TOKEN\"",
-            )])),
-            1 => Answer::Stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
-            _ => Answer::Stream(end_turn()),
-        },
-        &bodies,
-    );
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(completion(&[(
+            "toolu_1",
+            "printf 'token=%s\\n' \"$API_TOKEN\"",
+        )])),
+        1 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
+        _ => Canned::stream(end_turn()),
+    });
     // The value reaches the child as an ordinary `[env]` entry, so the tool prints it
     // and the masker is what removes it — not the command.
     let env = masking(secret);
-    let (host, runtime) = start(addr, env);
+    let (host, runtime, _dir) = start(&upstream, env).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
     // The loop is idle until the submission reaches it, so the turn is waited for by
-    // what it did rather than by the phase, which is idle in both states.
+    // what it did as well as by the phase, which is idle in both states.
     session
-        .poll_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3)
-        .await;
-    session
-        .wait_until("the turn finishes", || {
-            session.loop_phase() == LoopPhase::Idle
+        .wait_until_with(&upstream, "the turn finishes", || {
+            upstream.count() >= 3 && session.loop_phase() == LoopPhase::Idle
         })
         .await;
     host.shut_down().await;
 
-    let triage = bodies.lock().unwrap()[1].clone();
+    let triage = upstream.requests()[1].body.clone();
     assert!(
         triage.contains("token="),
         "the triage carries the result: {triage}"
@@ -175,29 +158,21 @@ async fn triage_is_shown_the_masked_result() {
 /// model reads, only when it was decided.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = recording(
-        Arc::clone(&requests),
-        |n| match n {
-            0 => Answer::Stream(completion(&[
-                ("toolu_1", "printf 'first\\nsecond\\nthird\\n'"),
-                ("toolu_2", "printf 'alpha\\nbeta\\n'"),
-            ])),
-            1 => Answer::Stream(verdict(&["1-2", "all"])),
-            _ => Answer::Stream(end_turn()),
-        },
-        &Arc::new(Mutex::new(Vec::new())),
-    );
-    let (host, runtime) = start(addr, masking(""));
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(completion(&[
+            ("toolu_1", "printf 'first\\nsecond\\nthird\\n'"),
+            ("toolu_2", "printf 'alpha\\nbeta\\n'"),
+        ])),
+        1 => Canned::stream(verdict(&["1-2", "all"])),
+        _ => Canned::stream(end_turn()),
+    });
+    let (host, runtime, _dir) = start(&upstream, masking("")).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
     session
-        .poll_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3)
-        .await;
-    session
-        .wait_until("the turn finishes", || {
-            session.loop_phase() == LoopPhase::Idle
+        .wait_until_with(&upstream, "the turn finishes", || {
+            upstream.count() >= 3 && session.loop_phase() == LoopPhase::Idle
         })
         .await;
     let through_the_loop = session.project_messages();

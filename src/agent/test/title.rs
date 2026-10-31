@@ -3,9 +3,9 @@
 //! standing title answers it.
 
 use super::*;
-use crate::api::Endpoint;
 use crate::daemon::SessionIdentity;
 use crate::log::{Provider, Title, TitleAuthor};
+use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile};
 
 fn session() -> Arc<Session> {
     let (shared, _rx) = Session::in_memory();
@@ -26,84 +26,36 @@ fn session() -> Arc<Session> {
     shared
 }
 
-/// A throwaway socket serving up to two completions, each a one-line text
-/// answer (the codex tests' mock, pointed at a message output item). Two
-/// accepts so a test asserting *no* triage fired fails loudly if one does.
+/// A client against an upstream answering every request, title asks included, with a
+/// one-line text answer (a Responses message output item): `line`.
 fn mock_client(line: &str) -> Client {
     mock(line, None).0
 }
 
-/// [`mock_client`] with a count of the requests it has read, and, when `hold` is
-/// given, each answer held until the test sends on it — so a triage can be kept in
-/// flight while the test moves the log.
-fn mock(
-    line: &str,
-    hold: Option<std::sync::mpsc::Receiver<()>>,
-) -> (Client, Arc<std::sync::atomic::AtomicUsize>) {
-    use std::io::{Read, Write};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let line = line.to_string();
-    let requests = Arc::new(AtomicUsize::new(0));
-    let counted = requests.clone();
-    std::thread::spawn(move || {
-        let mut served = 0;
-        while served < 2 {
-            let Ok((mut sock, _)) = listener.accept() else {
-                break;
-            };
-            // A port the kernel hands out is reused once its test drops it, so a
-            // client from another test still retrying against its own dead mock
-            // can connect here. Only a title ask is answered and counted. The
-            // marker is in the body, which a loaded machine may deliver after the
-            // headers, so read until it arrives or the client stops sending.
-            const MARKER: &str = "say what this session is for";
-            let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(5)));
-            let mut request = Vec::new();
-            let mut buf = vec![0u8; 65536];
-            while !String::from_utf8_lossy(&request).contains(MARKER) {
-                match sock.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(read) => request.extend_from_slice(&buf[..read]),
-                }
-            }
-            if !String::from_utf8_lossy(&request).contains(MARKER) {
-                continue;
-            }
-            served += 1;
-            counted.fetch_add(1, Ordering::SeqCst);
-            if let Some(hold) = &hold {
-                let _ = hold.recv();
-            }
-            let item = format!(
-                "{{\"type\":\"message\",\"id\":\"m1\",\"role\":\"assistant\",\
-                 \"status\":\"completed\",\"content\":[{{\"type\":\"output_text\",\
-                 \"text\":\"{line}\",\"annotations\":[]}}]}}"
-            );
-            let body = format!(
-                "event: response.completed\ndata: {{\"type\":\"response.completed\",\
-                 \"response\":{{\"id\":\"r\",\"status\":\"completed\",\"output\":[{item}],\
-                 \"usage\":{{\"input_tokens\":1,\"output_tokens\":1}}}}}}\n\n"
-            );
-            sock.write_all(
-                format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
-            )
-            .unwrap();
-            sock.flush().unwrap();
+/// [`mock_client`], and its upstream, which counts the asks; with `hold`, each answer
+/// waits at that turnstile until the test admits it, so a triage can be kept in flight
+/// while the test moves the log.
+fn mock(line: &str, hold: Option<&Turnstile>) -> (Client, ScriptedUpstream) {
+    let item = format!(
+        "{{\"type\":\"message\",\"id\":\"m1\",\"role\":\"assistant\",\
+         \"status\":\"completed\",\"content\":[{{\"type\":\"output_text\",\
+         \"text\":\"{line}\",\"annotations\":[]}}]}}"
+    );
+    let body = format!(
+        "event: response.completed\ndata: {{\"type\":\"response.completed\",\
+         \"response\":{{\"id\":\"r\",\"status\":\"completed\",\"output\":[{item}],\
+         \"usage\":{{\"input_tokens\":1,\"output_tokens\":1}}}}}}\n\n"
+    );
+    let hold = hold.cloned();
+    let upstream = ScriptedUpstream::scripting_title_asks(move |_| {
+        let answer = Canned::stream(body.clone());
+        match &hold {
+            Some(turnstile) => answer.held(turnstile),
+            None => answer,
         }
     });
-    let endpoint = Endpoint::at(
-        Provider::OpenAICodex,
-        format!("http://{addr}/backend-api/codex/responses"),
-    );
-    (Client::new(endpoint, "m", "sys", None), requests)
+    let endpoint = upstream.endpoint(Provider::OpenAICodex, "/backend-api/codex/responses");
+    (Client::new(endpoint, "m", "sys", None), upstream)
 }
 
 fn titles(shared: &Session) -> Vec<String> {
@@ -178,27 +130,26 @@ fn user_turn(shared: &Session, text: &str) {
 /// second ask.
 #[tokio::test]
 async fn title_checks_during_an_ask_in_flight_spend_one_peek() {
-    use std::sync::atomic::Ordering;
     let shared = session();
     user_turn(&shared, "start");
-    let (release, hold) = std::sync::mpsc::channel();
-    let (client, requests) = mock("Fix title cadence", Some(hold));
+    let release = Turnstile::new();
+    let (client, upstream) = mock("Fix title cadence", Some(&release));
     let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
     shared
-        .poll_until("the ask reached the mock", || {
-            requests.load(Ordering::SeqCst) == 1
+        .wait_until_with(&upstream, "the ask reached the mock", || {
+            upstream.count() == 1
         })
         .await;
     solicit_title_detached(&shared, &ask);
-    release.send(()).unwrap();
+    release.admit();
     shared
         .wait_until("the title landed", || titles(&shared).len() == 1)
         .await;
     for _ in 0..20 {
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
-    assert_eq!(requests.load(Ordering::SeqCst), 1, "{:?}", titles(&shared));
+    assert_eq!(upstream.count(), 1, "{:?}", titles(&shared));
     assert_eq!(titles(&shared), ["Fix title cadence"]);
 }
 
@@ -207,27 +158,26 @@ async fn title_checks_during_an_ask_in_flight_spend_one_peek() {
 /// again so the turn the triage never saw is read.
 #[tokio::test]
 async fn a_user_turn_during_the_peek_is_asked_about_again() {
-    use std::sync::atomic::Ordering;
     let shared = session();
     user_turn(&shared, "start");
-    let (release, hold) = std::sync::mpsc::channel();
-    let (client, requests) = mock("Fix title cadence", Some(hold));
+    let release = Turnstile::new();
+    let (client, upstream) = mock("Fix title cadence", Some(&release));
     let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
     shared
-        .poll_until("the ask reached the mock", || {
-            requests.load(Ordering::SeqCst) == 1
+        .wait_until_with(&upstream, "the ask reached the mock", || {
+            upstream.count() == 1
         })
         .await;
     user_turn(&shared, "new scope");
     solicit_title_detached(&shared, &ask);
-    release.send(()).unwrap();
+    release.admit();
     shared
-        .poll_until("the second ask reached the mock", || {
-            requests.load(Ordering::SeqCst) == 2
+        .wait_until_with(&upstream, "the second ask reached the mock", || {
+            upstream.count() == 2
         })
         .await;
-    release.send(()).unwrap();
+    release.admit();
     shared
         .wait_until("the second title landed", || titles(&shared).len() == 2)
         .await;

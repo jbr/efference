@@ -66,6 +66,10 @@ pub struct Endpoint {
     /// ([`RequestOptions`]); the default everywhere but a described Completions
     /// connection that sets `body` or `output-cap-field`.
     pub request: RequestOptions,
+    /// The client a test pointed this endpoint at, an in-process upstream
+    /// (`testing/upstream.rs`), in place of the process-wide one ([`Self::http`]).
+    #[cfg(test)]
+    pub(crate) http: Option<trillium_client::Client>,
 }
 
 /// One authenticated GET's whole answer, whatever its status
@@ -276,7 +280,24 @@ impl Endpoint {
             extra_headers: Vec::new(),
             base,
             request: RequestOptions::default(),
+            #[cfg(test)]
+            http: None,
         }
+    }
+
+    /// The client this endpoint's requests go out through: the process-wide one
+    /// (`http.rs`), or in a test the in-process upstream the endpoint was pointed at.
+    /// Every request an endpoint makes — a turn's, a probe's, a decision's — draws
+    /// its client here, so a test that points an endpoint at an upstream catches them
+    /// all.
+    // `self` is read only in a test build, where an endpoint can carry a test's client.
+    #[cfg_attr(not(test), allow(clippy::unused_self))]
+    pub(crate) fn http(&self) -> trillium_client::Client {
+        #[cfg(test)]
+        if let Some(http) = &self.http {
+            return http.clone();
+        }
+        crate::http::client()
     }
 
     /// Whether requests carry a credential.
@@ -355,6 +376,11 @@ impl Endpoint {
 
     pub(crate) fn with_extra_headers(mut self, extra_headers: Vec<(String, String)>) -> Self {
         self.extra_headers = extra_headers;
+        self
+    }
+
+    pub(crate) fn with_http(mut self, http: trillium_client::Client) -> Self {
+        self.http = Some(http);
         self
     }
 }

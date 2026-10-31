@@ -2,12 +2,12 @@
 //! (docs/control-api.md): `settle` returns at the phases that wait on someone outside
 //! the loop and at idle, and at no step in between.
 
-use super::upstream_hold::{Answer, end_turn, scripted, start, start_with, tool_call};
+use super::upstream_hold::{start, start_with};
 use super::*;
 use crate::daemon::{BlockedReason, LoopPhase};
 use crate::frontend::SubmittedTurn;
 use crate::log::Stance;
-use std::sync::atomic::AtomicUsize;
+use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile, end_turn, tool_call};
 
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
 
@@ -20,50 +20,27 @@ fn settle(session: &Arc<Session>) -> tokio::task::JoinHandle<Value> {
     })
 }
 
-/// Holds a scripted answer until the test opens it, so a `settle` that should block is
-/// seen blocking however the threads are scheduled. One static per test: the scripts
-/// are plain `fn`s.
-pub(super) struct Latch(AtomicBool);
-
-impl Latch {
-    pub(super) const fn new() -> Self {
-        Self(AtomicBool::new(false))
-    }
-
-    pub(super) fn wait(&self) {
-        let start = Instant::now();
-        while !self.0.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(20) {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-
-    pub(super) fn open(&self) {
-        self.0.store(true, Ordering::SeqCst);
-    }
-}
-
 /// **The 2026-09-12 case.** A `settle` racing a tool's result and its triage stays blocked
 /// until the loop is idle: the triage is a request in flight, not a decision point.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn settle_waits_through_a_results_triage() {
-    static TRIAGE: Latch = Latch::new();
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |n| match n {
-        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
-        1 => {
-            TRIAGE.wait();
-            Answer::Stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#))
-        }
-        _ => Answer::Stream(end_turn()),
+    // The triage's answer waits for the test, so a `settle` that should block is seen
+    // blocking however the threads are scheduled.
+    let triage = Turnstile::new();
+    let held = triage.clone();
+    let upstream = ScriptedUpstream::new(move |n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        1 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)).held(&held),
+        _ => Canned::stream(end_turn()),
     });
-    let (host, runtime) = start(addr);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     let waiter = settle(&session);
 
     session
-        .poll_until("the triage is in flight", || {
-            requests.load(Ordering::SeqCst) >= 2
+        .wait_until_with(&upstream, "the triage is in flight", || {
+            upstream.count() >= 2
         })
         .await;
     assert!(
@@ -75,7 +52,7 @@ async fn settle_waits_through_a_results_triage() {
     );
     assert_eq!(session.loop_phase(), LoopPhase::Requesting);
     assert!(!waiter.is_finished(), "settle does not answer mid-triage");
-    TRIAGE.open();
+    triage.open();
 
     let state = waiter.await.unwrap();
     assert_eq!(state["loop_phase"], serde_json::json!({"phase": "idle"}));
@@ -87,28 +64,28 @@ async fn settle_waits_through_a_results_triage() {
 /// gated phase, so a `settle` racing it answers only when the turn ends.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn settle_waits_through_an_autonomous_decline() {
-    static NEXT: Latch = Latch::new();
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |n| match n {
-        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
-        _ => {
-            NEXT.wait();
-            Answer::Stream(end_turn())
-        }
+    let next = Turnstile::new();
+    let held = next.clone();
+    let upstream = ScriptedUpstream::new(move |n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        _ => Canned::stream(end_turn()).held(&held),
     });
-    let (host, runtime) = start_with(addr, |boot| {
+    let (host, runtime, _dir) = start_with(&upstream, |boot| {
         boot.autonomous = true;
         boot.spotter.stance = Stance::Watch;
         boot.spotter.reason = "watch-for: echo".into();
-    });
+    })
+    .await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     let waiter = settle(&session);
 
     session
-        .poll_until("the decline is logged and the next request sent", || {
-            requests.load(Ordering::SeqCst) >= 2
-        })
+        .wait_until_with(
+            &upstream,
+            "the decline is logged and the next request sent",
+            || upstream.count() >= 2,
+        )
         .await;
     assert!(
         session.snapshot().iter().any(
@@ -117,7 +94,7 @@ async fn settle_waits_through_an_autonomous_decline() {
         "the declined call has its result"
     );
     assert!(!waiter.is_finished(), "a decline is not a decision point");
-    NEXT.open();
+    next.open();
 
     let state = waiter.await.unwrap();
     assert_eq!(state["loop_phase"], serde_json::json!({"phase": "idle"}));
@@ -137,27 +114,24 @@ async fn settle_waits_through_an_autonomous_decline() {
 /// answers there, naming the phase.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn settle_returns_on_a_held_pace() {
-    static FIRST: Latch = Latch::new();
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |n| match n {
-        0 => {
-            FIRST.wait();
-            Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#))
-        }
-        1 => Answer::Stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
-        _ => Answer::Stream(end_turn()),
+    let first = Turnstile::new();
+    let held = first.clone();
+    let upstream = ScriptedUpstream::new(move |n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)).held(&held),
+        1 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
+        _ => Canned::stream(end_turn()),
     });
-    let (host, runtime) = start(addr);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     // A submit releases a hold, so the hold is set once the turn is under way.
     session
-        .poll_until("the first request is out", || {
-            requests.load(Ordering::SeqCst) >= 1
+        .wait_until_with(&upstream, "the first request is out", || {
+            upstream.count() >= 1
         })
         .await;
     session.set_pace(None, Some(true));
-    FIRST.open();
+    first.open();
     let state = settle(&session).await.unwrap();
     assert_eq!(
         state["loop_phase"],
@@ -183,13 +157,12 @@ async fn settle_returns_on_a_held_pace() {
 /// A finite pace delay ends on its own timer: `settle` waits through it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn settle_waits_through_a_pace_delay() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |n| match n {
-        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
-        1 => Answer::Stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
-        _ => Answer::Stream(end_turn()),
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        1 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
+        _ => Canned::stream(end_turn()),
     });
-    let (host, runtime) = start(addr);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.set_pace(Some(Duration::from_secs(2)), None);
     session.submit_turn(SubmittedTurn::new("go", "s1"));
@@ -214,13 +187,12 @@ async fn settle_waits_through_a_pace_delay() {
 /// through it, and the operator's continue cuts it short.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn settle_waits_through_a_retry_pause() {
-    let requests = Arc::new(AtomicUsize::new(0));
     // The transport makes four attempts before the loop sees the failure.
-    let addr = scripted(Arc::clone(&requests), |n| match n {
-        0..4 => Answer::Status(503, OVERLOADED),
-        _ => Answer::Stream(end_turn()),
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0..4 => Canned::json(503, OVERLOADED),
+        _ => Canned::stream(end_turn()),
     });
-    let (host, runtime) = start(addr);
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     let waiter = settle(&session);
@@ -257,9 +229,8 @@ async fn settle_waits_through_a_retry_pause() {
 /// there, naming the phase, and the repair moves the loop on.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn settle_returns_on_a_config_repair_park() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |_| Answer::Stream(end_turn()));
-    let (host, runtime) = start(addr);
+    let upstream = ScriptedUpstream::new(|_| Canned::stream(end_turn()));
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.require_config_repair(ConfigRepair {
         path: "/repo/config.toml".into(),
@@ -274,16 +245,12 @@ async fn settle_returns_on_a_config_repair_park() {
         state["loop_phase"],
         serde_json::json!({"phase": "blocked", "reason": "config_repair"})
     );
-    assert_eq!(
-        requests.load(Ordering::SeqCst),
-        0,
-        "nothing is sent while parked"
-    );
+    assert_eq!(upstream.count(), 0, "nothing is sent while parked");
 
     session.clear_config_repair();
     session
-        .poll_until("the turn finishes", || {
-            session.loop_phase() == LoopPhase::Idle && requests.load(Ordering::SeqCst) == 1
+        .wait_until_with(&upstream, "the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle && upstream.count() == 1
         })
         .await;
     host.shut_down().await;
@@ -293,13 +260,10 @@ async fn settle_returns_on_a_config_repair_park() {
 /// through it, and one that pins nothing returns to idle without a turn having ended.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_idle_triage_reads_requesting_and_settle_waits_through_it() {
-    static TRIAGE: Latch = Latch::new();
-    let requests = Arc::new(AtomicUsize::new(0));
-    let addr = scripted(Arc::clone(&requests), |_| {
-        TRIAGE.wait();
-        Answer::Stream(end_turn())
-    });
-    let (host, runtime) = start(addr);
+    let triage = Turnstile::new();
+    let held = triage.clone();
+    let upstream = ScriptedUpstream::new(move |_| Canned::stream(end_turn()).held(&held));
+    let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     session.notify("ci".into(), "the build finished".into(), None);
 
@@ -310,19 +274,19 @@ async fn an_idle_triage_reads_requesting_and_settle_waits_through_it() {
         .await;
     let waiter = settle(&session);
     session
-        .poll_until("the idle triage's request is out", || {
-            requests.load(Ordering::SeqCst) >= 1
+        .wait_until_with(&upstream, "the idle triage's request is out", || {
+            upstream.count() >= 1
         })
         .await;
     assert!(
         !waiter.is_finished(),
         "settle waits through the idle triage"
     );
-    TRIAGE.open();
+    triage.open();
 
     let state = waiter.await.unwrap();
     assert_eq!(state["loop_phase"], serde_json::json!({"phase": "idle"}));
-    assert!(requests.load(Ordering::SeqCst) >= 1);
+    assert!(upstream.count() >= 1);
     assert_eq!(session.turns_ended(), 0, "no turn ran");
     host.shut_down().await;
 }

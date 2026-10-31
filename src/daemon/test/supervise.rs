@@ -65,19 +65,6 @@ impl Fixture {
     }
 }
 
-/// Whether `session` has heard a notification from `source` whose body matches —
-/// pending, or already logged as an `Ambient` by its live loop's first show.
-fn heard(session: &Session, source: &str, matches: impl Fn(&str) -> bool) -> bool {
-    session
-        .pending_notifications()
-        .iter()
-        .any(|n| n.source == source && matches(&n.body))
-        || session.snapshot().iter().any(|e| match &e.payload {
-            Payload::Ambient(n) => n.source == source && matches(&n.body),
-            _ => false,
-        })
-}
-
 /// The `SupervisorSet` records in `session`'s log, in order.
 fn supervisor_records(session: &Session) -> Vec<Option<String>> {
     session
@@ -174,16 +161,22 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
         "subscribed as a creator is, with wake"
     );
     b.wait_until("b was told it supervises a", || {
-        heard(&b, "a", |body| body.starts_with("You now supervise a"))
+        heard(&b, |n| {
+            n.source == "a" && n.body.starts_with("You now supervise a")
+        })
+        .is_some()
     })
     .await;
 
     let seq = issue(&a);
     let gate = a.register_pending(&leaf(), None, None);
     b.wait_until("the gate reached b", || {
-        heard(&b, "a", |body| {
-            body.contains("waiting for your decision") && body.contains(&format!("seq: \"{seq}\""))
+        heard(&b, |n| {
+            n.source == "a"
+                && n.body.contains("waiting for your decision")
+                && n.body.contains(&format!("seq: \"{seq}\""))
         })
+        .is_some()
     })
     .await;
     allow("a", &seq)
@@ -214,7 +207,10 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
     a.going_idle();
 
     b.wait_until("a's idle reached b", || {
-        heard(&b, "a", |body| body.starts_with("idle, its turn is done"))
+        heard(&b, |n| {
+            n.source == "a" && n.body.starts_with("idle, its turn is done")
+        })
+        .is_some()
     })
     .await;
 
@@ -343,18 +339,22 @@ async fn clearing_or_moving_the_pointer_reroutes_a_held_call() {
     fixture
         .session("b")
         .wait_until("the gate reached b", || {
-            heard(&fixture.session("b"), "a", |body| {
-                body.contains("waiting for your decision")
+            heard(&fixture.session("b"), |n| {
+                n.source == "a" && n.body.contains("waiting for your decision")
             })
+            .is_some()
         })
         .await;
 
     // Moved: the same held call goes to the new supervisor.
     fixture.host.set_supervisor("a", Some("c".into())).unwrap();
     c.wait_until("the held call was re-routed to c", || {
-        heard(&c, "a", |body| {
-            body.contains("waiting for your decision") && body.contains("fs.list")
+        heard(&c, |n| {
+            n.source == "a"
+                && n.body.contains("waiting for your decision")
+                && n.body.contains("fs.list")
         })
+        .is_some()
     })
     .await;
     let subscribers: Vec<String> = fixture
@@ -422,9 +422,10 @@ async fn a_child_with_no_setting_answers_to_its_creator() {
     fixture
         .session("a")
         .wait_until("the gate reached the creator", || {
-            heard(&fixture.session("a"), "kid", |body| {
-                body.contains("waiting for your decision")
+            heard(&fixture.session("a"), |n| {
+                n.source == "kid" && n.body.contains("waiting for your decision")
             })
+            .is_some()
         })
         .await;
     allow("kid", &seq)

@@ -9,6 +9,7 @@ use crate::daemon::keepalive::{
 };
 use crate::log::{AssistantOutput, MessagesOutputBlock};
 use crate::project::{Role, WireTurn};
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 fn message(role: Role, text: &str) -> WireTurn {
     match role {
@@ -246,71 +247,6 @@ fn completion_cost_prefers_the_receipt() {
     assert_eq!(completion_cost(&billed, Some(&glm())), Some(0.003));
 }
 
-/// A canned upstream for the loop tests: answers every request with the status and
-/// body `reply` picks by arrival order, closing each connection, and counts them.
-fn serve(
-    reply: impl Fn(usize) -> (u16, String) + Send + 'static,
-) -> (std::net::SocketAddr, Arc<std::sync::atomic::AtomicUsize>) {
-    let (addr, count, _) = serve_recording(reply);
-    (addr, count)
-}
-
-/// [`serve`], also keeping each request's body in arrival order.
-pub(super) fn serve_recording(
-    reply: impl Fn(usize) -> (u16, String) + Send + 'static,
-) -> (
-    std::net::SocketAddr,
-    Arc<std::sync::atomic::AtomicUsize>,
-    Arc<Mutex<Vec<String>>>,
-) {
-    use std::io::{Read, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let seen = Arc::clone(&count);
-    let bodies = Arc::new(Mutex::new(Vec::new()));
-    let recorded = Arc::clone(&bodies);
-    std::thread::spawn(move || {
-        for sock in listener.incoming() {
-            let Ok(mut sock) = sock else { return };
-            let mut request = String::new();
-            let mut buf = [0u8; 16384];
-            loop {
-                let read = sock.read(&mut buf).unwrap_or(0);
-                request.push_str(&String::from_utf8_lossy(&buf[..read]));
-                let complete = request.split_once("\r\n\r\n").is_some_and(|(head, body)| {
-                    head.to_ascii_lowercase()
-                        .split("\r\n")
-                        .find_map(|line| line.strip_prefix("content-length: ").map(str::to_string))
-                        .and_then(|n| n.trim().parse::<usize>().ok())
-                        .is_some_and(|n| body.len() >= n)
-                });
-                if read == 0 || complete {
-                    break;
-                }
-            }
-            // Recorded before the count moves, so a waiter that sees the count sees the body.
-            recorded.lock().unwrap().push(
-                request
-                    .split_once("\r\n\r\n")
-                    .map_or_default(|(_, body)| body.to_string()),
-            );
-            let n = seen.fetch_add(1, Ordering::SeqCst);
-            let (status, body) = reply(n);
-            let _ = sock.write_all(
-                format!(
-                    "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\n\
-                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
-            );
-            let _ = sock.flush();
-        }
-    });
-    (addr, count, bodies)
-}
-
 /// The main lineage's loop as the runtime spawns it, with the auto envelope.
 fn main_loop(
     client: Arc<Client>,
@@ -332,17 +268,17 @@ fn main_loop(
 }
 
 /// A session with one user message and one recorded turn of `prefix` prompt tokens,
-/// and a client pointed at `addr`.
+/// and a client pointed at `upstream`.
 pub(super) fn pinged_session(
-    addr: std::net::SocketAddr,
+    upstream: &ScriptedUpstream,
     prefix: u64,
 ) -> (Arc<Session>, Arc<Client>) {
-    use crate::api::{Client, Endpoint};
+    use crate::api::Client;
     use crate::log::Provider;
     let (shared, _rx) = Session::in_memory();
     shared.append(1, Payload::user("hi")).unwrap();
     record_turn(&shared, prefix);
-    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
+    let endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
     (
         shared,
         Arc::new(Client::new(endpoint, "claude-opus-5", "sys", None)),
@@ -370,8 +306,8 @@ fn skipped(shared: &Session) -> Value {
 #[tokio::test]
 async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
     let ping_body = r#"{"id":"m","model":"m","usage":{"input_tokens":5000,"output_tokens":10000}}"#;
-    let (addr, count) = serve(move |_| (200, ping_body.to_string()));
-    let (shared, client) = pinged_session(addr, 5_000);
+    let upstream = ScriptedUpstream::new(move |_| Canned::json(200, ping_body));
+    let (shared, client) = pinged_session(&upstream, 5_000);
     let task = tokio::spawn(main_loop(
         client,
         Arc::clone(&shared),
@@ -379,12 +315,14 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
         Duration::from_millis(1),
         None,
     ));
-    let sent = |n| count.load(Ordering::SeqCst) == n;
+    let sent = |n| upstream.count() == n;
     // The first ping goes out unjudged; the following ticks skip.
     shared
-        .poll_until("the first ping went out and the next tick skipped", || {
-            sent(1) && skipped(&shared).is_object()
-        })
+        .wait_until_with(
+            &upstream,
+            "the first ping went out and the next tick skipped",
+            || sent(1) && skipped(&shared).is_object(),
+        )
         .await;
     let stance = skipped(&shared);
     assert_eq!(stance["reason"], "discard");
@@ -396,10 +334,10 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
     // The prefix grows past break-even: 10k discarded tokens need over 1M prefix.
     record_turn(&shared, 2_000_000);
     shared
-        .poll_until("the next ping went out", || !sent(1))
+        .wait_until_with(&upstream, "the next ping went out", || !sent(1))
         .await;
     shared
-        .poll_until("the skip stance cleared", || skipped(&shared).is_null())
+        .wait_until("the skip stance cleared", || skipped(&shared).is_null())
         .await;
     task.abort();
 }
@@ -407,8 +345,8 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
 /// A permanent rejection still ends the loop, and the state says why.
 #[tokio::test]
 async fn a_permanent_rejection_ends_the_loop() {
-    let (addr, count) = serve(|_| (400, r#"{"error":"bad"}"#.to_string()));
-    let (shared, client) = pinged_session(addr, 5_000);
+    let upstream = ScriptedUpstream::new(|_| Canned::json(400, r#"{"error":"bad"}"#));
+    let (shared, client) = pinged_session(&upstream, 5_000);
     let task = tokio::spawn(main_loop(
         client,
         Arc::clone(&shared),
@@ -420,7 +358,7 @@ async fn a_permanent_rejection_ends_the_loop() {
         .await
         .expect("the loop returns")
         .unwrap();
-    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert_eq!(upstream.count(), 1);
     let stance = skipped(&shared);
     assert_eq!(stance["reason"], "rejected");
     assert!(stance["detail"].as_str().unwrap().contains("400"));
@@ -433,11 +371,11 @@ async fn a_permanent_rejection_ends_the_loop() {
 async fn an_exhausted_limit_pauses_until_the_next_turn() {
     let limit = r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","resets_at":1791623333,"resets_in_seconds":13597}}"#;
     let ok = r#"{"id":"m","model":"m","usage":{"input_tokens":5000,"output_tokens":1}}"#;
-    let (addr, count) = serve(move |n| match n {
-        0 => (429, limit.to_string()),
-        _ => (200, ok.to_string()),
+    let upstream = ScriptedUpstream::new(move |n| match n {
+        0 => Canned::json(429, limit),
+        _ => Canned::json(200, ok),
     });
-    let (shared, client) = pinged_session(addr, 5_000);
+    let (shared, client) = pinged_session(&upstream, 5_000);
     let task = tokio::spawn(main_loop(
         client,
         Arc::clone(&shared),
@@ -445,11 +383,13 @@ async fn an_exhausted_limit_pauses_until_the_next_turn() {
         Duration::from_millis(1),
         None,
     ));
-    let sent = |n| count.load(Ordering::SeqCst) == n;
+    let sent = |n| upstream.count() == n;
     shared
-        .poll_until("the first ping went out and the next tick skipped", || {
-            sent(1) && skipped(&shared).is_object()
-        })
+        .wait_until_with(
+            &upstream,
+            "the first ping went out and the next tick skipped",
+            || sent(1) && skipped(&shared).is_object(),
+        )
         .await;
     let stance = skipped(&shared);
     assert_eq!(stance["reason"], "exhausted");
@@ -459,10 +399,10 @@ async fn an_exhausted_limit_pauses_until_the_next_turn() {
 
     record_turn(&shared, 5_000);
     shared
-        .poll_until("the next ping went out", || !sent(1))
+        .wait_until_with(&upstream, "the next ping went out", || !sent(1))
         .await;
     shared
-        .poll_until("the skip stance cleared", || skipped(&shared).is_null())
+        .wait_until("the skip stance cleared", || skipped(&shared).is_null())
         .await;
     task.abort();
 }

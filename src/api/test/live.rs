@@ -4,108 +4,51 @@
 
 use super::*;
 use crate::log::RequestOrigin;
+use crate::testing::upstream::{Canned, ScriptedUpstream};
+
+/// A Messages stream's first event, and nothing after it.
+const FIRST_EVENT: &str = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
+    \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
 
 /// **The duration ceiling** (docs/transport.md): a stream that opens, trickles,
 /// and then never finalizes is given up on rather than blocking its turn forever,
 /// and the completion comes back marked exactly the way a mid-stream abort is —
-/// record-only, retryable, with the reason on it. The server here holds the
-/// connection open with an unterminated SSE body, which is the shape nothing
+/// record-only, retryable, with the reason on it. The upstream here holds the
+/// response open with an unterminated SSE body, which is the shape nothing
 /// bounded before this: the retry policy applies only while *opening* a response.
 ///
 /// One read loop serves both stream surfaces, so a turn and a triage are
 /// bounded by the same knob.
 #[tokio::test]
 async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
-    use std::io::{Read, Write};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    // The server holds the connection open until the test says it is done, so the
-    // *client's* ceiling is always what ends the read. A server that closed on its
-    // own timer would race it, and an EOF already waiting on the socket wins over an
-    // elapsed deadline — the assertion would then be about the wrong failure.
-    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let held = std::sync::Arc::clone(&done);
-    let server = std::thread::spawn(move || {
-        let (mut sock, _) = listener.accept().unwrap();
-        let mut buf = [0u8; 8192];
-        let _ = sock.read(&mut buf);
-        let event = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
-                     \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
-        sock.write_all(
-            format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                 transfer-encoding: chunked\r\n\r\n{:x}\r\n{event}\r\n",
-                event.len()
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-        sock.flush().unwrap();
-        // Never send the terminating chunk: the response is open and unfinalized,
-        // which is the shape nothing bounded before this.
-        sock.set_read_timeout(Some(std::time::Duration::from_millis(50)))
-            .unwrap();
-        while !held.load(std::sync::atomic::Ordering::SeqCst) {
-            let _ = sock.read(&mut buf);
-        }
-    });
-
-    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
+    // The upstream holds the response open after its first event, so the *client's*
+    // ceiling is what ends the read.
+    let upstream = ScriptedUpstream::answering([Canned::stream(FIRST_EVENT).left_open()]);
+    let endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
     let client = Client::new(endpoint, "m", "sys", None)
         .with_stream_ceiling(std::time::Duration::from_millis(200));
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect("the ceiling is not an open failure — it assembles a partial");
-    done.store(true, std::sync::atomic::Ordering::SeqCst);
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("ceiling"), "{why}");
     assert!(why.contains("stream-ceiling"), "names the knob: {why}");
     let diagnostic = client.upstream_failure().lock().unwrap().clone().unwrap();
     assert_eq!(diagnostic.status, None);
     assert_eq!(diagnostic.detail, why);
-    server.join().unwrap();
 }
 
 /// The operator's interrupt ends a read in flight (docs/control-channel.md): the
-/// server holds an unfinalized stream open, the notifier fires, and `complete`
+/// upstream holds an unfinalized stream open, the notifier fires, and `complete`
 /// returns at once with the partial marked `Aborted` — record-only like any
 /// aborted attempt, but a class the retry loops do not retry. The notifier is
 /// registered before the first read, so a press that lands between events is
 /// not lost to `notify_waiters`' no-permit semantics.
 #[tokio::test]
 async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
-    use std::io::{Read, Write};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let held = std::sync::Arc::clone(&done);
-    let server = std::thread::spawn(move || {
-        let (mut sock, _) = listener.accept().unwrap();
-        let mut buf = [0u8; 8192];
-        let _ = sock.read(&mut buf);
-        let event = "event: message_start\ndata: {\"message\":{\"model\":\"m\",\
-                     \"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
-        sock.write_all(
-            format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                 transfer-encoding: chunked\r\n\r\n{:x}\r\n{event}\r\n",
-                event.len()
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-        sock.flush().unwrap();
-        sock.set_read_timeout(Some(std::time::Duration::from_millis(50)))
-            .unwrap();
-        while !held.load(std::sync::atomic::Ordering::SeqCst) {
-            let _ = sock.read(&mut buf);
-        }
-    });
-
-    let endpoint = Endpoint::at(Provider::Anthropic, format!("http://{addr}/v1/messages"));
+    let upstream = ScriptedUpstream::answering([Canned::stream(FIRST_EVENT).left_open()]);
+    let endpoint = upstream.endpoint(Provider::Anthropic, "/v1/messages");
     let interrupt = std::sync::Arc::new(tokio::sync::Notify::new());
     let mut client = Client::new(endpoint, "m", "sys", None)
         .with_stream_ceiling(std::time::Duration::from_secs(30));
@@ -120,7 +63,6 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect("an interrupt is not an open failure — it assembles a partial");
-    done.store(true, std::sync::atomic::Ordering::SeqCst);
     assert!(
         started.elapsed() < std::time::Duration::from_secs(5),
         "the read ended on the interrupt, not the ceiling"
@@ -141,50 +83,28 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
         ),
         "the partial is record-only"
     );
-    server.join().unwrap();
 }
 
-/// End to end over a socket: the diagnostics come off the *response*, so the
-/// hook is in `complete` — the status handler cannot serve this path, an empty
-/// stream being a 200 it early-returns on. The server here answers exactly as a
-/// gateway fronting a slow upstream does: 200, an `x-generation-id`, a
-/// `message_start` with all-zero usage, `[DONE]`, nothing else.
+/// End to end: the diagnostics come off the *response*, so the hook is in `complete` —
+/// the status handler cannot serve this path, an empty stream being a 200 it
+/// early-returns on. The upstream here answers exactly as a gateway fronting a slow
+/// upstream does: 200, an `x-generation-id`, a `message_start` with all-zero usage,
+/// `[DONE]`, nothing else.
 #[tokio::test]
 async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
-    use std::io::{Read, Write};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let server = std::thread::spawn(move || {
-        let (mut sock, _) = listener.accept().unwrap();
-        let mut buf = [0u8; 8192];
-        let _ = sock.read(&mut buf);
-        let body = "event: message_start\ndata: {\"message\":{\"id\":\"gen-abc123\",\
-                    \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
-                    event: data\ndata: [DONE]\n\n";
-        sock.write_all(
-            format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                 x-generation-id: gen-abc123\r\nset-cookie: session=nope\r\n\
-                 content-length: {}\r\n\r\n{body}",
-                body.len()
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-        sock.flush().unwrap();
-    });
-
-    let endpoint = Endpoint::at(
-        Provider::OpenRouter,
-        format!("http://{addr}/api/v1/messages"),
-    );
+    let upstream = ScriptedUpstream::answering([Canned::stream(
+        "event: message_start\ndata: {\"message\":{\"id\":\"gen-abc123\",\
+         \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
+         event: data\ndata: [DONE]\n\n",
+    )
+    .with_header("x-generation-id", "gen-abc123")
+    .with_header("set-cookie", "session=nope")]);
+    let endpoint = upstream.endpoint(Provider::OpenRouter, "/api/v1/messages");
     let client = Client::new(endpoint, "m", "sys", None);
     let completion = client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect("an empty stream assembles a record-only entry, not an error");
-    server.join().unwrap();
 
     let Payload::Assistant {
         excluded: Some(Exclusion::Upstream(failure)),
@@ -217,7 +137,7 @@ fn the_stream_ceiling_defaults_generously_and_is_operator_settable() {
 }
 
 /// The attribution headers ride an OpenRouter inference POST and no other
-/// (docs/transport.md). Asserted over a socket rather than off
+/// (docs/transport.md). Asserted on the request as sent rather than off
 /// `Provider::attribution` alone, because the thing that can break is the wiring:
 /// `with_attribution` is applied on two conn-building paths and would be silently
 /// absent from either.
@@ -227,54 +147,30 @@ fn the_stream_ceiling_defaults_generously_and_is_operator_settable() {
 /// still carrying the `User-Agent`, which every host is meant to see.
 #[tokio::test]
 async fn attribution_rides_openrouter_turns_and_nothing_else() {
-    use std::io::{Read, Write};
+    use crate::testing::upstream::Request;
 
-    /// The request head of one round trip against a canned reply. `sse` picks
-    /// the path: an empty stream for `complete`, a usage-only body for
-    /// `keepalive`.
-    async fn request_head(provider: Provider, sse: bool) -> String {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = std::thread::spawn(move || {
-            let (mut sock, _) = listener.accept().unwrap();
-            let mut request = String::new();
-            let mut buf = [0u8; 16384];
-            while !request.contains("\r\n\r\n") {
-                let read = sock.read(&mut buf).unwrap();
-                if read == 0 {
-                    break;
-                }
-                request.push_str(&String::from_utf8_lossy(&buf[..read]));
-            }
-            let (content_type, body) = if sse {
-                (
-                    "text/event-stream",
-                    "event: message_start\ndata: {\"message\":{\"id\":\"gen-1\",\
-                     \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
-                     event: data\ndata: [DONE]\n\n",
-                )
-            } else {
-                (
-                    "application/json",
-                    "{\"id\":\"msg-1\",\"model\":\"m\",\"usage\":{\"input_tokens\":1,\
-                     \"output_tokens\":0}}",
-                )
-            };
-            sock.write_all(
-                format!(
-                    "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\n\
-                     content-length: {}\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
+    /// The request one round trip sends against a canned answer. `sse` picks the
+    /// path: an empty stream for `complete`, a usage-only body for `keepalive`.
+    async fn request(provider: Provider, sse: bool) -> Request {
+        let upstream = ScriptedUpstream::answering([if sse {
+            Canned::stream(
+                "event: message_start\ndata: {\"message\":{\"id\":\"gen-1\",\
+                 \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
+                 event: data\ndata: [DONE]\n\n",
             )
-            .unwrap();
-            sock.flush().unwrap();
-            request
-        });
-
-        let endpoint = Endpoint::at(provider, format!("http://{addr}/v1/messages"));
-        let client = Client::new(endpoint, "m", "sys", None);
+        } else {
+            Canned::json(
+                200,
+                "{\"id\":\"msg-1\",\"model\":\"m\",\"usage\":{\"input_tokens\":1,\
+                 \"output_tokens\":0}}",
+            )
+        }]);
+        let client = Client::new(
+            upstream.endpoint(provider, "/v1/messages"),
+            "m",
+            "sys",
+            None,
+        );
         if sse {
             client
                 .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -289,34 +185,41 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
                 .await
                 .expect("the canned body parses");
         }
-        let request = server.join().unwrap();
+        upstream.requests().remove(0)
+    }
+
+    /// The names of the headers `request` carried, lowercased.
+    fn names(request: &Request) -> Vec<String> {
         request
-            .split_once("\r\n\r\n")
-            .map_or(request.clone(), |(head, _)| head.to_string())
-            .to_ascii_lowercase()
+            .headers
+            .iter()
+            .map(|(name, _)| name.to_string().to_ascii_lowercase())
+            .collect()
     }
 
     // The `User-Agent` is the one header every request carries, on every path.
-    let expected_ua = format!("user-agent: {}", crate::http::user_agent()).to_ascii_lowercase();
+    let user_agent = Some(crate::http::user_agent());
 
     for sse in [true, false] {
-        let openrouter = request_head(Provider::OpenRouter, sse).await;
-        for header in [
-            "http-referer: https://efference.net",
-            "x-openrouter-title: efference",
-            "x-openrouter-categories: cli-agent,programming-app",
+        let openrouter = request(Provider::OpenRouter, sse).await;
+        for (name, value) in [
+            ("http-referer", "https://efference.net"),
+            ("x-openrouter-title", "efference"),
+            ("x-openrouter-categories", "cli-agent,programming-app"),
         ] {
-            assert!(
-                openrouter.contains(header),
-                "missing {header}: {openrouter}"
-            );
+            assert_eq!(openrouter.header(name), Some(value), "{openrouter:?}");
         }
-        assert!(openrouter.contains(&expected_ua), "{openrouter}");
+        assert_eq!(openrouter.header("user-agent"), user_agent);
 
-        let anthropic = request_head(Provider::Anthropic, sse).await;
-        assert!(!anthropic.contains("referer"), "{anthropic}");
-        assert!(!anthropic.contains("x-openrouter"), "{anthropic}");
-        assert!(anthropic.contains(&expected_ua), "{anthropic}");
+        let anthropic = request(Provider::Anthropic, sse).await;
+        let names = names(&anthropic);
+        assert!(
+            !names
+                .iter()
+                .any(|name| name.contains("referer") || name.starts_with("x-openrouter")),
+            "{names:?}"
+        );
+        assert_eq!(anthropic.header("user-agent"), user_agent);
     }
 }
 
@@ -325,40 +228,17 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
 /// with a transient class, so the abort schedule retries it (docs/transport.md).
 #[tokio::test]
 async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
-    use std::io::{Read, Write};
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let held = std::sync::Arc::clone(&done);
-    let server = std::thread::spawn(move || {
-        let (mut sock, _) = listener.accept().unwrap();
-        let mut buf = [0u8; 8192];
-        let _ = sock.read(&mut buf);
-        let events = "event: response.created\ndata: {\"type\":\"response.created\",\
-                      \"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"output\":[]}}\n\n\
-                      event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\
-                      \"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\
-                      \"status\":\"in_progress\",\"content\":[]}}\n\n\
-                      event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\
-                      \"output_index\":0,\"content_index\":0,\"delta\":\"half an\"}\n\n";
-        sock.write_all(
-            format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
-                 transfer-encoding: chunked\r\n\r\n{:x}\r\n{events}\r\n",
-                events.len()
-            )
-            .as_bytes(),
-        )
-        .unwrap();
-        sock.flush().unwrap();
-        sock.set_read_timeout(Some(std::time::Duration::from_millis(50)))
-            .unwrap();
-        while !held.load(std::sync::atomic::Ordering::SeqCst) {
-            let _ = sock.read(&mut buf);
-        }
-    });
-    let endpoint = Endpoint::at(Provider::OpenAI, format!("http://{addr}/v1/responses"));
+    let upstream = ScriptedUpstream::answering([Canned::stream(
+        "event: response.created\ndata: {\"type\":\"response.created\",\
+         \"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"output\":[]}}\n\n\
+         event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\
+         \"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\
+         \"status\":\"in_progress\",\"content\":[]}}\n\n\
+         event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\
+         \"output_index\":0,\"content_index\":0,\"delta\":\"half an\"}\n\n",
+    )
+    .left_open()]);
+    let endpoint = upstream.endpoint(Provider::OpenAI, "/v1/responses");
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None)
         .with_stream_ceiling(std::time::Duration::from_millis(200));
     let mut streamed = Vec::new();
@@ -366,8 +246,6 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
         .complete(&[], &[], ToolChoice::auto(), |s| streamed.push(s))
         .await
         .expect("the ceiling assembles a partial");
-    done.store(true, std::sync::atomic::Ordering::SeqCst);
-    server.join().unwrap();
     let why = completion.upstream_failure().expect("marked");
     assert!(why.contains("stream-ceiling"), "{why}");
     assert_eq!(completion.failure_class, FailureClass::Transient);

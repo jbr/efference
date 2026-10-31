@@ -1,8 +1,9 @@
 //! The wait the tests share (docs/control-channel.md): a predicate is read again when the
-//! session, or the host, signals that something it could read has moved, and one hang
-//! guard bounds a wait that can never succeed.
+//! session, the host, or a scripted upstream signals that something it could read has
+//! moved, and one hang guard bounds a wait that can never succeed.
 
 use super::*;
+use crate::testing::upstream::ScriptedUpstream;
 use std::future::Future;
 use std::task::Poll;
 use tokio::sync::futures::Notified;
@@ -25,9 +26,10 @@ const BRIEF: usize = 160;
 impl Session {
     /// Wait until `ready` holds. It is read again at each signal the session raises that a
     /// state reader wakes on (`watch_topics`, `topics.rs`): a phase or gate change, a state
-    /// ping, a log append, and a change to the retry cell. A predicate that reads anything
-    /// else — a counter another thread keeps, a file, a process — is not woken when that
-    /// moves; that is [`poll_until`](Self::poll_until)'s.
+    /// ping, a log append, and a change to the retry cell. A predicate that also reads
+    /// what a scripted upstream was sent waits with [`wait_until_with`](Self::wait_until_with);
+    /// one that reads anything else — a file, a process — is not woken when that moves,
+    /// and that is [`poll_until`](Self::poll_until)'s.
     ///
     /// The signals are armed before the predicate is read, as [`Session::await_settled`]
     /// arms its waiter, so a change landing between the read and the await wakes the wait.
@@ -36,9 +38,32 @@ impl Session {
         until(what, || self.signals(), None, ready, || self.stalled()).await;
     }
 
-    /// [`wait_until`](Self::wait_until) for a predicate that also reads something the
-    /// session raises no signal for, such as the requests a mock upstream has counted:
-    /// read again every [`POLL`] as well as at each signal.
+    /// [`wait_until`](Self::wait_until) for a predicate that also reads what `upstream`
+    /// was sent: read again at each request it records as well as at each signal the
+    /// session raises. On a hang the test fails with the requests beside the session.
+    pub(crate) async fn wait_until_with(
+        &self,
+        upstream: &ScriptedUpstream,
+        what: &str,
+        ready: impl FnMut() -> bool,
+    ) {
+        until(
+            what,
+            || {
+                let mut signals = self.signals();
+                signals.push(upstream.arrived());
+                signals
+            },
+            None,
+            ready,
+            || format!("{}\nupstream: {}", self.stalled(), upstream.describe()),
+        )
+        .await;
+    }
+
+    /// [`wait_until`](Self::wait_until) for a predicate that also reads something nothing
+    /// signals, such as a file a process writes: read again every [`POLL`] as well as at
+    /// each signal.
     pub(crate) async fn poll_until(&self, what: &str, ready: impl FnMut() -> bool) {
         until(
             what,

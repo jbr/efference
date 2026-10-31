@@ -87,19 +87,6 @@ fn not_sent(kind: MomentKind, to: &str) -> (MomentKind, PushEvent) {
     (kind, PushEvent::NotSent { to: to.into() })
 }
 
-/// Whether `session` has heard a notification from `source` whose body matches,
-/// pending or already logged as an `Ambient`.
-fn heard(session: &Session, source: &str, matches: impl Fn(&str) -> bool) -> bool {
-    session
-        .pending_notifications()
-        .iter()
-        .any(|n| n.source == source && matches(&n.body))
-        || session.snapshot().iter().any(|e| match &e.payload {
-            Payload::Ambient(n) => n.source == source && matches(&n.body),
-            _ => false,
-        })
-}
-
 fn curl(id: &str) -> ToolCall {
     ToolCall::new(
         crate::bash::NAME,
@@ -127,25 +114,30 @@ async fn a_supervised_sessions_moments_push_nothing() {
 
     let _gate = kid.register_pending(&curl("toolu_1"), None, None);
     boss.wait_until("the gate reached boss", || {
-        heard(&boss, "kid", |body| {
-            body.starts_with("waiting for your decision")
+        heard(&boss, |n| {
+            n.source == "kid" && n.body.starts_with("waiting for your decision")
         })
+        .is_some()
     })
     .await;
     assert!(kid.resolve_approval(&"toolu_1".into(), Approval::Approve, None, None));
 
     let wait = kid.begin_ask("ask_1", "Which branch?".into(), 1, 1);
     boss.wait_until("the question reached boss", || {
-        heard(&boss, "kid", |body| body.starts_with("asking a question"))
+        heard(&boss, |n| {
+            n.source == "kid" && n.body.starts_with("asking a question")
+        })
+        .is_some()
     })
     .await;
     drop(wait);
 
     settle(&kid);
     boss.wait_until("the idle reached boss", || {
-        heard(&boss, "kid", |body| {
-            body.starts_with("idle, its turn is done")
+        heard(&boss, |n| {
+            n.source == "kid" && n.body.starts_with("idle, its turn is done")
         })
+        .is_some()
     })
     .await;
 

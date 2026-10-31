@@ -168,6 +168,39 @@ fn append_compactable_history(shared: &Session) {
     }
 }
 
+/// Every notification `session` has been told, in arrival order (docs/inbox.md): the
+/// ones in its log are `Ambient` entries, with the slot and the wake they arrived with,
+/// and a slot notification still queued for the loop's next triage is held in memory
+/// only. A session's live loop drains its queue into its log after the idle debounce, so
+/// a test cannot count on catching one queued.
+fn told(session: &Session) -> Vec<crate::log::Notification> {
+    let logged = session
+        .snapshot()
+        .into_iter()
+        .filter_map(|e| match e.payload {
+            Payload::Ambient(n) => Some(n),
+            _ => None,
+        });
+    let queued = session
+        .pending_notifications()
+        .into_iter()
+        .filter(|n| n.seq.is_none())
+        .map(|n| {
+            let note = crate::log::Notification::new(n.source, n.body, n.slot);
+            if n.wake { note.waking() } else { note }
+        });
+    logged.chain(queued).collect()
+}
+
+/// The latest notification `session` has been told ([`told`]) that `matches` accepts, or
+/// `None` when it has heard none.
+fn heard(
+    session: &Session,
+    matches: impl Fn(&crate::log::Notification) -> bool,
+) -> Option<crate::log::Notification> {
+    told(session).into_iter().rev().find(|n| matches(n))
+}
+
 mod approvals;
 mod ask;
 mod background;

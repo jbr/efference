@@ -209,7 +209,7 @@ async fn a_successful_hook_leaves_its_descendant_alone() {
 }
 
 #[tokio::test]
-async fn a_timeout_reaches_the_hoks_whole_process_tree() {
+async fn a_timeout_reaches_the_hooks_whole_process_tree() {
     // A shell recipe spawns children. Killing only the process the harness spawned
     // would leave those running, so the kill is aimed at the process group — and
     // this is what tells the two apart: the marker is written by a *grandchild*,

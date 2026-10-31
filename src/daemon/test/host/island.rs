@@ -8,8 +8,9 @@ use super::*;
 use crate::daemon::LoopPhase;
 use crate::daemon::island::OwnerWatch;
 use crate::frontend::SubmittedTurn;
-use crate::log::{Payload, WorktreeEventKind};
+use crate::log::{Payload, Provider, WorktreeEventKind};
 use crate::session_ids::SessionIds;
+use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// A host over a state database in `roots`, and the register it reserves in.
 fn host_and_register(roots: &Roots) -> (Arc<Host>, SessionIds) {
@@ -168,42 +169,25 @@ async fn an_islands_exit_archives_each_session_before_it_shuts_down() {
 async fn an_islands_exit_archives_a_session_mid_turn() {
     let roots = Roots::new();
     // An upstream that takes each request and never answers.
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let counted = Arc::clone(&accepted);
-    std::thread::spawn(move || {
-        let mut held = Vec::new();
-        for stream in listener.incoming() {
-            let Ok(stream) = stream else { return };
-            held.push(stream);
-            counted.fetch_add(1, Ordering::SeqCst);
-        }
-    });
+    let upstream = ScriptedUpstream::new(|_| Canned::silent());
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.client = Client::new(
-        crate::api::Endpoint::at(
-            crate::log::Provider::Anthropic,
-            format!("http://{addr}/v1/messages"),
-        ),
+        upstream.endpoint(Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
         None,
     );
     let host = Host::new(one_connection_registry(), baseline_env());
-    host.adopt("busy".into(), SessionRuntime::start(boot, host.swansong()))
+    host.adopt("busy".into(), runtime::started(boot, host.swansong()).await)
         .expect("the id is free in this test");
     let session = host.session("busy").unwrap();
     let owner = island(&host);
     session.submit_turn(SubmittedTurn::new("go", "s1"));
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while session.loop_phase() != LoopPhase::Requesting || accepted.load(Ordering::SeqCst) == 0
-        {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("the turn's request is in flight");
+    session
+        .wait_until_with(&upstream, "the turn's request is in flight", || {
+            session.loop_phase() == LoopPhase::Requesting && upstream.count() > 0
+        })
+        .await;
 
     drop(owner);
     shuts_down(&host).await;
