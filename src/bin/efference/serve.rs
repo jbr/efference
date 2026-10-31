@@ -400,17 +400,15 @@ pub(crate) async fn host(
     .try_init();
     let host_cwd = std::env::current_dir()?;
     let host_env = efference::env_table::EnvSnapshot::capture()?;
-    // Cloned before the registry consumes it: the host needs the same snapshot as
-    // the baseline a session launched without one of its own inherits
-    // (docs/env.md).
-    let launch_baseline = host_env.clone();
-    let inference = efference::inference::InferenceRegistry::load(&host_cwd, host_env, &secrets)?;
+    let inference = efference::inference::InferenceRegistry::load(&host_cwd, &host_env, &secrets)?;
     refuse_broken_connections(&inference)?;
     for (name, auth) in inference.renewing() {
         log::info!("{name}: renewing its credential ahead of expiry while the host runs");
         tokio::spawn(auth.keep_renewed());
     }
-    let host = daemon::Host::new(inference, launch_baseline);
+    // The snapshot the registry read is also the baseline a session created without an
+    // environment of its own inherits (docs/env.md).
+    let host = daemon::Host::new(inference, host_env);
     // Only with the user's answer: a configuration without one never checks
     // (docs/update-check.md). An island is a host like any other here.
     if efference::inference::UpdatesConfig::load(Path::new(&home))?.check {

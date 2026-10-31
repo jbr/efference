@@ -57,7 +57,7 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             cwd,
             config,
             connection,
-        } => dev_models::history(cwd, config, connection),
+        } => dev_models::history(cwd, config.as_deref(), connection.as_deref()),
         DevCommand::View {
             session,
             read,
@@ -180,7 +180,7 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             summary,
             list,
             no_fallback,
-        } => spot_report::spotter_log(path, stances, summary, list, no_fallback),
+        } => spot_report::spotter_log(path, &stances, summary, list, no_fallback),
         DevCommand::SpotterEval {
             cases,
             labels,
@@ -196,7 +196,7 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             dump_states,
         } => {
             if let Some(out) = dump_states {
-                return spotter_eval::dump_states(cases, filter, limit, out);
+                return spotter_eval::dump_states(&cases, filter.as_deref(), limit, &out);
             }
             spotter_eval::spotter_eval(
                 cases,

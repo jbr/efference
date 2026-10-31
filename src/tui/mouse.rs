@@ -419,7 +419,7 @@ impl<'a> super::InteractiveState<'a> {
                 } else {
                     // ExpandBlock mutates the document in place; `handle_action`
                     // drops the affected node's cached layout.
-                    handle_action(&mut self.document, &mut self.view, action);
+                    handle_action(&mut self.document, &mut self.view, &action);
                 }
             }
         }

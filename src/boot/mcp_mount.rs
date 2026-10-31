@@ -137,7 +137,8 @@ async fn mount_one(
     }
     let authorized =
         auth::authorize_and_store(store, name, &url, challenge.as_ref(), |authorization_url| {
-            present(name, authorization_url)
+            present(name, authorization_url);
+            Ok(())
         })
         .await;
     if let Some(waiting) = &authorization.waiting {
@@ -166,7 +167,7 @@ async fn mount_one(
 /// reported, and the printed URL was already the answer. The failure modes are
 /// not symmetric — a spurious open attempt costs a line of output, while a
 /// spurious *refusal* leaves someone staring at a stalled boot.
-fn present(server: &str, url: &Url) -> anyhow::Result<()> {
+fn present(server: &str, url: &Url) {
     // Kept only as a diagnostic. Nothing branches on it — see above.
     log::debug!(
         "presenting authorization; tty: stdin={} stdout={} stderr={}",
@@ -187,7 +188,6 @@ fn present(server: &str, url: &Url) -> anyhow::Result<()> {
         Err(e) => eprintln!("  (could not open a browser: {e} — open the URL above to continue)"),
     }
     eprintln!();
-    Ok(())
 }
 
 /// An OSC 8 hyperlink whose visible text is the URL itself, so a terminal that

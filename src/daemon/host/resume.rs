@@ -93,6 +93,9 @@ pub struct PatchSession {
 
 /// Read a field whose `null` means something: absent is `None` (by `default`), and a
 /// present value — `null` included — is `Some`.
+// The control channel's JSON tells an absent `supervisor` (leave it alone) from `null`
+// (clear it), and `deserialize_with` fixes this return type to the field's.
+#[allow(clippy::option_option)]
 fn present<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Option<String>>, D::Error> {
@@ -158,10 +161,10 @@ impl Host {
     /// than a repeat.
     pub(super) fn resume(
         self: &Arc<Self>,
-        id: String,
+        id: &str,
         body: PatchSession,
     ) -> Result<Resume, ResumeRefused> {
-        if !tcp::plain_id(&id) {
+        if !tcp::plain_id(id) {
             return Err(ResumeRefused::Refused(format!(
                 "session name {id:?} is not a single plain path segment"
             )));
@@ -185,7 +188,7 @@ impl Host {
         // id, and quietly claiming it would attach a client to the wrong one. The
         // patch's `cwd` names the root holding the session's `.efference`: its
         // project, which differs from the working directory in a worktree.
-        if let Some(entry) = self.entry(&id) {
+        if let Some(entry) = self.entry(id) {
             let held = match &entry {
                 Entry::Hosted(hosted) => hosted.session.directories().project().to_path_buf(),
                 Entry::Starting(starting) => starting.project().to_path_buf(),
@@ -200,12 +203,12 @@ impl Host {
                 )))
             };
         }
-        let session_dir = cwd.join(SESSION_BASE).join(&id);
+        let session_dir = cwd.join(SESSION_BASE).join(id);
         // The register holds the id under one root. A directory of the same name
         // under another is a different session sharing the name, which the host
         // cannot key (docs/session-title.md); a root never registered claims it.
         if session_dir.is_dir()
-            && let Err(held) = self.session_ids.claim(&id, &cwd)
+            && let Err(held) = self.session_ids.claim(id, &cwd)
         {
             return Err(ResumeRefused::Conflict(format!(
                 "session id {id:?} is registered under {}, not {}",
@@ -231,7 +234,7 @@ impl Host {
         // Creator, `detached`, and where the session works, as the header recorded them.
         let recorded = self.recorded_lineage(&session_dir);
         let starting = Starting::new(StartingParts {
-            id: id.clone(),
+            id: id.to_string(),
             directories: crate::policy::Directories::new(
                 cwd.clone(),
                 recorded.working.clone().unwrap_or_else(|| cwd.clone()),
@@ -409,7 +412,7 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
                 "`state` and `supervisor` are separate patches",
             );
         }
-        (None, Some(supervisor)) => return supervise(conn, &host, id, supervisor),
+        (None, Some(supervisor)) => return supervise(conn, &host, &id, supervisor),
         (None, None) => {
             return fail(
                 conn,
@@ -420,11 +423,11 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
         (Some(state), None) => state,
     };
     match state {
-        SessionState::Active => match host.resume(id.clone(), body) {
+        SessionState::Active => match host.resume(&id, body) {
             // Both outcomes are the state the caller asked for, so both answer
             // 200; `resumed` is what tells a repeat apart from the change.
-            Ok(Resume::Starting) => active(conn, id, true),
-            Err(ResumeRefused::AlreadyActive) => active(conn, id, false),
+            Ok(Resume::Starting) => active(conn, &id, true),
+            Err(ResumeRefused::AlreadyActive) => active(conn, &id, false),
             Err(ResumeRefused::Conflict(reason)) => fail(conn, ErrorCode::StateMismatch, reason),
             Err(ResumeRefused::Refused(reason)) => fail(conn, ErrorCode::BadRequest, reason),
         },
@@ -450,8 +453,8 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
 /// A `supervisor` patch (docs/permissions.md): `200 {"id", "state": "active",
 /// "supervisor"}` with the pointer as it now reads, `404` for a session that is not
 /// hosted, `400` naming why the change was refused.
-fn supervise(conn: Conn, host: &Host, id: String, supervisor: Option<String>) -> Conn {
-    match host.set_supervisor(&id, supervisor) {
+fn supervise(conn: Conn, host: &Host, id: &str, supervisor: Option<String>) -> Conn {
+    match host.set_supervisor(id, supervisor) {
         Ok(supervisor) => conn
             .with_status(200)
             .with_body(
@@ -461,14 +464,14 @@ fn supervise(conn: Conn, host: &Host, id: String, supervisor: Option<String>) ->
                 .to_string(),
             )
             .halt(),
-        Err(SupervisorRefused::NotHosted(_)) => no_such_session(conn, &id),
+        Err(SupervisorRefused::NotHosted(_)) => no_such_session(conn, id),
         Err(SupervisorRefused::Refused(reason)) => fail(conn, ErrorCode::BadRequest, reason),
     }
 }
 
 /// The `200` an `active` patch answers with, saying whether this call is what
 /// made the session live.
-fn active(conn: Conn, id: String, resumed: bool) -> Conn {
+fn active(conn: Conn, id: &str, resumed: bool) -> Conn {
     conn.with_status(200)
         .with_body(
             serde_json::json!({

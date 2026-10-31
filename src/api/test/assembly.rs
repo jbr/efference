@@ -25,8 +25,7 @@ fn a_named_cache_miss_rides_the_completion() {
         ),
         ("content_block_stop", r#"{"index":0}"#),
         ("message_stop", "{}"),
-    ])
-    .expect("a finalized stream");
+    ]);
 
     assert_eq!(
         completion.cache_miss,
@@ -65,8 +64,7 @@ fn the_quiet_cache_diagnostics_states_read_as_no_attribution() {
             ),
             ("content_block_stop", r#"{"index":0}"#),
             ("message_stop", "{}"),
-        ])
-        .expect("a finalized stream");
+        ]);
         assert_eq!(completion.cache_miss, None, "for {diagnostics}");
     }
 }
@@ -188,21 +186,50 @@ fn prose_still_reaches_the_sink_as_text() {
 #[test]
 fn assembles_text_and_split_tool_use() {
     let completion = feed(&[
-            ("message_start", r#"{"type":"message_start","message":{"model":"claude-haiku-4-5","usage":{"input_tokens":3,"output_tokens":1,"cache_read_input_tokens":9407}}}"#),
-            ("ping", r#"{"type":"ping"}"#),
-            ("content_block_start", r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#),
-            ("content_block_delta", r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"let me look"}}"#),
-            ("content_block_stop", r#"{"type":"content_block_stop","index":0}"#),
-            ("content_block_start", r#"{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_9","name":"bash"}}"#),
-            // One JSON object, three arbitrary byte splits.
-            ("content_block_delta", r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"comm"}}"#),
-            ("content_block_delta", r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"and\":\"l"}}"#),
-            ("content_block_delta", r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"s\"}"}}"#),
-            ("content_block_stop", r#"{"type":"content_block_stop","index":1}"#),
-            ("message_delta", r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}"#),
-            ("message_stop", r#"{"type":"message_stop"}"#),
-        ])
-        .unwrap();
+        (
+            "message_start",
+            r#"{"type":"message_start","message":{"model":"claude-haiku-4-5","usage":{"input_tokens":3,"output_tokens":1,"cache_read_input_tokens":9407}}}"#,
+        ),
+        ("ping", r#"{"type":"ping"}"#),
+        (
+            "content_block_start",
+            r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"let me look"}}"#,
+        ),
+        (
+            "content_block_stop",
+            r#"{"type":"content_block_stop","index":0}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_9","name":"bash"}}"#,
+        ),
+        // One JSON object, three arbitrary byte splits.
+        (
+            "content_block_delta",
+            r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"comm"}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"and\":\"l"}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"s\"}"}}"#,
+        ),
+        (
+            "content_block_stop",
+            r#"{"type":"content_block_stop","index":1}"#,
+        ),
+        (
+            "message_delta",
+            r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ]);
 
     assert_eq!(completion.model, "claude-haiku-4-5");
     assert_eq!(
@@ -245,14 +272,25 @@ fn assembles_text_and_split_tool_use() {
 #[test]
 fn tool_call_cut_at_the_output_cap_is_a_record_only_partial() {
     let completion = feed(&[
-        ("message_start", r#"{"type":"message_start","message":{"id":"gen-cap","model":"z-ai/glm-5.3-flash","usage":{"input_tokens":10,"output_tokens":0}}}"#),
-        ("content_block_start", r#"{"index":0,"content_block":{"type":"tool_use","id":"call_1","name":"write","input":{}}}"#),
-        ("content_block_delta", r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"contents\": \"scope = \", \"read\": \"x\"}"}}"#),
+        (
+            "message_start",
+            r#"{"type":"message_start","message":{"id":"gen-cap","model":"z-ai/glm-5.3-flash","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"tool_use","id":"call_1","name":"write","input":{}}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"contents\": \"scope = \", \"read\": \"x\"}"}}"#,
+        ),
         ("content_block_stop", r#"{"index":0}"#),
-        ("message_delta", r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":10,"output_tokens":2048}}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":10,"output_tokens":2048}}"#,
+        ),
         ("message_stop", r#"{"type":"message_stop"}"#),
-    ])
-    .unwrap();
+    ]);
     assert_eq!(
         completion.finish.as_ref().map(|f| &f.reason),
         Some(&FinishReason::OutputCap)
@@ -274,14 +312,25 @@ fn tool_call_cut_at_the_output_cap_is_a_record_only_partial() {
     // The same cap with no call in flight is a finalized, committable turn:
     // thinking-only or text-only output that ran long is the model's own.
     let plain = feed(&[
-        ("message_start", r#"{"type":"message_start","message":{"id":"gen-cap2","model":"z-ai/glm-5.3-flash","usage":{"input_tokens":10,"output_tokens":0}}}"#),
-        ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
-        ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"long"}}"#),
+        (
+            "message_start",
+            r#"{"type":"message_start","message":{"id":"gen-cap2","model":"z-ai/glm-5.3-flash","usage":{"input_tokens":10,"output_tokens":0}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"long"}}"#,
+        ),
         ("content_block_stop", r#"{"index":0}"#),
-        ("message_delta", r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":10,"output_tokens":2048}}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":10,"output_tokens":2048}}"#,
+        ),
         ("message_stop", r#"{"type":"message_stop"}"#),
-    ])
-    .unwrap();
+    ]);
     assert!(plain.upstream_failure().is_none());
 }
 
@@ -294,14 +343,25 @@ fn tool_call_cut_at_the_output_cap_is_a_record_only_partial() {
 #[test]
 fn openrouter_null_cache_usage_does_not_crash() {
     let completion = feed(&[
-            ("message_start", r#"{"type":"message_start","message":{"id":"gen-1","type":"message","role":"assistant","container":null,"content":[],"model":"thinkingmachines/inkling","stop_reason":null,"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null,"cache_creation":null,"inference_geo":null,"server_tool_use":null,"service_tier":null,"speed":"standard"},"provider":"Together"}}"#),
-            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
-            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
-            ("content_block_stop", r#"{"index":0}"#),
-            ("message_delta", r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":17,"output_tokens":64,"cache_creation_input_tokens":null,"cache_read_input_tokens":0}}"#),
-            ("message_stop", r#"{"type":"message_stop"}"#),
-        ])
-        .unwrap();
+        (
+            "message_start",
+            r#"{"type":"message_start","message":{"id":"gen-1","type":"message","role":"assistant","container":null,"content":[],"model":"thinkingmachines/inkling","stop_reason":null,"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null,"cache_creation":null,"inference_geo":null,"server_tool_use":null,"service_tier":null,"speed":"standard"},"provider":"Together"}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"input_tokens":17,"output_tokens":64,"cache_creation_input_tokens":null,"cache_read_input_tokens":0}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ]);
     assert_eq!(completion.model, "thinkingmachines/inkling");
     // Every count comes from `message_delta` here: `message_start` reported zeros
     // and nulls for all four, so the max-merge keeps the delta's numbers.
@@ -319,14 +379,25 @@ fn openrouter_null_cache_usage_does_not_crash() {
 #[test]
 fn openrouter_cache_counts_arrive_in_message_delta() {
     let completion = feed(&[
-            ("message_start", r#"{"type":"message_start","message":{"id":"gen-2","model":"anthropic/claude-haiku-4.5","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null}}}"#),
-            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
-            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
-            ("content_block_stop", r#"{"index":0}"#),
-            ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":12,"output_tokens":26,"cache_creation_input_tokens":165,"cache_read_input_tokens":9407}}"#),
-            ("message_stop", r#"{"type":"message_stop"}"#),
-        ])
-        .unwrap();
+        (
+            "message_start",
+            r#"{"type":"message_start","message":{"id":"gen-2","model":"anthropic/claude-haiku-4.5","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":12,"output_tokens":26,"cache_creation_input_tokens":165,"cache_read_input_tokens":9407}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ]);
     assert_eq!(completion.usage.input_tokens, 12);
     assert_eq!(completion.usage.output_tokens, 26);
     assert_eq!(completion.usage.cache_creation_input_tokens, 165);
@@ -340,14 +411,25 @@ fn openrouter_cache_counts_arrive_in_message_delta() {
 #[test]
 fn inline_cost_and_serving_upstream_land_on_the_receipt() {
     let completion = feed(&[
-            ("message_start", r#"{"type":"message_start","message":{"id":"gen-9","type":"message","role":"assistant","content":[],"model":"z-ai/glm-5.3-flash","stop_reason":null,"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null,"speed":"standard"},"provider":"InferenceNet"}}"#),
-            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
-            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
-            ("content_block_stop", r#"{"index":0}"#),
-            ("message_delta", r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":15,"output_tokens":55,"output_tokens_details":{"thinking_tokens":43},"cache_creation_input_tokens":null,"cache_read_input_tokens":0,"is_byok":false,"cost":0.00002855,"cost_details":{"upstream_inference_cost":0.00002855,"upstream_inference_prompt_cost":0.00000105,"upstream_inference_completions_cost":0.0000275}},"context_management":null}"#),
-            ("message_stop", r#"{"type":"message_stop"}"#),
-        ])
-        .unwrap();
+        (
+            "message_start",
+            r#"{"type":"message_start","message":{"id":"gen-9","type":"message","role":"assistant","content":[],"model":"z-ai/glm-5.3-flash","stop_reason":null,"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null,"speed":"standard"},"provider":"InferenceNet"}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "message_delta",
+            r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":15,"output_tokens":55,"output_tokens_details":{"thinking_tokens":43},"cache_creation_input_tokens":null,"cache_read_input_tokens":0,"is_byok":false,"cost":0.00002855,"cost_details":{"upstream_inference_cost":0.00002855,"upstream_inference_prompt_cost":0.00000105,"upstream_inference_completions_cost":0.0000275}},"context_management":null}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ]);
     assert_eq!(
         completion.receipt.served_by.as_deref(),
         Some("InferenceNet")
@@ -371,11 +453,13 @@ fn null_or_missing_cost_reads_as_absent() {
     ] {
         let delta = format!(r#"{{"delta":{{"stop_reason":"end_turn"}},"usage":{usage}}}"#);
         let completion = feed(&[
-            ("message_start", r#"{"message":{"id":"msg-1","model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#),
+            (
+                "message_start",
+                r#"{"message":{"id":"msg-1","model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#,
+            ),
             ("message_delta", delta.as_str()),
             ("message_stop", r#"{"type":"message_stop"}"#),
-        ])
-        .unwrap();
+        ]);
         assert_eq!(completion.receipt, Receipt::default(), "{usage}");
         assert_eq!(completion.usage.output_tokens, 2);
     }

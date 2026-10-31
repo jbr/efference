@@ -111,7 +111,7 @@ where
             }
         };
         match tool.call(self.state.clone(), request_context()).await {
-            Ok(result) => crate::mcp::render_result(result),
+            Ok(result) => crate::mcp::render_result(&result),
             Err(e) => RawResult::error(e.to_string()),
         }
     }

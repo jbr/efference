@@ -22,8 +22,8 @@ const BODY_PREVIEW_BYTES: usize = 1000;
 /// the same answers creation and the pickers read, printed for inspection.
 pub(crate) fn history(
     cwd: Option<PathBuf>,
-    config: Option<PathBuf>,
-    connection: Option<String>,
+    config: Option<&Path>,
+    connection: Option<&str>,
 ) -> CliResult {
     let cwd = match cwd {
         Some(cwd) => cwd,
@@ -34,11 +34,11 @@ pub(crate) fn history(
         Some(home) => efference::history::History::user(home),
         None => efference::history::History::disabled(),
     };
-    let scope = efference::history::Scope::for_request(&cwd, config.as_deref());
+    let scope = efference::history::Scope::for_request(&cwd, config);
     let now = efference::history::now();
     println!("scope: {}", scope.cwd.display());
     println!("config: {}", scope.config_key);
-    match connection.as_deref() {
+    match connection {
         Some(connection) => {
             let recents = store.recent(&scope, connection, now, 10);
             if recents.is_empty() {

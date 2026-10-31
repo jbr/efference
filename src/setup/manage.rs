@@ -202,7 +202,7 @@ async fn act_on_connection<P: Prompter, Q: Probe>(
         1 => {
             let disabled = !connection.disabled;
             if disabled {
-                offer_repoint_defaults(prompter, working, draft, name).await?;
+                offer_repoint_defaults(prompter, working, draft, name)?;
             }
             draft.record(Change::SetDisabled {
                 name: name.to_string(),
@@ -219,7 +219,7 @@ async fn act_on_connection<P: Prompter, Q: Probe>(
                 &format!("Delete {name}? This removes it from the file."),
                 false,
             )? {
-                offer_repoint_defaults(prompter, working, draft, name).await?;
+                offer_repoint_defaults(prompter, working, draft, name)?;
                 if let Some(item) = connection.auth.item_name(name)
                     && matches!(probe.secret_value(&item), Ok(Some(_)))
                     && prompter
@@ -249,7 +249,7 @@ async fn act_on_connection<P: Prompter, Q: Probe>(
 /// (src/inference.rs), so disable and delete share this prompt: name the
 /// affected role, offer to repoint it, and accept a dangling default if the
 /// operator chooses one.
-async fn offer_repoint_defaults<P: Prompter>(
+fn offer_repoint_defaults<P: Prompter>(
     prompter: &mut P,
     working: &mut Working,
     draft: &mut Draft,

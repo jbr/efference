@@ -23,11 +23,11 @@ const STAGE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 impl<'a> InteractiveState<'a> {
     /// A bracketed paste from the terminal.
-    pub(in crate::tui) fn handle_paste(&mut self, text: String) {
+    pub(in crate::tui) fn handle_paste(&mut self, text: &str) {
         if let UiMode::Sessions(menu) = &mut self.ui_mode
             && let Some(page) = &mut menu.resume
         {
-            page.paste(&text);
+            page.paste(text);
             return;
         }
         // The new-session form open over the switcher owns a paste as it owns a
@@ -35,7 +35,7 @@ impl<'a> InteractiveState<'a> {
         if let UiMode::Sessions(menu) = &mut self.ui_mode
             && let Some(form) = &mut menu.form
         {
-            let action = form.paste(&text);
+            let action = form.paste(text);
             self.apply_form_action(action);
             return;
         }
@@ -50,7 +50,7 @@ impl<'a> InteractiveState<'a> {
             }
             return;
         }
-        self.route_text_paste(&text);
+        self.route_text_paste(text);
     }
 
     /// Paste from the system clipboard (`Super-V`, `C-y`), falling back to the in-process copy

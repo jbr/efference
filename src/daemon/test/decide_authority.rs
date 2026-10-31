@@ -52,10 +52,7 @@ impl Fixture {
     }
 
     fn control(&self, caller: &str) -> Control {
-        Control::new(
-            Executor::host(Arc::clone(&self.host), caller.to_string()),
-            false,
-        )
+        Control::new(Executor::host(&self.host, caller.to_string()), false)
     }
 
     fn session(&self, id: &str) -> Arc<Session> {

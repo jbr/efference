@@ -144,7 +144,7 @@ auth = { kind = "codex-cache" }
     crate::inference::InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        host_env,
+        &host_env,
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
@@ -257,7 +257,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
     let inference = crate::inference::InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        host_env,
+        &host_env,
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
@@ -291,6 +291,9 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
 
 /// The scratch dir a successful boot owns, removed here as the runtime's
 /// teardown would (docs/tools.md).
+// Takes the boot to end it: its toolbox, and any stdio server child the toolbox holds,
+// drops at this call rather than at the caller's scope end.
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn drop_boot(boot: SessionBoot<MountedSpotter>) {
     if let Some(scratch) = boot.toolbox.scratch_dir() {
         let _ = std::fs::remove_dir_all(scratch);

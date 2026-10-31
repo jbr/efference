@@ -11,7 +11,7 @@ use crate::project::ApiBlock;
 /// assembler refuses stops the feed and is recorded as the stream's failure, which
 /// `finish` folds into the completion's `upstream_failure` — the partial is never
 /// discarded.
-fn feed(events: &[(&str, &str)]) -> Result<Completion, Error> {
+fn feed(events: &[(&str, &str)]) -> Completion {
     let mut a = Assembler::new();
     for (ty, data) in events {
         if let Err(e) = a.apply(Some(ty), data) {

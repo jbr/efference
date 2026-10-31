@@ -67,6 +67,9 @@ fn first_sentence(s: &str) -> &str {
 /// drift from `retain_instruction`, which is the one divergence the replay rig exists to
 /// rule out. A full-text override was the other candidate and can't work: a fifth of the
 /// triages in a real session carry several results and need their ids interpolated.
+// One flag per ablation axis, each set by its own `EFFERENCE_TRIAGE_ASK` token; any
+// combination is a variant.
+#[allow(clippy::struct_excessive_bools)]
 pub(super) struct AskVariant {
     pub(super) roster: RosterStyle,
     banner: bool,

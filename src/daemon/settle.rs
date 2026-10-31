@@ -6,6 +6,9 @@ use super::*;
 /// The loop phase and what waits in front of the loop, as they stood at one instant
 /// ([`Session::phase_and_queue`]): what `settle`, a turn's delivery, and a continue's
 /// verdict each decide from (docs/control-channel.md).
+// Separate observations read at one instant, each consumer reading a different subset;
+// the flags are not alternatives of one state.
+#[allow(clippy::struct_excessive_bools)]
 pub(super) struct PhaseAndQueue {
     /// The phase, as [`Session::loop_phase`] reports it.
     pub(super) phase: LoopPhase,

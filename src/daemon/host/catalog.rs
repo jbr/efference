@@ -84,7 +84,13 @@ async fn entry(
             .catalog
             .snapshot(&row.name, row.provider, crate::history::now()),
     };
-    assemble(&row.name, row.provider, snapshot, unavailable, &recents)
+    assemble(
+        &row.name,
+        row.provider,
+        snapshot,
+        unavailable.as_deref(),
+        &recents,
+    )
 }
 
 /// `GET /inference/catalog?cwd=<root>&config=<path>&role=<role>`: every configured

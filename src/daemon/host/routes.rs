@@ -40,7 +40,7 @@ pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
         .all(
             "/sessions/:session/*",
             (
-                move |conn: Conn| async move { resolve_session(conn, files).await },
+                move |conn: Conn| async move { resolve_session(conn, files) },
                 control_routes(),
                 files.then(Files::route),
             ),
@@ -119,7 +119,7 @@ async fn read_sessions(conn: Conn) -> Conn {
 /// `/sessions/:session/*`: put the session into conn state for the control
 /// routes, or `404` when no hosted session has that id. Exact public web-shell
 /// routes pass through even without a session (docs/web-client.md).
-async fn resolve_session(conn: Conn, web: bool) -> Conn {
+fn resolve_session(conn: Conn, web: bool) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };

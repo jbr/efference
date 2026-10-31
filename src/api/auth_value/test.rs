@@ -175,23 +175,23 @@ fn renewing(
     (value, calls)
 }
 
-fn in_a_day() -> Option<SystemTime> {
-    Some(SystemTime::now() + Duration::from_secs(60 * 60 * 24))
+fn in_a_day() -> SystemTime {
+    SystemTime::now() + Duration::from_secs(60 * 60 * 24)
 }
 
-fn fresh(value: &str, renew_at: Option<SystemTime>) -> Result<Reread, String> {
-    Ok(Reread {
+fn fresh(value: &str, renew_at: Option<SystemTime>) -> Reread {
+    Reread {
         value: value.into(),
         renew_at,
-    })
+    }
 }
 
 /// The case `efference dev models` hit: a listing probe sent the value loaded
 /// at launch, which had passed its expiry, with nothing to renew it.
 #[tokio::test]
 async fn a_value_past_its_deadline_is_renewed_before_it_is_sent() {
-    let next = in_a_day();
-    let (value, calls) = renewing(Some(SystemTime::UNIX_EPOCH), vec![fresh("new", next)]);
+    let next = Some(in_a_day());
+    let (value, calls) = renewing(Some(SystemTime::UNIX_EPOCH), vec![Ok(fresh("new", next))]);
     assert_eq!(value.current().await, "new");
     assert_eq!(value.renew_at(), next);
     assert_eq!(value.current().await, "new");
@@ -204,7 +204,7 @@ async fn a_value_past_its_deadline_is_renewed_before_it_is_sent() {
 
 #[tokio::test]
 async fn a_value_before_its_deadline_is_sent_without_a_read() {
-    let (value, calls) = renewing(in_a_day(), vec![]);
+    let (value, calls) = renewing(Some(in_a_day()), vec![]);
     assert_eq!(value.current().await, "old");
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
@@ -226,7 +226,7 @@ async fn a_failed_renewal_keeps_the_value_and_backs_off() {
 /// deadline.
 #[tokio::test]
 async fn keeping_a_due_value_renewed_renews_it_at_once() {
-    let (value, calls) = renewing(Some(SystemTime::UNIX_EPOCH), vec![fresh("new", None)]);
+    let (value, calls) = renewing(Some(SystemTime::UNIX_EPOCH), vec![Ok(fresh("new", None))]);
     value.clone().keep_renewed().await;
     assert_eq!(value.get(), "new");
     assert_eq!(calls.load(Ordering::SeqCst), 1);

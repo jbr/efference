@@ -77,7 +77,7 @@ pub fn split_frontmatter(text: &str) -> Result<Split<'_>, UnterminatedFrontmatte
         if trimmed == "---" {
             // Closing delimiter: the body is everything after this line.
             if let Some(b) = block.take() {
-                close_block_scalar(&mut fm, b);
+                close_block_scalar(&mut fm, &b);
             }
             return Ok(Split {
                 frontmatter: Some(fm),
@@ -91,7 +91,7 @@ pub fn split_frontmatter(text: &str) -> Result<Split<'_>, UnterminatedFrontmatte
                 continue;
             }
             // First flush-left line ends the block; fall through to parse this line normally.
-            close_block_scalar(&mut fm, block.take().unwrap());
+            close_block_scalar(&mut fm, &block.take().unwrap());
         }
         block = parse_frontmatter_line(line, &mut fm);
         offset += line.len();
@@ -136,7 +136,7 @@ pub(super) fn block_scalar_style(value: &str) -> Option<bool> {
 /// Assemble a finished block scalar and assign it: folded joins the non-blank lines with spaces
 /// (the single-paragraph `description: >-` case real skill files use); literal keeps line breaks.
 /// Chomping indicators are ignored — trailing whitespace never matters to these keys.
-pub(super) fn close_block_scalar(fm: &mut Frontmatter, block: BlockScalar) {
+pub(super) fn close_block_scalar(fm: &mut Frontmatter, block: &BlockScalar) {
     let value = if block.folded {
         block
             .lines

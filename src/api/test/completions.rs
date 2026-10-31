@@ -55,7 +55,7 @@ async fn a_described_completions_connection_round_trips() {
     let (base, server) = serve(include_str!("../completions/mistral_tool.sse"));
     let endpoint = Endpoint::from_credentials(
         Provider::Custom(WireDialect::Completions),
-        "KEY".into(),
+        "KEY",
         None,
         Some(base),
     )

@@ -18,8 +18,7 @@ fn a_stream_that_finalizes_empty_is_marked_retryable() {
             r#"{"message":{"model":"google/gemini-3.7-flash","usage":{"input_tokens":0,"output_tokens":0}}}"#,
         ),
         ("message_stop", "{}"),
-    ])
-    .unwrap();
+    ]);
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("no content"), "{why}");
 }
@@ -53,8 +52,7 @@ fn a_finalized_stream_with_unparseable_tool_input_is_marked_retryable() {
             r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}"#,
         ),
         ("message_stop", r#"{"type":"message_stop"}"#),
-    ])
-    .expect("a malformed tool input is a marked completion, not an error");
+    ]);
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("unparseable tool input"), "{why}");
     match &completion.assistant {
@@ -86,7 +84,7 @@ fn an_empty_stream_records_status_headers_and_frames() {
     let message_start = r#"{"message":{"id":"gen-abc123","model":"m","provider":"Google AI Studio","usage":{"input_tokens":0,"output_tokens":0}}}"#;
     a.apply(Some("message_start"), message_start).unwrap();
     a.apply(Some("data"), "[DONE]").unwrap();
-    let completion = a.finish().unwrap();
+    let completion = a.finish();
 
     let Payload::Assistant {
         excluded: Some(Exclusion::Upstream(failure)),
@@ -137,7 +135,7 @@ fn frame_capture_stops_at_the_cap() {
     )
     .unwrap();
     a.apply(Some("data"), "[DONE]").unwrap();
-    let completion = a.finish().unwrap();
+    let completion = a.finish();
 
     let Payload::Assistant {
         excluded: Some(Exclusion::Upstream(failure)),
@@ -163,8 +161,7 @@ fn a_death_before_finalizing_carries_no_diagnostics() {
     let completion = feed(&[(
         "message_start",
         r#"{"message":{"model":"m","usage":{"input_tokens":3,"output_tokens":0}}}"#,
-    )])
-    .unwrap();
+    )]);
     let Payload::Assistant {
         excluded: Some(Exclusion::Upstream(failure)),
         ..
@@ -191,8 +188,7 @@ fn an_empty_turn_that_was_billed_is_left_alone() {
             r#"{"message":{"model":"m","usage":{"input_tokens":12,"output_tokens":7}}}"#,
         ),
         ("message_stop", "{}"),
-    ])
-    .unwrap();
+    ]);
     assert!(
         completion.upstream_failure().is_none(),
         "a billed turn is not an empty stream"
@@ -254,7 +250,7 @@ fn a_turn_says_nothing_without_prose_or_a_call() {
     ];
     let says_nothing = |head: &[(&'static str, &'static str)], stop| {
         let events: Vec<_> = head.iter().copied().chain(ended(stop)).collect();
-        feed(&events).unwrap().says_nothing()
+        feed(&events).says_nothing()
     };
     assert!(says_nothing(&thinking, end_turn));
     assert!(says_nothing(&whitespace, end_turn));

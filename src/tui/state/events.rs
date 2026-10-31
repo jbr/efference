@@ -249,7 +249,7 @@ impl<'a> InteractiveState<'a> {
                 self.ui.debug_message = note.into();
                 self.dirty = true;
             }
-            TuiEvent::Recalled(withdrawn) => self.apply_recall(withdrawn),
+            TuiEvent::Recalled(withdrawn) => self.apply_recall(&withdrawn),
             TuiEvent::NotDelivered { turn, answered } => self.apply_not_delivered(turn, answered),
             TuiEvent::Ask(ask) => self.apply_ask(ask),
             TuiEvent::Uploaded { key, result } => self.upload_landed(key, result),

@@ -262,8 +262,8 @@ async fn call(provider: &ConnectedProvider) -> RawResult {
     }
 }
 
-fn bearer(token: &str) -> Option<String> {
-    Some(format!("Bearer {token}"))
+fn bearer(token: &str) -> String {
+    format!("Bearer {token}")
 }
 
 /// A call whose grant has expired is not sent with it: the transport refreshes
@@ -276,9 +276,7 @@ async fn an_expired_grant_is_refreshed_before_the_call() {
         .expect("a stored grant");
     assert!(credentials.is_expired());
     let mut session = Session::new(Transport::Http(
-        HttpTransport::new(&fixture.url)
-            .unwrap()
-            .with_credentials(Some(credentials)),
+        HttpTransport::new(&fixture.url).with_credentials(Some(credentials)),
     ));
     let request = session
         .protocol
@@ -293,7 +291,7 @@ async fn an_expired_grant_is_refreshed_before_the_call() {
     assert_eq!(fixture.parties.refreshes(), 1);
     assert_eq!(
         fixture.parties.calls(),
-        [bearer("at-1")],
+        [Some(bearer("at-1"))],
         "the expired grant never reached the server"
     );
     assert_eq!(fixture.stored(), ("at-1".into(), Some("rt-1".into())));
@@ -312,7 +310,10 @@ async fn a_refused_call_is_refreshed_and_retried_once() {
     assert!(!result.is_error, "{}", result.content);
     assert_eq!(result.content, "echoed");
     assert_eq!(fixture.parties.refreshes(), 1);
-    assert_eq!(fixture.parties.calls(), [bearer("at-0"), bearer("at-1")]);
+    assert_eq!(
+        fixture.parties.calls(),
+        [Some(bearer("at-0")), Some(bearer("at-1"))]
+    );
     assert_eq!(fixture.stored(), ("at-1".into(), Some("rt-1".into())));
 }
 
@@ -337,10 +338,10 @@ async fn concurrent_calls_share_one_refresh() {
     assert_eq!(
         calls,
         [
-            bearer("at-0"),
-            bearer("at-0"),
-            bearer("at-1"),
-            bearer("at-1")
+            Some(bearer("at-0")),
+            Some(bearer("at-0")),
+            Some(bearer("at-1")),
+            Some(bearer("at-1"))
         ]
     );
     assert_eq!(fixture.stored(), ("at-1".into(), Some("rt-1".into())));
@@ -377,7 +378,7 @@ async fn a_failed_refresh_fails_the_call_without_looping() {
         result.content
     );
     assert_eq!(fixture.parties.refreshes(), 1);
-    assert_eq!(fixture.parties.calls(), [bearer("at-0")]);
+    assert_eq!(fixture.parties.calls(), [Some(bearer("at-0"))]);
     assert_eq!(
         fixture.stored(),
         ("at-0".into(), Some("rt-0".into())),
@@ -419,5 +420,8 @@ async fn a_renewed_grant_refused_again_fails_the_call_without_looping() {
         result.content
     );
     assert_eq!(fixture.parties.refreshes(), 1);
-    assert_eq!(fixture.parties.calls(), [bearer("at-0"), bearer("at-1")]);
+    assert_eq!(
+        fixture.parties.calls(),
+        [Some(bearer("at-0")), Some(bearer("at-1"))]
+    );
 }

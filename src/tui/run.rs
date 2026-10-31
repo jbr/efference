@@ -369,11 +369,11 @@ async fn attach(
         ui_loop(
             rx,
             senders,
-            theme,
+            &theme,
             images,
             None,
             frame_cost,
-            attached,
+            &attached,
             Some(attender),
         )
     });
@@ -482,11 +482,11 @@ async fn run_offline(
         ui_loop(
             rx,
             senders,
-            theme,
+            &theme,
             images,
             viewing,
             frame_cost,
-            Attached::default(),
+            &Attached::default(),
             None,
         )
     });

@@ -48,7 +48,7 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                         refusal.message(id.as_deref().unwrap_or("the session"), source.as_deref());
                     return respond(
                         conn,
-                        ErrorBody::new(ErrorCode::NotDelivered, message)
+                        &ErrorBody::new(ErrorCode::NotDelivered, message)
                             .with_detail(shared.topic_json(Topic::Ask)),
                     );
                 }
@@ -76,7 +76,7 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                 );
                 return respond(
                     conn,
-                    ErrorBody::new(ErrorCode::NotDelivered, message).with_detail(Value::Null),
+                    &ErrorBody::new(ErrorCode::NotDelivered, message).with_detail(Value::Null),
                 );
             }
             if let Err(refusal) = starting.submit(turn) {
@@ -241,7 +241,7 @@ pub(super) async fn resolve_approval(mut conn: Conn) -> Conn {
         // "that gate moved" from "there is no such call".
         respond(
             conn,
-            ErrorBody::new(
+            &ErrorBody::new(
                 ErrorCode::GateMoved,
                 "that call is not the pending approval gate",
             )
@@ -278,7 +278,7 @@ pub(super) async fn escalate_approval(mut conn: Conn) -> Conn {
     } else {
         respond(
             conn,
-            ErrorBody::new(
+            &ErrorBody::new(
                 ErrorCode::GateMoved,
                 "that call is not the pending approval gate",
             )

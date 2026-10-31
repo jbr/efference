@@ -73,8 +73,8 @@ fn adopt_worktree(
     (added.path, dir)
 }
 
-fn json(body: String) -> Value {
-    serde_json::from_str(&body).unwrap()
+fn json(body: &str) -> Value {
+    serde_json::from_str(body).unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -92,7 +92,7 @@ async fn archiving_an_empty_session_removes_it_and_frees_its_id() {
         .assert_status(200)
         .body()
         .to_string();
-    assert_eq!(json(body)["state"], "discarded");
+    assert_eq!(json(&body)["state"], "discarded");
     assert!(!path.parent().unwrap().exists());
     assert_eq!(
         register.holder("empty-one"),
@@ -108,7 +108,7 @@ async fn archiving_an_empty_session_removes_it_and_frees_its_id() {
         .assert_status(200)
         .body()
         .to_string();
-    assert_eq!(json(body)["state"], "discarded");
+    assert_eq!(json(&body)["state"], "discarded");
     assert!(!roots.0.join(".efference/empty-two").exists());
     assert_eq!(register.holder("empty-two"), None);
     host.swansong().shut_down().await;
@@ -131,7 +131,7 @@ async fn archiving_a_session_with_a_turn_keeps_it() {
         .assert_status(200)
         .body()
         .to_string();
-    assert_eq!(json(body)["state"], "archived");
+    assert_eq!(json(&body)["state"], "archived");
     let recording = crate::persist::load_recording(&path).unwrap();
     assert!(matches!(
         recording.entries.last().unwrap().payload,
@@ -181,7 +181,7 @@ async fn an_empty_session_with_a_dirty_worktree_is_archived() {
         .assert_status(200)
         .body()
         .to_string();
-    let body = json(body);
+    let body = json(&body);
     assert_eq!(body["state"], "archived");
     assert!(body["worktree"]["kept"].is_string());
     assert!(dir.join(crate::boot::LOG_NAME).is_file());
@@ -203,7 +203,7 @@ async fn an_empty_session_with_a_clean_worktree_is_discarded_with_it() {
         .assert_status(200)
         .body()
         .to_string();
-    let body = json(body);
+    let body = json(&body);
     assert_eq!(body["state"], "discarded");
     assert_eq!(body["worktree"]["removed"], true);
     assert!(!worktree.exists());

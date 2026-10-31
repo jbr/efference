@@ -41,7 +41,7 @@ fn the_authorize_url_carries_what_the_issuer_requires() {
 }
 
 /// A JWT segment, signed with nothing: the claims are read, never verified.
-fn jwt(claims: serde_json::Value) -> String {
+fn jwt(claims: &serde_json::Value) -> String {
     use base64::Engine as _;
     let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string());
     format!("header.{payload}.signature")
@@ -49,7 +49,7 @@ fn jwt(claims: serde_json::Value) -> String {
 
 #[test]
 fn the_account_and_plan_come_off_the_access_token() {
-    let token = jwt(serde_json::json!({
+    let token = jwt(&serde_json::json!({
         "https://api.openai.com/auth": {
             "chatgpt_account_id": "228f6909-0000-0000-0000-000000000000",
             "chatgpt_plan_type": "plus",
@@ -65,7 +65,7 @@ fn the_account_and_plan_come_off_the_access_token() {
 /// it could.
 #[test]
 fn a_token_without_an_account_is_refused() {
-    let token = jwt(serde_json::json!({ "https://api.openai.com/auth": { "amr": ["pop"] } }));
+    let token = jwt(&serde_json::json!({ "https://api.openai.com/auth": { "amr": ["pop"] } }));
     let error = account_of(&token).expect_err("no account id");
     assert!(error.contains("chatgpt_account_id"), "{error}");
 }

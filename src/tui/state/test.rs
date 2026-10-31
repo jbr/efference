@@ -139,14 +139,14 @@ fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
     let mut s = InteractiveState::new(erx, senders, rc, theme);
 
     let short = "one\ntwo\nthree";
-    s.handle_paste(short.into());
+    s.handle_paste(short);
     assert_eq!(s.composer.text(), short, "a short paste inlines");
 
     let long = (0..40)
         .map(|n| format!("line {n}"))
         .collect::<Vec<_>>()
         .join("\n");
-    s.handle_paste(long.clone());
+    s.handle_paste(&long);
     assert_eq!(s.composer.text(), short, "the composer is untouched");
     let crate::tui::staged::AttachCmd::Upload { key, name, bytes } = atx.try_recv().unwrap() else {
         panic!("a long paste uploads")

@@ -72,12 +72,12 @@ pub struct Loopback {
 /// Every rung is tried before failing, and the error names all of them —
 /// "port 50505 is in use" is not actionable on its own when the caller only
 /// knows about a ladder.
-pub async fn listen(ports: &[u16]) -> anyhow::Result<Loopback> {
-    listen_at(ports, CALLBACK_PATH).await
+pub fn listen(ports: &[u16]) -> anyhow::Result<Loopback> {
+    listen_at(ports, CALLBACK_PATH)
 }
 
 /// [`listen`] at a callback path the issuer dictates.
-pub async fn listen_at(ports: &[u16], path: &'static str) -> anyhow::Result<Loopback> {
+pub fn listen_at(ports: &[u16], path: &'static str) -> anyhow::Result<Loopback> {
     let (sender, received) = oneshot::channel();
     let sender = Arc::new(Mutex::new(Some(sender)));
     let swansong = Swansong::new();

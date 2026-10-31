@@ -49,8 +49,8 @@ struct Supported {
 }
 
 impl Supported {
-    fn yes(entry: &Option<Self>) -> bool {
-        entry.as_ref().and_then(|s| s.supported) == Some(true)
+    fn yes(entry: Option<&Self>) -> bool {
+        entry.and_then(|s| s.supported) == Some(true)
     }
 }
 
@@ -103,11 +103,11 @@ pub(super) fn capabilities(body: &str) -> Result<ModelCapabilities, Error> {
         .as_ref()
         .and_then(|c| c.thinking.as_ref())
         .map_or(ThinkingSupport::UNKNOWN, |t| ThinkingSupport {
-            adaptive: Supported::yes(&t.types.adaptive),
+            adaptive: Supported::yes(t.types.adaptive.as_ref()),
             // A model that refuses `disabled` answers it with a 400 naming
             // `between_tools` as the way to turn thinking off; the metadata does
             // not list that type, so the refusal is the signal (docs/transport.md).
-            off: if Supported::yes(&t.types.disabled) {
+            off: if Supported::yes(t.types.disabled.as_ref()) {
                 ThinkingOff::Disabled
             } else {
                 ThinkingOff::BetweenTools
@@ -125,7 +125,7 @@ pub(super) fn capabilities(body: &str) -> Result<ModelCapabilities, Error> {
             let mut levels: Vec<String> = effort
                 .levels
                 .iter()
-                .filter(|(_, entry)| effort.supported && Supported::yes(entry))
+                .filter(|(_, entry)| effort.supported && Supported::yes(entry.as_ref()))
                 .map(|(level, _)| level.clone())
                 .collect();
             levels.sort_by_key(|level| {

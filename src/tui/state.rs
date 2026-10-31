@@ -251,6 +251,10 @@ pub(super) enum KeyboardCursor {
 
 /// Viewport and scroll tracking
 #[derive(Debug)]
+// Pointer and scroll flags, each set and cleared by its own event (hover, drag, scroll).
+// They co-occur (a scrollbar drag leaves its hover flag set), so they are not alternatives
+// of one state.
+#[allow(clippy::struct_excessive_bools)]
 pub(super) struct ViewportState {
     pub scroll_offset: u16,
     pub cursor_pos: Option<Position>,
@@ -344,6 +348,9 @@ pub(super) struct PaceWidget {
 
 /// UI display state
 #[derive(Debug)]
+// Terminal capabilities and loop requests, each written by its own event; they co-occur, so
+// they are not alternatives of one state.
+#[allow(clippy::struct_excessive_bools)]
 pub(super) struct UiState {
     pub mouse_enabled: bool,
     pub debug_message: Cow<'static, str>,
@@ -397,6 +404,10 @@ pub(super) struct LayoutState {
 
 /// Main interactive state - composes all UI state
 #[derive(Debug)]
+// Flags written by separate events: dimming, focus, clipboard, host ownership, sidebar.
+// `composing`, `sidebar_open` and `strip_focus` together name the focus context, and
+// `strip_focus` carries a verb, so the bools alone do not form an enum.
+#[allow(clippy::struct_excessive_bools)]
 pub(super) struct InteractiveState<'a> {
     pub document: DocumentState<'a>,
     pub viewport: ViewportState,

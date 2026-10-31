@@ -32,7 +32,7 @@ impl Carried {
 
     /// The outcome of a triage an interrupt stopped (docs/control-channel.md), `by` who
     /// sent it.
-    pub(super) fn interrupted(self, count: usize, by: Option<String>) -> HoldOutcome {
+    pub(super) fn interrupted(self, count: usize, by: Option<&str>) -> HoldOutcome {
         HoldOutcome::interrupted(count, by, self.retries, self.thinking)
     }
 }

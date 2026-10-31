@@ -104,7 +104,8 @@ pub(super) async fn land(
                             continue;
                         }
                         Held::Interrupted => {
-                            break carried.interrupted(pending.len(), shared.interrupter());
+                            break carried
+                                .interrupted(pending.len(), shared.interrupter().as_deref());
                         }
                     }
                 }

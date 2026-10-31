@@ -165,7 +165,7 @@ auth = { kind = "env", key = "EFFERENCE_SWITCH_TEST_KEY" }
     InferenceRegistry::from_config(
         config,
         std::path::Path::new("/host"),
-        host_env,
+        &host_env,
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()

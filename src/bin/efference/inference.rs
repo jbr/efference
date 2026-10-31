@@ -12,7 +12,7 @@ pub(crate) fn registry() -> Result<InferenceRegistry, Error> {
     let cwd = std::env::current_dir()?;
     let env = efference::env_table::EnvSnapshot::capture()?;
     let secrets = std::sync::Arc::new(efference::secrets::Secrets::for_user()?);
-    let registry = InferenceRegistry::load(&cwd, env, &secrets)?;
+    let registry = InferenceRegistry::load(&cwd, &env, &secrets)?;
     let catalog =
         efference::catalog::Catalog::new(registry.history().state_path().map(ToOwned::to_owned));
     Ok(registry.with_catalog(catalog))

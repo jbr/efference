@@ -57,7 +57,7 @@ fn a_query_decodes_into_pairs() {
 /// callback, and get the decoded query back.
 #[tokio::test]
 async fn a_callback_delivers_its_query() {
-    let loopback = listen(&TEST_PORTS).await.unwrap();
+    let loopback = listen(&TEST_PORTS).unwrap();
     let uri = loopback.redirect_uri();
     assert!(TEST_PORTS.contains(&loopback.port()));
 
@@ -90,7 +90,7 @@ async fn a_callback_delivers_its_query() {
 /// that rejects it belongs to `authorize::Pending`, not here.
 #[tokio::test]
 async fn an_empty_callback_still_resolves() {
-    let loopback = listen(&TEST_PORTS).await.unwrap();
+    let loopback = listen(&TEST_PORTS).unwrap();
     let uri = loopback.redirect_uri();
     tokio::spawn(async move { client().get(uri.as_str()).await });
     assert!(loopback.wait().await.unwrap().is_empty());
@@ -100,7 +100,7 @@ async fn an_empty_callback_still_resolves() {
 /// must not resolve the wait.
 #[tokio::test]
 async fn other_paths_do_not_deliver() {
-    let loopback = listen(&TEST_PORTS).await.unwrap();
+    let loopback = listen(&TEST_PORTS).unwrap();
     let port = loopback.port();
     let stray = client()
         .get(format!("http://127.0.0.1:{port}/favicon.ico").as_str())
@@ -120,7 +120,7 @@ async fn other_paths_do_not_deliver() {
 /// A refresh or a stale tab must not overwrite a response already in hand.
 #[tokio::test]
 async fn a_second_callback_does_not_replace_the_first() {
-    let loopback = listen(&TEST_PORTS).await.unwrap();
+    let loopback = listen(&TEST_PORTS).unwrap();
     let uri = loopback.redirect_uri();
 
     let first = client()
@@ -147,7 +147,7 @@ async fn a_second_callback_does_not_replace_the_first() {
 /// listener is a standing invitation to feed this process an unsolicited code.
 #[tokio::test]
 async fn the_port_closes_once_the_response_is_taken() {
-    let loopback = listen(&TEST_PORTS).await.unwrap();
+    let loopback = listen(&TEST_PORTS).unwrap();
     let port = loopback.port();
     let uri = loopback.redirect_uri();
     tokio::spawn(async move { client().get(format!("{uri}?code=c").as_str()).await });
@@ -156,7 +156,7 @@ async fn the_port_closes_once_the_response_is_taken() {
     // Rebinding the same port is the observable proof the listener is gone.
     let rebound = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if let Ok(again) = listen(&[port]).await {
+            if let Ok(again) = listen(&[port]) {
                 return again;
             }
             tokio::time::sleep(Duration::from_millis(25)).await;

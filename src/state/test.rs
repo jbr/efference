@@ -79,7 +79,7 @@ fn the_real_stores_coexist_in_one_user_scoped_file() {
         .unwrap();
 
     store
-        .upsert(crate::push::Subscription {
+        .upsert(&crate::push::Subscription {
             endpoint: "https://push.example.net/a".into(),
             p256dh: "p".into(),
             auth: "a".into(),

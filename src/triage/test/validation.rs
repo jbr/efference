@@ -235,7 +235,7 @@ fn bounds_skip_keywords_and_unoffered_ids() {
 fn an_interrupted_gate_withholds_every_result_without_blaming_triage() {
     let outcome = HoldOutcome::interrupted(
         2,
-        Some("session[parent]".into()),
+        Some("session[parent]"),
         vec!["held: overloaded".into()],
         Vec::new(),
     );

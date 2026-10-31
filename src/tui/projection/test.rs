@@ -690,7 +690,7 @@ fn a_resumed_notice_carries_one_glyph() {
 /// Both leave the path field, and a windowed read's trailing `LINES:`, out of it.
 #[test]
 fn read_marker_takes_the_path_before_either_size_field() {
-    use super::tools::read_marker;
+    use super::tools::{ReadMarker, read_marker};
     for line in [
         "==tok BEGIN src/a.rs, BYTES: 9 tok==",
         "==tok BEGIN src/a.rs, LENGTH: 9 tok==",
@@ -698,12 +698,12 @@ fn read_marker_takes_the_path_before_either_size_field() {
     ] {
         assert_eq!(
             read_marker(line),
-            Some(Some("src/a.rs".to_string())),
+            Some(ReadMarker::Begin("src/a.rs".to_string())),
             "{line}"
         );
     }
     assert_eq!(
         read_marker("==tok END src/a.rs, BYTES: 9 tok=="),
-        Some(None)
+        Some(ReadMarker::End)
     );
 }

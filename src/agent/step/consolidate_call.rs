@@ -5,7 +5,7 @@ use super::*;
 
 /// Record the summary and pair the `tool_use`. No world-run, no triage: there is no
 /// tool output to curate, so the payloads land as they stand (`Decision::Direct`).
-pub(super) fn record(shared: &Arc<Session>, call: &ToolCall) -> Result<Decision, Error> {
+pub(super) fn record(shared: &Arc<Session>, call: &ToolCall) -> Decision {
     let note = consolidate::summary(&call.input).unwrap_or_default();
     let log = shared.snapshot();
     let current = log
@@ -48,18 +48,18 @@ pub(super) fn record(shared: &Arc<Session>, call: &ToolCall) -> Result<Decision,
         Some(_) => None,
     };
     let (Some(span), None) = (span, refusal) else {
-        return Ok(Decision::Direct(vec![Payload::tool_result(
+        return Decision::Direct(vec![Payload::tool_result(
             call.id.clone(),
             RawResult::error(refusal.unwrap_or_default()),
             WireState::Raw,
-        )]));
+        )]);
     };
-    Ok(Decision::Direct(vec![
+    Decision::Direct(vec![
         Payload::Summary(Summary::consolidation(span.from, span.upto, note)),
         Payload::tool_result(
             call.id.clone(),
             RawResult::text("consolidated"),
             WireState::Raw,
         ),
-    ]))
+    ])
 }

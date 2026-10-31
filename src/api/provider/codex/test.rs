@@ -60,7 +60,7 @@ fn an_entry_reports_its_window_levels_and_modalities() {
     let caps = catalog
         .entry("gpt-6-sol")
         .unwrap()
-        .capabilities(baseline(Provider::OpenAICodex));
+        .capabilities(&baseline(Provider::OpenAICodex));
     // The catalog's window, not the larger public figure: what the backend
     // reports is what the backend enforces.
     assert_eq!(caps.context_length, Some(272_000));
@@ -99,7 +99,7 @@ fn an_entry_reports_its_window_levels_and_modalities() {
     let text_only = catalog
         .entry("gpt-5.5")
         .unwrap()
-        .capabilities(baseline(Provider::OpenAICodex));
+        .capabilities(&baseline(Provider::OpenAICodex));
     assert!(!text_only.supports_image_input);
     assert!(text_only.check_effort("ultra", "gpt-5.5").is_ok());
 }

@@ -227,7 +227,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
         // summary + pair the `tool_use`. No world-run, no triage — there is no tool
         // output to curate, so it never reaches the triage.
         Approval::Approve if call.name == consolidate::NAME => {
-            consolidate_call::record(shared, call)
+            Ok(consolidate_call::record(shared, call))
         }
         Approval::Approve => {
             run_approved(

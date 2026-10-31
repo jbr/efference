@@ -87,7 +87,7 @@ fn completions_envelope_matches_expected_wire_bytes() {
         encode_completions(&turns, "PRE"),
         &tools,
         ToolChoice::auto(),
-        RequestParams {
+        &RequestParams {
             max_tokens: MAX_TOKENS,
             temperature: None,
             effort: None,
@@ -128,7 +128,7 @@ fn request_options_shape_the_envelope() {
         encode_completions(&[WireTurn::text("hi")], ""),
         &[],
         ToolChoice::auto(),
-        RequestParams {
+        &RequestParams {
             max_tokens: 100,
             temperature: Some(0.5),
             effort: Some("high"),

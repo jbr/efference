@@ -60,10 +60,7 @@ impl Fixture {
     }
 
     fn control(&self, caller: &str) -> Control {
-        Control::new(
-            Executor::host(Arc::clone(&self.host), caller.to_string()),
-            false,
-        )
+        Control::new(Executor::host(&self.host, caller.to_string()), false)
     }
 
     fn session(&self, id: &str) -> Arc<Session> {
@@ -349,7 +346,7 @@ async fn only_a_successors_archive_of_its_predecessor_completes_the_hand_off() {
         .record_succession("parent", "peer", "carry on".into());
     let toolbox_for = |caller: &str| {
         let mut toolbox = Toolbox::bash_only();
-        toolbox.mount_sessions(Arc::clone(&fixture.host), caller.to_string());
+        toolbox.mount_sessions(&fixture.host, caller.to_string());
         toolbox
     };
     let archive = |target: &str| {

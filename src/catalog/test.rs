@@ -155,14 +155,7 @@ fn held(age: u64, failure: Option<&str>, ids: &[&str]) -> Snapshot {
 #[test]
 fn status_follows_age_failure_and_availability() {
     let status = |snapshot, unavailable: Option<&str>| {
-        assemble(
-            "c",
-            Provider::Anthropic,
-            snapshot,
-            unavailable.map(str::to_string),
-            &[],
-        )
-        .status
+        assemble("c", Provider::Anthropic, snapshot, unavailable, &[]).status
     };
     let day = DAY.as_secs();
     assert_eq!(status(held(10, None, &["a"]), None), Status::Fresh);

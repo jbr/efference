@@ -39,7 +39,7 @@ fn registry() -> InferenceRegistry {
     InferenceRegistry::from_config(
         config,
         std::path::Path::new("/host"),
-        env,
+        &env,
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()

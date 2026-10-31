@@ -72,14 +72,14 @@ fn axes(sketch_level: usize, precedent: Option<Precedent>) -> Axes {
     }
 }
 
-fn precedent(candidates: usize, same: usize, required: Option<usize>) -> Option<Precedent> {
-    Some(Precedent {
+fn precedent(candidates: usize, same: usize, required: Option<usize>) -> Precedent {
+    Precedent {
         candidates,
         same,
         wider: 0,
         required,
         compared: Vec::new(),
-    })
+    }
 }
 
 /// A held `bash` call at `8.2`, held for what `spot` says and routed to `reviewer`.
@@ -499,7 +499,7 @@ fn ended_failed_and_starting() {
 fn every_later_line_opens_with_a_label() {
     let scope = Axes {
         in_scope: 0.21,
-        ..axes(0, precedent(0, 0, Some(1)))
+        ..axes(0, Some(precedent(0, 0, Some(1))))
     };
     let spot = spot(Origin::Model, "", Some(scope));
     let text = rendered(&gated(&spot, supervisor("parent")), &reviewer());

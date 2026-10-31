@@ -280,7 +280,7 @@ fn feed(events: &[&str]) -> (Completion, Vec<Streamed>) {
             Err(e) => a.fail(e.to_string()),
         }
     }
-    (a.finish().unwrap(), streamed)
+    (a.finish(), streamed)
 }
 
 const COMPLETED_WITH_CALL: &str = r#"{"type":"response.completed","response":{"id":"resp_1","model":"gpt-5.6-luna","status":"completed","output":[

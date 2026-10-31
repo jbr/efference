@@ -130,7 +130,7 @@ impl Entry {
     /// What this entry reports about the model, over the arm's baseline: the
     /// fields the catalog speaks for are filled in, and the ones it does not
     /// keep whatever the baseline asserted.
-    pub(super) fn capabilities(&self, baseline: ModelCapabilities) -> ModelCapabilities {
+    pub(super) fn capabilities(&self, baseline: &ModelCapabilities) -> ModelCapabilities {
         let efforts = self.efforts();
         ModelCapabilities {
             context_length: self.context_window.or(self.max_context_window),
@@ -154,7 +154,7 @@ impl Entry {
             // answer is the check — and it names every value it accepts, which
             // no list in this build can.
             validates_efforts: false,
-            ..baseline
+            ..*baseline
         }
     }
 }
@@ -211,7 +211,7 @@ pub(super) async fn capabilities(
         Err(error) => return Err(error),
     };
     Ok(match catalog.entry(model) {
-        Some(entry) => entry.capabilities(baseline),
+        Some(entry) => entry.capabilities(&baseline),
         None => baseline,
     })
 }

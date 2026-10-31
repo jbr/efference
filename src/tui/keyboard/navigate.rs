@@ -231,7 +231,7 @@ impl<'a> InteractiveState<'a> {
             } else {
                 // ExpandBlock mutates the document in place; `handle_action`
                 // drops the affected node's cached layout.
-                crate::tui::events::handle_action(&mut self.document, &mut self.view, action);
+                crate::tui::events::handle_action(&mut self.document, &mut self.view, &action);
             }
         }
     }

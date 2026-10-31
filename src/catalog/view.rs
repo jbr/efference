@@ -114,11 +114,11 @@ pub fn assemble(
     connection: &str,
     provider: Provider,
     snapshot: Snapshot,
-    unavailable: Option<String>,
+    unavailable: Option<&str>,
     recents: &[Recent],
 ) -> ConnectionCatalog {
-    let (status, error) = match (&unavailable, &snapshot.rows, &snapshot.failure) {
-        (Some(reason), _, _) => (Status::Unavailable, Some(reason.clone())),
+    let (status, error) = match (unavailable, &snapshot.rows, &snapshot.failure) {
+        (Some(reason), _, _) => (Status::Unavailable, Some(reason.to_string())),
         (None, None, Some(failure)) => (Status::Failed, Some(failure.error.clone())),
         (None, None, None) => (Status::Missing, None),
         (None, Some(_), failure) => {

@@ -396,7 +396,7 @@ fn with_agent_verbs(caller: &str) -> Toolbox {
         crate::env_table::EnvSnapshot::new(Default::default()).unwrap(),
     );
     let mut toolbox = Toolbox::bash_only();
-    toolbox.mount_sessions(host, caller.into());
+    toolbox.mount_sessions(&host, caller.into());
     toolbox
 }
 

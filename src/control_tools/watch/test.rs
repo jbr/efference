@@ -6,7 +6,7 @@ use super::*;
 use serde_json::json;
 
 /// A `status` frame for `child` with `condition`, as the stream carries it.
-fn frame(condition: serde_json::Value) -> String {
+fn frame(condition: &serde_json::Value) -> String {
     json!({
         "class": "state",
         "kind": "status",
@@ -15,12 +15,12 @@ fn frame(condition: serde_json::Value) -> String {
     .to_string()
 }
 
-fn view(condition: serde_json::Value) -> StatusView {
+fn view(condition: &serde_json::Value) -> StatusView {
     status_frame(&frame(condition)).expect("a status frame")
 }
 
-fn gated(call_id: &str, reviewer: serde_json::Value) -> StatusView {
-    view(json!({
+fn gated(call_id: &str, reviewer: &serde_json::Value) -> StatusView {
+    view(&json!({
         "kind": "gated",
         "call_id": call_id,
         "tool": "bash",
@@ -30,14 +30,14 @@ fn gated(call_id: &str, reviewer: serde_json::Value) -> StatusView {
 }
 
 fn idle(seq: u64) -> StatusView {
-    view(json!({
+    view(&json!({
         "kind": "idle",
         "closing": { "seq": seq, "text": "done", "bytes": 4, "lines": 1 },
     }))
 }
 
 fn working() -> StatusView {
-    view(json!({ "kind": "working", "activity": [{ "kind": "thinking", "since": 1 }] }))
+    view(&json!({ "kind": "working", "activity": [{ "kind": "thinking", "since": 1 }] }))
 }
 
 /// Only a `status` state frame carries a view.
@@ -55,28 +55,28 @@ fn only_status_frames_are_read() {
 fn marks_tell_decision_points_apart() {
     let operator = || json!({ "kind": "operator" });
     assert_eq!(mark(&working()), None);
-    let starting = view(json!({ "kind": "starting", "stage": "environment", "since": 1 }));
+    let starting = view(&json!({ "kind": "starting", "stage": "environment", "since": 1 }));
     assert_eq!(mark(&starting), None);
 
     assert_eq!(
-        mark(&gated("toolu_1", operator())),
-        mark(&gated("toolu_1", operator()))
+        mark(&gated("toolu_1", &operator())),
+        mark(&gated("toolu_1", &operator()))
     );
     assert_ne!(
-        mark(&gated("toolu_1", operator())),
-        mark(&gated("toolu_2", operator()))
+        mark(&gated("toolu_1", &operator())),
+        mark(&gated("toolu_2", &operator()))
     );
     assert_ne!(
-        mark(&gated("toolu_1", operator())),
+        mark(&gated("toolu_1", &operator())),
         mark(&gated(
             "toolu_1",
-            json!({ "kind": "supervisor", "id": "parent" })
+            &json!({ "kind": "supervisor", "id": "parent" })
         ))
     );
     assert_eq!(mark(&idle(4)), mark(&idle(4)));
     assert_ne!(mark(&idle(4)), mark(&idle(9)));
     assert_eq!(
-        mark(&view(json!({ "kind": "failed", "error": "boom" }))),
+        mark(&view(&json!({ "kind": "failed", "error": "boom" }))),
         Some(Mark::Ended)
     );
 }
@@ -118,7 +118,7 @@ async fn each_decision_point_is_returned_once() {
     watch.saw("child", working());
     unchanged(watch.next(second).await);
 
-    let gate = gated("toolu_1", json!({ "kind": "operator" }));
+    let gate = gated("toolu_1", &json!({ "kind": "operator" }));
     watch.saw("child", gate.clone());
     assert_eq!(new(watch.next(second).await), [gate]);
     unchanged(watch.next(second).await);

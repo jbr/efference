@@ -183,25 +183,22 @@ fn role(case: &CaseIn) -> efference::config::Config {
 /// state rather than a re-implementation of it. Labels are not required: every
 /// case is dumped.
 pub(crate) fn dump_states(
-    cases_files: Vec<PathBuf>,
-    filter: Option<String>,
+    cases_files: &[PathBuf],
+    filter: Option<&str>,
     limit: Option<usize>,
-    out: PathBuf,
+    out: &Path,
 ) -> CliResult {
     let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
     let mut lines = String::new();
     let mut n = 0usize;
-    for path in &cases_files {
+    for path in cases_files {
         for line in std::fs::read_to_string(path)?.lines() {
             if line.trim().is_empty() {
                 continue;
             }
             let case: CaseIn = serde_json::from_str(line)
                 .map_err(|e| format!("{}: bad case line: {e}", path.display()))?;
-            if filter
-                .as_ref()
-                .is_some_and(|f| !case.id.contains(f.as_str()))
-            {
+            if filter.is_some_and(|f| !case.id.contains(f)) {
                 continue;
             }
             if limit.is_some_and(|l| n >= l) {
@@ -232,7 +229,7 @@ pub(crate) fn dump_states(
             n += 1;
         }
     }
-    std::fs::write(&out, lines)?;
+    std::fs::write(out, lines)?;
     eprintln!("{n} states -> {}", out.display());
     Ok(())
 }

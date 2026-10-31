@@ -22,15 +22,15 @@ fn store_round_trip() {
     let store = temp_store("round-trip");
     assert!(store.load().is_empty(), "a missing file is an empty list");
 
-    store.upsert(sub("https://push.example.net/a")).unwrap();
-    store.upsert(sub("https://push.example.net/b")).unwrap();
+    store.upsert(&sub("https://push.example.net/a")).unwrap();
+    store.upsert(&sub("https://push.example.net/b")).unwrap();
     assert_eq!(store.load().len(), 2);
 
     // An upsert on a known endpoint replaces rather than appends, so a page
     // reload that re-POSTs its subscription leaves one entry.
     let mut refreshed = sub("https://push.example.net/a");
     refreshed.auth = "AAAAAAAAAAAAAAAAAAAAAA".into();
-    store.upsert(refreshed.clone()).unwrap();
+    store.upsert(&refreshed).unwrap();
     let loaded = store.load();
     assert_eq!(loaded.len(), 2, "replaced, not appended");
     assert!(loaded.contains(&refreshed));
@@ -61,7 +61,7 @@ fn a_file_that_is_not_a_database_reads_as_empty() {
     assert!(store.load().is_empty());
     // Writes report it rather than pretending: a subscribe has to be able to say
     // it did not record.
-    assert!(store.upsert(sub("https://push.example.net/a")).is_err());
+    assert!(store.upsert(&sub("https://push.example.net/a")).is_err());
     let _ = std::fs::remove_file(&store.path);
 }
 
@@ -70,7 +70,7 @@ fn a_file_that_is_not_a_database_reads_as_empty() {
 #[test]
 fn a_subscription_survives_a_new_store_on_the_same_file() {
     let store = temp_store("two-handles");
-    store.upsert(sub("https://push.example.net/a")).unwrap();
+    store.upsert(&sub("https://push.example.net/a")).unwrap();
     assert_eq!(Store::new(store.path.clone()).load(), store.load());
     let _ = std::fs::remove_file(&store.path);
 }

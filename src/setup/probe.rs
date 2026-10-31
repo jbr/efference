@@ -147,7 +147,7 @@ impl LiveProbe {
     }
 
     fn endpoint(target: &Target, key: &str) -> Result<Endpoint, String> {
-        Endpoint::from_credentials(target.provider, key.to_string(), None, target.base.clone())
+        Endpoint::from_credentials(target.provider, key, None, target.base.clone())
             .map_err(|error| error.to_string())
     }
 }
@@ -197,8 +197,11 @@ impl Probe for LiveProbe {
         say: &mut dyn FnMut(&str),
     ) -> Result<ChatGptLogin, String> {
         let secrets = self.secrets.as_ref().map_err(Clone::clone)?;
-        let grant =
-            crate::inference::chatgpt::log_in(|url| present_authorization(url, say)).await?;
+        let grant = crate::inference::chatgpt::log_in(|url| {
+            present_authorization(url, say);
+            Ok(())
+        })
+        .await?;
         grant.save(secrets, connection)?;
         Ok(ChatGptLogin {
             account_id: grant.account_id,
@@ -250,7 +253,7 @@ impl Probe for LiveProbe {
 /// a failure is reported rather than fatal — the same reasoning as the MCP
 /// authorization path (`src/boot/mcp_mount.rs`). Said through the flow's
 /// prompter, so it reads in place in the transcript setup keeps.
-fn present_authorization(url: &str, say: &mut dyn FnMut(&str)) -> Result<(), String> {
+fn present_authorization(url: &str, say: &mut dyn FnMut(&str)) {
     say(&format!(
         "Log in to ChatGPT to authorize efference:\n\n  {url}\n"
     ));
@@ -260,7 +263,6 @@ fn present_authorization(url: &str, say: &mut dyn FnMut(&str)) -> Result<(), Str
             "(could not open a browser: {error} — open the URL above to continue)"
         )),
     }
-    Ok(())
 }
 
 /// The `exp` claim of a JWT's payload segment, undecorated by a signature

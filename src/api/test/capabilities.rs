@@ -288,7 +288,7 @@ fn prompt_caching_is_read_off_the_endpoint_metadata() {
 #[tokio::test]
 async fn the_platform_arm_reads_the_catalog_over_its_own_baseline() {
     seed_codex_catalog(Provider::OpenAI, "");
-    let platform = Endpoint::from_credentials(Provider::OpenAI, "sk-test".into(), None, None)
+    let platform = Endpoint::from_credentials(Provider::OpenAI, "sk-test", None, None)
         .expect("a platform connection is well-formed");
     let named = platform
         .fetch_capabilities("gpt-5.6-luna", &[])

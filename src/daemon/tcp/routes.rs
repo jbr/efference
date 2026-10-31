@@ -64,7 +64,7 @@ async fn request_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
         Ok(requested) => credential_answer(
             conn,
             200,
-            serde_json::json!({
+            &serde_json::json!({
                 "claim": requested.claim.encoded(),
                 "code": requested.code.to_string(),
                 "expires_in": TTL_SECS,
@@ -106,7 +106,7 @@ async fn claim_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
     };
     match auth.sign_ins.claim(&claim, SystemTime::now()) {
         Ok(Claim::Waiting) => {
-            credential_answer(conn, 202, serde_json::json!({ "status": "pending" }))
+            credential_answer(conn, 202, &serde_json::json!({ "status": "pending" }))
         }
         Ok(Claim::Approved { label, joined }) => {
             let label = match joined {
@@ -115,7 +115,7 @@ async fn claim_sign_in(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
             };
             match auth.enroll(Kind::Browser, label, joined) {
                 Ok(enrolled) => {
-                    credential_answer(conn, 200, serde_json::json!({ "token": enrolled.token }))
+                    credential_answer(conn, 200, &serde_json::json!({ "token": enrolled.token }))
                 }
                 // The claim is spent either way: its row went before the insert, and a
                 // claim that could enroll twice is the replay the delete exists to stop.
@@ -145,7 +145,7 @@ const UNKNOWN_CLAIM: &str = "no pending sign-in answers to that claim: it was cl
 /// An answer carrying a credential, which is never stored for reuse — the
 /// token-endpoint rule (RFC 6749 §5.1). `/auth` and `/pair` sit outside the `/v1`
 /// prefix that `SecurityHeaders` covers, so each such answer says so itself.
-fn credential_answer(conn: Conn, status: u16, body: Value) -> Conn {
+fn credential_answer(conn: Conn, status: u16, body: &Value) -> Conn {
     conn.with_status(status)
         .with_response_header(KnownHeaderName::ContentType, "application/json")
         .with_response_header(KnownHeaderName::CacheControl, "no-store")
@@ -174,7 +174,7 @@ pub(crate) fn enrollment_routes(auth: Option<Arc<TcpAuth>>) -> Router {
 /// a credential.
 async fn auth_link(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
     match auth.mint_link() {
-        Ok(url) => credential_answer(conn, 200, serde_json::json!({ "url": url })),
+        Ok(url) => credential_answer(conn, 200, &serde_json::json!({ "url": url })),
         Err(e) => fail(
             conn,
             ErrorCode::Internal,
@@ -285,7 +285,7 @@ async fn add_device(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
         Ok(enrolled) => credential_answer(
             conn,
             201,
-            serde_json::to_value(enrolled).unwrap_or_default(),
+            &serde_json::to_value(enrolled).unwrap_or_default(),
         ),
         Err(e) => fail(
             conn,

@@ -97,8 +97,8 @@ struct Pricing {
     input_cache_write: Option<String>,
 }
 
-fn price(value: &Option<String>) -> Option<f64> {
-    value.as_deref()?.trim().parse().ok()
+fn price(value: Option<&str>) -> Option<f64> {
+    value?.trim().parse().ok()
 }
 
 impl Entry {
@@ -147,8 +147,8 @@ impl Entry {
             prompt_cache: match self.pricing.as_ref() {
                 None => PromptCachePolicy::None,
                 Some(pricing) => match (
-                    price(&pricing.input_cache_read),
-                    price(&pricing.input_cache_write),
+                    price(pricing.input_cache_read.as_deref()),
+                    price(pricing.input_cache_write.as_deref()),
                 ) {
                     (None, None) => PromptCachePolicy::None,
                     (_, Some(write)) if write > 0.0 => PromptCachePolicy::Explicit,

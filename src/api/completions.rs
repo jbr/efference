@@ -202,7 +202,7 @@ pub fn render_completions_request_pretty(
         messages,
         tools,
         tool_choice,
-        RequestParams {
+        &RequestParams {
             max_tokens: MAX_TOKENS,
             temperature: None,
             effort: None,
@@ -217,7 +217,7 @@ pub(super) fn completions_request<'a>(
     messages: Vec<Message>,
     tools: &[Value],
     tool_choice: ToolChoice,
-    params: RequestParams<'a>,
+    params: &RequestParams<'a>,
 ) -> CompletionsRequest<'a> {
     let (max_tokens, max_completion_tokens) = match params.options.output_cap_field {
         OutputCapField::MaxTokens => (Some(params.max_tokens), None),

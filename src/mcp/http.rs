@@ -60,14 +60,14 @@ pub struct HttpTransport {
 }
 
 impl HttpTransport {
-    pub fn new(url: &str) -> anyhow::Result<Self> {
-        Ok(Self {
+    pub fn new(url: &str) -> Self {
+        Self {
             client: crate::http::client(),
             url: url.to_string(),
             credentials: None,
             session_id: None,
             protocol_version: None,
-        })
+        }
     }
 
     /// Send these credentials on every request, renewing them as they lapse.

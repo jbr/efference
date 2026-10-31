@@ -10,14 +10,14 @@ fn environment(values: &[(&str, &str)]) -> EnvSnapshot {
     .unwrap()
 }
 
-fn registry(toml: &str, environment: EnvSnapshot) -> InferenceRegistry {
+fn registry(toml: &str, environment: &EnvSnapshot) -> InferenceRegistry {
     registry_with_secrets(toml, environment, &Arc::new(Secrets::in_memory()))
 }
 
 /// The same, against a store a test has already put something in.
 fn registry_with_secrets(
     toml: &str,
-    environment: EnvSnapshot,
+    environment: &EnvSnapshot,
     secrets: &Arc<Secrets>,
 ) -> InferenceRegistry {
     let config = InferenceConfig::from_toml(toml).unwrap();
@@ -39,7 +39,7 @@ auth = { kind = "env", key = "WORK_KEY" }
 provider = "openrouter"
 auth = { kind = "env", key = "PERSONAL_KEY" }
 "#,
-        environment(&[
+        &environment(&[
             ("WORK_KEY", "work-secret"),
             ("PERSONAL_KEY", "personal-secret"),
         ]),
@@ -63,7 +63,7 @@ fn an_unqualified_model_is_refused_without_a_connection_prefix() {
 provider = "openrouter"
 auth = { kind = "env", key = "ROUTER_KEY" }
 "#,
-        environment(&[("ROUTER_KEY", "router-secret")]),
+        &environment(&[("ROUTER_KEY", "router-secret")]),
     );
 
     let error = match registry.resolve(Some("vendor/claude-sonnet-4-5"), None, None) {
@@ -85,7 +85,7 @@ auth = { kind = "env", key = "READY_KEY" }
 provider = "anthropic"
 auth = { kind = "env", key = "MISSING_KEY" }
 "#,
-        environment(&[("READY_KEY", "ready-secret")]),
+        &environment(&[("READY_KEY", "ready-secret")]),
     );
 
     assert!(registry.resolve(Some("ready/main"), None, None).is_ok());
@@ -118,7 +118,7 @@ disabled = true
 provider = "anthropic"
 auth = { kind = "env", key = "MISSING_KEY" }
 "#,
-        environment(&[("READY_KEY", "ready-secret"), ("OFF_KEY", "off-secret")]),
+        &environment(&[("READY_KEY", "ready-secret"), ("OFF_KEY", "off-secret")]),
     );
 
     let (provider, endpoint) = registry.endpoint("ready").unwrap();
@@ -160,7 +160,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 provider = "openai"
 auth = { kind = "env", key = "OPENAI_KEY" }
 "#,
-        environment(&[
+        &environment(&[
             ("ANTHROPIC_KEY", "anthropic-secret"),
             ("OPENAI_KEY", "openai-secret"),
         ]),
@@ -192,7 +192,7 @@ env_hook = ["/Users/jbr/.cargo/bin/nu", "-i", "-l", "-c", "direnv exec . /usr/bi
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
     );
 
     assert_eq!(
@@ -220,7 +220,7 @@ fn a_config_without_an_env_hook_reports_none() {
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
     );
 
     assert_eq!(registry.env_hook(), None);
@@ -297,7 +297,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
     let error = match InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
         &Arc::new(Secrets::in_memory()),
     ) {
         Ok(_) => panic!("unqualified default unexpectedly loaded"),
@@ -317,7 +317,7 @@ fn reserved_prefixes_name_connections_even_when_unconfigured() {
 provider = "openrouter"
 auth = { kind = "env", key = "ROUTER_KEY" }
 "#,
-        environment(&[("ROUTER_KEY", "router-secret")]),
+        &environment(&[("ROUTER_KEY", "router-secret")]),
     );
     let error = match registry.resolve(Some("anthropic/claude-sonnet-4-5"), None, None) {
         Ok(_) => panic!("reserved prefix unexpectedly resolved without a connection"),
@@ -344,7 +344,7 @@ fn connection_name_collisions_and_slashes_are_rejected() {
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
     );
     let error = match registry.resolve(Some("main"), None, None) {
         Ok(_) => panic!("bare connection name unexpectedly resolved"),
@@ -363,7 +363,7 @@ auth = { kind = "env", key = "K" }
     let error = match InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        environment(&[]),
+        &environment(&[]),
         &Arc::new(Secrets::in_memory()),
     ) {
         Ok(_) => panic!("slashed connection name unexpectedly loaded"),
@@ -392,7 +392,7 @@ disabled = true
     let error = match InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
         &Arc::new(Secrets::in_memory()),
     ) {
         Ok(_) => panic!("[defaults].spotter naming a disabled connection unexpectedly loaded"),
@@ -418,7 +418,7 @@ provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 disabled = true
 "#,
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
     );
     let error = match registry.resolve(Some("main/claude"), None, None) {
         Ok(_) => panic!("a disabled connection unexpectedly resolved"),
@@ -438,7 +438,7 @@ fn explicit_triage_on_the_main_model_is_its_own_client() {
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
     );
     let shared = registry.resolve(Some("main/claude"), None, None).unwrap();
     assert!(shared.triage().is_none());
@@ -485,7 +485,7 @@ auth = { kind = "codex-cache" }
 provider = "openai-codex"
 auth = { kind = "env", key = "BARE_KEY" }
 "#,
-        environment(&[
+        &environment(&[
             ("HOME", root.join("home").to_str().unwrap()),
             ("BARE_KEY", "bare-token"),
         ]),
@@ -518,7 +518,7 @@ spotter = "work/gpt-5.6-luna"
 provider = "openai"
 auth = { kind = "env", key = "WORK_KEY" }
 "#,
-        environment(&[("WORK_KEY", "work-secret")]),
+        &environment(&[("WORK_KEY", "work-secret")]),
     );
     let identity = registry
         .resolve(Some("work/gpt-5.6"), None, None)
@@ -549,7 +549,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 provider = "openrouter"
 auth = { kind = "env", key = "NEVER_SET" }
 "#,
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
     );
     let unavailable = registry.unavailable();
     assert_eq!(
@@ -577,7 +577,7 @@ provider = "openrouter"
 disabled = true
 auth = { kind = "env", key = "NEVER_SET" }
 "#,
-        environment(&[("ANTHROPIC_KEY", "secret")]),
+        &environment(&[("ANTHROPIC_KEY", "secret")]),
     );
     assert!(
         registry.unavailable().is_empty(),
@@ -600,7 +600,7 @@ fn an_oauth_connection_loads_the_stored_grant() {
 provider = "openai-codex"
 auth = { kind = "oauth" }
 "#,
-        environment(&[]),
+        &environment(&[]),
         &secrets,
     );
     assert!(
@@ -620,7 +620,7 @@ fn an_oauth_connection_without_a_grant_says_to_log_in() {
 provider = "openai-codex"
 auth = { kind = "oauth" }
 "#,
-        environment(&[]),
+        &environment(&[]),
         &Arc::new(Secrets::in_memory()),
     );
     let unavailable = registry.unavailable();
@@ -641,7 +641,7 @@ fn oauth_on_a_provider_with_no_issuer_is_refused() {
 provider = "anthropic"
 auth = { kind = "oauth" }
 "#,
-        environment(&[]),
+        &environment(&[]),
         &Arc::new(Secrets::in_memory()),
     );
     let unavailable = registry.unavailable();
@@ -666,7 +666,7 @@ auth = {{ kind = "env", key = "META_KEY" }}
         InferenceRegistry::from_config(
             config,
             Path::new("/host"),
-            environment(&[("META_KEY", "k")]),
+            &environment(&[("META_KEY", "k")]),
             &Arc::new(Secrets::in_memory()),
         )
         .map(|registry| registry.inventory())
@@ -742,7 +742,7 @@ auth = {{ kind = "env", key = "K" }}
         InferenceRegistry::from_config(
             config,
             Path::new("/host"),
-            environment(&[("K", "k")]),
+            &environment(&[("K", "k")]),
             &Arc::new(Secrets::in_memory()),
         )
         .map_or_else(|error| error.to_string(), |_| String::new())
@@ -774,7 +774,7 @@ disabled = true
     let registry = InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        env,
+        &env,
         &Arc::new(Secrets::in_memory()),
     )
     .unwrap();
@@ -802,7 +802,7 @@ base-url = "https://api.mistral.ai/v1"
         InferenceRegistry::from_config(
             config,
             Path::new("/host"),
-            environment(&[("MISTRAL_KEY", "k")]),
+            &environment(&[("MISTRAL_KEY", "k")]),
             &Arc::new(Secrets::in_memory()),
         )
         .map_err(|error| error.to_string())
@@ -850,7 +850,7 @@ fn a_described_connection_without_auth_sends_no_credential() {
         InferenceRegistry::from_config(
             config,
             Path::new("/host"),
-            environment(&[]),
+            &environment(&[]),
             &Arc::new(Secrets::in_memory()),
         )
         .map_err(|error| error.to_string())

@@ -53,15 +53,16 @@ pub(super) async fn edit_connection<P: Prompter, Q: Probe>(
     choices.push(Choice::new("Back"));
     let picked = prompter.select(&format!("Edit {name}"), &choices)?;
     match choices[picked].label.as_str() {
-        "Rename" => rename_connection(prompter, probe, working, draft, name, connection).await,
+        "Rename" => rename_connection(prompter, probe, working, draft, name, connection),
         "Update the credential" => {
             update_credential(prompter, probe, working, draft, name, connection).await
         }
         "Move the key into the keychain" => {
-            move_env_to_keychain(prompter, probe, working, draft, name, connection).await
+            move_env_to_keychain(prompter, probe, working, draft, name, connection);
+            Ok(())
         }
         "Reveal the key and switch to an environment variable" => {
-            reveal_and_switch_to_env(prompter, probe, working, draft, name, connection).await
+            reveal_and_switch_to_env(prompter, probe, working, draft, name, connection)
         }
         // One label, two mechanisms: the cached login is re-checked, a grant is
         // obtained again. The stored item name is the connection's unless the
@@ -87,7 +88,7 @@ pub(super) async fn edit_connection<P: Prompter, Q: Probe>(
 /// connection's own name, the secret store item moves first — write the new
 /// item, confirm it reads back, then delete the old, so a failure strands a
 /// copy rather than destroying the only one.
-async fn rename_connection<P: Prompter, Q: Probe>(
+fn rename_connection<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     working: &mut Working,
@@ -258,27 +259,27 @@ async fn update_credential<P: Prompter, Q: Probe>(
 /// Refused on a scheme-shaped value (docs: `op://…`), which a resolver
 /// expands at read time — storing what the variable literally says would put
 /// the unexpanded reference in the keychain.
-async fn move_env_to_keychain<P: Prompter, Q: Probe>(
+fn move_env_to_keychain<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     working: &mut Working,
     draft: &mut Draft,
     name: &str,
     connection: &ExistingConnection,
-) -> Result<(), Cancelled> {
+) {
     let ExistingAuth::Env { key } = &connection.auth else {
-        return Ok(());
+        return;
     };
     let Some(value) = probe.env_var(key) else {
         prompter.say(Tone::Bad, &format!("{key} is not set in this shell."));
-        return Ok(());
+        return;
     };
     if looks_like_scheme_reference(&value) {
         prompter.say(
             Tone::Bad,
             &format!("{key} holds a reference ({value}), not a plain key; move it by hand."),
         );
-        return Ok(());
+        return;
     }
     let item = crate::secrets::inference_name(name);
     match probe.store_secret(&item, &value) {
@@ -297,13 +298,12 @@ async fn move_env_to_keychain<P: Prompter, Q: Probe>(
         }
         Err(error) => prompter.say(Tone::Bad, &format!("Could not write `{item}`: {error}")),
     }
-    Ok(())
 }
 
 /// The reverse move is destructive, so it is never spelled as a move: reveal
 /// the stored value, switch the config to read it from a variable, and leave
 /// the stored copy in place unless the operator separately asks to clear it.
-async fn reveal_and_switch_to_env<P: Prompter, Q: Probe>(
+fn reveal_and_switch_to_env<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     working: &mut Working,

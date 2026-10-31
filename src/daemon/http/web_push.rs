@@ -30,7 +30,7 @@ pub(super) async fn subscribe(mut conn: Conn) -> Conn {
             );
         }
     };
-    match crate::push::Store::machine_scoped().upsert(subscription) {
+    match crate::push::Store::machine_scoped().upsert(&subscription) {
         Ok(()) => conn
             .with_status(201)
             .with_body(r#"{"status":"subscribed"}"#)

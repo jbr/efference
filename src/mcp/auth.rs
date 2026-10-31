@@ -165,7 +165,7 @@ where
 
     // Bind before building the URL: the port is in the redirect URI, and the
     // redirect URI is in the authorization request.
-    let listener = loopback::listen(&REDIRECT_PORTS).await?;
+    let listener = loopback::listen(&REDIRECT_PORTS)?;
     let redirect_uri = listener.redirect_uri();
 
     let registration = client_id_for(&discovery, &server, &issuer, existing, scope.clone()).await?;

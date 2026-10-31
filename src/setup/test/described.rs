@@ -61,7 +61,7 @@ async fn a_described_endpoint_is_named_after_its_host() {
     let registry = crate::inference::InferenceRegistry::from_config(
         config,
         std::path::Path::new("/host"),
-        crate::env_table::EnvSnapshot::new(BTreeMap::from([(
+        &crate::env_table::EnvSnapshot::new(BTreeMap::from([(
             "META_API_KEY".to_string(),
             "sk-real".to_string(),
         )]))

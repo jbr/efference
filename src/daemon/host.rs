@@ -614,7 +614,7 @@ pub async fn serve_host(
         let open = listener.open;
         let addr = listener.addr.clone();
         let handle = tcp::spawn(
-            listener,
+            &listener,
             handler(
                 Transport::Web {
                     auth: Arc::clone(&auth),

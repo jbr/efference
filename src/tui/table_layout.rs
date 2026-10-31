@@ -315,7 +315,7 @@ fn wrap_tokens<'a>(tokens: Vec<Token<'a>>, width: usize) -> Vec<Vec<Span<'a>>> {
                     hard_break_word(
                         token.text.as_ref(),
                         token.style,
-                        token.action,
+                        token.action.as_ref(),
                         width,
                         &mut lines,
                         &mut current,
@@ -335,7 +335,7 @@ fn wrap_tokens<'a>(tokens: Vec<Token<'a>>, width: usize) -> Vec<Vec<Span<'a>>> {
 fn hard_break_word<'a>(
     word: &str,
     style: SpanStyle,
-    action: Option<TuiAction<'a>>,
+    action: Option<&TuiAction<'a>>,
     width: usize,
     lines: &mut Vec<Vec<Span<'a>>>,
     current: &mut Vec<Span<'a>>,
@@ -365,7 +365,7 @@ fn hard_break_word<'a>(
         let span = Span {
             text: Cow::Owned(chunk),
             style,
-            action: action.clone(),
+            action: action.cloned(),
         };
         if acc_w >= width {
             lines.push(vec![span]);

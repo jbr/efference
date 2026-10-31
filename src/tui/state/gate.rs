@@ -131,13 +131,13 @@ impl<'a> InteractiveState<'a> {
     /// An empty list is the lost race: the loop dequeued the turn between the keypress and the
     /// withdraw. Nothing is spliced and the status line says so — the echo stays until its `User`
     /// entry settles it.
-    pub(in crate::tui) fn apply_recall(&mut self, withdrawn: Vec<crate::client::WithdrawnTurn>) {
+    pub(in crate::tui) fn apply_recall(&mut self, withdrawn: &[crate::client::WithdrawnTurn]) {
         if withdrawn.is_empty() {
             self.ui.debug_message = "already sent — nothing recalled".into();
             self.dirty = true;
             return;
         }
-        for turn in &withdrawn {
+        for turn in withdrawn {
             self.pending_turns
                 .retain(|p| p.submission_id != turn.submission_id);
         }
@@ -175,7 +175,7 @@ impl<'a> InteractiveState<'a> {
         turn: crate::client::WithdrawnTurn,
         answered: bool,
     ) {
-        self.apply_recall(vec![turn]);
+        self.apply_recall(&[turn]);
         self.ui.debug_message = if answered {
             "not sent: that question is no longer waiting; your message is back in the composer"
         } else {
@@ -211,7 +211,7 @@ impl<'a> InteractiveState<'a> {
             })
             .collect();
         if !own.is_empty() {
-            self.apply_recall(own);
+            self.apply_recall(&own);
         }
     }
 

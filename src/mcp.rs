@@ -216,7 +216,7 @@ impl ConnectedProvider {
                 )?)
             }
             McpTransport::Http { url } => {
-                Transport::Http(http::HttpTransport::new(url)?.with_credentials(credentials))
+                Transport::Http(http::HttpTransport::new(url).with_credentials(credentials))
             }
         };
         Self::mount_transport(name, transport).await
@@ -388,7 +388,7 @@ impl ConnectedProvider {
         };
         match result {
             Ok(result) => match serde_json::from_value::<ToolCallOutcome>(result) {
-                Ok(ToolCallOutcome::Complete(result)) => render_result(result),
+                Ok(ToolCallOutcome::Complete(result)) => render_result(&result),
                 // An interim result: the server wants more input (elicitation,
                 // sampling) or is shedding load, and expects the client to
                 // supply it and re-issue. efference declares no client
@@ -665,7 +665,7 @@ impl Exchange<'_> {
 /// blocks — and images that fail to decode — land as placeholders naming what
 /// was withheld (the log stays a faithful record that *something* was there);
 /// a structured-only result lands as pretty JSON.
-pub(crate) fn render_result(result: CallToolResult) -> RawResult {
+pub(crate) fn render_result(result: &CallToolResult) -> RawResult {
     let is_error = result.is_error.unwrap_or(false);
     let mut images = Vec::new();
     let mut parts: Vec<String> = result

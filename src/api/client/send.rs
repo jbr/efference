@@ -201,7 +201,7 @@ impl Client {
                     messages.clone(),
                     open.tools,
                     open.tool_choice,
-                    completions::RequestParams {
+                    &completions::RequestParams {
                         max_tokens,
                         temperature: self.wire_temperature(),
                         effort: self.effort.as_deref(),
@@ -264,7 +264,7 @@ impl Client {
                         Ok(events) => return Ok(events),
                         Err(e) => {
                             let (status, detail) = Self::sse_open_failure(e).await;
-                            return Err(Self::open_error(status, detail));
+                            return Err(Self::open_error(status, &detail));
                         }
                     }
                 }
@@ -304,7 +304,7 @@ impl Client {
                     outcome => {
                         return Err(Self::open_error(
                             status,
-                            format!("{detail} (credential re-read: {outcome})"),
+                            &format!("{detail} (credential re-read: {outcome})"),
                         ));
                     }
                 }
@@ -322,7 +322,7 @@ impl Client {
             } else {
                 detail
             };
-            return Err(Self::open_error(status, detail));
+            return Err(Self::open_error(status, &detail));
         }
     }
 
@@ -499,7 +499,7 @@ impl Client {
         // Dropping the stream closes its connection: a hung socket is freed here,
         // not when the provider decides.
         drop(events);
-        let mut completion = assembler.finish()?;
+        let mut completion = assembler.finish();
         if operator_abort {
             completion.failure_class = FailureClass::Aborted;
         }
@@ -659,13 +659,13 @@ impl Client {
     /// The [`Error`] for an open failure [`Self::sse_open_failure`] took apart:
     /// the status and body on a non-2xx, the transport's own text otherwise. Logged
     /// at `error` so the daemon's log preserves it even though it also propagates.
-    fn open_error(status: Option<Status>, detail: String) -> Error {
+    fn open_error(status: Option<Status>, detail: &str) -> Error {
         let message = match status {
             Some(status) => format!("upstream API returned {status}: {detail}"),
             None => format!("upstream SSE request failed: {detail}"),
         };
         log::error!("{message}");
-        Box::new(OpenError::new(status.map(|s| s as u16), message, &detail))
+        Box::new(OpenError::new(status.map(|s| s as u16), message, detail))
     }
 }
 
@@ -732,7 +732,7 @@ impl AnyAssembler {
         }
     }
 
-    fn finish(self) -> Result<Completion, Error> {
+    fn finish(self) -> Completion {
         match self {
             Self::Messages(a) => a.finish(),
             Self::Responses(a) => a.finish(),

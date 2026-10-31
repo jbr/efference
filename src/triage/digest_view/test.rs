@@ -114,7 +114,7 @@ fn views_parse_from_their_flag_spelling() {
 fn the_view_follows_the_triage_configuration() {
     let endpoint = crate::api::Endpoint::from_credentials(
         crate::api::Provider::Anthropic,
-        "sk-ant-xyz".into(),
+        "sk-ant-xyz",
         None,
         None,
     )

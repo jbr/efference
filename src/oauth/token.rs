@@ -52,6 +52,9 @@ mod unix_seconds {
     use super::*;
     use serde::{Deserializer, Serializer};
 
+    // serde's `with` calls `serialize(&field, serializer)`, so the first parameter is a
+    // reference to the field's own type.
+    #[allow(clippy::ref_option)]
     pub(super) fn serialize<S: Serializer>(
         value: &Option<SystemTime>,
         serializer: S,

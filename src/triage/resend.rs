@@ -44,7 +44,6 @@ impl Triager {
     /// send. Read after the round trip, so a request the forced-choice fallback sent is
     /// stored in that form ([`Client::sent_form`]).
     pub(super) fn sent_triage(
-        &self,
         client: &Client,
         turns: Vec<WireTurn>,
         tools: &[Value],

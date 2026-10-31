@@ -68,7 +68,7 @@ fn every_tool_a_guide_names_is_mounted() {
         crate::env_table::EnvSnapshot::new(Default::default())
             .expect("an empty environment is valid"),
     );
-    toolbox.mount_sessions(host, "reader".into());
+    toolbox.mount_sessions(&host, "reader".into());
     let mounted = crate::agent::callable_names(&toolbox);
     for document in DOCUMENTS {
         for tool in document.tools {

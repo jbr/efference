@@ -92,7 +92,7 @@ pub fn render_request_yaml(
             lines.extend(crate::pretty::keyed(key, v));
         }
     }
-    Ok(crate::pretty::join(lines))
+    Ok(crate::pretty::join(&lines))
 }
 
 /// Render just the projected `messages` array — the `wire --messages` view: what

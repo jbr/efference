@@ -291,6 +291,9 @@ struct CreationPlan {
 /// empty map is an explicit empty environment, so `{}` and omitted are different
 /// requests.
 #[derive(Serialize, Deserialize)]
+// The control channel's JSON body: each flag is its own optional key, and a client sends
+// any subset of them.
+#[allow(clippy::struct_excessive_bools)]
 pub struct CreateSession {
     /// The session id; a minted adjective-noun pair when absent
     /// (docs/session-title.md). A single plain path segment, as the gate's

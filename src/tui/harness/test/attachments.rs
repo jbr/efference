@@ -22,7 +22,7 @@ fn shot() -> Arrival {
 /// Stage a long paste and land its upload, returning the chip's key.
 fn stage_and_land(play: &mut Screenplay<'_>, arrival: Arrival) -> u64 {
     let long: String = (0..30).map(|n| format!("line {n}\n")).collect();
-    play.state.handle_paste(long);
+    play.state.handle_paste(&long);
     let Some(AttachCmd::Upload { key, .. }) = play.took_attach() else {
         panic!("a long paste uploads")
     };

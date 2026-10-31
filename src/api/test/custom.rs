@@ -220,7 +220,7 @@ fn the_reported_provider_name_carries_the_dialect() {
 fn a_base_url_is_required_for_custom_and_refused_elsewhere() {
     let endpoint = Endpoint::from_credentials(
         MESSAGES,
-        "tok".into(),
+        "tok",
         None,
         Some("https://api.example.com/v1".into()),
     )
@@ -231,12 +231,12 @@ fn a_base_url_is_required_for_custom_and_refused_elsewhere() {
     );
     assert_eq!(endpoint.base.as_deref(), Some("https://api.example.com/v1"));
 
-    let missing = Endpoint::from_credentials(MESSAGES, "tok".into(), None, None).unwrap_err();
+    let missing = Endpoint::from_credentials(MESSAGES, "tok", None, None).unwrap_err();
     assert!(missing.to_string().contains("base URL"), "{missing}");
 
     let unwanted = Endpoint::from_credentials(
         Provider::Anthropic,
-        "tok".into(),
+        "tok",
         None,
         Some("https://api.example.com/v1".into()),
     )
@@ -291,8 +291,7 @@ fn a_custom_system_one_endpoint_posts_to_its_url_whole() {
     assert!(!SYSTEM_ONE.decisions_takes_session_id());
     assert_eq!(SYSTEM_ONE.attribution(), &[]);
 
-    let endpoint =
-        Endpoint::from_credentials(SYSTEM_ONE, "tok".into(), None, Some(url.into())).unwrap();
+    let endpoint = Endpoint::from_credentials(SYSTEM_ONE, "tok", None, Some(url.into())).unwrap();
     assert_eq!(endpoint.url, None);
     assert_eq!(endpoint.base.as_deref(), Some(url));
 }

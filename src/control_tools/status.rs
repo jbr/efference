@@ -78,7 +78,7 @@ impl Tool<Control> for Status {
                         lines.push(answers::overview_line(&view, &reader, false, now));
                     }
                     return Ok(answers::overview(
-                        lines,
+                        &lines,
                         &format!(
                             "the host holds no agents; `{}` starts one",
                             (Moves::MCP.create)()
@@ -105,7 +105,7 @@ impl Tool<Control> for Status {
                         lines.push(answers::overview_line(&view, &reader, drives, now));
                     }
                     return Ok(answers::overview(
-                        lines,
+                        &lines,
                         &format!(
                             "no other agents in this project; `{}` starts one",
                             (Moves::IN_SESSION.create)()

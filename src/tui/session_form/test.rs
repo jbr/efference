@@ -336,7 +336,7 @@ fn a_paste_reaches_the_embedded_form_not_the_composer() {
     // Enter on the main-model row opens the model picker and its query.
     play.route_key(KeyCode::Down, KeyModifiers::NONE);
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
-    play.state.handle_paste("gpt".to_string());
+    play.state.handle_paste("gpt");
     assert!(play.state.composer.text().is_empty());
     let UiMode::Sessions(menu) = &play.state.ui_mode else {
         panic!("the switcher closed");

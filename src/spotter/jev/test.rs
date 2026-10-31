@@ -38,12 +38,12 @@ fn at_level(level: usize) -> Axes {
     }
 }
 
-fn readings(candidates: usize, same: usize, wider: usize) -> Option<Reading> {
-    Some(Reading {
+fn readings(candidates: usize, same: usize, wider: usize) -> Reading {
+    Reading {
         candidates,
         same,
         wider,
-    })
+    }
 }
 
 /// The fold table: level, precedents found, and the stance that results. Level 0
@@ -57,38 +57,38 @@ fn the_fold_requires_precedent_by_level() {
         (
             "level 2, none found",
             at_level(2),
-            readings(1, 0, 0),
+            Some(readings(1, 0, 0)),
             Stance::Gate,
         ),
         ("level 2, relation failed", at_level(2), None, Stance::Gate),
         (
             "level 2, one found",
             at_level(2),
-            readings(1, 1, 0),
+            Some(readings(1, 1, 0)),
             Stance::Clear,
         ),
         (
             "level 3, one of two",
             at_level(3),
-            readings(3, 1, 0),
+            Some(readings(3, 1, 0)),
             Stance::Gate,
         ),
         (
             "level 3, two found",
             at_level(3),
-            readings(3, 2, 0),
+            Some(readings(3, 2, 0)),
             Stance::Clear,
         ),
         (
             "level 4, many found",
             at_level(4),
-            readings(10, 10, 0),
+            Some(readings(10, 10, 0)),
             Stance::Gate,
         ),
         (
             "level 2, only wider",
             at_level(2),
-            readings(2, 0, 2),
+            Some(readings(2, 0, 2)),
             Stance::Gate,
         ),
         (
@@ -97,7 +97,7 @@ fn the_fold_requires_precedent_by_level() {
                 path_outside: 0.62,
                 ..clean()
             },
-            readings(1, 0, 0),
+            Some(readings(1, 0, 0)),
             Stance::Gate,
         ),
         (
@@ -106,7 +106,7 @@ fn the_fold_requires_precedent_by_level() {
                 path_outside: 0.62,
                 ..clean()
             },
-            readings(1, 1, 0),
+            Some(readings(1, 1, 0)),
             Stance::Clear,
         ),
         (
@@ -115,7 +115,7 @@ fn the_fold_requires_precedent_by_level() {
                 exposes_secrets: 0.5,
                 ..clean()
             },
-            readings(5, 5, 0),
+            Some(readings(5, 5, 0)),
             Stance::Gate,
         ),
     ];
@@ -209,9 +209,9 @@ fn bumps_raise_the_level_to_the_axis_floor() {
 /// precedent: the count that clears is `same` alone.
 #[test]
 fn wider_does_not_count_as_precedent() {
-    let decision = decide(&at_level(2), readings(3, 1, 2), false);
+    let decision = decide(&at_level(2), Some(readings(3, 1, 2)), false);
     assert_eq!(decision.stance, Stance::Clear);
-    let decision = decide(&at_level(2), readings(3, 0, 3), false);
+    let decision = decide(&at_level(2), Some(readings(3, 0, 3)), false);
     assert_eq!(decision.stance, Stance::Gate);
     assert_eq!(decision.required, Some(1));
 }
@@ -242,7 +242,10 @@ fn only_a_confident_prefix_vote_on_a_clear_promotes() {
         prefix_safe: Some(0.99),
         ..at_level(3)
     };
-    assert_eq!(decide(&held, readings(1, 0, 0), true).stance, Stance::Gate);
+    assert_eq!(
+        decide(&held, Some(readings(1, 0, 0)), true).stance,
+        Stance::Gate
+    );
 }
 
 /// This rung's dial is how many precedents a level needs (backlog trust dial), so
@@ -263,7 +266,7 @@ fn the_fold_never_returns_watch() {
                     ..at_level(level)
                 };
                 for probe in [false, true] {
-                    let stance = decide(&axes, readings(3, same, 0), probe).stance;
+                    let stance = decide(&axes, Some(readings(3, same, 0)), probe).stance;
                     assert_ne!(stance, Stance::Watch, "{axes:?}");
                 }
             }
@@ -276,7 +279,7 @@ fn the_reason_reads_as_designed() {
     let reason = |axes: &Axes, reading| decide(axes, reading, false).reason;
     assert_eq!(reason(&clean(), None), "routine (level 0).");
     assert_eq!(
-        reason(&clean(), readings(2, 2, 0)),
+        reason(&clean(), Some(readings(2, 2, 0))),
         "routine (level 0); matches 2 earlier calls the operator approved."
     );
     assert_eq!(
@@ -285,16 +288,16 @@ fn the_reason_reads_as_designed() {
                 path_outside: 0.62,
                 ..clean()
             },
-            readings(1, 0, 0)
+            Some(readings(1, 0, 0))
         ),
         "level 2 (outside the grants, 62%): needs 1 approved call like it, found none."
     );
     assert_eq!(
-        reason(&at_level(3), readings(3, 1, 0)),
+        reason(&at_level(3), Some(readings(3, 1, 0))),
         "level 3 (sketch, 80%): needs 2 approved calls like it, found 1."
     );
     assert_eq!(
-        reason(&at_level(4), readings(3, 3, 0)),
+        reason(&at_level(4), Some(readings(3, 3, 0))),
         "level 4 (sketch, 80%): no number of approved calls clears this level."
     );
     assert_eq!(
@@ -303,7 +306,7 @@ fn the_reason_reads_as_designed() {
                 path_outside: 0.62,
                 ..clean()
             },
-            readings(2, 0, 2)
+            Some(readings(2, 0, 2))
         ),
         "level 2 (outside the grants, 62%): needs 1 approved call like it, found none; \
          goes further than 2 calls the operator approved."
@@ -314,7 +317,7 @@ fn the_reason_reads_as_designed() {
                 exposes_secrets: 0.91,
                 ..clean()
             },
-            readings(4, 4, 0)
+            Some(readings(4, 4, 0))
         ),
         "this looks like it would expose secret material (91% confidence) — no earlier \
          approval clears that, so it stops here."
@@ -439,7 +442,7 @@ fn conditional_questions_are_asked_only_when_they_apply() {
     assert!(full.contains_key(questions::PREFIX_SAFE));
 }
 
-fn answered(answers: serde_json::Value) -> crate::api::Decisions {
+fn answered(answers: &serde_json::Value) -> crate::api::Decisions {
     serde_json::from_value(json!({ "answers": answers, "usage": {} })).expect("parses")
 }
 
@@ -463,26 +466,26 @@ fn cold_answers() -> serde_json::Value {
 fn a_missing_answer_for_an_asked_question_fails_rather_than_reading_as_absent() {
     let full = cold_answers();
     // Not asked: the axis is absent and the read succeeds.
-    let axes = read_axes(&answered(full.clone()), false, false)
-        .expect("the unconditional set is complete");
+    let axes =
+        read_axes(&answered(&full), false, false).expect("the unconditional set is complete");
     assert_eq!(axes.watch_for_hit, None);
     assert_eq!(axes.sketch, Some(vec![0.6, 0.2, 0.1, 0.07, 0.03]));
     // Asked and unanswered: no verdict.
-    assert!(read_axes(&answered(full.clone()), true, false).is_none());
+    assert!(read_axes(&answered(&full), true, false).is_none());
     // One unconditional axis missing: no verdict.
     let mut fewer = full.clone();
     fewer.as_object_mut().expect("object").remove("path_denied");
-    assert!(read_axes(&answered(fewer), false, false).is_none());
+    assert!(read_axes(&answered(&fewer), false, false).is_none());
     // The sketch missing a level, or missing altogether: no verdict.
     let mut short = full.clone();
     short["sketch"]["probabilities"]
         .as_object_mut()
         .expect("object")
         .remove("4");
-    assert!(read_axes(&answered(short), false, false).is_none());
+    assert!(read_axes(&answered(&short), false, false).is_none());
     let mut none = full;
     none.as_object_mut().expect("object").remove("sketch");
-    assert!(read_axes(&answered(none), false, false).is_none());
+    assert!(read_axes(&answered(&none), false, false).is_none());
 }
 
 #[test]

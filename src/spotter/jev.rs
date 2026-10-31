@@ -166,7 +166,7 @@ impl Spotter for JevSpot {
         let (reading, compared) = match relation {
             None => (Some(questions::Reading::default()), Vec::new()),
             Some(Ok(answered)) => {
-                add_usage(&mut usage, answered.request_usage());
+                add_usage(&mut usage, &answered.request_usage());
                 (
                     Some(relation::read(&answered, candidates.len())),
                     relation::compared(&answered, &candidates),
@@ -213,7 +213,7 @@ impl Spotter for JevSpot {
 /// Fold the relation request's billing into the cold request's, so the spot is
 /// one entry in the ledger with the whole cost. The id and model stay the cold
 /// request's.
-fn add_usage(total: &mut crate::api::RequestUsage, extra: crate::api::RequestUsage) {
+fn add_usage(total: &mut crate::api::RequestUsage, extra: &crate::api::RequestUsage) {
     total.usage.input_tokens += extra.usage.input_tokens;
     total.usage.output_tokens += extra.usage.output_tokens;
 }
@@ -229,21 +229,19 @@ fn read_axes(decisions: &crate::api::Decisions, watch_for: bool, probe: bool) ->
         // A conditional axis is `None` when it wasn't asked, and a hard failure
         // when it was asked and went unanswered — the fold reads "not asked" as
         // "nothing to weigh", which is wrong if the question was in fact posed.
-        watch_for_hit: conditional(decisions, questions::WATCH_FOR_HIT, watch_for)?,
-        prefix_safe: conditional(decisions, questions::PREFIX_SAFE, probe)?,
+        watch_for_hit: if watch_for {
+            Some(decisions.probability(questions::WATCH_FOR_HIT)?)
+        } else {
+            None
+        },
+        prefix_safe: if probe {
+            Some(decisions.probability(questions::PREFIX_SAFE)?)
+        } else {
+            None
+        },
         sketch: Some(sketch(decisions)?),
         precedent: None,
     })
-}
-
-/// `Ok(None)` for an axis that wasn't asked, `Ok(Some(p))` for one that was
-/// answered, `None` for one that was asked and wasn't — expressed as nested
-/// `Option` so `?` propagates the failure and keeps the "not asked" case.
-fn conditional(decisions: &crate::api::Decisions, key: &str, asked: bool) -> Option<Option<f64>> {
-    match asked {
-        true => decisions.probability(key).map(Some),
-        false => Some(None),
-    }
 }
 
 /// The sketch distribution as five probabilities, level 0 first. `None` when the

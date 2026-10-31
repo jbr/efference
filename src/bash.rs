@@ -306,7 +306,7 @@ impl Bash {
             })),
             // Both pipes at EOF: the child has finished writing; reap its status.
             None => match child.wait().await {
-                Ok(status) => render(combined, status).into(),
+                Ok(status) => render(&combined, status).into(),
                 Err(e) => RawResult::error(format!("error waiting on bash: {e}")).into(),
             },
         }
@@ -406,8 +406,8 @@ fn decode(combined: &[u8]) -> String {
 
 /// Decode the accumulated (arrival-interleaved) output and mark `is_error` on a
 /// non-zero exit, annotating the status (a code, or `signal` when killed by one).
-fn render(combined: Vec<u8>, status: ExitStatus) -> RawResult {
-    let mut content = decode(&combined);
+fn render(combined: &[u8], status: ExitStatus) -> RawResult {
+    let mut content = decode(combined);
 
     let is_error = !status.success();
     if is_error {

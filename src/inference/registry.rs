@@ -9,7 +9,7 @@ impl InferenceRegistry {
     /// naming the path: with no connections there is nothing a session could use.
     pub fn load(
         host_cwd: &Path,
-        host_env: EnvSnapshot,
+        host_env: &EnvSnapshot,
         secrets: &Arc<Secrets>,
     ) -> Result<Self, Error> {
         let home = host_env
@@ -28,7 +28,7 @@ impl InferenceRegistry {
     pub fn load_at(
         path: &Path,
         host_cwd: &Path,
-        host_env: EnvSnapshot,
+        host_env: &EnvSnapshot,
         secrets: &Arc<Secrets>,
     ) -> Result<Self, Error> {
         let text = match std::fs::read_to_string(path) {
@@ -93,7 +93,7 @@ impl InferenceRegistry {
     pub fn from_config(
         config: InferenceConfig,
         host_cwd: &Path,
-        host_env: EnvSnapshot,
+        host_env: &EnvSnapshot,
         secrets: &Arc<Secrets>,
     ) -> Result<Self, Error> {
         let mut connections = BTreeMap::new();
@@ -115,7 +115,7 @@ impl InferenceRegistry {
             let credential = match (config.disabled, config.auth, base) {
                 (true, _, _) => Err(format!("connection {name:?} is disabled")),
                 (false, Some(auth), base) => {
-                    load_credential(&name, provider, base, auth, host_cwd, &host_env, secrets)
+                    load_credential(&name, provider, base, auth, host_cwd, host_env, secrets)
                 }
                 // A described connection with no `auth` line sends no credential.
                 (false, None, Some(base)) => Ok(Credential {

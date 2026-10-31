@@ -209,7 +209,7 @@ fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_o
 fn own_triage_sends_its_own_client_and_only_the_triage_tools() {
     let endpoint = crate::api::Endpoint::from_credentials(
         crate::api::Provider::Anthropic,
-        "sk-ant-xyz".into(),
+        "sk-ant-xyz",
         None,
         None,
     )
@@ -249,7 +249,7 @@ fn own_triage_sends_its_own_client_and_only_the_triage_tools() {
 fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
     let endpoint = crate::api::Endpoint::from_credentials(
         crate::api::Provider::Anthropic,
-        "sk-ant-xyz".into(),
+        "sk-ant-xyz",
         None,
         None,
     )

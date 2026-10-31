@@ -162,7 +162,7 @@ impl Store {
     /// Record a subscription, replacing any row with the same endpoint. The
     /// browser mints a new endpoint per subscribe, so this is an upsert rather
     /// than an append mostly to keep a repeated POST idempotent.
-    pub fn upsert(&self, subscription: Subscription) -> Result<(), crate::state::Error> {
+    pub fn upsert(&self, subscription: &Subscription) -> Result<(), crate::state::Error> {
         self.connect()?.execute(
             "INSERT OR REPLACE INTO push_subscriptions (endpoint, p256dh, auth)
              VALUES (?1, ?2, ?3)",

@@ -10,7 +10,7 @@ fn assemble(capture: &str) -> (Completion, Vec<Streamed>) {
             live.extend(assembler.apply(None, data).unwrap());
         }
     }
-    (assembler.finish().unwrap(), live)
+    (assembler.finish(), live)
 }
 
 fn message(completion: &Completion) -> &CompletionsMessage {

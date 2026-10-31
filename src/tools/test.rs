@@ -688,7 +688,7 @@ async fn the_sessions_provider_mounts_the_agent_verbs_namespaced() {
             .expect("an empty environment is valid"),
     );
     let mut toolbox = Toolbox::bash_and_mcps(dir.clone(), None).unwrap();
-    toolbox.mount_sessions(host, "caller".into());
+    toolbox.mount_sessions(&host, "caller".into());
 
     let names = toolbox.names();
     let agents: Vec<&str> = names

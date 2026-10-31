@@ -65,7 +65,7 @@ impl InteractiveState<'_> {
         let newly_failed = self.starting.as_ref().is_none_or(|s| s.failure.is_none());
         if newly_failed && let Some(failure) = starting.as_ref().and_then(|s| s.failure.clone()) {
             if !failure.withdrawn.is_empty() {
-                self.apply_recall(failure.withdrawn);
+                self.apply_recall(&failure.withdrawn);
             }
             self.ui.debug_message = "↑ to the controls · ⏎ on retry to try again".into();
         }

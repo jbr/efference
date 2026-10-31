@@ -86,7 +86,7 @@ fn an_id_outside_the_menu_still_resolves() {
     for typed in ["gpt-reserve", "gpt-6-unlisted"] {
         assert!(!models(&rows).contains(&typed));
         let entry = catalog.entry(typed).unwrap();
-        let caps = entry.capabilities(codex::baseline(Provider::OpenAI));
+        let caps = entry.capabilities(&codex::baseline(Provider::OpenAI));
         assert_eq!(caps.context_length, Some(272_000));
     }
 }

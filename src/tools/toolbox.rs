@@ -125,7 +125,7 @@ impl Toolbox {
     /// its project's other sessions through `host`, in-process, under the
     /// `agents__<verb>` wire names. `caller` is the session's own id. The in-session
     /// set is its own enum (`control_tools::in_session`), so nothing is hidden here.
-    pub fn mount_sessions(&mut self, host: std::sync::Arc<crate::daemon::Host>, caller: String) {
+    pub fn mount_sessions(&mut self, host: &std::sync::Arc<crate::daemon::Host>, caller: String) {
         let state = crate::control_tools::Control::new(
             crate::control_tools::Executor::host(host, caller),
             false,

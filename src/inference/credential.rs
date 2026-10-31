@@ -106,7 +106,7 @@ pub(super) fn load_credential(
             (token, Some(account), "Codex cache".to_string(), reload)
         }
     };
-    let mut endpoint = Endpoint::from_credentials(provider, token.clone(), account, base)
+    let mut endpoint = Endpoint::from_credentials(provider, &token, account, base)
         .map_err(|error| error.to_string())?;
     if let Some(reload) = reload {
         endpoint.auth_value = AuthValue::renewing(

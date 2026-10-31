@@ -5,8 +5,8 @@ use serde_json::json;
 
 use super::*;
 
-fn sig(name: &str, input: Value) -> String {
-    flat_signature(&call_view(name, &input))
+fn sig(name: &str, input: &Value) -> String {
+    flat_signature(&call_view(name, input))
 }
 
 /// The layout as the text it renders, one row per line, indents as spaces.
@@ -22,8 +22,8 @@ fn text(layout: &SigLayout) -> String {
         .join("\n")
 }
 
-fn at(columns: Option<usize>, name: &str, input: Value) -> SigLayout {
-    layout_signature(&call_view(name, &input), columns)
+fn at(columns: Option<usize>, name: &str, input: &Value) -> SigLayout {
+    layout_signature(&call_view(name, input), columns)
 }
 
 #[test]
@@ -47,22 +47,22 @@ fn a_call_with_no_arguments_is_empty() {
     assert!(view.bodies.is_empty());
     assert_eq!(flat_signature(&view), "check_inbox()");
     // Nor does an intent-only call have arguments: the intent is its own line.
-    assert_eq!(sig("list", json!({"intent": "look around"})), "list()");
+    assert_eq!(sig("list", &json!({"intent": "look around"})), "list()");
 }
 
 #[test]
 fn a_builtins_primary_argument_reads_positionally_an_array_spread() {
     assert_eq!(
-        sig("read", json!({"paths": ["a.rs", "b.rs"], "from_line": 3})),
+        sig("read", &json!({"paths": ["a.rs", "b.rs"], "from_line": 3})),
         r#"read("a.rs", "b.rs", from_line: 3)"#
     );
     // Positional first, whatever order the input serialized in.
     assert_eq!(
-        sig("search", json!({"path": "src", "pattern": "foo"})),
+        sig("search", &json!({"path": "src", "pattern": "foo"})),
         r#"search("foo", path: "src")"#
     );
     assert_eq!(
-        sig("read_image", json!({"path": "m.png", "long_edge": 2576})),
+        sig("read_image", &json!({"path": "m.png", "long_edge": 2576})),
         r#"read_image("m.png", long_edge: 2576)"#
     );
     // The key is kept on the argument, for the chip table.
@@ -76,7 +76,7 @@ fn a_builtins_primary_argument_reads_positionally_an_array_spread() {
     );
     // A mounted tool of the same name is not a built-in.
     assert_eq!(
-        sig("srv__read", json!({"paths": ["a.rs"]})),
+        sig("srv__read", &json!({"paths": ["a.rs"]})),
         r#"srv.read(paths: ["a.rs"])"#
     );
 }
@@ -195,14 +195,18 @@ fn a_hand_off_puts_the_brief_under_whom_it_is_for_as_prose() {
 
 #[test]
 fn a_call_that_fits_is_one_line() {
-    let layout = at(Some(80), "read", json!({"paths": ["a.rs"], "from_line": 3}));
+    let layout = at(
+        Some(80),
+        "read",
+        &json!({"paths": ["a.rs"], "from_line": 3}),
+    );
     assert!(!layout.broken);
     assert_eq!(text(&layout), r#"read("a.rs", from_line: 3)"#);
 }
 
 #[test]
 fn before_the_width_is_known_the_signature_is_flat_and_nothing_is_pulled() {
-    let layout = at(None, "mystery", json!({"note": "x".repeat(500)}));
+    let layout = at(None, "mystery", &json!({"note": "x".repeat(500)}));
     assert!(!layout.broken);
     assert!(layout.pulled.is_empty());
 }
@@ -212,7 +216,7 @@ fn a_call_that_does_not_fit_breaks_after_the_paren_one_argument_per_line() {
     let layout = at(
         Some(40),
         "read",
-        json!({"paths": ["src/api/provider/listing.rs", "src/boot.rs"], "from_line": 3}),
+        &json!({"paths": ["src/api/provider/listing.rs", "src/boot.rs"], "from_line": 3}),
     );
     assert!(layout.broken);
     assert_eq!(
@@ -231,7 +235,7 @@ fn a_call_that_does_not_fit_breaks_after_the_paren_one_argument_per_line() {
 #[test]
 fn a_lone_scalar_argument_is_not_broken_around() {
     let path = "../codex/codex-rs/model-provider/src/models_cache_ttl.rs";
-    let layout = at(Some(30), "read", json!({"paths": [path]}));
+    let layout = at(Some(30), "read", &json!({"paths": [path]}));
     assert!(!layout.broken);
     assert_eq!(text(&layout), format!(r#"read("{path}")"#));
 }
@@ -241,7 +245,7 @@ fn a_collection_that_does_not_fit_on_its_row_breaks_inside_the_same_way() {
     let layout = at(
         Some(30),
         "mystery",
-        json!({"globs": ["src/**/*.rs", "web/src/**/*.ts"], "n": 1}),
+        &json!({"globs": ["src/**/*.rs", "web/src/**/*.ts"], "n": 1}),
     );
     assert_eq!(
         text(&layout),
@@ -262,7 +266,7 @@ fn a_collection_that_does_not_fit_on_its_row_breaks_inside_the_same_way() {
         text(&at(
             Some(40),
             "mystery",
-            json!({"globs": ["a", "b"], "other": other})
+            &json!({"globs": ["a", "b"], "other": other})
         )),
         [
             "mystery(".to_string(),
@@ -280,13 +284,13 @@ fn a_value_longer_than_three_lines_at_this_width_leaves_the_signature() {
     let wide = at(
         Some(100),
         "search",
-        json!({"pattern": pattern, "path": "src"}),
+        &json!({"pattern": pattern, "path": "src"}),
     );
     assert!(wide.pulled.is_empty());
     let narrow = at(
         Some(40),
         "search",
-        json!({"pattern": pattern, "path": "src"}),
+        &json!({"pattern": pattern, "path": "src"}),
     );
     assert_eq!(
         narrow
@@ -302,7 +306,7 @@ fn a_value_longer_than_three_lines_at_this_width_leaves_the_signature() {
 #[test]
 fn bashs_command_is_one_row_whatever_the_width() {
     let command = "cargo test --workspace -- --nocapture projection::stable";
-    let layout = at(Some(20), "bash", json!({"command": command}));
+    let layout = at(Some(20), "bash", &json!({"command": command}));
     assert_eq!(layout.rows.len(), 1);
     assert_eq!(text(&layout), command);
     assert!(layout.shell);
@@ -310,7 +314,7 @@ fn bashs_command_is_one_row_whatever_the_width() {
         text(&at(
             Some(80),
             "bash",
-            json!({"command": "make", "background_after": 600})
+            &json!({"command": "make", "background_after": 600})
         )),
         "makebackground after 600s"
     );
@@ -318,7 +322,7 @@ fn bashs_command_is_one_row_whatever_the_width() {
         text(&at(
             Some(80),
             "bash",
-            json!({"command": "cargo watch", "background": true, "background_after": 5})
+            &json!({"command": "cargo watch", "background": true, "background_after": 5})
         )),
         "cargo watchbackground"
     );

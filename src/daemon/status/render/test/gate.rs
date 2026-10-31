@@ -9,7 +9,7 @@ use super::*;
 fn a_gate_held_for_scope_with_no_precedent() {
     let scope = Axes {
         in_scope: 0.21,
-        ..axes(0, precedent(0, 0, Some(1)))
+        ..axes(0, Some(precedent(0, 0, Some(1))))
     };
     let spot = spot(
         Origin::Model,
@@ -41,7 +41,7 @@ fn a_gate_held_with_precedents_short_of_the_requirement() {
     let spot = spot(
         Origin::Model,
         "level 3 (sketch, 80%): needs 2 approved calls like it, found 1.",
-        Some(axes(3, precedent(3, 1, Some(2)))),
+        Some(axes(3, Some(precedent(3, 1, Some(2))))),
     );
     let reason = "held because: its reviewer rates it serious: hard to undo, or reaching other \
         people; only 1 earlier call like it was allowed, and a call like this needs 2";

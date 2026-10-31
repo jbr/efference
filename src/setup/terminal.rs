@@ -126,7 +126,7 @@ impl Terminal {
         Ok(())
     }
 
-    fn width(&self) -> usize {
+    fn width() -> usize {
         size().map_or(80, |(columns, _)| columns as usize).max(20)
     }
 
@@ -196,7 +196,7 @@ impl Terminal {
     /// trailer that does not fit beside its label continues on indented lines,
     /// so nothing is cut off at the terminal's edge.
     fn draw_menu(&mut self, choices: &[Choice], selected: usize) -> std::io::Result<u16> {
-        let width = self.width();
+        let width = Self::width();
         let label_width = choices
             .iter()
             .map(|choice| choice.label.chars().count())
@@ -294,7 +294,7 @@ fn io_cancelled(_: std::io::Error) -> Cancelled {
 
 impl Prompter for Terminal {
     fn say(&mut self, tone: Tone, text: &str) {
-        let width = self.width().min(88);
+        let width = Self::width().min(88);
         let (mark, style): (&str, fn(&str) -> String) = match tone {
             Tone::Plain => (" ", |s| s.to_string()),
             Tone::Good => ("✓", |s| s.green().to_string()),

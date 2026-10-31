@@ -248,7 +248,7 @@ impl CompletionsAssembler {
         })
     }
 
-    pub(crate) fn finish(mut self) -> Result<Completion, Error> {
+    pub(crate) fn finish(mut self) -> Completion {
         let mut upstream_failure: Option<UpstreamFailureRecord> = if self.finalized {
             if let Some(why) = &self.failure {
                 log::warn!("stream error after finalization (completion kept): {why}");
@@ -311,7 +311,7 @@ impl CompletionsAssembler {
                 }
             })
         });
-        Ok(Completion {
+        Completion {
             assistant: Payload::Assistant {
                 output: AssistantOutput::Completions(message),
                 excluded: upstream_failure.map(Exclusion::Upstream),
@@ -323,7 +323,7 @@ impl CompletionsAssembler {
             cache_miss: None,
             receipt: self.receipt,
             failure_class: self.failure_class,
-        })
+        }
     }
 }
 

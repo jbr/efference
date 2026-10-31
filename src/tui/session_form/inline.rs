@@ -50,7 +50,7 @@ pub async fn run_hosted(client: Client, theme: Option<String>) -> anyhow::Result
     );
     let dispatcher = tokio::spawn(crate::tui::host_dispatch::serve(client, command_rx, events));
     let created =
-        tokio::task::spawn_blocking(move || drive(Form::new(context), styles, replies, commands))
+        tokio::task::spawn_blocking(move || drive(Form::new(context), styles, &replies, &commands))
             .await??;
     dispatcher.abort();
     Ok(created)
@@ -61,13 +61,13 @@ pub async fn run_hosted(client: Client, theme: Option<String>) -> anyhow::Result
 fn drive(
     mut form: Form,
     styles: Styles,
-    replies: crossbeam_channel::Receiver<TuiEvent>,
-    commands: tokio::sync::mpsc::UnboundedSender<HostCmd>,
+    replies: &crossbeam_channel::Receiver<TuiEvent>,
+    commands: &tokio::sync::mpsc::UnboundedSender<HostCmd>,
 ) -> io::Result<Option<String>> {
     let mut viewport = Inline::open(form.viewport_height())?;
     // Resolve the untouched draft, so the form opens showing the defaults a
     // session would actually get rather than blanks.
-    dispatch(&commands, form.initial_preview());
+    dispatch(commands, form.initial_preview());
     let outcome = (|| {
         loop {
             viewport.draw(|buf, area| form.render(buf, area, styles))?;
@@ -76,7 +76,7 @@ fn drive(
             while let Ok(reply) = replies.try_recv() {
                 match reply {
                     TuiEvent::Preview(resolved) => {
-                        dispatch(&commands, form.preview_returned(resolved));
+                        dispatch(commands, form.preview_returned(resolved));
                     }
                     TuiEvent::Catalog { connection, result } => {
                         form.catalog_returned(&connection, result);
@@ -99,7 +99,7 @@ fn drive(
             if matches!(action, Action::Cancel) {
                 return Ok(None);
             }
-            dispatch(&commands, action);
+            dispatch(commands, action);
         }
     })();
     viewport.close()?;

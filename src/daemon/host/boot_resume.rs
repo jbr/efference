@@ -114,7 +114,7 @@ impl Host {
         let Reopening { id, root, .. } = session;
         let mut patch = PatchSession::activate(root.clone());
         patch.refuse_authorization = true;
-        match self.resume(id.clone(), patch) {
+        match self.resume(&id, patch) {
             Ok(_) => {}
             Err(ResumeRefused::AlreadyActive) => return None,
             Err(ResumeRefused::Conflict(reason) | ResumeRefused::Refused(reason)) => {

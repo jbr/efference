@@ -65,7 +65,7 @@ auth = { kind = "env", key = "TEST_KEY" }
     crate::inference::InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        env,
+        &env,
         &Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
@@ -93,7 +93,7 @@ fn registry_with_hook(argv: &[String]) -> crate::inference::InferenceRegistry {
     crate::inference::InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        env,
+        &env,
         &Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
@@ -325,7 +325,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     crate::api::seed_codex_catalog(crate::api::Provider::OpenAICodex, "acct-1");
     let registry = crate::inference::InferenceRegistry::load(
         &roots.0,
-        host_env,
+        &host_env,
         &Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .expect("host registry");
@@ -505,7 +505,7 @@ disabled = true
         crate::inference::InferenceRegistry::from_config(
             config,
             Path::new("/host"),
-            env,
+            &env,
             &Arc::new(crate::secrets::Secrets::in_memory()),
         )
         .unwrap(),
@@ -576,7 +576,7 @@ disabled = true
         crate::inference::InferenceRegistry::from_config(
             config,
             Path::new("/host"),
-            env,
+            &env,
             &Arc::new(crate::secrets::Secrets::in_memory()),
         )
         .unwrap()
@@ -674,7 +674,7 @@ disabled = true
         crate::inference::InferenceRegistry::from_config(
             config,
             Path::new("/host"),
-            env,
+            &env,
             &Arc::new(crate::secrets::Secrets::in_memory()),
         )
         .unwrap(),

@@ -4,7 +4,7 @@ fn url(s: &str) -> Url {
     Url::parse(s).unwrap()
 }
 
-fn urls(list: Vec<Url>) -> Vec<String> {
+fn urls(list: &[Url]) -> Vec<String> {
     list.iter().map(Url::to_string).collect()
 }
 
@@ -18,7 +18,7 @@ fn authorization_server(json: serde_json::Value) -> AuthorizationServer {
 #[test]
 fn an_advertised_resource_metadata_url_is_tried_first() {
     assert_eq!(
-        urls(protected_resource_urls(
+        urls(&protected_resource_urls(
             &url("https://mcp.example.com/mcp"),
             Some("https://mcp.example.com/.well-known/oauth-protected-resource")
         )),
@@ -34,7 +34,7 @@ fn an_advertised_resource_metadata_url_is_tried_first() {
 #[test]
 fn protected_resource_probes_path_then_root() {
     assert_eq!(
-        urls(protected_resource_urls(
+        urls(&protected_resource_urls(
             &url("https://example.com/public/mcp"),
             None
         )),
@@ -49,11 +49,11 @@ fn protected_resource_probes_path_then_root() {
 #[test]
 fn protected_resource_at_the_root_probes_once() {
     assert_eq!(
-        urls(protected_resource_urls(&url("https://example.com"), None)),
+        urls(&protected_resource_urls(&url("https://example.com"), None)),
         ["https://example.com/.well-known/oauth-protected-resource"]
     );
     assert_eq!(
-        urls(protected_resource_urls(&url("https://example.com/"), None)),
+        urls(&protected_resource_urls(&url("https://example.com/"), None)),
         ["https://example.com/.well-known/oauth-protected-resource"]
     );
 }
@@ -61,7 +61,7 @@ fn protected_resource_at_the_root_probes_once() {
 #[test]
 fn an_unparseable_advertised_url_is_skipped_not_fatal() {
     assert_eq!(
-        urls(protected_resource_urls(
+        urls(&protected_resource_urls(
             &url("https://example.com/mcp"),
             Some("not a url")
         )),
@@ -78,7 +78,7 @@ fn an_unparseable_advertised_url_is_skipped_not_fatal() {
 #[test]
 fn an_issuer_with_a_path_gets_three_rungs_in_order() {
     assert_eq!(
-        urls(authorization_server_urls(&url(
+        urls(&authorization_server_urls(&url(
             "https://auth.example.com/tenant1"
         ))),
         [
@@ -92,7 +92,7 @@ fn an_issuer_with_a_path_gets_three_rungs_in_order() {
 #[test]
 fn an_issuer_without_a_path_gets_two_rungs_in_order() {
     assert_eq!(
-        urls(authorization_server_urls(&url("https://auth.example.com"))),
+        urls(&authorization_server_urls(&url("https://auth.example.com"))),
         [
             "https://auth.example.com/.well-known/oauth-authorization-server",
             "https://auth.example.com/.well-known/openid-configuration",
@@ -105,7 +105,7 @@ fn an_issuer_without_a_path_gets_two_rungs_in_order() {
 #[test]
 fn a_trailing_slash_does_not_double_up() {
     assert_eq!(
-        urls(authorization_server_urls(&url(
+        urls(&authorization_server_urls(&url(
             "https://auth.example.com/tenant1/"
         )))[0],
         "https://auth.example.com/.well-known/oauth-authorization-server/tenant1"
@@ -115,7 +115,7 @@ fn a_trailing_slash_does_not_double_up() {
 #[test]
 fn a_nonstandard_port_is_preserved() {
     assert_eq!(
-        urls(protected_resource_urls(
+        urls(&protected_resource_urls(
             &url("https://mcp.example.com:8443/mcp"),
             None
         ))[0],
@@ -128,7 +128,7 @@ fn a_nonstandard_port_is_preserved() {
 #[test]
 fn query_and_fragment_are_dropped_from_probes() {
     assert_eq!(
-        urls(protected_resource_urls(
+        urls(&protected_resource_urls(
             &url("https://example.com/mcp?session=abc#here"),
             None
         )),
@@ -271,7 +271,7 @@ fn a_protected_resource_without_authorization_servers_parses_empty() {
 /// GitHub at all.
 #[test]
 fn the_rung_order_puts_rfc_8414_path_insertion_first() {
-    let rungs = urls(authorization_server_urls(&url(
+    let rungs = urls(&authorization_server_urls(&url(
         "https://github.com/login/oauth",
     )));
     assert_eq!(

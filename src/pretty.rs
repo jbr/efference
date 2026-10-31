@@ -25,7 +25,7 @@ pub fn to_pseudo_yaml(value: &Value) -> String {
         Rendered::Inline(s) => vec![s],
         Rendered::Block(lines) => lines,
     };
-    join(lines)
+    join(&lines)
 }
 
 /// Render a single `key: value` entry to its lines — a scalar value stays on the
@@ -127,7 +127,7 @@ fn all_inline(rendered: &[Rendered]) -> Option<Vec<String>> {
 
 /// Join lines, trimming each line's trailing whitespace so blank lines inside a
 /// multi-line string don't surface as runs of indentation spaces.
-pub(crate) fn join(lines: Vec<String>) -> String {
+pub(crate) fn join(lines: &[String]) -> String {
     lines
         .iter()
         .map(|l| l.trim_end())

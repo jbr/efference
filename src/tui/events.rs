@@ -13,7 +13,7 @@ use crate::tui::projection::ViewState;
 pub(super) fn handle_action(
     _document: &mut DocumentState<'_>,
     _view: &mut ViewState,
-    action: TuiAction<'_>,
+    action: &TuiAction<'_>,
 ) {
     match action {
         // Focus is applied by the caller (the cursor moves, or a click sets it);

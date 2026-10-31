@@ -18,7 +18,7 @@ use std::io::Write;
 pub(super) fn ui_loop(
     events: Receiver<TuiEvent>,
     senders: Senders,
-    theme_name: String,
+    theme_name: &str,
     // How to pick the graphics protocol for result images (docs/tui.md).
     images: ImageMode,
     // `Some(label)` runs the loop as a read-only view of a recorded log
@@ -30,7 +30,7 @@ pub(super) fn ui_loop(
     frame_cost: bool,
     // The default for a run with no session behind it — the gallery and the
     // read-only view.
-    attached: Attached,
+    attached: &Attached,
     // Reports whether the operator is attending (`attention.rs`); `None` where no
     // host is behind the run.
     mut attender: Option<attention::Attender>,
@@ -55,7 +55,7 @@ pub(super) fn ui_loop(
         .with_terminal_width(width);
     // `resolve_theme` already validated the name; a `.tmTheme` path could still
     // fail to load, so fall back to the default rather than abort the UI.
-    if render_context.set_theme_name(&theme_name).is_err() {
+    if render_context.set_theme_name(theme_name).is_err() {
         let _ = render_context.set_theme_name(DEFAULT_THEME);
     }
     let theme = InteractiveTheme::from_render_context(&render_context);
@@ -255,7 +255,7 @@ pub(super) fn ui_loop(
                                 redraw = true;
                             }
                             Event::Paste(text) => {
-                                state.handle_paste(text);
+                                state.handle_paste(&text);
                                 redraw = true;
                             }
                             Event::Resize(_, _) => {

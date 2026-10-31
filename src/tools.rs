@@ -226,7 +226,7 @@ impl ToolEntry {
             title: definition.title.clone(),
             description: definition.description.clone(),
             input_schema: if inject_intent {
-                with_intent_schema(input_schema)
+                with_intent_schema(&input_schema)
             } else {
                 input_schema
             },
@@ -257,7 +257,7 @@ impl ToolEntry {
                 .and_then(Value::as_str)
                 .map(str::to_string),
             input_schema: if inject_intent {
-                with_intent_schema(input_schema)
+                with_intent_schema(&input_schema)
             } else {
                 input_schema
             },
@@ -270,7 +270,7 @@ impl ToolEntry {
 /// [`with_intent`] applied to a bare `input_schema`, unwrapped back out —
 /// reused so [`ToolEntry`] carries exactly the schema the model was sent,
 /// without duplicating the injection rule.
-fn with_intent_schema(schema: Value) -> Value {
+fn with_intent_schema(schema: &Value) -> Value {
     with_intent(json!({ "input_schema": schema }))
         .get("input_schema")
         .cloned()

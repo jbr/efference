@@ -366,7 +366,7 @@ impl Assembler {
     /// already-closed stream) does not unmake the completion: the provider stood
     /// behind it with a `stop_reason` and usage — unless a tool input it carries
     /// does not parse, which marks the completion here rather than erroring.
-    pub(super) fn finish(mut self) -> Result<Completion, Error> {
+    pub(super) fn finish(mut self) -> Completion {
         let mut upstream_failure: Option<UpstreamFailureRecord> = if self.finalized {
             if let Some(why) = &self.failure {
                 log::warn!("stream error after finalization (completion kept): {why}");
@@ -490,7 +490,7 @@ impl Assembler {
                 }
             })
         });
-        Ok(Completion {
+        Completion {
             assistant: Payload::Assistant {
                 output: AssistantOutput::Messages(output),
                 excluded: upstream_failure.map(Exclusion::Upstream),
@@ -502,6 +502,6 @@ impl Assembler {
             cache_miss: self.cache_miss,
             receipt: self.receipt,
             failure_class: self.failure_class,
-        })
+        }
     }
 }

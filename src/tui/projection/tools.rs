@@ -185,12 +185,11 @@ fn read_rows(content: &str) -> Option<ReadRows<'_>> {
     let mut body: Vec<(u32, &str)> = Vec::new();
     for (idx, line) in content.lines().enumerate() {
         match read_marker(line) {
-            Some(found_path) => {
+            Some(ReadMarker::Begin(found_path)) => {
                 saw_marker = true;
-                if found_path.is_some() {
-                    path = found_path;
-                }
+                path = Some(found_path);
             }
+            Some(ReadMarker::End) => saw_marker = true,
             None => body.push((idx as u32 + 1, line)),
         }
     }
@@ -210,9 +209,18 @@ struct ReadRows<'c> {
     lines: Vec<(u32, &'c str)>,
 }
 
-/// Classify a `read` sentinel line: `Some(Some(path))` for a `BEGIN` line,
-/// `Some(None)` for an `END` line, `None` for ordinary file content.
-pub(in crate::tui) fn read_marker(line: &str) -> Option<Option<String>> {
+/// A `read` result's sentinel line.
+#[derive(Debug, PartialEq)]
+pub(in crate::tui) enum ReadMarker {
+    /// The `BEGIN` line, with the path it names.
+    Begin(String),
+    /// The `END` line.
+    End,
+}
+
+/// Classify a `read` sentinel line: a `BEGIN` or an `END` line, or `None` for ordinary
+/// file content.
+pub(in crate::tui) fn read_marker(line: &str) -> Option<ReadMarker> {
     let inner = line.strip_prefix("==")?.strip_suffix("==")?;
     if let Some(rest) = inner.split_once(" BEGIN ").map(|(_, r)| r) {
         // `BYTES:` is the current spelling; `LENGTH:` is what older session logs hold.
@@ -222,9 +230,9 @@ pub(in crate::tui) fn read_marker(line: &str) -> Option<Option<String>> {
             .and_then(|r| r.split(", LENGTH:").next())
             .unwrap_or(rest)
             .trim();
-        Some(Some(path.to_string()))
+        Some(ReadMarker::Begin(path.to_string()))
     } else if inner.contains(" END ") {
-        Some(None)
+        Some(ReadMarker::End)
     } else {
         None
     }

@@ -47,6 +47,9 @@ pub const CONFIG_NAME: &str = "config.toml";
 
 /// What a session's creator supplies. Paths are absolute; nothing here is read
 /// from the process environment or working directory by `prepare`.
+// The creator's options are independent flags (`CreateSession` carries them as JSON
+// keys), so every combination is a valid request.
+#[allow(clippy::struct_excessive_bools)]
 pub struct SessionRequest {
     /// The session's project (config, grants, the session base) and working directory
     /// (tools, MCP mounts, children) (docs/control-channel.md).

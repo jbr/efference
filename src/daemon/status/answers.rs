@@ -334,7 +334,7 @@ pub(crate) fn unchanged(seconds: u64, lines: Vec<String>) -> String {
 }
 
 /// The overview's lines, or what it says when there are none.
-pub(crate) fn overview(lines: Vec<String>, empty: &str) -> String {
+pub(crate) fn overview(lines: &[String], empty: &str) -> String {
     match lines.is_empty() {
         true => empty.to_string(),
         false => lines.join("\n"),

@@ -484,10 +484,9 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
 fn thinking_off_takes_the_models_spelling() {
     use super::thinking::{Thinking, ThinkingOff};
     let openrouter =
-        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None, None)
-            .unwrap();
+        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc", None, None).unwrap();
     let anthropic =
-        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None, None).unwrap();
+        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz", None, None).unwrap();
     let auto = ToolChoice::auto();
     let support = |off| ThinkingSupport {
         adaptive: true,

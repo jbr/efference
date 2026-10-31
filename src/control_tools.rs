@@ -236,8 +236,8 @@ impl Executor {
     /// sessions through the host it already lives in (docs/tools.md). The host
     /// is held weakly — the host owns every session and a session's toolbox
     /// holds this executor, so a strong reference would be a cycle.
-    pub fn host(host: std::sync::Arc<crate::daemon::Host>, caller: String) -> Self {
-        Self::Host(HostExecutor::new(&host, caller))
+    pub fn host(host: &std::sync::Arc<crate::daemon::Host>, caller: String) -> Self {
+        Self::Host(HostExecutor::new(host, caller))
     }
 }
 

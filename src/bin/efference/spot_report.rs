@@ -165,7 +165,7 @@ pub(crate) fn resolve_spotter_logs(
 /// network, config-independent. The read side of the `spotter` dev tool.
 pub(crate) fn spotter_log(
     path: Option<PathBuf>,
-    stances: Vec<StanceArg>,
+    stances: &[StanceArg],
     summary_only: bool,
     list_only: bool,
     no_fallback: bool,
@@ -190,7 +190,7 @@ pub(crate) fn spotter_log(
                 continue;
             }
         };
-        let found = spots_in(session, &entries, &stances, no_fallback);
+        let found = spots_in(session, &entries, stances, no_fallback);
         if !found.is_empty() {
             sessions_with_spots += 1;
         }

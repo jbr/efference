@@ -70,7 +70,7 @@ fn instructions_may_be_an_object() {
 /// boolean answer has none.
 #[test]
 fn a_distribution_reads_as_probabilities() {
-    let decisions = response(serde_json::json!({
+    let decisions = response(&serde_json::json!({
         "sketch": {
             "type": "score",
             "score": 0.4,
@@ -84,7 +84,7 @@ fn a_distribution_reads_as_probabilities() {
     assert_eq!(decisions.probabilities("absent"), None);
 }
 
-fn response(answers: Value) -> Decisions {
+fn response(answers: &Value) -> Decisions {
     serde_json::from_value(serde_json::json!({
         "id": "gen-1",
         "model": "typesafe/jev-1.13",
@@ -96,7 +96,7 @@ fn response(answers: Value) -> Decisions {
 
 #[test]
 fn a_boolean_answer_reads_as_its_probability() {
-    let decisions = response(serde_json::json!({
+    let decisions = response(&serde_json::json!({
         "in_scope": { "type": "noul", "noul": 0.96 },
     }));
     assert_eq!(decisions.probability("in_scope"), Some(0.96));
@@ -110,7 +110,7 @@ fn a_boolean_answer_reads_as_its_probability() {
 /// would turn one unexpected sibling into a fail-closed gate.
 #[test]
 fn an_unmodeled_answer_shape_does_not_break_the_response() {
-    let decisions = response(serde_json::json!({
+    let decisions = response(&serde_json::json!({
         "in_scope": { "type": "noul", "noul": 0.9 },
         "team": { "type": "choice", "choice": "payments", "confidence": 0.75 },
         "urgency": { "type": "score", "score": 1.99, "confidence": 0.99 },
@@ -123,7 +123,7 @@ fn an_unmodeled_answer_shape_does_not_break_the_response() {
 /// truthful zero rather than a missing reading (docs/log-and-projection.md).
 #[test]
 fn usage_maps_with_zero_cache_counts() {
-    let usage = response(serde_json::json!({})).request_usage();
+    let usage = response(&serde_json::json!({})).request_usage();
     assert_eq!(usage.id.as_deref(), Some("gen-1"));
     assert_eq!(usage.usage.input_tokens, 476);
     assert_eq!(usage.usage.output_tokens, 70);
@@ -138,7 +138,7 @@ fn usage_maps_with_zero_cache_counts() {
 fn the_session_id_rides_only_where_it_is_documented() {
     let body = |provider: Provider| {
         let mut endpoint =
-            Endpoint::from_credentials(provider, "k".into(), None, None).expect("credentials");
+            Endpoint::from_credentials(provider, "k", None, None).expect("credentials");
         endpoint.session_id = Some("sess-1".into());
         serde_json::to_value(DecisionsRequest {
             model: "jev-latest",
@@ -176,7 +176,7 @@ fn the_first_party_response_shape_parses() {
 /// body at its messages URL.
 #[tokio::test]
 async fn a_provider_without_the_route_refuses() {
-    let endpoint = Endpoint::from_credentials(Provider::Anthropic, "k".into(), None, None)
+    let endpoint = Endpoint::from_credentials(Provider::Anthropic, "k", None, None)
         .expect("anthropic credentials");
     let error = endpoint
         .decide("typesafe/jev-1.13", &Value::Null, &BTreeMap::new())

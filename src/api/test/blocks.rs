@@ -24,8 +24,7 @@ fn empty_tool_input_is_empty_object() {
             r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":2}}"#,
         ),
         ("message_stop", r#"{"type":"message_stop"}"#),
-    ])
-    .unwrap();
+    ]);
     match completion.assistant {
         Payload::Assistant { output, .. } => {
             let calls = output.tool_calls().unwrap();
@@ -42,19 +41,42 @@ fn empty_tool_input_is_empty_object() {
 #[test]
 fn assembles_thinking_block_leading_the_turn() {
     let completion = feed(&[
-            ("message_start", r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#),
-            ("content_block_start", r#"{"index":0,"content_block":{"type":"thinking","thinking":""}}"#),
-            ("content_block_delta", r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"weighing "}}"#),
-            ("content_block_delta", r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"the options"}}"#),
-            ("content_block_delta", r#"{"index":0,"delta":{"type":"signature_delta","signature":"SiG=="}}"#),
-            ("content_block_stop", r#"{"index":0}"#),
-            ("content_block_start", r#"{"index":1,"content_block":{"type":"text","text":""}}"#),
-            ("content_block_delta", r#"{"index":1,"delta":{"type":"text_delta","text":"here's the answer"}}"#),
-            ("content_block_stop", r#"{"index":1}"#),
-            ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":6}}"#),
-            ("message_stop", r#"{"type":"message_stop"}"#),
-        ])
-        .unwrap();
+        (
+            "message_start",
+            r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"thinking","thinking":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"weighing "}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"the options"}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"signature_delta","signature":"SiG=="}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "content_block_start",
+            r#"{"index":1,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":1,"delta":{"type":"text_delta","text":"here's the answer"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":1}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":6}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ]);
     match completion.assistant {
         Payload::Assistant {
             output: AssistantOutput::Messages(blocks),
@@ -82,24 +104,56 @@ fn assembles_thinking_block_leading_the_turn() {
 #[test]
 fn assembles_and_projects_interleaved_blocks_in_provider_order() {
     let completion = feed(&[
-            ("message_start", r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#),
-            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
-            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"first"}}"#),
-            ("content_block_stop", r#"{"index":0}"#),
-            ("content_block_start", r#"{"index":1,"content_block":{"type":"thinking","thinking":""}}"#),
-            ("content_block_delta", r#"{"index":1,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#),
-            ("content_block_delta", r#"{"index":1,"delta":{"type":"signature_delta","signature":"SiG=="}}"#),
-            ("content_block_stop", r#"{"index":1}"#),
-            ("content_block_start", r#"{"index":2,"content_block":{"type":"text","text":""}}"#),
-            ("content_block_delta", r#"{"index":2,"delta":{"type":"text_delta","text":"second"}}"#),
-            ("content_block_stop", r#"{"index":2}"#),
-            ("content_block_start", r#"{"index":3,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash","input":{}}}"#),
-            ("content_block_delta", r#"{"index":3,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}"#),
-            ("content_block_stop", r#"{"index":3}"#),
-            ("message_delta", r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":6}}"#),
-            ("message_stop", r#"{"type":"message_stop"}"#),
-        ])
-        .unwrap();
+        (
+            "message_start",
+            r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"first"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "content_block_start",
+            r#"{"index":1,"content_block":{"type":"thinking","thinking":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":1,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":1,"delta":{"type":"signature_delta","signature":"SiG=="}}"#,
+        ),
+        ("content_block_stop", r#"{"index":1}"#),
+        (
+            "content_block_start",
+            r#"{"index":2,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":2,"delta":{"type":"text_delta","text":"second"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":2}"#),
+        (
+            "content_block_start",
+            r#"{"index":3,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash","input":{}}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":3,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":3}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":6}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ]);
     let Payload::Assistant {
         output: AssistantOutput::Messages(blocks),
         excluded: None,
@@ -154,13 +208,21 @@ fn assembles_and_projects_interleaved_blocks_in_provider_order() {
 #[test]
 fn assembles_redacted_thinking_block() {
     let completion = feed(&[
-            ("message_start", r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#),
-            ("content_block_start", r#"{"index":0,"content_block":{"type":"redacted_thinking","data":"ENCRYPTED=="}}"#),
-            ("content_block_stop", r#"{"index":0}"#),
-            ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#),
-            ("message_stop", r#"{"type":"message_stop"}"#),
-        ])
-        .unwrap();
+        (
+            "message_start",
+            r#"{"message":{"model":"claude-opus-4-8","usage":{"input_tokens":5,"output_tokens":1}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"redacted_thinking","data":"ENCRYPTED=="}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+    ]);
     match completion.assistant {
         Payload::Assistant {
             output: AssistantOutput::Messages(blocks),
@@ -180,7 +242,7 @@ fn assembles_redacted_thinking_block() {
 /// never committed as a clean turn.
 #[test]
 fn unknown_event_type_is_loud() {
-    let completion = feed(&[("surprise", "{}")]).unwrap();
+    let completion = feed(&[("surprise", "{}")]);
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("surprise"), "{why}");
 }
@@ -192,16 +254,27 @@ fn unknown_event_type_is_loud() {
 #[test]
 fn done_sentinel_is_terminal_not_unknown() {
     let completion = feed(&[
-            ("message_start", r#"{"message":{"model":"thinkingmachines/inkling","usage":{"input_tokens":1,"output_tokens":1}}}"#),
-            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
-            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
-            ("content_block_stop", r#"{"index":0}"#),
-            ("message_delta", r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#),
-            ("message_stop", r#"{"type":"message_stop"}"#),
-            // The OpenRouter/OpenAI terminator — must not error.
-            ("data", "[DONE]"),
-        ])
-        .unwrap();
+        (
+            "message_start",
+            r#"{"message":{"model":"thinkingmachines/inkling","usage":{"input_tokens":1,"output_tokens":1}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        (
+            "message_delta",
+            r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#,
+        ),
+        ("message_stop", r#"{"type":"message_stop"}"#),
+        // The OpenRouter/OpenAI terminator — must not error.
+        ("data", "[DONE]"),
+    ]);
     match completion.assistant {
         Payload::Assistant { output, .. } => {
             assert_eq!(output.text(), vec!["hi"]);
@@ -228,8 +301,7 @@ fn in_stream_error_surfaces_body() {
             "error",
             r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
         ),
-    ])
-    .unwrap();
+    ]);
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("overloaded_error"), "{why}");
     match &completion.assistant {
@@ -248,12 +320,20 @@ fn in_stream_error_surfaces_body() {
 #[test]
 fn aborted_stream_assembles_as_record_only_partial() {
     let completion = feed(&[
-        ("message_start", r#"{"message":{"model":"stealth/ox-alpha","usage":{"input_tokens":5,"output_tokens":1}}}"#),
-        ("content_block_start", r#"{"index":0,"content_block":{"type":"thinking","thinking":""}}"#),
-        ("content_block_delta", r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"working through"}}"#),
+        (
+            "message_start",
+            r#"{"message":{"model":"stealth/ox-alpha","usage":{"input_tokens":5,"output_tokens":1}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"thinking","thinking":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"working through"}}"#,
+        ),
         // …and the stream simply ends: no message_delta, no message_stop.
-    ])
-    .unwrap();
+    ]);
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("before finalizing"), "{why}");
     assert_eq!(completion.finish, None);
@@ -283,8 +363,7 @@ fn done_sentinel_alone_finalizes() {
             r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#,
         ),
         ("data", "[DONE]"),
-    ])
-    .unwrap();
+    ]);
     assert_eq!(completion.upstream_failure(), None);
 }
 
@@ -308,7 +387,7 @@ fn failure_after_finalization_keeps_the_completion_clean() {
         a.apply(Some(ty), data).unwrap();
     }
     a.fail("connection reset while draining".into());
-    let completion = a.finish().unwrap();
+    let completion = a.finish();
     assert_eq!(completion.upstream_failure(), None);
     assert_eq!(
         completion.finish.as_ref().map(|f| &f.reason),
@@ -322,11 +401,16 @@ fn failure_after_finalization_keeps_the_completion_clean() {
 #[test]
 fn aborted_stream_keeps_partial_tool_input_unparsed() {
     let completion = feed(&[
-        ("content_block_start", r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash"}}"#),
-        ("content_block_delta", r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"cargo t"}}"#),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash"}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"cargo t"}}"#,
+        ),
         // stream dies mid-input
-    ])
-    .unwrap();
+    ]);
     assert!(completion.upstream_failure().is_some());
     match &completion.assistant {
         Payload::Assistant { output, .. } => {
@@ -347,14 +431,12 @@ fn a_messages_error_event_is_classed_by_its_type() {
     let overloaded = feed(&[(
         "error",
         r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
-    )])
-    .unwrap();
+    )]);
     assert_eq!(overloaded.failure_class, FailureClass::Transient);
     let refused = feed(&[(
         "error",
         r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#,
-    )])
-    .unwrap();
+    )]);
     assert_eq!(refused.failure_class, FailureClass::Terminal);
     assert!(
         refused

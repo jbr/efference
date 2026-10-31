@@ -165,7 +165,7 @@ where
 /// `Arc<Host>`. `without_signals` because the UDS server already registered the
 /// signal handlers.
 pub(crate) fn spawn(
-    listener: Listener,
+    listener: &Listener,
     handler: impl trillium::Handler,
     swansong: trillium_tokio::Swansong,
     shared: impl Send + Sync + 'static,
@@ -175,7 +175,7 @@ pub(crate) fn spawn(
         .with_shared_state(shared)
         .without_signals()
         .listeners();
-    Ok(bind(&listener, config)?.spawn(handler))
+    Ok(bind(listener, config)?.spawn(handler))
 }
 
 impl TcpAuth {

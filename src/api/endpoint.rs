@@ -224,7 +224,7 @@ impl Endpoint {
     /// supplies, and only a [`Provider::Custom`] connection has one to give.
     pub fn from_credentials(
         provider: Provider,
-        token: String,
+        token: &str,
         account_id: Option<String>,
         base: Option<String>,
     ) -> Result<Self, Error> {
@@ -241,7 +241,7 @@ impl Endpoint {
             provider,
             url: provider.messages_url(base.as_deref()),
             auth_header: provider.auth_header().to_string(),
-            auth_value: AuthValue::from(provider.auth_header_value(&token)),
+            auth_value: AuthValue::from(provider.auth_header_value(token)),
             session_id: None,
             extra_headers: Vec::new(),
             base,

@@ -35,7 +35,7 @@ async fn settle_answer(shared: &Arc<Session>, cap: Duration) -> (Option<String>,
         async move { settle_and_state_within(&shared, conn, cap).await }
     })
     .await;
-    answer(server.get("/").await)
+    answer(&server.get("/").await)
 }
 
 async fn starting_answer(starting: &Arc<Starting>, cap: Duration) -> (Option<String>, Value) {
@@ -45,10 +45,10 @@ async fn starting_answer(starting: &Arc<Starting>, cap: Duration) -> (Option<Str
         async move { settle_starting_within(&starting, conn, cap).await }
     })
     .await;
-    answer(server.get("/").await)
+    answer(&server.get("/").await)
 }
 
-fn answer(response: trillium_testing::ConnTest) -> (Option<String>, Value) {
+fn answer(response: &trillium_testing::ConnTest) -> (Option<String>, Value) {
     response.assert_status(200);
     let header = response
         .response_headers()

@@ -582,7 +582,7 @@ fn image_blocks_realize_and_structured_content_renders_as_json() {
         ],
         ..CallToolResult::default()
     };
-    let rendered = render_result(result);
+    let rendered = render_result(&result);
     assert_eq!(
         rendered.content,
         "plain\n\n100×60 image/png, 12 visual tokens"
@@ -606,7 +606,7 @@ fn image_blocks_realize_and_structured_content_renders_as_json() {
         }],
         ..CallToolResult::default()
     };
-    let rendered = render_result(undecodable);
+    let rendered = render_result(&undecodable);
     assert!(
         rendered
             .content
@@ -620,7 +620,7 @@ fn image_blocks_realize_and_structured_content_renders_as_json() {
         structured_content: Some(json!({ "answer": 42 })),
         ..CallToolResult::default()
     };
-    let rendered = render_result(structured_only);
+    let rendered = render_result(&structured_only);
     assert!(rendered.content.contains("\"answer\": 42"));
 }
 

@@ -183,7 +183,6 @@ pub async fn log_in(
     // displacing another; aimed at a `codex login` the operator is running, it
     // would cancel their real login.
     let listener = loopback::listen_at(&PORTS, CALLBACK_PATH)
-        .await
         .map_err(|e| format!("{e}. Close whatever is using port 1455 or 1457 and try again"))?;
     let redirect_uri = listener.redirect_uri_for(REDIRECT_HOST);
 

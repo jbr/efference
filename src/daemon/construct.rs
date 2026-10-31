@@ -95,7 +95,7 @@ impl Session {
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        let directories = crate::policy::Directories::at(&cwd);
+        let directories = crate::policy::Directories::new(cwd.clone(), cwd);
         // Tests and the convenience constructors resolve the `[env]` policy from
         // the role they were handed (docs/env.md); boot builds one earlier —
         // it needs the strip set for the toolbox and the masker for the boot

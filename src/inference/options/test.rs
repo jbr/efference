@@ -22,7 +22,7 @@ fn registry(toml: &str) -> InferenceRegistry {
     InferenceRegistry::from_config(
         config,
         Path::new("/host"),
-        environment,
+        &environment,
         &Arc::new(Secrets::in_memory()),
     )
     .unwrap()

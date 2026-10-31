@@ -183,7 +183,7 @@ impl HoldOutcome {
     /// agent's side nothing did: whoever interrupted stopped the turn.
     pub fn interrupted(
         count: usize,
-        by: Option<String>,
+        by: Option<&str>,
         retries: Vec<String>,
         thinking: Vec<String>,
     ) -> Self {
@@ -191,7 +191,7 @@ impl HoldOutcome {
             results: (0..count)
                 .map(|_| TriageOutcome {
                     wire: WireState::Interrupted(crate::log::Interruption {
-                        by: by.clone(),
+                        by: by.map(str::to_string),
                         after_ms: None,
                         killed: false,
                     }),
@@ -405,6 +405,9 @@ impl Triager {
     /// all, and a wrong dismiss there is silent; it runs on the agent's own lineage,
     /// at the agent's thinking, reading the cache the keepalive holds warm. The
     /// separate model keeps the per-result triages, which are the volume.
+    // Asked of the triager beside `client`, `tools` and `choice`, the per-result
+    // envelope accessors; the idle answer ignores the triager's own configuration.
+    #[allow(clippy::unused_self)]
     fn idle_envelope<'a>(
         &self,
         agent: &'a Client,
@@ -487,7 +490,7 @@ impl Triager {
         )
         .await;
         record.sent = resend
-            .and_then(|(turns, at)| self.sent_triage(&client, turns, tools, choice, at, &record));
+            .and_then(|(turns, at)| Self::sent_triage(&client, turns, tools, choice, at, &record));
 
         let verdict = match parsed {
             Ok(v) => v,
