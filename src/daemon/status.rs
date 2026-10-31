@@ -113,7 +113,7 @@ impl Session {
         let pending = pending.as_ref()?;
         let intent = pending
             .input
-            .get(crate::tools::INTENT)
+            .get(crate::log::INTENT)
             .and_then(Value::as_str)
             .map(str::to_string);
         Some(SessionStatus::Gated {

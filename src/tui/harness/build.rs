@@ -307,7 +307,7 @@ impl Screenplay<'_> {
         };
         self.event(TuiEvent::Gate(Some(crate::tui::PendingGate {
             call_id: call_id.into(),
-            name: crate::control_tools::DECIDE_WIRE_NAME.into(),
+            name: crate::protocol::agents::DECIDE_WIRE_NAME.into(),
             input: serde_json::json!({
                 "agent": leaf_session,
                 "seq": "4",

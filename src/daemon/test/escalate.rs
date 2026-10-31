@@ -3,12 +3,12 @@
 //! (docs/permissions.md, docs/tools.md).
 
 use super::*;
-use crate::control_tools::{Control, Decide, Decision, Executor, Status};
+use crate::control_tools::{Control, Decide, Executor, Status};
 use crate::daemon::Host;
 use crate::daemon::status::{Condition, Escalated, Reviewer};
-use crate::frontend::Approval;
-use crate::log::Telemetry;
+use crate::log::{Approval, Telemetry};
 use crate::policy::ReviewLevel;
+use crate::protocol::agents::Decision;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
@@ -273,7 +273,7 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
 
     // `g` does not supervise `c`, yet the loop binds its allow of this gate.
     let allow = ToolCall::new(
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_g",
         serde_json::json!({ "agent": "c", "seq": seq, "decision": "allow" }),
     );
@@ -336,7 +336,7 @@ async fn the_grandparent_decides_only_the_escalated_gate() {
         assert_eq!(err, refusal);
     }
     let allow = ToolCall::new(
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_g",
         serde_json::json!({ "agent": "c", "seq": next, "decision": "allow" }),
     );

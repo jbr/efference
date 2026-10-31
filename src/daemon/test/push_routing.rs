@@ -5,8 +5,7 @@
 use super::*;
 use crate::daemon::Host;
 use crate::daemon::LoopPhase;
-use crate::frontend::Approval;
-use crate::log::{MomentKind, PushEvent, PushRecord, Telemetry};
+use crate::log::{Approval, MomentKind, PushEvent, PushRecord, Telemetry};
 use crate::policy::ReviewLevel;
 
 struct Fixture {

@@ -15,7 +15,7 @@ fn turn(text: &str) -> SubmittedTurn {
 /// Log an assistant turn issuing an `ask` with `call_id`; returns its seq, the handle.
 fn asks(shared: &Session, call_id: &str, question: &str) -> Seq {
     let call = ToolCall::new(
-        crate::process_monitor::ASK,
+        crate::log::ASK,
         call_id,
         serde_json::json!({ "question": question }),
     );

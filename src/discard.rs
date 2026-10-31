@@ -23,10 +23,10 @@ pub fn is_empty(entries: &[LogEntry]) -> bool {
 /// Refuses anything that is not a real directory directly under the root's
 /// `.efference` named by `id` (a symlink is refused, never followed).
 pub fn remove(root: &Path, id: &str, ids: &crate::session_ids::SessionIds) -> std::io::Result<()> {
-    if !crate::daemon::tcp::plain_id(id) {
+    if !crate::session_dir::plain_id(id) {
         return Err(std::io::Error::other(format!("{id:?} is not a plain id")));
     }
-    let dir = root.join(crate::daemon::SESSION_BASE).join(id);
+    let dir = root.join(crate::session_dir::SESSION_BASE).join(id);
     if !std::fs::symlink_metadata(&dir)?.is_dir() {
         return Err(std::io::Error::other(format!(
             "{} is not a directory",

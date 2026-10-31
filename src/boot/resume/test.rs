@@ -1,12 +1,13 @@
 use super::super::test::{Root, codex_registry, drop_boot, minting, request};
 use super::*;
-use crate::boot::{BASE_DIR, prepare};
+use crate::boot::prepare;
 use crate::log::Telemetry;
 use crate::log::{
     AssistantOutput, CallId, ContentBlock, ExitOutcome, ProcessEvent, ProcessEventKind,
     ProcessExit, ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,
 };
 use crate::recovery::{CallState, last_live_completion, pending_batch};
+use crate::session_dir::SESSION_BASE;
 
 mod switch;
 
@@ -529,7 +530,7 @@ async fn a_failed_resume_leaves_the_session_dir_alone() {
         scratch.iter().all(|dir| !dir.exists()),
         "no scratch it minted survives: {scratch:?}"
     );
-    assert!(dir.starts_with(root.path().join(BASE_DIR)));
+    assert!(dir.starts_with(root.path().join(SESSION_BASE)));
 
     // The log is still resumable once the failure is gone.
     let registry = codex_registry(root.path(), "fail");

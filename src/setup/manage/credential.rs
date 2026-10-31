@@ -4,7 +4,7 @@
 //! keychain→env reveal-then-switch.
 
 use super::Working;
-use crate::api::Provider;
+use crate::log::Provider;
 use crate::setup::*;
 
 /// What can be done about one connection's credential, per its kind.

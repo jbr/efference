@@ -23,41 +23,7 @@ use std::path::PathBuf;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::log::LoggedInference;
-
-/// Which inference the triage step ran on (docs/triage.md).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TriageModel {
-    /// Triage ran on the session's main inference.
-    Shared,
-    /// Triage ran on its own inference, with the reasoning settings boot
-    /// resolved for it — the knob set that inference is called with, recorded
-    /// so a reader need not consult live configuration to reproduce the step.
-    Separate {
-        selection: LoggedInference,
-        thinking: bool,
-        auto_choice: bool,
-        effort: Option<String>,
-    },
-}
-
-impl TriageModel {
-    /// Triage on the main inference.
-    pub fn shared() -> Self {
-        Self::Shared
-    }
-
-    /// Triage on `selection`, with `thinking` and `auto_choice` off and no
-    /// effort override — the minimum a caller setting the other fields passes.
-    pub fn separate(selection: LoggedInference) -> Self {
-        Self::Separate {
-            selection,
-            thinking: false,
-            auto_choice: false,
-            effort: None,
-        }
-    }
-}
+use crate::log::{LoggedInference, TriageModel};
 
 /// What boot recorded about the session it created: the address it answers to,
 /// the directory it ran in, the three inferences it was configured with, and

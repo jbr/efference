@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::api::{Provider, WireDialect};
+use crate::log::{Provider, WireDialect};
 
 mod defaults;
 mod flow;
@@ -361,7 +361,7 @@ impl ExistingAuth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExistingConnection {
     /// The provider name, or the `custom-<dialect>` name a described endpoint
-    /// reports ([`crate::api::Provider::name`]) — so a row in the management list
+    /// reports ([`crate::log::Provider::name`]) — so a row in the management list
     /// says what it speaks either way.
     pub provider: String,
     /// The base URL a described endpoint carries, `None` for a named provider.

@@ -811,7 +811,7 @@ fn a_hosts_preview_reads_back_as_what_it_wrote() {
 /// the whole response.
 #[test]
 fn every_provider_display_name_decodes_back() {
-    use crate::api::{Provider, WireDialect};
+    use crate::log::{Provider, WireDialect};
     for provider in [
         Provider::Anthropic,
         Provider::OpenRouter,
@@ -910,7 +910,7 @@ async fn the_borrowed_spotter_default_reads_the_catalog() {
     catalog
         .refresh_with(
             "main",
-            crate::api::Provider::Anthropic,
+            crate::log::Provider::Anthropic,
             crate::catalog::CATALOG_TTL,
             || async {
                 Ok(vec![

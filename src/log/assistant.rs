@@ -40,7 +40,7 @@ impl AssistantOutput {
                     MessagesOutputBlock::RedactedThinking { data }
                 }
                 ContentBlock::Attachment(arrival) => {
-                    MessagesOutputBlock::Text(crate::attachments::turn_line(&arrival))
+                    MessagesOutputBlock::Text(attachment::turn_line(&arrival))
                 }
             })
             .chain(calls.into_iter().map(MessagesOutputBlock::ToolUse))
@@ -50,24 +50,24 @@ impl AssistantOutput {
 
     /// A turn with no output, in the given dialect — the record-only entry for a
     /// request that never produced a stream (docs/transport.md).
-    pub fn empty(dialect: crate::api::WireDialect) -> Self {
+    pub fn empty(dialect: WireDialect) -> Self {
         match dialect {
-            crate::api::WireDialect::Messages => Self::Messages(Vec::new()),
-            crate::api::WireDialect::Responses => Self::Responses(Vec::new()),
-            crate::api::WireDialect::Completions => Self::Completions(Default::default()),
+            WireDialect::Messages => Self::Messages(Vec::new()),
+            WireDialect::Responses => Self::Responses(Vec::new()),
+            WireDialect::Completions => Self::Completions(Default::default()),
             // A System One request produces no turn, so no record of one exists.
-            crate::api::WireDialect::SystemOne => {
+            WireDialect::SystemOne => {
                 unreachable!("a System One connection serves no turns")
             }
         }
     }
 
     /// The wire dialect these items were recorded in (docs/transport.md).
-    pub fn dialect(&self) -> crate::api::WireDialect {
+    pub fn dialect(&self) -> WireDialect {
         match self {
-            Self::Messages(_) => crate::api::WireDialect::Messages,
-            Self::Responses(_) => crate::api::WireDialect::Responses,
-            Self::Completions(_) => crate::api::WireDialect::Completions,
+            Self::Messages(_) => WireDialect::Messages,
+            Self::Responses(_) => WireDialect::Responses,
+            Self::Completions(_) => WireDialect::Completions,
         }
     }
 

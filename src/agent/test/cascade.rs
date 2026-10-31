@@ -12,7 +12,7 @@ impl Frontend for NeverGates {
     async fn approve(
         &mut self,
         call: &ToolCall,
-        _bound: Option<&crate::control_tools::BoundAction>,
+        _bound: Option<&crate::protocol::agents::BoundAction>,
         _grant: Option<policy::GateGrant>,
     ) -> Approval {
         panic!(
@@ -48,7 +48,7 @@ impl Spotter for NeverAsked {
 /// `agents__decide` ladder tests and the gate-grant tests. It answers with a fixed
 /// decision.
 pub(super) struct RecordingFrontend {
-    pub(super) decisions: Vec<(String, Option<crate::control_tools::BoundAction>)>,
+    pub(super) decisions: Vec<(String, Option<crate::protocol::agents::BoundAction>)>,
     /// The grant each gate offered, in the order the gates were reached.
     pub(super) grants: Vec<Option<policy::GateGrant>>,
     decision: Approval,
@@ -72,7 +72,7 @@ impl Frontend for RecordingFrontend {
     async fn approve(
         &mut self,
         call: &ToolCall,
-        bound: Option<&crate::control_tools::BoundAction>,
+        bound: Option<&crate::protocol::agents::BoundAction>,
         grant: Option<policy::GateGrant>,
     ) -> Approval {
         self.decisions.push((call.name.clone(), bound.cloned()));
@@ -135,7 +135,7 @@ pub(super) fn parent_with(role: crate::config::Config) -> Arc<Session> {
 /// call's handle, and `decision`.
 fn decide_call(decision: &str) -> ToolCall {
     ToolCall::new(
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_parent",
         serde_json::json!({ "agent": "child", "seq": "4", "decision": decision }),
     )
@@ -147,8 +147,8 @@ pub(super) fn approve_call() -> ToolCall {
 }
 
 /// A leaf the child holds, bound to the parent's approval.
-pub(super) fn bound_leaf(command: &str) -> crate::control_tools::BoundAction {
-    crate::control_tools::BoundAction {
+pub(super) fn bound_leaf(command: &str) -> crate::protocol::agents::BoundAction {
+    crate::protocol::agents::BoundAction {
         name: bash::NAME.into(),
         input: serde_json::json!({ "command": command, "intent": "whatever" }),
         intent: Some("whatever".into()),
@@ -165,7 +165,7 @@ pub(super) fn bound_leaf(command: &str) -> crate::control_tools::BoundAction {
 #[tokio::test]
 async fn a_granted_decide_clears_blind() {
     let mut role = crate::config::Config::default();
-    role.tools.grant(crate::control_tools::DECIDE_WIRE_NAME);
+    role.tools.grant(crate::protocol::agents::DECIDE_WIRE_NAME);
     let shared = parent_with(role);
     let mut frontend = RecordingFrontend::answering(Approval::Abort);
     let spotter = crate::spotter::StaticSpotter {
@@ -224,7 +224,7 @@ async fn an_ungranted_approve_clears_on_the_leafs_fast_path() {
         !shared
             .effective_config()
             .tools
-            .granted(crate::control_tools::DECIDE_WIRE_NAME),
+            .granted(crate::protocol::agents::DECIDE_WIRE_NAME),
         "the approval tool itself was never granted"
     );
 }
@@ -256,7 +256,7 @@ async fn a_leaf_outside_the_grants_gates_with_the_bound_action() {
     let (name, seen) = &frontend.decisions[0];
     assert_eq!(
         name,
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "the gate registers the parent's call"
     );
     assert_eq!(
@@ -285,7 +285,7 @@ async fn the_spotter_judges_the_leaf_with_the_chain() {
         stance: Stance::Gate,
         reason: "no".into(),
     };
-    let bound = crate::control_tools::BoundAction {
+    let bound = crate::protocol::agents::BoundAction {
         chain: vec!["child".into(), "grandchild".into()],
         ..bound_leaf("rm -rf ./build")
     };
@@ -365,7 +365,7 @@ async fn an_archive_without_a_succession_goes_to_the_spotter() {
         reason: "would gate".into(),
     };
     let call = ToolCall::new(
-        crate::control_tools::ARCHIVE_WIRE_NAME,
+        crate::protocol::agents::ARCHIVE_WIRE_NAME,
         "toolu_archive",
         serde_json::json!({ "agent": "brisk-raven" }),
     );

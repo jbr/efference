@@ -41,8 +41,8 @@ use crate::api::{
     Client, Completion, PlanState, RequestUsage, RetrySurface, Streamed, ToolChoice,
     UpstreamFailureState, UpstreamRetryCell,
 };
-use crate::context::Item;
 use crate::inbox::ShownNotification;
+use crate::log::context::Item;
 use crate::log::{
     AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
     Triaged, WireState,

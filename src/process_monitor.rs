@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+use crate::log::ASK;
+
 mod record;
 pub use record::{ProcessRecord, from_log};
 
@@ -46,11 +48,6 @@ pub const CHECK_INBOX: &str = "check_inbox";
 /// `wait` — block until a new inbox notification arrives, then surface pending
 /// notifications (docs/process-monitor.md). Refuses when no known source can wake it.
 pub const WAIT: &str = "wait";
-/// `ask` — put a question to the operator and block until a submitted turn answers it
-/// (docs/process-monitor.md). Loop-owned like `wait`, but it bypasses the permission cascade:
-/// there is nothing in the world to authorize.
-pub const ASK: &str = "ask";
-
 /// The question an `ask` call puts and its place among the asks of one completion,
 /// `n` of `of` (1-based), for a surface that draws it as prose rather than as a call
 /// (docs/tui.md, docs/web-client.md). `None` for a call that is not an ask, or one

@@ -97,7 +97,7 @@ Each session keeps an append-only log in the project it runs in, at
 `.efference/<session id>/log.jsonl`, beside a copy of the project's configuration as that
 session sees it. Resuming a session reopens its log. [Credentials](credentials.md) covers
 what is kept out of it.
-<!-- src: src/boot.rs::LOG_NAME, CONFIG_NAME; src/persist.rs::Log; src/boot/resume.rs -->
+<!-- src: src/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/persist.rs::Log; src/boot/resume.rs -->
 
 ### What happens after a restart
 

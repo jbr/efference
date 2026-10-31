@@ -385,7 +385,7 @@ fn state_reports_session_cost_only_when_armed() {
     assert!(v["usage"]["cost"].is_null());
 
     shared.enable_cost_tracking(crate::api::Endpoint {
-        provider: crate::api::Provider::OpenRouter,
+        provider: crate::log::Provider::OpenRouter,
         url: Some("https://openrouter.ai/api/v1/messages".into()),
         auth_header: "authorization".into(),
         auth_value: "Bearer sk-or-test".into(),

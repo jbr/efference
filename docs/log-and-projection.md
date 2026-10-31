@@ -8,6 +8,15 @@ caching constraint that shapes both.
 
 ## Core types
 
+The types are `src/log.rs` and the files under `src/log/`, and the module imports no other
+top-level module (docs/README.md, *Dependency direction*). That includes the shapes other
+subsystems fill in or read: the provider and wire dialect a boot records (`provider.rs`),
+a gate's `Approval` (`approval.rs`), the resolved `[context]` (`context.rs`), an attachment's
+`Arrival` (`attachment.rs`), the spotter's `Axes` (`spot.rs`), the `TriageModel` a preamble
+records (`preamble.rs`), and the names a recorded call is read by, `INTENT` and `ASK`
+(`names.rs`). Behavior that needs another subsystem stays with it, as `impl` blocks on these
+types.
+
 ### `LogEntry`
 
 ```rust

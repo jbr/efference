@@ -30,9 +30,9 @@ use super::grid::frame_grid;
 use super::render_context::{OutputMode, RenderContext};
 use super::state::InteractiveState;
 use super::theme::InteractiveTheme;
-use crate::frontend::Approval;
 use crate::log::{
-    CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, Timestamp, ToolCall, WireState,
+    Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, Timestamp, ToolCall,
+    WireState,
 };
 use serde_json::{Value, json};
 

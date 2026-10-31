@@ -49,7 +49,7 @@ mod open;
 mod read;
 
 pub use error::{LoadError, OpenError};
-pub use header::{LogHeader, SessionMetadata, TriageModel};
+pub use header::{LogHeader, SessionMetadata};
 pub use open::{Opened, Repair};
 pub use read::{LoadedRecording, Trailing, load, load_recording, read_header};
 
@@ -120,7 +120,7 @@ impl Log {
         let file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .mode(crate::daemon::permissions::FILE_MODE)
+            .mode(crate::session_dir::FILE_MODE)
             .open(path)
             .map_err(|error| {
                 io::Error::new(error.kind(), format!("{}: {error}", path.display()))

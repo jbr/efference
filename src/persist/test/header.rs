@@ -1,8 +1,7 @@
 //! Line 1: what a header carries, and the files a strict reader must refuse.
 
 use super::*;
-use crate::log::LoggedInference;
-use crate::persist::TriageModel;
+use crate::log::{LoggedInference, TriageModel};
 
 /// The header is line 1, it is not an entry, and the entries behind it are
 /// numbered exactly as they would be without it.
@@ -53,11 +52,11 @@ fn session_metadata_round_trips_through_the_header() {
         ..SessionMetadata::new(
             "swift-lynx",
             "/work/project",
-            LoggedInference::new("main-conn", crate::api::Provider::Anthropic, "claude"),
-            LoggedInference::new("spot-conn", crate::api::Provider::OpenRouter, "flash"),
+            LoggedInference::new("main-conn", crate::log::Provider::Anthropic, "claude"),
+            LoggedInference::new("spot-conn", crate::log::Provider::OpenRouter, "flash"),
             TriageModel::separate(LoggedInference::new(
                 "triage-conn",
-                crate::api::Provider::Anthropic,
+                crate::log::Provider::Anthropic,
                 "claude-fast",
             )),
         )
@@ -83,13 +82,13 @@ fn the_triage_choice_and_its_settings_round_trip() {
     let shared = SessionMetadata::new(
         "a",
         "/w",
-        LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
-        LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
+        LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
+        LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
         TriageModel::shared(),
     );
     let mut separate = shared.clone();
     separate.triage = TriageModel::Separate {
-        selection: LoggedInference::new("triage", crate::api::Provider::Anthropic, "small"),
+        selection: LoggedInference::new("triage", crate::log::Provider::Anthropic, "small"),
         thinking: true,
         auto_choice: true,
         effort: Some("low".into()),
@@ -109,8 +108,8 @@ fn unset_metadata_fields_are_skipped() {
     let metadata = SessionMetadata::new(
         "swift-lynx",
         "/work",
-        LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
-        LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
+        LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
+        LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
         TriageModel::shared(),
     );
     let line = serde_json::to_string(&LogHeader::new(Some(metadata.clone()))).unwrap();
@@ -147,8 +146,8 @@ fn a_working_directory_apart_from_the_project_round_trips() {
     let mut metadata = SessionMetadata::new(
         "swift-lynx",
         "/work/project",
-        LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
-        LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
+        LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
+        LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
         TriageModel::shared(),
     );
     metadata.working = Some("/work/project/.efference/worktrees/swift-lynx".into());

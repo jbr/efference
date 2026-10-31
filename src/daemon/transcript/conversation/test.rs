@@ -1,7 +1,6 @@
 use super::super::fixtures::*;
 use super::*;
-use crate::frontend::Approval;
-use crate::log::{Keep, Notification, Stance, Summary, Triaged};
+use crate::log::{Approval, Keep, Notification, Stance, Summary, Triaged};
 
 mod escalation;
 

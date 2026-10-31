@@ -540,7 +540,7 @@ pub(crate) fn tail_nodes(
     for call in live.calls() {
         // An `ask` is drawn as prose once committed (docs/tui.md); its arguments
         // arriving as a call would show the plumbing.
-        if call.name == crate::process_monitor::ASK {
+        if call.name == crate::log::ASK {
             continue;
         }
         nodes.push(live_call_entry(call));

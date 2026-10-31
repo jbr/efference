@@ -626,7 +626,7 @@ fn a_result_that_carries_images_keeps_its_text_and_sheds_the_bytes() {
 /// namespaced wire form is what is judged, and the display form is what is reported.
 #[test]
 fn tool_names_are_judged_on_the_wire_form_per_dialect() {
-    use crate::api::WireDialect;
+    use crate::log::WireDialect;
     for dialect in [WireDialect::Messages, WireDialect::Responses] {
         assert_eq!(dialect.tool_name_problem("ferritin__get"), None);
         assert!(dialect.tool_name_problem("").is_some());
@@ -648,7 +648,7 @@ fn tool_names_are_judged_on_the_wire_form_per_dialect() {
 /// names an offender in its display form with the reason beside it.
 #[test]
 fn the_embedded_toolbox_is_legal_on_both_dialects() {
-    use crate::api::WireDialect;
+    use crate::log::WireDialect;
     let cwd = std::env::temp_dir();
     let toolbox = Toolbox::bash_and_mcps(cwd, None).unwrap();
     assert_eq!(

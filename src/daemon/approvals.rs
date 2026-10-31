@@ -18,7 +18,7 @@ pub(super) struct Pending {
     /// The leaf action this approval authorizes, when the held call is a bound
     /// `agents__decide` (docs/permissions.md). `None` for an ordinary gate.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) acting_on: Option<crate::control_tools::BoundAction>,
+    pub(super) acting_on: Option<crate::protocol::agents::BoundAction>,
     /// The one grant this gate offers, decided at the rung that held the call
     /// (docs/permissions.md). `None` when no single change is confidently the one.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,7 +113,7 @@ impl Session {
     pub(super) fn register_pending(
         &self,
         call: &ToolCall,
-        bound: Option<&crate::control_tools::BoundAction>,
+        bound: Option<&crate::protocol::agents::BoundAction>,
         grant: Option<crate::policy::GateGrant>,
     ) -> oneshot::Receiver<Approval> {
         let (tx, rx) = oneshot::channel();

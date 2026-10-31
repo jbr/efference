@@ -211,7 +211,7 @@ fn asked(question: &str, id: &str) -> Payload {
             Vec::new(),
             Vec::new(),
             vec![ToolCall::new(
-                crate::process_monitor::ASK,
+                ASK,
                 id,
                 serde_json::json!({ "question": question }),
             )],
@@ -299,7 +299,7 @@ fn only_completed_ask_calls_are_counted() {
                     Vec::new(),
                     Vec::new(),
                     vec![ToolCall::new(
-                        crate::process_monitor::ASK,
+                        ASK,
                         "a9",
                         serde_json::json!({ "question": "?" }),
                     )],

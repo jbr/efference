@@ -1,5 +1,6 @@
 use super::scaffold::self_surface_grants;
 use super::*;
+use crate::session_dir::{LOG_NAME, SESSION_BASE};
 use crate::worktree::testing::{commit, git};
 use std::path::Path;
 
@@ -50,7 +51,7 @@ impl Root {
     }
 
     pub(crate) fn session_dir(&self, id: &str) -> PathBuf {
-        self.0.join(BASE_DIR).join(id)
+        self.0.join(SESSION_BASE).join(id)
     }
 }
 
@@ -82,7 +83,7 @@ pub(crate) fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionReq
     SessionRequest {
         directories: crate::policy::Directories::at(root),
         base_env: base_env(),
-        session_dir: root.join(BASE_DIR).join(id),
+        session_dir: root.join(SESSION_BASE).join(id),
         config: None,
         inference,
         temperature: None,
@@ -123,7 +124,7 @@ pub(crate) fn codex_registry(root: &Path, id: &str) -> crate::inference::Inferen
         .to_string(),
     )
     .unwrap();
-    crate::api::seed_codex_catalog(crate::api::Provider::OpenAICodex, &account);
+    crate::api::seed_codex_catalog(crate::log::Provider::OpenAICodex, &account);
     let config = crate::inference::InferenceConfig::from_toml(
         r#"
 [connections.oai]
@@ -272,7 +273,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
                 .collect(),
         )
         .unwrap(),
-        session_dir: root.join(BASE_DIR).join(id),
+        session_dir: root.join(SESSION_BASE).join(id),
         config: None,
         inference,
         temperature,
@@ -528,7 +529,7 @@ fn the_attachment_store_is_readable_through_the_self_surface_deny() {
         "[tools]\nefference = { enabled = true }\n\"efference.read\" = { granted = true }\n\"efference.read_image\" = { granted = true }\n\"efference.write\" = { granted = true }\n[paths]\n\".\" = { read = true, write = true }\n",
     )
     .unwrap();
-    let session_dir = Path::new(BASE_DIR).join("s1");
+    let session_dir = Path::new(SESSION_BASE).join("s1");
     self_surface_grants(&mut role.paths, &session_dir);
     let cwd = PathBuf::from("/work/proj");
     let call = |tool: &str, path: PathBuf| {

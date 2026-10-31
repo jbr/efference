@@ -14,7 +14,7 @@ use super::*;
 /// and no declared server may take their names.
 pub const BUILTIN_NAMESPACES: [&str; 3] = [
     crate::mcp::BUILTIN_NAMESPACE,
-    crate::control_tools::NAMESPACE,
+    crate::protocol::agents::NAMESPACE,
     crate::tools::lsp::NAMESPACE,
 ];
 
@@ -141,7 +141,7 @@ pub fn always_present(wire_name: &str) -> bool {
         pm::WATCH,
         pm::CHECK_INBOX,
         pm::WAIT,
-        pm::ASK,
+        crate::log::ASK,
     ]
     .contains(&wire_name)
         || crate::triage::is_triage_tool(wire_name)

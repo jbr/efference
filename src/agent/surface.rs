@@ -84,7 +84,7 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// ride every turn's `tools[]`, so a reader destructuring the triage's own
 /// call wants their schema too.
 ///
-/// None of these five sources inject [`crate::tools::INTENT`] the way a
+/// None of these five sources inject [`crate::log::INTENT`] the way a
 /// `Toolbox`-mounted tool's wire entry does — [`tool_definitions`] pushes
 /// `consolidate::definition()`, `process_monitor::tool_definitions()`, and the triage
 /// tools onto `toolbox.definitions()` *after* `with_intent` has already run
@@ -108,7 +108,7 @@ pub fn tool_catalog(
         process_monitor::WATCH,
         process_monitor::CHECK_INBOX,
         process_monitor::WAIT,
-        process_monitor::ASK,
+        crate::log::ASK,
     ] {
         if let Some(brief) = process_monitor::brief(name) {
             catalog.insert(

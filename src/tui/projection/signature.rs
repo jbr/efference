@@ -159,7 +159,7 @@ pub(crate) fn call_view(name: &str, input: &Value) -> CallView {
         return view;
     };
     let str_arg = |key: &str| object.get(key).and_then(Value::as_str);
-    view.intent = str_arg(crate::tools::INTENT)
+    view.intent = str_arg(crate::log::INTENT)
         .map(str::trim)
         .filter(|intent| !intent.is_empty())
         .map(str::to_string);
@@ -167,7 +167,7 @@ pub(crate) fn call_view(name: &str, input: &Value) -> CallView {
     // A hand-off's brief is a message to the session that takes over (docs/tools.md):
     // labelled with whom it is for and read as prose, so it is not mistaken for the
     // agent addressing the operator.
-    if name == crate::control_tools::HAND_OFF_WIRE_NAME
+    if name == crate::protocol::agents::HAND_OFF_WIRE_NAME
         && let Some(brief) = str_arg("brief")
     {
         view.bodies.push(CallBody {
@@ -206,7 +206,7 @@ pub(crate) fn call_view(name: &str, input: &Value) -> CallView {
     let mut labelled = Vec::new();
     for (key, value) in object {
         // `intent` is already the call's title.
-        if key == crate::tools::INTENT {
+        if key == crate::log::INTENT {
             continue;
         }
         if is_content(value) {

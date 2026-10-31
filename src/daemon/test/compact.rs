@@ -286,7 +286,7 @@ async fn a_compaction_streams_its_writers_deltas() {
     // The compaction loop runs on the session's own client; the test starts it directly,
     // without a runtime around it.
     let endpoint = crate::api::Endpoint {
-        provider: crate::api::Provider::Anthropic,
+        provider: crate::log::Provider::Anthropic,
         url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),
@@ -355,7 +355,7 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
                 Default::default(),
                 Some(crate::log::LoggedInference::new(
                     "c",
-                    crate::api::Provider::Anthropic,
+                    crate::log::Provider::Anthropic,
                     "m",
                 )),
             ),

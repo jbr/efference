@@ -238,7 +238,7 @@ pub(super) fn gate_body(
     name: &str,
     intent: Option<&str>,
     reason: Option<&str>,
-    bound: Option<&crate::control_tools::BoundAction>,
+    bound: Option<&crate::protocol::agents::BoundAction>,
 ) -> String {
     if let Some(bound) = bound {
         let display = crate::mcp::display_name(&bound.name);

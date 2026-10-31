@@ -138,7 +138,7 @@ fn parse_turn(body: &str) -> Result<TurnBody, String> {
 fn resolve_attachments(
     shared: &Session,
     names: &[String],
-) -> Result<Vec<crate::attachments::Arrival>, String> {
+) -> Result<Vec<crate::log::attachment::Arrival>, String> {
     if names.is_empty() {
         return Ok(Vec::new());
     }

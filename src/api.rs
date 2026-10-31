@@ -15,7 +15,9 @@ use trillium_client::Client as HttpClient;
 use trillium_client::Conn;
 use trillium_client::sse::{EventStream, SseError, SseErrorKind};
 
-use crate::log::{AssistantOutput, Exclusion, MessagesOutputBlock, Payload, ToolCall};
+use crate::log::{
+    AssistantOutput, Exclusion, MessagesOutputBlock, Payload, Provider, ToolCall, WireDialect,
+};
 use crate::project::ApiMessage;
 
 /// The `anthropic-version` header value. This is part of the Anthropic Messages
@@ -646,8 +648,8 @@ pub use plan::{PlanLimit, PlanSnapshot, PlanState, PlanWindow, plan_state};
 #[cfg(test)]
 pub(crate) use provider::seed_codex_catalog;
 pub use provider::{
-    ListedModel, ModelCapabilities, ModelKind, OUTPUT_FLOOR, Price, PromptCachePolicy, Provider,
-    ResponsesProfile, TokenPrices, WireDialect,
+    ListedModel, ModelCapabilities, ModelKind, OUTPUT_FLOOR, Price, PromptCachePolicy,
+    ResponsesProfile, TokenPrices,
 };
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,

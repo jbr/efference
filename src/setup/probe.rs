@@ -7,8 +7,9 @@ use std::path::Path;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
-use crate::api::{Endpoint, Provider};
+use crate::api::Endpoint;
 use crate::env_table::EnvSnapshot;
+use crate::log::Provider;
 use crate::secrets::Secrets;
 
 /// What a live key check learned, beyond "accepted".
@@ -66,7 +67,7 @@ impl Target {
     }
 
     /// An endpoint described by dialect and base URL.
-    pub fn described(dialect: crate::api::WireDialect, base: impl Into<String>) -> Self {
+    pub fn described(dialect: crate::log::WireDialect, base: impl Into<String>) -> Self {
         Self {
             provider: Provider::Custom(dialect),
             base: Some(base.into()),

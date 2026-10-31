@@ -2,7 +2,7 @@
 //! what the next action reads uncached, and the action goes through unchanged.
 
 use super::*;
-use crate::frontend::Approval;
+use crate::log::Approval;
 use crate::tui::ColdView;
 use crate::tui::parse::PendingAsk;
 

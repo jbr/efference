@@ -409,7 +409,7 @@ The split was originally forced: while the reason and the affordance were nested
 
 The status bar mirrors this affordance for the scrolled-away case, and the [control strip](#the-control-strip) simultaneously carries the full verb set (`approve ⏎ · abort`), so `↑ ⏎` approves without typing and the strip — not instruction text — is the legend for abort. Strip `approve`/`abort` resolve the gate directly *without* clearing a drafted redirect the operator decided against sending (unlike an empty-composer `⏎`, which routes through the submit path below).
 
-The composer composes text only. Submitting from it while a gate is pending resolves the gate with the `Approval` the loop consumes (from `src/frontend.rs`):
+The composer composes text only. Submitting from it while a gate is pending resolves the gate with the `Approval` the loop consumes (from `src/log/approval.rs`):
 
 - empty → `Approval::Approve`
 - any text → `Approval::Redirect(text)` — including text that begins `.abort` or `.allow`, which are sent as written

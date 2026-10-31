@@ -16,7 +16,7 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
     toolbox: &Toolbox,
     turn: Turn,
     call: &ToolCall,
-    bound: Option<&crate::control_tools::BoundAction>,
+    bound: Option<&crate::protocol::agents::BoundAction>,
 ) -> Result<Approval, Error> {
     // Classify against the *effective* policy — base role plus the fold of every
     // grant so far: a prior amendment can promote this very call into the
@@ -197,7 +197,7 @@ fn gate_grant(
     shared: &Session,
     role: &crate::config::Config,
     call: &ToolCall,
-    bound: Option<&crate::control_tools::BoundAction>,
+    bound: Option<&crate::protocol::agents::BoundAction>,
 ) -> Option<policy::GateGrant> {
     bound
         .is_none()

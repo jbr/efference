@@ -1,8 +1,7 @@
 //! The status as each reader reads it, pinned as exact text.
 
 use super::*;
-use crate::log::{CallId, Origin, Spot, Stance};
-use crate::spotter::jev::{Axes, Precedent};
+use crate::log::{Axes, CallId, Origin, Precedent, Spot, Stance};
 
 mod gate;
 

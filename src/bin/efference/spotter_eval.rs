@@ -127,7 +127,7 @@ struct Attempt {
     /// rung. Written out so the figures behind each verdict can be read back
     /// without re-requesting any of them.
     #[serde(skip_serializing_if = "Option::is_none")]
-    axes: Option<efference::spotter::jev::Axes>,
+    axes: Option<efference::log::Axes>,
 }
 
 #[cfg(test)]
@@ -449,7 +449,7 @@ pub(crate) async fn spotter_eval(
     // concurrently under the same `--concurrency` the attempts pass used;
     // `Endpoint::fetch_generation_cost` shares a pooled client, so the
     // semaphore bounds in-flight lookups, not sockets.
-    if !no_cost && matches!(endpoint.provider, efference::api::Provider::OpenRouter) {
+    if !no_cost && matches!(endpoint.provider, efference::log::Provider::OpenRouter) {
         let mut unpriced = attempts
             .iter()
             .filter(|a| a.generation_id.is_none())

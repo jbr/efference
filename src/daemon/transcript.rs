@@ -164,7 +164,7 @@ fn kept_of(raw: &RawResult, verdict: &crate::log::Triaged) -> (usize, usize) {
 /// allow carries the decider's note when one was sent with it (`note`, from
 /// `index.rs`): `allowed by you, with "use read next time"`.
 fn decided(decision: &crate::log::GateDecision, me: Option<&str>, note: Option<&str>) -> String {
-    use crate::frontend::Approval;
+    use crate::log::Approval;
     let by = sender(decision.source.as_deref(), me);
     match &decision.decision {
         Approval::Approve => match note {
@@ -196,7 +196,7 @@ fn escalated(escalation: &crate::log::Escalation, me: Option<&str>) -> String {
 
 /// Whether a recorded decision refused the call: an abort or a redirect.
 fn refused(decision: &crate::log::GateDecision) -> bool {
-    use crate::frontend::Approval;
+    use crate::log::Approval;
     matches!(decision.decision, Approval::Abort | Approval::Redirect(_))
 }
 
@@ -387,7 +387,7 @@ fn arguments(call: &ToolCall) -> String {
     match &call.input {
         Value::Object(map) => {
             for (key, value) in map {
-                if key == crate::tools::INTENT {
+                if key == crate::log::INTENT {
                     continue;
                 }
                 let rendered = match value {

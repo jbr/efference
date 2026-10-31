@@ -1,29 +1,7 @@
-//! The wire dialect a provider speaks (docs/transport.md).
+//! The wire dialect a provider speaks (docs/transport.md): the behavior of
+//! [`WireDialect`], which the log defines because an assistant turn is recorded in its arm.
 
 use super::*;
-
-/// The request/response shape a provider speaks (docs/transport.md). Derived
-/// from the declared provider — there is no independent knob — so one session
-/// projects and assembles in exactly one dialect.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WireDialect {
-    /// Anthropic Messages: `system` + `messages[]`, content blocks, SSE
-    /// `message_start` … `message_stop`.
-    Messages,
-    /// OpenAI Responses: `input[]` items, ordered output items, SSE
-    /// `response.created` … `response.completed`.
-    Responses,
-    /// Chat Completions: `messages[]` with `role: "tool"` results, assistant
-    /// messages replayed as received, SSE `choices[0].delta` chunks ending in
-    /// `[DONE]` (backlog/inbox/completions-dialect.md until it is served).
-    Completions,
-    /// The System One contract (docs/transport.md): one POST of
-    /// `{model, state, questions}` answered with a probability per question.
-    /// Not a turn dialect — it has no assistant output to encode or assemble —
-    /// so [`Provider::inference_dialect`] never returns it, and a connection
-    /// speaking it can back the spotter role only.
-    SystemOne,
-}
 
 impl WireDialect {
     /// The longest tool name this dialect's request accepts. Both dialects share

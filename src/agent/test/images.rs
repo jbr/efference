@@ -2,7 +2,8 @@
 //! closes once with one record, and a resumed session restores both halves.
 use super::*;
 
-use crate::api::{Endpoint, Provider};
+use crate::api::Endpoint;
+use crate::log::Provider;
 
 fn session() -> Arc<Session> {
     let (shared, _rx) = Session::new(

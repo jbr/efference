@@ -1,25 +1,8 @@
 //! Argument shapes the verbs share, and the sender a call over MCP is named by.
 
 use mcplease::types::RequestContext;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-
-/// A gate decision (docs/permissions.md): `allow` runs the held call; `deny` refuses it;
-/// `escalate` leaves it held and passes it to whoever decides next.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, clap::ValueEnum,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum Decision {
-    Allow,
-    Deny,
-    Escalate,
-}
-
-/// The decision an `agents__decide` call's input names, if it names one.
-pub(crate) fn decision_of(input: &Value) -> Option<Decision> {
-    serde_json::from_value(input.get("decision")?.clone()).ok()
-}
 
 /// A transcript handle given as an argument: `"8.2"`, or a seq an agent wrote as a
 /// number.

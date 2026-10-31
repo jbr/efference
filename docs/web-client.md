@@ -279,7 +279,7 @@ list view and the prefixed base are held for the in-process host
 at its root under either binding — one credential covers every session behind a
 host.
 
-The id set the derivation accepts mirrors the gate's (`plain_id`, `src/daemon/tcp/gate.rs`):
+The id set the derivation accepts mirrors the gate's (`plain_id`, `src/session_dir.rs`):
 a path whose second segment is not a plain segment is not a prefix, and addresses
 the root instead.
 

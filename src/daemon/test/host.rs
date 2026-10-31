@@ -322,7 +322,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     // The Codex connection's capabilities come from the provider's catalog, so
     // the test seeds the cache that lookup reads: these sessions boot without a
     // provider. Seeded under the account `auth.json` above names.
-    crate::api::seed_codex_catalog(crate::api::Provider::OpenAICodex, "acct-1");
+    crate::api::seed_codex_catalog(crate::log::Provider::OpenAICodex, "acct-1");
     let registry = crate::inference::InferenceRegistry::load(
         &roots.0,
         &host_env,
@@ -368,7 +368,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     // The platform arm reads the same catalog under its own cache key, seeded
     // here so the creation makes no request; the key it holds stays out of the
     // response.
-    crate::api::seed_codex_catalog(crate::api::Provider::OpenAI, "");
+    crate::api::seed_codex_catalog(crate::log::Provider::OpenAI, "");
     let platform = server
         .post("/sessions")
         .with_json_body(&serde_json::json!({
@@ -433,7 +433,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
                 .join(cwd)
                 .join(".efference")
                 .join(id)
-                .join(crate::boot::LOG_NAME),
+                .join(crate::session_dir::LOG_NAME),
         )
         .unwrap()
     };

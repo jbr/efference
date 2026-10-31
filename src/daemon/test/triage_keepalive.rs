@@ -4,11 +4,11 @@
 use super::keepalive::{pinged_session, record_turn, serve_recording};
 use super::upstream_hold::{Answer, end_turn, recording, tool_call, wait_until};
 use super::*;
-use crate::api::{Client, Endpoint, PromptCachePolicy, Provider, RequestUsage, SentRequest};
+use crate::api::{Client, Endpoint, PromptCachePolicy, RequestUsage, SentRequest};
 use crate::daemon::SessionRuntime;
 use crate::daemon::keepalive::{CacheLineage, KeepaliveSpec, keepalive_interval};
 use crate::frontend::SubmittedTurn;
-use crate::log::{Summary, Timestamp};
+use crate::log::{Provider, Summary, Timestamp};
 use crate::project::WireTurn;
 use crate::triage::Triager;
 use std::sync::Mutex;

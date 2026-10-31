@@ -14,6 +14,7 @@
 
 use super::resume::ResumeRefused;
 use super::*;
+use crate::session_dir::{SESSION_BASE, plain_id};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::{Semaphore, watch};
 
@@ -149,7 +150,7 @@ impl Host {
             for row in self.inventory.refresh(&root) {
                 if !row.interrupted
                     || row.problem.is_some()
-                    || !tcp::plain_id(&row.id)
+                    || !plain_id(&row.id)
                     || !seen.insert(row.id.clone())
                 {
                     continue;
@@ -169,7 +170,10 @@ impl Host {
 /// The creator the session's header records, read from line 1 alone.
 fn header_creator(root: &std::path::Path, id: &str) -> Option<String> {
     use std::io::BufRead;
-    let log = root.join(SESSION_BASE).join(id).join(crate::boot::LOG_NAME);
+    let log = root
+        .join(SESSION_BASE)
+        .join(id)
+        .join(crate::session_dir::LOG_NAME);
     let mut line = Vec::new();
     io::BufReader::new(std::fs::File::open(&log).ok()?)
         .read_until(b'\n', &mut line)

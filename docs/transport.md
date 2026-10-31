@@ -781,7 +781,7 @@ a login to redo, naming `efference setup`; a transport failure or 5xx is not.
 
 ## The Responses dialect
 
-A provider speaks one of three turn dialects (`api::WireDialect`), fixed by the
+A provider speaks one of three turn dialects (`log::WireDialect`, with its behavior in `src/api/provider/dialect.rs`), fixed by the
 declared provider: Anthropic and OpenRouter speak **Messages** (everything above);
 OpenAI speaks **Responses** (`POST /v1/responses`); a described connection may also
 speak **Chat Completions** (below). There is no independent knob —
@@ -1127,9 +1127,10 @@ Messages for Anthropic and OpenRouter, Responses for OpenAI — so the log, the
 semantic fold, and the cache-frontier model are provider-independent. What varies
 between providers is the **dialect**, **where** the POST goes, **how** it
 authenticates, and **which metadata source** answers questions about the selected
-model. All derive from one declared identity: `api::Provider`, an enum
+model. All derive from one declared identity: `log::Provider`, an enum
 (`anthropic`, `openrouter`, `openai`, `openai-codex`, `typesafe`, and `custom`)
-grown in code as providers are added. Identity is an input, never inferred from URL
+grown in code as providers are added; the log defines it because a boot records it, and
+what each variant does is `src/api/provider.rs`. Identity is an input, never inferred from URL
 shape (sniffing fails for proxies and custom URLs). `api::Endpoint` carries the
 derived `url` + `auth_header` + `auth_value` alongside the provider; its `Debug`
 redacts the credential and extra headers.

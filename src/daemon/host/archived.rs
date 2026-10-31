@@ -12,6 +12,7 @@
 use super::*;
 use crate::inference::ResumeSwitch;
 use crate::inventory::{InventoryRow, sort_rows};
+use crate::session_dir::SESSION_BASE;
 use std::collections::HashSet;
 
 /// One archived session as `GET /sessions?state=archived` lists it: the
@@ -54,7 +55,7 @@ impl DormantSession {
     /// whole, since a resume's switch can record selections anywhere in it.
     fn read(archived: ArchivedSession) -> Self {
         let dir = archived.row.cwd.join(SESSION_BASE).join(&archived.row.id);
-        let selections = crate::persist::load_recording(dir.join(crate::boot::LOG_NAME))
+        let selections = crate::persist::load_recording(dir.join(crate::session_dir::LOG_NAME))
             .ok()
             .map(|recording| crate::boot::recorded_selections(&recording))
             .filter(|selections| !selections.is_empty());

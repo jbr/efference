@@ -305,7 +305,7 @@ fn compaction_failed(error: &str) -> Payload {
 }
 
 fn compaction_summary(upto: u64) -> Payload {
-    let model = crate::log::LoggedInference::new("c", crate::api::Provider::Anthropic, "m");
+    let model = crate::log::LoggedInference::new("c", crate::log::Provider::Anthropic, "m");
     Payload::Summary(Summary::compaction(upto, "account", model))
 }
 

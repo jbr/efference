@@ -247,7 +247,7 @@ impl<'a> Zoom<'a, '_> {
         }
         let mut input = call.input.clone();
         if let Value::Object(map) = &mut input {
-            map.remove(crate::tools::INTENT);
+            map.remove(crate::log::INTENT);
         }
         let pretty = serde_json::to_string_pretty(&input).unwrap_or_else(|_| input.to_string());
         self.lines.push(format!("input: {pretty}"));
@@ -292,7 +292,7 @@ impl<'a> Zoom<'a, '_> {
 
     /// Whether the gate held the call, and who decided it and how.
     fn decision(&mut self, id: &str, spot: Option<&Spot>) {
-        use crate::frontend::Approval;
+        use crate::log::Approval;
         for (seq, escalation) in self.index.escalations(id) {
             let line = escalated(escalation, self.reading.me);
             self.lines.push(format!("{line} (seq {seq})"));

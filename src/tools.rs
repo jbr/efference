@@ -28,15 +28,8 @@ use serde_json::{Value, json};
 
 use crate::bash::{self, Bash, Outcome};
 use crate::frontend::Interrupt;
-use crate::log::{Notification, RawResult, ToolCall};
+use crate::log::{INTENT, Notification, RawResult, ToolCall};
 use read_image::ReadImage;
-
-/// The property the harness adds to every mounted tool's input schema
-/// (docs/tools.md "The `intent` property"): one line of prose saying why the call
-/// is being made, generated before the call runs. Stripped from `input` before
-/// dispatch, so no tool ever receives it; kept on the logged [`ToolCall`], so it
-/// projects to the wire and is available to the harness's own readers.
-pub const INTENT: &str = "intent";
 
 /// The `intent` property's schema `description`. Deliberately a pointer, not the
 /// guidance: the guidance is stated once in the session preamble
@@ -335,7 +328,7 @@ impl McpServer<crate::control_tools::Control, crate::control_tools::in_session::
     fn resolve_bound_action(
         &self,
         call: &ToolCall,
-    ) -> anyhow::Result<crate::control_tools::BoundAction> {
+    ) -> anyhow::Result<crate::protocol::agents::BoundAction> {
         self.state.resolve_bound_action(call)
     }
 }

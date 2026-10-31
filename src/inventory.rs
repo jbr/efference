@@ -125,11 +125,11 @@ impl Inventory {
     /// from it, and any other is scanned again. Cached rows whose directory is
     /// gone are dropped. A root with no `.efference` has no rows.
     pub fn refresh(&self, root: &Path) -> Vec<InventoryRow> {
-        let base = root.join(crate::daemon::SESSION_BASE);
+        let base = root.join(crate::session_dir::SESSION_BASE);
         let mut rows = Vec::new();
         let mut seen = HashSet::new();
         for id in session_dirs(&base) {
-            let log = base.join(&id).join(crate::boot::LOG_NAME);
+            let log = base.join(&id).join(crate::session_dir::LOG_NAME);
             let len = match std::fs::metadata(&log) {
                 Ok(meta) if meta.is_file() => meta.len(),
                 Ok(_) => {

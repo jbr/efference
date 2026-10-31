@@ -471,7 +471,7 @@ itself over its own documents would be the self-authorization the config design 
 is also excluded from `[paths]` resolution outright, because joined onto the cwd it would
 look like an ordinary relative path and a broad grant would then appear to cover it.
 
-## An allowing `agents__decide` is classified as the action it authorizes (`src/agent/step.rs`, `src/control_tools.rs`)
+## An allowing `agents__decide` is classified as the action it authorizes (`src/agent/step.rs`, `src/protocol/agents.rs`, `src/control_tools.rs`)
 
 A session's `agents__decide` carries only a target, the held call's transcript handle
 (`seq`), and the decision, so classifying an allow as written would ask every rung to
@@ -479,7 +479,7 @@ judge a handle. Before the cascade runs, the loop asks the mounted sessions prov
 bind an allowing call to the target's held move (docs/tools.md): the host reads the
 target's pending gate, and while the held call is itself an allowing `agents__decide` it
 follows that call's `agent`+`seq` to the next session, refusing on a cycle. The result is
-a `BoundAction` — the leaf tool, the child's input, its intent, its cwd, and the chain of
+a `BoundAction` (`src/protocol/agents.rs`) — the leaf tool, the child's input, its intent, its cwd, and the chain of
 session ids from the directly-targeted child down to the session holding the leaf. A seq
 that is not the target's pending gate is refused before classification with a "gate
 moved" error result, and the target rules the Host executor already enforces (self never,

@@ -2,8 +2,7 @@
 //! the dialect its assistant turns were recorded in.
 
 use super::*;
-use crate::api::WireDialect;
-use crate::log::ResponsesOutputItem;
+use crate::log::{ResponsesOutputItem, WireDialect};
 
 fn messages_turn() -> WireTurn {
     WireTurn::Assistant(AssistantOutput::from_legacy_messages(

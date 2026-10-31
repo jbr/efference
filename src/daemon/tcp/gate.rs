@@ -267,21 +267,7 @@ const DEV_PROXY_DIRS: [&str; 2] = ["/src", "/node_modules"];
 pub(super) fn session_scoped(path: &str) -> Option<&str> {
     let after = path.strip_prefix("/sessions/")?;
     let (id, rest) = after.split_at(after.find('/').unwrap_or(after.len()));
-    plain_id(id).then_some(if rest.is_empty() { "/" } else { rest })
-}
-
-/// Whether `id` is a single plain path segment — ASCII alphanumerics, `-`, `_`, `.`,
-/// and neither `.` nor `..`. Anything else names no session: an id arrives from a
-/// URL and is joined onto a filesystem path, so it is validated before the join
-/// rather than trusted. The web client's base derivation (`web/src/api/base.ts`)
-/// accepts the same set.
-pub(crate) fn plain_id(id: &str) -> bool {
-    !id.is_empty()
-        && id != "."
-        && id != ".."
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    crate::session_dir::plain_id(id).then_some(if rest.is_empty() { "/" } else { rest })
 }
 
 #[cfg(test)]

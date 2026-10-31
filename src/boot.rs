@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use crate::api::Error;
 use crate::daemon::SessionBoot;
 use crate::persist::Log;
+use crate::session_dir::LOG_NAME;
 use crate::spotter::MountedSpotter;
 
 mod env;
@@ -35,13 +36,6 @@ use mint::Minted;
 pub use mint::{mint_scratch_dir, mint_session_dir};
 pub use resume::{ResumeRequest, recorded_selections, resume};
 pub use scaffold::CONFIG_SCAFFOLD;
-
-/// The base directory for all session dirs (gitignored). Each session is
-/// `.efference/<id>/`, holding its standard-named log and config
-/// (docs/permissions.md).
-pub const BASE_DIR: &str = crate::daemon::SESSION_BASE;
-
-pub const LOG_NAME: &str = "log.jsonl";
 
 pub const CONFIG_NAME: &str = "config.toml";
 

@@ -136,7 +136,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
 pub(super) struct FrozenPreamble {
     pub identity: String,
     pub body: String,
-    pub resolved: crate::context::Resolved,
+    pub resolved: crate::log::context::Resolved,
     pub context_block: Option<String>,
 }
 

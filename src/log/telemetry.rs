@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{CallId, ColdEvent, PushRecord, RequestStage, ToolTelemetry};
+use super::{Approval, CallId, ColdEvent, PushRecord, RequestStage, ToolTelemetry};
 
 /// One telemetry fact, recorded as `{"Telemetry": {"<Variant>": …}}`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -130,7 +130,7 @@ pub struct GateDecision {
     pub call_id: CallId,
     /// The decision as the loop received it: approve, abort, redirect with its
     /// message, or a config edit with its change.
-    pub decision: crate::frontend::Approval,
+    pub decision: Approval,
     /// Who decided, spelled as a turn's `source` is: `web`, `mcp[<name>]`,
     /// `session[<id>]`. Client-asserted, like an interrupt's; absent for the
     /// operator's own command line or TUI.
@@ -146,11 +146,7 @@ pub struct GateDecision {
 
 impl GateDecision {
     /// The record of `decision` on the call `call_id`, decided by `source`.
-    pub fn new(
-        call_id: impl Into<CallId>,
-        decision: crate::frontend::Approval,
-        source: Option<String>,
-    ) -> Self {
+    pub fn new(call_id: impl Into<CallId>, decision: Approval, source: Option<String>) -> Self {
         Self {
             call_id: call_id.into(),
             decision,

@@ -2,8 +2,8 @@ use super::super::test::{
     catalog, context, drawn, entry, form, key, listed, open_picker, press, settle, type_str,
 };
 use super::super::*;
-use crate::api::Provider;
 use crate::client::CatalogStatus;
+use crate::log::Provider;
 use crate::tui::{TuiEvent, harness::Screenplay};
 
 /// The ids of the rows on screen, in order.

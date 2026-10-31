@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::daemon::Host;
-use crate::frontend::Approval;
+use crate::log::Approval;
 use std::path::Path;
 
 struct Fixture {
@@ -239,9 +239,9 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
                 origin: crate::log::Origin::Model,
                 model: None,
                 probed_prefix: None,
-                axes: Some(crate::spotter::jev::Axes {
+                axes: Some(crate::log::Axes {
                     in_scope: 0.21,
-                    precedent: Some(crate::spotter::jev::Precedent {
+                    precedent: Some(crate::log::Precedent {
                         candidates: 0,
                         same: 0,
                         wider: 0,

@@ -37,8 +37,8 @@ use crate::api::{
 };
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
-use crate::frontend::{Approval, Frontend, Interrupt, SubmittedTurn};
-use crate::log::{CallId, EditState, LogEntry, Payload, RawResult, Seq, ToolCall, Turn};
+use crate::frontend::{Frontend, Interrupt, SubmittedTurn};
+use crate::log::{Approval, CallId, EditState, LogEntry, Payload, RawResult, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::process_monitor::{BgView, ProcessMonitor};
 use crate::project::{
@@ -661,11 +661,6 @@ impl Session {
 /// wedged loop can never hold a client forever. Far longer than any real turn — a clean settle wins
 /// the race in practice; this is only the backstop.
 const SETTLE_TIMEOUT: Duration = Duration::from_secs(300);
-
-/// The directory every session dir lives under, relative to the working directory a
-/// session was started in (docs/control-channel.md). One session is
-/// `<SESSION_BASE>/<id>/`, holding standard-named files.
-pub const SESSION_BASE: &str = ".efference";
 
 mod approvals;
 mod ask;

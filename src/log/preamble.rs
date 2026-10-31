@@ -3,8 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{LogEntry, Payload};
-use crate::persist::TriageModel;
+use super::{LogEntry, Payload, Provider, context};
 
 /// The inference identity persisted in a boot [`Payload::Preamble`].
 ///
@@ -15,7 +14,7 @@ use crate::persist::TriageModel;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoggedInference {
     pub connection: String,
-    pub provider: crate::api::Provider,
+    pub provider: Provider,
     pub model: String,
 }
 
@@ -23,7 +22,7 @@ impl LoggedInference {
     /// Construct the persisted identity from the three values recorded at boot.
     pub fn new(
         connection: impl Into<String>,
-        provider: crate::api::Provider,
+        provider: Provider,
         model: impl Into<String>,
     ) -> Self {
         Self {
@@ -47,6 +46,40 @@ pub fn recorded_inference(entries: &[LogEntry]) -> Option<&LoggedInference> {
             _ => None,
         })
         .flatten()
+}
+
+/// Which inference the triage step ran on (docs/triage.md).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TriageModel {
+    /// Triage ran on the session's main inference.
+    Shared,
+    /// Triage ran on its own inference, with the reasoning settings boot
+    /// resolved for it — the knob set that inference is called with, recorded
+    /// so a reader need not consult live configuration to reproduce the step.
+    Separate {
+        selection: LoggedInference,
+        thinking: bool,
+        auto_choice: bool,
+        effort: Option<String>,
+    },
+}
+
+impl TriageModel {
+    /// Triage on the main inference.
+    pub fn shared() -> Self {
+        Self::Shared
+    }
+
+    /// Triage on `selection`, with `thinking` and `auto_choice` off and no
+    /// effort override — the minimum a caller setting the other fields passes.
+    pub fn separate(selection: LoggedInference) -> Self {
+        Self::Separate {
+            selection,
+            thinking: false,
+            auto_choice: false,
+            effort: None,
+        }
+    }
 }
 
 /// The spotter and triage selections a `Preamble` records after a resume changed
@@ -79,7 +112,7 @@ impl Payload {
     pub fn preamble(
         identity: impl Into<String>,
         body: impl Into<String>,
-        context: crate::context::Resolved,
+        context: context::Resolved,
         inference: Option<LoggedInference>,
     ) -> Self {
         Payload::Preamble {

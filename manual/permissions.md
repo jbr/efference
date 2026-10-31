@@ -30,7 +30,7 @@ wants. Then you can:
 
 In the terminal, pressing Return with an empty message approves the call. The agent isn’t
 told about approvals; it sees only what you declined and why.
-<!-- src: src/frontend.rs::Approval; src/tui/control_strip.rs::strip_context_verbs; src/tui/state/gate.rs::submit_composer; web/src/ui/Gate.tsx::GateControls; src/agent/results.rs::rejected, aborted -->
+<!-- src: src/log/approval.rs::Approval; src/tui/control_strip.rs::strip_context_verbs; src/tui/state/gate.rs::submit_composer; web/src/ui/Gate.tsx::GateControls; src/agent/results.rs::rejected, aborted -->
 
 These are checks for mistakes, not a sandbox or a defense against a deliberately misled
 agent. Allowed commands run with your full access, the spotter can be wrong, and path

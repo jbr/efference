@@ -131,7 +131,7 @@ impl Toolbox {
             false,
         );
         self.providers.push(Provider::Sessions(Box::new(
-            McpServer::from_state_namespaced(state, &[], crate::control_tools::NAMESPACE),
+            McpServer::from_state_namespaced(state, &[], crate::protocol::agents::NAMESPACE),
         )));
     }
 
@@ -175,7 +175,7 @@ impl Toolbox {
     /// authorizes nothing and so clears on the fast path (docs/permissions.md). False
     /// when no sessions provider is mounted.
     pub fn authorizes_nothing(&self, call: &ToolCall) -> bool {
-        crate::control_tools::authorizes_nothing(call)
+        crate::protocol::agents::authorizes_nothing(call)
             && self
                 .providers
                 .iter()
@@ -190,7 +190,7 @@ impl Toolbox {
     pub fn resolve_bound_action(
         &self,
         call: &ToolCall,
-    ) -> anyhow::Result<crate::control_tools::BoundAction> {
+    ) -> anyhow::Result<crate::protocol::agents::BoundAction> {
         let sessions = self
             .providers
             .iter()
@@ -219,7 +219,7 @@ impl Toolbox {
     /// `<server>__<tool>` form — because the MCP spec lets a server's own tool name
     /// carry characters and lengths the request alphabet does not, and the namespace
     /// prefix counts against the ceiling. Empty means every name is legal.
-    pub fn illegal_names(&self, dialect: crate::api::WireDialect) -> Vec<String> {
+    pub fn illegal_names(&self, dialect: crate::log::WireDialect) -> Vec<String> {
         self.names()
             .iter()
             .filter_map(|name| {

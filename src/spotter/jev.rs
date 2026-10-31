@@ -36,7 +36,7 @@
 
 use crate::api::Endpoint;
 use crate::config::Config;
-use crate::log::{Origin, RequestOrigin, ToolCall};
+use crate::log::{Axes, Origin, Precedent, RequestOrigin, ToolCall};
 use crate::tools::ToolBrief;
 
 use super::{Read, Spotter, Spotting};
@@ -46,7 +46,7 @@ mod questions;
 mod relation;
 mod state;
 
-pub use questions::{Axes, Precedent, plain_reason};
+pub use questions::plain_reason;
 
 /// The decision-model spotter. Holds the [`Endpoint`] rather than a
 /// [`Client`](crate::api::Client): the decisions route is one JSON POST with no

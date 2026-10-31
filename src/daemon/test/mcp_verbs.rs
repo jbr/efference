@@ -3,8 +3,9 @@
 //! session, and a turn from an agent answers a question only by naming it.
 
 use super::*;
-use crate::control_tools::{ClientExecutor, Control, Decide, Decision, Executor, Message};
+use crate::control_tools::{ClientExecutor, Control, Decide, Executor, Message};
 use crate::log::Telemetry;
+use crate::protocol::agents::Decision;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
@@ -203,7 +204,7 @@ async fn escalate_over_mcp_goes_to_the_operator() {
 async fn every_sender_names_the_question() {
     let shared = child();
     let ask = ToolCall::new(
-        crate::process_monitor::ASK,
+        crate::log::ASK,
         "toolu_q",
         serde_json::json!({ "question": "Which branch?" }),
     );
@@ -263,7 +264,7 @@ async fn post_turns_holds_every_client_to_naming_its_question() {
         .append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
         .unwrap();
     let ask = ToolCall::new(
-        crate::process_monitor::ASK,
+        crate::log::ASK,
         "toolu_q",
         serde_json::json!({ "question": "Proceed?" }),
     );

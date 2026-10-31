@@ -35,7 +35,7 @@ fn adopt_logged(
 ) -> PathBuf {
     let dir = roots.0.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(crate::boot::LOG_NAME);
+    let path = dir.join(crate::session_dir::LOG_NAME);
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.paths = SessionPaths::new(
         crate::policy::Directories::new(roots.0.clone(), working.to_path_buf()),
@@ -182,7 +182,7 @@ async fn an_islands_exit_archives_a_session_mid_turn() {
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.client = Client::new(
         crate::api::Endpoint {
-            provider: crate::api::Provider::Anthropic,
+            provider: crate::log::Provider::Anthropic,
             url: Some(format!("http://{addr}/v1/messages")),
             auth_header: "x-api-key".into(),
             auth_value: "k".into(),

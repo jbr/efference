@@ -7,7 +7,7 @@ use crate::log::{LoggedInference, MadeBy};
 fn model() -> LoggedInference {
     LoggedInference {
         connection: "anthropic".into(),
-        provider: crate::api::Provider::Anthropic,
+        provider: crate::log::Provider::Anthropic,
         model: "claude-opus-5-5".into(),
     }
 }

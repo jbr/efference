@@ -5,8 +5,7 @@
 //! cut anywhere, so these lookups never stop at its edges.
 
 use super::*;
-use crate::frontend::Approval;
-use crate::log::{ContentBlock, Escalation, GateDecision, Seq, Spot, Telemetry};
+use crate::log::{Approval, ContentBlock, Escalation, GateDecision, Seq, Spot, Telemetry};
 
 /// One call, as the log issued it.
 pub(super) struct Call {

@@ -122,14 +122,14 @@ pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: b
     let targets = if all {
         let found = spot_report::resolve_spotter_logs(None)?;
         if found.is_empty() {
-            return Err(format!("no {LOG_NAME} under {BASE_DIR}/.").into());
+            return Err(format!("no {LOG_NAME} under {SESSION_BASE}/.").into());
         }
         found
     } else {
         let target = session
             .or(name)
             .or_else(|| session_ids().first().cloned())
-            .ok_or_else(|| CliError::from(format!("no {LOG_NAME} under {BASE_DIR}/.")))?;
+            .ok_or_else(|| CliError::from(format!("no {LOG_NAME} under {SESSION_BASE}/.")))?;
         let (path, label) = resolve_session_log(&target)?;
         vec![(label, path)]
     };

@@ -183,7 +183,7 @@ fn keep_fragment(saved_to: &Path, bytes: &[u8]) -> io::Result<()> {
     match OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(crate::daemon::permissions::FILE_MODE)
+        .mode(crate::session_dir::FILE_MODE)
         .open(saved_to)
     {
         Ok(mut file) => {

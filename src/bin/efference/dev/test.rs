@@ -89,7 +89,7 @@ async fn wire_messages_skips_the_unparseable_config() {
 fn wire_model_prefers_the_recorded_native_model() {
     let identity = efference::log::LoggedInference::new(
         "router",
-        efference::api::Provider::OpenRouter,
+        efference::log::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
     assert_eq!(wire_model(Some(&identity)), "google/gemini-3.7-flash");
@@ -103,7 +103,7 @@ fn wire_model_prefers_the_recorded_native_model() {
 fn wire_placements_follow_the_recorded_provider_and_model() {
     let identity = efference::log::LoggedInference::new(
         "router",
-        efference::api::Provider::OpenRouter,
+        efference::log::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
     assert_eq!(
@@ -131,7 +131,7 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
     let _ = std::fs::remove_file(&log_path);
     let identity = efference::log::LoggedInference::new(
         "anthropic",
-        efference::api::Provider::Anthropic,
+        efference::log::Provider::Anthropic,
         "claude",
     );
     let mut log = efference::persist::Log::create(&log_path, None).unwrap();
@@ -175,7 +175,7 @@ fn write_openrouter_image_log(path: &Path) {
 
     let identity = efference::log::LoggedInference::new(
         "router",
-        efference::api::Provider::OpenRouter,
+        efference::log::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
     let mut log = efference::persist::Log::create(path, None).unwrap();
@@ -657,8 +657,7 @@ fn ladder_gaps_parse_comma_separated_seconds() {
 /// absent one leaves the configured value standing (docs/tui.md).
 #[test]
 fn a_display_flag_overrides_its_tui_key_alone() {
-    use efference::inference::InferenceConfig;
-    use efference::tui::ImageMode;
+    use efference::inference::{ImageMode, InferenceConfig};
     let config = InferenceConfig::from_toml("[tui]\ntheme = \"Nord\"\nimages = \"off\"\n")
         .unwrap()
         .tui()

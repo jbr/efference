@@ -3,6 +3,7 @@
 use super::attention::Attender;
 use super::senders::Submission;
 use super::*;
+use crate::inference::ImageMode;
 
 /// Attach to a session and stay there until the operator leaves it.
 ///

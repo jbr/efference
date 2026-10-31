@@ -20,9 +20,9 @@ use serde_json::{Value, json};
 
 use crate::api::{Decisions, Instructions, Question};
 use crate::bash;
-use crate::log::ToolCall;
+use crate::log::{Compared, ToolCall};
 
-use super::questions::{Compared, RELATION_COUNTS, Reading};
+use super::questions::{RELATION_COUNTS, Reading};
 
 /// How many consented same-family calls are asked about, most recent first.
 const CANDIDATES_MAX: usize = 10;
@@ -122,7 +122,7 @@ pub(super) fn plaintext(call: &ToolCall) -> String {
     if let Some(arguments) = call.input.as_object() {
         for (name, value) in arguments
             .iter()
-            .filter(|(name, _)| *name != crate::tools::INTENT)
+            .filter(|(name, _)| *name != crate::log::INTENT)
         {
             let value = match value {
                 Value::String(s) => s.clone(),

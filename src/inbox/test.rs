@@ -67,7 +67,7 @@ fn assistant(seq: Seq) -> LogEntry {
     entry(
         seq,
         Payload::Assistant {
-            output: crate::log::AssistantOutput::empty(crate::api::WireDialect::Messages),
+            output: crate::log::AssistantOutput::empty(crate::log::WireDialect::Messages),
             excluded: None,
         },
     )

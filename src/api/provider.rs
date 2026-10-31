@@ -8,7 +8,8 @@
 //! capability source), and that interface is deferred until
 //! the in-code providers show what it must carry.
 //!
-//! This file holds the identity and per-provider policy (cache lifetime, keepalive
+//! The enum itself is [`crate::log::Provider`], because a boot records it; this file holds
+//! the identity's serde impls and the per-provider policy (cache lifetime, keepalive
 //! cap, placements, default models). The HTTP shape of a provider's requests is
 //! `provider/http.rs`; the capability types and their per-provider parses are
 //! `provider/capabilities.rs`; the lookups an [`Endpoint`] makes are
@@ -32,7 +33,6 @@ mod typesafe;
 pub use capabilities::{ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy};
 #[cfg(test)]
 pub(crate) use codex::seed_codex_catalog;
-pub use dialect::WireDialect;
 #[cfg(test)]
 pub(in crate::api) use fetch::parse_generation_cost;
 pub use prices::TokenPrices;
@@ -43,54 +43,6 @@ pub use row::{ListedModel, ModelKind, Price};
 /// rather than a catalog: the spotter shares the endpoint and wants the cheap
 /// band, and the arm's catalog reports no cost to pick from.
 const OPENAI_DEFAULT_SPOTTER_MODEL: &str = "gpt-5.6-luna";
-
-/// Which API family fronts the messages endpoint. Each variant knows its
-/// messages URL, its auth header shape, and its model-metadata endpoint — the
-/// operator declares one word and everything else is derived.
-///
-/// Serializes as its lowercase name ([`Provider::name`]), for state and boot
-/// reports; a request body never carries it (the dialect encoder is what a
-/// provider selects).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Provider {
-    /// Anthropic's own API: `x-api-key` auth, metadata at `GET /v1/models/{model}`.
-    Anthropic,
-    /// OpenRouter's Anthropic-Messages skin (`/api/v1/messages`): `authorization:
-    /// Bearer` auth, metadata at `GET /api/v1/models/{author}/{slug}/endpoints`
-    /// (ceilings) plus `GET /api/v1/model/{author}/{slug}` (effort levels).
-    OpenRouter,
-    /// OpenAI's Responses API (`/v1/responses`): `authorization: Bearer` auth,
-    /// capabilities from the compiled catalog in `provider/openai.rs` because
-    /// the Models endpoint reports none of the limits the boot path consumes.
-    OpenAI,
-    /// The Codex backend (`chatgpt.com/backend-api/codex/responses`): the same
-    /// Responses wire, billed to a ChatGPT/Codex subscription instead of the
-    /// platform balance. Auth is the OAuth access token Codex CLI caches in
-    /// `~/.codex/auth.json` plus its `ChatGPT-Account-ID`; the request shape
-    /// mirrors what Codex CLI sends ([`ResponsesProfile::Codex`]).
-    OpenAICodex,
-    /// TypeSafe's System One API (`/v1/systemone`): `authorization: Bearer`
-    /// auth, and **no inference dialect at all**. It serves decision models —
-    /// state plus typed questions in, a calibrated probability per question out
-    /// — so it can back the spotter rung (docs/permissions.md) and nothing else.
-    /// [`Self::inference_dialect`] returns `None` for it, and resolution refuses
-    /// it for the main and triage roles before anything downstream could ask.
-    TypeSafe,
-    /// An endpoint the operator declared rather than one this enum knows: a wire
-    /// dialect plus a base URL from `[connections.<name>]`
-    /// (docs/transport.md). The dialect is the payload because it is the one fact
-    /// no default can supply — everything else a custom connection needs is either
-    /// owned data on [`Endpoint`] (the URL, the auth header, extra headers) or
-    /// derived from the dialect here.
-    ///
-    /// Every per-provider quirk takes its conservative arm for this variant, and
-    /// derives from the dialect rather than being inherited from a named provider
-    /// that happens to speak the same one. Those values — a sticky-routing header,
-    /// an attribution header, a cache-key field, a placement workaround — are
-    /// facts about one vendor's deployment, so copying OpenRouter's set onto an
-    /// arbitrary endpoint would send it another vendor's workarounds.
-    Custom(WireDialect),
-}
 
 impl Serialize for Provider {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

@@ -41,7 +41,8 @@ which carry no `seq`.
 ## Attachments — the store, and two ways into it
 
 The attachment store is a **plain directory**, `.efference/<id>/attachments/`, beside
-`config.toml` (`src/attachments.rs`, `src/daemon/attachments.rs`). Files reach it two ways, and
+`config.toml` (`src/attachments.rs`, `src/daemon/attachments.rs`; the `Arrival` a notice or a
+turn records, and its two renderings, `src/log/attachment.rs`). Files reach it two ways, and
 both are described the same way — by a **notice** stating what arrived and where — but they
 are announced on different rails:
 

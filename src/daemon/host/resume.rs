@@ -18,6 +18,7 @@ use super::preparation::authorization_for;
 use super::*;
 use crate::daemon::starting::{Stage, Starting, StartingParts};
 use crate::inference::ResumeSwitch;
+use crate::session_dir::{SESSION_BASE, plain_id};
 use serde::{Deserialize, Serialize};
 
 /// Whether a session is running on this host.
@@ -167,7 +168,7 @@ impl Host {
         id: &str,
         body: PatchSession,
     ) -> Result<Resume, ResumeRefused> {
-        if !tcp::plain_id(id) {
+        if !plain_id(id) {
             return Err(ResumeRefused::Refused(format!(
                 "session name {id:?} is not a single plain path segment"
             )));
@@ -338,7 +339,7 @@ impl Host {
             working: None,
         };
         let Some(recording) =
-            crate::persist::load_recording(session_dir.join(crate::boot::LOG_NAME)).ok()
+            crate::persist::load_recording(session_dir.join(crate::session_dir::LOG_NAME)).ok()
         else {
             return unread;
         };

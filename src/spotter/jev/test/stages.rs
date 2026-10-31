@@ -3,8 +3,8 @@
 //! when the route refuses it, against a scripted endpoint.
 
 use super::*;
-use crate::api::{Provider, StageRecorder, StageSink, WireDialect};
-use crate::log::{RequestStage, RequestStageKind};
+use crate::api::{StageRecorder, StageSink};
+use crate::log::{Provider, RequestStage, RequestStageKind, WireDialect};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};

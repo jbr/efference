@@ -2,6 +2,7 @@
 
 use super::*;
 
+use crate::inference::ImageMode;
 use crate::terminal_title::{self, TerminalTitle};
 use crate::tui::frame_cost::FrameCost;
 use ratatui::prelude::Backend;

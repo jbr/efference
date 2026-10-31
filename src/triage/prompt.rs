@@ -202,7 +202,7 @@ pub(super) fn append_inbox_and_background(
 /// The whole item is carried, not just the name, so [`append_roster`] can re-render it as
 /// the preamble spelled it — summary and path included.
 pub(super) fn surfaceable_roster(prefix: &[LogEntry]) -> Vec<Item> {
-    let mut sections: &[crate::context::Section] = &[];
+    let mut sections: &[crate::log::context::Section] = &[];
     let mut surfaced: HashSet<&str> = HashSet::new();
     for entry in prefix {
         match &entry.payload {

@@ -5,6 +5,7 @@ use crate::client::Client;
 use crate::persist::Log;
 use mcplease::traits::Tool as _;
 use mcplease::types::{JsonRpcRequest, JsonRpcResponse, RequestContext};
+use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 

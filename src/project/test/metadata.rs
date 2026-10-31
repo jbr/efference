@@ -242,8 +242,7 @@ fn cold_records_project_to_identical_bytes() {
 /// projected byte.
 #[test]
 fn gate_decisions_project_to_identical_bytes() {
-    use crate::frontend::Approval;
-    use crate::log::{ConfigChange, GateDecision};
+    use crate::log::{Approval, ConfigChange, GateDecision};
     let without = serde_json::to_string(&project(&sample_log())).unwrap();
     let without_semantic = format!("{:?}", project_semantic(&sample_log()));
     let decisions = [

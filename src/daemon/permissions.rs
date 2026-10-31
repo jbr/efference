@@ -16,12 +16,7 @@
 
 use std::path::Path;
 
-/// Owner-only mode for the state directory and the host socket: nothing
-/// another local account can traverse or connect to.
-pub(crate) const DIR_MODE: u32 = 0o700;
-
-/// Owner read/write for the state files.
-pub(crate) const FILE_MODE: u32 = 0o600;
+use crate::session_dir::{DIR_MODE, FILE_MODE};
 
 /// The files beside the control socket that hold user state or secrets.
 /// `state.db` is the current store (the name of `crate::state::RELATIVE_PATH`)

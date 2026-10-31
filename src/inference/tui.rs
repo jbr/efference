@@ -11,7 +11,6 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::api::Error;
-use crate::tui::ImageMode;
 
 /// `[tui]`: how the terminal UI draws. Read by each terminal client, not by the host.
 // `[tui]` as written. Every key is optional. The `///` docs are the published user schema's
@@ -32,6 +31,32 @@ pub struct TuiConfig {
     /// for the streaming render.
     #[serde(default)]
     pub frame_cost: bool,
+}
+
+/// How the terminal UI draws images in tool results. Default `"auto"`.
+// How the TUI picks its graphics protocol for result images (docs/tui.md). Detection is a
+// startup act — `Picker::from_query_stdio` runs once in `ui_loop`, before the crossterm reader
+// thread takes stdin — and tmux makes detection lie in both directions (its DA1 masks a
+// kitty-capable outer terminal; passthrough can make OSC 1337 work with nothing detectable
+// saying so), so the override ships in the same change as detection. Set by `images` under
+// `[tui]` in the user configuration, spelled in lowercase; the `///` docs are its published
+// hover text (docs/config-schemas.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageMode {
+    /// Ask the terminal which graphics protocol it supports, and fall back to half-block
+    /// characters when nothing answers.
+    #[default]
+    Auto,
+    /// Use the kitty graphics protocol, for a kitty terminal that tmux hides from
+    /// detection.
+    Kitty,
+    /// Use iTerm2's inline image protocol, for a terminal detection missed.
+    // Env identification is weaker than kitty's query fence, so forcing it is sometimes the
+    // truth detection missed.
+    Iterm2,
+    /// Show each image as a one-line reference.
+    Off,
 }
 
 impl TuiConfig {

@@ -115,15 +115,15 @@ impl SessionIds {
         };
         let mut collisions = Vec::new();
         for root in roots {
-            let base = root.join(crate::daemon::SESSION_BASE);
+            let base = root.join(crate::session_dir::SESSION_BASE);
             let Ok(entries) = std::fs::read_dir(&base) else {
                 continue;
             };
             let mut ids: Vec<String> = entries
                 .flatten()
-                .filter(|entry| entry.path().join(crate::boot::LOG_NAME).is_file())
+                .filter(|entry| entry.path().join(crate::session_dir::LOG_NAME).is_file())
                 .filter_map(|entry| entry.file_name().into_string().ok())
-                .filter(|id| crate::daemon::tcp::plain_id(id))
+                .filter(|id| crate::session_dir::plain_id(id))
                 .collect();
             ids.sort();
             for id in ids {

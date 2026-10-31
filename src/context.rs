@@ -5,7 +5,9 @@
 //! optional leading frontmatter block off the body and decides the file's **mode** — **inlined**
 //! (the whole body rides in the cached preamble, the CLAUDE.md role) or **listed** (only a one-line
 //! stub rides, the body fetched on demand via the `read` tool). Mode is the *file's* call, carried
-//! in its frontmatter; the config never decides it (docs/context.md).
+//! in its frontmatter; the config never decides it (docs/context.md). The shapes it produces,
+//! [`Resolved`], [`Section`] and [`Item`], are defined in [`crate::log::context`], because a
+//! boot preamble records them; the rendering and the resolution are here.
 //!
 //! Frontmatter is recognized **only at the very start of the file** (first line `---`), so a `---`
 //! horizontal rule mid-document is never mistaken for it. The parser is deliberately minimal —
@@ -17,57 +19,8 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
 use crate::config::{ContextEntry, ContextSource};
-
-/// A fully-resolved `[context]` ready to render into the preamble: sections in **document order**
-/// (docs/context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.
-/// This is what [`crate::env`] builds from disk at boot and freezes into the cached prefix.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct Resolved {
-    pub sections: Vec<Section>,
-}
-
-/// One rendered section: a labeled group (`heading = Some`) or a bare entry (`heading = None`).
-/// `description` is the operator's prose hint about how to use these files (e.g. how to read or
-/// write a memory), rendered as a `<description>` child element inside the group wrapper.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Section {
-    pub heading: Option<String>,
-    pub items: Vec<Item>,
-    pub description: Option<String>,
-}
-
-/// A single resolved context item — an inlined file (body in full) or a listed stub (read on demand).
-/// Both render as a name tag `<name>…</name>` (docs/context.md); the name is the file's
-/// frontmatter `name`, else its basename.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Item {
-    /// The full body rides in the preamble inside `<name>…</name>`. `path` is kept for provenance /
-    /// the boot snapshot, not rendered (the tag name is the identity).
-    Inline {
-        name: String,
-        path: String,
-        body: String,
-    },
-    /// A one-line stub `<name>{description} Read {path} for the full file.</name>`; the body is read
-    /// on demand via `path`.
-    Listed {
-        name: String,
-        description: String,
-        path: String,
-    },
-    /// A dynamic section (docs/context.md): `body` is the stdout of `command`, run
-    /// **once at boot** with the session cwd — frozen and snapshotted exactly like a static file, so
-    /// `Date = { exec = "date" }` honestly means "the date as of session boot". Renders identically
-    /// to [`Item::Inline`]; `command` is kept for provenance, not rendered.
-    Exec {
-        name: String,
-        command: String,
-        body: String,
-    },
-}
+use crate::log::context::{Item, Resolved, Section};
 
 /// The instructional lead-in before the tagged block — teaches the model that a tag holding a file's
 /// full text is present as-is, while a tag holding a short summary ending in "Read PATH" is a pointer

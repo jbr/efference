@@ -218,7 +218,7 @@ fn proposed_move(
     // a channel for talking past the gate on assertion alone.
     let mut input = call.input.clone();
     if let Some(object) = input.as_object_mut() {
-        object.remove(crate::tools::INTENT);
+        object.remove(crate::log::INTENT);
     }
     let mut proposed = json!({
         "kind": "tool_call",

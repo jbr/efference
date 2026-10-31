@@ -152,7 +152,7 @@ Read top-down; open the subsystem doc you need.
 
 | Subsystem | Doc | Governing modules |
 | --- | --- | --- |
-| The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/log.rs`, `src/project.rs`, `src/persist.rs` |
+| The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/log.rs` (+ `src/log/`), `src/project.rs`, `src/persist.rs` |
 | Per-result triage — how every tool result is triaged, and the text view a separate triage model reads | [triage.md](triage.md) | `src/triage.rs`, `src/triage/text_view.rs`, `src/project.rs` |
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry; which tools a session mounts) | [tools.md](tools.md) | `src/tools.rs`, `src/tools/lsp.rs`, `src/bash.rs`, `src/agent/telemetry.rs`, `src/config/tools.rs` |
 | Trajectory consolidation (completed working spans and juncture checks) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
@@ -166,6 +166,8 @@ Read top-down; open the subsystem doc you need.
 | Worktree sessions — a session's own git checkout, and the project/working directory pair | [worktrees.md](worktrees.md) | `src/worktree.rs`, `src/policy/directories.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | Background processes — the process monitor | [process-monitor.md](process-monitor.md) | `src/process_monitor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
+| The session directory — the base session dirs live under, the log's file name, which ids may name a session, and the owner-only modes it and its files are created with | [control-channel.md](control-channel.md), [state-store.md](state-store.md) | `src/session_dir.rs`, `src/daemon/permissions.rs` |
+| The `agents__*` tool contract — the namespace, the wire names the loop treats specially, the `decide` argument, and the `BoundAction` a decision binds | [tools.md](tools.md), [permissions.md](permissions.md) | `src/protocol.rs`, `src/protocol/agents.rs`, `src/control_tools.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |
 | The `[context]` preamble builder — what the session boots knowing | [context.md](context.md) | `src/context.rs`, `src/config.rs`, `src/env.rs`, `src/policy.rs`, `src/guide.rs` |
 | Operating a session — what an operator can see, change, and say (usage, not architecture) | [operating.md](operating.md) | `src/client.rs`, `src/control_tools.rs`, `src/bin/efference/control.rs`, `src/bin/efference/verbs.rs` |
@@ -205,6 +207,31 @@ family under `http/`, and `stream.rs` (the control channel), `config_edits.rs` (
 inbox), `background.rs` (the process monitor), `phase.rs` (where the loop is) and `verbs.rs`
 (what each loop route would answer now), plus `pace.rs`, `approvals.rs`, `metrics.rs`,
 `keepalive.rs`, `watch.rs`, and `views.rs` (the `/state` and `/log` readouts).
+
+## Dependency direction
+
+The top-level modules import in one direction, and `src/test/layering.rs` fails on an
+import that runs the other way. Two rules hold:
+
+- **`log` imports no other top-level module.** It holds the vocabulary a record is
+  written in, which includes the shapes other subsystems fill in or read: a provider and
+  its wire dialect, a gate's `Approval`, the resolved `[context]`, an attachment's
+  `Arrival`, the spotter's `Axes`, the triage model a preamble records, and the names a
+  recorded call is read by (`INTENT`, `ASK`). Behavior that needs another subsystem stays
+  with it, as `impl` blocks on the type the log defines: `api` implements `Provider`, and
+  `context` resolves and renders `Resolved`.
+- **A module outside the outer set imports nothing from it.** The outer set is `daemon`
+  and `boot`, which host sessions; `control_tools`, the session-control verbs; and the
+  clients `client`, `tui`, `setup` and the `bin` crate. What the inner modules and the
+  outer ones both need sits in modules that import nothing above them: `src/session_dir.rs`
+  (where a session lives on disk) and `src/protocol.rs` (the names and shapes that cross
+  the control channel or the tool wire).
+
+The imports that still run against the second rule are named in the test, each by the
+file that makes it and the path it imports: the turn loop (`agent`) reads the session,
+its phase types and its streamed deltas from `daemon`, and the toolbox (`tools`) mounts
+the session-control tools over `daemon::Host` and `control_tools`. A new import of that
+kind fails the test, and so does a named one that has gone, until its line is deleted.
 
 ## Repository layout
 

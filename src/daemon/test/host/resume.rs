@@ -334,13 +334,13 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
         let mut metadata = crate::persist::SessionMetadata::new(
             id,
             &roots.0,
-            crate::log::LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
-            crate::log::LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
-            crate::persist::TriageModel::shared(),
+            crate::log::LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
+            crate::log::LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
+            crate::log::TriageModel::shared(),
         );
         metadata.created_by = Some(created_by.into());
         metadata.detached = detached;
-        Log::create(dir.join(crate::boot::LOG_NAME), Some(metadata)).unwrap();
+        Log::create(dir.join(crate::session_dir::LOG_NAME), Some(metadata)).unwrap();
         dir
     };
 

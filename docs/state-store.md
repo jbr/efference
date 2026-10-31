@@ -79,7 +79,9 @@ that the sign-in was recorded, approved, or unknown.
 The creating process's umask need not be as private as this content warrants — model
 picks, subscriptions, the device labels — so the tightening is part of boot rather than
 of each file's creation. It is one-way (a file already stricter stays so), skips absent
-files, and warns without failing boot when a mode cannot be changed.
+files, and warns without failing boot when a mode cannot be changed. The two modes,
+`0700` for directories and `0600` for files, are constants in `src/session_dir.rs`, which the
+writers of a session's log and attachments read as well.
 
 A project's `.efference/` is owner-only by the same rule, applied by the sessions that
 use it rather than at boot (`src/daemon/permissions.rs`, called from `src/boot/mint.rs` and

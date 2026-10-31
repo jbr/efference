@@ -198,7 +198,7 @@ impl PingCost {
 }
 
 /// The cache keepalive (docs/transport.md): fire a ping (capped at
-/// [`crate::api::Provider::keepalive_output_cap`]) when the lineage's cached prefix nears
+/// [`crate::log::Provider::keepalive_output_cap`]) when the lineage's cached prefix nears
 /// eviction during idle, so the next real turn resumes hot. Pure transport — it reads the
 /// prefix and records the usage; the log is never touched.
 ///

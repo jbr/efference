@@ -223,7 +223,7 @@ pub(crate) fn resolve_usage_targets(
             .filter(|(_, path)| path.is_file())
             .collect();
         if found.is_empty() {
-            return Err(format!("no {USAGE_NAME} under {BASE_DIR}/.").into());
+            return Err(format!("no {USAGE_NAME} under {SESSION_BASE}/.").into());
         }
         return Ok(found);
     }

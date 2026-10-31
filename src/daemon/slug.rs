@@ -94,7 +94,7 @@ mod test {
         let (adjective, noun) = id.split_once('-').expect("adjective-noun");
         assert!(ADJECTIVES.contains(&adjective));
         assert!(NOUNS.contains(&noun));
-        assert!(super::super::tcp::plain_id(&id));
+        assert!(crate::session_dir::plain_id(&id));
     }
 
     #[test]

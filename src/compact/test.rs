@@ -138,7 +138,7 @@ fn a_second_compaction_reads_the_first_account_and_summarizes_only_after_it() {
                 with_header("The first account."),
                 LoggedInference {
                     connection: "anthropic".into(),
-                    provider: crate::api::Provider::Anthropic,
+                    provider: crate::log::Provider::Anthropic,
                     model: "claude-opus-5-5".into(),
                 },
             )),

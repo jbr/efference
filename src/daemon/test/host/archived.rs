@@ -269,9 +269,9 @@ async fn a_dormant_session_is_found_under_a_remembered_root() {
 /// main `c/main` and spotter `c/spot` with separate triage on `c/tri`, followed by a
 /// preamble that switched the spotter to `c/spot-2` at a resume.
 fn write_recorded_session(root: &Path, id: &str) -> PathBuf {
-    use crate::log::{LoggedInference, RecordedRoles};
-    use crate::persist::{SessionMetadata, TriageModel};
-    let inference = |model: &str| LoggedInference::new("c", crate::api::Provider::Anthropic, model);
+    use crate::log::{LoggedInference, RecordedRoles, TriageModel};
+    use crate::persist::SessionMetadata;
+    let inference = |model: &str| LoggedInference::new("c", crate::log::Provider::Anthropic, model);
     let dir = root.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
     let metadata = SessionMetadata::new(

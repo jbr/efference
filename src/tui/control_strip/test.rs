@@ -337,7 +337,7 @@ fn strip_gate_set_leads_with_approve() {
     assert!(
         matches!(
             play.took_approval(),
-            Some((id, crate::frontend::Approval::Approve)) if id == "toolu_g"
+            Some((id, crate::log::Approval::Approve)) if id == "toolu_g"
         ),
         "…with an Approve decision"
     );
@@ -356,10 +356,7 @@ fn strip_abort_sends_abort_and_keeps_the_draft() {
     play.route_key(KeyCode::Right, NONE); // abort
     play.route_key(KeyCode::Enter, NONE);
     assert!(
-        matches!(
-            play.took_approval(),
-            Some((_, crate::frontend::Approval::Abort))
-        ),
+        matches!(play.took_approval(), Some((_, crate::log::Approval::Abort))),
         "⏎ on abort sends Abort"
     );
     assert_eq!(

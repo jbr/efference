@@ -176,7 +176,7 @@ fn transcript_pending_bound_approval_gate() {
     play.assistant(
         "Asking the child to remove it.",
         vec![ToolCall::new(
-            crate::control_tools::DECIDE_WIRE_NAME,
+            crate::protocol::agents::DECIDE_WIRE_NAME,
             "toolu_parent",
             json!({ "agent": "child", "seq": "4", "decision": "allow" }),
         )],

@@ -285,7 +285,7 @@ fn a_cut_history_marks_the_digest_end_and_the_history_end() {
 fn a_triage_summary_leads_and_replaces_its_range() {
     let (mut log, triaged) = session(4, 64);
     let anchor = log.pop().unwrap();
-    let model = LoggedInference::new("c", crate::api::Provider::Anthropic, "m");
+    let model = LoggedInference::new("c", crate::log::Provider::Anthropic, "m");
     log.push(entry(
         50,
         Payload::Summary(

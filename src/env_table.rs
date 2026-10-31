@@ -606,7 +606,7 @@ impl EnvPolicy {
     /// Mask a resolved `[context]` listing before the preamble is rendered from
     /// it, so the rendered `system` string and the `Preamble` snapshot of it
     /// stay byte-identical (docs/context.md).
-    pub fn mask_context(&self, resolved: &mut crate::context::Resolved) {
+    pub fn mask_context(&self, resolved: &mut crate::log::context::Resolved) {
         self.masker.mask_context(resolved);
     }
 }

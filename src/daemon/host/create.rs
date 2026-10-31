@@ -10,6 +10,7 @@
 use super::preparation::authorization_for;
 use super::*;
 use crate::daemon::starting::{Stage, Starting, StartingParts};
+use crate::session_dir::{SESSION_BASE, plain_id};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -56,7 +57,7 @@ impl Host {
         // when any root holds it.
         let id = match body.name.clone() {
             Some(id) => {
-                if !tcp::plain_id(&id) {
+                if !plain_id(&id) {
                     return Err(format!(
                         "session name {id:?} is not a single plain path segment"
                     ));

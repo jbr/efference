@@ -28,7 +28,7 @@ pub use mount::MountedSpotter;
 use crate::api::{Client, Endpoint, RequestUsage};
 use crate::bash;
 use crate::config::Config;
-use crate::log::{Origin, Stance, ToolCall};
+use crate::log::{Axes, Origin, Stance, ToolCall};
 use crate::project::{UserPart, WireTurn};
 use crate::tools::ToolBrief;
 use mcplease::types::Tool as ToolDefinition;
@@ -69,7 +69,7 @@ pub struct Spotting {
     ///
     /// Recorded on the `Spot` entry (docs/permissions.md), so the figures behind a
     /// verdict can be read back without re-requesting anything.
-    pub axes: Option<jev::Axes>,
+    pub axes: Option<Axes>,
 }
 
 impl Spotting {
@@ -542,7 +542,7 @@ fn render_move(
         // (docs/permissions.md).
         let mut shown = call.input.clone();
         if let Some(object) = shown.as_object_mut() {
-            object.remove(crate::tools::INTENT);
+            object.remove(crate::log::INTENT);
         }
         let input = serde_json::to_string_pretty(&shown).unwrap_or_else(|_| shown.to_string());
         let display = crate::mcp::display_name(&call.name);

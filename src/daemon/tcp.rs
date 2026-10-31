@@ -25,7 +25,7 @@ mod gate;
 mod headers;
 mod routes;
 
-pub(crate) use gate::{Surface, gate, plain_id};
+pub(crate) use gate::{Surface, gate};
 pub(crate) use headers::SecurityHeaders;
 pub(crate) use routes::{enrollment_routes, frontend, pair_routes};
 

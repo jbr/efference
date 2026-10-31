@@ -86,8 +86,8 @@ fn recorded_inference_comes_from_the_latest_boot_preamble() {
         source: None,
         payload: Payload::preamble("", "sys", Default::default(), inference),
     };
-    let first = LoggedInference::new("first", crate::api::Provider::Anthropic, "claude");
-    let second = LoggedInference::new("second", crate::api::Provider::OpenRouter, "google/gemini");
+    let first = LoggedInference::new("first", Provider::Anthropic, "claude");
+    let second = LoggedInference::new("second", Provider::OpenRouter, "google/gemini");
     let entries = vec![
         entry(0, Some(first.clone())),
         entry(1, Some(second.clone())),
@@ -105,11 +105,7 @@ fn recorded_inference_comes_from_the_latest_boot_preamble() {
 
 #[test]
 fn logged_inference_has_a_stable_json_shape() {
-    let identity = LoggedInference::new(
-        "router",
-        crate::api::Provider::OpenRouter,
-        "google/gemini-3.7-flash",
-    );
+    let identity = LoggedInference::new("router", Provider::OpenRouter, "google/gemini-3.7-flash");
     let json = serde_json::to_string(&identity).unwrap();
     assert_eq!(
         json,
@@ -158,7 +154,7 @@ fn latest_title_latest_entry_wins() {
 /// before the field existed still reads (docs/permissions.md).
 #[test]
 fn a_spot_carries_the_decision_axes_and_old_entries_still_read() {
-    let axes = crate::spotter::jev::Axes {
+    let axes = Axes {
         in_scope: 0.94,
         path_outside: 0.19,
         sketch: Some(vec![0.9, 0.05, 0.03, 0.01, 0.01]),

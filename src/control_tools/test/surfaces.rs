@@ -2,6 +2,7 @@
 //! fills in, and the hints an approval UX shows (docs/tools.md).
 
 use super::super::*;
+use crate::protocol::agents::Decision;
 use mcplease::traits::AsToolsList;
 
 /// Each set's advertised names, in order: a mounting harness caches the list, and

@@ -178,7 +178,7 @@ fn the_edit_family_omits_its_content_and_emits_no_body() {
 #[test]
 fn a_hand_off_puts_the_brief_under_whom_it_is_for_as_prose() {
     let view = call_view(
-        crate::control_tools::HAND_OFF_WIRE_NAME,
+        crate::protocol::agents::HAND_OFF_WIRE_NAME,
         &json!({"brief": "Greet the operator.", "intent": "hand off"}),
     );
     assert_eq!(view.args, Some(vec![]));

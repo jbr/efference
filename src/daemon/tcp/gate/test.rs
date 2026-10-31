@@ -415,14 +415,10 @@ fn the_dev_servers_module_graph_is_anonymous() {
     );
 }
 
-/// Ids are validated before they are joined onto a path: only a plain segment names
-/// a session, and the session-prefixed client routes are offered for exactly those.
+/// The session-prefixed client routes are offered for exactly the ids a host would
+/// accept (`session_dir::plain_id`).
 #[test]
-fn only_plain_ids_name_a_session() {
-    assert!(plain_id("work-1.2"));
-    for bad in ["", ".", "..", "a/b", "/etc", "a b", "wörk"] {
-        assert!(!plain_id(bad), "{bad:?} passed as a session id");
-    }
+fn session_prefixed_routes_need_a_plain_id() {
     assert_eq!(session_scoped("/sessions/work"), Some("/"));
     assert_eq!(session_scoped("/sessions/work/"), Some("/"));
     assert_eq!(session_scoped("/sessions/work/tree"), Some("/tree"));

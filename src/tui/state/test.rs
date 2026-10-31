@@ -160,10 +160,10 @@ fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
     s.submit_composer("look".into());
     assert!(srx.try_recv().is_err(), "a send waits for its upload");
 
-    let arrival = crate::attachments::Arrival {
+    let arrival = crate::log::attachment::Arrival {
         name: name.clone(),
         path: format!("att/composer/{name}"),
-        kind: crate::attachments::Kind::Binary { bytes: 1 },
+        kind: crate::log::attachment::Kind::Binary { bytes: 1 },
     };
     s.upload_landed(key, Ok(arrival.clone()));
     s.submit_composer("look".into());

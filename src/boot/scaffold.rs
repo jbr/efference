@@ -3,9 +3,10 @@
 
 use std::path::Path;
 
-use super::{BASE_DIR, CONFIG_NAME};
+use super::CONFIG_NAME;
 use crate::api::Error;
 use crate::config::{ConfigSource, LoadedConfig};
+use crate::session_dir::SESSION_BASE;
 
 /// Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).
 ///
@@ -31,7 +32,7 @@ pub(super) fn self_surface_grants(
         read: true,
         write: false,
     };
-    paths.insert(BASE_DIR.to_string(), crate::config::Perms::default());
+    paths.insert(SESSION_BASE.to_string(), crate::config::Perms::default());
     for path in [
         session_dir.join(CONFIG_NAME),
         crate::attachments::dir_for_session(session_dir),

@@ -30,7 +30,7 @@ fn adopt_child(
 ) -> PathBuf {
     let dir = roots.0.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(crate::boot::LOG_NAME);
+    let path = dir.join(crate::session_dir::LOG_NAME);
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.paths = SessionPaths::new(
         crate::policy::Directories::new(roots.0.clone(), roots.0.join("one")),
@@ -66,7 +66,7 @@ fn adopt_worktree(
         dir.clone(),
     )
     .unwrap();
-    boot.log = Log::create(dir.join(crate::boot::LOG_NAME), None).unwrap();
+    boot.log = Log::create(dir.join(crate::session_dir::LOG_NAME), None).unwrap();
     register.reserve(id, &roots.0).unwrap();
     host.adopt(id.into(), SessionRuntime::start(boot, host.swansong()))
         .unwrap();
@@ -184,7 +184,7 @@ async fn an_empty_session_with_a_dirty_worktree_is_archived() {
     let body = json(&body);
     assert_eq!(body["state"], "archived");
     assert!(body["worktree"]["kept"].is_string());
-    assert!(dir.join(crate::boot::LOG_NAME).is_file());
+    assert!(dir.join(crate::session_dir::LOG_NAME).is_file());
     host.swansong().shut_down().await;
 }
 

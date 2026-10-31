@@ -44,7 +44,7 @@ fn another_tool_renders_as_its_name_and_argument_lines() {
             "path": "src/lib.rs",
             "count": 3,
             "text": "one\ntwo",
-            crate::tools::INTENT: "a plea",
+            crate::log::INTENT: "a plea",
         }),
     );
     assert_eq!(

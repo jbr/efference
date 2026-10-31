@@ -141,7 +141,7 @@ pub(crate) fn resolve_spotter_logs(
         return Ok(vec![(id, log)]);
     }
     let mut out = Vec::new();
-    let base = Path::new(BASE_DIR);
+    let base = Path::new(SESSION_BASE);
     if !base.is_dir() {
         return Ok(out);
     }
@@ -175,7 +175,7 @@ pub(crate) fn spotter_log(
 
     let logs = resolve_spotter_logs(path)?;
     if logs.is_empty() {
-        eprintln!("no session logs found (looked under {BASE_DIR}/*/{LOG_NAME}).");
+        eprintln!("no session logs found (looked under {SESSION_BASE}/*/{LOG_NAME}).");
         return Ok(());
     }
     let tty = std::io::stdout().is_terminal();

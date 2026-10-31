@@ -1,9 +1,8 @@
 //! Logs for the conversation and zoom tests, built through the production appenders.
 
-use crate::frontend::Approval;
 use crate::log::{
-    AssistantOutput, ContentBlock, GateDecision, Origin, Payload, Seq, Spot, Stance, Telemetry,
-    ToolCall,
+    Approval, AssistantOutput, ContentBlock, GateDecision, Origin, Payload, Seq, Spot, Stance,
+    Telemetry, ToolCall,
 };
 use crate::persist::Log;
 
@@ -86,7 +85,7 @@ pub(super) fn bash(id: &str, command: &str, intent: &str) -> ToolCall {
 
 pub(super) fn ask(id: &str, question: &str) -> ToolCall {
     ToolCall::new(
-        crate::process_monitor::ASK,
+        crate::log::ASK,
         id,
         serde_json::json!({ "question": question }),
     )

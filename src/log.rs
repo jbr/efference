@@ -11,13 +11,18 @@ use serde_json::Value;
 mod curation;
 pub use curation::result_verdicts;
 
+mod approval;
 mod assistant;
+pub mod attachment;
 mod cold;
 mod completions;
 mod config_edit;
+pub mod context;
 mod exclusion;
+mod names;
 mod preamble;
 mod process;
+mod provider;
 mod push;
 mod request;
 mod result;
@@ -34,6 +39,7 @@ mod worktree;
 
 #[cfg(test)]
 mod test;
+pub use approval::Approval;
 pub use assistant::{
     AssistantOutput, MessagesOutputBlock, ResponsesMessageContent, ResponsesOutputItem,
     ResponsesPhase, ResponsesReasoningSummary, ResponsesReasoningText,
@@ -42,14 +48,18 @@ pub use cold::{ColdEvent, ColdReason, ReleasedBy, UnparkCause};
 pub use completions::CompletionsMessage;
 pub use config_edit::{ConfigChange, ConfigEdit, EditState};
 pub use exclusion::Exclusion;
-pub use preamble::{LoggedInference, RecordedRoles, recorded_inference, recorded_roles};
+pub use names::{ASK, INTENT};
+pub use preamble::{
+    LoggedInference, RecordedRoles, TriageModel, recorded_inference, recorded_roles,
+};
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
+pub use provider::{Provider, WireDialect};
 pub use push::{
     AttentiveClient, DeliveryOutcome, DeviceDelivery, MomentKind, PushCancel, PushEvent, PushRecord,
 };
 pub use request::{RequestOrigin, RequestStage, RequestStageKind};
 pub use result::{ContentElision, RawResult, ResultImage};
-pub use spot::{Spot, Stance};
+pub use spot::{Axes, Compared, Precedent, Spot, Stance};
 pub use stops::Stop;
 pub use summary::{Audience, MadeBy, Summary};
 pub use telemetry::{ContinueOrigin, Escalation, GateDecision, InterruptOrigin, Telemetry};
@@ -297,7 +307,7 @@ pub enum Payload {
         identity: String,
         body: String,
         #[serde(default)]
-        context: crate::context::Resolved,
+        context: context::Resolved,
         /// The fixed main inference identity chosen when this session booted:
         /// connection, provider, and provider-native model id. It is log metadata
         /// only — an offline reader uses it to derive the historical dialect and
@@ -437,7 +447,7 @@ pub enum ContentBlock {
     Text(String),
     Thinking { text: String, signature: String },
     RedactedThinking { data: String },
-    Attachment(crate::attachments::Arrival),
+    Attachment(attachment::Arrival),
 }
 
 /// A tool invocation emitted by the model. `input` is a [`serde_json::Value`],
@@ -465,7 +475,7 @@ impl ToolCall {
     /// (docs/tools.md). Builds; it does not amend a recorded call.
     pub fn with_intent(mut self, intent: impl Into<String>) -> Self {
         if let Value::Object(map) = &mut self.input {
-            map.insert(crate::tools::INTENT.into(), Value::String(intent.into()));
+            map.insert(INTENT.into(), Value::String(intent.into()));
         }
         self
     }
@@ -481,7 +491,7 @@ impl ToolCall {
     /// (docs/log-and-projection.md). Only the dispatch path removes it.
     pub fn intent(&self) -> Option<&str> {
         self.input
-            .get(crate::tools::INTENT)
+            .get(INTENT)
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|intent| !intent.is_empty())

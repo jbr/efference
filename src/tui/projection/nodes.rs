@@ -11,7 +11,7 @@ use super::*;
 /// dimmed lines (not markdown) so the in-flight echo doesn't reflow as it commits.
 pub(in crate::tui) fn pending_turn(
     text: &str,
-    attachments: &[crate::attachments::Arrival],
+    attachments: &[crate::log::attachment::Arrival],
 ) -> DocumentNode<'static> {
     let mut lines: Vec<Span<'static>> = text
         .lines()
@@ -39,12 +39,12 @@ pub(in crate::tui) fn pending_turn(
 /// The files a user turn carried, one dimmed line each (docs/tui.md): name and what the daemon
 /// made of it. `None` when the turn carried none.
 pub(in crate::tui) fn attachment_lines(
-    attachments: &[crate::attachments::Arrival],
+    attachments: &[crate::log::attachment::Arrival],
 ) -> Option<DocumentNode<'static>> {
     (!attachments.is_empty()).then(|| DocumentNode::styled_lines(attachment_spans(attachments)))
 }
 
-fn attachment_spans(attachments: &[crate::attachments::Arrival]) -> Vec<Span<'static>> {
+fn attachment_spans(attachments: &[crate::log::attachment::Arrival]) -> Vec<Span<'static>> {
     attachments
         .iter()
         .map(|a| {
@@ -107,7 +107,7 @@ fn calling_tool_entry(name: &str, input: &str) -> Option<DocumentNode<'static>> 
     let arriving = parsed.arriving_text();
     let intent = view.intent.clone().or_else(|| {
         arriving
-            .filter(|(key, _)| *key == crate::tools::INTENT)
+            .filter(|(key, _)| *key == crate::log::INTENT)
             .map(|(_, text)| text.to_string())
     });
     let mut blocks = call_blocks(view, true);
@@ -116,7 +116,7 @@ fn calling_tool_entry(name: &str, input: &str) -> Option<DocumentNode<'static>> 
     // case worth rendering as a block — a file's contents, a heredoc, a message
     // body — and it is rendered in the language of whatever settled path names it,
     // which is why the path arriving first is what makes this worth doing.
-    if let Some((key, text)) = arriving.filter(|(key, _)| *key != crate::tools::INTENT) {
+    if let Some((key, text)) = arriving.filter(|(key, _)| *key != crate::log::INTENT) {
         if text.contains('\n') {
             blocks.push(code_block(streaming_lang(&parsed), text));
         } else {

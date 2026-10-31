@@ -260,7 +260,7 @@ pub(crate) enum TuiEvent {
     /// by the staging key, or why it could not.
     Uploaded {
         key: u64,
-        result: Result<crate::attachments::Arrival, String>,
+        result: Result<crate::log::attachment::Arrival, String>,
     },
     /// Whether the system clipboard holds an image and no text, learned from its type
     /// list alone when it changes — the strip then says `C-v` attaches it (docs/tui.md).
@@ -358,32 +358,6 @@ pub(crate) enum Exit {
     /// Attach to `id` with `draft` in the composer: the turns a failed start handed
     /// back, carried to the session its retry made (`starting.rs`).
     SwitchWithDraft { id: String, draft: String },
-}
-
-/// How the terminal UI draws images in tool results. Default `"auto"`.
-// How the TUI picks its graphics protocol for result images (docs/tui.md). Detection is a
-// startup act — `Picker::from_query_stdio` runs once in `ui_loop`, before the crossterm reader
-// thread takes stdin — and tmux makes detection lie in both directions (its DA1 masks a
-// kitty-capable outer terminal; passthrough can make OSC 1337 work with nothing detectable
-// saying so), so the override ships in the same change as detection. Set by `images` under
-// `[tui]` in the user configuration, spelled in lowercase; the `///` docs are its published
-// hover text (docs/config-schemas.md).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum ImageMode {
-    /// Ask the terminal which graphics protocol it supports, and fall back to half-block
-    /// characters when nothing answers.
-    #[default]
-    Auto,
-    /// Use the kitty graphics protocol, for a kitty terminal that tmux hides from
-    /// detection.
-    Kitty,
-    /// Use iTerm2's inline image protocol, for a terminal detection missed.
-    // Env identification is weaker than kitty's query fence, so forcing it is sometimes the
-    // truth detection missed.
-    Iterm2,
-    /// Show each image as a one-line reference.
-    Off,
 }
 
 /// The operator's pace state, as surfaced by `GET /state`'s `pace`

@@ -351,7 +351,7 @@ async fn only_a_successors_archive_of_its_predecessor_completes_the_hand_off() {
     };
     let archive = |target: &str| {
         ToolCall::new(
-            crate::control_tools::ARCHIVE_WIRE_NAME,
+            crate::protocol::agents::ARCHIVE_WIRE_NAME,
             "toolu_1",
             serde_json::json!({ "agent": target }),
         )

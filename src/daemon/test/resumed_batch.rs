@@ -7,8 +7,8 @@ use super::runtime::boot;
 use super::upstream_hold::{Answer, end_turn, recording, wait_until};
 use super::*;
 use crate::daemon::SessionRuntime;
-use crate::frontend::{Approval, SubmittedTurn};
-use crate::log::Telemetry;
+use crate::frontend::SubmittedTurn;
+use crate::log::{Approval, Telemetry};
 use crate::log::{AssistantOutput, CallId, RawResult, Resumed, Spot, Stance, WireState};
 use crate::project::{ApiBlock, Role};
 use crate::spotter::StaticSpotter;
@@ -91,7 +91,7 @@ pub(super) fn start(addr: SocketAddr, log: Log) -> (Swansong, SessionRuntime) {
     let mut boot = boot(&cwd.canonicalize().unwrap());
     boot.client = Client::new(
         crate::api::Endpoint {
-            provider: crate::api::Provider::Anthropic,
+            provider: crate::log::Provider::Anthropic,
             url: Some(format!("http://{addr}/v1/messages")),
             auth_header: "x-api-key".into(),
             auth_value: "k".into(),

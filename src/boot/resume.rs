@@ -24,13 +24,14 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use super::mint::Minted;
-use super::{BASE_DIR, CONFIG_NAME, LOG_NAME, env, model, parts, scaffold};
+use super::{CONFIG_NAME, env, model, parts, scaffold};
 use crate::api::Error;
 use crate::daemon::SessionBoot;
 use crate::inference::{InferenceRegistry, ResumeSwitch, SessionOptions};
 use crate::log::{LogEntry, LoggedInference, Payload, Resumed, Timestamp};
 use crate::persist::{LoadedRecording, Log, SessionMetadata};
 use crate::recovery::{Resumption, resume_point};
+use crate::session_dir::{LOG_NAME, SESSION_BASE};
 use crate::spotter::MountedSpotter;
 
 /// What a resume needs from whoever resumes. The session's working directory, role
@@ -338,7 +339,9 @@ fn session_directories(
     }
     let base = session_dir.parent();
     match base.and_then(|base| Some((base, base.parent()?))) {
-        Some((base, root)) if base.ends_with(BASE_DIR) => Ok(crate::policy::Directories::at(root)),
+        Some((base, root)) if base.ends_with(SESSION_BASE) => {
+            Ok(crate::policy::Directories::at(root))
+        }
         _ => Err(format!(
             "cannot resume {}: the log header records no working directory",
             session_dir.display()

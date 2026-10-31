@@ -5,7 +5,7 @@
 
 use efference::inference::TuiConfig;
 
-/// The `--images` value — the CLI face of [`efference::tui::ImageMode`]
+/// The `--images` value — the CLI face of [`efference::inference::ImageMode`]
 /// (docs/tui.md). Detection lies under tmux in both directions, so the
 /// override covers both: forcing a protocol detection missed, and turning off
 /// one it wrongly claimed.
@@ -21,9 +21,9 @@ pub(crate) enum ImagesArg {
     Off,
 }
 
-impl From<ImagesArg> for efference::tui::ImageMode {
+impl From<ImagesArg> for efference::inference::ImageMode {
     fn from(arg: ImagesArg) -> Self {
-        use efference::tui::ImageMode;
+        use efference::inference::ImageMode;
         match arg {
             ImagesArg::Auto => ImageMode::Auto,
             ImagesArg::Kitty => ImageMode::Kitty,

@@ -1,8 +1,8 @@
 //! Initial session facts recorded in the header (docs/log-and-projection.md).
 
 use super::SessionRequest;
-use crate::log::{LoggedInference, RecordedRoles};
-use crate::persist::{SessionMetadata, TriageModel};
+use crate::log::{LoggedInference, RecordedRoles, TriageModel};
+use crate::persist::SessionMetadata;
 
 /// The spotter and triage selections `inference` resolved, in the shape the log records.
 pub(super) fn roles(inference: &crate::inference::SessionInference) -> RecordedRoles {

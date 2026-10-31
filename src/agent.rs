@@ -22,12 +22,12 @@ use crate::consolidate;
 use crate::daemon::{
     BlockedReason, LoopPhase, RequestOrigin, Session, Stall, StallReason, StreamDelta,
 };
-use crate::frontend::{Approval, Frontend, SubmittedTurn};
+use crate::frontend::{Frontend, SubmittedTurn};
 use crate::inbox::ShownNotification;
 use crate::log::{
-    AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Exclusion,
-    Notification, Origin, Payload, RawResult, Spot, Stance, Summary, ToolCall, Triage, Turn,
-    WireState,
+    Approval, AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState,
+    Exclusion, Notification, Origin, Payload, RawResult, Spot, Stance, Summary, ToolCall, Triage,
+    Turn, WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
 use crate::process_monitor;

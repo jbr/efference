@@ -71,7 +71,7 @@ fn pinned_notification_projects_at_triage_position() {
 /// current listing (a cross-boot change) drops silently — deterministic, never a panic.
 #[test]
 fn surfaced_context_item_projects_at_triage_position() {
-    use crate::context::{Resolved, Section};
+    use crate::log::context::{Resolved, Section};
     let listing = Resolved {
         sections: vec![Section {
             heading: Some("Skills".into()),

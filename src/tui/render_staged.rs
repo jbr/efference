@@ -10,7 +10,7 @@ use ratatui_image::Image;
 use super::image::Painted;
 use super::staged::{Staged, Status};
 use super::state::InteractiveState;
-use crate::attachments::Kind;
+use crate::log::attachment::Kind;
 
 /// At most this many chip rows; past it the last row counts the rest.
 const MAX_ROWS: usize = 4;

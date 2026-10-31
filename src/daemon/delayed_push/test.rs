@@ -5,9 +5,8 @@
 
 use super::*;
 use crate::daemon::attention::{Attention, AttentionReport};
-use crate::frontend::Approval;
-use crate::log::MomentKind;
 use crate::log::Telemetry;
+use crate::log::{Approval, MomentKind};
 use crate::log::{CallId, ToolCall};
 use crate::persist::Log;
 

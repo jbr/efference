@@ -1,10 +1,10 @@
 //! Session runtimes stop independently inside one process (docs/control-channel.md).
 
 use super::*;
-use crate::api::{Endpoint, ModelCapabilities, Provider};
+use crate::api::{Endpoint, ModelCapabilities};
 use crate::bash::group_alive;
 use crate::daemon::{SessionBoot, SessionRuntime};
-use crate::log::Stance;
+use crate::log::{Provider, Stance};
 use crate::spotter::StaticSpotter;
 use crate::triage::Triager;
 use std::path::Path;

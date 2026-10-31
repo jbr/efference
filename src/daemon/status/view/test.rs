@@ -1,9 +1,8 @@
 //! The status view as the host builds it from a session's state.
 
 use super::*;
-use crate::log::{AssistantOutput, ContentBlock, Stance, Telemetry};
+use crate::log::{AssistantOutput, Axes, ContentBlock, Precedent, Stance, Telemetry};
 use crate::persist::Log;
-use crate::spotter::jev::{Axes, Precedent};
 
 fn session() -> Arc<Session> {
     Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0

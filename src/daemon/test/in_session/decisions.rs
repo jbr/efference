@@ -2,9 +2,9 @@
 //! (docs/tools.md, docs/permissions.md).
 
 use super::*;
-use crate::control_tools::{Decide, Decision};
-use crate::frontend::Approval;
-use crate::log::Telemetry;
+use crate::control_tools::Decide;
+use crate::log::{Approval, Telemetry};
+use crate::protocol::agents::Decision;
 
 fn decide(seq: &str, decision: Decision, message: Option<&str>) -> Decide {
     Decide {

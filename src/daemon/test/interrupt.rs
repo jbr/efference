@@ -185,7 +185,7 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     let addr = scripted_upstream(Arc::clone(&requests), Arc::clone(&release), open);
     let mut boot = boot(&cwd);
     let endpoint = crate::api::Endpoint {
-        provider: crate::api::Provider::Anthropic,
+        provider: crate::log::Provider::Anthropic,
         url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),
@@ -297,7 +297,7 @@ async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
     );
     let mut boot = boot(&cwd);
     let endpoint = crate::api::Endpoint {
-        provider: crate::api::Provider::Anthropic,
+        provider: crate::log::Provider::Anthropic,
         url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),

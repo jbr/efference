@@ -7,8 +7,8 @@ in `efference.toml` closes that gap: **the operator declares what knowledge the 
 boots with — nothing is auto-discovered.** No `EFFERENCE.md` convention, no auto-loaded
 `CLAUDE.md`, no scanning for skill files. The one config file is the single source of
 truth for what the session starts knowing, the same way it already is for the session's
-perimeter. Schema in `src/config.rs`; resolution and render in `src/context.rs`; splicing
-in `src/env.rs`; the read/write grants in `src/policy.rs`.
+perimeter. Schema in `src/config.rs`; resolution and render in `src/context.rs`, the resolved
+shapes the log records in `src/log/context.rs`; splicing in `src/env.rs`; the read/write grants in `src/policy.rs`.
 
 ## The identity line
 
@@ -193,7 +193,7 @@ a memory store: descriptions are the index, `read` is recall, a write is a save,
 
 ## Render — pseudo-XML name tags (provisional)
 
-`context::Resolved::render` renders each file as a `<name>…</name>` tag — the operator's
+`Resolved::render` (`src/context.rs`) renders each file as a `<name>…</name>` tag — the operator's
 label (when a labeled entry resolves to one file), else the frontmatter `name`, else the
 **full basename**, extension included (`<CLAUDE.md>`, not `<CLAUDE>`: the tag then names a
 file the model can `read`) — and wraps a multi-file group in a verbatim `<Heading>` tag.

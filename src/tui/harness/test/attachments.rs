@@ -3,7 +3,7 @@
 //! turn and shown under it in the transcript.
 
 use super::*;
-use crate::attachments::{Arrival, Kind};
+use crate::log::attachment::{Arrival, Kind};
 use crate::tui::staged::AttachCmd;
 
 fn shot() -> Arrival {

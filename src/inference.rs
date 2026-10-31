@@ -11,10 +11,9 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use crate::api::{
-    AuthValue, Endpoint, Error, Provider, Reload, RequestOptions, Reread, WireDialect,
-};
+use crate::api::{AuthValue, Endpoint, Error, Reload, RequestOptions, Reread};
 use crate::env_table::EnvSnapshot;
+use crate::log::{Provider, WireDialect};
 use crate::secrets::Secrets;
 use crate::triage::TriageModel;
 
@@ -588,7 +587,7 @@ pub mod chatgpt;
 mod host;
 pub use host::HostConfig;
 mod tui;
-pub use tui::TuiConfig;
+pub use tui::{ImageMode, TuiConfig};
 mod updates;
 pub use updates::UpdatesConfig;
 pub mod options;

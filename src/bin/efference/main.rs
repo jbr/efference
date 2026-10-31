@@ -23,6 +23,9 @@ use efference::api::Client;
 use efference::client::Client as ControlClient;
 use efference::daemon;
 #[cfg(feature = "dev")]
+use efference::session_dir::LOG_NAME;
+use efference::session_dir::SESSION_BASE;
+#[cfg(feature = "dev")]
 use efference::spotter::MountedSpotter;
 #[cfg(feature = "dev")]
 use efference::spotter::Spotter;

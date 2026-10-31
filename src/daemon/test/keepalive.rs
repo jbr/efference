@@ -337,7 +337,8 @@ pub(super) fn pinged_session(
     addr: std::net::SocketAddr,
     prefix: u64,
 ) -> (Arc<Session>, Arc<Client>) {
-    use crate::api::{Client, Endpoint, Provider};
+    use crate::api::{Client, Endpoint};
+    use crate::log::Provider;
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared
         .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))

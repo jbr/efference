@@ -1,8 +1,6 @@
 use super::super::fixtures::*;
 use super::*;
-use crate::frontend::Approval;
-use crate::log::{Keep, Origin, Triaged};
-use crate::spotter::jev::{Axes, Precedent};
+use crate::log::{Approval, Axes, Keep, Origin, Precedent, Triaged};
 
 fn child<'a>(me: Option<&'a str>) -> Reading<'a> {
     Reading {

@@ -120,7 +120,7 @@ pub struct TransportLimits {
     pub stream_ceiling: Duration,
     /// How long the cached prefix may go untouched at idle before the keepalive
     /// pings it (docs/transport.md). `None` derives it from the provider's cache
-    /// lifetime ([`crate::api::Provider::cache_ttl`]), so a set value is an override.
+    /// lifetime ([`crate::log::Provider::cache_ttl`]), so a set value is an override.
     /// **Zero turns the keepalive off** — the honest spelling for "do not ping",
     /// rather than a separate boolean that could disagree with it.
     pub keepalive_interval: Option<Duration>,

@@ -15,7 +15,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::{HostCmd, PaceCmd, SidebarCmd};
 use crate::daemon::attention::AttentionReport;
-use crate::frontend::{Approval, Interrupt, SubmittedTurn};
+use crate::frontend::{Interrupt, SubmittedTurn};
+use crate::log::Approval;
 
 /// A composer send: the turn, and the question it answers when one was showing
 /// (`answers` on `POST /turns`, docs/control-api.md). A send naming no question is

@@ -431,7 +431,7 @@ fn inline_cost_prices_a_request_and_is_recorded() {
     // Armed, so the request without an inline cost would be queued for the lookup
     // (not run here: no runtime). The first two must reach the total by themselves.
     shared.enable_cost_tracking(crate::api::Endpoint {
-        provider: crate::api::Provider::OpenRouter,
+        provider: crate::log::Provider::OpenRouter,
         url: Some("http://127.0.0.1:9/api/v1/messages".into()),
         auth_header: "authorization".into(),
         auth_value: "Bearer test".into(),

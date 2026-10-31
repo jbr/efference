@@ -143,7 +143,7 @@ fn placement_moves_the_marker_without_adding_one() {
 /// native shapes; OpenRouter takes the portable ones.
 #[test]
 fn placements_are_derived_from_the_declared_provider() {
-    use crate::api::Provider;
+    use crate::log::Provider;
     assert_eq!(
         Provider::Anthropic.breakpoint_placement("claude-sonnet-5"),
         BreakpointPlacement::TrailingBlock

@@ -18,8 +18,8 @@
 //!   tool, carrying the intent: kill the process group, or detach it into the
 //!   background process monitor (docs/process-monitor.md).
 
-use crate::control_tools::BoundAction;
-use crate::log::{ConfigChange, ContentBlock, ToolCall};
+use crate::log::{Approval, ContentBlock, ToolCall};
+use crate::protocol::agents::BoundAction;
 
 /// The `source` of the kickoff turn a `first-turn` config submits (docs/context.md).
 /// Reserved: the clients read it to leave the turn out of the transcript, since it
@@ -125,7 +125,7 @@ pub struct SubmittedTurn {
     /// Files the submitting composer attached, already in the session's store
     /// (docs/inbox.md). Each lands on the `User` entry as a
     /// [`ContentBlock::Attachment`] after the text.
-    pub attachments: Vec<crate::attachments::Arrival>,
+    pub attachments: Vec<crate::log::attachment::Arrival>,
 }
 
 impl SubmittedTurn {
@@ -146,7 +146,7 @@ impl SubmittedTurn {
         self
     }
 
-    pub fn with_attachments(mut self, attachments: Vec<crate::attachments::Arrival>) -> Self {
+    pub fn with_attachments(mut self, attachments: Vec<crate::log::attachment::Arrival>) -> Self {
         self.attachments = attachments;
         self
     }
@@ -194,7 +194,11 @@ impl SubmittedTurn {
         (!text.is_empty())
             .then(|| text.to_string())
             .into_iter()
-            .chain(self.attachments.iter().map(crate::attachments::turn_line))
+            .chain(
+                self.attachments
+                    .iter()
+                    .map(crate::log::attachment::turn_line),
+            )
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -211,34 +215,6 @@ pub enum Interrupt {
     /// process monitor as a `p#<n>` process (`PATCH /processes/:id {background: true}`, the
     /// foreground→background handoff, docs/process-monitor.md).
     Detach,
-}
-
-/// The decision returned by [`Frontend::approve`] (docs/README.md). A typed line is a
-/// *redirect* — the call is rejected and the human's text is fed to the model as
-/// the next user turn, steering it without ending the turn. Every un-run
-/// `tool_use` still gets a paired `is_error` `tool_result` so the wire never
-/// orphans a call (the API rejects that); the loop owns that pairing.
-///
-/// Serialized into the log as a gate decision's record (`Telemetry::GateDecision`,
-/// docs/log-and-projection.md), so a rename here changes what new entries say.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Approval {
-    /// Run the call.
-    Approve,
-    /// Don't run it; bail the turn.
-    Abort,
-    /// Don't run it; reject the call and send this text to the model as the next
-    /// user message, then keep going. The human's words land as a real user turn
-    /// (after the rejection `tool_result`), so the model reads it as direction,
-    /// not tool output.
-    Redirect(String),
-    /// **Amend policy**, then run this call iff the amended policy now clears it
-    /// (docs/permissions.md). The orchestrator's reply at a gate: extend
-    /// the config with a [`ConfigChange`], written to the session's config file and logged as a
-    /// `Payload::ConfigEdit`. The current call does not "ride along" — the loop re-classifies it
-    /// against the new policy and only runs it if it clears, so the mechanism (not the
-    /// human's gesture) authorizes the run. `note` is the rationale, for the audit corpus.
-    ConfigEdit { change: ConfigChange, note: String },
 }
 
 /// The interaction boundary. Used generically by the loop (`<F: Frontend>`); not

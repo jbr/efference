@@ -3,7 +3,7 @@
 use super::*;
 use crate::daemon::status::SessionStatus;
 use crate::daemon::{BlockedReason, LoopPhase};
-use crate::frontend::Approval;
+use crate::log::Approval;
 
 fn session() -> Arc<Session> {
     Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0

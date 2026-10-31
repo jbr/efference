@@ -31,7 +31,7 @@ fn triage_tool_schemas_are_static_and_permission_phrased() {
 }
 
 fn preamble_with(items: Vec<Item>) -> LogEntry {
-    use crate::context::{Resolved, Section};
+    use crate::log::context::{Resolved, Section};
     entry(
         0,
         Payload::preamble(

@@ -3,8 +3,8 @@
 
 use super::upstream_hold::{Answer, end_turn, scripted, start_with, tool_call, wait_until};
 use super::*;
-use crate::frontend::{Approval, SubmittedTurn};
-use crate::log::{ContentBlock, Stance, Telemetry};
+use crate::frontend::SubmittedTurn;
+use crate::log::{Approval, ContentBlock, Stance, Telemetry};
 use std::sync::atomic::AtomicUsize;
 
 fn script(n: usize) -> Answer {

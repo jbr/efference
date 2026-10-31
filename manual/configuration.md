@@ -222,7 +222,7 @@ setting. [How efference runs](how-it-runs.md) lists what the request sends.
 theme = "Nord"
 images = "kitty"
 ```
-<!-- src: src/inference/tui.rs::TuiConfig; src/tui/mod.rs::ImageMode -->
+<!-- src: src/inference/tui.rs::TuiConfig; src/inference/tui.rs::ImageMode -->
 
 - **`theme`**: a built-in theme's name, or the path to a `.tmTheme` file. An unknown name
   lists the built-in ones when the terminal interface opens. The theme picker in the
@@ -232,7 +232,7 @@ images = "kitty"
   terminal. Inside tmux, which hides the terminal from that question, `"kitty"` or
   `"iterm2"` names the terminal's image protocol. `"off"` shows each image as a one-line
   reference.
-<!-- src: src/inference/tui.rs::TuiConfig (theme, expand_home); src/tui/keyboard.rs (ThemePicker: Enter closes the picker, writes nothing); src/tui/mod.rs::ImageMode -->
+<!-- src: src/inference/tui.rs::TuiConfig (theme, expand_home); src/tui/keyboard.rs (ThemePicker: Enter closes the picker, writes nothing); src/inference/tui.rs::ImageMode -->
 
 ## Editor support
 

@@ -1,4 +1,5 @@
-//! The spotter's logged verdict on one gated call (docs/permissions.md).
+//! The spotter's logged verdict on one gated call, and the decision model's answers
+//! recorded beside it (docs/permissions.md).
 
 use super::*;
 
@@ -43,7 +44,7 @@ pub struct Spot {
     /// band without re-asking. `None` from the prose rung, from a fail-closed
     /// verdict, and on entries written before this field existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub axes: Option<crate::spotter::jev::Axes>,
+    pub axes: Option<Axes>,
 }
 
 /// The spotter's graded disposition for one move (docs/permissions.md). It splits
@@ -70,4 +71,89 @@ pub enum Stance {
     Watch,
     /// Out of scope or unsanctioned-irreversible: stop and ask the human.
     Gate,
+}
+
+/// One assessment's answers, as the model reported them: P(true) per axis, and the
+/// sketch distribution. The two optional axes are asked only when the state
+/// carries the thing they are about — a watch-for list, a promotion probe — so
+/// `None` means "not asked", never "answered zero".
+///
+/// Recorded alongside the stance on `Spot::axes`. Entries written before the
+/// sketch fold carry `reversible` and `sanctioned`, which are ignored on read, and
+/// lack `sketch` and `precedent`, which default to `None`.
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct Axes {
+    pub in_scope: f64,
+    /// Names a path outside every grant. Split from [`Self::path_denied`]
+    /// because one question asking both was four hops — resolve the move's
+    /// paths, resolve the grants, check containment, check the denies — and
+    /// scored 0.21–0.56 on plainly in-scope read-only commands.
+    pub path_outside: f64,
+    /// Names a path under a grant marked `denied` — the carve-out case, which
+    /// is a different question from being outside every grant.
+    pub path_denied: f64,
+    pub exposes_secrets: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watch_for_hit: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix_safe: Option<f64>,
+    /// P(level) for sketch levels 0 to 4, lowest first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sketch: Option<Vec<f64>>,
+    /// What the relation request found, when the fold reached the precedent step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precedent: Option<Precedent>,
+}
+
+impl Axes {
+    /// One `name value` string per recorded figure, for the dev verbs that print a
+    /// spot's whole vector.
+    pub fn summary(&self) -> Vec<String> {
+        let show = |label: &str, p: f64| format!("{label} {p:.2}");
+        let mut parts = Vec::new();
+        if let Some(sketch) = &self.sketch {
+            let figures: Vec<String> = sketch.iter().map(|p| format!("{p:.2}")).collect();
+            parts.push(format!("sketch {}", figures.join("/")));
+        }
+        parts.push(show("in_scope", self.in_scope));
+        parts.push(show("path_outside", self.path_outside));
+        parts.push(show("path_denied", self.path_denied));
+        parts.push(show("exposes_secrets", self.exposes_secrets));
+        parts.extend(self.watch_for_hit.map(|p| show("watch_for_hit", p)));
+        parts.extend(self.prefix_safe.map(|p| show("prefix_safe", p)));
+        if let Some(p) = &self.precedent {
+            let required = p.required.map_or("never".to_string(), |n| n.to_string());
+            parts.push(format!(
+                "precedent same {} wider {} of {} (required {required})",
+                p.same, p.wider, p.candidates
+            ));
+        }
+        parts
+    }
+}
+
+/// What the relation request read: of the `candidates` earlier calls asked about,
+/// how many the model read as the `same` action and how many as `wider`, with the
+/// number the move's level required.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Precedent {
+    pub candidates: usize,
+    pub same: usize,
+    pub wider: usize,
+    /// `None` when no number of precedents clears the level.
+    pub required: Option<usize>,
+    /// Each candidate's reading, in the order asked. The counts above are these
+    /// under the fold's cut; recording the figures is what lets a different cut be
+    /// replayed, and a surprising clear be traced to the approved call it matched.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compared: Vec<Compared>,
+}
+
+/// One candidate's reading: the earlier call, by id, and the mean of its two
+/// askings for `same` and for `wider`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Compared {
+    pub call_id: CallId,
+    pub same: f64,
+    pub wider: f64,
 }

@@ -2,7 +2,8 @@
 
 use crate::cli::{Cli, Command};
 use clap::Parser;
-use efference::control_tools::{Decision, Output, cli::Tools};
+use efference::control_tools::{Output, cli::Tools};
+use efference::protocol::agents::Decision;
 
 fn parse(argv: &[&str]) -> Result<Tools, clap::Error> {
     let mut full = vec!["efference", "control"];

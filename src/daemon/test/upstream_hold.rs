@@ -193,7 +193,7 @@ pub(super) fn start_with(
     let cwd = cwd.canonicalize().unwrap();
     let mut boot = boot(&cwd);
     let endpoint = crate::api::Endpoint {
-        provider: crate::api::Provider::Anthropic,
+        provider: crate::log::Provider::Anthropic,
         url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),

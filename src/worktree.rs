@@ -12,7 +12,7 @@ const WORKTREES: &str = "worktrees";
 /// session dirs rather than inside one, so one prefix covers every worktree.
 pub fn path(project: &Path, id: &str) -> PathBuf {
     project
-        .join(crate::daemon::SESSION_BASE)
+        .join(crate::session_dir::SESSION_BASE)
         .join(WORKTREES)
         .join(id)
 }
@@ -26,7 +26,9 @@ pub fn path(project: &Path, id: &str) -> PathBuf {
 /// (docs/worktrees.md). Lexical, like the rest of path classification: `path` must
 /// already be absolute and normalized.
 pub fn counterpart(project: &Path, path: &Path) -> Option<PathBuf> {
-    let worktrees = project.join(crate::daemon::SESSION_BASE).join(WORKTREES);
+    let worktrees = project
+        .join(crate::session_dir::SESSION_BASE)
+        .join(WORKTREES);
     let rest = path.strip_prefix(&worktrees).ok()?;
     let mut components = rest.components();
     match components.next() {
@@ -47,7 +49,7 @@ pub fn counterpart(project: &Path, path: &Path) -> Option<PathBuf> {
 pub fn project_of(dir: &Path) -> Option<PathBuf> {
     let components: Vec<Component> = dir.components().collect();
     (0..components.len().saturating_sub(2)).rev().find_map(|i| {
-        let is_worktree = components[i].as_os_str() == crate::daemon::SESSION_BASE
+        let is_worktree = components[i].as_os_str() == crate::session_dir::SESSION_BASE
             && components[i + 1].as_os_str() == WORKTREES
             && matches!(components[i + 2], Component::Normal(_));
         is_worktree.then(|| components[..i].iter().collect())

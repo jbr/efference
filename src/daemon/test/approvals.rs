@@ -39,11 +39,11 @@ fn the_gate_carries_the_spotter_reason() {
 fn the_gate_carries_the_bound_leaf_action() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let approve = ToolCall::new(
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_parent",
         serde_json::json!({ "agent": "child", "seq": "4", "decision": "allow" }),
     );
-    let bound = crate::control_tools::BoundAction {
+    let bound = crate::protocol::agents::BoundAction {
         name: "bash".into(),
         input: serde_json::json!({ "command": "rm -rf build", "intent": "clean the tree" }),
         intent: Some("clean the tree".into()),

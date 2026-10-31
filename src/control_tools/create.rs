@@ -236,7 +236,7 @@ impl Tool<Control> for Create {
                 let cwd = request.cwd.clone();
                 let child_project =
                     crate::worktree::project_of(&cwd).unwrap_or_else(|| cwd.clone());
-                let base = child_project.join(crate::daemon::SESSION_BASE);
+                let base = child_project.join(crate::session_dir::SESSION_BASE);
                 let project = caller
                     .storage_base()
                     .map(crate::policy::lexical_normalize)

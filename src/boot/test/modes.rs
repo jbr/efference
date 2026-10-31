@@ -3,7 +3,8 @@
 
 use super::{Root, base_env, codex_registry, drop_boot, request};
 use crate::boot::ResumeRequest;
-use crate::boot::{BASE_DIR, CONFIG_NAME, LOG_NAME, mint_session_dir, prepare, resume};
+use crate::boot::{CONFIG_NAME, mint_session_dir, prepare, resume};
+use crate::session_dir::{LOG_NAME, SESSION_BASE};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -26,7 +27,7 @@ async fn a_created_session_is_owner_only() {
         .await
         .unwrap();
     let dir = root.session_dir("private");
-    assert_eq!(mode(&root.path().join(BASE_DIR)), 0o700, ".efference/");
+    assert_eq!(mode(&root.path().join(SESSION_BASE)), 0o700, ".efference/");
     assert_eq!(mode(&dir), 0o700, "the session directory");
     assert_eq!(mode(&dir.join(LOG_NAME)), 0o600, "the log");
     assert_eq!(mode(&dir.join(CONFIG_NAME)), 0o600, "the config snapshot");
@@ -56,7 +57,7 @@ fn files_added_to_a_session_directory_are_owner_only() {
 #[test]
 fn minting_a_session_tightens_an_open_project_base() {
     let root = Root::new("modes-mint");
-    let base = root.path().join(BASE_DIR);
+    let base = root.path().join(SESSION_BASE);
     std::fs::create_dir(&base).unwrap();
     set_mode(&base, 0o755);
     mint_session_dir(&root.session_dir("a")).unwrap();
@@ -73,7 +74,7 @@ fn minting_a_session_tightens_an_open_project_base() {
 async fn resuming_a_session_tightens_an_open_project_base() {
     let root = Root::new("modes-resume");
     drop_boot(prepare(request(root.path(), "again", None)).await.unwrap());
-    let base = root.path().join(BASE_DIR);
+    let base = root.path().join(SESSION_BASE);
     set_mode(&base, 0o755);
 
     let registry = codex_registry(root.path(), "again");

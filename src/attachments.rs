@@ -16,12 +16,15 @@
 //! base64'd into the log entry at pull time, so rearranging this directory can neither move
 //! committed wire bytes nor cold the cache.
 //!
-//! This module is the pure half — naming, storing, and describing what arrived. The watcher
-//! that notices an arrival and enqueues the notification is `src/daemon/attachments.rs`.
+//! This module is the pure half — naming, storing, and classifying what arrived; the
+//! [`Arrival`] it produces and the two renderings of one are [`crate::log::attachment`]. The
+//! watcher that notices an arrival and enqueues the notification is
+//! `src/daemon/attachments.rs`.
 
-use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
+
+use crate::log::attachment::{Arrival, Kind, Shape, describe};
 
 mod store;
 pub use store::Store;
@@ -49,68 +52,6 @@ pub fn dir_for_session(session_dir: &Path) -> PathBuf {
     session_dir.join(DIR_NAME)
 }
 
-/// What an arrived file turned out to be — the triage signals the notification carries.
-///
-/// The set is deliberately small and prototype-first: enough for the model to decide whether the
-/// file is worth pulling *without* re-deriving its content from the notice. Tunable — the right
-/// fields are an empirical question about real pastes, not a settled schema.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Kind {
-    /// Valid UTF-8: byte size, line count, a sniffed shape, and the first non-blank line.
-    Text {
-        bytes: u64,
-        lines: usize,
-        shape: Shape,
-        first_line: String,
-    },
-    /// A decodable image: format, pixel dimensions, byte size.
-    Image {
-        format: String,
-        width: u32,
-        height: u32,
-        bytes: u64,
-    },
-    /// Neither — the notice says only what it honestly knows.
-    Binary { bytes: u64 },
-}
-
-/// A coarse guess at a text attachment's shape, from its first lines. Coarse on purpose: it
-/// steers a first move (grep vs read vs ignore) and is never relied on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Shape {
-    Json,
-    Diff,
-    Stacktrace,
-    Log,
-    Prose,
-}
-
-impl Shape {
-    fn as_str(self) -> &'static str {
-        match self {
-            Shape::Json => "JSON",
-            Shape::Diff => "a diff",
-            Shape::Stacktrace => "a stack trace",
-            Shape::Log => "log output",
-            Shape::Prose => "prose",
-        }
-    }
-}
-
-/// One file that arrived in the store: where it is, and what it looks like.
-///
-/// Also the content of a [`crate::log::ContentBlock::Attachment`], which is how a turn carries
-/// the files its composer attached — so its serialized form is part of the log.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Arrival {
-    /// The file's name inside its store directory — how a client addresses it
-    /// (`GET /attachments/:name`) and how a turn references an upload.
-    pub name: String,
-    /// The path as the model will use it — how the store was addressed, plus the file name.
-    pub path: String,
-    pub kind: Kind,
-}
-
 /// Write `bytes` into the store under a name derived from `suggested`, returning the path.
 ///
 /// The name is made unique by appending `-2`, `-3`, … before the extension rather than
@@ -132,7 +73,7 @@ pub fn store(dir: &Path, suggested: &str, bytes: &[u8]) -> io::Result<PathBuf> {
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .mode(crate::daemon::permissions::FILE_MODE)
+            .mode(crate::session_dir::FILE_MODE)
             .open(&path)
         {
             Ok(mut file) => {
@@ -317,68 +258,6 @@ fn image_metadata(full: &Path) -> Option<(String, u32, u32)> {
     let format = reader.format()?;
     let (width, height) = reader.into_dimensions().ok()?;
     Some((format!("{format:?}").to_uppercase(), width, height))
-}
-
-/// Bytes as a short human string — the notice states a magnitude, not an exact count.
-fn human_bytes(bytes: u64) -> String {
-    match bytes {
-        b if b < 1024 => format!("{b} B"),
-        b if b < 1024 * 1024 => format!("{:.1} KB", b as f64 / 1024.0),
-        b => format!("{:.1} MB", b as f64 / (1024.0 * 1024.0)),
-    }
-}
-
-/// What an arrival is, as the model reads it: **what arrived and where**, and nothing about what
-/// to do with it (docs/inbox.md). The harness takes no stance — the user attached the file, and
-/// the user can say what that means — so there is no eager-read default baked in here and no
-/// ask-first one either.
-///
-/// One line, subject first — `shot.png — PNG image, 828×120, 28.7 KB — at <path>` — with a text
-/// file's first line under it. A two-line form with the path leading read as boilerplate, and a
-/// model looking back at it later could not say whether it had seen the dimensions at all
-/// (journal/2026-09-27-composer-attachments.md). The same body is an ambient notice's and, under
-/// the harness's `⟢`, a turn's attachment line ([`turn_line`]).
-pub fn describe(arrival: &Arrival) -> String {
-    let (detail, first) = match &arrival.kind {
-        Kind::Text {
-            bytes,
-            lines,
-            shape,
-            first_line,
-        } => {
-            let mut s = "text".to_string();
-            if *lines > 0 {
-                s.push_str(&format!(", {lines} lines"));
-            }
-            s.push_str(&format!(
-                ", {}, looks like {}",
-                human_bytes(*bytes),
-                shape.as_str()
-            ));
-            (s, (!first_line.is_empty()).then(|| first_line.clone()))
-        }
-        Kind::Image {
-            format,
-            width,
-            height,
-            bytes,
-        } => (
-            format!("{format} image, {width}×{height}, {}", human_bytes(*bytes)),
-            None,
-        ),
-        Kind::Binary { bytes } => (format!("binary, {}", human_bytes(*bytes)), None),
-    };
-    let mut line = format!("{} — {detail} — at {}", arrival.name, arrival.path);
-    if let Some(first) = first {
-        line.push_str(&format!("\nfirst line: {first}"));
-    }
-    line
-}
-
-/// How a turn's attachment reads on the wire: the harness's `⟢` note, so the model can tell the
-/// harness's report from the operator's words (docs/inbox.md).
-pub fn turn_line(arrival: &Arrival) -> String {
-    format!("⟢ attached: {}", describe(arrival))
 }
 
 /// The notification an arrival enqueues: `(source, body, slot)` for [`crate::daemon`]'s

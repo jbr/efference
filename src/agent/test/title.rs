@@ -3,9 +3,9 @@
 //! standing title answers it.
 
 use super::*;
-use crate::api::{Endpoint, Provider};
+use crate::api::Endpoint;
 use crate::daemon::SessionIdentity;
-use crate::log::{Title, TitleAuthor};
+use crate::log::{Provider, Title, TitleAuthor};
 
 fn session() -> Arc<Session> {
     let (shared, _rx) = Session::new(

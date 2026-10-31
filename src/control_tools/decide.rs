@@ -1,10 +1,11 @@
-use super::args::{Decision, handle, reader_name, turn_source};
+use super::args::{handle, reader_name, turn_source};
 use super::executor::{state_of, status_in};
 use super::host_executor::names_held;
 use super::status::{operator_relation, session_relation};
 use super::{Control, Executor};
 use crate::daemon::status::{Condition, HeldCall, Moves, Reader, Reviewer, StatusView, answers};
-use crate::frontend::Approval;
+use crate::log::Approval;
+use crate::protocol::agents::Decision;
 use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},

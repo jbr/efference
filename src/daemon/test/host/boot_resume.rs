@@ -157,7 +157,7 @@ async fn a_session_that_fails_to_resume_stays_dormant_and_the_pass_goes_on() {
 async fn an_island_leaves_an_interrupted_session_dormant_and_another_host_resumes_it() {
     let root = Root::new("boot-resume-island");
     left(&root, "open", None, false, |_| {}).await;
-    let log = root.session_dir("open").join(crate::boot::LOG_NAME);
+    let log = root.session_dir("open").join(crate::session_dir::LOG_NAME);
     let before = std::fs::read(&log).unwrap();
     let island = host_over(&root);
     let (reader, owner) = io::pipe().unwrap();
@@ -226,7 +226,7 @@ async fn an_empty_session_a_host_left_is_reopened_and_discarded_at_archive() {
     let host = host_over(&root);
 
     assert_eq!(host.resume_open_sessions().await, ["stub"]);
-    assert!(dir.join(crate::boot::LOG_NAME).is_file());
+    assert!(dir.join(crate::session_dir::LOG_NAME).is_file());
     let register = crate::session_ids::SessionIds::at(root.path().join("state.db"));
     assert!(
         register.holder("stub").is_some(),

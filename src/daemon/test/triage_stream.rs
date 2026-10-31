@@ -32,7 +32,7 @@ fn thinking_verdict() -> String {
 
 fn endpoint(addr: std::net::SocketAddr) -> crate::api::Endpoint {
     crate::api::Endpoint {
-        provider: crate::api::Provider::Anthropic,
+        provider: crate::log::Provider::Anthropic,
         url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
         auth_value: "k".into(),

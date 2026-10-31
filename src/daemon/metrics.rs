@@ -329,7 +329,7 @@ impl Session {
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .mode(permissions::FILE_MODE)
+            .mode(crate::session_dir::FILE_MODE)
             .open(path)
         {
             Ok(file) => *self.usage_log.lock().unwrap() = Some(io::BufWriter::new(file)),

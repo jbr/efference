@@ -15,7 +15,7 @@
 //! going. Those need a task whose answer is known in advance (eval/harness/README.md);
 //! this fold needs only the log.
 
-use super::{LogEntry, Payload};
+use super::{ASK, LogEntry, Payload};
 
 /// What a turn ending turned out to be, judged by the turn that followed it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,7 +101,7 @@ pub fn classify_asks(entries: &[LogEntry]) -> Vec<(Option<Stop>, Option<String>)
                         .tool_calls()
                         .unwrap_or_default()
                         .into_iter()
-                        .filter(|c| c.name == crate::process_monitor::ASK)
+                        .filter(|c| c.name == ASK)
                         .map(|c| c.id.0),
                 );
             }

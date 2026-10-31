@@ -2,12 +2,12 @@
 //! authority, and a wake subscription (docs/permissions.md, docs/tools.md).
 
 use super::*;
-use crate::control_tools::{Control, Decide, Decision, Executor, Interrupt, Message};
+use crate::control_tools::{Control, Decide, Executor, Interrupt, Message};
 use crate::daemon::Host;
 use crate::daemon::host::SupervisorRefused;
-use crate::frontend::Approval;
-use crate::log::{InterruptOrigin, Telemetry};
+use crate::log::{Approval, InterruptOrigin, Telemetry};
 use crate::policy::ReviewLevel;
+use crate::protocol::agents::Decision;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 use std::path::Path;

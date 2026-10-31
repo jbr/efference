@@ -3,8 +3,8 @@
 //! reports for a client to prefill a switch from (docs/control-api.md).
 
 use crate::inference::{ResumeSwitch, TriageChoice};
-use crate::log::{LoggedInference, RecordedRoles};
-use crate::persist::{LoadedRecording, TriageModel};
+use crate::log::{LoggedInference, RecordedRoles, TriageModel};
+use crate::persist::LoadedRecording;
 
 /// The main, spotter and triage selections the session last ran on, in the shapes an
 /// `active` patch takes. A role the log records nothing for is left out: a log with no

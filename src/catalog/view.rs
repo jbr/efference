@@ -2,7 +2,8 @@
 //! connection with its status, age, and rows, with recent picks folded in.
 
 use super::{CATALOG_TTL, Snapshot};
-use crate::api::{ListedModel, ModelKind, Provider};
+use crate::api::{ListedModel, ModelKind};
+use crate::log::Provider;
 use serde::{Deserialize, Serialize};
 
 /// Where a connection's listing stands.

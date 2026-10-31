@@ -11,11 +11,10 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{Reader, extract_boundaries, render_triage_failure, render_triaged};
-use crate::api::WireDialect;
-use crate::context::Item;
+use crate::log::context::Item;
 use crate::log::{
     AssistantOutput, CallId, ContentBlock, Disposition, LogEntry, Notification, Payload, RawResult,
-    ResultImage, Seq, WireState,
+    ResultImage, Seq, WireDialect, WireState,
 };
 
 /// One wire turn, before dialect encoding.
@@ -213,7 +212,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             _ => None,
         })
         .flatten()
-        .filter(|call| call.name == crate::process_monitor::ASK)
+        .filter(|call| call.name == crate::log::ASK)
         .filter_map(|call| {
             let question = call.input.get("question")?.as_str()?.trim().to_string();
             Some((call.id, question))
@@ -331,7 +330,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                     let (text, separator) = match block {
                         ContentBlock::Text(text) => (text.clone(), " "),
                         ContentBlock::Attachment(arrival) => {
-                            (crate::attachments::turn_line(arrival), "\n")
+                            (crate::log::attachment::turn_line(arrival), "\n")
                         }
                         ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {
                             return None;

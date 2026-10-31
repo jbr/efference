@@ -493,7 +493,7 @@ fn the_state_withholds_the_harness_injected_intent() {
     let call = ToolCall::new(
         "fs__read",
         "c1",
-        json!({ "path": "src/lib.rs", crate::tools::INTENT: "just looking, honest" }),
+        json!({ "path": "src/lib.rs", crate::log::INTENT: "just looking, honest" }),
     );
     let state = state::state(
         &role("scope = \"work here\""),
@@ -509,7 +509,7 @@ fn the_state_withholds_the_harness_injected_intent() {
     let input = &state["move"]["input"];
     assert_eq!(input["path"], json!("src/lib.rs"));
     assert!(
-        input.get(crate::tools::INTENT).is_none(),
+        input.get(crate::log::INTENT).is_none(),
         "the judged party's own plea reached the spotter: {state}"
     );
 }

@@ -2,9 +2,10 @@
 //! (docs/permissions.md).
 
 use super::*;
-use crate::control_tools::{Control, Decide, Decision, Executor};
+use crate::control_tools::{Control, Decide, Executor};
 use crate::daemon::Host;
 use crate::policy::ReviewLevel;
+use crate::protocol::agents::Decision;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 use std::path::Path;

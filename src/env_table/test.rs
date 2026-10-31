@@ -522,7 +522,8 @@ fn every_text_bearing_payload_path_is_masked() {
     };
     assert!(!note.body.contains("leaked-secret-value"));
 
-    let mut preamble = Payload::preamble("", leak(), crate::context::Resolved::default(), None);
+    let mut preamble =
+        Payload::preamble("", leak(), crate::log::context::Resolved::default(), None);
     masker.mask_payload(&mut preamble);
     let Payload::Preamble { body: system, .. } = &preamble else {
         unreachable!()

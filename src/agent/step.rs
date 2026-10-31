@@ -124,7 +124,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // `ask` puts a question to the operator (docs/process-monitor.md): there is nothing in the
     // world to authorize, so it skips the cascade, and the wait for the reply is the
     // call. The interrupt's *after* juncture applies as for any call.
-    if call.name == process_monitor::ASK {
+    if call.name == crate::log::ASK {
         // An answered ask lands in the triage, so its triage is certain short of an
         // interrupt — fire the primer over the operator's deliberation window
         // (docs/transport.md).
@@ -170,7 +170,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // Resolve it first: a moved gate or a refused target is the whole answer, and
     // nothing should be classified. The logged `ToolCall` is untouched — the wire
     // carries what the model wrote. A denial authorizes nothing and is not bound.
-    let bound = if crate::control_tools::allows(call) {
+    let bound = if crate::protocol::agents::allows(call) {
         match toolbox.resolve_bound_action(call) {
             Ok(bound) => Some(bound),
             Err(e) => {
@@ -194,7 +194,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
         .is_some_and(|cfg| policy::is_config_write(&shared.directories(), call, cfg));
     // A hand-off gives this session's place to a new one (docs/tools.md): the operator's
     // decision, like a policy edit, so it takes the same route past the cascade.
-    let hand_off = call.name == crate::control_tools::HAND_OFF_WIRE_NAME;
+    let hand_off = call.name == crate::protocol::agents::HAND_OFF_WIRE_NAME;
     // Neither offers a grant: no change to the policy table would clear either, since
     // both bypass the cascade that reads it.
     let approval = if config_write || hand_off {

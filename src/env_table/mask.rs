@@ -426,9 +426,9 @@ impl Masker {
             Payload::Telemetry(Telemetry::GateDecision(decision)) => {
                 self.mask_opt(&mut decision.source);
                 match &mut decision.decision {
-                    crate::frontend::Approval::Approve | crate::frontend::Approval::Abort => {}
-                    crate::frontend::Approval::Redirect(message) => self.mask_in_place(message),
-                    crate::frontend::Approval::ConfigEdit { change, note } => {
+                    crate::log::Approval::Approve | crate::log::Approval::Abort => {}
+                    crate::log::Approval::Redirect(message) => self.mask_in_place(message),
+                    crate::log::Approval::ConfigEdit { change, note } => {
                         self.mask_in_place(note);
                         self.mask_change(change);
                     }
@@ -493,8 +493,8 @@ impl Masker {
 
     /// Filter a resolved `[context]` listing. Called directly at boot, before
     /// the preamble is rendered — see [`crate::env_table::EnvPolicy::mask_context`].
-    pub fn mask_context(&self, resolved: &mut crate::context::Resolved) {
-        use crate::context::Item;
+    pub fn mask_context(&self, resolved: &mut crate::log::context::Resolved) {
+        use crate::log::context::Item;
         for section in &mut resolved.sections {
             self.mask_opt(&mut section.heading);
             self.mask_opt(&mut section.description);

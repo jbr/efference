@@ -17,13 +17,14 @@ use anyhow::{Context, Result, anyhow};
 use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
-use crate::attachments::Arrival;
 pub use crate::catalog::{CatalogModel, ConnectionCatalog, ModelRole, Status as CatalogStatus};
 use crate::daemon::{
     ArchivedSession, CreateSession, PatchSession, SessionOptionsRequest, SessionState,
 };
-use crate::frontend::{Approval, SubmittedTurn};
+use crate::frontend::SubmittedTurn;
 use crate::inference::{ConnectionInventory, ResolvedOptions};
+use crate::log::Approval;
+use crate::log::attachment::Arrival;
 
 mod host;
 mod transport;

@@ -2,13 +2,6 @@
 
 use super::*;
 
-/// The base directory for all session dirs (gitignored). Each session is `.efference/<id>/`,
-/// holding its standard-named log and config (docs/permissions.md).
-pub(crate) const BASE_DIR: &str = daemon::SESSION_BASE;
-
-#[cfg(feature = "dev")]
-pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
-
 #[derive(Parser)]
 #[command(
     name = "efference",
@@ -122,7 +115,7 @@ impl HostFlags {
 /// The directory for a session id (`.efference/<id>`).
 #[cfg(any(feature = "dev", test))]
 pub(crate) fn session_dir(id: &str) -> PathBuf {
-    Path::new(BASE_DIR).join(id)
+    Path::new(SESSION_BASE).join(id)
 }
 
 /// The host socket's name under a base dir (docs/control-channel.md).
@@ -131,14 +124,14 @@ pub(crate) const HOST_SOCKET_NAME: &str = "host.sock";
 /// A project-local host: `.efference/host.sock` here. What `efference --host
 /// --socket .efference/host.sock` binds; consulted before the user's host.
 pub(crate) fn project_host_socket() -> PathBuf {
-    Path::new(BASE_DIR).join(HOST_SOCKET_NAME)
+    Path::new(SESSION_BASE).join(HOST_SOCKET_NAME)
 }
 
 /// The user's host: `~/.efference/host.sock`, what `efference --host` binds
 /// and where every project's clients look after their own directory
 /// (docs/control-channel.md). `None` without a home directory.
 pub(crate) fn user_host_socket() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| Path::new(&home).join(BASE_DIR).join(HOST_SOCKET_NAME))
+    std::env::var_os("HOME").map(|home| Path::new(&home).join(SESSION_BASE).join(HOST_SOCKET_NAME))
 }
 
 /// Where a client looks for a host, in order: this project's, then the user's.
@@ -334,7 +327,7 @@ const LISTED_SESSIONS: usize = 10;
 /// called it.
 pub(crate) fn session_ids() -> Vec<String> {
     let mut found = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(BASE_DIR) {
+    if let Ok(entries) = std::fs::read_dir(SESSION_BASE) {
         for entry in entries.flatten() {
             let log = entry.path().join(LOG_NAME);
             if let Ok(meta) = log.metadata()
@@ -356,7 +349,7 @@ pub(crate) fn session_ids() -> Vec<String> {
 pub(crate) fn session_listing() -> String {
     let ids = session_ids();
     if ids.is_empty() {
-        return format!(" No recorded sessions under {BASE_DIR}/.");
+        return format!(" No recorded sessions under {SESSION_BASE}/.");
     }
     let shown = ids.len().min(LISTED_SESSIONS);
     let mut listing = format!(" Recent sessions: {}", ids[..shown].join(", "));

@@ -7,10 +7,11 @@ use std::sync::{Arc, Weak};
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 
-use super::{ARCHIVE_WIRE_NAME, BoundAction, DECIDE_WIRE_NAME, args};
+use super::args;
 use crate::daemon::transcript::Handle;
 use crate::daemon::{Host, Session};
 use crate::log::ToolCall;
+use crate::protocol::agents::{ARCHIVE_WIRE_NAME, BoundAction, DECIDE_WIRE_NAME, allows};
 
 /// The in-process executor (docs/tools.md): the calling session's toolbox reaches
 /// the host directly — the same `Session` methods the HTTP handlers call, never a
@@ -93,7 +94,7 @@ impl HostExecutor {
                     == Some(
                         starting
                             .project()
-                            .join(crate::daemon::SESSION_BASE)
+                            .join(crate::session_dir::SESSION_BASE)
                             .as_path(),
                     )
             }),
@@ -289,7 +290,7 @@ impl HostExecutor {
                         .map_or_default(|handle| format!("; it holds {handle}"))
                 ));
             }
-            if !super::allows(&gate.call) {
+            if !allows(&gate.call) {
                 let intent = gate.call.intent().map(str::to_string);
                 let top = chain[0].clone();
                 return Ok(BoundAction {

@@ -42,10 +42,12 @@ pub mod policy;
 pub mod pretty;
 pub mod process_monitor;
 pub mod project;
+pub mod protocol;
 pub mod push;
 pub mod recovery;
 pub mod remembered;
 pub mod secrets;
+pub mod session_dir;
 pub mod session_ids;
 pub mod setup;
 pub mod sign_ins;
@@ -60,3 +62,6 @@ pub mod update_check;
 pub mod vision;
 pub mod worktree;
 pub mod www_authenticate;
+
+#[cfg(test)]
+mod test;

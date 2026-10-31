@@ -107,7 +107,7 @@ async fn disk_roundtrip_projects_identically() {
 /// additive structured half.
 #[test]
 fn preamble_snapshots_the_structured_context_listing() {
-    use crate::context::{Item, Resolved, Section};
+    use crate::log::context::{Item, Resolved, Section};
 
     let listing = Resolved {
         sections: vec![Section {
@@ -122,7 +122,7 @@ fn preamble_snapshots_the_structured_context_listing() {
     };
     let inference = crate::log::LoggedInference::new(
         "recorded",
-        crate::api::Provider::OpenRouter,
+        crate::log::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
     let line = serde_json::to_string(&Payload::preamble(
@@ -168,7 +168,7 @@ fn legacy_preamble_without_context_reads_back_empty() {
             ..
         } => {
             assert_eq!(format!("{identity}{body}"), "You are m. an agent");
-            assert_eq!(context, crate::context::Resolved::default());
+            assert_eq!(context, crate::log::context::Resolved::default());
             assert!(inference.is_none());
         }
         other => panic!("expected a Preamble, got {other:?}"),

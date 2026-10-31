@@ -145,7 +145,7 @@ impl SessionRuntime {
         // Session cost telemetry (docs/transport.md): armed only where the provider
         // has a per-request accounting surface (OpenRouter's generation endpoint).
         // Direct Anthropic has none, so the readout stays absent rather than modeled.
-        if client.endpoint().provider == crate::api::Provider::OpenRouter {
+        if client.endpoint().provider == crate::log::Provider::OpenRouter {
             session.enable_cost_tracking(client.endpoint().clone());
         }
         // The per-request usage record (docs/log-and-projection.md) lives beside the

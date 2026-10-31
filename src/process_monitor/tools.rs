@@ -8,7 +8,8 @@ use std::sync::LazyLock;
 
 use serde_json::{Value, json};
 
-use super::{ASK, CHECK_INBOX, KILL, LIST, READ, WAIT, WATCH};
+use super::{CHECK_INBOX, KILL, LIST, READ, WAIT, WATCH};
+use crate::log::ASK;
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 

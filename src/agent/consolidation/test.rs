@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{AssistantOutput, ToolCall};
+use crate::log::{AssistantOutput, Provider, ToolCall};
 
 fn response(text: &str) -> AssistantOutput {
     AssistantOutput::Messages(vec![crate::log::MessagesOutputBlock::Text(text.into())])
@@ -38,7 +38,7 @@ fn rejects_skip_short_tools_failures_and_caps() {
     assert_eq!(account(&called, None, None).unwrap_err(), "tool call");
 }
 
-use crate::api::{Endpoint, Provider};
+use crate::api::Endpoint;
 use crate::log::{RawResult, Summary, WireState};
 use std::io::{Read, Write};
 use std::sync::Arc;

@@ -3,7 +3,7 @@
 //!
 //! The documents are `[context]` entries that are **born resolved**: each is a
 //! `(name, description, body)` triple in [`DOCUMENTS`], entering the preamble as a
-//! [`crate::context::Item::Listed`] stub without a frontmatter round-trip. Only the
+//! [`crate::log::context::Item::Listed`] stub without a frontmatter round-trip. Only the
 //! *source* and the path *resolution* differ from an operator's group; the render is the
 //! same code.
 //!
@@ -193,13 +193,13 @@ pub fn lookup(target: &str) -> Option<&'static Document> {
 /// The `[context]` section this mount renders as, under `heading`. Built directly as
 /// resolved items — the render half of the `[context]` pipeline, not the read-from-disk
 /// half (docs/context.md).
-pub fn section(heading: &str) -> crate::context::Section {
-    crate::context::Section {
+pub fn section(heading: &str) -> crate::log::context::Section {
+    crate::log::context::Section {
         heading: Some(heading.to_string()),
         description: Some(GROUP_DESCRIPTION.to_string()),
         items: DOCUMENTS
             .iter()
-            .map(|d| crate::context::Item::Listed {
+            .map(|d| crate::log::context::Item::Listed {
                 name: d.slug.to_string(),
                 description: d.description.to_string(),
                 path: path(d.slug),
@@ -215,12 +215,12 @@ pub fn builtin_section(
     value: &str,
     heading: &str,
     description: Option<String>,
-) -> crate::context::Section {
+) -> crate::log::context::Section {
     match inline_document(value) {
-        Some(document) => crate::context::Section {
+        Some(document) => crate::log::context::Section {
             heading: None,
             description,
-            items: vec![crate::context::Item::Inline {
+            items: vec![crate::log::context::Item::Inline {
                 name: heading.to_string(),
                 path: path(document.slug),
                 body: document.body.trim_end().to_string(),

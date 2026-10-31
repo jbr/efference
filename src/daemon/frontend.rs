@@ -3,7 +3,7 @@
 
 use super::*;
 
-use crate::control_tools::BoundAction;
+use crate::protocol::agents::BoundAction;
 
 /// The loop's [`Frontend`], backed entirely by [`Session`]: every input arrives
 /// over HTTP. The loop is pull-shaped — it blocks at `read_user_turn` / `approve`

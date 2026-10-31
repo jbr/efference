@@ -1,6 +1,7 @@
 //! Tests for the attachment store: naming, classification, and the notification body.
 
 use super::*;
+use crate::log::attachment::turn_line;
 
 fn tmpdir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("efference-att-{}-{tag}", std::process::id()));

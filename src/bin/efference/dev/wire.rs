@@ -82,7 +82,7 @@ pub(crate) async fn wire(
     let dialect = recorded_provider
         .and_then(|provider| provider.inference_dialect())
         .or(recorded)
-        .unwrap_or(efference::api::WireDialect::Messages);
+        .unwrap_or(efference::log::WireDialect::Messages);
     turns.push(efference::project::WireTurn::Breakpoint);
     let messages = efference::project::encode_messages(&turns, placement, breakpoint);
 
@@ -101,7 +101,7 @@ pub(crate) async fn wire(
                     &turns, "", &model,
                 )?)?
             }
-            (None, efference::api::WireDialect::Responses, _) => {
+            (None, efference::log::WireDialect::Responses, _) => {
                 serde_json::to_string_pretty(&efference::api::encode_responses(&turns, "", cache))?
             }
             (None, _, WireFormat::Json) => efference::api::render_messages_pretty(&messages)?,
@@ -204,7 +204,7 @@ pub(crate) async fn wire(
                 &model, &system, &tools, choice, &turns,
             )?
         }
-        (None, efference::api::WireDialect::Responses, _) => {
+        (None, efference::log::WireDialect::Responses, _) => {
             efference::api::render_responses_request_pretty(
                 &model, &system, &tools, choice, &turns, cache,
             )?

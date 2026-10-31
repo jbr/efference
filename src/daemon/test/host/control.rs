@@ -3,8 +3,7 @@
 
 use super::*;
 use crate::control_tools::{Archive, ClientExecutor, Control, Create, Executor, Status};
-use crate::frontend::Approval;
-use crate::log::ToolCall;
+use crate::log::{Approval, ToolCall};
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 

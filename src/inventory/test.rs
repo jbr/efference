@@ -23,7 +23,7 @@ impl Root {
     }
 
     fn log(&self, id: &str) -> PathBuf {
-        self.dir(id).join(crate::boot::LOG_NAME)
+        self.dir(id).join(crate::session_dir::LOG_NAME)
     }
 
     /// A resumable session: the boot preamble, then one user entry, written

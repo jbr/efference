@@ -3,12 +3,12 @@
 //! docs/tools.md).
 
 use super::*;
-use crate::control_tools::{Control, Decide, Decision, Executor, Message, Status};
+use crate::control_tools::{Control, Decide, Executor, Message, Status};
 use crate::daemon::Host;
 use crate::daemon::status::{Condition, Reviewer};
-use crate::frontend::Approval;
-use crate::log::Telemetry;
+use crate::log::{Approval, Telemetry};
 use crate::policy::ReviewLevel;
+use crate::protocol::agents::Decision;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
@@ -234,7 +234,7 @@ async fn a_moved_pointer_moves_decide_to_the_new_supervisor() {
         assert_eq!(err, refusal);
     }
     let allow = ToolCall::new(
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_p",
         serde_json::json!({ "agent": "c", "seq": seq, "decision": "allow" }),
     );

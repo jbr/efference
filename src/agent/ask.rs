@@ -16,7 +16,7 @@ impl AskPosition {
     /// The position of `calls[index]` among the asks of `calls` (1 of 1 for a call
     /// that is not one, which nothing reads).
     pub(super) fn of_call(calls: &[ToolCall], index: usize) -> Self {
-        let is_ask = |c: &&ToolCall| c.name == process_monitor::ASK;
+        let is_ask = |c: &&ToolCall| c.name == crate::log::ASK;
         Self {
             n: calls[..index].iter().filter(is_ask).count() + 1,
             of: calls.iter().filter(is_ask).count(),

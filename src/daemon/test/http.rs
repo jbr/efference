@@ -402,7 +402,7 @@ async fn a_turn_carries_the_attachments_it_names() {
 
     let err = client
         .submit(
-            &SubmittedTurn::new("", "s2").with_attachments(vec![crate::attachments::Arrival {
+            &SubmittedTurn::new("", "s2").with_attachments(vec![crate::log::attachment::Arrival {
                 name: "../escape".into(),
                 ..arrival.clone()
             }]),

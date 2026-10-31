@@ -1,6 +1,6 @@
 use super::*;
-use crate::context::Item;
 use crate::log::Telemetry;
+use crate::log::context::Item;
 use crate::log::{
     AssistantOutput, CallId, ContentBlock, Disposition, Keep, LogEntry, Notification, Origin,
     Payload, RawResult, Summary, Timestamp, ToolCall, Triage, Triaged, WireState,
@@ -147,10 +147,10 @@ fn source_does_not_move_unsourced_bytes() {
 /// jsonl, so a renamed field here would silently drop attachments from old logs.
 #[test]
 fn attachment_projects_as_its_notice() {
-    let arrival = crate::attachments::Arrival {
+    let arrival = crate::log::attachment::Arrival {
         name: "shot.png".into(),
         path: ".efference/s1/attachments/composer/shot.png".into(),
-        kind: crate::attachments::Kind::Image {
+        kind: crate::log::attachment::Kind::Image {
             format: "PNG".into(),
             width: 1280,
             height: 800,
@@ -176,10 +176,10 @@ fn attachment_projects_as_its_notice() {
 /// source takes a line of its own and the harness's `⟢` note still starts a line.
 #[test]
 fn a_sourced_attachment_only_turn_keeps_the_sigil_at_a_line_start() {
-    let arrival = crate::attachments::Arrival {
+    let arrival = crate::log::attachment::Arrival {
         name: "a.txt".into(),
         path: "att/composer/a.txt".into(),
-        kind: crate::attachments::Kind::Binary { bytes: 3 },
+        kind: crate::log::attachment::Kind::Binary { bytes: 3 },
     };
     let mut log = vec![entry(
         0,
@@ -245,7 +245,7 @@ fn triaged_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
 fn boot_inference_identity_does_not_project() {
     let identity = crate::log::LoggedInference::new(
         "router",
-        crate::api::Provider::OpenRouter,
+        crate::log::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
     let mut with_identity = sample_log();

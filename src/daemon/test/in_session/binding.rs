@@ -19,7 +19,7 @@ async fn a_bound_decide_resolves_the_childs_held_move() {
     let _gate = child.register_pending(&leaf, None, None);
 
     let decide = ToolCall::new(
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_parent",
         serde_json::json!({ "agent": "child", "seq": seq.to_string(), "decision": "allow" }),
     );
@@ -53,7 +53,7 @@ async fn a_decide_of_a_decide_carries_a_two_hop_chain() {
     let _leaf_gate = grandchild.register_pending(&leaf, None, None);
 
     let inner = ToolCall::new(
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_inner",
         serde_json::json!({
             "agent": "grandchild", "seq": leaf_seq.to_string(), "decision": "allow"
@@ -64,7 +64,7 @@ async fn a_decide_of_a_decide_carries_a_two_hop_chain() {
     let _inner_gate = child.register_pending(&inner, None, None);
 
     let outer = ToolCall::new(
-        crate::control_tools::DECIDE_WIRE_NAME,
+        crate::protocol::agents::DECIDE_WIRE_NAME,
         "toolu_outer",
         serde_json::json!({ "agent": "child", "seq": inner_seq, "decision": "allow" }),
     );
@@ -99,7 +99,7 @@ async fn a_stale_absent_or_unnamed_gate_is_refused() {
             input["seq"] = seq.into();
         }
         ToolCall::new(
-            crate::control_tools::DECIDE_WIRE_NAME,
+            crate::protocol::agents::DECIDE_WIRE_NAME,
             "toolu_parent",
             input,
         )
@@ -139,7 +139,7 @@ async fn the_target_rules_apply_to_a_bound_decide() {
     let control = fixture.control("parent");
     let decide = |agent: &str, seq: &str| {
         ToolCall::new(
-            crate::control_tools::DECIDE_WIRE_NAME,
+            crate::protocol::agents::DECIDE_WIRE_NAME,
             "toolu_parent",
             serde_json::json!({ "agent": agent, "seq": seq, "decision": "allow" }),
         )

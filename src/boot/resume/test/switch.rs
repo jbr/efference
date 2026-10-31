@@ -2,8 +2,7 @@
 
 use super::*;
 use crate::inference::{ResumeSwitch, TriageChoice};
-use crate::log::RecordedRoles;
-use crate::persist::TriageModel;
+use crate::log::{RecordedRoles, TriageModel};
 
 fn switch_to_terra_and_luna() -> ResumeSwitch {
     ResumeSwitch {
