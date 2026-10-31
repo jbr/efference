@@ -61,7 +61,7 @@ impl Session {
     /// Queue `turn` for the loop's next juncture, releasing the ask lock the caller holds
     /// once the turn is in the queue, so no ask can start between the check and the push.
     /// Returns whether the turn waits behind the operator's hold: an agent's turn
-    /// ([`agent_source`](crate::frontend::agent_source)) submitted while held is queued but
+    /// ([`agent_source`](crate::names::sources::agent_source)) submitted while held is queued but
     /// not sent until the hold is released (docs/control-channel.md). Any other turn
     /// releases the hold.
     ///
@@ -90,7 +90,7 @@ impl Session {
                     interleaved(self);
                 }
             }
-            if !crate::frontend::agent_source(turn.source.as_deref()) {
+            if !crate::names::sources::agent_source(turn.source.as_deref()) {
                 pace.release(&self.turns_tx);
             } else if pace.held {
                 pace.held_back.push(turn);

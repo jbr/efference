@@ -169,7 +169,7 @@ fn budget_counts_projected_verdict_text_and_json_not_raw_output() {
 fn manual_consolidation_is_not_tool_work() {
     let log = vec![
         user(0, "work"),
-        call(1, "c", NAME),
+        call(1, "c", CONSOLIDATE),
         result(2, "c", "consolidated"),
         report(3, "done"),
     ];

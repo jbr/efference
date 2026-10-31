@@ -244,7 +244,7 @@ pub(super) fn gate_body(
     bound: Option<&crate::protocol::agents::BoundAction>,
 ) -> String {
     if let Some(bound) = bound {
-        let display = crate::mcp::display_name(&bound.name);
+        let display = crate::names::tools::display_name(&bound.name);
         let text = bound.intent.as_deref().or(intent).or(reason);
         return match text {
             Some(text) => format!("approve {}'s {display} — {text}", bound.session),
@@ -267,7 +267,7 @@ pub(super) fn gate_body(
 pub(super) fn escalated_body(source: Option<&str>, note: Option<&str>, gate: &str) -> String {
     let by = source.map_or_else(
         || "the operator".to_string(),
-        |source| crate::frontend::source_name(source).to_string(),
+        |source| crate::names::sources::source_name(source).to_string(),
     );
     let note = note
         .map(str::trim)

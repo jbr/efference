@@ -231,7 +231,7 @@ I am not expecting."
                 format!("Wrote {} bytes to {WRITTEN_PATH}", WRITTEN_FILE.len()),
             ),
             Scene::Bash => (
-                crate::bash::NAME,
+                crate::names::tools::BASH,
                 "Running the test suite.",
                 object(&[
                     ("intent", json_str("run the test suite")),

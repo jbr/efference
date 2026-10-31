@@ -872,7 +872,7 @@ it — which is how `check_inbox` came to render as a code block containing `{}`
   `<server>__<tool>`: the dotted form is the only spelling an operator ever
   writes (an eval config's `"ferritin.get" = { granted = true }`), so showing the wire form
   showed a name that appears nowhere else in the product. `splitToolName`
-  mirrors `mcp::display_name` (the boundary is the *first* `__`). The server segment is a
+  mirrors `names::tools::display_name` (the boundary is the *first* `__`). The server segment is a
   dimmed span of its own rather than a smaller one — built-in versus
   mounted-server is the `open_world_hint` distinction, i.e. whether the call
   could have reached outside the session, which is worth a standing visual.

@@ -188,7 +188,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     let child = fixture.session("child");
 
     let curl = ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "toolu_curl",
         serde_json::json!({
             "command": "curl -sI https://example.com",

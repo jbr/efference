@@ -69,11 +69,7 @@ fn sample_role() -> Config {
 }
 
 fn bash_call(command: &str) -> ToolCall {
-    ToolCall::new(
-        bash::NAME,
-        "toolu_x",
-        serde_json::json!({ "command": command }),
-    )
+    ToolCall::new(BASH, "toolu_x", serde_json::json!({ "command": command }))
 }
 
 fn verdict(command: &str) -> Verdict {

@@ -19,8 +19,8 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use crate::api::{Decisions, Instructions, Question};
-use crate::bash;
 use crate::log::{Compared, ToolCall};
+use crate::names::tools::{BASH, INTENT, display_name};
 
 use super::questions::{RELATION_COUNTS, Reading};
 
@@ -60,7 +60,7 @@ pub(super) fn key(index: usize, reversed: bool) -> String {
 /// model does the comparing.
 pub(super) fn family(call: &ToolCall) -> String {
     let Some(command) = bash_command(call) else {
-        return crate::mcp::display_name(&call.name);
+        return display_name(&call.name);
     };
     let program = without_leading_cd(command.trim())
         .split_whitespace()
@@ -68,11 +68,11 @@ pub(super) fn family(call: &ToolCall) -> String {
         .map(|word| word.rsplit('/').next().unwrap_or(word))
         .filter(|name| !name.is_empty())
         .unwrap_or("?");
-    format!("{}:{program}", bash::NAME)
+    format!("{BASH}:{program}")
 }
 
 fn bash_command(call: &ToolCall) -> Option<&str> {
-    (call.name == bash::NAME).then(|| {
+    (call.name == BASH).then(|| {
         call.input
             .get("command")
             .and_then(Value::as_str)
@@ -118,12 +118,9 @@ pub(super) fn plaintext(call: &ToolCall) -> String {
     if let Some(command) = bash_command(call) {
         return format!("$ {}", command.replace('\n', "\n  "));
     }
-    let mut text = crate::mcp::display_name(&call.name);
+    let mut text = display_name(&call.name);
     if let Some(arguments) = call.input.as_object() {
-        for (name, value) in arguments
-            .iter()
-            .filter(|(name, _)| *name != crate::log::INTENT)
-        {
+        for (name, value) in arguments.iter().filter(|(name, _)| *name != INTENT) {
             let value = match value {
                 Value::String(s) => s.clone(),
                 other => other.to_string(),

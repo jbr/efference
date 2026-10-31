@@ -8,6 +8,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::names::tools::INTENT;
+
 mod curation;
 pub use curation::result_verdicts;
 
@@ -20,7 +22,6 @@ mod config_edit;
 mod construct;
 pub mod context;
 mod exclusion;
-mod names;
 mod preamble;
 mod process;
 mod provider;
@@ -49,7 +50,6 @@ pub use cold::{ColdEvent, ColdReason, ReleasedBy, UnparkCause};
 pub use completions::CompletionsMessage;
 pub use config_edit::{ConfigChange, ConfigEdit, EditState};
 pub use exclusion::Exclusion;
-pub use names::{ASK, INTENT};
 pub use preamble::{
     LoggedInference, RecordedRoles, TriageModel, recorded_inference, recorded_roles,
 };

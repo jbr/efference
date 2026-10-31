@@ -15,9 +15,9 @@
 
 use serde_json::{Value, json};
 
-use crate::bash;
 use crate::config::Config;
 use crate::log::ToolCall;
+use crate::names::tools::{BASH, INTENT, display_name};
 use crate::tools::ToolBrief;
 
 /// The state for one assessment.
@@ -179,7 +179,7 @@ fn proposed_move(
     dirs: Option<&crate::policy::Directories>,
     scratch: Option<&std::path::Path>,
 ) -> Value {
-    if call.name == bash::NAME {
+    if call.name == BASH {
         return match call.input.get("command").and_then(Value::as_str) {
             Some(command) => {
                 // A leading `cd` into the working directory goes nowhere, so the move
@@ -218,11 +218,11 @@ fn proposed_move(
     // a channel for talking past the gate on assertion alone.
     let mut input = call.input.clone();
     if let Some(object) = input.as_object_mut() {
-        object.remove(crate::log::INTENT);
+        object.remove(INTENT);
     }
     let mut proposed = json!({
         "kind": "tool_call",
-        "tool": crate::mcp::display_name(&call.name),
+        "tool": display_name(&call.name),
         "input": input,
     });
     let object = proposed.as_object_mut().expect("built as an object");

@@ -94,7 +94,7 @@ pub fn probe_ledger(dirs: &Directories, role: &Config, log: &[LogEntry]) -> Prob
     for entry in log {
         if let Payload::Assistant { output, .. } = &entry.payload {
             for call in output.tool_calls().unwrap_or_default() {
-                if call.name == bash::NAME
+                if call.name == BASH
                     && let Some(cmd) = call.input.get("command").and_then(Value::as_str)
                 {
                     command_of.insert(call.id, cmd.to_string());

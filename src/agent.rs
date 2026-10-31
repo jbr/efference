@@ -34,9 +34,7 @@ use crate::protocol::state::{BlockedReason, LoopPhase, Stall, StallReason};
 use crate::protocol::stream::StreamDelta;
 use crate::spotter::Spotter;
 use crate::tools::Toolbox;
-use crate::triage::{
-    BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager, is_triage_tool,
-};
+use crate::triage::{BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager};
 
 /// Hard cap on a single tool result's bytes (defense in depth). The triage caps
 /// *line count* (`TRIAGE_LINE_CAP`), but not a pathological single huge line; an

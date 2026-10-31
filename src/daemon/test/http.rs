@@ -165,7 +165,7 @@ async fn the_kickoff_source_is_reserved() {
         .turn_with(
             "hidden",
             crate::client::TurnOptions {
-                source: Some(crate::frontend::KICKOFF_SOURCE),
+                source: Some(crate::names::sources::KICKOFF_SOURCE),
             },
         )
         .await

@@ -115,7 +115,7 @@ impl Operations {
                     .into_iter()
                     .map(|call| {
                         let intent = call.intent().map(str::to_string);
-                        let command = (call.name == crate::bash::NAME)
+                        let command = (call.name == crate::names::tools::BASH)
                             .then(|| call.input.get("command").and_then(Value::as_str))
                             .flatten()
                             .map(str::to_string);
@@ -265,7 +265,7 @@ impl Operations {
     /// already reports the retry with its budget.
     pub(crate) fn activity(&self, retrying: bool) -> Vec<Activity> {
         let tools = self.tools.iter().map(|tool| Activity::Tool {
-            tool: crate::mcp::display_name(&tool.tool),
+            tool: crate::names::tools::display_name(&tool.tool),
             command: tool.command.clone(),
             since: tool.since,
         });

@@ -89,17 +89,17 @@ pub(crate) fn sender(source: Option<&str>, me: Option<&str>) -> String {
     if source == "web" {
         return "operator (web)".to_string();
     }
-    if crate::frontend::is_review_source(source) {
+    if crate::names::sources::is_review_source(source) {
         return "the permission review".to_string();
     }
     let named = |name: &str| match me.is_some_and(|me| me == source || me == name) {
         true => "you".to_string(),
         false => name.to_string(),
     };
-    if let Some(predecessor) = crate::frontend::handoff_predecessor(source) {
+    if let Some(predecessor) = crate::names::sources::handoff_predecessor(source) {
         return format!("{} (hand-off)", named(predecessor));
     }
-    named(crate::frontend::source_name(source))
+    named(crate::names::sources::source_name(source))
 }
 
 /// `ok, 12 lines` — a result's outcome and size: `ok` or `error`, its text in lines,
@@ -209,7 +209,10 @@ fn change_words(change: &ConfigChange) -> String {
         } => format!("read access to {}", code_span(path)),
         ConfigChange::Path { path, .. } => format!("no access to {}", code_span(path)),
         ConfigChange::Tool { name } => {
-            format!("the tool {}", code_span(&crate::mcp::display_name(name)))
+            format!(
+                "the tool {}",
+                code_span(&crate::names::tools::display_name(name))
+            )
         }
         ConfigChange::Scope { .. } => "a new scope".to_string(),
     }
@@ -367,7 +370,7 @@ fn assistant(output: &AssistantOutput) -> (Vec<String>, Vec<ToolCall>) {
 /// call's command, any other call's arguments as `audit::call_line` writes them. `None`
 /// for a call with nothing but its intent.
 pub(crate) fn call_summary(call: &ToolCall) -> Option<String> {
-    if call.name == crate::bash::NAME
+    if call.name == crate::names::tools::BASH
         && let Some(command) = call.input.get("command").and_then(Value::as_str)
     {
         return Some(clip(command, ARG_WIDE));
@@ -384,7 +387,7 @@ fn arguments(call: &ToolCall) -> String {
     match &call.input {
         Value::Object(map) => {
             for (key, value) in map {
-                if key == crate::log::INTENT {
+                if key == crate::names::tools::INTENT {
                     continue;
                 }
                 let rendered = match value {

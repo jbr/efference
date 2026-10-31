@@ -7,16 +7,17 @@
 //! the fast path's name grant and moves live with the session's grants.
 
 use super::*;
+use crate::names::tools::{
+    AGENTS_NAMESPACE, ASK, BUILTIN_NAMESPACE, CHECK_INBOX, CONSOLIDATE, KILL_PROCESS,
+    LIST_PROCESSES, LSP_NAMESPACE, NAMESPACE_SEPARATOR, READ_PROCESS, WAIT, WATCH_PROCESS,
+    display_name, is_namespace_glob, is_triage_tool, namespace_glob, namespace_of,
+};
 
-/// The namespaces efference serves itself: [`crate::mcp::BUILTIN_NAMESPACE`] for the
+/// The namespaces efference serves itself: [`BUILTIN_NAMESPACE`] for the
 /// unprefixed built-ins (`read`, `bash`, …), the session-control verbs (`agents__<verb>`),
 /// and the language-server tools (`lsp__<tool>`). Off unless a `[tools]` entry enables them,
 /// and no declared server may take their names.
-pub const BUILTIN_NAMESPACES: [&str; 3] = [
-    crate::mcp::BUILTIN_NAMESPACE,
-    crate::protocol::agents::NAMESPACE,
-    crate::tools::lsp::NAMESPACE,
-];
+pub const BUILTIN_NAMESPACES: [&str; 3] = [BUILTIN_NAMESPACE, AGENTS_NAMESPACE, LSP_NAMESPACE];
 
 /// One `[tools]` entry as written. A field left `None` comes from the namespace's entry, then
 /// the default ([`Config::tool_enabled`], [`ToolsTable::granted`]). Serialized as the `role`
@@ -61,13 +62,13 @@ impl ToolsTable {
     ) -> Option<bool> {
         self.tools.get(wire_name).and_then(&field).or_else(|| {
             self.namespaces
-                .get(crate::mcp::namespace_of(wire_name))
+                .get(namespace_of(wire_name))
                 .and_then(&field)
         })
     }
 
     /// Apply a logged grant ([`ConfigChange::Tool`]): a wire name grants that tool, and a
-    /// namespace glob (`ferritin__*`, [`crate::mcp::namespace_glob`]) the whole namespace.
+    /// namespace glob (`ferritin__*`, [`namespace_glob`]) the whole namespace.
     pub fn grant(&mut self, name: &str) {
         match namespace_of_glob(name) {
             Some(namespace) => {
@@ -79,11 +80,7 @@ impl ToolsTable {
             None => {
                 // A config written before the `[tools]` table spelled a built-in `efference.read`,
                 // which it logged as `efference__read`; the built-in's wire name is `read`.
-                let builtin = format!(
-                    "{}{}",
-                    crate::mcp::BUILTIN_NAMESPACE,
-                    crate::mcp::NAMESPACE_SEPARATOR
-                );
+                let builtin = format!("{BUILTIN_NAMESPACE}{NAMESPACE_SEPARATOR}");
                 let wire = name.strip_prefix(&builtin).unwrap_or(name);
                 self.tools.entry(wire.to_string()).or_default().granted = Some(true);
             }
@@ -97,7 +94,7 @@ impl ToolsTable {
             .namespaces
             .iter()
             .filter(|(_, s)| s.granted == Some(true))
-            .map(|(namespace, _)| crate::mcp::namespace_glob(namespace));
+            .map(|(namespace, _)| namespace_glob(namespace));
         let tools = self
             .tools
             .iter()
@@ -116,18 +113,18 @@ impl ToolsTable {
 
 /// The namespace a logged whole-namespace grant names, or `None` for a tool's wire name.
 fn namespace_of_glob(name: &str) -> Option<&str> {
-    crate::mcp::is_namespace_glob(name)
-        .then(|| name.strip_suffix(&crate::mcp::namespace_glob("")))
+    is_namespace_glob(name)
+        .then(|| name.strip_suffix(&namespace_glob("")))
         .flatten()
 }
 
 /// The `[tools]` key for a tool's wire name: `efference.read` for the unprefixed built-in
 /// `read`, `ferritin.get` for `ferritin__get`. Always dotted, because a bare key is a namespace.
 pub fn table_key(wire_name: &str) -> String {
-    if wire_name.contains(crate::mcp::NAMESPACE_SEPARATOR) {
-        crate::mcp::display_name(wire_name)
+    if wire_name.contains(NAMESPACE_SEPARATOR) {
+        display_name(wire_name)
     } else {
-        format!("{}.{wire_name}", crate::mcp::BUILTIN_NAMESPACE)
+        format!("{BUILTIN_NAMESPACE}.{wire_name}")
     }
 }
 
@@ -136,19 +133,18 @@ pub fn table_key(wire_name: &str) -> String {
 /// and a backgrounded command is read through the process tools. They take a grant like any
 /// other tool, but not `enabled`.
 pub fn always_present(wire_name: &str) -> bool {
-    use crate::process_monitor as pm;
     [
-        crate::consolidate::NAME,
-        pm::LIST,
-        pm::READ,
-        pm::KILL,
-        pm::WATCH,
-        pm::CHECK_INBOX,
-        pm::WAIT,
-        crate::log::ASK,
+        CONSOLIDATE,
+        LIST_PROCESSES,
+        READ_PROCESS,
+        KILL_PROCESS,
+        WATCH_PROCESS,
+        CHECK_INBOX,
+        WAIT,
+        ASK,
     ]
     .contains(&wire_name)
-        || crate::triage::is_triage_tool(wire_name)
+        || is_triage_tool(wire_name)
 }
 
 /// Whether a namespace's tools are mounted when no entry says: a declared server's are (the
@@ -167,7 +163,7 @@ impl Config {
         always_present(wire_name)
             || self.tools.enabled(
                 wire_name,
-                enabled_by_default(crate::mcp::namespace_of(wire_name), &self.mcp_servers),
+                enabled_by_default(namespace_of(wire_name), &self.mcp_servers),
             )
     }
 }
@@ -196,10 +192,10 @@ pub(super) fn validate_tools(
                 table.namespaces.insert(key, settings);
             }
             Some((namespace, tool)) if !tool.is_empty() && known(namespace) => {
-                let wire = if namespace == crate::mcp::BUILTIN_NAMESPACE {
+                let wire = if namespace == BUILTIN_NAMESPACE {
                     tool.to_string()
                 } else {
-                    format!("{namespace}{}{tool}", crate::mcp::NAMESPACE_SEPARATOR)
+                    format!("{namespace}{NAMESPACE_SEPARATOR}{tool}")
                 };
                 if settings.enabled.is_some() && always_present(&wire) {
                     return Err(ValidationError::ToolAlwaysPresent(key));
@@ -219,10 +215,7 @@ pub(super) fn validate_tools(
     }
     for (wire, settings) in &table.tools {
         let enabled = always_present(wire)
-            || table.enabled(
-                wire,
-                enabled_by_default(crate::mcp::namespace_of(wire), mcp_servers),
-            );
+            || table.enabled(wire, enabled_by_default(namespace_of(wire), mcp_servers));
         if settings.granted == Some(true) && !enabled {
             return Err(ValidationError::ToolGrantedNotEnabled(table_key(wire)));
         }

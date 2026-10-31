@@ -18,11 +18,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::log::{CallId, LogEntry, Payload, Seq};
+use crate::names::tools::CONSOLIDATE;
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
-
-/// The wire name. The loop branches on this to take the structural path.
-pub const NAME: &str = "consolidate";
 
 /// The mounted-table entry, in the same [`ToolDefinition`] shape a provider's
 /// mount snapshots, so the spotter's brief (docs/permissions.md) reads this tool
@@ -39,7 +37,7 @@ pub const NAME: &str = "consolidate";
 /// operator/audit property, not something the prompt dangles.
 static SCHEMA: LazyLock<ToolDefinition> = LazyLock::new(|| {
     let mut tool = ToolDefinition::new(
-        NAME,
+        CONSOLIDATE,
         json!({
             "type": "object",
             "properties": {
@@ -86,7 +84,7 @@ pub fn definition() -> Value {
 /// The spotter's brief for `consolidate` (docs/permissions.md); `None` for any
 /// other name. `server: None` — the harness's own.
 pub fn brief(name: &str) -> Option<ToolBrief<'static>> {
-    (name == NAME).then(|| {
+    (name == CONSOLIDATE).then(|| {
         let schema: &'static ToolDefinition = &SCHEMA;
         ToolBrief {
             server: None,

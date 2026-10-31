@@ -1,6 +1,8 @@
 //! Tests for the ask's own text and shape.
 use super::*;
 
+use crate::names::tools::is_triage_tool;
+
 /// The triage tools' schemas are static (docs/triage.md): they ride every turn's
 /// `tools[]`, so any variation would re-key the request envelope and split the cache
 /// lineage. Byte-identical across calls, every rider field unconditional, and the

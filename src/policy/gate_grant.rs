@@ -3,6 +3,8 @@
 
 use super::*;
 
+use crate::names::tools::display_name;
+
 /// The one grant a gate offers alongside approve and abort (docs/permissions.md): the
 /// change a client commits unchanged as the `config_edit` decision, and the label that
 /// names what it allows ("always allow reading /work/refs"). Surfaced on `/state`'s
@@ -40,7 +42,7 @@ pub fn gate_grant(
         apply_config_change(&mut amended, change);
         classify_in(&amended, call, dirs) == Verdict::Clear
     };
-    let change = if call.name == bash::NAME {
+    let change = if call.name == BASH {
         let command = call.input.get("command").and_then(Value::as_str)?;
         let tokens = bash_tokens_in(role, command, dirs)?;
         if commands::command_stance(role, &tokens) == Some(CommandStance::Deny) {
@@ -124,7 +126,7 @@ fn label(change: &ConfigChange) -> String {
         } => format!("always allow reading and writing {path}"),
         ConfigChange::Path { path, .. } => format!("always allow reading {path}"),
         ConfigChange::Tool { name } => {
-            format!("always allow the tool {}", crate::mcp::display_name(name))
+            format!("always allow the tool {}", display_name(name))
         }
         ConfigChange::Scope { .. } => "replace the session scope".to_string(),
     }

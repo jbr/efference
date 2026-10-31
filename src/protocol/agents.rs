@@ -13,9 +13,6 @@ use serde_json::Value;
 
 use crate::log::ToolCall;
 
-/// The namespace the in-session set is mounted under: `agents__<verb>` (docs/tools.md).
-pub const NAMESPACE: &str = "agents";
-
 /// The wire name of the in-session `decide`: the one call the loop binds to its
 /// target's held action before running the permission ladder, when it allows
 /// (docs/permissions.md).

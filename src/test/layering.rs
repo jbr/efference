@@ -1,10 +1,11 @@
 //! Which way imports run between the crate's top-level modules (docs/README.md,
 //! *Dependency direction*).
 //!
-//! Two rows hold. `log` imports no other top-level module. And a module outside
-//! [`OUTER`] imports nothing from [`OUTER`], apart from the imports named in
-//! [`OPEN_EDGES`]: a new one fails here instead of joining them, and a named one that
-//! goes away fails until its line is deleted.
+//! Three rows hold. `names` imports no other top-level module. `log` imports none but
+//! [`BELOW_LOG`], the modules placed below it. And a module outside [`OUTER`] imports
+//! nothing from [`OUTER`], apart from the imports named in [`OPEN_EDGES`]: a new one
+//! fails here instead of joining them, and a named one that goes away fails until its
+//! line is deleted.
 //!
 //! The scan is over text, as `daemon/test/statics.rs` is: it skips test files and
 //! comments, and reads every spelling of a path that names a module of the crate
@@ -36,6 +37,10 @@ const OUTER: &[&str] = &[
     "boot",
 ];
 
+/// The modules placed below `log`, which it may import: `names` holds the names a recorded
+/// entry carries, and `log`'s own readers match on them.
+const BELOW_LOG: &[&str] = &["names"];
+
 /// A set of top-level modules, for the table.
 enum Modules {
     /// Exactly these.
@@ -65,9 +70,15 @@ struct Row {
 
 const TABLE: &[Row] = &[
     Row {
-        importers: Modules::These(&["log"]),
+        importers: Modules::These(&["names"]),
         imports: Modules::Except(&[]),
-        why: "`log` imports no other top-level module",
+        why: "`names` imports no other top-level module",
+        open: &[],
+    },
+    Row {
+        importers: Modules::These(&["log"]),
+        imports: Modules::Except(BELOW_LOG),
+        why: "`log` imports no top-level module but those placed below it",
         open: &[],
     },
     Row {
@@ -175,10 +186,18 @@ fn visit(root: &Path, dir: &Path, found: &mut Vec<Reference>) {
 #[test]
 fn the_table_forbids_what_it_names() {
     let forbidden = |importer: &str, imported: &str| row_for(importer, imported).is_some();
-    // `log` imports nothing.
+    // `names` imports nothing, and `log` imports nothing but `names`.
+    assert!(forbidden("names", "log"));
+    assert!(forbidden("names", "protocol"));
+    assert!(!forbidden("names", "names"));
     assert!(forbidden("log", "api"));
     assert!(forbidden("log", "persist"));
     assert!(!forbidden("log", "log"));
+    assert!(!forbidden("log", "names"));
+    // Everything above `log` may import `names`, the outer modules included.
+    assert!(!forbidden("agent", "names"));
+    assert!(!forbidden("session_dir", "names"));
+    assert!(!forbidden("daemon", "names"));
     // The inner modules do not import the outer ones; the outer ones may import anything.
     assert!(forbidden("agent", "daemon"));
     assert!(forbidden("session_dir", "boot"));

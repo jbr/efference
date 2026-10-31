@@ -26,7 +26,8 @@
 //! contain no `__`, and the config validates server names against the API's
 //! tool-name alphabet). That alphabet (`[a-zA-Z0-9_-]`) has no separator that
 //! reads as one — the MCP spec permits `.`, the provider does not — so
-//! [`display_name`] renders the boundary as a dot for the TUI.
+//! [`display_name`](crate::names::tools::display_name) renders the boundary as a dot for
+//! the TUI.
 //!
 //! Protocol interop is `mcplease::client`'s (docs/tools.md "the client
 //! protocol"): `ClientProtocol` builds each request and classifies each
@@ -52,6 +53,7 @@ use tokio::sync::Mutex;
 use crate::bash::Outcome;
 use crate::config::McpTransport;
 use crate::log::{Notification, RawResult, ToolCall};
+use crate::names::tools::NAMESPACE_SEPARATOR;
 use crate::tools::Interrupt;
 use crate::tools::anthropic_def;
 
@@ -64,67 +66,6 @@ use events::{ServerEvent, route_event, token_matches};
 
 #[cfg(test)]
 mod test;
-
-/// The separator between server name and tool name on the wire
-/// (`github__create_issue`). Two underscores: legal in the API's tool-name
-/// alphabet, and absent from every embedded tool name, so a namespaced name
-/// can never collide with an embedded one.
-pub const NAMESPACE_SEPARATOR: &str = "__";
-
-/// The namespace the harness's own embedded tools sit in for grant purposes
-/// (docs/permissions.md). Their wire names carry no prefix — `read` is `read` —
-/// so this is the name that stands in for the missing `<server>` half when a
-/// `[tools]` entry is resolved: `efference` is the whole-namespace entry over the
-/// built-ins, and `"efference.read"` is how `read` is keyed. A declared server
-/// may not take the name (`config::BUILTIN_NAMESPACES`).
-pub const BUILTIN_NAMESPACE: &str = "efference";
-
-/// A namespaced wire name rendered for a human: `ferritin__get` → `ferritin.get`.
-///
-/// The wire alphabet (`[a-zA-Z0-9_-]`) has no separator that reads as one, so
-/// `__` is what the name must *be*; a dot is what it wants to look like. Only
-/// the first occurrence is replaced — the server name is validated against that
-/// same alphabet and embedded tool names contain no `__`, so the first `__` is
-/// always the namespace boundary and any later one belongs to the server's own
-/// tool name.
-///
-/// Display only. Nothing that reaches the wire, the log, or a lookup may go
-/// through here — the dotted form is not a name anything can be found by.
-pub fn display_name(wire_name: &str) -> String {
-    wire_name.replacen(NAMESPACE_SEPARATOR, ".", 1)
-}
-
-/// The namespace a wire tool name belongs to: the `<server>` half of
-/// `<server>__<tool>`, or [`BUILTIN_NAMESPACE`] for an unprefixed embedded name.
-/// The boundary is the **first** `__`, the same rule [`display_name`] applies —
-/// server names may not contain one.
-pub fn namespace_of(wire_name: &str) -> &str {
-    match wire_name.split_once(NAMESPACE_SEPARATOR) {
-        Some((server, _)) => server,
-        None => BUILTIN_NAMESPACE,
-    }
-}
-
-/// How a logged grant names a whole namespace (docs/permissions.md): a
-/// [`crate::log::ConfigChange::Tool`] carries `ferritin__*` for a granted
-/// `ferritin` entry, beside the wire names exact grants carry. `*` is absent from
-/// the API's tool-name alphabet, so it can never collide with a real advertised
-/// name.
-pub fn namespace_glob(namespace: &str) -> String {
-    format!("{namespace}{NAMESPACE_SEPARATOR}*")
-}
-
-/// Whether a logged grant name is a whole-namespace glob — `<namespace>__*`
-/// with a non-empty namespace that is itself star-free ([`namespace_glob`]).
-pub fn is_namespace_glob(entry: &str) -> bool {
-    entry
-        .strip_suffix(&namespace_glob(""))
-        .is_some_and(|namespace| {
-            !namespace.is_empty()
-                && !namespace.contains('*')
-                && !namespace.contains(NAMESPACE_SEPARATOR)
-        })
-}
 
 /// A declared server that did not mount, and why (docs/tools.md).
 ///

@@ -10,7 +10,7 @@ fn call(name: &str, input: Value) -> ToolCall {
 fn bash_only_advertises_exactly_the_bash_tool() {
     let defs = Toolbox::bash_only().definitions();
     assert_eq!(defs.len(), 1);
-    assert_eq!(defs[0]["name"], json!(bash::NAME));
+    assert_eq!(defs[0]["name"], json!(BASH));
 }
 
 /// `tool_entry` has no hole for `Bash`, unlike `brief`: its description and
@@ -19,9 +19,9 @@ fn bash_only_advertises_exactly_the_bash_tool() {
 #[test]
 fn tool_entry_answers_for_bash_even_though_brief_does_not() {
     let box_ = Toolbox::bash_only();
-    assert!(box_.brief(bash::NAME).is_none(), "brief still has the hole");
-    let entry = box_.tool_entry(bash::NAME).expect("bash has a definition");
-    assert_eq!(entry.name, bash::NAME);
+    assert!(box_.brief(BASH).is_none(), "brief still has the hole");
+    let entry = box_.tool_entry(BASH).expect("bash has a definition");
+    assert_eq!(entry.name, BASH);
     assert!(entry.server.is_none(), "a built-in has no mounting server");
     assert!(entry.description.is_some());
     assert_eq!(
@@ -59,7 +59,7 @@ async fn routes_a_bash_call_to_the_bash_backend() {
     let box_ = Toolbox::bash_only();
     let result = done(
         box_.run(
-            &call(bash::NAME, json!({"command": "echo routed"})),
+            &call(BASH, json!({"command": "echo routed"})),
             pending(),
             |_| {},
             |_| {},
@@ -227,7 +227,7 @@ async fn intent_is_stripped_before_the_tool_runs() {
     let result = done(
         box_.run(
             &call(
-                bash::NAME,
+                BASH,
                 json!({"command": "echo ran", INTENT: "prove the strip"}),
             ),
             pending(),
@@ -245,17 +245,17 @@ async fn intent_is_stripped_before_the_tool_runs() {
 /// puts it on the wire and in reach of the harness's readers.
 #[test]
 fn the_logged_call_keeps_its_intent() {
-    let with = call(bash::NAME, json!({"command": "true", INTENT: "  why  "}));
+    let with = call(BASH, json!({"command": "true", INTENT: "  why  "}));
     assert_eq!(with.intent(), Some("why"), "trimmed, and still on the call");
-    assert_eq!(call(bash::NAME, json!({"command": "true"})).intent(), None);
+    assert_eq!(call(BASH, json!({"command": "true"})).intent(), None);
     // An empty or whitespace-only intent reads as absent rather than as a blank row.
     assert_eq!(
-        call(bash::NAME, json!({"command": "true", INTENT: "   "})).intent(),
+        call(BASH, json!({"command": "true", INTENT: "   "})).intent(),
         None
     );
     // A non-string intent (a model emitting the wrong type) is absent, not a panic.
     assert_eq!(
-        call(bash::NAME, json!({"command": "true", INTENT: 7})).intent(),
+        call(BASH, json!({"command": "true", INTENT: 7})).intent(),
         None
     );
 }

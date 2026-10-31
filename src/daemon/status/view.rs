@@ -125,7 +125,7 @@ impl Session {
                     Some(format!(
                         "{}'s {}{leaf_summary}",
                         bound.session,
-                        crate::mcp::display_name(&bound.name)
+                        crate::names::tools::display_name(&bound.name)
                     ))
                 }
                 None => transcript::call_summary(&ToolCall::new(
@@ -145,7 +145,7 @@ impl Session {
         };
         HeldCall {
             call_id: call_id.to_string(),
-            tool: crate::mcp::display_name(name),
+            tool: crate::names::tools::display_name(name),
             summary,
             intent,
             handle: self.handle_of(call_id),

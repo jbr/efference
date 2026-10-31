@@ -78,7 +78,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
                 vec![],
                 vec![],
                 vec![ToolCall::new(
-                    bash::NAME,
+                    BASH,
                     id,
                     serde_json::json!({ "command": command }),
                 )],

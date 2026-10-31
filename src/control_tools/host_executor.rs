@@ -116,7 +116,7 @@ impl HostExecutor {
     /// `session[<id>]`, naming the caller's project as well when it is not `target`'s
     /// (docs/tools.md).
     pub(super) fn source_for(&self, target: &Session) -> String {
-        crate::frontend::session_source(&self.caller, self.place_for(target).as_deref())
+        crate::names::sources::session_source(&self.caller, self.place_for(target).as_deref())
     }
 
     /// The `source` of a note the caller leaves in `target`'s inbox: its bare id within
@@ -124,7 +124,7 @@ impl HostExecutor {
     /// [`source_for`](Self::source_for) label from another project (docs/inbox.md).
     pub(super) fn note_source_for(&self, target: &Session) -> String {
         match self.place_for(target) {
-            Some(place) => crate::frontend::session_source(&self.caller, Some(&place)),
+            Some(place) => crate::names::sources::session_source(&self.caller, Some(&place)),
             None => self.caller.clone(),
         }
     }

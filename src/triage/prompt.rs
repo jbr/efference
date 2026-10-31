@@ -169,7 +169,7 @@ pub(super) fn append_inbox_and_background(
     if !inbox.is_empty() {
         view.push_str(&format!("\n\n═══ inbox · {} pending ═══", inbox.len()));
         for n in inbox {
-            let source = crate::frontend::wire_label(&n.source);
+            let source = crate::names::sources::wire_label(&n.source);
             view.push_str(&format!("\n[{}] {source} · {}", n.seq, n.body));
         }
     }

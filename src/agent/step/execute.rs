@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::log::Telemetry;
+use crate::names::tools::BASH;
 
 /// Run `call` and capture what it produced as a [`Decision`]. `config_write` marks the
 /// call that writes the session's own config file, whose effect is decided after it
@@ -183,7 +184,7 @@ async fn run_foreground<F: Frontend>(
     toolbox: &Toolbox,
     call: &ToolCall,
 ) -> Acquired {
-    if call.name == bash::NAME {
+    if call.name == BASH {
         // A detach request that never found a running tool must not label this
         // fresh command's (potential) handoff — drop any stale note first.
         shared.take_detach_note();

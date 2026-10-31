@@ -9,25 +9,17 @@ use structural_lsp::host::AgentId;
 use structural_lsp::session::Session;
 use structural_lsp::tools::Tools;
 
+use crate::names::tools::{LSP_NAMESPACE, NAMESPACE_SEPARATOR};
+
 /// The host-wide language-server host: its workspaces are keyed by project root, so the
 /// sessions in one project share one set of servers.
 pub use structural_lsp::host::Host as LanguageServers;
-
-/// The wire namespace (`lsp__definition`). One of efference's own, so it is off unless a
-/// `[tools]` entry enables it (`config::BUILTIN_NAMESPACES`).
-pub const NAMESPACE: &str = "lsp";
 
 /// Every tool the namespace serves, by wire name.
 pub fn wire_names() -> impl Iterator<Item = String> {
     <Tools as AsToolsList>::tools_list()
         .into_iter()
-        .map(|tool| {
-            format!(
-                "{NAMESPACE}{}{}",
-                crate::mcp::NAMESPACE_SEPARATOR,
-                tool.name
-            )
-        })
+        .map(|tool| format!("{LSP_NAMESPACE}{NAMESPACE_SEPARATOR}{}", tool.name))
 }
 
 /// Whether `role` mounts any `lsp` tool. Boot asks before binding, since binding starts the
@@ -63,7 +55,7 @@ impl Lsp {
         })
         .await?;
         Ok(Self {
-            server: McpServer::from_state_namespaced(session, &[], NAMESPACE),
+            server: McpServer::from_state_namespaced(session, &[], LSP_NAMESPACE),
             _interest: Interest { servers, agent },
         })
     }

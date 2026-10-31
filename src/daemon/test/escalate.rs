@@ -84,7 +84,7 @@ fn latest_from(session: &Session, source: &str) -> Option<String> {
 
 fn curl(id: &str) -> ToolCall {
     ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         id,
         serde_json::json!({
             "command": "curl -sI https://example.com",

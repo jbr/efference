@@ -17,7 +17,7 @@ use trillium_tokio::Swansong;
 
 fn call(id: &str, command: &str) -> ToolCall {
     ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         id,
         serde_json::json!({ "command": command }),
     )

@@ -3,6 +3,11 @@
 
 use super::*;
 
+use crate::names::tools::{
+    ASK, CHECK_INBOX, CONSOLIDATE, KILL_PROCESS, LIST_PROCESSES, READ_PROCESS, WAIT, WATCH_PROCESS,
+    is_triage_tool,
+};
+
 /// The exact `tools[]` a turn advertises: the world tools (`toolbox`) plus the
 /// harness tools handled structurally in the loop — `consolidate` (docs/consolidate.md)
 /// and the process-monitor/inbox tools (docs/process-monitor.md). One source of truth so the
@@ -84,7 +89,7 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// ride every turn's `tools[]`, so a reader destructuring the triage's own
 /// call wants their schema too.
 ///
-/// None of these five sources inject [`crate::log::INTENT`] the way a
+/// None of these five sources inject [`crate::names::tools::INTENT`] the way a
 /// `Toolbox`-mounted tool's wire entry does — [`tool_definitions`] pushes
 /// `consolidate::definition()`, `process_monitor::tool_definitions()`, and the triage
 /// tools onto `toolbox.definitions()` *after* `with_intent` has already run
@@ -95,20 +100,20 @@ pub fn tool_catalog(
 ) -> std::collections::HashMap<String, crate::tools::ToolEntry> {
     let mut catalog = toolbox.tool_catalog();
 
-    if let Some(brief) = consolidate::brief(consolidate::NAME) {
+    if let Some(brief) = consolidate::brief(CONSOLIDATE) {
         catalog.insert(
-            consolidate::NAME.to_string(),
+            CONSOLIDATE.to_string(),
             crate::tools::ToolEntry::from_definition(brief.definition, None, false),
         );
     }
     for name in [
-        process_monitor::LIST,
-        process_monitor::READ,
-        process_monitor::KILL,
-        process_monitor::WATCH,
-        process_monitor::CHECK_INBOX,
-        process_monitor::WAIT,
-        crate::log::ASK,
+        LIST_PROCESSES,
+        READ_PROCESS,
+        KILL_PROCESS,
+        WATCH_PROCESS,
+        CHECK_INBOX,
+        WAIT,
+        ASK,
     ] {
         if let Some(brief) = process_monitor::brief(name) {
             catalog.insert(

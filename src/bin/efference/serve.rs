@@ -153,7 +153,7 @@ fn available_tools(toolbox: &Toolbox) -> Vec<String> {
         .definitions()
         .iter()
         .filter_map(|d| d.get("name").and_then(|n| n.as_str()))
-        .map(efference::mcp::display_name)
+        .map(efference::names::tools::display_name)
         .collect()
 }
 
@@ -309,7 +309,7 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
             serde_json::from_str(&input).map_err(|e| format!("--input is not valid JSON: {e}"))?,
         ),
         None => efference::log::ToolCall::new(
-            efference::bash::NAME,
+            efference::names::tools::BASH,
             "toolu_spotter_check",
             serde_json::json!({ "command": command }),
         ),
@@ -327,7 +327,7 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
         // call — the exact thing this mode exists to avoid.
         return Err(format!(
             "no mounted tool named `{}`. Mounted: {}",
-            efference::mcp::display_name(&call.name),
+            efference::names::tools::display_name(&call.name),
             match toolbox.as_ref().map(available_tools) {
                 Some(names) if !names.is_empty() => names.join(", "),
                 _ => "(none)".into(),

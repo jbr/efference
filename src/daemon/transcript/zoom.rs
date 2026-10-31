@@ -203,7 +203,7 @@ impl<'a> Zoom<'a, '_> {
                     self.lines.push(format!(
                         "{}  {}{summary}",
                         call_label(seq, i, calls.len()),
-                        crate::mcp::display_name(&call.name)
+                        crate::names::tools::display_name(&call.name)
                     ));
                 }
                 self.lines.push(format!(
@@ -220,14 +220,14 @@ impl<'a> Zoom<'a, '_> {
         let ask = self.index.call(id).and_then(|c| c.ask.clone());
         self.lines.push(format!(
             "call {handle}: {}",
-            crate::mcp::display_name(&call.name)
+            crate::names::tools::display_name(&call.name)
         ));
         if let Some(intent) = call.intent() {
             self.lines.push(format!("intent: {intent}"));
         }
         let mut input = call.input.clone();
         if let Value::Object(map) = &mut input {
-            map.remove(crate::log::INTENT);
+            map.remove(crate::names::tools::INTENT);
         }
         let pretty = serde_json::to_string_pretty(&input).unwrap_or_else(|_| input.to_string());
         self.lines.push(format!("input: {pretty}"));

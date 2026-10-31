@@ -14,7 +14,7 @@ fn turn(text: &str) -> SubmittedTurn {
 /// Log an assistant turn issuing an `ask` with `call_id`; returns its seq, the handle.
 fn asks(shared: &Session, call_id: &str, question: &str) -> Seq {
     let call = ToolCall::new(
-        crate::log::ASK,
+        crate::names::tools::ASK,
         call_id,
         serde_json::json!({ "question": question }),
     );
@@ -115,7 +115,7 @@ async fn a_reply_to_a_non_question_or_a_blank_reply_is_refused() {
                 vec![],
                 vec![],
                 vec![ToolCall::new(
-                    crate::bash::NAME,
+                    crate::names::tools::BASH,
                     "toolu_b",
                     serde_json::json!({ "command": "ls" }),
                 )],

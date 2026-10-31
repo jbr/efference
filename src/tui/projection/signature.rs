@@ -157,7 +157,7 @@ pub(crate) fn call_view(name: &str, input: &Value) -> CallView {
         return view;
     };
     let str_arg = |key: &str| object.get(key).and_then(Value::as_str);
-    view.intent = str_arg(crate::log::INTENT)
+    view.intent = str_arg(crate::names::tools::INTENT)
         .map(str::trim)
         .filter(|intent| !intent.is_empty())
         .map(str::to_string);
@@ -177,7 +177,7 @@ pub(crate) fn call_view(name: &str, input: &Value) -> CallView {
         return view;
     }
 
-    if name == crate::bash::NAME
+    if name == crate::names::tools::BASH
         && let Some(command) = str_arg("command")
     {
         view.args = None;
@@ -204,7 +204,7 @@ pub(crate) fn call_view(name: &str, input: &Value) -> CallView {
     let mut labelled = Vec::new();
     for (key, value) in object {
         // `intent` is already the call's title.
-        if key == crate::log::INTENT {
+        if key == crate::names::tools::INTENT {
             continue;
         }
         if is_content(value) {

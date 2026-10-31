@@ -107,7 +107,7 @@ fn strip_offers_background_only_for_foreground_bash_but_always_an_interrupt() {
     // (docs/process-monitor.md) — it is never the foreground tool either.
     play.running_tool(
         "toolu_g",
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         json!({ "command": "cargo watch", "background": true }),
     );
     assert!(

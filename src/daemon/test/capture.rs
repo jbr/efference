@@ -230,12 +230,12 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
                 vec![],
                 vec![
                     ToolCall::new(
-                        crate::bash::NAME,
+                        crate::names::tools::BASH,
                         "toolu_1",
                         serde_json::json!({ "command": "printf 'first\\nsecond\\nthird\\n'" }),
                     ),
                     ToolCall::new(
-                        crate::bash::NAME,
+                        crate::names::tools::BASH,
                         "toolu_2",
                         serde_json::json!({ "command": "printf 'alpha\\nbeta\\n'" }),
                     ),

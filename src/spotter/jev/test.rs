@@ -488,7 +488,7 @@ fn the_state_withholds_the_harness_injected_intent() {
     let call = ToolCall::new(
         "fs__read",
         "c1",
-        json!({ "path": "src/lib.rs", crate::log::INTENT: "just looking, honest" }),
+        json!({ "path": "src/lib.rs", crate::names::tools::INTENT: "just looking, honest" }),
     );
     let state = state::state(
         &ConfigFixture::new().with_scope("work here").build(),
@@ -504,7 +504,7 @@ fn the_state_withholds_the_harness_injected_intent() {
     let input = &state["move"]["input"];
     assert_eq!(input["path"], json!("src/lib.rs"));
     assert!(
-        input.get(crate::log::INTENT).is_none(),
+        input.get(crate::names::tools::INTENT).is_none(),
         "the judged party's own plea reached the spotter: {state}"
     );
 }
@@ -520,7 +520,7 @@ fn grants_render_resolved_with_the_denies_kept() {
             .with_path(".", true, true)
             .with_path(".efference", false, false)
             .build(),
-        &ToolCall::new(crate::bash::NAME, "c1", json!({ "command": "ls" })),
+        &ToolCall::new(crate::names::tools::BASH, "c1", json!({ "command": "ls" })),
         None,
         &[],
         None,
@@ -545,7 +545,11 @@ fn grants_render_resolved_with_the_denies_kept() {
 /// ordinary move carries no empty field inviting an answer about it.
 #[test]
 fn the_probe_and_the_chain_ride_only_when_present() {
-    let call = ToolCall::new(crate::bash::NAME, "c1", json!({ "command": "cargo test" }));
+    let call = ToolCall::new(
+        crate::names::tools::BASH,
+        "c1",
+        json!({ "command": "cargo test" }),
+    );
     let config = ConfigFixture::new().with_scope("work here").build();
     let plain = state::state(&config, &call, None, &[], None, None, None);
     assert!(plain.get("promotion_probe").is_none());
@@ -570,7 +574,7 @@ fn the_probe_and_the_chain_ride_only_when_present() {
 #[test]
 fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
     let call = ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "c1",
         json!({ "command": "cd /work/proj && cargo test" }),
     );
@@ -599,7 +603,7 @@ fn a_shell_move_carries_its_resolved_paths() {
         .build();
     let cwd = std::path::Path::new("/work/proj");
     let call = ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "c1",
         json!({ "command": "cat >> .git/info/exclude << 'EOF'\n.efference/\nEOF\nrg x ~/.cargo/src" }),
     );
@@ -626,7 +630,11 @@ fn a_shell_move_carries_its_resolved_paths() {
     );
     assert!(state["move"].get("paths_complete").is_none());
 
-    let plain = ToolCall::new(crate::bash::NAME, "c2", json!({ "command": "cargo test" }));
+    let plain = ToolCall::new(
+        crate::names::tools::BASH,
+        "c2",
+        json!({ "command": "cargo test" }),
+    );
     let state = state::state(
         &config,
         &plain,
@@ -655,7 +663,7 @@ fn a_worktree_move_is_shown_as_its_project_counterpart() {
         "/work/proj/.efference/worktrees/w".into(),
     );
     let call = ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "c1",
         json!({ "command": "cd /work/proj/.efference/worktrees/w && wc -l src/a.rs" }),
     );

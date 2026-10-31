@@ -26,8 +26,9 @@ use mcplease::types::{RequestContext, Tool as ToolDefinition};
 use semantic_edit_mcp::SemanticEditTools;
 use serde_json::{Value, json};
 
-use crate::bash::{self, Bash, Outcome};
-use crate::log::{INTENT, Notification, RawResult, ToolCall};
+use crate::bash::{Bash, Outcome};
+use crate::log::{Notification, RawResult, ToolCall};
+use crate::names::tools::{BASH, INTENT};
 use read_image::ReadImage;
 
 /// The `intent` property's schema `description`. Deliberately a pointer, not the
@@ -329,8 +330,8 @@ pub fn unknown_tool_message(name: &str, available: &[String]) -> String {
         return message;
     }
     message.push_str(&format!("Mounted tools: {}.", available.join(", ")));
-    if available.iter().any(|n| n == bash::NAME) {
-        let bash = bash::NAME;
+    if available.iter().any(|n| n == BASH) {
+        let bash = BASH;
         message.push_str(&format!(
             "\n\nIf `{name}` is a program rather than a tool, run it through `{bash}`."
         ));

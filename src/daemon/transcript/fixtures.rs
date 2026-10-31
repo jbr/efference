@@ -68,7 +68,7 @@ pub(super) fn turn(text: &str, calls: Vec<ToolCall>) -> Payload {
 
 pub(super) fn bash(id: &str, command: &str, intent: &str) -> ToolCall {
     ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         id,
         serde_json::json!({ "command": command }),
     )
@@ -77,7 +77,7 @@ pub(super) fn bash(id: &str, command: &str, intent: &str) -> ToolCall {
 
 pub(super) fn ask(id: &str, question: &str) -> ToolCall {
     ToolCall::new(
-        crate::log::ASK,
+        crate::names::tools::ASK,
         id,
         serde_json::json!({ "question": question }),
     )

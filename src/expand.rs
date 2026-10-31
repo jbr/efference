@@ -136,7 +136,7 @@ fn valid_name(name: &str) -> bool {
 /// classifier uses. Returns `Ok(None)` when the call is untouched (bash, a
 /// path-less tool, or no `$` in any target) so the common case never clones.
 pub fn expand_call(expander: &Expander, call: &ToolCall) -> Result<Option<ToolCall>, String> {
-    if call.name == crate::bash::NAME {
+    if call.name == crate::names::tools::BASH {
         return Ok(None); // bash expands in-shell against the child env.
     }
     let Some((key, _, _)) = policy::path_spec(&call.name) else {

@@ -110,7 +110,7 @@ fn projection_with_source_matches_expected_wire_bytes() {
 #[test]
 fn projection_with_agent_source_matches_expected_wire_bytes() {
     let mut log = sample_log();
-    log[0].source = Some(crate::frontend::session_source("parent", None));
+    log[0].source = Some(crate::names::sources::session_source("parent", None));
     let wire = serde_json::to_string(&project(&log)).unwrap();
     let expected = r#"[{"role":"user","content":[{"type":"text","text":"parent (agent): hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] file.txt"}]}]"#;
     assert_eq!(wire, expected);

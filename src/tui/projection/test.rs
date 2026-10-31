@@ -503,7 +503,7 @@ fn an_elided_result_names_the_elision_in_its_header() {
 #[test]
 fn the_kickoff_turn_is_not_drawn() {
     let mut kickoff = entry(0, Payload::user("greet them"));
-    kickoff.source = Some(crate::frontend::KICKOFF_SOURCE.to_string());
+    kickoff.source = Some(crate::names::sources::KICKOFF_SOURCE.to_string());
     let mut sourced = entry(2, Payload::user("from web"));
     sourced.source = Some("web".to_string());
     let log = vec![
@@ -533,7 +533,7 @@ fn the_kickoff_turn_is_not_drawn() {
 #[test]
 fn a_handoff_brief_is_drawn_as_the_predecessors_note() {
     let mut brief = entry(0, Payload::user("carry on"));
-    brief.source = Some(crate::frontend::handoff_source("old-leaf"));
+    brief.source = Some(crate::names::sources::handoff_source("old-leaf"));
     let doc = project(
         &[brief],
         &LiveTail::default(),

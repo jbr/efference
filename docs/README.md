@@ -153,6 +153,7 @@ Read top-down; open the subsystem doc you need.
 | Subsystem | Doc | Governing modules |
 | --- | --- | --- |
 | The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/log.rs` (+ `src/log/`), `src/project.rs`, `src/persist.rs` |
+| The names a recorded entry carries — tool and namespace names, and the labels a turn's `source` is written in | [tools.md](tools.md), [log-and-projection.md](log-and-projection.md) | `src/names.rs`, `src/names/tools.rs`, `src/names/sources.rs` |
 | Per-result triage — how every tool result is triaged, and the text view a separate triage model reads | [triage.md](triage.md) | `src/triage.rs`, `src/triage/text_view.rs`, `src/project.rs` |
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry; which tools a session mounts) | [tools.md](tools.md) | `src/tools.rs`, `src/tools/lsp.rs`, `src/bash.rs`, `src/agent/telemetry.rs`, `src/config/tools.rs` |
 | Trajectory consolidation (completed working spans and juncture checks) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
@@ -213,15 +214,18 @@ inbox), `background.rs` (the process monitor), `phase.rs` (where the loop is) an
 ## Dependency direction
 
 The top-level modules import in one direction, and `src/test/layering.rs` fails on an
-import that runs the other way. Two rules hold:
+import that runs the other way. Three rules hold:
 
-- **`log` imports no other top-level module.** It holds the vocabulary a record is
-  written in, which includes the shapes other subsystems fill in or read: a provider and
+- **`names` imports no other top-level module.** It holds the names a recorded entry
+  carries and its readers match on: tool and namespace names with the helpers that take
+  them apart (`src/names/tools.rs`), and the labels a turn's `source` is written in
+  (`src/names/sources.rs`).
+- **`log` imports no other top-level module but `names`.** It holds the vocabulary a record
+  is written in, which includes the shapes other subsystems fill in or read: a provider and
   its wire dialect, a gate's `Approval`, the resolved `[context]`, an attachment's
-  `Arrival`, the spotter's `Axes`, the triage model a preamble records, and the names a
-  recorded call is read by (`INTENT`, `ASK`). Behavior that needs another subsystem stays
-  with it, as `impl` blocks on the type the log defines: `api` implements `Provider`, and
-  `context` resolves and renders `Resolved`.
+  `Arrival`, the spotter's `Axes`, and the triage model a preamble records. Behavior that
+  needs another subsystem stays with it, as `impl` blocks on the type the log defines: `api`
+  implements `Provider`, and `context` resolves and renders `Resolved`.
 - **A module outside the outer set imports nothing from it.** The outer set is `daemon`
   and `boot`, which host sessions; `control_tools`, the session-control verbs; and the
   clients `client`, `tui`, `setup` and the `bin` crate. What the inner modules and the

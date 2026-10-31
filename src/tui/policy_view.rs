@@ -121,7 +121,7 @@ impl PolicyView {
                 }
                 ConfigChange::Tool { name } => {
                     // A logged grant names a namespace as `<namespace>__*` and a tool by wire name.
-                    let key = match name.strip_suffix(&crate::mcp::namespace_glob("")) {
+                    let key = match name.strip_suffix(&crate::names::tools::namespace_glob("")) {
                         Some(namespace) => namespace.to_string(),
                         None => crate::config::table_key(name),
                     };

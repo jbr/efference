@@ -131,7 +131,7 @@ impl Toolbox {
             false,
         );
         self.providers.push(Provider::Sessions(Box::new(
-            McpServer::from_state_namespaced(state, &[], crate::protocol::agents::NAMESPACE),
+            McpServer::from_state_namespaced(state, &[], crate::names::tools::AGENTS_NAMESPACE),
         )));
     }
 
@@ -225,7 +225,7 @@ impl Toolbox {
             .filter_map(|name| {
                 dialect
                     .tool_name_problem(name)
-                    .map(|why| format!("{} {why}", crate::mcp::display_name(name)))
+                    .map(|why| format!("{} {why}", crate::names::tools::display_name(name)))
             })
             .collect()
     }

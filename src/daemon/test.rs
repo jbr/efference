@@ -30,7 +30,7 @@ fn baseline_env() -> crate::env_table::EnvSnapshot {
 /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.
 fn bash_call(command: &str) -> ToolCall {
     ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "toolu_x",
         serde_json::json!({ "command": command }),
     )

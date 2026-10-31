@@ -96,7 +96,7 @@ fn mount_over(host: ControlClient) -> (Control, ClientExecutor) {
 /// A bash call running `command`.
 fn bash(call_id: &str, command: &str) -> ToolCall {
     ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         call_id,
         serde_json::json!({ "command": command }),
     )

@@ -377,7 +377,7 @@ fn the_operations_topics_keep_their_bytes() {
         vec![],
         vec![
             ToolCall::new(
-                crate::bash::NAME,
+                crate::names::tools::BASH,
                 "toolu_1",
                 serde_json::json!({"command": "cargo test", "intent": "run the suite"}),
             ),
@@ -484,7 +484,7 @@ fn the_gate_topic_keeps_its_bytes() {
         )
         .unwrap();
     let bound = BoundAction {
-        name: crate::bash::NAME.into(),
+        name: crate::names::tools::BASH.into(),
         input: serde_json::json!({"command": "curl -sI https://example.com", "intent": "fetch headers"}),
         intent: Some("fetch headers".into()),
         cwd: "/work/child".into(),

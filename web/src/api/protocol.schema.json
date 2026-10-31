@@ -1559,7 +1559,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Grant a structured tool: set `granted` on its `[tools]` entry. `name` is the tool's\nwire name, or a whole namespace as `<namespace>__*` ([`crate::mcp::namespace_glob`]).",
+          "description": "Grant a structured tool: set `granted` on its `[tools]` entry. `name` is the tool's\nwire name, or a whole namespace as `<namespace>__*` ([`crate::names::tools::namespace_glob`]).",
           "properties": {
             "tool": {
               "properties": {

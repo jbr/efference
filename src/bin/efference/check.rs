@@ -141,7 +141,7 @@ fn print_server(role: &efference::config::Config, name: &str, mounted: &[serde_j
         println!(
             "    {} {} ({} B)",
             grant_mark(role, tool),
-            efference::mcp::display_name(tool),
+            efference::names::tools::display_name(tool),
             weight
         );
     }

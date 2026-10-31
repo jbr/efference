@@ -29,7 +29,7 @@ fn a_gate_names_its_handle_summary_and_plain_reason() {
         serde_json::json!({ "path": "a.rs", "intent": "read it" }),
     );
     let curl = ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "toolu_1",
         serde_json::json!({ "command": "curl -sI https://example.com", "intent": "fetch headers" }),
     );
@@ -126,7 +126,7 @@ fn the_closing_message_is_capped_on_a_char_boundary() {
 fn a_running_tool_is_the_working_activity() {
     let shared = session();
     let test = ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "toolu_1",
         serde_json::json!({ "command": "cargo test", "intent": "run the suite" }),
     );

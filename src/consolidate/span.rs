@@ -1,6 +1,6 @@
 //! Working-span selection and accounting (docs/consolidate.md).
-use super::NAME;
 use crate::log::{Audience, CallId, LogEntry, Payload, Seq};
+use crate::names::tools::{CONSOLIDATE, is_triage_tool};
 use crate::project::{Reader, UserPart, WireTurn, project_semantic, skipped_seqs};
 use std::collections::{HashMap, HashSet};
 
@@ -182,7 +182,7 @@ pub fn tool_bytes(log: &[LogEntry], span: Span) -> usize {
         .flat_map(|(seq, calls)| {
             calls
                 .into_iter()
-                .filter(|c| c.name != NAME && !crate::triage::is_triage_tool(&c.name))
+                .filter(|c| c.name != CONSOLIDATE && !is_triage_tool(&c.name))
                 .map(move |c| {
                     (
                         c.id,

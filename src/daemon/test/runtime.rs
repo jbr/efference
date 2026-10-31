@@ -177,7 +177,7 @@ async fn a_first_turn_is_submitted_into_an_empty_log() {
         .wait_until("the kickoff is recorded", || {
             session.snapshot().iter().any(|entry| {
                 matches!(entry.payload, Payload::User(_))
-                    && entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE)
+                    && entry.source.as_deref() == Some(crate::names::sources::KICKOFF_SOURCE)
             })
         })
         .await;

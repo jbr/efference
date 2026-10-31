@@ -23,7 +23,7 @@ fn assistant_call(seq: u64, text: &str, call_id: &str, command: &str) -> LogEntr
             vec![],
             vec![ContentBlock::Text(text.into())],
             vec![ToolCall::new(
-                crate::bash::NAME,
+                crate::names::tools::BASH,
                 call_id,
                 serde_json::json!({ "command": command }),
             )],

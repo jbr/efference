@@ -199,7 +199,9 @@ impl Session {
                         frozen_end.is_some_and(|end| *for_result <= end)
                     }
                     Payload::Assistant { output, .. } => output.tool_calls().is_ok_and(|calls| {
-                        calls.iter().any(|c| c.name == crate::consolidate::NAME)
+                        calls
+                            .iter()
+                            .any(|c| c.name == crate::names::tools::CONSOLIDATE)
                     }),
                     _ => false,
                 })

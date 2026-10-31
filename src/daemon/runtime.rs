@@ -249,7 +249,7 @@ fn submit_kickoff(session: &Session, first_turn: Option<String>) {
         if fresh {
             session.submit_turn(
                 SubmittedTurn::new(text, mint_submission_id())
-                    .sourced(Some(crate::frontend::KICKOFF_SOURCE.to_string())),
+                    .sourced(Some(crate::names::sources::KICKOFF_SOURCE.to_string())),
             );
         }
     }

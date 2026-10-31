@@ -458,7 +458,7 @@ fn sender(source: Option<&str>, me: Option<&str>) -> String {
     let Some(source) = source.filter(|source| *source != "web") else {
         return "operator".to_string();
     };
-    name(crate::frontend::source_name(source), me)
+    name(crate::names::sources::source_name(source), me)
 }
 
 /// A session id, or "you" when it is the reader's.

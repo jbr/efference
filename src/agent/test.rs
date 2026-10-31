@@ -1,15 +1,13 @@
 use super::*;
 
+use crate::names::tools::BASH;
+
 pub(super) fn call(name: &str) -> ToolCall {
     ToolCall::new(name, "toolu_x", serde_json::json!({}))
 }
 
 pub(super) fn bash_call(command: &str) -> ToolCall {
-    ToolCall::new(
-        bash::NAME,
-        "toolu_b",
-        serde_json::json!({ "command": command }),
-    )
+    ToolCall::new(BASH, "toolu_b", serde_json::json!({ "command": command }))
 }
 
 mod ask;

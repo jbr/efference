@@ -506,7 +506,7 @@ impl Host {
         if let Some(session) = self.session(successor) {
             session.submit_turn(
                 SubmittedTurn::new(brief, mint_submission_id())
-                    .sourced(Some(crate::frontend::handoff_source(from))),
+                    .sourced(Some(crate::names::sources::handoff_source(from))),
             );
         }
         if let Some(predecessor) = self.session(from) {

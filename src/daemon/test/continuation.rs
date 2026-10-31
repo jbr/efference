@@ -18,7 +18,7 @@ fn assistant_calling(call_id: &str) -> Payload {
         vec![],
         vec![],
         vec![ToolCall::new(
-            crate::bash::NAME,
+            crate::names::tools::BASH,
             call_id,
             serde_json::json!({ "command": "ls" }),
         )],

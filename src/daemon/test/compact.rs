@@ -23,7 +23,7 @@ fn call(seq: u64, id: &str) -> LogEntry {
             vec![],
             vec![],
             vec![ToolCall::new(
-                crate::bash::NAME,
+                crate::names::tools::BASH,
                 id,
                 serde_json::json!({"command": "ls"}),
             )],

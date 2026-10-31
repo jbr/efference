@@ -15,7 +15,8 @@
 //! going. Those need a task whose answer is known in advance (eval/harness/README.md);
 //! this fold needs only the log.
 
-use super::{ASK, LogEntry, Payload};
+use super::{LogEntry, Payload};
+use crate::names::tools::ASK;
 
 /// What a turn ending turned out to be, judged by the turn that followed it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

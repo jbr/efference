@@ -45,7 +45,7 @@ impl ConfigFixture {
     /// Grant the tool `wire_name` by name (`read`, `agents__message`), mounting its
     /// namespace as a file must for the grant to load.
     pub(crate) fn with_tool(self, wire_name: &str) -> Self {
-        let mut fixture = self.with_namespace(crate::mcp::namespace_of(wire_name));
+        let mut fixture = self.with_namespace(crate::names::tools::namespace_of(wire_name));
         let grant = ConfigChange::Tool {
             name: wire_name.into(),
         };

@@ -70,6 +70,15 @@ pub(crate) struct PendingGate {
     pub(crate) directories: crate::policy::Directories,
 }
 
+/// The `source` the loop's own permission review decides under, at the review level in
+/// force: `review[<level>]` (docs/permissions.md). It writes the redirects no person
+/// or agent wrote (the autonomous redirect, a `[commands]` deny, a config edit's
+/// outcome), so a reader is not told the operator wrote them.
+/// [`is_review_source`](crate::names::sources::is_review_source) recognizes the label.
+fn review_source(level: crate::policy::ReviewLevel) -> String {
+    format!("review[{}]", level.as_str())
+}
+
 impl Session {
     /// The spotter's reason for the most recent verdict on `call_id`, read from the log's `Spot`
     /// audit entries (docs/permissions.md). The spotter logs its verdict *before* routing the call
@@ -238,11 +247,9 @@ impl Session {
     /// Record a redirect the loop's own permission review wrote — no person or agent at a
     /// gate — as the call's gate decision, under [`review_source`] at the level in force,
     /// and return it as the approval it is (docs/permissions.md).
-    ///
-    /// [`review_source`]: crate::frontend::review_source
     pub(crate) fn review_redirect(&self, id: &CallId, message: String) -> Approval {
         let decision = Approval::Redirect(message);
-        let source = crate::frontend::review_source(self.resolved_review_level());
+        let source = review_source(self.resolved_review_level());
         let record = crate::log::GateDecision::new(id.clone(), decision.clone(), Some(source));
         let entry = Payload::Telemetry(crate::log::Telemetry::GateDecision(record));
         // The record must not stop what it describes.

@@ -2,6 +2,7 @@
 //! spotter, and the human gate.
 
 use super::*;
+use crate::names::tools::BASH;
 use crate::spotter::{Read, Spotting};
 
 /// The permission cascade for one call (docs/permissions.md). `bound` is the leaf
@@ -141,7 +142,7 @@ fn promotion_probe(
     judged: &ToolCall,
     bound: Option<&crate::protocol::agents::BoundAction>,
 ) -> Option<String> {
-    if bound.is_none() && judged.name == bash::NAME {
+    if bound.is_none() && judged.name == BASH {
         judged
             .input
             .get("command")

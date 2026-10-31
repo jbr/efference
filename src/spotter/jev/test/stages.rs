@@ -58,7 +58,7 @@ fn clean_answers() -> String {
 async fn assess(endpoint: Endpoint, recorder: &Arc<Recorder>) -> Spotting {
     let mut spot = JevSpot::new(endpoint, "jev");
     spot.set_stage_sink(Arc::clone(recorder) as StageSink);
-    let call = ToolCall::new(crate::bash::NAME, "c1", json!({ "command": "ls" }));
+    let call = ToolCall::new(crate::names::tools::BASH, "c1", json!({ "command": "ls" }));
     spot.assess(&Config::default(), &call, None, &[], None, &[])
         .await
 }

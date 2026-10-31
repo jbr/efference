@@ -6,7 +6,6 @@ use serde_json::json;
 /// that mounts them.
 #[test]
 fn the_names_on_the_tool_wire_are_fixed() {
-    assert_eq!(NAMESPACE, "agents");
     assert_eq!(DECIDE_WIRE_NAME, "agents__decide");
     assert_eq!(HAND_OFF_WIRE_NAME, "agents__hand_off");
     assert_eq!(ARCHIVE_WIRE_NAME, "agents__archive");

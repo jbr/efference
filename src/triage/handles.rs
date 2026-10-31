@@ -79,7 +79,7 @@ const REPLY_SHAPE: &str = "operator reply";
 /// Whether `call` is an `ask`, whose result is the operator's own words
 /// (docs/process-monitor.md). Operator words are never the triage's to summarize.
 pub(super) fn is_reply(call: &ToolCall) -> bool {
-    call.name == crate::log::ASK
+    call.name == crate::names::tools::ASK
 }
 
 /// Whether this triage holds an `ask` reply and nothing else the triage would decide

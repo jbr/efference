@@ -163,7 +163,11 @@ impl Screenplay<'_> {
     /// The common case of [`running_tool`](Self::running_tool): a foreground `bash`
     /// command mid-run — the one state that offers `background` and `kill`.
     pub(crate) fn running_bash(&mut self, call_id: &str, command: &str) -> &mut Self {
-        self.running_tool(call_id, crate::bash::NAME, json!({ "command": command }))
+        self.running_tool(
+            call_id,
+            crate::names::tools::BASH,
+            json!({ "command": command }),
+        )
     }
 
     /// Open an in-flight tool call on the live tail, as `tool_call_start` does: the

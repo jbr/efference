@@ -46,22 +46,9 @@ use crate::log::{
     AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
     Triaged, WireState,
 };
+use crate::names::tools::{RETAIN, TRIAGE};
 use crate::process_monitor::BgView;
 use crate::project::{Reader, TRIAGE_LINE_CAP, UserPart, WireTurn, project_semantic_for};
-
-const RETAIN: &str = "retain";
-
-/// The tool of the **standalone** idle triage (docs/process-monitor.md): no `keep`
-/// (there's no tool output to retain), only inbox/background dispositions.
-const TRIAGE: &str = "triage";
-
-/// Whether `name` is a triage tool. Both stand in every turn's `tools[]` (the shared
-/// envelope, docs/triage.md) but are answered only when a triage's tail
-/// instruction asks — the agent loop pairs an un-asked call with a nudge result
-/// instead of running the cascade.
-pub fn is_triage_tool(name: &str) -> bool {
-    name == RETAIN || name == TRIAGE
-}
 
 /// A live-process triage disposition (docs/process-monitor.md) — distinct from the seq-keyed
 /// notification [`Disposition`] because a running process is addressed by its live

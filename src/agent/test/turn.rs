@@ -103,7 +103,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
     use crate::project::ApiBlock;
     let (shared, _rx) = Session::in_memory();
     let first = ToolCall::new("search", "search_2", serde_json::json!({}));
-    let second = ToolCall::new(bash::NAME, "bash_3", serde_json::json!({ "command": "ls" }));
+    let second = ToolCall::new(BASH, "bash_3", serde_json::json!({ "command": "ls" }));
     shared
         .append(
             1,

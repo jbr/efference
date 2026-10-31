@@ -136,7 +136,7 @@ pub(super) fn approve_call() -> ToolCall {
 /// A leaf the child holds, bound to the parent's approval.
 pub(super) fn bound_leaf(command: &str) -> crate::protocol::agents::BoundAction {
     crate::protocol::agents::BoundAction {
-        name: bash::NAME.into(),
+        name: BASH.into(),
         input: serde_json::json!({ "command": command, "intent": "whatever" }),
         intent: Some("whatever".into()),
         cwd: std::env::current_dir().unwrap(),

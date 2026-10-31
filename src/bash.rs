@@ -23,6 +23,7 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 use crate::log::RawResult;
+use crate::names::tools::BASH;
 use crate::tools::Interrupt;
 use std::time::Duration;
 
@@ -64,9 +65,6 @@ pub struct DetachedBash {
     /// `background_after` becomes worth knowing about (docs/process-monitor.md).
     pub auto_after: Option<Duration>,
 }
-
-/// The tool name the model calls; `tool_use` / `tool_result` ids pair on it.
-pub const NAME: &str = "bash";
 
 /// The line a killed command's result ends with: its process group was killed by an
 /// interrupt (docs/control-channel.md). Kept in `raw`, which only the operator reads.
@@ -132,7 +130,7 @@ struct Input {
 /// handled structurally by the loop (it registers a child with the process monitor)
 /// rather than run to completion here.
 pub fn is_background_call(call: &crate::log::ToolCall) -> bool {
-    call.name == NAME
+    call.name == BASH
         && call
             .input
             .get("background")
@@ -147,7 +145,7 @@ pub fn is_background_call(call: &crate::log::ToolCall) -> bool {
 /// those verbs ask this before showing them. Lives beside the schema that defines
 /// the `background` flag, so there is one reader of it.
 pub fn is_foreground_call(call: &crate::log::ToolCall) -> bool {
-    call.name == NAME && !is_background_call(call)
+    call.name == BASH && !is_background_call(call)
 }
 
 impl Bash {
@@ -156,7 +154,7 @@ impl Bash {
     /// (cache determinism, docs/log-and-projection.md) when this lands in the request next slice.
     pub fn definition() -> Value {
         json!({
-            "name": NAME,
+            "name": BASH,
             "description": DESCRIPTION,
             "input_schema": {
                 "type": "object",

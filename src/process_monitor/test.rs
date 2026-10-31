@@ -1,4 +1,7 @@
 use super::*;
+use crate::names::tools::{
+    CHECK_INBOX, KILL_PROCESS, LIST_PROCESSES, READ_PROCESS, WAIT, WATCH_PROCESS,
+};
 
 #[test]
 fn register_mints_ids_and_tails_recent_output() {
@@ -219,7 +222,14 @@ fn pgid_of_only_running() {
 /// harness's own claims: reads are reads, `kill_process` is the destructive member.
 #[test]
 fn every_process_monitor_tool_has_a_brief_with_honest_annotations() {
-    for name in [LIST, READ, KILL, WATCH, CHECK_INBOX, WAIT] {
+    for name in [
+        LIST_PROCESSES,
+        READ_PROCESS,
+        KILL_PROCESS,
+        WATCH_PROCESS,
+        CHECK_INBOX,
+        WAIT,
+    ] {
         let b = brief(name).unwrap_or_else(|| panic!("no brief for {name}"));
         assert!(b.server.is_none(), "{name} is the harness's own");
         let hints = b.definition.annotations.as_ref().unwrap();
@@ -233,10 +243,10 @@ fn every_process_monitor_tool_has_a_brief_with_honest_annotations() {
         // acts on — that stays `kill_process` alone.
         assert_eq!(
             hints.read_only_hint,
-            Some(name != KILL && name != WATCH),
+            Some(name != KILL_PROCESS && name != WATCH_PROCESS),
             "{name}: the reads read; kill_process and watch_process leave something behind"
         );
-        if name != KILL {
+        if name != KILL_PROCESS {
             assert_ne!(
                 hints.destructive_hint,
                 Some(true),
@@ -245,7 +255,7 @@ fn every_process_monitor_tool_has_a_brief_with_honest_annotations() {
         }
     }
     assert_eq!(
-        brief(KILL)
+        brief(KILL_PROCESS)
             .unwrap()
             .definition
             .annotations
@@ -271,7 +281,18 @@ fn every_process_monitor_tool_has_a_brief_with_honest_annotations() {
 fn wire_definitions_carry_no_annotations() {
     let defs = tool_definitions();
     let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec![LIST, READ, KILL, WATCH, CHECK_INBOX, WAIT, ASK]);
+    assert_eq!(
+        names,
+        vec![
+            LIST_PROCESSES,
+            READ_PROCESS,
+            KILL_PROCESS,
+            WATCH_PROCESS,
+            CHECK_INBOX,
+            WAIT,
+            ASK
+        ]
+    );
     for def in &defs {
         let keys: Vec<&str> = def
             .as_object()

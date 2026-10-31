@@ -8,7 +8,7 @@ use super::*;
 pub fn render_interruption(interruption: &crate::log::Interruption) -> String {
     let who = match interruption.by.as_deref() {
         None | Some("web") => "the operator".into(),
-        Some(source) => crate::frontend::wire_label(source),
+        Some(source) => crate::names::sources::wire_label(source),
     };
     match interruption.after_ms {
         Some(ms) => {
@@ -275,7 +275,7 @@ pub fn render_resumed(resumed: &crate::log::Resumed, at: Seq) -> String {
             if !names.is_empty() {
                 let names: Vec<String> = names
                     .iter()
-                    .map(|name| crate::mcp::display_name(name))
+                    .map(|name| crate::names::tools::display_name(name))
                     .collect();
                 parts.push(format!("{label}: {}", names.join(", ")));
             }

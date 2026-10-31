@@ -73,7 +73,7 @@ fn message(text: &str, reply_to: Option<&str>) -> Message {
 async fn decide_maps_the_seq_and_records_the_client() {
     let shared = child();
     let call = ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "toolu_curl",
         serde_json::json!({ "command": "curl -sI https://example.com" }),
     );
@@ -131,7 +131,7 @@ async fn decide_maps_the_seq_and_records_the_client() {
 async fn escalate_over_mcp_goes_to_the_operator() {
     let shared = child();
     let call = ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "toolu_curl",
         serde_json::json!({ "command": "curl -sI https://example.com" }),
     );
@@ -201,7 +201,7 @@ async fn escalate_over_mcp_goes_to_the_operator() {
 async fn every_sender_names_the_question() {
     let shared = child();
     let ask = ToolCall::new(
-        crate::log::ASK,
+        crate::names::tools::ASK,
         "toolu_q",
         serde_json::json!({ "question": "Which branch?" }),
     );
@@ -259,7 +259,7 @@ async fn post_turns_holds_every_client_to_naming_its_question() {
     let shared = child();
     shared.append(1, Payload::user("go")).unwrap();
     let ask = ToolCall::new(
-        crate::log::ASK,
+        crate::names::tools::ASK,
         "toolu_q",
         serde_json::json!({ "question": "Proceed?" }),
     );

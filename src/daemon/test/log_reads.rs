@@ -14,7 +14,7 @@ fn assistant_calling(call_id: &str, command: &str) -> Payload {
         vec![],
         vec![],
         vec![ToolCall::new(
-            crate::bash::NAME,
+            crate::names::tools::BASH,
             call_id,
             serde_json::json!({ "command": command }),
         )],
@@ -205,7 +205,7 @@ async fn a_tool_call_resolves_by_its_call_id() {
         // carrying it without a search.
         assert_eq!(body["seq"], 1);
         assert_eq!(body["call"]["id"], "toolu_9");
-        assert_eq!(body["call"]["name"], crate::bash::NAME);
+        assert_eq!(body["call"]["name"], crate::names::tools::BASH);
         assert_eq!(body["call"]["input"]["command"], "cargo test");
     });
 

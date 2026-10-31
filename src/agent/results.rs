@@ -2,6 +2,9 @@
 
 use super::*;
 use crate::log::Interruption;
+use crate::names::tools::{
+    CHECK_INBOX, KILL_PROCESS, LIST_PROCESSES, READ_PROCESS, WAIT, WATCH_PROCESS,
+};
 
 /// Enforce [`MAX_TOOL_RESULT_BYTES`]: replace an over-cap result with a hard error
 /// (rather than a silent truncation) that names the byte counts and shows a short,
@@ -43,9 +46,9 @@ pub(super) async fn process_monitor_tool_result(
 ) -> Option<RawResult> {
     let handle = || call.input.get("handle").and_then(Value::as_str);
     match call.name.as_str() {
-        process_monitor::LIST => Some(RawResult::text(shared.bg_list_text())),
-        process_monitor::CHECK_INBOX => Some(RawResult::text(shared.inbox_listing())),
-        process_monitor::WAIT => Some(
+        LIST_PROCESSES => Some(RawResult::text(shared.bg_list_text())),
+        CHECK_INBOX => Some(RawResult::text(shared.inbox_listing())),
+        WAIT => Some(
             // A turn queued while this step was generating is already a reason to stop:
             // checked ahead of the refusal, which counts only sources that could arrive.
             if shared.turn_to_run() {
@@ -76,7 +79,7 @@ pub(super) async fn process_monitor_tool_result(
                 }
             },
         ),
-        process_monitor::READ => Some(match handle() {
+        READ_PROCESS => Some(match handle() {
             Some(h) => {
                 match shared.bg_read_since(h, call.input.get("cursor").and_then(Value::as_u64)) {
                     Some(text) => RawResult::text(text),
@@ -88,7 +91,7 @@ pub(super) async fn process_monitor_tool_result(
         // `watch_process` registers and returns (docs/process-monitor.md) — it never waits.
         // The hit arrives as an inbox notification, which is what wakes an idle agent;
         // the result here only confirms the registration.
-        process_monitor::WATCH => Some(
+        WATCH_PROCESS => Some(
             match (handle(), call.input.get("pattern").and_then(Value::as_str)) {
                 (Some(h), Some(pattern)) if !pattern.is_empty() => {
                     match shared.watch_bg(h, pattern.to_string()) {
@@ -105,7 +108,7 @@ pub(super) async fn process_monitor_tool_result(
                 _ => RawResult::error("watch_process requires a non-empty `pattern`"),
             },
         ),
-        process_monitor::KILL => Some(match handle() {
+        KILL_PROCESS => Some(match handle() {
             Some(h) if shared.kill_bg(h) => RawResult::text(format!(
                 "killed {h} (SIGKILL to its process group); its exit will be confirmed in your inbox."
             )),
@@ -206,18 +209,18 @@ pub(super) fn expansion_error(call: &ToolCall, message: &str) -> Payload {
 ///
 /// It names who decided (docs/permissions.md): the operator as "the user", as it always
 /// has; another agent or client by the label its own messages open with
-/// (`frontend::wire_label`); the loop's own permission review as itself.
+/// (`names::sources::wire_label`); the loop's own permission review as itself.
 pub(super) fn rejected(call: &ToolCall, decider: Option<&str>) -> Payload {
     let text = match decider {
         None | Some("web") => {
             "Not run — the user replied instead of approving; see their next message.".to_string()
         }
-        Some(review) if crate::frontend::is_review_source(review) => {
+        Some(review) if crate::names::sources::is_review_source(review) => {
             "Not run — the permission review declined it; see the next message.".to_string()
         }
         Some(source) => format!(
             "Not run — {} replied instead of approving; see the next message.",
-            crate::frontend::wire_label(source)
+            crate::names::sources::wire_label(source)
         ),
     };
     Payload::tool_result(call.id.clone(), RawResult::error(text), WireState::Raw)

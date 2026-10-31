@@ -71,7 +71,7 @@ pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> 
         // would claim this is a finished thing to read rather than bytes still arriving.
         let mut lines = vec![dim_span(&format!(
             "› {}…",
-            crate::mcp::display_name(&call.name)
+            crate::names::tools::display_name(&call.name)
         ))];
         lines.extend(
             call.input
@@ -107,7 +107,7 @@ fn calling_tool_entry(name: &str, input: &str) -> Option<DocumentNode<'static>> 
     let arriving = parsed.arriving_text();
     let intent = view.intent.clone().or_else(|| {
         arriving
-            .filter(|(key, _)| *key == crate::log::INTENT)
+            .filter(|(key, _)| *key == crate::names::tools::INTENT)
             .map(|(_, text)| text.to_string())
     });
     let mut blocks = call_blocks(view, true);
@@ -116,7 +116,7 @@ fn calling_tool_entry(name: &str, input: &str) -> Option<DocumentNode<'static>> 
     // case worth rendering as a block — a file's contents, a heredoc, a message
     // body — and it is rendered in the language of whatever settled path names it,
     // which is why the path arriving first is what makes this worth doing.
-    if let Some((key, text)) = arriving.filter(|(key, _)| *key != crate::log::INTENT) {
+    if let Some((key, text)) = arriving.filter(|(key, _)| *key != crate::names::tools::INTENT) {
         if text.contains('\n') {
             blocks.push(code_block(streaming_lang(&parsed), text));
         } else {
@@ -270,7 +270,7 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
 /// it is holding. The chain joins with `→` when the approval passed through more
 /// than one session.
 pub(in crate::tui) fn bound_action(bound: &BoundAction) -> DocumentNode<'static> {
-    let display = crate::mcp::display_name(&bound.name);
+    let display = crate::names::tools::display_name(&bound.name);
     let detail = match bound.name.as_str() {
         "bash" => bound
             .input

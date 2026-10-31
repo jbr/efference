@@ -62,7 +62,7 @@ impl Fixture {
 
 fn leaf() -> ToolCall {
     ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "toolu_leaf",
         serde_json::json!({
             "command": "curl -sI https://example.com",

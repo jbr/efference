@@ -302,7 +302,10 @@ fn a_question_reads_with_its_reply() {
 #[test]
 fn notes_and_summaries_are_one_line_and_mechanism_is_hidden() {
     let mut log = Fixture::new();
-    log.user("Introduce yourself.", Some(crate::frontend::KICKOFF_SOURCE));
+    log.user(
+        "Introduce yourself.",
+        Some(crate::names::sources::KICKOFF_SOURCE),
+    );
     log.add(Payload::Title(crate::log::Title::new(
         "Fixing the build",
         crate::log::TitleAuthor::Triage,

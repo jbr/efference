@@ -218,7 +218,7 @@ pub(crate) fn entry_nodes(
             // is not drawn as a turn: the agent's reply is the first thing shown
             // (docs/context.md).
             Payload::User(_)
-                if entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE) => {}
+                if entry.source.as_deref() == Some(crate::names::sources::KICKOFF_SOURCE) => {}
             // A hand-off brief (docs/tools.md) is the predecessor speaking, not the
             // operator: drawn as the harness's note of the hand-off with the brief under
             // it, so the operator sees what this session was told.
@@ -226,7 +226,7 @@ pub(crate) fn entry_nodes(
                 if let Some(predecessor) = entry
                     .source
                     .as_deref()
-                    .and_then(crate::frontend::handoff_predecessor) =>
+                    .and_then(crate::names::sources::handoff_predecessor) =>
             {
                 let mut body = vec![DocumentNode::Paragraph {
                     spans: vec![Span {
@@ -375,7 +375,7 @@ pub(crate) fn tail_nodes(
     for call in live.calls() {
         // An `ask` is drawn as prose once committed (docs/tui.md); its arguments
         // arriving as a call would show the plumbing.
-        if call.name == crate::log::ASK {
+        if call.name == crate::names::tools::ASK {
             continue;
         }
         nodes.push(live_call_entry(call));

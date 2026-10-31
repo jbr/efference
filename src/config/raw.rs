@@ -609,7 +609,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
 pub fn wire_tool_name(entry: String) -> String {
     match entry.split_once('.') {
         Some((server, tool)) if !server.is_empty() && !tool.is_empty() => {
-            format!("{server}{}{tool}", crate::mcp::NAMESPACE_SEPARATOR)
+            format!("{server}{}{tool}", crate::names::tools::NAMESPACE_SEPARATOR)
         }
         _ => entry,
     }
@@ -628,7 +628,7 @@ pub(super) fn validate_mcp_server(
     // occurrence land inside the server name, so the name must not contain one.
     let name_ok = !name.is_empty()
         && name.len() <= 32
-        && !name.contains(crate::mcp::NAMESPACE_SEPARATOR)
+        && !name.contains(crate::names::tools::NAMESPACE_SEPARATOR)
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');

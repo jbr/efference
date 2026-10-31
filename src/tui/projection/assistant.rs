@@ -142,7 +142,7 @@ fn call_nodes(
         // summary rendered below in full, and its result is a
         // constant acknowledgement (docs/consolidate.md). A pending,
         // gated, or failed one renders whole — an error is information.
-        if call.name == crate::consolidate::NAME
+        if call.name == crate::names::tools::CONSOLIDATE
             && let Some((_, raw, _)) = result
             && !raw.is_error
         {

@@ -12,7 +12,7 @@ fn session() -> Arc<Session> {
 
 fn ask_call(id: &str, question: &str) -> ToolCall {
     ToolCall::new(
-        crate::log::ASK,
+        crate::names::tools::ASK,
         id,
         serde_json::json!({ "question": question }),
     )
@@ -165,7 +165,7 @@ async fn a_reply_racing_an_interrupt_is_not_lost() {
 #[tokio::test]
 async fn a_missing_question_is_a_refusal_not_a_pending_ask() {
     let shared = session();
-    let call = ToolCall::new(crate::log::ASK, "ask_1", serde_json::json!({}));
+    let call = ToolCall::new(crate::names::tools::ASK, "ask_1", serde_json::json!({}));
     let (result, reply) = ask_result(&shared, &call, ONE).await;
     assert!(result.is_error && result.content.contains("question"));
     assert!(reply.is_none());
@@ -381,7 +381,7 @@ fn ask_is_advertised_with_a_required_question() {
     let defs = tool_definitions(&toolbox);
     let ask = defs
         .iter()
-        .find(|d| d["name"] == crate::log::ASK)
+        .find(|d| d["name"] == crate::names::tools::ASK)
         .expect("advertised");
     assert_eq!(
         ask["input_schema"]["required"],
@@ -394,6 +394,6 @@ fn ask_is_advertised_with_a_required_question() {
             .contains("one at a time"),
         "the parallel behaviour is stated to the model"
     );
-    assert!(callable_names(&toolbox).contains(&crate::log::ASK.to_string()));
-    assert!(tool_catalog(&toolbox).contains_key(crate::log::ASK));
+    assert!(callable_names(&toolbox).contains(&crate::names::tools::ASK.to_string()));
+    assert!(tool_catalog(&toolbox).contains_key(crate::names::tools::ASK));
 }

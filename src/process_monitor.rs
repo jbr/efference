@@ -17,7 +17,7 @@
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
-use crate::log::ASK;
+use crate::names::tools::ASK;
 use crate::protocol::state::ProcessState;
 use crate::terminal_text::strip_formatting;
 
@@ -27,24 +27,6 @@ pub use record::{ProcessRecord, from_log};
 mod tools;
 pub use tools::{brief, tool_definitions};
 
-/// `list_processes` — the directed read of running processes (docs/process-monitor.md). Named to
-/// avoid colliding with fs-mcp's `list`.
-pub const LIST: &str = "list_processes";
-/// `read_process` — cursor-based tailing of one process's output (the process monitor's
-/// `read_since`, docs/process-monitor.md). Named to avoid colliding with fs-mcp's `read`.
-pub const READ: &str = "read_process";
-/// `kill_process` — terminate a background process's group (docs/process-monitor.md).
-pub const KILL: &str = "kill_process";
-/// `watch_process` — register a one-shot output pattern that notifies on a hit
-/// (docs/process-monitor.md). Named beside `read_process`/`kill_process`; a bare `watch`
-/// would read as a filesystem watcher.
-pub const WATCH: &str = "watch_process";
-/// `check_inbox` — surface pending notifications on demand (the directed inbox read,
-/// docs/inbox.md) so the model needn't wait for them to ride its next action.
-pub const CHECK_INBOX: &str = "check_inbox";
-/// `wait` — block until a new inbox notification arrives, then surface pending
-/// notifications (docs/process-monitor.md). Refuses when no known source can wake it.
-pub const WAIT: &str = "wait";
 /// The question an `ask` call puts and its place among the asks of one completion,
 /// `n` of `of` (1-based), for a surface that draws it as prose rather than as a call
 /// (docs/tui.md, docs/web-client.md). `None` for a call that is not an ask, or one

@@ -20,7 +20,7 @@ fn summary_parses_and_tolerates_garbage() {
 #[test]
 fn definition_advertises_the_name_and_a_required_summary() {
     let d = definition();
-    assert_eq!(d["name"], json!(NAME));
+    assert_eq!(d["name"], json!(CONSOLIDATE));
     assert_eq!(d["input_schema"]["required"], json!(["summary"]));
 }
 
@@ -29,7 +29,7 @@ fn definition_advertises_the_name_and_a_required_summary() {
 /// annotations leak.
 #[test]
 fn consolidate_has_a_brief_and_a_clean_wire_entry() {
-    let b = brief(NAME).expect("consolidate brief");
+    let b = brief(CONSOLIDATE).expect("consolidate brief");
     assert!(b.server.is_none());
     let hints = b.definition.annotations.as_ref().unwrap();
     assert_eq!(hints.read_only_hint, Some(false));

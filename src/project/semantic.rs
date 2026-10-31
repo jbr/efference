@@ -154,8 +154,8 @@ pub fn render_result(
         seq: Some(seq),
         content: match reply.filter(|_| !matches!(wire, WireState::Elided)) {
             Some(AskReply { question, source }) => {
-                let from =
-                    source.map_or_default(|s| format!("{}: ", crate::frontend::wire_label(s)));
+                let from = source
+                    .map_or_default(|s| format!("{}: ", crate::names::sources::wire_label(s)));
                 format!("[{seq}] asked: {question}\n{from}{content}")
             }
             None => format!("[{seq}] {content}"),
@@ -214,7 +214,7 @@ impl<'a> Lookups<'a> {
                 _ => None,
             })
             .flatten()
-            .filter(|call| call.name == crate::log::ASK)
+            .filter(|call| call.name == crate::names::tools::ASK)
             .filter_map(|call| {
                 let question = call.input.get("question")?.as_str()?.trim().to_string();
                 Some((call.id, question))
@@ -279,7 +279,10 @@ fn user_parts<'a>(
         };
         Some(UserPart::Text(match source.take() {
             Some(source) => {
-                format!("{}:{separator}{text}", crate::frontend::wire_label(source))
+                format!(
+                    "{}:{separator}{text}",
+                    crate::names::sources::wire_label(source)
+                )
             }
             None => text,
         }))
@@ -300,7 +303,7 @@ fn triage_text(t: &Triage, lookups: &Lookups) -> Option<String> {
         .filter(|(_, d)| matches!(d, Disposition::Pin))
         .filter_map(|(seq, _)| {
             lookups.notifications.get(seq).map(|n| {
-                let source = crate::frontend::wire_label(&n.source);
+                let source = crate::names::sources::wire_label(&n.source);
                 format!("⟢ {source}: {}", n.body)
             })
         })

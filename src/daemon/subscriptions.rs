@@ -118,7 +118,9 @@ impl Host {
         let returned_to: Vec<String> = match &view.condition {
             Condition::Asking { returned, .. } => returned
                 .iter()
-                .filter_map(|message| crate::frontend::source_session(message.source.as_deref()?))
+                .filter_map(|message| {
+                    crate::names::sources::source_session(message.source.as_deref()?)
+                })
                 .filter(|sender| {
                     !subscribers
                         .iter()

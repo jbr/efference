@@ -203,7 +203,7 @@ async fn a_located_tool_call_keeps_its_bytes() {
                 vec![],
                 vec![],
                 vec![ToolCall::new(
-                    crate::bash::NAME,
+                    crate::names::tools::BASH,
                     "toolu_9",
                     serde_json::json!({ "command": "cargo test" }),
                 )],

@@ -26,9 +26,9 @@ pub mod precedent;
 pub use mount::MountedSpotter;
 
 use crate::api::{Client, Endpoint, RequestUsage};
-use crate::bash;
 use crate::config::Config;
 use crate::log::{Axes, Origin, Stance, ToolCall};
+use crate::names::tools::{BASH, INTENT, display_name};
 use crate::project::{UserPart, WireTurn};
 use crate::tools::ToolBrief;
 use mcplease::types::Tool as ToolDefinition;
@@ -508,7 +508,7 @@ fn render_move(
     dirs: Option<&crate::policy::Directories>,
     scratch: Option<&std::path::Path>,
 ) -> String {
-    let body = if call.name == bash::NAME {
+    let body = if call.name == BASH {
         match call.input.get("command").and_then(Value::as_str) {
             Some(cmd) => {
                 // A leading `cd` into the working directory goes nowhere; the reviewer
@@ -542,10 +542,10 @@ fn render_move(
         // (docs/permissions.md).
         let mut shown = call.input.clone();
         if let Some(object) = shown.as_object_mut() {
-            object.remove(crate::log::INTENT);
+            object.remove(INTENT);
         }
         let input = serde_json::to_string_pretty(&shown).unwrap_or_else(|_| shown.to_string());
-        let display = crate::mcp::display_name(&call.name);
+        let display = display_name(&call.name);
         match brief {
             Some(brief) => format!(
                 "{}\nThe call being proposed, with input:\n\n{input}",

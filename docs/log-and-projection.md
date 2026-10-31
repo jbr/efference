@@ -9,13 +9,14 @@ caching constraint that shapes both.
 ## Core types
 
 The types are `src/log.rs` and the files under `src/log/`, and the module imports no other
-top-level module (docs/README.md, *Dependency direction*). That includes the shapes other
-subsystems fill in or read: the provider and wire dialect a boot records (`provider.rs`),
-a gate's `Approval` (`approval.rs`), the resolved `[context]` (`context.rs`), an attachment's
-`Arrival` (`attachment.rs`), the spotter's `Axes` (`spot.rs`), the `TriageModel` a preamble
-records (`preamble.rs`), and the names a recorded call is read by, `INTENT` and `ASK`
-(`names.rs`). Behavior that needs another subsystem stays with it, as `impl` blocks on these
-types.
+top-level module but `names` (docs/README.md, *Dependency direction*). That includes the
+shapes other subsystems fill in or read: the provider and wire dialect a boot records
+(`provider.rs`), a gate's `Approval` (`approval.rs`), the resolved `[context]` (`context.rs`),
+an attachment's `Arrival` (`attachment.rs`), the spotter's `Axes` (`spot.rs`), and the
+`TriageModel` a preamble records (`preamble.rs`). The names a recorded entry carries are
+`src/names.rs`: the tool names and the `intent` key a call is read by (`names/tools.rs`), and
+the labels a turn's `source` is written in (`names/sources.rs`). Behavior that needs another
+subsystem stays with it, as `impl` blocks on these types.
 
 ### `LogEntry`
 
@@ -40,7 +41,7 @@ another session on the host — client-asserted like `notify`'s source. It **is*
 projected: a `User` entry carrying one opens its wire block with a prefix naming the
 speaker, so the model can tell the voices apart when several clients submit into a
 session (docs/control-api.md). The stored `session[<id>]` opens the block as
-`<id> (agent):` (`frontend::wire_label`), the spelling the preamble teaches
+`<id> (agent):` (`names::sources::wire_label`), the spelling the preamble teaches
 (`assets/prompts/session.md`), and `session[<id> in <place>]`, from a session in another
 project, as `<id> (agent in <place>):`; every other label opens it as written (`web:`,
 `mcp[<name>]:`). A pinned inbox note's source goes through the same label, so a note

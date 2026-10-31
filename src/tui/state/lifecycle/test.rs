@@ -56,7 +56,11 @@ fn an_unpaired_call_is_in_flight_in_either_dialect() {
 fn a_responses_bash_call_is_a_foreground_bash() {
     let mut play = Screenplay::new(80, 12);
     play.user("run it");
-    play.running_responses_tool("call_b", crate::bash::NAME, r#"{"command":"cargo test"}"#);
+    play.running_responses_tool(
+        "call_b",
+        crate::names::tools::BASH,
+        r#"{"command":"cargo test"}"#,
+    );
     let call = play.state.in_flight_call().expect("in flight");
     assert!(crate::bash::is_foreground_call(&call));
     assert_eq!(&labels(&play)[..2], ["background", "kill"]);
@@ -69,7 +73,11 @@ fn a_responses_bash_call_is_a_foreground_bash() {
 fn malformed_responses_arguments_put_nothing_in_flight() {
     let mut play = Screenplay::new(80, 12);
     play.user("run it");
-    play.running_responses_tool("call_x", crate::bash::NAME, r#"{"command": "cargo te"#);
+    play.running_responses_tool(
+        "call_x",
+        crate::names::tools::BASH,
+        r#"{"command": "cargo te"#,
+    );
     assert_eq!(in_flight(&play), None);
     assert_eq!(
         labels(&play)[0],

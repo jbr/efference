@@ -39,6 +39,7 @@ fn rejects_skip_short_tools_failures_and_caps() {
 }
 
 use crate::log::{RawResult, Summary, WireState};
+use crate::names::tools::CONSOLIDATE;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 use std::sync::Arc;
 
@@ -272,7 +273,7 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
             1,
             Payload::assistant(AssistantOutput::Messages(vec![
                 crate::log::MessagesOutputBlock::ToolUse(ToolCall::new(
-                    consolidate::NAME,
+                    CONSOLIDATE,
                     "manual",
                     serde_json::json!({"summary":"s"}),
                 )),

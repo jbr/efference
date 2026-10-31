@@ -1,6 +1,8 @@
 //! Tests for the advertised tool surface and the loop-owned tools.
 use super::*;
 
+use crate::names::tools::{CHECK_INBOX, CONSOLIDATE, WAIT, is_triage_tool};
+
 /// `tool_catalog` covers every name `tool_definitions` advertises — the gap
 /// review found: a catalog built from `Toolbox::tool_catalog` alone answered
 /// only the mounted providers, so `GET /v1/tools/check_inbox` 404'd for a
@@ -30,15 +32,15 @@ fn only_the_toolbox_half_of_the_catalog_carries_injected_intent() {
     let toolbox = Toolbox::bash_only();
     let catalog = tool_catalog(&toolbox);
 
-    let bash = &catalog[bash::NAME];
+    let bash = &catalog[BASH];
     assert!(
         bash.input_schema["properties"]["intent"].is_object(),
         "a toolbox-mounted tool's served schema matches the wire, intent included"
     );
 
     for name in [
-        consolidate::NAME,
-        process_monitor::CHECK_INBOX,
+        CONSOLIDATE,
+        CHECK_INBOX,
         crate::triage::retain_tool()["name"].as_str().unwrap(),
         crate::triage::triage_tool()["name"].as_str().unwrap(),
     ] {
@@ -60,7 +62,7 @@ fn only_the_toolbox_half_of_the_catalog_carries_injected_intent() {
 #[tokio::test]
 async fn wait_refuses_when_no_known_source_can_wake_it() {
     let (shared, _rx) = Session::in_memory();
-    let result = process_monitor_tool_result(&shared, &call(process_monitor::WAIT))
+    let result = process_monitor_tool_result(&shared, &call(WAIT))
         .await
         .expect("wait is a process monitor tool");
 
@@ -90,7 +92,7 @@ async fn wait_wakes_for_a_notification_and_returns_its_body() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        process_monitor_tool_result(&shared, &call(process_monitor::WAIT)),
+        process_monitor_tool_result(&shared, &call(WAIT)),
     )
     .await
     .expect("wait wakes when notify enqueues")
@@ -121,7 +123,7 @@ async fn wait_wakes_when_a_turn_is_queued() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        process_monitor_tool_result(&shared, &call(process_monitor::WAIT)),
+        process_monitor_tool_result(&shared, &call(WAIT)),
     )
     .await
     .expect("a queued turn wakes wait")
@@ -137,7 +139,7 @@ async fn wait_wakes_when_a_turn_is_queued() {
 async fn wait_returns_at_once_for_a_turn_already_queued() {
     let (shared, _rx) = Session::in_memory();
     shared.submit_turn(SubmittedTurn::new("are you there?", "sub-1"));
-    let result = process_monitor_tool_result(&shared, &call(process_monitor::WAIT))
+    let result = process_monitor_tool_result(&shared, &call(WAIT))
         .await
         .expect("wait is a process monitor tool");
     assert!(!result.is_error, "{result:?}");
@@ -158,9 +160,7 @@ async fn a_held_back_turn_wakes_wait_only_when_released() {
     );
 
     let waiter = Arc::clone(&shared);
-    let wait = tokio::spawn(async move {
-        process_monitor_tool_result(&waiter, &call(process_monitor::WAIT)).await
-    });
+    let wait = tokio::spawn(async move { process_monitor_tool_result(&waiter, &call(WAIT)).await });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert!(
         !wait.is_finished(),
@@ -230,7 +230,7 @@ pub(super) fn cap_head_is_char_boundary_safe() {
 pub(super) fn callable_names_are_the_advertised_ones_minus_the_triage_tools() {
     let toolbox = Toolbox::bash_only();
     let callable = callable_names(&toolbox);
-    for advertised in [bash::NAME, consolidate::NAME] {
+    for advertised in [BASH, CONSOLIDATE] {
         assert!(
             callable.iter().any(|n| n == advertised),
             "{advertised} is advertised, so a call may name it: {callable:?}"

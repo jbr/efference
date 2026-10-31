@@ -12,6 +12,7 @@
 
 use super::*;
 use crate::log::ToolTelemetry;
+use crate::names::tools::{ASK, CONSOLIDATE, is_triage_tool};
 
 mod consolidate_call;
 mod execute;
@@ -160,7 +161,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     if !callable.contains(&call.name) {
         return Ok(Decision::Direct(vec![unknown_tool(call, &callable)]));
     }
-    if call.name == crate::log::ASK {
+    if call.name == ASK {
         return Ok(run_ask(shared, call, ask_at, primer_go).await);
     }
     // The guide overlay's one closed door (docs/context.md): a call that names an
@@ -239,9 +240,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
         // `consolidate` acts on the log, not the world (docs/consolidate.md): record the
         // summary + pair the `tool_use`. No world-run, no triage — there is no tool
         // output to curate, so it never reaches the triage.
-        Approval::Approve if call.name == consolidate::NAME => {
-            Ok(consolidate_call::record(shared, call))
-        }
+        Approval::Approve if call.name == CONSOLIDATE => Ok(consolidate_call::record(shared, call)),
         Approval::Approve => {
             run_approved(
                 frontend,
@@ -263,7 +262,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             Ok(Decision::Redirect {
                 payload: rejected(call, decider.as_deref()),
                 message,
-                source: decider.filter(|source| !crate::frontend::is_review_source(source)),
+                source: decider.filter(|source| !crate::names::sources::is_review_source(source)),
             })
         }
         // Resolved into Approve/Redirect by `commit_config_edit` above before this match.

@@ -972,7 +972,7 @@ toolbox after `[tools]` has filtered it).
 
 The alphabet has no separator that reads as one to a human, so the TUI renders
 the boundary as a dot — `ferritin__get` displays as `ferritin.get`
-(`mcp::display_name`, applied at the two transcript sites that print a tool
+(`names::tools::display_name`, applied at the two transcript sites that print a tool
 name). The dotted form never reaches the wire or the log. It *is* the config's
 spelling, since an operator types what the TUI shows them: a `[tools]` key is
 resolved to the wire name at validate (`config::tools::validate_tools`), so a grant

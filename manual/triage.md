@@ -19,7 +19,7 @@ of `cargo test | tail -3`, which might hide the failure it needs, it runs `cargo
 says what it’s looking for. The triage model uses that intent to choose what to keep. The
 aim is to spend the agent’s context on information it needs for the work, not on the volume
 of output a command happens to produce.
-<!-- src: docs/positions.md ("Origin"); assets/prompts/session.md (do not pre-filter); src/log/names.rs::INTENT -->
+<!-- src: docs/positions.md ("Origin"); assets/prompts/session.md (do not pre-filter); src/names/tools.rs::INTENT -->
 
 You can inspect both versions: the session log keeps the full output, subject to the
 [result-size limit](#limits-and-exceptions), and the clients can show it beside the selected
@@ -77,7 +77,7 @@ conversation, only the verdict does.
 The project's tools, and efference's file and shell tools, carry an `intent` field: a
 sentence saying what the agent wants from the call. The triage model reads it and the note
 answers it. When the intent gave it nothing to decide against, it can say so to the agent.
-<!-- src: src/log/names.rs::INTENT; src/tools.rs::with_intent; src/agent/surface.rs::tool_definitions; src/project/render.rs::INTENT_FEEDBACK_LEAD -->
+<!-- src: src/names/tools.rs::INTENT; src/tools.rs::with_intent; src/agent/surface.rs::tool_definitions; src/project/render.rs::INTENT_FEEDBACK_LEAD -->
 
 The same request also sees pending notifications and the output of the session's
 background processes, and decides which deserve the agent's attention.

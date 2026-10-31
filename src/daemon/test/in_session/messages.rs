@@ -159,7 +159,7 @@ async fn questions_are_answered_by_naming_them() {
     let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let ask = ToolCall::new(
-        crate::log::ASK,
+        crate::names::tools::ASK,
         "toolu_q",
         serde_json::json!({ "question": "Delete the old migrations?" }),
     );

@@ -49,7 +49,7 @@ fn parse_spot_reads_the_promotion_safe_vote() {
 
 #[test]
 fn render_move_asks_the_promotion_question_only_when_a_prefix_is_probed() {
-    let call = ToolCall::new(bash::NAME, "x", json!({ "command": "git log --oneline" }));
+    let call = ToolCall::new(BASH, "x", json!({ "command": "git log --oneline" }));
     // No probe → no promotion question.
     let plain = render_move(&Config::default(), &call, None, &[], None, None, None);
     assert!(!plain.contains("clear_always"), "{plain}");
@@ -78,7 +78,7 @@ fn parse_spot_is_none_without_a_spot_call() {
 
 #[test]
 fn render_move_shows_bash_command_and_structured_input() {
-    let bash_call = ToolCall::new(bash::NAME, "x", json!({ "command": "git push" }));
+    let bash_call = ToolCall::new(BASH, "x", json!({ "command": "git push" }));
     let rendered = render_move(&Config::default(), &bash_call, None, &[], None, None, None);
     assert!(rendered.contains("git push"), "{rendered}");
     assert!(rendered.contains("spot"), "instruction present: {rendered}");
@@ -287,7 +287,7 @@ fn a_worktree_session_is_reviewed_as_its_project_counterpart() {
     assert!(ctx.contains("- working directory: /work/proj\n"), "{ctx}");
 
     let call = ToolCall::new(
-        bash::NAME,
+        BASH,
         "c1",
         serde_json::json!({ "command": "cd /work/proj/.efference/worktrees/w && wc -l src/a.rs" }),
     );
@@ -433,7 +433,7 @@ fn render_context_without_a_cwd_names_no_directory() {
 fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
     let cwd = Path::new("/work/proj");
     let into = ToolCall::new(
-        bash::NAME,
+        BASH,
         "c1",
         json!({ "command": "cd /work/proj && cat .claude/settings.local.json" }),
     );
@@ -454,7 +454,7 @@ fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
     assert!(!block.contains("cd /work/proj"));
 
     let elsewhere = ToolCall::new(
-        bash::NAME,
+        BASH,
         "c2",
         json!({ "command": "cd /work/other && cat secrets.txt" }),
     );
@@ -484,7 +484,7 @@ fn a_bash_move_states_where_its_paths_resolve() {
         .with_path(".efference", false, false)
         .build();
     let call = ToolCall::new(
-        bash::NAME,
+        BASH,
         "c1",
         json!({ "command": "cat >> .git/info/exclude << 'EOF'\n.efference/\nEOF" }),
     );
@@ -507,7 +507,7 @@ fn a_bash_move_states_where_its_paths_resolve() {
     // The here-doc body is data; its `.efference/` is not listed as a path.
     assert!(!block.contains("- `.efference/`"), "{block}");
 
-    let outside = ToolCall::new(bash::NAME, "c2", json!({ "command": "cat /etc/hosts" }));
+    let outside = ToolCall::new(BASH, "c2", json!({ "command": "cat /etc/hosts" }));
     let block = render_move(
         &role,
         &outside,
@@ -522,7 +522,7 @@ fn a_bash_move_states_where_its_paths_resolve() {
         "{block}"
     );
 
-    let plain = ToolCall::new(bash::NAME, "c3", json!({ "command": "cargo test" }));
+    let plain = ToolCall::new(BASH, "c3", json!({ "command": "cargo test" }));
     let block = render_move(
         &role,
         &plain,

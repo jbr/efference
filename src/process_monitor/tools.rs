@@ -8,8 +8,9 @@ use std::sync::LazyLock;
 
 use serde_json::{Value, json};
 
-use super::{CHECK_INBOX, KILL, LIST, READ, WAIT, WATCH};
-use crate::log::ASK;
+use crate::names::tools::{
+    ASK, CHECK_INBOX, KILL_PROCESS, LIST_PROCESSES, READ_PROCESS, WAIT, WATCH_PROCESS,
+};
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 
@@ -32,7 +33,10 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
         open_world_hint: Some(false),
         ..Default::default()
     };
-    let mut list = ToolDefinition::new(LIST, json!({ "type": "object", "properties": {} }));
+    let mut list = ToolDefinition::new(
+        LIST_PROCESSES,
+        json!({ "type": "object", "properties": {} }),
+    );
     list.description = Some(
         "List the background processes currently running — handle, command, how long each \
          has run, and how long since its last output. Their recent output also surfaces \
@@ -42,7 +46,7 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
     list.annotations = Some(read_only.clone());
 
     let mut read = ToolDefinition::new(
-        READ,
+        READ_PROCESS,
         json!({
             "type": "object",
             "properties": {
@@ -62,7 +66,7 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
     read.annotations = Some(read_only.clone());
 
     let mut kill = ToolDefinition::new(
-        KILL,
+        KILL_PROCESS,
         json!({
             "type": "object",
             "properties": {
@@ -85,7 +89,7 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
     });
 
     let mut watch = ToolDefinition::new(
-        WATCH,
+        WATCH_PROCESS,
         json!({
             "type": "object",
             "properties": {

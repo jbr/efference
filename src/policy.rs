@@ -28,9 +28,9 @@ use std::path::{Component, Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::bash;
 use crate::config::{CommandStance, Config, Perms};
 use crate::log::{ConfigChange, LogEntry, Origin, Payload, Stance, ToolCall};
+use crate::names::tools::BASH;
 
 /// The fast-path's decision for one tool call. `Gate` is the extension point for the
 /// spotter rung, which splits it into a graded `{clear, watch, gate}` stance
@@ -205,7 +205,7 @@ fn is_config_write_in(call: &ToolCall, protected: &Path, dirs: &Directories) -> 
 /// The directories-injected core, for deterministic tests. `bash` uses `dirs` to resolve the
 /// target of a tolerated leading `cd` against the `[paths]` grants ([`commands::bash_tokens_in`]).
 fn classify_in(role: &Config, call: &ToolCall, dirs: &Directories) -> Verdict {
-    if call.name == bash::NAME {
+    if call.name == BASH {
         match call.input.get("command").and_then(Value::as_str) {
             Some(command) => classify_bash(role, command, dirs),
             // A bash call without a string `command` is malformed — let the gate see it.
@@ -296,7 +296,7 @@ pub fn missing_grants(dirs: &Directories, role: &Config, call: &ToolCall) -> Opt
 
 /// The directories-injected core of [`missing_grants`], for deterministic tests.
 fn missing_grants_in(role: &Config, call: &ToolCall, dirs: &Directories) -> Option<MissingGrants> {
-    if call.name == bash::NAME {
+    if call.name == BASH {
         return None;
     }
     let tool = (!tool_granted(role, &call.name)).then(|| call.name.clone());

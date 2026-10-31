@@ -20,7 +20,7 @@ impl Provider {
     /// Drop the tools `enabled` refuses ([`Toolbox::retain_enabled`]); whether any remain.
     pub(super) fn retain_enabled(&mut self, enabled: &impl Fn(&str) -> bool) -> bool {
         match self {
-            Provider::Bash(_) => enabled(bash::NAME),
+            Provider::Bash(_) => enabled(BASH),
             Provider::ReadImage(_) => enabled(read_image::NAME),
             Provider::Fs(s) => s.retain_enabled(enabled),
             Provider::SemanticEdit(s) => s.retain_enabled(enabled),
@@ -33,7 +33,7 @@ impl Provider {
     /// Whether this backend owns the named tool.
     pub(super) fn handles(&self, name: &str) -> bool {
         match self {
-            Provider::Bash(_) => name == bash::NAME,
+            Provider::Bash(_) => name == BASH,
             Provider::ReadImage(_) => name == read_image::NAME,
             Provider::Fs(s) => s.handles(name),
             Provider::SemanticEdit(s) => s.handles(name),
@@ -123,7 +123,7 @@ impl Provider {
         // went through `with_intent` in `Toolbox::definitions` — the served
         // schema does too (`inject_intent: true`).
         match self {
-            Provider::Bash(_) if name == bash::NAME => {
+            Provider::Bash(_) if name == BASH => {
                 Some(ToolEntry::from_raw(name, &Bash::definition(), None, true))
             }
             Provider::ReadImage(_) if name == read_image::NAME => Some(ToolEntry::from_raw(

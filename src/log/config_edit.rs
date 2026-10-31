@@ -76,7 +76,7 @@ pub enum ConfigChange {
         write: bool,
     },
     /// Grant a structured tool: set `granted` on its `[tools]` entry. `name` is the tool's
-    /// wire name, or a whole namespace as `<namespace>__*` ([`crate::mcp::namespace_glob`]).
+    /// wire name, or a whole namespace as `<namespace>__*` ([`crate::names::tools::namespace_glob`]).
     Tool { name: String },
     /// Replace the session **scope** (the perimeter prose). **Session-visible** — the boot
     /// preamble stays frozen (re-rendering it would mutate behind the cache breakpoint), so a

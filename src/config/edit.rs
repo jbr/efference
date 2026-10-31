@@ -81,9 +81,9 @@ pub(super) fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
         // document boundary, and undone by the `[tools]` validation on the next load, so the
         // reloaded file grants the same name and the idempotent echo diffs to nothing.
         ConfigChange::Tool { name } => {
-            let key = match crate::mcp::is_namespace_glob(name) {
+            let key = match crate::names::tools::is_namespace_glob(name) {
                 true => name
-                    .strip_suffix(&crate::mcp::namespace_glob(""))
+                    .strip_suffix(&crate::names::tools::namespace_glob(""))
                     .unwrap_or(name)
                     .to_string(),
                 false => table_key(name),

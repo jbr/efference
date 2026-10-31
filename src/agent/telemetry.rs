@@ -9,6 +9,7 @@
 use super::*;
 
 use crate::log::{BashTelemetry, EditTelemetry, ToolOutcome, ToolTelemetry};
+use crate::names::tools::BASH;
 
 /// Argument names an edit-shaped call spells its anchor with. Several tools
 /// across two crates use one of these; a call carrying none simply records no
@@ -52,7 +53,7 @@ pub(super) fn observe(
         outcome,
         result_bytes: result.content.len(),
         images: result.images.len(),
-        bash: (call.name == bash::NAME).then(|| BashTelemetry {
+        bash: (call.name == BASH).then(|| BashTelemetry {
             exit_status: bash::reported_exit_status(&result.content).map(str::to_string),
             background: bash::is_background_call(call),
             handle,

@@ -624,20 +624,6 @@ fn image_blocks_realize_and_structured_content_renders_as_json() {
     assert!(rendered.content.contains("\"answer\": 42"));
 }
 
-#[test]
-fn display_name_dots_the_namespace_boundary_only() {
-    // The common case: what the operator reads instead of `ferritin__get`.
-    assert_eq!(display_name("ferritin__get"), "ferritin.get");
-    // An embedded tool name has no boundary to find, so it passes through
-    // unchanged — the same invariant that makes namespacing collision-free.
-    assert_eq!(display_name("edit"), "edit");
-    assert_eq!(display_name("undo_edit"), "undo_edit");
-    // Only the *first* `__` is the boundary. A server whose own tool name
-    // contains `__` keeps it: `get__raw` is that server's name for the tool,
-    // not a second namespace.
-    assert_eq!(display_name("ferritin__get__raw"), "ferritin.get__raw");
-}
-
 /// Nothing missing means no section: a heading announcing that everything
 /// mounted is noise, and it would sit in the cached prefix forever.
 #[test]

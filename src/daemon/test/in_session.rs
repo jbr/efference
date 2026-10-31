@@ -87,7 +87,7 @@ fn issue(session: &Session, calls: Vec<ToolCall>) -> Seq {
 /// A bash call the child holds for a decision.
 fn curl() -> ToolCall {
     ToolCall::new(
-        crate::bash::NAME,
+        crate::names::tools::BASH,
         "toolu_curl",
         serde_json::json!({
             "command": "curl -sI https://example.com",
