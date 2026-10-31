@@ -26,7 +26,7 @@ impl Session {
     /// A turn a client submitted (`POST /turns`): the person's action,
     /// then the submission. The harness's own submissions — the kickoff, a hand-off
     /// brief — go to [`Session::submit_turn`] directly.
-    pub(crate) fn submit_client_turn(&self, turn: crate::frontend::SubmittedTurn) {
+    pub(crate) fn submit_client_turn(&self, turn: SubmittedTurn) {
         self.person_acted(PersonAction::Turn);
         self.submit_turn(turn);
     }

@@ -91,18 +91,12 @@ fn a_hand_placed_boundary_names_split_calls() {
         responses_call(6, "consolidate"),
     ];
     let upto = 4;
-    assert_eq!(split_calls(&log, upto), Vec::<crate::log::CallId>::new());
+    assert_eq!(split_calls(&log, upto), Vec::<CallId>::new());
 
     // Between call_b and its result: the call is replaced, the output would replay alone.
-    assert_eq!(
-        split_calls(&log, 3),
-        vec![crate::log::CallId("call_b".into())]
-    );
+    assert_eq!(split_calls(&log, 3), vec![CallId("call_b".into())]);
     // Before call_a's result but after nothing else: the same shape at the front.
-    assert_eq!(
-        split_calls(&log, 1),
-        vec![crate::log::CallId("call_a".into())]
-    );
+    assert_eq!(split_calls(&log, 1), vec![CallId("call_a".into())]);
     // A boundary before any call splits nothing.
-    assert_eq!(split_calls(&log, 0), Vec::<crate::log::CallId>::new());
+    assert_eq!(split_calls(&log, 0), Vec::<CallId>::new());
 }

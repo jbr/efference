@@ -76,7 +76,7 @@ async fn report_attention(mut conn: Conn) -> Conn {
         return missing_host(conn);
     };
     let body = conn.request_body_string().await.unwrap_or_default();
-    match super::attention::AttentionReport::parse(&body) {
+    match attention::AttentionReport::parse(&body) {
         Ok(report) => {
             host.report_attention(&report);
             conn.with_status(204).halt()
@@ -103,7 +103,7 @@ fn list_sessions() -> impl trillium::Handler {
             // host as shared state; an empty stream closes rather than hangs.
             None => Box::pin(futures_lite::stream::empty()),
         })
-        .with_heartbeat(super::http::EVENTS_HEARTBEAT),
+        .with_heartbeat(http::EVENTS_HEARTBEAT),
         read_sessions,
     )
 }
@@ -141,7 +141,7 @@ async fn resolve_session(conn: Conn, web: bool) -> Conn {
         // home (docs/web-client.md). Control and file paths still fail here.
         None if web
             && conn.method() == trillium::Method::Get
-            && super::tcp::Surface::Session
+            && tcp::Surface::Session
                 .spa_route(&format!("/{}", conn.path().trim_start_matches('/'))) =>
         {
             conn

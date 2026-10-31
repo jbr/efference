@@ -66,7 +66,7 @@ pub(super) fn legislate_grants_then_approves_a_covered_call() {
     let call = bash_call("npm install");
     assert_eq!(
         policy::classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -87,7 +87,7 @@ pub(super) fn legislate_grants_then_approves_a_covered_call() {
     // The policy is now amended for any future call too.
     assert_eq!(
         policy::classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -165,7 +165,7 @@ pub(super) fn a_gated_structured_edit_names_the_missing_grant_not_a_tool_defect(
     let msg = missing_grant_message(
         Some(Path::new(".efference/x/config.toml")),
         "writes outside the repo",
-        &crate::policy::MissingGrants {
+        &policy::MissingGrants {
             tool: Some("edit".into()),
             paths: vec!["src/lib.rs".into()],
             needs_write: true,
@@ -205,7 +205,7 @@ pub(super) fn the_missing_grant_message_names_only_what_is_missing() {
     let msg = missing_grant_message(
         None,
         "outside scope",
-        &crate::policy::MissingGrants {
+        &policy::MissingGrants {
             tool: None,
             paths: vec!["/etc/hosts".into()],
             needs_write: false,
@@ -226,8 +226,8 @@ pub(super) fn missing_grants_reports_the_two_halves_independently() {
     let role = crate::config::parse_text("[paths]\n\".\" = true\n");
     let call = |name: &str, input| ToolCall::new(name, "toolu_x", input);
     // Path granted, name not: only the name is reported.
-    let missing = crate::policy::missing_grants(
-        &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+    let missing = policy::missing_grants(
+        &policy::Directories::at(&std::env::current_dir().unwrap()),
         &role,
         &call("edit", serde_json::json!({ "file_path": "src/lib.rs" })),
     )
@@ -237,8 +237,8 @@ pub(super) fn missing_grants_reports_the_two_halves_independently() {
     assert!(missing.needs_write);
     // bash is not decomposed this way.
     assert!(
-        crate::policy::missing_grants(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+        policy::missing_grants(
+            &policy::Directories::at(&std::env::current_dir().unwrap()),
             &role,
             &call("bash", serde_json::json!({ "command": "rm -rf /" }))
         )
@@ -260,7 +260,7 @@ pub(super) fn a_config_write_that_does_not_parse_is_reverted_and_reported_as_an_
     ));
     let good = "# schema in this header\nscope = \"stay in src/\"\n";
     std::fs::write(&path, good).unwrap();
-    let (shared, _rx) = crate::daemon::Session::with_role(
+    let (shared, _rx) = Session::with_role(
         std::env::current_dir().unwrap(),
         crate::persist::Log::in_memory(),
         crate::config::LoadedConfig {

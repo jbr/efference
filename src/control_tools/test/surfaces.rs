@@ -24,11 +24,7 @@ fn each_set_advertises_its_verbs_in_order() {
         "transcript",
     ];
     let with = |extra: &[&str]| -> Vec<String> {
-        agent
-            .iter()
-            .chain(extra)
-            .map(|name| name.to_string())
-            .collect()
+        agent.iter().chain(extra).map(ToString::to_string).collect()
     };
     assert_eq!(names(in_session::Tools::tools_list()), with(&["hand_off"]));
     assert_eq!(names(mcp::Tools::tools_list()), with(&["wait"]));
@@ -220,7 +216,7 @@ fn every_agent_verb_takes_agent() {
             .unwrap_or_default();
         match tool.name.as_str() {
             "create" | "hand_off" => {
-                assert!(!properties.contains_key("agent"), "{}", tool.name)
+                assert!(!properties.contains_key("agent"), "{}", tool.name);
             }
             name if acting.contains(&name) => {
                 assert!(
@@ -229,7 +225,7 @@ fn every_agent_verb_takes_agent() {
                         .is_some_and(|required| required.contains(&"agent".into())),
                     "{} requires `agent`",
                     tool.name
-                )
+                );
             }
             _ => assert!(
                 properties.contains_key("agent"),

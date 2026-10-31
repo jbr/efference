@@ -60,7 +60,7 @@ fn a_finalized_stream_with_unparseable_tool_input_is_marked_retryable() {
     match &completion.assistant {
         Payload::Assistant { output, .. } => assert_eq!(
             output.tool_calls().unwrap()[0].input,
-            serde_json::Value::String(r#"{"command": "echo cut"#.to_string()),
+            Value::String(r#"{"command": "echo cut"#.to_string()),
             "the raw fragment is kept verbatim"
         ),
         other => panic!("expected Payload::Assistant, got {other:?}"),
@@ -89,7 +89,7 @@ fn an_empty_stream_records_status_headers_and_frames() {
     let completion = a.finish().unwrap();
 
     let Payload::Assistant {
-        excluded: Some(crate::log::Exclusion::Upstream(failure)),
+        excluded: Some(Exclusion::Upstream(failure)),
         ..
     } = &completion.assistant
     else {
@@ -140,7 +140,7 @@ fn frame_capture_stops_at_the_cap() {
     let completion = a.finish().unwrap();
 
     let Payload::Assistant {
-        excluded: Some(crate::log::Exclusion::Upstream(failure)),
+        excluded: Some(Exclusion::Upstream(failure)),
         ..
     } = &completion.assistant
     else {
@@ -166,7 +166,7 @@ fn a_death_before_finalizing_carries_no_diagnostics() {
     )])
     .unwrap();
     let Payload::Assistant {
-        excluded: Some(crate::log::Exclusion::Upstream(failure)),
+        excluded: Some(Exclusion::Upstream(failure)),
         ..
     } = &completion.assistant
     else {

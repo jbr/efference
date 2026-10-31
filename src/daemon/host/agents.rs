@@ -36,14 +36,14 @@ impl Host {
     }
 
     /// The last seq `reader` was shown of `target`'s transcript.
-    pub(crate) fn read_cursor(&self, target: &str, reader: &str) -> Option<crate::log::Seq> {
+    pub(crate) fn read_cursor(&self, target: &str, reader: &str) -> Option<Seq> {
         self.sessions_mut()
             .hosted(target)
             .and_then(|hosted| hosted.read_cursors.get(reader).copied())
     }
 
     /// Record the last seq `reader` was shown of `target`'s transcript.
-    pub(crate) fn set_read_cursor(&self, target: &str, reader: &str, seq: crate::log::Seq) {
+    pub(crate) fn set_read_cursor(&self, target: &str, reader: &str, seq: Seq) {
         if let Some(hosted) = self.sessions_mut().hosted_mut(target) {
             hosted.read_cursors.insert(reader.to_string(), seq);
         }

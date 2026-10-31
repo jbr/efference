@@ -278,16 +278,12 @@ async fn an_archive_releases_the_log_while_a_stream_holds_the_session() {
     std::fs::create_dir_all(&cwd).unwrap();
     let path = cwd.join("log.jsonl");
     let mut boot = runtime::boot(&cwd);
-    boot.log = crate::persist::Log::create(&path, None).expect("a fresh log");
+    boot.log = Log::create(&path, None).expect("a fresh log");
     let host = Host::new(one_connection_registry(), baseline_env());
     host.adopt("one".into(), SessionRuntime::start(boot, host.swansong()))
         .expect("the id is free in this test");
     let session = host.session("one").expect("hosted");
-    let mut stream = crate::daemon::stream::control_stream(
-        Arc::clone(&session),
-        crate::daemon::stream::Include::default(),
-        0,
-    );
+    let mut stream = control_stream(Arc::clone(&session), Include::default(), 0);
     drop(session);
 
     host.end("one").expect("hosted").await;
@@ -344,11 +340,11 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
         );
         metadata.created_by = Some(created_by.into());
         metadata.detached = detached;
-        crate::persist::Log::create(dir.join(crate::boot::LOG_NAME), Some(metadata)).unwrap();
+        Log::create(dir.join(crate::boot::LOG_NAME), Some(metadata)).unwrap();
         dir
     };
 
-    let lineage = |dir: &std::path::Path| {
+    let lineage = |dir: &Path| {
         let recorded = host.recorded_lineage(dir);
         (recorded.created_by, recorded.detached)
     };
@@ -372,7 +368,7 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
     )
     .unwrap();
     host.end("one").unwrap().await;
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(host.session("kept").is_some());
 
     host.swansong().shut_down().await;
@@ -384,7 +380,7 @@ fn adopt_logged(host: &Arc<Host>, roots: &Roots, name: &str, created_by: Option<
     std::fs::create_dir_all(&cwd).unwrap();
     let path = cwd.join("log.jsonl");
     let mut boot = runtime::boot(&cwd);
-    boot.log = crate::persist::Log::create(&path, None).expect("a fresh log");
+    boot.log = Log::create(&path, None).expect("a fresh log");
     host.adopt_with(
         name.into(),
         SessionRuntime::start(boot, host.swansong()),
@@ -395,7 +391,7 @@ fn adopt_logged(host: &Arc<Host>, roots: &Roots, name: &str, created_by: Option<
     path
 }
 
-fn last_payload(path: &Path) -> crate::log::Payload {
+fn last_payload(path: &Path) -> Payload {
     let recording = crate::persist::load_recording(path).expect("the log loads");
     recording.entries.last().expect("an entry").payload.clone()
 }
@@ -410,7 +406,7 @@ async fn an_archive_and_a_cascaded_child_end_log_archived() {
     let child = adopt_logged(&host, &roots, "child", Some("creator"));
     host.session("creator")
         .unwrap()
-        .append(3, crate::log::Payload::User(vec![]))
+        .append(3, Payload::User(vec![]))
         .unwrap();
 
     host.end("creator").expect("hosted").await;
@@ -424,7 +420,7 @@ async fn an_archive_and_a_cascaded_child_end_log_archived() {
     for path in [&creator, &child] {
         let recording = crate::persist::load_recording(path).unwrap();
         let last = recording.entries.last().unwrap();
-        assert!(matches!(last.payload, crate::log::Payload::Archived { .. }));
+        assert!(matches!(last.payload, Payload::Archived { .. }));
     }
     let recording = crate::persist::load_recording(&creator).unwrap();
     let last = recording.entries.last().unwrap();
@@ -445,13 +441,13 @@ async fn a_host_shutdown_does_not_log_archived() {
     let path = adopt_logged(&host, &roots, "open", None);
     host.session("open")
         .unwrap()
-        .append(0, crate::log::Payload::User(vec![]))
+        .append(0, Payload::User(vec![]))
         .unwrap();
 
     host.swansong().shut_down().await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    assert!(matches!(last_payload(&path), crate::log::Payload::User(_)));
+    assert!(matches!(last_payload(&path), Payload::User(_)));
 }
 
 /// A dormant directory whose id the register holds under another root is a

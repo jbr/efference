@@ -20,7 +20,7 @@ async fn gate_on(
         stance: Stance::Gate,
         reason: "outside the mission".into(),
     };
-    super::step::judge(
+    judge(
         &mut frontend,
         &shared,
         &spotter,
@@ -117,7 +117,7 @@ async fn a_bound_gate_offers_nothing() {
         stance: Stance::Gate,
         reason: "outside the mission".into(),
     };
-    super::step::judge(
+    judge(
         &mut frontend,
         &shared,
         &spotter,

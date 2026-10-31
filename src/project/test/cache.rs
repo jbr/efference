@@ -209,7 +209,7 @@ fn none_placement_marks_nothing() {
         WireTurn::User(vec![UserPart::Text("hello".into()), UserPart::Breakpoint]),
         WireTurn::Breakpoint,
     ];
-    let encoded = super::super::messages::encode_messages(
+    let encoded = encode_messages(
         &turns,
         ImagePlacement::FollowingUserBlock,
         BreakpointPlacement::None,

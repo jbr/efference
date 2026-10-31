@@ -591,8 +591,8 @@ auth = { kind = "env", key = "NEVER_SET" }
 #[test]
 fn an_oauth_connection_loads_the_stored_grant() {
     let secrets = Arc::new(Secrets::in_memory());
-    let access = crate::inference::chatgpt::test_support::access_token("acct-7", "plus");
-    crate::inference::chatgpt::test_support::store_grant(&secrets, "codex", &access);
+    let access = chatgpt::test_support::access_token("acct-7", "plus");
+    chatgpt::test_support::store_grant(&secrets, "codex", &access);
 
     let registry = registry_with_secrets(
         r#"
@@ -745,8 +745,7 @@ auth = {{ kind = "env", key = "K" }}
             environment(&[("K", "k")]),
             &Arc::new(Secrets::in_memory()),
         )
-        .map(|_| String::new())
-        .unwrap_or_else(|error| error.to_string())
+        .map_or_else(|error| error.to_string(), |_| String::new())
     };
     let dialect = declare(r#"dialect = "messages""#);
     assert!(dialect.contains("derives its own dialect"), "{dialect}");

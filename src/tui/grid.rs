@@ -40,7 +40,7 @@ fn collect_rows(buf: &Buffer, region: Rect) -> Vec<String> {
         }
         rows.push(s.trim_end().to_string());
     }
-    while rows.last().is_some_and(|r| r.is_empty()) {
+    while rows.last().is_some_and(String::is_empty) {
         rows.pop();
     }
     rows

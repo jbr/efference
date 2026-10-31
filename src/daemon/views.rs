@@ -420,7 +420,7 @@ impl Session {
         let log = self.log.lock().unwrap();
         let entries = log.entries();
         match grain {
-            Grain::Audit => super::transcript::audit::render(window(entries, select)),
+            Grain::Audit => transcript::audit::render(window(entries, select)),
             // A tail of the conversation counts its rendered lines, not log entries.
             Grain::Conversation => {
                 let bounded = window(
@@ -431,10 +431,10 @@ impl Session {
                     },
                 );
                 match select.tail {
-                    Some(tail) => super::transcript::conversation::render_tail(
-                        entries, bounded, tail, &reading,
-                    ),
-                    None => super::transcript::conversation::render(entries, bounded, &reading),
+                    Some(tail) => {
+                        transcript::conversation::render_tail(entries, bounded, tail, &reading)
+                    }
+                    None => transcript::conversation::render(entries, bounded, &reading),
                 }
             }
         }
@@ -454,7 +454,7 @@ impl Session {
             held: held.as_deref(),
         };
         let log = self.log.lock().unwrap();
-        super::transcript::zoom::zoom(log.entries(), handle, &reading)
+        transcript::zoom::zoom(log.entries(), handle, &reading)
     }
 
     /// The session's id and the call held at its gate now: what a reading names and

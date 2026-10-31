@@ -4,7 +4,7 @@ use crate::log::Telemetry;
 use crate::log::CallId;
 use serde_json::json;
 
-fn call(name: &str, input: serde_json::Value) -> ToolCall {
+fn call(name: &str, input: Value) -> ToolCall {
     ToolCall::new(name, "toolu_1", input)
 }
 
@@ -27,7 +27,7 @@ fn outcome_classes_derive_generically() {
         false,
         None,
     );
-    assert_eq!(ok.outcome, crate::log::ToolOutcome::Applied);
+    assert_eq!(ok.outcome, ToolOutcome::Applied);
     let refused = observe(
         &call("edit", json!({})),
         &result("anchor matched nothing", true),
@@ -35,7 +35,7 @@ fn outcome_classes_derive_generically() {
         false,
         None,
     );
-    assert_eq!(refused.outcome, crate::log::ToolOutcome::Rejected);
+    assert_eq!(refused.outcome, ToolOutcome::Rejected);
     let broken = observe(
         &call("bash", json!({})),
         &result("failed to background: no pty", true),
@@ -43,7 +43,7 @@ fn outcome_classes_derive_generically() {
         true,
         None,
     );
-    assert_eq!(broken.outcome, crate::log::ToolOutcome::HarnessError);
+    assert_eq!(broken.outcome, ToolOutcome::HarnessError);
 }
 
 /// The common fields are the same four for every tool, and `result_bytes` is the
@@ -170,14 +170,11 @@ fn telemetry_serializes_without_its_absent_halves() {
         false,
         None,
     );
-    let line = serde_json::to_string(&crate::log::Payload::Telemetry(Telemetry::Tool(t))).unwrap();
+    let line = serde_json::to_string(&Payload::Telemetry(Telemetry::Tool(t))).unwrap();
     assert!(!line.contains("bash"), "{line}");
     assert!(!line.contains("edit"), "{line}");
     assert!(!line.contains("images"), "{line}");
     assert!(line.contains(r#""outcome":"applied""#), "{line}");
-    let back: crate::log::Payload = serde_json::from_str(&line).unwrap();
-    assert!(matches!(
-        back,
-        crate::log::Payload::Telemetry(Telemetry::Tool(_))
-    ));
+    let back: Payload = serde_json::from_str(&line).unwrap();
+    assert!(matches!(back, Payload::Telemetry(Telemetry::Tool(_))));
 }

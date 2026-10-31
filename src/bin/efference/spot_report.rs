@@ -96,10 +96,10 @@ pub(crate) fn spots_in(
         if !stances.is_empty() && !stances.iter().any(|s| s.matches(spot.stance)) {
             continue;
         }
-        let call = calls
-            .get(&spot.call_id)
-            .map(|c| describe_call(&c.name, &c.input))
-            .unwrap_or_else(|| format!("<unresolved call {}>", spot.call_id.0));
+        let call = calls.get(&spot.call_id).map_or_else(
+            || format!("<unresolved call {}>", spot.call_id.0),
+            |c| describe_call(&c.name, &c.input),
+        );
         rows.push(SpotRow {
             session: session.to_string(),
             seq: entry.seq,

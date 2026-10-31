@@ -72,7 +72,7 @@ struct Entry {
     /// `YYYY-MM-DD`). Held as raw JSON so a spelling this parse does not read
     /// cannot fail the listing; only a string is compared (`is_past_shutdown`).
     #[serde(default)]
-    shutdown_date: Option<serde_json::Value>,
+    shutdown_date: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -108,7 +108,7 @@ impl Entry {
     fn is_past_shutdown(&self, today: &str) -> bool {
         self.shutdown_date
             .as_ref()
-            .and_then(serde_json::Value::as_str)
+            .and_then(Value::as_str)
             .and_then(|date| date.get(..10))
             .is_some_and(|date| date < today)
     }
@@ -184,8 +184,7 @@ pub(super) fn capabilities_for(body: &str, model: &str) -> Result<ModelCapabilit
         .data
         .iter()
         .find(|entry| entry.id == model)
-        .map(Entry::capabilities)
-        .unwrap_or_else(ModelCapabilities::unknown))
+        .map_or_else(ModelCapabilities::unknown, Entry::capabilities))
 }
 
 /// The rows a listing names, in the order the endpoint gave them and then

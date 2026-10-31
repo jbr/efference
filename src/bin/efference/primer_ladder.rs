@@ -65,7 +65,7 @@ pub(crate) async fn ladder(
     let gaps = parse_gaps(gaps)?;
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
     let entries = efference::persist::load(&path)?;
-    let inference = crate::inference::resolve(
+    let inference = inference::resolve(
         Some(model),
         None,
         triage.clone().map(|triage| {
@@ -79,7 +79,7 @@ pub(crate) async fn ladder(
     );
     let recorded_identity = efference::log::recorded_inference(&entries);
 
-    let all = super::triage_replay::recorded_triages(&entries);
+    let all = triage_replay::recorded_triages(&entries);
     let triage = match seq {
         Some(seq) => all
             .iter()
@@ -145,7 +145,7 @@ pub(crate) async fn ladder(
     }
     let agent_model = recorded_identity
         .map(|identity| identity.model.clone())
-        .or_else(|| super::triage_replay::session_model(&system))
+        .or_else(|| triage_replay::session_model(&system))
         .unwrap_or_else(|| model.to_string());
     let triage_selection = inference.triage().ok_or(
         "the ladder plants on the own triage lineage; this session resolves a shared triage",

@@ -140,7 +140,7 @@ fn listing_options_are_clamped_rather_than_refused() {
         Options::from_query("recursive=1&depth=9999"),
         Options {
             recursive: true,
-            depth: super::list::MAX_DEPTH
+            depth: list::MAX_DEPTH
         }
     );
     assert_eq!(

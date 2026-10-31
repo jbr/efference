@@ -232,12 +232,11 @@ fn heading(out: &mut String, who: &str, seq: Seq, options: Options) {
 fn tag(call: &ToolCall) -> String {
     let paths = crate::policy::path_spec(&call.name)
         .and_then(|(key, _, _)| call.input.get(key))
-        .map(|value| match value {
+        .map_or_default(|value| match value {
             Value::String(s) => vec![s.as_str()],
             Value::Array(items) => items.iter().filter_map(Value::as_str).collect(),
             _ => vec![],
-        })
-        .unwrap_or_default();
+        });
     if paths.is_empty() {
         format!("[{}]", call.name)
     } else {

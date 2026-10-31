@@ -101,7 +101,7 @@ fn view_strips_image_data_and_keeps_layout_metadata() {
         view.contains(r#"{"media_type":"image/webp","width":40,"height":30}"#),
         "the reference shape, in declaration order: {view}"
     );
-    let parsed: serde_json::Value = serde_json::from_str(&view).unwrap();
+    let parsed: Value = serde_json::from_str(&view).unwrap();
     let image = &parsed["payload"]["ToolResult"]["raw"]["images"][0];
     assert!(image.get("data").is_none(), "data omitted, not emptied");
     assert_eq!(image["media_type"], "image/webp");
@@ -230,7 +230,7 @@ fn a_triaged_view_carries_the_line_counts_the_prefix_cannot_yield() {
             ]))),
         ),
     );
-    let windowed: serde_json::Value =
+    let windowed: Value =
         serde_json::from_str(&serde_json::to_string(&EntryView::new(&triaged)).unwrap()).unwrap();
     let result = &windowed["payload"]["ToolResult"];
     assert!(
@@ -242,7 +242,7 @@ fn a_triaged_view_carries_the_line_counts_the_prefix_cannot_yield() {
         serde_json::json!({ "total_lines": 400, "kept_lines": 61 }),
         "the counts are over the whole content"
     );
-    let full: serde_json::Value =
+    let full: Value =
         serde_json::from_str(&serde_json::to_string(&EntryView::full(&triaged)).unwrap()).unwrap();
     assert_eq!(
         full["payload"]["ToolResult"]["selection"], result["selection"],

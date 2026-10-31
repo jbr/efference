@@ -276,8 +276,7 @@ fn jwt_exp(token: &str) -> Option<i64> {
 fn now_unix() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
+        .map_or(0, |duration| duration.as_secs() as i64)
 }
 
 /// OpenRouter's `GET /api/v1/key` body carries `data.label`; any other body

@@ -53,7 +53,7 @@ pub(super) fn observe(
         result_bytes: result.content.len(),
         images: result.images.len(),
         bash: (call.name == bash::NAME).then(|| BashTelemetry {
-            exit_status: crate::bash::reported_exit_status(&result.content).map(str::to_string),
+            exit_status: bash::reported_exit_status(&result.content).map(str::to_string),
             background: bash::is_background_call(call),
             handle,
         }),

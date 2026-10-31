@@ -64,7 +64,7 @@ pub(super) struct Metrics {
     /// staleness from its own absolute stamp.
     pub(super) last_cache_miss: Option<LastCacheMiss>,
     /// Set while the keepalive loop is skipping pings or ended on a rejection (`usage.keepalive_skipped`).
-    pub(super) keepalive_skipped: Option<super::keepalive::KeepaliveSkip>,
+    pub(super) keepalive_skipped: Option<keepalive::KeepaliveSkip>,
     /// The triage lineage's touch clock (docs/transport.md): stamped by a primer, a
     /// keepalive ping, and a result triage on the own client. Idle triage runs on the
     /// agent's client and does not stamp it. The triage keepalive reads it the way the main
@@ -74,10 +74,10 @@ pub(super) struct Metrics {
     pub(super) last_triage_wall: Option<crate::log::Timestamp>,
     /// The request the triage keepalive re-sends (docs/transport.md): the last primer, or
     /// the last result triage's request ending at its last breakpoint.
-    pub(super) triage_request: Option<super::keepalive::StoredRequest>,
+    pub(super) triage_request: Option<keepalive::StoredRequest>,
     /// Set while the triage keepalive is skipping pings or ended on a rejection
     /// (`usage.triage_keepalive_skipped`).
-    pub(super) triage_keepalive_skipped: Option<super::keepalive::KeepaliveSkip>,
+    pub(super) triage_keepalive_skipped: Option<keepalive::KeepaliveSkip>,
 }
 
 /// Session cost telemetry (docs/transport.md): the endpoint whose accounting
@@ -311,8 +311,7 @@ pub struct LastCacheMiss {
 fn wall_millis() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or_default()
+        .map_or_default(|d| d.as_millis())
 }
 
 impl Session {
@@ -330,7 +329,7 @@ impl Session {
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .mode(crate::daemon::permissions::FILE_MODE)
+            .mode(permissions::FILE_MODE)
             .open(path)
         {
             Ok(file) => *self.usage_log.lock().unwrap() = Some(io::BufWriter::new(file)),
@@ -517,7 +516,7 @@ impl Session {
             request.usage.cache_read_input_tokens,
         );
         if let Some(stored) = &mut m.triage_request {
-            stored.prefix_tokens = super::keepalive::prefix_tokens(&request.usage);
+            stored.prefix_tokens = keepalive::prefix_tokens(&request.usage);
         }
         Self::compaction_usage(&mut m, request.usage);
         Self::stamp_triage_touch(&mut m, at_ms);
@@ -610,10 +609,7 @@ impl Session {
     /// Record that the triage runs on its own client, handing over that client's failure
     /// and plan cells for `GET /state` (docs/control-api.md). Set once at boot; a second
     /// call is ignored.
-    pub(crate) fn set_triage_client(
-        &self,
-        cells: (crate::api::UpstreamFailureState, crate::api::PlanState),
-    ) {
+    pub(crate) fn set_triage_client(&self, cells: (UpstreamFailureState, crate::api::PlanState)) {
         let _ = self.triage_client.set(cells);
     }
 

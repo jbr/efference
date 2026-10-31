@@ -64,14 +64,14 @@ async fn a_refused_authorization_fails_the_mount_without_the_dance() {
             optional: false,
         },
     )]);
-    let store: Arc<dyn TokenStore> = Arc::new(crate::mcp::auth::store::KeychainStore::new(
-        Arc::new(crate::secrets::Secrets::in_memory()),
-    ));
-    let waited = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let told = std::sync::Arc::clone(&waited);
+    let store: Arc<dyn TokenStore> = Arc::new(auth::store::KeychainStore::new(Arc::new(
+        crate::secrets::Secrets::in_memory(),
+    )));
+    let waited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let told = Arc::clone(&waited);
     let authorization = AuthorizationHandling {
         refuse: true,
-        waiting: Some(std::sync::Arc::new(move |_: Option<&str>| {
+        waiting: Some(Arc::new(move |_: Option<&str>| {
             told.store(true, std::sync::atomic::Ordering::SeqCst);
         })),
     };
@@ -93,11 +93,11 @@ struct UnusableStore {
 }
 
 impl TokenStore for UnusableStore {
-    fn load(&self, _: &str) -> anyhow::Result<Option<crate::mcp::auth::store::StoredAuth>> {
+    fn load(&self, _: &str) -> anyhow::Result<Option<auth::store::StoredAuth>> {
         self.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         anyhow::bail!("the secret store could not be opened")
     }
-    fn save(&self, _: &str, _: &crate::mcp::auth::store::StoredAuth) -> anyhow::Result<()> {
+    fn save(&self, _: &str, _: &auth::store::StoredAuth) -> anyhow::Result<()> {
         anyhow::bail!("the secret store could not be opened")
     }
     fn clear(&self, _: &str) -> anyhow::Result<()> {

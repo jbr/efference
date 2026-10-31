@@ -432,8 +432,10 @@ impl Client {
         let resp = self.patch("/loop", body).await?;
         let v = serde_json::from_str::<serde_json::Value>(&resp)
             .map_err(|_| anyhow!("bad /loop response: {resp}"))?;
-        let speed = v["pace"].get("speed_ms").and_then(|s| s.as_u64());
-        let held = v["pace"].get("held").and_then(|h| h.as_bool());
+        let speed = v["pace"]
+            .get("speed_ms")
+            .and_then(serde_json::Value::as_u64);
+        let held = v["pace"].get("held").and_then(serde_json::Value::as_bool);
         match (speed, held) {
             (Some(s), Some(h)) => Ok((s, h)),
             _ => Err(anyhow!("no pace in /loop response: {resp}")),
@@ -473,7 +475,7 @@ impl Client {
         let resp = self.post("/notifications", payload.to_string()).await?;
         let value = serde_json::from_str::<serde_json::Value>(&resp)
             .map_err(|e| anyhow!("bad /notifications response {resp}: {e}"))?;
-        Ok(value.get("seq").and_then(|i| i.as_u64()))
+        Ok(value.get("seq").and_then(serde_json::Value::as_u64))
     }
 
     /// Current ephemeral control state (`GET /state`, docs/control-api.md): the last

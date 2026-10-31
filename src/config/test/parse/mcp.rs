@@ -63,7 +63,7 @@ fn mcp_server_with_both_or_neither_transport_fails_the_file() {
         "[mcp.servers.x]\ncommand = \"a\"\nurl = \"https://b\"\n",
         "[mcp.servers.x]\nargs = [\"--stdio\"]\n",
     ] {
-        let err = super::parse(Path::new("bad.toml"), text).unwrap_err();
+        let err = parse(Path::new("bad.toml"), text).unwrap_err();
         assert!(matches!(
             err,
             LoadError::Validate(_, ValidationError::McpServerTransport(_))
@@ -74,7 +74,7 @@ fn mcp_server_with_both_or_neither_transport_fails_the_file() {
 /// `args`/`env` parameterize a spawned subprocess; an HTTP server is not spawned.
 #[test]
 fn mcp_http_server_with_spawn_keys_fails_the_file() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[mcp.servers.x]\nurl = \"https://b\"\nenv = { A = \"1\" }\n",
     )
@@ -89,7 +89,7 @@ fn mcp_http_server_with_spawn_keys_fails_the_file() {
 /// so it must fit the API's tool-name alphabet.
 #[test]
 fn mcp_server_name_outside_the_tool_alphabet_fails_the_file() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[mcp.servers.\"my server!\"]\ncommand = \"a\"\n",
     )
@@ -105,7 +105,7 @@ fn mcp_server_name_outside_the_tool_alphabet_fails_the_file() {
 /// rejected even though `_` is otherwise a legal character.
 #[test]
 fn mcp_server_name_containing_the_separator_fails_the_file() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[mcp.servers.my__server]\ncommand = \"a\"\n",
     )
@@ -115,7 +115,7 @@ fn mcp_server_name_containing_the_separator_fails_the_file() {
         LoadError::Validate(_, ValidationError::McpServerName(_))
     ));
     // A single underscore is still fine — only the doubled form is the separator.
-    let ok = super::parse(
+    let ok = parse(
         Path::new("ok.toml"),
         "[mcp.servers.my_server]\ncommand = \"a\"\n",
     )

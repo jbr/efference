@@ -192,8 +192,7 @@ pub fn inspect(display: &str, full: &Path) -> io::Result<Arrival> {
     Ok(Arrival {
         name: full
             .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default(),
+            .map_or_default(|name| name.to_string_lossy().into_owned()),
         path: display.to_string(),
         kind,
     })
@@ -273,8 +272,7 @@ fn sniff_shape(text: &str) -> Shape {
     let first = head
         .iter()
         .find(|l| !l.trim().is_empty())
-        .map(|l| l.trim())
-        .unwrap_or("");
+        .map_or("", |l| l.trim());
     if (first.starts_with('{') || first.starts_with('[')) && text.trim_end().ends_with(['}', ']']) {
         return Shape::Json;
     }

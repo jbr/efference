@@ -21,15 +21,15 @@ const BODY_PREVIEW_BYTES: usize = 1000;
 /// every connection) and the omitted-branch default for one project scope —
 /// the same answers creation and the pickers read, printed for inspection.
 pub(crate) fn history(
-    cwd: Option<std::path::PathBuf>,
-    config: Option<std::path::PathBuf>,
+    cwd: Option<PathBuf>,
+    config: Option<PathBuf>,
     connection: Option<String>,
 ) -> CliResult {
     let cwd = match cwd {
         Some(cwd) => cwd,
         None => std::env::current_dir()?,
     };
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
     let store = match home.as_deref() {
         Some(home) => efference::history::History::user(home),
         None => efference::history::History::disabled(),
@@ -65,7 +65,7 @@ pub(crate) fn history(
 /// Read the listing routes for one configured connection and print what each
 /// answered.
 pub(crate) async fn models(connection: &str, urls: &[String], raw: bool) -> CliResult {
-    let registry = crate::inference::registry()?;
+    let registry = inference::registry()?;
     let (provider, endpoint) = registry.endpoint(connection)?;
     println!("{connection} — {provider}");
 

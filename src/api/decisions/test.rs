@@ -84,7 +84,7 @@ fn a_distribution_reads_as_probabilities() {
     assert_eq!(decisions.probabilities("absent"), None);
 }
 
-fn response(answers: serde_json::Value) -> Decisions {
+fn response(answers: Value) -> Decisions {
     serde_json::from_value(serde_json::json!({
         "id": "gen-1",
         "model": "typesafe/jev-1.13",

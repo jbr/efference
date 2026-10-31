@@ -182,7 +182,7 @@ impl TcpAuth {
     pub(crate) fn public_base(&self) -> String {
         self.public_base
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
 
@@ -200,7 +200,7 @@ impl TcpAuth {
         let mut base = self
             .public_base
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(unbound) = base.strip_suffix(":0") {
             *base = format!("{unbound}:{port}");
         }

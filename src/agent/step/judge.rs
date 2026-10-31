@@ -89,8 +89,8 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
             // plus the loop-owned family (docs/permissions.md). `None` for bash,
             // whose command text is its own description. Built from the leaf's name
             // when bound, so the spotter reads the child's tool.
-            let brief = super::brief(toolbox, &judged.name);
-            let chain: &[String] = bound.map(|b| b.chain.as_slice()).unwrap_or(&[]);
+            let brief = brief(toolbox, &judged.name);
+            let chain: &[String] = bound.map_or(&[], |b| b.chain.as_slice());
             // A bound leaf's history is the child's, not this log's, so it has no
             // precedents here (docs/permissions.md).
             let precedents = if bound.is_none() {

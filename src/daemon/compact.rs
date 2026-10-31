@@ -247,10 +247,10 @@ async fn compact_once(
             Some(cut),
             |streamed| match streamed {
                 Streamed::Text { text, .. } => {
-                    session.publish_delta(StreamDelta::CompactionText { text })
+                    session.publish_delta(StreamDelta::CompactionText { text });
                 }
                 Streamed::Thinking { text, .. } => {
-                    session.publish_delta(StreamDelta::CompactionThinking { text })
+                    session.publish_delta(StreamDelta::CompactionThinking { text });
                 }
                 Streamed::ToolStart { .. } | Streamed::ToolInput { .. } => {}
             },

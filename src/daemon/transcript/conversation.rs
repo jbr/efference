@@ -130,7 +130,7 @@ impl<'a, 'r> Out<'a, 'r> {
                 None => self.assistant(entry.seq, output),
             },
             Payload::ToolResult { call_id, .. } if !self.shown(&call_id.0) => {
-                self.orphan_result(entry, &call_id.0)
+                self.orphan_result(entry, &call_id.0);
             }
             Payload::ResultVerdict { for_result, wire } => self.orphan_verdict(*for_result, wire),
             Payload::Telemetry(Telemetry::GateDecision(decision))
@@ -235,7 +235,7 @@ impl<'a, 'r> Out<'a, 'r> {
     }
 
     fn assistant(&mut self, seq: Seq, output: &AssistantOutput) {
-        let (prose, calls) = super::assistant(output);
+        let (prose, calls) = assistant(output);
         let speaker = self.reading.speaker().to_string();
         for text in prose {
             self.push(seq, format!("{speaker}: {text}"));

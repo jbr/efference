@@ -103,7 +103,7 @@ fn calling_tool_entry(name: &str, input: &str) -> Option<DocumentNode<'static>> 
         return None;
     }
     let settled = parsed.settled_value();
-    let view = super::signature::call_view(name, &settled);
+    let view = signature::call_view(name, &settled);
     let arriving = parsed.arriving_text();
     let intent = view.intent.clone().or_else(|| {
         arriving

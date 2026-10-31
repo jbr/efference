@@ -51,9 +51,8 @@ async fn update_without_check_names_the_check_and_the_install_command() {
 #[test]
 fn the_version_flag_and_the_update_verb_parse() {
     use clap::Parser;
-    let err = match Cli::try_parse_from(["efference", "--version"]) {
-        Err(err) => err,
-        Ok(_) => panic!("--version exits"),
+    let Err(err) = Cli::try_parse_from(["efference", "--version"]) else {
+        panic!("--version exits");
     };
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
     assert_eq!(

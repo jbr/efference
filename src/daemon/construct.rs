@@ -222,10 +222,10 @@ impl Session {
             attention: std::sync::OnceLock::new(),
             newer_version: std::sync::OnceLock::new(),
             delayed_push: Arc::default(),
-            phase: Mutex::new(phase::LoopPhase::Idle),
+            phase: Mutex::new(LoopPhase::Idle),
             turns_ended: std::sync::atomic::AtomicU64::new(0),
             #[cfg(test)]
-            loop_idled: std::sync::atomic::AtomicBool::new(false),
+            loop_idled: AtomicBool::new(false),
             #[cfg(test)]
             between_reads: Mutex::new(None),
             #[cfg(test)]
@@ -258,7 +258,7 @@ impl Session {
 
             proposals: Mutex::new(Vec::new()),
             process_monitor: Mutex::new(ProcessMonitor::with_minted(minted)),
-            reaped: tokio::sync::Notify::new(),
+            reaped: Notify::new(),
             role,
             effective: Mutex::new(effective),
             config_file: Mutex::new(config_file),

@@ -310,13 +310,7 @@ impl Form {
                             .unwrap_or(0),
                     },
                     3 => Page::Temperature {
-                        value: Line::new(
-                            &self
-                                .draft
-                                .temperature
-                                .map(|t| t.to_string())
-                                .unwrap_or_default(),
-                        ),
+                        value: Line::new(&self.draft.temperature.map_or_default(|t| t.to_string())),
                     },
                     4 => Self::picker(Role::Spotter),
                     5 => Self::picker(Role::Triage),

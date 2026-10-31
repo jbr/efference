@@ -556,10 +556,8 @@ fn mounted_toolbox_advertises_unique_tool_names() {
 async fn read_image_refuses_when_the_model_takes_no_images() {
     let dir = std::env::temp_dir().join("efference-test-image-gate");
     std::fs::create_dir_all(&dir).unwrap();
-    let box_ = Toolbox::new(vec![Provider::ReadImage(read_image::ReadImage {
-        cwd: dir.clone(),
-    })])
-    .with_image_input(false);
+    let box_ = Toolbox::new(vec![Provider::ReadImage(ReadImage { cwd: dir.clone() })])
+        .with_image_input(false);
     let result = done(
         box_.run(
             // A path that does not exist: reaching the filesystem at all would be

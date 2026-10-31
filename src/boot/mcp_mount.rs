@@ -28,7 +28,7 @@ use trillium_client::Url;
 
 /// Told which server an authorization waits on as the wait begins, and `None` as it
 /// ends — how a starting session names the server in its state (docs/control-api.md).
-pub type AuthorizationWaiting = std::sync::Arc<dyn Fn(Option<&str>) + Send + Sync>;
+pub type AuthorizationWaiting = Arc<dyn Fn(Option<&str>) + Send + Sync>;
 
 /// How a mount meets a server that asks for authorization (docs/mcp-auth.md).
 /// The default runs the dance and tells nobody.

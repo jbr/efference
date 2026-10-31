@@ -259,7 +259,7 @@ impl Masker {
                             match block {
                                 MessagesOutputBlock::Text(text) => self.mask_in_place(text),
                                 MessagesOutputBlock::ToolUse(call) => {
-                                    self.mask_json(&mut call.input)
+                                    self.mask_json(&mut call.input);
                                 }
                                 MessagesOutputBlock::Thinking { .. }
                                 | MessagesOutputBlock::RedactedThinking { .. } => {}
@@ -286,7 +286,7 @@ impl Masker {
                                                 text, ..
                                             } => self.mask_in_place(text),
                                             ResponsesMessageContent::Refusal { refusal } => {
-                                                self.mask_in_place(refusal)
+                                                self.mask_in_place(refusal);
                                             }
                                         }
                                     }
@@ -302,7 +302,7 @@ impl Masker {
                                 // record-only, never dispatched, and still must not
                                 // carry the secret to disk.
                                 ResponsesOutputItem::FunctionCall { arguments, .. } => {
-                                    self.mask_arguments(arguments)
+                                    self.mask_arguments(arguments);
                                 }
                                 ResponsesOutputItem::Unsupported(value) => self.mask_json(value),
                             }
@@ -444,7 +444,7 @@ impl Masker {
             // provider receives unmasked; nothing in them is read from the environment.
             Payload::Telemetry(Telemetry::Tools { .. }) => {}
             Payload::Telemetry(Telemetry::Consolidation { outcome, .. }) => {
-                self.mask_in_place(outcome)
+                self.mask_in_place(outcome);
             }
             // Git's output, including whatever the project's `post-checkout` hook
             // printed, and its error and status text: free text that may quote the
@@ -452,7 +452,7 @@ impl Masker {
             Payload::Worktree(event) => match &mut event.kind {
                 crate::log::WorktreeEventKind::Added(checkout)
                 | crate::log::WorktreeEventKind::Restored(checkout) => {
-                    self.mask_in_place(&mut checkout.output)
+                    self.mask_in_place(&mut checkout.output);
                 }
                 crate::log::WorktreeEventKind::Kept { reason } => self.mask_in_place(reason),
                 crate::log::WorktreeEventKind::RemoveFailed { error } => self.mask_in_place(error),

@@ -4,6 +4,7 @@
 
 use super::*;
 
+use super::upstream_status::record_upstream_failure;
 use std::pin::Pin;
 use tokio::sync::futures::Notified;
 
@@ -26,13 +27,9 @@ impl Client {
             .send_traced(trace.as_ref(), turns, tools, tool_choice, cap, on_delta)
             .await;
         if let Err(error) = &result
-            && super::super::error_status(error).is_none_or(|status| (200..300).contains(&status))
+            && error_status(error).is_none_or(|status| (200..300).contains(&status))
         {
-            super::upstream_status::record_upstream_failure(
-                &self.upstream_failure,
-                None,
-                error.to_string(),
-            );
+            record_upstream_failure(&self.upstream_failure, None, error.to_string());
         }
         if let Some(trace) = trace {
             match &result {
@@ -40,7 +37,7 @@ impl Client {
                 Ok(completion) if completion.operator_abort() => trace.interrupted(),
                 Ok(completion) => match completion.upstream_failure() {
                     Some(_) if self.primer_planted(completion) => {
-                        trace.ended(completion.finish.as_ref().map(|f| f.raw.as_str()))
+                        trace.ended(completion.finish.as_ref().map(|f| f.raw.as_str()));
                     }
                     Some(why) => trace.failed(why),
                     None => trace.ended(completion.finish.as_ref().map(|f| f.raw.as_str())),
@@ -142,7 +139,7 @@ impl Client {
                 Encoded::Responses(encode_responses(turns, preamble, self.prompt_cache))
             }
             WireDialect::Completions => {
-                Encoded::Completions(completions::encode_completions(turns, &self.system))
+                Encoded::Completions(encode_completions(turns, &self.system))
             }
             WireDialect::SystemOne => {
                 unreachable!("a client is only built on a provider that serves turns")
@@ -551,7 +548,7 @@ impl Client {
         if !completion.operator_abort()
             && let Some(why) = completion.upstream_failure()
         {
-            super::upstream_status::record_upstream_failure(&self.upstream_failure, None, why);
+            record_upstream_failure(&self.upstream_failure, None, why);
         }
         completion
     }

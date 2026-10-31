@@ -59,7 +59,7 @@ async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Interrupt::Detach
     };
-    let fg_id = std::sync::Mutex::new(None::<u64>);
+    let fg_id = Mutex::new(None::<u64>);
     let outcome = crate::bash::Bash::default()
         .run(
             &serde_json::json!({ "command": "echo early; sleep 0.6; echo late" }),

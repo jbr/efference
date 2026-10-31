@@ -66,7 +66,7 @@ auth = { kind = "env", key = "TEST_KEY" }
         config,
         Path::new("/host"),
         env,
-        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        &Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
 }
@@ -94,7 +94,7 @@ fn registry_with_hook(argv: &[String]) -> crate::inference::InferenceRegistry {
         config,
         Path::new("/host"),
         env,
-        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        &Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
 }
@@ -143,8 +143,8 @@ async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Han
     let nonce = RandomState::new().build_hasher().finish();
     let root = std::env::temp_dir().join(format!("efference-net-host-{nonce:016x}"));
     std::fs::create_dir_all(&root).expect("scratch root");
-    let (auth, _listener) = crate::daemon::tcp::arm_with_state(
-        crate::daemon::tcp::TcpBind {
+    let (auth, _listener) = tcp::arm_with_state(
+        TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,
             public_url: "http://localhost:7777".into(),
@@ -326,7 +326,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     let registry = crate::inference::InferenceRegistry::load(
         &roots.0,
         host_env,
-        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        &Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .expect("host registry");
     let host = Host::new(registry, baseline_env());
@@ -506,7 +506,7 @@ disabled = true
             config,
             Path::new("/host"),
             env,
-            &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+            &Arc::new(crate::secrets::Secrets::in_memory()),
         )
         .unwrap(),
         baseline_env(),
@@ -577,7 +577,7 @@ disabled = true
             config,
             Path::new("/host"),
             env,
-            &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+            &Arc::new(crate::secrets::Secrets::in_memory()),
         )
         .unwrap()
         .with_history(history),
@@ -675,7 +675,7 @@ disabled = true
             config,
             Path::new("/host"),
             env,
-            &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+            &Arc::new(crate::secrets::Secrets::in_memory()),
         )
         .unwrap(),
         baseline_env(),

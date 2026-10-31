@@ -231,8 +231,7 @@ pub fn output_cap_rejection(body: &str) -> Option<OutputCapRejection> {
         first_number_after(&body, "<=")
             .or_else(|| first_number_after(&body, ">"))
             .or_else(|| first_number_after(&body, "at most"))
-            .map(OutputCapRejection::Max)
-            .unwrap_or(OutputCapRejection::Unstated),
+            .map_or(OutputCapRejection::Unstated, OutputCapRejection::Max),
     )
 }
 

@@ -114,7 +114,7 @@ async fn decide_maps_the_seq_and_records_the_client() {
         said,
         "allowed: child runs bash `curl -sI https://example.com`"
     );
-    assert_eq!(gate.await, Ok(crate::frontend::Approval::Approve));
+    assert_eq!(gate.await, Ok(Approval::Approve));
     let decided: Vec<_> = shared
         .snapshot()
         .into_iter()

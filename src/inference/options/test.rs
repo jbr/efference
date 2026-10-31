@@ -61,8 +61,7 @@ fn historied(
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or(0)
+            .map_or(0, |elapsed| elapsed.as_nanos())
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let store = crate::history::History::at(dir.join("state.db"));
@@ -801,7 +800,7 @@ fn a_hosts_preview_reads_back_as_what_it_wrote() {
     );
     assert_eq!(
         decoded.effective.triage.value,
-        Some(crate::inference::EffectiveTriage::Shared)
+        Some(EffectiveTriage::Shared)
     );
 }
 

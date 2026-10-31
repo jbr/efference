@@ -91,7 +91,7 @@ impl SessionRuntime {
         // The kickoff (docs/context.md), read before the config moves into `Session`.
         let first_turn = role.role.first_turn.clone();
         let scratch = toolbox.scratch_dir().map(std::path::Path::to_path_buf);
-        let (session, turns) = Session::full(crate::daemon::SessionParts {
+        let (session, turns) = Session::full(SessionParts {
             role,
             id: Some(paths.id().to_string()),
             scratch: scratch.clone(),
@@ -100,7 +100,7 @@ impl SessionRuntime {
             plan: client.plan_state(),
             image_placement: client.image_placement(),
             env_policy,
-            ..crate::daemon::SessionParts::new(paths.directories(), log)
+            ..SessionParts::new(paths.directories(), log)
         });
         // The kickoff: with a `first-turn` and nothing yet said, the harness submits
         // the opening turn so the agent speaks first. A resumed log already has its
@@ -109,10 +109,10 @@ impl SessionRuntime {
             let fresh = !session
                 .snapshot()
                 .iter()
-                .any(|entry| matches!(entry.payload, crate::log::Payload::User(_)));
+                .any(|entry| matches!(entry.payload, Payload::User(_)));
             if fresh {
                 session.submit_turn(
-                    crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
+                    SubmittedTurn::new(text, mint_submission_id())
                         .sourced(Some(crate::frontend::KICKOFF_SOURCE.to_string())),
                 );
             }
@@ -204,13 +204,13 @@ impl SessionRuntime {
         // to lose; its watcher publishes the moment the belief turns.
         if cacheable {
             session.set_cache_ttl(client.endpoint().provider.cache_ttl());
-            tokio::spawn(swansong.interrupt(super::cold::cold_watch(Arc::clone(&session))));
+            tokio::spawn(swansong.interrupt(cold::cold_watch(Arc::clone(&session))));
         }
         // The compaction writes on the session's own client (docs/summary.md). It starts
         // whatever the capabilities say about a prompt cache: a warm `POST /loop/compact`
         // is accepted without a cold belief, and unknown cache support is not evidence
         // that none exists.
-        tokio::spawn(swansong.interrupt(super::compact::compact_loop(
+        tokio::spawn(swansong.interrupt(compact::compact_loop(
             Arc::clone(&client),
             Arc::clone(&session),
             tools.clone(),
@@ -244,7 +244,7 @@ impl SessionRuntime {
         // The fs-watch initiator (docs/permissions.md): if the config resolved
         // from a file, watch it so external edits take effect live as committed
         // `ConfigEdit`s. The built-in default has no file to watch.
-        if let Some(config_path) = session.config_path().map(|p| p.to_path_buf()) {
+        if let Some(config_path) = session.config_path().map(std::path::Path::to_path_buf) {
             tokio::spawn(swansong.interrupt(config_watch_loop(Arc::clone(&session), config_path)));
         }
 
@@ -310,7 +310,7 @@ impl SessionRuntime {
                 if keep_scratch {
                     log::debug!("scratch kept: {}", scratch.display());
                 } else if let Err(e) = std::fs::remove_dir_all(&scratch)
-                    && e.kind() != std::io::ErrorKind::NotFound
+                    && e.kind() != io::ErrorKind::NotFound
                 {
                     log::warn!("scratch: could not remove {}: {e}", scratch.display());
                 }

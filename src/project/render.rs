@@ -236,7 +236,7 @@ pub(super) fn normalize(ranges: &[(usize, usize)], n: usize) -> Vec<(usize, usiz
 /// how long it sat, and what the loader set aside. `at` is the entry's own seq, which
 /// bounds the skipped range. It states what happened and
 /// nothing about what to do next.
-pub fn render_resumed(resumed: &crate::log::Resumed, at: crate::log::Seq) -> String {
+pub fn render_resumed(resumed: &crate::log::Resumed, at: Seq) -> String {
     let secs = resumed.gap_ms / 1000;
     let gap = match secs {
         0..=59 => format!("{secs}s"),

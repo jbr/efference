@@ -56,7 +56,7 @@ impl<'a> InteractiveState<'a> {
         // Create list items from theme names
         let items: Vec<ListItem> = themes
             .iter()
-            .map(|theme_name| ListItem::new(Line::from(format!("  {}", theme_name))))
+            .map(|theme_name| ListItem::new(Line::from(format!("  {theme_name}"))))
             .collect();
 
         // Create list state for selection
@@ -107,7 +107,7 @@ impl<'a> InteractiveState<'a> {
                     // Make the hovered row text bold
                     for x in (modal_area.x + 1)..(modal_area.x + modal_area.width - 1) {
                         if let Some(cell) = buf.cell_mut((x, hover_y)) {
-                            cell.modifier.insert(ratatui::style::Modifier::BOLD);
+                            cell.modifier.insert(Modifier::BOLD);
                         }
                     }
                 }

@@ -24,7 +24,7 @@ const STAGE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 impl<'a> InteractiveState<'a> {
     /// A bracketed paste from the terminal.
     pub(in crate::tui) fn handle_paste(&mut self, text: String) {
-        if let super::UiMode::Sessions(menu) = &mut self.ui_mode
+        if let UiMode::Sessions(menu) = &mut self.ui_mode
             && let Some(page) = &mut menu.resume
         {
             page.paste(&text);
@@ -32,7 +32,7 @@ impl<'a> InteractiveState<'a> {
         }
         // The new-session form open over the switcher owns a paste as it owns a
         // key: its query and editors take it, and the composer underneath never does.
-        if let super::UiMode::Sessions(menu) = &mut self.ui_mode
+        if let UiMode::Sessions(menu) = &mut self.ui_mode
             && let Some(form) = &mut menu.form
         {
             let action = form.paste(&text);
@@ -44,7 +44,7 @@ impl<'a> InteractiveState<'a> {
             match self.clipboard.paste() {
                 Paste::Image(png) => self.stage_clipboard_image(png),
                 Paste::ImageUnreadable(why) => {
-                    self.set_debug_message(format!("could not read the clipboard image: {why}"))
+                    self.set_debug_message(format!("could not read the clipboard image: {why}"));
                 }
                 _ => self.set_debug_message("nothing to paste"),
             }
@@ -59,12 +59,12 @@ impl<'a> InteractiveState<'a> {
     pub(in crate::tui) fn paste_clipboard(&mut self) {
         match self.clipboard.paste() {
             Paste::Text(text) if text.trim().is_empty() => {
-                self.set_debug_message("the clipboard has no text or image")
+                self.set_debug_message("the clipboard has no text or image");
             }
             Paste::Text(text) => self.route_text_paste(&text),
             Paste::Image(png) => self.stage_clipboard_image(png),
             Paste::ImageUnreadable(why) => {
-                self.set_debug_message(format!("could not read the clipboard image: {why}"))
+                self.set_debug_message(format!("could not read the clipboard image: {why}"));
             }
             Paste::Unavailable => {
                 if let Some(text) = self.clipboard.fallback().map(str::to_owned) {
@@ -116,8 +116,7 @@ impl<'a> InteractiveState<'a> {
     fn stage_path(&mut self, path: &std::path::Path) {
         let name = path
             .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "attachment".into());
+            .map_or_else(|| "attachment".into(), |n| n.to_string_lossy().into_owned());
         let too_big = std::fs::metadata(path).is_ok_and(|m| m.len() > STAGE_MAX_BYTES);
         match std::fs::read(path) {
             Ok(_) if too_big => self.set_debug_message(format!("{name} is too large to attach")),
@@ -177,6 +176,5 @@ impl<'a> InteractiveState<'a> {
 fn paste_stamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs())
 }

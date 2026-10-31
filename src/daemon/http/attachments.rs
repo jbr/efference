@@ -26,8 +26,7 @@ pub(super) async fn upload(mut conn: Conn) -> Conn {
     };
     let name = trillium_client::url::form_urlencoded::parse(conn.querystring().as_bytes())
         .find(|(key, _)| key == "name")
-        .map(|(_, value)| value.into_owned())
-        .unwrap_or_else(|| "attachment".to_string());
+        .map_or_else(|| "attachment".to_string(), |(_, value)| value.into_owned());
     let declared = conn
         .request_headers()
         .get_str(trillium::KnownHeaderName::ContentLength)

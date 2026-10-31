@@ -20,7 +20,7 @@ fn switch_to_terra_and_luna() -> ResumeSwitch {
     }
 }
 
-fn preambles(entries: &[crate::log::LogEntry]) -> Vec<&crate::log::LogEntry> {
+fn preambles(entries: &[LogEntry]) -> Vec<&LogEntry> {
     entries
         .iter()
         .filter(|e| matches!(e.payload, Payload::Preamble { .. }))
@@ -131,7 +131,7 @@ async fn a_switch_creation_would_refuse_refuses_the_resume() {
 /// The registry behind [`codex_registry`] plus a Messages-dialect connection, so a switch
 /// can name a model on the other side of the dialect line. Nothing contacts `msg`: the
 /// dialect check refuses before capabilities are read.
-fn two_dialect_registry(root: &std::path::Path, id: &str) -> crate::inference::InferenceRegistry {
+fn two_dialect_registry(root: &std::path::Path, id: &str) -> InferenceRegistry {
     let codex_home = root.join(format!("codex-home-{id}"));
     let _ = codex_registry(root, id);
     let config = crate::inference::InferenceConfig::from_toml(
@@ -162,7 +162,7 @@ auth = { kind = "env", key = "EFFERENCE_SWITCH_TEST_KEY" }
         .collect(),
     )
     .unwrap();
-    crate::inference::InferenceRegistry::from_config(
+    InferenceRegistry::from_config(
         config,
         std::path::Path::new("/host"),
         host_env,
@@ -173,7 +173,7 @@ auth = { kind = "env", key = "EFFERENCE_SWITCH_TEST_KEY" }
 
 fn assistant_turn() -> Payload {
     Payload::Assistant {
-        output: crate::log::AssistantOutput::Responses(Vec::new()),
+        output: AssistantOutput::Responses(Vec::new()),
         excluded: None,
     }
 }

@@ -245,8 +245,7 @@ async fn file(conn: Conn) -> Conn {
     };
     let path = trillium_client::url::form_urlencoded::parse(conn.querystring().as_bytes())
         .find(|(key, _)| key == "path")
-        .map(|(_, value)| value.into_owned())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.into_owned());
     let script = match file_text(&session, &path).await {
         Ok(text) => format!(
             "efference.__file({}, {});\n",

@@ -111,11 +111,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
         crate::persist::Log::in_memory(),
     );
     let first = ToolCall::new("search", "search_2", serde_json::json!({}));
-    let second = ToolCall::new(
-        crate::bash::NAME,
-        "bash_3",
-        serde_json::json!({ "command": "ls" }),
-    );
+    let second = ToolCall::new(bash::NAME, "bash_3", serde_json::json!({ "command": "ls" }));
     shared
         .append(
             1,

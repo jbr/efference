@@ -223,13 +223,11 @@ impl ResponsesAssembler {
         let index = body
             .get("output_index")
             .and_then(Value::as_u64)
-            .map(|i| i as usize)
-            .unwrap_or(0);
+            .map_or(0, |i| i as usize);
         let delta = || {
             body.get("delta")
                 .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_default()
+                .map_or_default(str::to_string)
         };
         let streamed = match kind {
             "response.created" => {

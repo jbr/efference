@@ -312,7 +312,7 @@ fn failure_after_finalization_keeps_the_completion_clean() {
     assert_eq!(completion.upstream_failure(), None);
     assert_eq!(
         completion.finish.as_ref().map(|f| &f.reason),
-        Some(&crate::api::FinishReason::Finished)
+        Some(&FinishReason::Finished)
     );
 }
 

@@ -65,13 +65,12 @@ pub(in crate::tui::session_form) fn resolve(options: &SessionOptions) -> Resolve
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or(0)
+            .map_or(0, |elapsed| elapsed.as_nanos())
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let store = crate::history::History::at(dir.join("state.db"));
     let scope = crate::history::Scope {
-        cwd: std::path::PathBuf::from("/code/example"),
+        cwd: PathBuf::from("/code/example"),
         config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
     };
     store.record(&crate::history::Pick {
@@ -222,7 +221,7 @@ pub(in crate::tui::session_form) fn catalog() -> Vec<ConnectionCatalog> {
 
 pub(in crate::tui::session_form) fn context() -> NewSessionContext {
     NewSessionContext {
-        cwd: std::path::PathBuf::from("/code/example"),
+        cwd: PathBuf::from("/code/example"),
         connections: connections(),
         catalog: catalog(),
     }

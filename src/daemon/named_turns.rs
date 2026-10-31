@@ -141,7 +141,7 @@ impl Session {
         &self,
         turn: SubmittedTurn,
         answers: Option<&str>,
-    ) -> std::result::Result<Landing, NotDelivered> {
+    ) -> Result<Landing, NotDelivered> {
         let named = answers.map(|reference| (reference, self.call_id_of(reference)));
         if named.is_some() && turn.is_blank() {
             return Err(NotDelivered::Blank);
@@ -198,7 +198,7 @@ impl Session {
 
     /// The transcript handle of the call `call_id`.
     pub(crate) fn handle_of(&self, call_id: &str) -> Option<String> {
-        super::transcript::call_handle(self.log.lock().unwrap().entries(), call_id)
+        transcript::call_handle(self.log.lock().unwrap().entries(), call_id)
     }
 
     /// Why a reference to a question that is not pending is refused.

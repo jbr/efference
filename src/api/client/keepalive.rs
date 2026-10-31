@@ -53,7 +53,7 @@ impl KeepaliveError {
         let Self::Status { body, .. } = self else {
             return None;
         };
-        let value: serde_json::Value = serde_json::from_str(body).ok()?;
+        let value: Value = serde_json::from_str(body).ok()?;
         let secs = value.get("error")?.get("resets_at")?.as_u64()?;
         Some(secs.saturating_mul(1000))
     }

@@ -93,8 +93,7 @@ mod calls {
     pub(super) fn decide(prefix: &str, target: &Target) -> String {
         let seq = target
             .handle
-            .map(|handle| format!(", seq: {}", quoted(handle)))
-            .unwrap_or_default();
+            .map_or_default(|handle| format!(", seq: {}", quoted(handle)));
         format!(
             "{prefix}decide({}{seq}, decision: \"allow\" | \"deny\", message?) — allow runs it, \
              and a message rides with its result; deny with a message refuses it and the session \
@@ -106,8 +105,7 @@ mod calls {
     pub(super) fn escalate(prefix: &str, target: &Target) -> String {
         let seq = target
             .handle
-            .map(|handle| format!(", seq: {}", quoted(handle)))
-            .unwrap_or_default();
+            .map_or_default(|handle| format!(", seq: {}", quoted(handle)));
         format!(
             "{prefix}decide({}{seq}, decision: \"escalate\", message?) — leaves it held and \
              passes it to whoever decides above you, with your message as a note to them",
@@ -138,8 +136,7 @@ mod calls {
     pub(super) fn transcript(prefix: &str, target: &Target) -> String {
         let seq = target
             .seq
-            .map(|seq| format!(", seq: {}", quoted(&seq.to_string())))
-            .unwrap_or_default();
+            .map_or_default(|seq| format!(", seq: {}", quoted(&seq.to_string())));
         format!("{prefix}transcript({}{seq})", agent(target))
     }
 

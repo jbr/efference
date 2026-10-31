@@ -30,14 +30,14 @@ pub(super) fn ui_loop(
     frame_cost: bool,
     // The default for a run with no session behind it — the gallery and the
     // read-only view.
-    attached: super::run::Attached,
+    attached: Attached,
     // Reports whether the operator is attending (`attention.rs`); `None` where no
     // host is behind the run.
-    mut attender: Option<super::attention::Attender>,
+    mut attender: Option<attention::Attender>,
 ) -> io::Result<Exit> {
     let attention_tx = senders.attention.clone();
     let send_report = |report: Option<crate::daemon::attention::AttentionReport>,
-                       attender: &mut Option<super::attention::Attender>| {
+                       attender: &mut Option<attention::Attender>| {
         if let Some(report) = report
             && attention_tx.send(report).is_err()
         {
@@ -48,9 +48,7 @@ pub(super) fn ui_loop(
         }
     };
     // Build the render context: interactive TTY, sized to the terminal.
-    let width = crossterm::terminal::size()
-        .map(|(w, _)| w as usize)
-        .unwrap_or(80);
+    let width = crossterm::terminal::size().map_or(80, |(w, _)| w as usize);
     let mut render_context = RenderContext::new()
         .with_interactive(true)
         .with_output_mode(OutputMode::Tty)
@@ -242,7 +240,7 @@ pub(super) fn ui_loop(
                                 Event::FocusGained => attender.focus(true),
                                 Event::FocusLost => attender.focus(false),
                                 Event::Key(_) | Event::Mouse(_) => {
-                                    attender.input(std::time::Instant::now())
+                                    attender.input(std::time::Instant::now());
                                 }
                                 _ => {}
                             }
@@ -301,7 +299,7 @@ pub(super) fn ui_loop(
             // Quitting says so at once; a switch leaves it to the next attach's
             // first report, which would otherwise race this one.
             if matches!(exit, Exit::Quit | Exit::Closed) {
-                let report = attender.as_mut().and_then(|a| a.leaving());
+                let report = attender.as_mut().and_then(attention::Attender::leaving);
                 send_report(report, &mut attender);
             }
             break Ok(exit);

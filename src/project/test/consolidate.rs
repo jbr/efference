@@ -319,7 +319,7 @@ fn a_responses_summary_replaces_whole_replay_units() {
     assert!(crate::consolidate::split_calls(&log, 2).is_empty());
 
     let input = encode_responses(&project_semantic(&log), "", PromptCachePolicy::None);
-    let items: Vec<serde_json::Value> = input
+    let items: Vec<Value> = input
         .iter()
         .map(|i| serde_json::to_value(i).unwrap())
         .collect();
@@ -393,7 +393,7 @@ fn a_summary_inside_a_responses_step_orphans_its_output() {
         vec![CallId("call_x".into())]
     );
     let input = encode_responses(&project_semantic(&log), "", PromptCachePolicy::None);
-    let items: Vec<serde_json::Value> = input
+    let items: Vec<Value> = input
         .iter()
         .map(|i| serde_json::to_value(i).unwrap())
         .collect();

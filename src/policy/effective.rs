@@ -41,8 +41,7 @@ pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
         // initiator that hands out a restriction. A non-clear stance is written in the file and
         // read at load (docs/permissions.md).
         ConfigChange::Command { command } => {
-            role.commands
-                .insert(command.clone(), crate::config::CommandStance::Clear);
+            role.commands.insert(command.clone(), CommandStance::Clear);
         }
         ConfigChange::Path { path, read, write } => {
             role.paths.insert(

@@ -66,7 +66,7 @@ fn a_failed_creation_keeps_the_view_and_retries_through_the_form() {
     );
 
     play.state
-        .activate_strip_verb(crate::tui::control_strip::StripVerb::Retry);
+        .activate_strip_verb(control_strip::StripVerb::Retry);
     assert!(matches!(play.took_host_cmd(), Some(HostCmd::NewSession)));
     assert!(play.event_quits(TuiEvent::Created(Ok("second".into()))));
     assert_eq!(
@@ -86,10 +86,10 @@ fn a_failed_resume_retries_the_resume() {
     play.event(starting(true, Some("env: the hook exited 7")));
     assert_eq!(
         play.state.leading_strip_verb(),
-        Some(crate::tui::control_strip::StripVerb::Retry)
+        Some(control_strip::StripVerb::Retry)
     );
     play.state
-        .activate_strip_verb(crate::tui::control_strip::StripVerb::Retry);
+        .activate_strip_verb(control_strip::StripVerb::Retry);
     assert!(matches!(play.took_host_cmd(), Some(HostCmd::Resume(id)) if id == "fresh"));
     assert!(play.event_quits(TuiEvent::Resumed(Ok("fresh".into()))));
     assert!(matches!(

@@ -62,7 +62,7 @@ pub(super) struct BlockScalar {
 /// Block content is consumed for **every** key, known or not — an unknown key's multiline value
 /// must never be misread as `key: value` lines of its own.
 pub fn split_frontmatter(text: &str) -> Result<Split<'_>, UnterminatedFrontmatter> {
-    let first_line_end = text.find('\n').map(|i| i + 1).unwrap_or(text.len());
+    let first_line_end = text.find('\n').map_or(text.len(), |i| i + 1);
     if text[..first_line_end].trim() != "---" {
         return Ok(Split {
             frontmatter: None,
@@ -209,7 +209,8 @@ impl Split<'_> {
 /// moves the rendered preamble bytes, so it moves the cached prefix for any session whose config
 /// lists a nameless file: the render pin is updated deliberately alongside it.
 pub fn fallback_name(path: &Path) -> String {
-    path.file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "context".to_string())
+    path.file_name().map_or_else(
+        || "context".to_string(),
+        |s| s.to_string_lossy().into_owned(),
+    )
 }

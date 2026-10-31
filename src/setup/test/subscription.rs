@@ -129,7 +129,7 @@ fn each_chatgpt_source_states_why_it_is_closed() {
         .unwrap();
     let offered = |probe: &Table| {
         let mut capture = Capture(Vec::new());
-        let result = runtime.block_on(super::flow::chatgpt_source(&mut capture, probe, "codex"));
+        let result = runtime.block_on(flow::chatgpt_source(&mut capture, probe, "codex"));
         assert_eq!(result.unwrap_err(), Cancelled);
         let of = |label: &str| {
             capture
@@ -187,7 +187,7 @@ fn neither_chatgpt_source_available_says_both_reasons() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap();
-    let result = runtime.block_on(super::flow::chatgpt_source(&mut silent, &probe, "codex"));
+    let result = runtime.block_on(flow::chatgpt_source(&mut silent, &probe, "codex"));
     assert_eq!(result.unwrap_err(), Cancelled);
     let said = silent.0.join("\n");
     assert!(said.contains("no auth.json"), "{said}");

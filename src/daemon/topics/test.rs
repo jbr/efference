@@ -124,7 +124,7 @@ async fn updates_are_stamped_with_the_log_position_they_reflect() {
 async fn an_append_alone_wakes_the_diff() {
     // The upstream-failure cell is reached through its own `Arc`, exactly as the HTTP
     // client reaches it — no `Session` in hand, so no way to ping.
-    let failure = crate::api::upstream_failure_state();
+    let failure = upstream_failure_state();
     let (shared, _turns_rx) = Session::with_role_scratch_and_upstream_failure(
         std::env::current_dir().unwrap(),
         Log::in_memory(),
@@ -159,10 +159,10 @@ async fn an_append_alone_wakes_the_diff() {
 /// (docs/transport.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_retry_publishes_without_an_append() {
-    let retry = crate::api::upstream_retry_state();
-    let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
+    let retry = upstream_retry_state();
+    let (shared, _turns_rx) = Session::full(SessionParts {
         upstream_retry: Arc::clone(&retry),
-        ..crate::daemon::SessionParts::new(
+        ..SessionParts::new(
             crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             Log::in_memory(),
         )
@@ -172,10 +172,10 @@ async fn a_retry_publishes_without_an_append() {
     drain(&mut rx).await; // the startup snapshot
 
     // Exactly what the turn loop does before sleeping: no log append anywhere.
-    retry.set(crate::agent::stream_abort_retry(
+    retry.set(agent::stream_abort_retry(
         crate::api::RetrySurface::Turn,
         2,
-        crate::agent::STREAM_ABORT_ATTEMPTS,
+        agent::STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(2),
         "upstream SSE stream failed mid-stream",
     ));
@@ -216,8 +216,8 @@ async fn the_status_republishes_when_it_moves() {
     let idle: Value = serde_json::from_str(&first[&Topic::Status].json).unwrap();
     assert_eq!(idle["condition"]["kind"], "idle");
 
-    shared.set_phase(crate::daemon::LoopPhase::Executing);
-    let call = crate::log::ToolCall::new(
+    shared.set_phase(LoopPhase::Executing);
+    let call = ToolCall::new(
         "bash",
         "toolu_1",
         serde_json::json!({ "command": "ls ~", "intent": "look around" }),

@@ -38,11 +38,7 @@ fn a_question_carries_its_answer() {
         }
     );
     log.submitted(
-        crate::log::Payload::tool_result(
-            "toolu_q",
-            RawResult::text("no, keep them"),
-            crate::log::WireState::Raw,
-        ),
+        Payload::tool_result("toolu_q", RawResult::text("no, keep them"), WireState::Raw),
         Some("session[parent]"),
     );
     assert_eq!(

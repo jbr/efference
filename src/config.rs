@@ -389,7 +389,7 @@ impl Config {
     /// written in the vocabulary an operator writes and checked by the parser that
     /// reads theirs, rather than assembled field by field around it.
     pub fn from_toml(text: &str) -> Result<Self, LoadError> {
-        raw::parse(Path::new("<inline>"), text)
+        parse(Path::new("<inline>"), text)
     }
 
     /// Render the scope into the byte-stable preamble section appended to the system prompt

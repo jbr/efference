@@ -90,8 +90,8 @@ async fn an_empty_message_continues_or_says_why_not() {
     child
         .append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
         .unwrap();
-    child.set_stall(crate::daemon::Stall {
-        reason: crate::daemon::StallReason::RetriesExhausted,
+    child.set_stall(Stall {
+        reason: StallReason::RetriesExhausted,
         attempts: Some(12),
         at: 0,
         message: "the trajectory stopped: 12 attempts in a row failed upstream".into(),

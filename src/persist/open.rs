@@ -180,7 +180,7 @@ fn fragment_path(log: &Path, byte_offset: u64) -> PathBuf {
 /// leave a log that cannot be reopened.
 fn keep_fragment(saved_to: &Path, bytes: &[u8]) -> io::Result<()> {
     use std::os::unix::fs::OpenOptionsExt;
-    match std::fs::OpenOptions::new()
+    match OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(crate::daemon::permissions::FILE_MODE)

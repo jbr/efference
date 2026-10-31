@@ -106,7 +106,7 @@ impl Session {
     /// stays a complete record of the perimeter the session ran under — the file an operator
     /// reads, and copies grants up to the origin template from. A session with no config file (the
     /// built-in default role) is a no-op: there is no file to diverge from.
-    pub fn apply_config_change(&self, change: &crate::log::ConfigChange) -> std::io::Result<()> {
+    pub fn apply_config_change(&self, change: &crate::log::ConfigChange) -> io::Result<()> {
         match self.config_file.lock().unwrap().as_mut() {
             Some(file) => file.apply(change),
             None => Ok(()),
@@ -117,12 +117,12 @@ impl Session {
     /// (docs/permissions.md). `None` when there's no file. Both callers
     /// — the fs-watch task and the loop, right after an approved config write — go through here,
     /// because the invariant is about the file's state, not about who edited it.
-    pub fn refresh_config(&self) -> Option<crate::config::Refreshed> {
+    pub fn refresh_config(&self) -> Option<Refreshed> {
         self.config_file
             .lock()
             .unwrap()
             .as_mut()
-            .map(|f| f.refresh())
+            .map(crate::config::ConfigFile::refresh)
     }
 
     /// Fold a newly-adopted config's `[env]` table into the session masker

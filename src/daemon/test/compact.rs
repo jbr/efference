@@ -102,10 +102,7 @@ async fn a_compaction_resets_the_cold_belief_and_the_keepalive() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::ZERO);
     append_compactable_history(&shared);
-    shared.record_request(
-        RequestOrigin::Turn,
-        crate::api::RequestUsage::new(crate::api::Usage::default()),
-    );
+    shared.record_request(RequestOrigin::Turn, RequestUsage::new(Usage::default()));
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert!(shared.cold_since().is_some());
     assert!(shared.keepalive_clocks(CacheLineage::Main).0.is_some());
@@ -163,20 +160,20 @@ fn a_held_triage_accepts_a_compaction() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::from_secs(3_600));
     append_compactable_history(&shared);
-    shared.set_phase(crate::daemon::LoopPhase::Requesting);
+    shared.set_phase(LoopPhase::Requesting);
     assert_eq!(shared.request_compaction(true), Err(NotCompactable::Busy));
 
-    shared.set_stall(crate::agent::stalled(
+    shared.set_stall(agent::stalled(
         StallReason::TriageUnavailable,
         None,
         "triage could not reach its model".into(),
         "429".into(),
     ));
     let _held = shared.wait_phase(
-        crate::daemon::LoopPhase::Blocked {
-            reason: crate::daemon::BlockedReason::TriageUnavailable,
+        LoopPhase::Blocked {
+            reason: BlockedReason::TriageUnavailable,
         },
-        crate::daemon::LoopPhase::Requesting,
+        LoopPhase::Requesting,
     );
     assert_eq!(shared.request_compaction(true), Ok(()));
 }
@@ -397,7 +394,7 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
         "the compaction did not fail"
     );
     assert_eq!(
-        requests.load(std::sync::atomic::Ordering::SeqCst),
+        requests.load(Ordering::SeqCst),
         1,
         "the compaction's request is the only one the upstream saw"
     );

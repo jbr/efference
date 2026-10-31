@@ -4,7 +4,7 @@
 use super::*;
 
 fn parse_err(text: &str) -> LoadError {
-    super::parse(Path::new("bad.toml"), text).unwrap_err()
+    parse(Path::new("bad.toml"), text).unwrap_err()
 }
 
 /// Opt-in: with no `[tools]` entry none of efference's own tools is mounted, and nothing is

@@ -143,7 +143,7 @@ fn call(name: &str, input: Value) -> ToolCall {
 /// resolves there, and nothing else (docs/permissions.md).
 #[test]
 fn a_cd_is_dropped_only_when_it_goes_nowhere() {
-    let cwd = std::path::Path::new("/work/proj");
+    let cwd = Path::new("/work/proj");
     let drop = |command| without_cd_into(command, &Directories::at(cwd));
     assert_eq!(drop("cd /work/proj && ls"), Some("ls"));
     assert_eq!(drop("cd . && ls -a"), Some("ls -a"));

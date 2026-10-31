@@ -217,12 +217,12 @@ impl<'a> InteractiveState<'a> {
             // Handle SelectTheme specially (same as mouse click)
             if let crate::tui::document::TuiAction::SelectTheme(theme_name) = &action {
                 let _ = self.apply_theme(theme_name);
-                if let super::UiMode::ThemePicker {
+                if let UiMode::ThemePicker {
                     ref mut selected_index,
                     ..
                 } = self.ui_mode
                 {
-                    let themes = crate::tui::render_context::RenderContext::available_themes();
+                    let themes = RenderContext::available_themes();
                     if let Some(idx) = themes.iter().position(|t| t == theme_name.as_ref()) {
                         *selected_index = idx;
                     }
@@ -268,7 +268,7 @@ impl<'a> InteractiveState<'a> {
         key: KeyEvent,
         terminal: &mut Terminal<impl Backend + Write>,
     ) {
-        let page = terminal.size().map(|s| s.height / 2).unwrap_or(10);
+        let page = terminal.size().map_or(10, |s| s.height / 2);
         match (key.code, key.modifiers) {
             (KeyCode::PageDown, _) | (KeyCode::Char('v'), KeyModifiers::CONTROL) => {
                 self.set_scroll_offset(self.viewport.scroll_offset.saturating_add(page));

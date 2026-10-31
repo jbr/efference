@@ -43,7 +43,7 @@ struct Entry {
     #[serde(default)]
     supported_parameters: Option<Vec<String>>,
     #[serde(default)]
-    reasoning: Option<serde_json::Value>,
+    reasoning: Option<Value>,
 }
 
 #[derive(Deserialize)]

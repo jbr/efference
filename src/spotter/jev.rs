@@ -120,8 +120,12 @@ impl Spotter for JevSpot {
         // The relation request rides beside the cold one, only when the session
         // has consented calls of the move's family to compare against.
         let candidates = relation::candidates(call, precedents);
-        let relation_state =
-            relation::state(call, dirs.as_ref().map(|d| d.judged_working()).as_deref());
+        let relation_state = relation::state(
+            call,
+            dirs.as_ref()
+                .map(crate::policy::Directories::judged_working)
+                .as_deref(),
+        );
         let relation_questions = relation::questions(&candidates);
         let cold = self.endpoint.decide_traced(
             self.stages.as_ref(),

@@ -138,8 +138,7 @@ impl Serialize for EntryView<'_> {
         }
         let links = self
             .session
-            .map(|session| super::artifacts::links(session, entry))
-            .unwrap_or_default();
+            .map_or_default(|session| artifacts::links(session, entry));
         s.serialize_field(
             "payload",
             &PayloadView(&entry.payload, self.elide_text, self.result_raw, &links),
@@ -156,7 +155,7 @@ struct PayloadView<'a>(
     &'a Payload,
     bool,
     Option<&'a RawResult>,
-    &'a [super::artifacts::Link],
+    &'a [artifacts::Link],
 );
 
 impl Serialize for PayloadView<'_> {

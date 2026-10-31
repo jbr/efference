@@ -306,7 +306,7 @@ fn compaction_failed(error: &str) -> Payload {
 
 fn compaction_summary(upto: u64) -> Payload {
     let model = crate::log::LoggedInference::new("c", crate::api::Provider::Anthropic, "m");
-    Payload::Summary(crate::log::Summary::compaction(upto, "account", model))
+    Payload::Summary(Summary::compaction(upto, "account", model))
 }
 
 /// A compaction waits from its request until its summarizing request is sent, writes
@@ -382,10 +382,7 @@ fn an_open_compaction_is_an_operation_and_a_failure_is_not() {
 fn a_consolidation_does_not_close_a_compaction() {
     let ops = fold(vec![
         (100, compaction_requested(4)),
-        (
-            120,
-            Payload::Summary(crate::log::Summary::consolidation(2, 3, "span")),
-        ),
+        (120, Payload::Summary(Summary::consolidation(2, 3, "span"))),
     ]);
     assert!(ops.compaction().is_some_and(CompactionState::open));
 }

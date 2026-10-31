@@ -260,7 +260,7 @@ pub(super) async fn escalate_approval(mut conn: Conn) -> Conn {
     };
     let id = CallId(conn.param("call_id").unwrap_or_default().to_string());
     let body = conn.request_body_string().await.unwrap_or_default();
-    let body = match serde_json::from_str::<super::EscalationBody>(&body) {
+    let body = match serde_json::from_str::<EscalationBody>(&body) {
         Ok(body) => body,
         Err(e) => {
             return fail(

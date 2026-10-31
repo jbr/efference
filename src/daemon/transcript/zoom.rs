@@ -65,7 +65,7 @@ pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Resul
                 // A lone call's handle is the bare seq; `.1` names it as well.
                 1 if n == 1 => out.call(&calls[0], &call_label(entry.seq, 0, 1)),
                 len if n <= len && len > 1 => {
-                    out.call(&calls[n - 1], &call_label(entry.seq, n - 1, len))
+                    out.call(&calls[n - 1], &call_label(entry.seq, n - 1, len));
                 }
                 0 => return Err(format!("seq {} issued no calls", handle.seq)),
                 1 => {
@@ -91,7 +91,7 @@ pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Resul
             ));
         }
         (Payload::Assistant { output, excluded }, None) => {
-            out.turn(entry.seq, output, excluded.is_some())
+            out.turn(entry.seq, output, excluded.is_some());
         }
         (Payload::ToolResult { call_id, .. }, None) => match out.index.call(&call_id.0) {
             Some(call) => {
@@ -193,7 +193,7 @@ impl<'a> Zoom<'a, '_> {
             match block {
                 ContentBlock::Text(text) => self.lines.push(text.trim_end().to_string()),
                 ContentBlock::Attachment(arrival) => {
-                    self.lines.push(format!("attached {}", arrival.path))
+                    self.lines.push(format!("attached {}", arrival.path));
                 }
                 _ => {}
             }
@@ -218,9 +218,8 @@ impl<'a> Zoom<'a, '_> {
             [call] => self.call(call, &seq.to_string()),
             calls => {
                 for (i, call) in calls.iter().enumerate() {
-                    let summary = call_summary(call)
-                        .map(|s| format!(" {}", code_span(&s)))
-                        .unwrap_or_default();
+                    let summary =
+                        call_summary(call).map_or_default(|s| format!(" {}", code_span(&s)));
                     self.lines.push(format!(
                         "{}  {}{summary}",
                         call_label(seq, i, calls.len()),

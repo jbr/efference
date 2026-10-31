@@ -113,7 +113,7 @@ fn a_block_is_highlighted_once_not_once_a_frame() {
             "==MK BEGIN /src/tui/state.rs, LENGTH: 9 MK==\n{body}==MK END /src/tui/state.rs MK=="
         ),
         false,
-        crate::log::WireState::Raw,
+        WireState::Raw,
     );
 
     // The first paint pays for the block, once.
@@ -156,7 +156,7 @@ fn a_theme_change_misses_the_highlight_memo() {
         "call-hl",
         "==MK BEGIN /a.rs, LENGTH: 9 MK==\nfn main() {}\n==MK END /a.rs MK==",
         false,
-        crate::log::WireState::Raw,
+        WireState::Raw,
     );
     let _ = play.draw();
     let _ = play.draw();
@@ -196,7 +196,7 @@ fn a_re_rendered_result_drops_its_cached_layout() {
         "call-1",
         "RAW-ONE\nRAW-TWO\nRAW-THREE",
         false,
-        crate::log::WireState::from(Triaged::new(crate::log::Keep::None).with_note("three deps")),
+        WireState::from(Triaged::new(Keep::None).with_note("three deps")),
     );
     play.pin_to_bottom();
     let before = play.render();

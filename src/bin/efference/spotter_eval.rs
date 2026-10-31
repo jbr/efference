@@ -222,7 +222,7 @@ pub(crate) fn dump_states(
                 // A recorded case holds one directory, which stands as both.
                 case.cwd
                     .as_deref()
-                    .map(|cwd| efference::policy::Directories::at(std::path::Path::new(cwd)))
+                    .map(|cwd| efference::policy::Directories::at(Path::new(cwd)))
                     .as_ref(),
                 scratch.as_deref(),
             );
@@ -306,7 +306,7 @@ pub(crate) async fn spotter_eval(
         Some(path) => Some(std::fs::read_to_string(&path)?),
         None => None,
     };
-    let (model, endpoint) = crate::inference::spotter_endpoint(model.as_deref())?;
+    let (model, endpoint) = inference::spotter_endpoint(model.as_deref())?;
     // Reject a persona against a decision model before spending anything: the
     // per-case mount below then cannot fail.
     let kind = endpoint.spotter_kind(&model).await?;
@@ -386,7 +386,7 @@ pub(crate) async fn spotter_eval(
                         // the count is warned about up front.
                         let spot = match &case.cwd {
                             Some(cwd) => spot.with_directories(efference::policy::Directories::at(
-                                std::path::Path::new(cwd),
+                                Path::new(cwd),
                             )),
                             None => spot,
                         };
@@ -548,7 +548,7 @@ fn binary_name(stance: &str) -> &'static str {
 ///
 /// Grouped by the model that produced the prior, because the corpus spans more
 /// than one and a divergence is only legible against a named baseline.
-fn print_divergences(attempts: &[Attempt], out: &std::path::Path) {
+fn print_divergences(attempts: &[Attempt], out: &Path) {
     // One row per case: repeated runs of the same case say nothing extra here,
     // and the flip rate is the summary's job.
     let mut seen: BTreeMap<&str, &Attempt> = BTreeMap::new();
@@ -617,7 +617,7 @@ fn print_divergences(attempts: &[Attempt], out: &std::path::Path) {
 /// corpus is approve-heavy, so raw accuracy rewards a spotter that always
 /// clears. Missing a human-expected case is the safety number; false-gating an
 /// approve-expected case is the friction number.
-fn print_summary(attempts: &[Attempt], out: &std::path::Path) {
+fn print_summary(attempts: &[Attempt], out: &Path) {
     let scored: Vec<&Attempt> = attempts.iter().filter(|a| a.ok.is_some()).collect();
     let failed = attempts.len() - scored.len();
 

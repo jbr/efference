@@ -300,7 +300,7 @@ impl InteractiveState<'_> {
             return;
         }
         self.pace_widget = Some(super::state::PaceWidget {
-            entry_speed_ms: self.pace.map(|p| p.speed_ms).unwrap_or(0),
+            entry_speed_ms: self.pace.map_or(0, |p| p.speed_ms),
         });
         // The stepper owns the row, so nothing pinned survives it.
         self.strip_pinned = None;
@@ -318,7 +318,7 @@ impl InteractiveState<'_> {
         if self.pace_widget.is_none() {
             return;
         }
-        let cur = self.pace.map(|p| p.speed_ms).unwrap_or(0);
+        let cur = self.pace.map_or(0, |p| p.speed_ms);
         let held = self.pace.is_some_and(|p| p.held);
         let next = super::state::next_pace_rung(cur, slower);
         self.pace = Some(super::PaceView {
@@ -335,7 +335,7 @@ impl InteractiveState<'_> {
         if self.pace_widget.take().is_none() {
             return;
         }
-        let speed = self.pace.map(|p| p.speed_ms).unwrap_or(0);
+        let speed = self.pace.map_or(0, |p| p.speed_ms);
         let _ = self.pace_tx.send((Some(speed), None));
         self.ui.debug_message = format!(
             "pace · {}",
@@ -516,7 +516,7 @@ impl InteractiveState<'_> {
         if entry.verb != StripVerb::PaceWidget {
             return entry.label.to_string();
         }
-        let val = super::state::pace_label(self.pace.map(|p| p.speed_ms).unwrap_or(0), false);
+        let val = super::state::pace_label(self.pace.map_or(0, |p| p.speed_ms), false);
         if self.pace_widget.is_some() {
             format!("▴ pace {val} ▾")
         } else {
@@ -546,13 +546,7 @@ fn is_tail(entry: &StripItem) -> bool {
 
 /// Write `text` at column `col` of the strip row, truncating at the area edge;
 /// returns the next free column. Column-at-a-time like the other chrome renders.
-fn put_row(
-    buf: &mut Buffer,
-    area: Rect,
-    col: u16,
-    text: &str,
-    style: ratatui::style::Style,
-) -> u16 {
+fn put_row(buf: &mut Buffer, area: Rect, col: u16, text: &str, style: Style) -> u16 {
     let mut x = col;
     for ch in text.chars() {
         if x >= area.width {

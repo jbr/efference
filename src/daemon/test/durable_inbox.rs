@@ -192,7 +192,7 @@ async fn a_result_triage_marks_what_its_rider_held() {
     });
     let (host, runtime) = start_with(addr, |boot| boot.log = quiet_log());
     let session = Arc::clone(runtime.session());
-    session.submit_turn(crate::frontend::SubmittedTurn::new("go again", "s1"));
+    session.submit_turn(SubmittedTurn::new("go again", "s1"));
 
     wait_until("the model request is open", || {
         requests.load(Ordering::SeqCst) >= 1

@@ -12,13 +12,12 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
 
     // The SPA shell (docs/web-client.md): served without a credential, since the
     // sign-in view is inside the app.
-    server
-        .get("/")
-        .await
-        .assert_status(200)
-        .assert_header_with(KnownHeaderName::ContentType, |ct| {
-            assert!(ct.as_str().is_some_and(|ct| ct.starts_with("text/html")))
-        });
+    server.get("/").await.assert_status(200).assert_header_with(
+        KnownHeaderName::ContentType,
+        |ct| {
+            assert!(ct.as_str().is_some_and(|ct| ct.starts_with("text/html")));
+        },
+    );
 
     // HEAD rides `trillium_head::head()`: 200 like the GET, with the body stripped.
     let head = server.build(Method::Head, "/").await;
@@ -281,10 +280,9 @@ async fn files_takes_a_token_on_both_surfaces() {
         ),
         (Surface::Host, "/sessions/work/files", "/sessions"),
     ] {
-        let server = TestServer::new((
-            gate(Arc::clone(&auth), surface),
-            |conn: trillium::Conn| async move { conn.ok("reached") },
-        ))
+        let server = TestServer::new((gate(Arc::clone(&auth), surface), |conn: Conn| async move {
+            conn.ok("reached")
+        }))
         .await
         .with_host("localhost");
         for path in [open, files] {

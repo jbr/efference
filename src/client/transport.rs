@@ -174,6 +174,5 @@ pub(super) fn json_field(body: &str, field: &str) -> Result<String> {
 /// A finished conn's status code, or `no status` when no response arrived.
 fn status_code(conn: &trillium_client::Conn) -> String {
     conn.status()
-        .map(|s| s.code().to_string())
-        .unwrap_or_else(|| "no status".into())
+        .map_or_else(|| "no status".into(), |s| s.code().to_string())
 }

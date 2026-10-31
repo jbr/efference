@@ -98,7 +98,7 @@ fn a_staged_image_shows_its_thumbnail() {
     let (_, chip_row) = play.find("shot.png").unwrap();
     let pixel = play.cell(2, chip_row - 1);
     assert!(
-        [pixel.fg, pixel.bg].contains(&ratatui::style::Color::Rgb(200, 60, 120)),
+        [pixel.fg, pixel.bg].contains(&Color::Rgb(200, 60, 120)),
         "the band above the chip is the image: {pixel:?}"
     );
 

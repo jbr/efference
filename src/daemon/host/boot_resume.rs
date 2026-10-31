@@ -149,7 +149,7 @@ impl Host {
             for row in self.inventory.refresh(&root) {
                 if !row.interrupted
                     || row.problem.is_some()
-                    || !crate::daemon::tcp::plain_id(&row.id)
+                    || !tcp::plain_id(&row.id)
                     || !seen.insert(row.id.clone())
                 {
                     continue;
@@ -171,7 +171,7 @@ fn header_creator(root: &std::path::Path, id: &str) -> Option<String> {
     use std::io::BufRead;
     let log = root.join(SESSION_BASE).join(id).join(crate::boot::LOG_NAME);
     let mut line = Vec::new();
-    std::io::BufReader::new(std::fs::File::open(&log).ok()?)
+    io::BufReader::new(std::fs::File::open(&log).ok()?)
         .read_until(b'\n', &mut line)
         .ok()?;
     let header = crate::persist::read_header(&log, line.trim_ascii_end()).ok()?;

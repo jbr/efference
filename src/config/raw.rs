@@ -55,7 +55,7 @@ pub(crate) struct RawConfig {
     /// present.
     // docs/tools.md, docs/permissions.md; validated by [`super::tools::validate_tools`].
     #[serde(default)]
-    tools: BTreeMap<String, super::tools::RawToolSettings>,
+    tools: BTreeMap<String, tools::RawToolSettings>,
     /// Filesystem subtrees the structured tools may read or write. The longest matching
     /// prefix decides, so a deeper key carves an exception out of a broader one. Matching
     /// is lexical, without resolving symlinks: a guard against mistakes, not access
@@ -555,7 +555,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         let entry = validate_mcp_server(&name, server)?;
         mcp_servers.insert(name, entry);
     }
-    let tools = super::tools::validate_tools(raw.tools, &mcp_servers)?;
+    let tools = tools::validate_tools(raw.tools, &mcp_servers)?;
     if raw
         .first_turn
         .as_deref()
@@ -576,7 +576,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         context,
         mcp_servers,
         env: raw.env,
-        bash: crate::config::BashLimits {
+        bash: BashLimits {
             background_after: raw
                 .bash
                 .background_after
@@ -586,7 +586,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
                 Duration::from_secs,
             ),
         },
-        transport: crate::config::TransportLimits {
+        transport: TransportLimits {
             effort: raw.transport.effort,
             stream_ceiling: raw
                 .transport
@@ -635,7 +635,7 @@ pub(super) fn validate_mcp_server(
     if !name_ok {
         return Err(ValidationError::McpServerName(name.to_string()));
     }
-    if super::tools::BUILTIN_NAMESPACES.contains(&name) {
+    if BUILTIN_NAMESPACES.contains(&name) {
         return Err(ValidationError::McpServerReserved(name.to_string()));
     }
     let optional = server.optional;

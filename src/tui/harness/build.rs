@@ -265,12 +265,7 @@ impl Screenplay<'_> {
     /// Mark the agent blocked on approval for `call_id` — the pending gate the
     /// daemon's `gate` topic carries, driven through the real `Gate` event so the
     /// inline gate renders exactly as in the app (docs/tui.md).
-    pub(crate) fn pending_gate(
-        &mut self,
-        call_id: &str,
-        name: &str,
-        input: serde_json::Value,
-    ) -> &mut Self {
+    pub(crate) fn pending_gate(&mut self, call_id: &str, name: &str, input: Value) -> &mut Self {
         self.pending_gate_reason(call_id, name, input, None)
     }
 
@@ -280,7 +275,7 @@ impl Screenplay<'_> {
         &mut self,
         call_id: &str,
         name: &str,
-        input: serde_json::Value,
+        input: Value,
         reason: Option<&str>,
     ) -> &mut Self {
         self.event(TuiEvent::Gate(Some(crate::tui::PendingGate {
@@ -300,7 +295,7 @@ impl Screenplay<'_> {
         call_id: &str,
         leaf_session: &str,
         leaf_name: &str,
-        leaf_input: serde_json::Value,
+        leaf_input: Value,
         leaf_intent: Option<&str>,
     ) -> &mut Self {
         let acting_on = crate::tui::ActingOn {

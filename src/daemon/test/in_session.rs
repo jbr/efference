@@ -112,7 +112,7 @@ async fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
         if done() {
             return;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
     panic!("timed out waiting for {what}");
 }
@@ -301,7 +301,7 @@ async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {
     wait_for("the brief", || {
         peer.snapshot().iter().any(|entry| {
             entry.source.as_deref() == Some("handoff[parent]")
-                && matches!(&entry.payload, crate::log::Payload::User(_))
+                && matches!(&entry.payload, Payload::User(_))
         })
     })
     .await;
@@ -348,12 +348,12 @@ async fn only_a_successors_archive_of_its_predecessor_completes_the_hand_off() {
         .host
         .record_succession("parent", "peer", "carry on".into());
     let toolbox_for = |caller: &str| {
-        let mut toolbox = crate::tools::Toolbox::bash_only();
+        let mut toolbox = Toolbox::bash_only();
         toolbox.mount_sessions(Arc::clone(&fixture.host), caller.to_string());
         toolbox
     };
     let archive = |target: &str| {
-        crate::log::ToolCall::new(
+        ToolCall::new(
             crate::control_tools::ARCHIVE_WIRE_NAME,
             "toolu_1",
             serde_json::json!({ "agent": target }),
@@ -369,14 +369,14 @@ async fn only_a_successors_archive_of_its_predecessor_completes_the_hand_off() {
     // The predecessor is not the successor of its successor.
     assert!(!toolbox_for("parent").completes_hand_off(&archive("peer")));
     // Another tool naming the predecessor is not the completion.
-    let note = crate::log::ToolCall::new(
+    let note = ToolCall::new(
         "agents__message",
         "toolu_2",
         serde_json::json!({ "agent": "parent", "text": "done?" }),
     );
     assert!(!toolbox_for("peer").completes_hand_off(&note));
     // No sessions provider mounted: nothing clears.
-    assert!(!crate::tools::Toolbox::bash_only().completes_hand_off(&archive("parent")));
+    assert!(!Toolbox::bash_only().completes_hand_off(&archive("parent")));
 
     fixture.host.swansong().shut_down().await;
 }

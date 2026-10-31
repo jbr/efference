@@ -188,7 +188,7 @@ impl<'a> InteractiveState<'a> {
                         .and_then(|view| view.successor.as_ref())
                         .is_some();
                 if follow && let Some(view) = &identity {
-                    self.switch_to = Some(super::Exit::Switch {
+                    self.switch_to = Some(Exit::Switch {
                         id: view.successor.clone().unwrap_or_default(),
                     });
                 }
@@ -273,7 +273,7 @@ impl<'a> InteractiveState<'a> {
                 // The offline gallery has no host to read a context from, so the
                 // form opens against an empty one — the same state the inline
                 // `efference dev session-form` container draws (docs/tui.md).
-                self.ui_mode = super::UiMode::Sessions(crate::tui::sessions::SessionMenu {
+                self.ui_mode = UiMode::Sessions(crate::tui::sessions::SessionMenu {
                     form: Some(Box::new(crate::tui::session_form::Form::new(
                         crate::tui::session_form::NewSessionContext::default(),
                     ))),
@@ -309,7 +309,7 @@ impl<'a> InteractiveState<'a> {
                 if self.start_failed() {
                     return false;
                 }
-                self.switch_to.get_or_insert(super::Exit::Closed);
+                self.switch_to.get_or_insert(Exit::Closed);
                 return true;
             }
         }
@@ -434,7 +434,7 @@ impl<'a> InteractiveState<'a> {
         // Timed only when `--frame-cost` asked for it (`frame_cost.rs`): this runs
         // before the paint rather than inside it, so without attributing it here a
         // frame's reported cost would omit rebuilding the nodes it then lays out.
-        let started = self.frame_cost.is_some().then(std::time::Instant::now);
+        let started = self.frame_cost.is_some().then(Instant::now);
         let gate = projection::Gate {
             call: self.pending_gate.as_ref().map(|g| g.call_id.as_str()),
             ask: self.ask.as_ref().map(|a| a.call_id.as_str()),

@@ -78,10 +78,7 @@ pub(crate) async fn oauth_source<P: Prompter, Q: Probe>(
             .await;
         match login {
             Ok(login) => {
-                let plan = login
-                    .plan
-                    .map(|plan| format!(", {plan} plan"))
-                    .unwrap_or_default();
+                let plan = login.plan.map_or_default(|plan| format!(", {plan} plan"));
                 prompter.say(
                     Tone::Good,
                     &format!(

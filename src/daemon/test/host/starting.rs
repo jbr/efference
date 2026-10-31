@@ -262,7 +262,7 @@ async fn a_failed_resume_is_listed_dormant_with_its_reason() {
     let roots = Roots::new();
     let root = roots.0.join("one");
     // No `config.toml` beside the log, which `boot::resume` refuses.
-    super::archived::write_session(&root, "dormant", "Dormant work");
+    archived::write_session(&root, "dormant", "Dormant work");
     let host = Host::new(one_connection_registry(), baseline_env());
     let server = host_server(&host).await;
 

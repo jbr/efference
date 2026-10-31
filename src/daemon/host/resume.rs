@@ -95,7 +95,7 @@ pub struct PatchSession {
 /// present value — `null` included — is `Some`.
 fn present<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> std::result::Result<Option<Option<String>>, D::Error> {
+) -> Result<Option<Option<String>>, D::Error> {
     Option::<String>::deserialize(deserializer).map(Some)
 }
 
@@ -160,8 +160,8 @@ impl Host {
         self: &Arc<Self>,
         id: String,
         body: PatchSession,
-    ) -> std::result::Result<Resume, ResumeRefused> {
-        if !crate::daemon::tcp::plain_id(&id) {
+    ) -> Result<Resume, ResumeRefused> {
+        if !tcp::plain_id(&id) {
             return Err(ResumeRefused::Refused(format!(
                 "session name {id:?} is not a single plain path segment"
             )));
@@ -263,7 +263,7 @@ impl Host {
         body: PatchSession,
         supplied_env: Option<crate::env_table::EnvSnapshot>,
         recorded: RecordedLineage,
-    ) -> std::result::Result<(), String> {
+    ) -> Result<(), String> {
         let id = starting.id().to_string();
         // An omitted environment is established for this session's own directory, on
         // the same terms a creation's is (docs/env.md).

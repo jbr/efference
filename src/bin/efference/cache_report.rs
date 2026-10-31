@@ -316,20 +316,17 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
         .by_origin
         .iter()
         .find(|(o, _)| *o == RequestOrigin::AbortedAttempt)
-        .map(|(_, t)| t.requests)
-        .unwrap_or(0);
+        .map_or(0, |(_, t)| t.requests);
     let turns = report
         .by_origin
         .iter()
         .find(|(o, _)| *o == RequestOrigin::Turn)
-        .map(|(_, t)| t.requests)
-        .unwrap_or(0);
+        .map_or(0, |(_, t)| t.requests);
     if aborted > 0 {
         let attempts = aborted + turns;
         let rate = aborted as f64 * 100.0 / attempts as f64;
         println!(
-            "  abort rate (main loop)    {:>4}   {rate:.0}% of turn attempts ({aborted} of {attempts})",
-            aborted
+            "  abort rate (main loop)    {aborted:>4}   {rate:.0}% of turn attempts ({aborted} of {attempts})"
         );
     }
     let [boot, model_change, idle] = report.cold_starts;

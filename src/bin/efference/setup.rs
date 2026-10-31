@@ -56,7 +56,7 @@ async fn offer_here(
     // conversation is billed on; with no past pick the form names the current
     // model instead. Best-effort: an unreadable store reads as no history.
     let model = std::env::var_os("HOME").and_then(|home| {
-        let store = efference::history::History::user(std::path::Path::new(&home));
+        let store = efference::history::History::user(Path::new(&home));
         let scope = efference::history::Scope::for_request(&here, None);
         store
             .default(&scope, efference::history::now())
@@ -85,7 +85,7 @@ async fn offer_here(
     // The session's settings are chosen in the new-session form, as any other
     // session's are (docs/tui.md); in a directory with no project config the
     // session it creates is the setup profile.
-    match cli::live_host() {
+    match live_host() {
         Some(host) => picker::create_through_form(host, display).await,
         None => {
             let creation = island::Creation::Form {

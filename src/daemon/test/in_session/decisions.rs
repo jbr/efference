@@ -28,7 +28,7 @@ fn decisions(session: &Session) -> Vec<crate::log::GateDecision> {
 }
 
 /// Hold `curl` at the child's gate; returns its handle and the gate's receiver.
-fn held(child: &Session) -> (String, tokio::sync::oneshot::Receiver<Approval>) {
+fn held(child: &Session) -> (String, oneshot::Receiver<Approval>) {
     let seq = issue(child, vec![curl()]).to_string();
     (seq, child.register_pending(&curl(), None, None))
 }

@@ -160,10 +160,7 @@ fn a_working_directory_apart_from_the_project_round_trips() {
     );
     let header: LogHeader = serde_json::from_str(&line).unwrap();
     assert_eq!(header.metadata(), Some(&metadata));
-    assert_eq!(
-        header.metadata().unwrap().cwd,
-        std::path::Path::new("/work/project")
-    );
+    assert_eq!(header.metadata().unwrap().cwd, Path::new("/work/project"));
 }
 
 /// A file whose first line is an entry is an unversioned log — a file this

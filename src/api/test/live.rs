@@ -211,7 +211,7 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
     server.join().unwrap();
 
     let Payload::Assistant {
-        excluded: Some(crate::log::Exclusion::Upstream(failure)),
+        excluded: Some(Exclusion::Upstream(failure)),
         ..
     } = &completion.assistant
     else {

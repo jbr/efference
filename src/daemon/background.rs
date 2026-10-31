@@ -304,7 +304,7 @@ impl Session {
     /// path that was writing it.
     pub(crate) fn append_process_event(&self, event: crate::log::ProcessEvent) {
         let turn = self.latest_turn();
-        if let Err(e) = self.append(turn, crate::log::Payload::ProcessEvent(event)) {
+        if let Err(e) = self.append(turn, Payload::ProcessEvent(event)) {
             log::warn!("process record: append failed: {e}");
         }
     }

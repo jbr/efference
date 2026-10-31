@@ -8,7 +8,7 @@ use super::*;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_built_in_tools_full_definition_is_present() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    shared.set_tool_catalog(&crate::tools::Toolbox::bash_only());
+    shared.set_tool_catalog(&Toolbox::bash_only());
     let app = test_server(&shared).await;
 
     let response = app.get("/v1/tools/bash").await;
@@ -37,7 +37,7 @@ async fn a_built_in_tools_full_definition_is_present() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_loop_owned_tools_full_definition_is_present() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    shared.set_tool_catalog(&crate::tools::Toolbox::bash_only());
+    shared.set_tool_catalog(&Toolbox::bash_only());
     let app = test_server(&shared).await;
 
     let response = app.get("/v1/tools/check_inbox").await;
@@ -71,7 +71,7 @@ async fn a_loop_owned_tools_full_definition_is_present() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unknown_tool_names_are_404() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    shared.set_tool_catalog(&crate::tools::Toolbox::bash_only());
+    shared.set_tool_catalog(&Toolbox::bash_only());
     let app = test_server(&shared).await;
     app.get("/v1/tools/nope").await.assert_status(404);
 

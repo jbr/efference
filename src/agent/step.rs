@@ -117,7 +117,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // (`tools::unknown_tool_message`) is the whole answer, and it reaches the wire
     // verbatim: a `Direct` payload never enters the triage, so no summary stands between
     // the correction and the model.
-    let callable = super::callable_names(toolbox);
+    let callable = callable_names(toolbox);
     if !callable.contains(&call.name) {
         return Ok(Decision::Direct(vec![unknown_tool(call, &callable)]));
     }

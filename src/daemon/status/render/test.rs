@@ -323,7 +323,7 @@ fn held_by_pace_and_config_repair() {
 /// The MCP mount's table names the same moves by their bare verbs.
 #[test]
 fn the_mcp_table_names_the_bare_verbs() {
-    let reader = Reader::read(Relation::Driver, &super::super::Moves::MCP, None);
+    let reader = Reader::read(Relation::Driver, &Moves::MCP, None);
     let idle = view(Condition::Idle { closing: None });
     assert_eq!(
         rendered(&idle, &reader),

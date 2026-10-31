@@ -23,7 +23,7 @@ pub(super) struct Pace {
 impl Pace {
     /// Drop the hold and hand the turns it held back to the loop, in submission order. Called
     /// with the pace lock held, so no turn is held back after the release it should have seen.
-    fn release(&mut self, turns: &tokio::sync::mpsc::UnboundedSender<SubmittedTurn>) {
+    fn release(&mut self, turns: &mpsc::UnboundedSender<SubmittedTurn>) {
         self.held = false;
         for turn in self.held_back.drain(..) {
             let _ = turns.send(turn);
@@ -72,7 +72,7 @@ impl Session {
     /// the turn as one about to run and waits for a wake that holding it back never sends.
     pub(super) fn queue_turn(
         &self,
-        ask: std::sync::MutexGuard<'_, Option<super::ask::AskState>>,
+        ask: std::sync::MutexGuard<'_, Option<ask::AskState>>,
         turn: SubmittedTurn,
     ) -> bool {
         {
@@ -328,7 +328,7 @@ impl Session {
         if a_turn_just_ended && self.no_turn_queued_to_run() {
             // A supervised session's settle is its supervisor's to read; only one
             // without a live supervisor pushes the operator (docs/web-push.md).
-            let body = super::push::settle_body(self.log.lock().unwrap().entries());
+            let body = push::settle_body(self.log.lock().unwrap().entries());
             self.moment(crate::log::MomentKind::Settle, self.supervisor(), body);
         }
     }
@@ -379,7 +379,7 @@ impl Session {
     /// the log (docs/log-and-projection.md). A failed write is reported and
     /// dropped: the record must not stop what it describes.
     pub(crate) fn interrupt(&self, origin: crate::log::InterruptOrigin) {
-        let entry = crate::log::Payload::Telemetry(crate::log::Telemetry::Interrupt(origin));
+        let entry = Payload::Telemetry(crate::log::Telemetry::Interrupt(origin));
         if let Err(e) = self.append(self.latest_turn(), entry) {
             log::warn!("interrupt record: append failed: {e}");
         }
@@ -401,7 +401,7 @@ impl Session {
             .iter()
             .rev()
             .find_map(|entry| match &entry.payload {
-                crate::log::Payload::Telemetry(crate::log::Telemetry::Interrupt(origin)) => {
+                Payload::Telemetry(crate::log::Telemetry::Interrupt(origin)) => {
                     Some(origin.source.clone())
                 }
                 _ => None,
@@ -413,8 +413,8 @@ impl Session {
     /// left (docs/control-channel.md).
     pub(crate) fn interruption_after(
         &self,
-        elapsed: std::time::Duration,
-        result: &crate::log::RawResult,
+        elapsed: Duration,
+        result: &RawResult,
     ) -> crate::log::Interruption {
         crate::log::Interruption {
             by: self.interrupter(),

@@ -66,7 +66,7 @@ impl<'a> InteractiveState<'a> {
             Level::Full => self.render_item_children(nodes, None, buf),
             Level::Trimmed => self.render_item_children(nodes, Some(key), buf),
             Level::Brief => {
-                self.render_brief_call(key, intent.as_deref(), signature, note.as_deref(), buf)
+                self.render_brief_call(key, intent.as_deref(), signature, note.as_deref(), buf);
             }
         }
     }

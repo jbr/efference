@@ -114,10 +114,10 @@ impl ConsolidationCheck {
                 ToolChoice::auto(),
                 |streamed| match streamed {
                     Streamed::Text { text, .. } => {
-                        shared.publish_delta(StreamDelta::ConsolidationText { text })
+                        shared.publish_delta(StreamDelta::ConsolidationText { text });
                     }
                     Streamed::Thinking { text, .. } => {
-                        shared.publish_delta(StreamDelta::ConsolidationThinking { text })
+                        shared.publish_delta(StreamDelta::ConsolidationThinking { text });
                     }
                     Streamed::ToolStart { .. } | Streamed::ToolInput { .. } => {}
                 },

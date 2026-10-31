@@ -90,7 +90,9 @@ impl ClientHandler for UpstreamStatusHandler {
                 |name| headers.get_str(name).map(str::to_string),
                 observed_at,
             ) {
-                *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(snapshot);
+                *cell
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(snapshot);
             }
         }
         if status.is_success() {
@@ -100,7 +102,9 @@ impl ClientHandler for UpstreamStatusHandler {
             if let Some((header, cell)) = &self.turn_routing
                 && let Some(token) = conn.response_headers().get_str(*header)
             {
-                let mut slot = cell.lock().unwrap_or_else(|e| e.into_inner());
+                let mut slot = cell
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 if slot.is_none() {
                     *slot = Some(token.to_string());
                 }

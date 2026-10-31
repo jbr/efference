@@ -37,10 +37,7 @@ fn compactable(cold: bool) -> Arc<Session> {
     let shared = session();
     shared.set_cache_ttl(Duration::from_secs(if cold { 0 } else { 3_600 }));
     append_compactable_history(&shared);
-    shared.record_request(
-        RequestOrigin::Turn,
-        crate::api::RequestUsage::new(crate::api::Usage::default()),
-    );
+    shared.record_request(RequestOrigin::Turn, RequestUsage::new(Usage::default()));
     if cold {
         std::thread::sleep(Duration::from_millis(5));
         assert!(shared.cold_since().is_some());
@@ -67,7 +64,7 @@ fn asking(shared: Arc<Session>) -> Arc<Session> {
 }
 
 fn held_triage(shared: Arc<Session>) -> Arc<Session> {
-    shared.set_stall(crate::agent::stalled(
+    shared.set_stall(agent::stalled(
         StallReason::TriageUnavailable,
         None,
         "triage could not reach its model".into(),
@@ -83,7 +80,7 @@ fn held_triage(shared: Arc<Session>) -> Arc<Session> {
 
 fn retrying(shared: Arc<Session>) -> Arc<Session> {
     shared.set_phase(LoopPhase::Requesting);
-    shared.upstream_retry.set(crate::agent::stream_abort_retry(
+    shared.upstream_retry.set(agent::stream_abort_retry(
         crate::api::RetrySurface::Turn,
         1,
         12,

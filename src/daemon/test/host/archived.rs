@@ -55,7 +55,7 @@ async fn archived_rows_are_listed_for_a_root() {
     let server = host_server(&host).await;
     let root = roots.0.join("one");
     write_session(&root, "older", "Older work");
-    std::thread::sleep(std::time::Duration::from_millis(5));
+    std::thread::sleep(Duration::from_millis(5));
     write_session(&root, "newer", "Newer work");
     std::fs::create_dir_all(root.join(".efference/broken")).unwrap();
     write_session(&roots.0.join("two"), "elsewhere", "Not listed");
@@ -296,21 +296,21 @@ fn write_recorded_session(root: &Path, id: &str) -> PathBuf {
 
 /// Append usage lines for `requests`, each an origin and its uncached input tokens,
 /// with 1000 tokens read from the cache and 10 written.
-fn write_usage(dir: &Path, requests: &[(crate::log::RequestOrigin, u64)]) {
+fn write_usage(dir: &Path, requests: &[(RequestOrigin, u64)]) {
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(dir.join(crate::daemon::USAGE_NAME))
+        .open(dir.join(USAGE_NAME))
         .unwrap();
     for (at, (origin, input)) in requests.iter().enumerate() {
-        let usage = crate::api::RequestUsage::new(crate::api::Usage {
+        let usage = RequestUsage::new(Usage {
             input_tokens: *input,
             output_tokens: 7,
             cache_read_input_tokens: 1000,
             cache_creation_input_tokens: 10,
         });
-        let line = crate::daemon::UsageLine::new(*origin, at as u128, false, &usage);
+        let line = UsageLine::new(*origin, at as u128, false, &usage);
         writeln!(file, "{}", serde_json::to_string(&line).unwrap()).unwrap();
     }
 }
@@ -359,7 +359,7 @@ async fn a_dormant_row_carries_its_recorded_selections_and_context_size() {
     );
     // The last `turn` line's prompt: 2 uncached + 1000 read + 10 written.
     assert_eq!(row["context_tokens"], 1012);
-    let read: crate::daemon::DormantSession = serde_json::from_str(response.body()).unwrap();
+    let read: DormantSession = serde_json::from_str(response.body()).unwrap();
     assert_eq!(read.archived.row.id, "recorded");
     assert_eq!(read.context_tokens, Some(1012));
 
@@ -371,7 +371,7 @@ async fn a_dormant_row_carries_its_recorded_selections_and_context_size() {
     let mut expected = row.as_object().unwrap().clone();
     expected.remove("selections");
     expected.remove("context_tokens");
-    assert_eq!(json(listing.body())[0], serde_json::Value::Object(expected));
+    assert_eq!(json(listing.body())[0], Value::Object(expected));
 
     host.swansong().shut_down().await;
 }
@@ -396,7 +396,7 @@ async fn a_dormant_row_without_a_turn_or_recorded_roles_leaves_them_out() {
     let row = json(unused.body());
     assert!(row.get("context_tokens").is_none(), "{row}");
     assert_eq!(row["selections"]["model"], "main");
-    assert!(!dir.join(crate::daemon::USAGE_NAME).exists());
+    assert!(!dir.join(USAGE_NAME).exists());
 
     let bare = server
         .get(&format!("/sessions/bare?cwd={}", encode(&root)))

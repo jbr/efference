@@ -141,7 +141,7 @@ impl InferenceConfig {
     pub fn from_toml(text: &str) -> Result<Self, Error> {
         let config: Self =
             toml_edit::de::from_str(text).map_err(|error| Error::from(error.to_string()))?;
-        if config.env_hook.as_ref().is_some_and(|argv| argv.is_empty()) {
+        if config.env_hook.as_ref().is_some_and(Vec::is_empty) {
             // An empty argv names no program to run. Reading it as "no hook"
             // would make a typo look like a deliberate choice to inherit the
             // host environment, which is the opposite of what the user wrote.

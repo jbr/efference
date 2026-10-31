@@ -108,7 +108,7 @@ pub fn probe_ledger(dirs: &Directories, role: &Config, log: &[LogEntry]) -> Prob
             continue;
         };
         if let Some(cmd) = command_of.get(&spot.call_id)
-            && let Some(tokens) = crate::policy::bash_tokens(dirs, role, cmd)
+            && let Some(tokens) = bash_tokens(dirs, role, cmd)
         {
             ledger.observe(&tokens);
         }

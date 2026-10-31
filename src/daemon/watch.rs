@@ -22,7 +22,7 @@ pub(crate) async fn config_watch_loop(shared: Arc<Session>, path: PathBuf) {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
         _ => PathBuf::from("."),
     };
-    let target = path.file_name().map(|n| n.to_os_string());
+    let target = path.file_name().map(std::ffi::OsStr::to_os_string);
 
     let (tx, mut rx) = mpsc::unbounded_channel::<DebounceEventResult>();
     let mut debouncer = match new_debouncer(Duration::from_millis(400), None, move |res| {
@@ -63,7 +63,7 @@ pub(crate) async fn config_watch_loop(shared: Arc<Session>, path: PathBuf) {
             ev.event
                 .paths
                 .iter()
-                .any(|p| p.file_name().map(|n| n.to_os_string()) == target)
+                .any(|p| p.file_name().map(std::ffi::OsStr::to_os_string) == target)
         });
         if touches {
             refresh_and_emit(&shared);
@@ -126,11 +126,10 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
                 ),
                 Some("config-parse-error".to_string()),
             );
-            shared.require_config_repair(crate::daemon::ConfigRepair {
+            shared.require_config_repair(ConfigRepair {
                 path: shared
                     .config_path()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|p| p.display().to_string()),
                 at: crate::log::Timestamp::now().0,
                 message: "config unparseable — the loop is parked until a human repairs the file"
                     .to_string(),
@@ -158,7 +157,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
     if !unresolved.is_empty() {
         let detail = unresolved
             .iter()
-            .map(|e| e.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join("; ");
         log::debug!("config: unresolved [env] reference: {detail}");

@@ -195,7 +195,7 @@ async fn a_stream_closes_with_an_error_when_the_host_stops_answering() {
     let down = Arc::new(AtomicBool::new(false));
     let front = {
         let down = Arc::clone(&down);
-        move |conn: trillium::Conn| {
+        move |conn: Conn| {
             let down = Arc::clone(&down);
             async move {
                 match down.load(Ordering::SeqCst) {

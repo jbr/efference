@@ -33,11 +33,7 @@ fn assistant_calling(call_id: &str) -> Payload {
 
 /// The paired result — a `tool_result` tail, which projects as a **user** message.
 fn tool_result(call_id: &str) -> Payload {
-    Payload::tool_result(
-        call_id,
-        crate::log::RawResult::text("ok"),
-        crate::log::WireState::Raw,
-    )
+    Payload::tool_result(call_id, RawResult::text("ok"), crate::log::WireState::Raw)
 }
 
 /// A record-only assistant entry: an upstream attempt that died before finalizing.
@@ -115,8 +111,7 @@ fn a_finished_turn_declines_in_every_dialect() {
             annotations: vec![],
         }],
     }]);
-    let serde_json::Value::Object(message) =
-        serde_json::json!({ "role": "assistant", "content": "done" })
+    let Value::Object(message) = serde_json::json!({ "role": "assistant", "content": "done" })
     else {
         unreachable!()
     };

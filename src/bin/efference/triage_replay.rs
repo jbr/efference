@@ -45,7 +45,7 @@ pub(crate) async fn triage(
     // that provider projects. If the current config cannot resolve the selection,
     // the boot identity supplies the historical shapes; a legacy log falls back to
     // the defaults (docs/log-and-projection.md).
-    let inference = crate::inference::resolve(
+    let inference = inference::resolve(
         Some(model),
         None,
         triage.clone().map(|triage| {
@@ -62,17 +62,11 @@ pub(crate) async fn triage(
         Ok(inference) => (Some(inference.main().1.provider), model),
         Err(_) => (
             recorded_identity.map(|identity| identity.provider),
-            recorded_identity
-                .map(|identity| identity.model.as_str())
-                .unwrap_or(model),
+            recorded_identity.map_or(model, |identity| identity.model.as_str()),
         ),
     };
-    let placement = provider
-        .map(|p| p.image_placement(placement_model))
-        .unwrap_or_default();
-    let breakpoint = provider
-        .map(|p| p.breakpoint_placement(placement_model))
-        .unwrap_or_default();
+    let placement = provider.map_or_default(|p| p.image_placement(placement_model));
+    let breakpoint = provider.map_or_default(|p| p.breakpoint_placement(placement_model));
     let all = recorded_triages(&entries);
     let mut selected: Vec<&Recorded> = match seq.is_empty() {
         false => all.iter().filter(|g| seq.contains(&g.seq)).collect(),

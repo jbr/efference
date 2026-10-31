@@ -29,9 +29,7 @@ pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
     // reloads the file as the base), exactly like a deleted key — the same honest frontier of
     // the additive fold, reached by a tightening that is written rather than removed.
     for (command, stance) in &to.commands {
-        if *stance == crate::config::CommandStance::Clear
-            && from.commands.get(command) != Some(stance)
-        {
+        if *stance == CommandStance::Clear && from.commands.get(command) != Some(stance) {
             out.push(ConfigChange::Command {
                 command: command.clone(),
             });
@@ -87,7 +85,7 @@ pub(super) fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
                     .strip_suffix(&crate::mcp::namespace_glob(""))
                     .unwrap_or(name)
                     .to_string(),
-                false => tools::table_key(name),
+                false => table_key(name),
             };
             let table = doc
                 .as_table_mut()

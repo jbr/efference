@@ -419,7 +419,7 @@ impl Existing {
                 let base_url = string("base-url")?;
                 let provider = match (string("provider")?, string("dialect")?) {
                     (Some(provider), _) => provider,
-                    (None, Some(dialect)) => crate::api::WireDialect::from_name(&dialect)
+                    (None, Some(dialect)) => WireDialect::from_name(&dialect)
                         .map(|dialect| Provider::Custom(dialect).name().to_string())
                         .map_err(|error| where_(&error.to_string()))?,
                     (None, None) => {

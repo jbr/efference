@@ -442,8 +442,7 @@ impl Screenplay<'_> {
                     .iter()
                     .rev()
                     .find(|(off, _)| *off <= byte)
-                    .map(|(_, x)| *x)
-                    .unwrap_or(0);
+                    .map_or(0, |(_, x)| *x);
                 return Some((x, y));
             }
         }

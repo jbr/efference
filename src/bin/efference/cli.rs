@@ -4,7 +4,7 @@ use super::*;
 
 /// The base directory for all session dirs (gitignored). Each session is `.efference/<id>/`,
 /// holding its standard-named log and config (docs/permissions.md).
-pub(crate) const BASE_DIR: &str = efference::daemon::SESSION_BASE;
+pub(crate) const BASE_DIR: &str = daemon::SESSION_BASE;
 
 #[cfg(feature = "dev")]
 pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
@@ -108,8 +108,8 @@ pub(crate) struct HostFlags {
 impl HostFlags {
     /// The web-bind flags, with the global `--bind`, as the host lays them over
     /// its `[host]` table.
-    pub(crate) fn bind_flags(&self, bind: Option<String>) -> crate::serve::BindFlags {
-        crate::serve::BindFlags {
+    pub(crate) fn bind_flags(&self, bind: Option<String>) -> serve::BindFlags {
+        serve::BindFlags {
             bind,
             public_url: self.public_url.clone(),
             tls_cert: self.tls_cert.clone(),

@@ -100,7 +100,7 @@ impl Form {
         match target {
             Target::Connection(connection) => *path = vec![Chip::Connection(connection)],
             Target::Group { connection, group } => {
-                *path = vec![Chip::Connection(connection), Chip::Group(group)]
+                *path = vec![Chip::Connection(connection), Chip::Group(group)];
             }
             _ => return Action::Continue,
         }

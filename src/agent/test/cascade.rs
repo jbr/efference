@@ -6,14 +6,14 @@ use super::*;
 struct NeverGates;
 
 impl Frontend for NeverGates {
-    async fn read_user_turn(&mut self) -> Option<crate::frontend::SubmittedTurn> {
+    async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
         unreachable!("the loop is not running")
     }
     async fn approve(
         &mut self,
         call: &ToolCall,
         _bound: Option<&crate::control_tools::BoundAction>,
-        _grant: Option<crate::policy::GateGrant>,
+        _grant: Option<policy::GateGrant>,
     ) -> Approval {
         panic!(
             "a call naming no tool reached the human gate: {}",
@@ -50,7 +50,7 @@ impl Spotter for NeverAsked {
 pub(super) struct RecordingFrontend {
     pub(super) decisions: Vec<(String, Option<crate::control_tools::BoundAction>)>,
     /// The grant each gate offered, in the order the gates were reached.
-    pub(super) grants: Vec<Option<crate::policy::GateGrant>>,
+    pub(super) grants: Vec<Option<policy::GateGrant>>,
     decision: Approval,
 }
 
@@ -66,14 +66,14 @@ impl RecordingFrontend {
 }
 
 impl Frontend for RecordingFrontend {
-    async fn read_user_turn(&mut self) -> Option<crate::frontend::SubmittedTurn> {
+    async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
         unreachable!("the loop is not running")
     }
     async fn approve(
         &mut self,
         call: &ToolCall,
         bound: Option<&crate::control_tools::BoundAction>,
-        grant: Option<crate::policy::GateGrant>,
+        grant: Option<policy::GateGrant>,
     ) -> Approval {
         self.decisions.push((call.name.clone(), bound.cloned()));
         self.grants.push(grant);
@@ -111,7 +111,7 @@ impl Spotter for RecordingSpotter {
                 stance: self.stance,
                 reason: self.reason.clone(),
             },
-            origin: crate::log::Origin::Model,
+            origin: Origin::Model,
             axes: None,
             usage: None,
         }
@@ -149,7 +149,7 @@ pub(super) fn approve_call() -> ToolCall {
 /// A leaf the child holds, bound to the parent's approval.
 pub(super) fn bound_leaf(command: &str) -> crate::control_tools::BoundAction {
     crate::control_tools::BoundAction {
-        name: crate::bash::NAME.into(),
+        name: bash::NAME.into(),
         input: serde_json::json!({ "command": command, "intent": "whatever" }),
         intent: Some("whatever".into()),
         cwd: std::env::current_dir().unwrap(),
@@ -172,7 +172,7 @@ async fn a_granted_decide_clears_blind() {
         stance: Stance::Gate,
         reason: "would gate".into(),
     };
-    let approval = super::step::judge(
+    let approval = judge(
         &mut frontend,
         &shared,
         &spotter,
@@ -204,7 +204,7 @@ async fn an_ungranted_approve_clears_on_the_leafs_fast_path() {
         stance: Stance::Gate,
         reason: "would gate".into(),
     };
-    let approval = super::step::judge(
+    let approval = judge(
         &mut frontend,
         &shared,
         &spotter,
@@ -240,7 +240,7 @@ async fn a_leaf_outside_the_grants_gates_with_the_bound_action() {
         reason: "outside the mission".into(),
     };
     let bound = bound_leaf("rm -rf ./build");
-    let approval = super::step::judge(
+    let approval = judge(
         &mut frontend,
         &shared,
         &spotter,
@@ -289,7 +289,7 @@ async fn the_spotter_judges_the_leaf_with_the_chain() {
         chain: vec!["child".into(), "grandchild".into()],
         ..bound_leaf("rm -rf ./build")
     };
-    let _ = super::step::judge(
+    let _ = judge(
         &mut frontend,
         &shared,
         &spotter,
@@ -369,7 +369,7 @@ async fn an_archive_without_a_succession_goes_to_the_spotter() {
         "toolu_archive",
         serde_json::json!({ "agent": "brisk-raven" }),
     );
-    let approval = super::step::judge(
+    let approval = judge(
         &mut frontend,
         &shared,
         &spotter,
@@ -415,7 +415,7 @@ async fn a_deny_or_an_escalate_clears_on_the_fast_path() {
         },
         decide_call("escalate"),
     ] {
-        let approval = super::step::judge(
+        let approval = judge(
             &mut NeverGates,
             &shared,
             &NeverAsked,

@@ -301,7 +301,7 @@ fn keychain_is_shown_unavailable_without_a_store() {
         .unwrap();
     // The first select is the provider menu; the capture cancels there, so
     // drive the key-source question directly.
-    let result = runtime.block_on(super::flow::api_key_source(
+    let result = runtime.block_on(flow::api_key_source(
         &mut capture,
         &probe,
         &Target::named(Provider::Anthropic),

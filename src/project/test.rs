@@ -512,7 +512,7 @@ fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
     );
 
     let line = serde_json::to_string(&appended).unwrap();
-    let read_back: crate::log::LogEntry = serde_json::from_str(&line).unwrap();
+    let read_back: LogEntry = serde_json::from_str(&line).unwrap();
     match &read_back.payload {
         Payload::Assistant {
             excluded: Some(crate::log::Exclusion::Upstream(why)),

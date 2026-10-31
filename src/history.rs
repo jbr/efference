@@ -285,11 +285,10 @@ impl History {
         let Some(connection) = self.connect() else {
             return Vec::new();
         };
-        let mut statement = match connection
+        let Ok(mut statement) = connection
             .prepare("SELECT at, cwd, config_key, connection, provider, model FROM model_picks")
-        {
-            Ok(statement) => statement,
-            Err(_) => return Vec::new(),
+        else {
+            return Vec::new();
         };
         statement
             .query_map([], |row| {
@@ -302,8 +301,7 @@ impl History {
                     model: row.get(5)?,
                 })
             })
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+            .map_or_default(|rows| rows.filter_map(Result::ok).collect())
     }
 
     /// The picks across all connections, most decayed weight first with project
@@ -447,8 +445,7 @@ fn weight(at: i64, now: i64) -> f64 {
 pub fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs() as i64)
-        .unwrap_or(0)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
 
 #[cfg(test)]

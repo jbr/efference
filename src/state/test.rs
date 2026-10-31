@@ -16,8 +16,7 @@ fn dir() -> PathBuf {
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or(0)
+            .map_or(0, |elapsed| elapsed.as_nanos())
     ));
     std::fs::create_dir_all(&dir).unwrap();
     dir

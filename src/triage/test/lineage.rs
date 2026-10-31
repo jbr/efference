@@ -101,7 +101,7 @@ fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_o
         &[],
     );
     let triage_input = encode_responses(&triage, "", PromptCachePolicy::Explicit);
-    let triage_json: Vec<serde_json::Value> = triage_input
+    let triage_json: Vec<Value> = triage_input
         .iter()
         .map(|item| serde_json::to_value(item).unwrap())
         .collect();
@@ -138,7 +138,7 @@ fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_o
     let mut canonical = crate::project::project_semantic(&log);
     canonical.push(WireTurn::Breakpoint);
     let canonical_input = encode_responses(&canonical, "", PromptCachePolicy::Explicit);
-    let canonical_json: Vec<serde_json::Value> = canonical_input
+    let canonical_json: Vec<Value> = canonical_input
         .iter()
         .map(|item| serde_json::to_value(item).unwrap())
         .collect();
@@ -146,14 +146,14 @@ fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_o
     // write instruction, not content: the triage's sits at the frontier, the
     // canonical request's at its own tail, and the provider matches the prefix on
     // what is between them (docs/log-and-projection.md).
-    fn unmarked(item: &serde_json::Value) -> serde_json::Value {
+    fn unmarked(item: &Value) -> Value {
         match item {
-            serde_json::Value::Object(map) => map
+            Value::Object(map) => map
                 .iter()
                 .filter(|(key, _)| key.as_str() != "prompt_cache_breakpoint")
                 .map(|(key, value)| (key.clone(), unmarked(value)))
                 .collect(),
-            serde_json::Value::Array(items) => items.iter().map(unmarked).collect(),
+            Value::Array(items) => items.iter().map(unmarked).collect(),
             other => other.clone(),
         }
     }

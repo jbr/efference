@@ -146,13 +146,11 @@ fn pick_connection<P: Prompter>(
 /// leaves no target, and the model is typed instead.
 fn target_for(connection: &ExistingConnection) -> Target {
     let provider = match connection.provider.strip_prefix("custom-") {
-        Some(dialect) => crate::api::WireDialect::from_name(dialect)
-            .ok()
-            .map(crate::api::Provider::Custom),
-        None => crate::api::Provider::from_name(&connection.provider).ok(),
+        Some(dialect) => WireDialect::from_name(dialect).ok().map(Provider::Custom),
+        None => Provider::from_name(&connection.provider).ok(),
     };
     Target {
-        provider: provider.unwrap_or(crate::api::Provider::Anthropic),
+        provider: provider.unwrap_or(Provider::Anthropic),
         base: connection.base_url.clone(),
     }
 }
@@ -160,7 +158,7 @@ fn target_for(connection: &ExistingConnection) -> Target {
 /// The prefill for a typed model id: the provider's cheap band where it has
 /// one. There is no id that is right across endpoints otherwise.
 fn hint(connection: &ExistingConnection) -> Option<&'static str> {
-    crate::api::Provider::from_name(&connection.provider)
+    Provider::from_name(&connection.provider)
         .ok()
         .and_then(|provider| provider.default_spotter_model())
 }

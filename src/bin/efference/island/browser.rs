@@ -169,8 +169,7 @@ impl Screen {
         let _ = write!(err, "{text}\r\n");
         let _ = err.flush();
         let columns = crossterm::terminal::size()
-            .map(|(c, _)| c as usize)
-            .unwrap_or(80)
+            .map_or(80, |(c, _)| c as usize)
             .max(1);
         let width = unicode_width::UnicodeWidthStr::width(text);
         self.rows.push(width.div_ceil(columns).max(1));

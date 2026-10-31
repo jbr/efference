@@ -84,7 +84,7 @@ async fn a_described_completions_connection_round_trips() {
             .any(|line| line.eq_ignore_ascii_case("authorization: Bearer KEY")),
         "{head}"
     );
-    let body: serde_json::Value = serde_json::from_str(body).unwrap();
+    let body: Value = serde_json::from_str(body).unwrap();
     assert_eq!(body["model"], "mistral-small-latest");
     assert_eq!(
         body["messages"][0],

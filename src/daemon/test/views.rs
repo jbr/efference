@@ -6,7 +6,7 @@ use super::*;
 /// transport diagnostic into the log (docs/transport.md).
 #[test]
 fn state_reports_upstream_failure() {
-    let failure = crate::api::upstream_failure_state();
+    let failure = upstream_failure_state();
     let (shared, _turns_rx) = Session::with_role_scratch_and_upstream_failure(
         std::env::current_dir().unwrap(),
         Log::in_memory(),
@@ -33,10 +33,10 @@ fn state_reports_upstream_failure() {
 /// that finalizes clears it (docs/transport.md).
 #[test]
 fn state_reports_the_retry_in_flight() {
-    let retry = crate::api::upstream_retry_state();
-    let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
+    let retry = upstream_retry_state();
+    let (shared, _turns_rx) = Session::full(SessionParts {
         upstream_retry: Arc::clone(&retry),
-        ..crate::daemon::SessionParts::new(
+        ..SessionParts::new(
             crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             Log::in_memory(),
         )
@@ -686,9 +686,9 @@ fn state_is_last_seq_plus_exactly_the_topics() {
 #[test]
 fn state_reports_plan_windows_under_usage() {
     let plan = crate::api::plan_state();
-    let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
+    let (shared, _turns_rx) = Session::full(SessionParts {
         plan: Arc::clone(&plan),
-        ..crate::daemon::SessionParts::new(
+        ..SessionParts::new(
             crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             Log::in_memory(),
         )
@@ -699,7 +699,7 @@ fn state_reports_plan_windows_under_usage() {
     *plan.lock().unwrap() = Some(crate::api::PlanSnapshot {
         plan_type: Some("plus".into()),
         active: None,
-        limits: std::collections::BTreeMap::from([(
+        limits: BTreeMap::from([(
             "codex".into(),
             crate::api::PlanLimit {
                 name: None,

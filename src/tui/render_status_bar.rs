@@ -50,7 +50,9 @@ impl<'a> InteractiveState<'a> {
         // read *while* something streams, so it must not be the thing that gets
         // truncated when the status message is long.
         let indicators = [
-            self.frame_cost.as_ref().and_then(|c| c.readout()),
+            self.frame_cost
+                .as_ref()
+                .and_then(super::frame_cost::FrameCost::readout),
             super::state::pace_indicator(self.pace),
             // What the loop is waiting on (the `current_operations` topic): it leads
             // the transport chips, which qualify it.
@@ -81,7 +83,7 @@ impl<'a> InteractiveState<'a> {
         let lead = self
             .starting
             .as_ref()
-            .map(|starting| starting.line())
+            .map(super::starting::StartingView::line)
             .or_else(|| self.cold_line());
         let lead_len = lead.as_ref().map_or(0, |l| l.chars().count());
         let text = match &lead {

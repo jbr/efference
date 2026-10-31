@@ -21,7 +21,7 @@ fn lines(s: &str) -> Vec<&str> {
 
 /// `render_hunks` over lines that were all shown to triage.
 fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], verdict: &Triaged) -> String {
-    crate::project::render::render_hunks(lines, ranges, verdict, lines.len())
+    render::render_hunks(lines, ranges, verdict, lines.len())
 }
 
 /// The canonical render over a stored verdict (docs/triage.md): `all` is the

@@ -9,7 +9,7 @@ use crate::env_table::Masker;
 
 /// Where a dropped fragment is kept, computed the way an open does — so a test
 /// can clear a leftover from an earlier run, or leave a decoy there.
-fn fragment_path(log: &std::path::Path, byte_offset: u64) -> PathBuf {
+fn fragment_path(log: &Path, byte_offset: u64) -> PathBuf {
     let mut name = log.as_os_str().to_os_string();
     name.push(format!(".torn-{byte_offset}"));
     PathBuf::from(name)
@@ -23,9 +23,8 @@ fn open_refuses_a_log_another_writer_holds() {
     let path = temp_path("held");
     let first = Log::create(&path, None).unwrap();
 
-    let error = match Log::open(&path) {
-        Ok(_) => panic!("a log with a live writer must not open"),
-        Err(error) => error,
+    let Err(error) = Log::open(&path) else {
+        panic!("a log with a live writer must not open");
     };
     assert!(matches!(error, OpenError::Held { .. }), "{error:?}");
     assert!(
@@ -86,12 +85,11 @@ fn two_opens_race_and_exactly_one_wins() {
 fn open_refuses_a_missing_file_without_creating_it() {
     let path = temp_path("absent-open");
 
-    let error = match Log::open(&path) {
-        Ok(_) => panic!("there is no log at that path to continue"),
-        Err(error) => error,
+    let Err(error) = Log::open(&path) else {
+        panic!("there is no log at that path to continue");
     };
     match error {
-        OpenError::Io { error, .. } => assert_eq!(error.kind(), std::io::ErrorKind::NotFound),
+        OpenError::Io { error, .. } => assert_eq!(error.kind(), io::ErrorKind::NotFound),
         other => panic!("expected the missing file itself, got {other:?}"),
     }
     assert!(!path.exists(), "a refused open leaves no file behind");
@@ -247,9 +245,8 @@ fn a_fragment_file_from_earlier_is_not_overwritten() {
     let earlier = b"a fragment an earlier repair kept";
     std::fs::write(&fragment, earlier).unwrap();
 
-    let error = match Log::open(&path) {
-        Ok(_) => panic!("the log must not be cut while its bytes have somewhere else to go"),
-        Err(error) => error,
+    let Err(error) = Log::open(&path) else {
+        panic!("the log must not be cut while its bytes have somewhere else to go");
     };
     assert!(matches!(error, OpenError::Io { .. }), "{error:?}");
     assert_eq!(
@@ -326,9 +323,8 @@ fn an_unreadable_log_is_refused_with_its_bytes_untouched() {
         let path = temp_path(&format!("refused-{name}"));
         std::fs::write(&path, &bytes).unwrap();
 
-        let error = match Log::open(&path) {
-            Ok(_) => panic!("{name}: a log this build will not read must not be continued"),
-            Err(error) => error,
+        let Err(error) = Log::open(&path) else {
+            panic!("{name}: a log this build will not read must not be continued");
         };
         assert!(
             matches!(error, OpenError::Load(_)),

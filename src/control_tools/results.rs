@@ -104,9 +104,10 @@ impl ImageResult {
         use base64::Engine as _;
         Self::Inline {
             data: base64::engine::general_purpose::STANDARD.encode(bytes),
-            mime_type: format
-                .map(|f| f.to_mime_type().to_string())
-                .unwrap_or_else(|| "application/octet-stream".into()),
+            mime_type: format.map_or_else(
+                || "application/octet-stream".into(),
+                |f| f.to_mime_type().to_string(),
+            ),
             bytes: bytes.len(),
         }
     }

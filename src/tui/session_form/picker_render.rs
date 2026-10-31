@@ -81,12 +81,11 @@ impl Form {
                 cells: vec![
                     row.id.clone(),
                     row.name.clone(),
-                    row.context.map(context_label).unwrap_or_default(),
-                    row.price.map(price_label).unwrap_or_default(),
+                    row.context.map_or_default(context_label),
+                    row.price.map_or_default(price_label),
                     row.created
                         .filter(|created| *created > 0)
-                        .map(|created| age_label(created, now))
-                        .unwrap_or_default(),
+                        .map_or_default(|created| age_label(created, now)),
                     row.trailer.clone(),
                 ],
                 dim: row.dim,

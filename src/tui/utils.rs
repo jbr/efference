@@ -6,19 +6,15 @@ use std::{env, io};
 /// Detect if the terminal supports mouse cursor shape changes
 pub(super) fn supports_cursor_shape() -> bool {
     // Kitty, WezTerm, and some other modern terminals support OSC 22
-    env::var("TERM_PROGRAM")
-        .map(|t| t == "kitty" || t == "WezTerm")
-        .unwrap_or(false)
-        || env::var("TERM")
-            .map(|t| t.contains("kitty"))
-            .unwrap_or(false)
+    env::var("TERM_PROGRAM").is_ok_and(|t| t == "kitty" || t == "WezTerm")
+        || env::var("TERM").is_ok_and(|t| t.contains("kitty"))
 }
 
 /// Set the mouse cursor shape (for terminals that support it)
 pub(super) fn set_cursor_shape<B: Backend + io::Write>(backend: &mut B, shape: &str) {
     // OSC 22 sequence: \x1b]22;<shape>\x07
     // Supported shapes: default, pointer, text, etc.
-    let _ = queue!(backend, Print(format!("\x1b]22;{}\x07", shape)));
+    let _ = queue!(backend, Print(format!("\x1b]22;{shape}\x07")));
     let _ = Backend::flush(backend);
 }
 

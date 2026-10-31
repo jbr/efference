@@ -56,7 +56,7 @@ impl<'a> InteractiveState<'a> {
                 if let Some(label) = &self.viewing {
                     self.composing = false;
                     self.strip_focus = self.leading_strip_verb();
-                    self.ui.debug_message = super::view_status(label).into();
+                    self.ui.debug_message = view_status(label).into();
                 } else {
                     self.composing = true;
                     self.strip_focus = None;

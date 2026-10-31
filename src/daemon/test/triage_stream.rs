@@ -86,7 +86,7 @@ async fn run(own: bool) -> (Vec<(&'static str, Vec<String>, String)>, Arc<Sessio
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     wait_until("the turn finishes", || {
         main_requests.load(Ordering::SeqCst) >= if own { 2 } else { 3 }
-            && session.loop_phase() == crate::daemon::LoopPhase::Idle
+            && session.loop_phase() == LoopPhase::Idle
     })
     .await;
     host.shut_down().await;
@@ -96,7 +96,7 @@ async fn run(own: bool) -> (Vec<(&'static str, Vec<String>, String)>, Arc<Sessio
         match delta {
             StreamDelta::TriageText { call_ids, text } => seen.push(("text", call_ids, text)),
             StreamDelta::TriageThinking { call_ids, text } => {
-                seen.push(("thinking", call_ids, text))
+                seen.push(("thinking", call_ids, text));
             }
             _ => {}
         }

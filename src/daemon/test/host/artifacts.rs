@@ -27,13 +27,10 @@ async fn loopback_get(url: &str) -> String {
     let request = format!("GET {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.unwrap();
     let mut response = Vec::new();
-    tokio::time::timeout(
-        std::time::Duration::from_secs(3),
-        stream.read_to_end(&mut response),
-    )
-    .await
-    .expect("the listener answers and closes")
-    .unwrap();
+    tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response))
+        .await
+        .expect("the listener answers and closes")
+        .unwrap();
     String::from_utf8_lossy(&response).into_owned()
 }
 

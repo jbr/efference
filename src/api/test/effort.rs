@@ -237,10 +237,7 @@ fn effort_levels_url_per_provider() {
 /// pairing with a 400. Any other spelling has no known coupling.
 #[test]
 fn the_two_spellings_requiring_thinking_are_those_two() {
-    assert_eq!(
-        super::thinking::EFFORTS_REQUIRING_THINKING,
-        ["xhigh", "max"]
-    );
+    assert_eq!(thinking::EFFORTS_REQUIRING_THINKING, ["xhigh", "max"]);
 }
 
 /// The one coupling between the level axis and the type axis, checked at boot:
@@ -316,19 +313,16 @@ fn a_declared_list_bounds_the_level_and_an_undeclared_source_does_not() {
 
 /// Test fixture: a [`ModelCapabilities`] with the effort metadata set and the
 /// other fields at neutral values.
-fn caps_with_effort_levels(
-    levels: Option<&[&str]>,
-    default: Option<&str>,
-) -> crate::api::ModelCapabilities {
-    crate::api::ModelCapabilities {
+fn caps_with_effort_levels(levels: Option<&[&str]>, default: Option<&str>) -> ModelCapabilities {
+    ModelCapabilities {
         context_length: Some(200_000),
         prompt_cache: PromptCachePolicy::Explicit,
-        supported_efforts: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
+        supported_efforts: levels.map(|l| l.iter().map(ToString::to_string).collect()),
         default_effort: default.map(String::from),
         // A fixture that declares levels is a source that declared them, which
         // is what makes the boot check apply.
         validates_efforts: levels.is_some(),
-        ..crate::api::ModelCapabilities::unknown()
+        ..ModelCapabilities::unknown()
     }
 }
 
@@ -426,7 +420,7 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
         let client = Client::new(endpoint, "claude-opus-5", "sys", None)
             .with_thinking(ThinkingSupport {
                 adaptive: true,
-                off: super::thinking::ThinkingOff::Disabled,
+                off: ThinkingOff::Disabled,
             })
             .with_effort(effort.map(String::from));
         if sse {

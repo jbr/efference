@@ -252,7 +252,7 @@ fn the_current_mark_is_bolder_than_the_upcoming_one() {
     let current = play.cell(cx, cy);
     let upcoming = play.cell(ux, uy);
     assert!(
-        current.modifier.contains(ratatui::style::Modifier::BOLD) || current.fg != upcoming.fg,
+        current.modifier.contains(Modifier::BOLD) || current.fg != upcoming.fg,
         "current {current:?} vs upcoming {upcoming:?}"
     );
 }

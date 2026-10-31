@@ -76,7 +76,7 @@ fn serve(
                 }
                 request.extend_from_slice(&buf[..n]);
             }
-            let sent: serde_json::Value = serde_json::from_slice(&request[body_at..]).unwrap();
+            let sent: Value = serde_json::from_slice(&request[body_at..]).unwrap();
             record
                 .lock()
                 .unwrap()

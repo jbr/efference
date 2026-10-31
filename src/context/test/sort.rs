@@ -22,7 +22,7 @@ fn names(resolved: &Resolved) -> Vec<String> {
 }
 
 /// A file per line: `(basename, frontmatter body)`.
-fn write_group(dir: &std::path::Path, files: &[(&str, &str)]) {
+fn write_group(dir: &Path, files: &[(&str, &str)]) {
     let group = dir.join("group");
     std::fs::create_dir_all(&group).unwrap();
     for (name, text) in files {

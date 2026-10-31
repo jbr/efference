@@ -7,10 +7,7 @@ impl Session {
     /// Resolve `$TMPDIR` in a structured call's path fields against the frozen
     /// session env map ([`crate::expand`]) — the loop's one expansion choke
     /// point, upstream of classify/spot/exec. `Ok(None)` = untouched.
-    pub fn expand_call(
-        &self,
-        call: &crate::log::ToolCall,
-    ) -> Result<Option<crate::log::ToolCall>, String> {
+    pub fn expand_call(&self, call: &ToolCall) -> Result<Option<ToolCall>, String> {
         crate::expand::expand_call(&self.expander, call)
     }
 
@@ -238,8 +235,7 @@ impl Session {
             .unwrap()
             .entries()
             .last()
-            .map(|e| e.turn)
-            .unwrap_or(0)
+            .map_or(0, |e| e.turn)
     }
 
     /// A clone of the single entry at `seq` (== its index in the log), or `None`
@@ -258,7 +254,7 @@ impl Session {
     /// The calls that ran with the operator's consent, folded under the log lock so
     /// the whole log is never cloned (docs/permissions.md). The decision rung's
     /// precedent evidence.
-    pub(crate) fn consented_calls(&self) -> Vec<crate::log::ToolCall> {
+    pub(crate) fn consented_calls(&self) -> Vec<ToolCall> {
         crate::spotter::precedent::consented(self.log.lock().unwrap().entries())
     }
 }

@@ -36,8 +36,7 @@ pub(crate) fn sent(id: &str, landing: Landing, view: Option<&StatusView>, now: u
             }) => {
                 let handle = handle
                     .as_deref()
-                    .map(|handle| format!(" {handle}"))
-                    .unwrap_or_default();
+                    .map_or_default(|handle| format!(" {handle}"));
                 format!(
                     "answered: {id} has your answer to{handle} {:?} and goes on",
                     question.trim()
@@ -58,8 +57,7 @@ pub(crate) fn sent(id: &str, landing: Landing, view: Option<&StatusView>, now: u
                 let handle = held
                     .handle
                     .as_deref()
-                    .map(|handle| format!("{handle} "))
-                    .unwrap_or_default();
+                    .map_or_default(|handle| format!("{handle} "));
                 format!(
                     "queued: {id} is waiting for a decision on {handle}({}); it reads this after \
                      the decision",
@@ -148,8 +146,7 @@ pub(crate) fn not_yours_to_escalate(id: &str, held: &HeldCall, reviewer: &Review
     let seq = held
         .handle
         .as_deref()
-        .map(|handle| format!(" (seq {handle})"))
-        .unwrap_or_default();
+        .map_or_default(|handle| format!(" (seq {handle})"));
     format!(
         "refused: {id}'s {}{seq} is routed to {asked}, not to you — escalate passes on a \
          gate routed to you; allow or deny still decide it",

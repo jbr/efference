@@ -147,7 +147,7 @@ fn run(argv: &[String], name: &str, input: Option<&str>) -> Result<Output, Strin
         let output = child
             .wait_with_output()
             .map_err(|error| format!("could not wait for `{program}`: {error}"))?;
-        let written = writer.map(|writer| writer.join());
+        let written = writer.map(std::thread::ScopedJoinHandle::join);
         // A command that exits without reading its input reports its own failure,
         // which says more than the broken pipe would.
         if output.status.success()
@@ -164,7 +164,7 @@ fn succeeded(argv: &[String], output: &Output) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
-    let program = argv.first().map(String::as_str).unwrap_or_default();
+    let program = argv.first().map_or_default(String::as_str);
     let ended = match output.status.code() {
         Some(code) => format!("exited with status {code}"),
         None => "was ended by a signal".to_string(),

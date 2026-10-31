@@ -10,7 +10,7 @@ fn persist_config_change(path: &Path, change: &ConfigChange) -> std::io::Result<
 }
 
 fn parse_str(text: &str) -> Config {
-    super::parse(Path::new("test.toml"), text).expect("valid config")
+    parse(Path::new("test.toml"), text).expect("valid config")
 }
 
 // --- [context] preamble builder (docs/context.md) ---

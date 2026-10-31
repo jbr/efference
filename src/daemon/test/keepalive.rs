@@ -261,14 +261,14 @@ pub(super) fn serve_recording(
 ) -> (
     std::net::SocketAddr,
     Arc<std::sync::atomic::AtomicUsize>,
-    Arc<std::sync::Mutex<Vec<String>>>,
+    Arc<Mutex<Vec<String>>>,
 ) {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let seen = Arc::clone(&count);
-    let bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let bodies = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&bodies);
     std::thread::spawn(move || {
         for sock in listener.incoming() {
@@ -293,10 +293,9 @@ pub(super) fn serve_recording(
             recorded.lock().unwrap().push(
                 request
                     .split_once("\r\n\r\n")
-                    .map(|(_, body)| body.to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|(_, body)| body.to_string()),
             );
-            let n = seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let n = seen.fetch_add(1, Ordering::SeqCst);
             let (status, body) = reply(n);
             let _ = sock.write_all(
                 format!(
@@ -314,13 +313,13 @@ pub(super) fn serve_recording(
 
 /// The main lineage's loop as the runtime spawns it, with the auto envelope.
 fn main_loop(
-    client: Arc<crate::api::Client>,
+    client: Arc<Client>,
     shared: Arc<Session>,
     tools: Vec<Value>,
     ping_at: Duration,
     prices: Option<TokenPrices>,
-) -> impl std::future::Future<Output = ()> {
-    super::keepalive::keepalive_loop(
+) -> impl Future<Output = ()> {
+    keepalive_loop(
         KeepaliveSpec {
             lineage: CacheLineage::Main,
             client,
@@ -337,7 +336,7 @@ fn main_loop(
 pub(super) fn pinged_session(
     addr: std::net::SocketAddr,
     prefix: u64,
-) -> (Arc<Session>, Arc<crate::api::Client>) {
+) -> (Arc<Session>, Arc<Client>) {
     use crate::api::{Client, Endpoint, Provider};
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared
@@ -390,7 +389,7 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
         Duration::from_millis(1),
         None,
     ));
-    let sent = |n| count.load(std::sync::atomic::Ordering::SeqCst) == n;
+    let sent = |n| count.load(Ordering::SeqCst) == n;
     let wait_for = async |what: &dyn Fn() -> bool| {
         for _ in 0..80 {
             if what() {
@@ -432,7 +431,7 @@ async fn a_permanent_rejection_ends_the_loop() {
         .await
         .expect("the loop returns")
         .unwrap();
-    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
     let stance = skipped(&shared);
     assert_eq!(stance["reason"], "rejected");
     assert!(stance["detail"].as_str().unwrap().contains("400"));
@@ -457,7 +456,7 @@ async fn an_exhausted_limit_pauses_until_the_next_turn() {
         Duration::from_millis(1),
         None,
     ));
-    let sent = |n| count.load(std::sync::atomic::Ordering::SeqCst) == n;
+    let sent = |n| count.load(Ordering::SeqCst) == n;
     let wait_for = async |what: &dyn Fn() -> bool| {
         for _ in 0..80 {
             if what() {

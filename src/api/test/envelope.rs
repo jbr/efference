@@ -290,7 +290,7 @@ fn openrouter_envelope_carries_the_prompt_cache_key() {
 fn the_cache_diagnostics_object_sits_after_messages() {
     let messages = [ApiMessage {
         role: crate::project::Role::User,
-        content: vec![crate::project::ApiBlock::Text {
+        content: vec![ApiBlock::Text {
             text: "hello".into(),
             cache_control: None,
         }],
@@ -455,7 +455,7 @@ fn a_pinned_upstream_renders_as_the_provider_object() {
     let tools: [Value; 0] = [];
     let messages = [ApiMessage {
         role: crate::project::Role::User,
-        content: vec![crate::project::ApiBlock::Text {
+        content: vec![ApiBlock::Text {
             text: "hi".into(),
             cache_control: None,
         }],

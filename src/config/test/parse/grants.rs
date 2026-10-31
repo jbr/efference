@@ -65,7 +65,7 @@ fn parses_reserved_extends_pointer() {
 /// whole file — no silent skip, no partial recovery.
 #[test]
 fn non_simple_command_key_fails_the_file() {
-    let err = super::parse(Path::new("bad.toml"), "[commands]\n\"git | rm\" = true\n").unwrap_err();
+    let err = parse(Path::new("bad.toml"), "[commands]\n\"git | rm\" = true\n").unwrap_err();
     assert!(matches!(
         err,
         LoadError::Validate(_, ValidationError::CommandNotSimple(_))
@@ -100,7 +100,7 @@ fn command_values_parse_as_stances_and_bool_sugar() {
 /// other malformed entry — the vocabulary is closed, so a typo is loud rather than ignored.
 #[test]
 fn unknown_command_stance_fails_the_file() {
-    let err = super::parse(Path::new("bad.toml"), "[commands]\ncargo = \"maybe\"\n").unwrap_err();
+    let err = parse(Path::new("bad.toml"), "[commands]\ncargo = \"maybe\"\n").unwrap_err();
     assert!(matches!(err, LoadError::Parse(..)));
 }
 
@@ -124,7 +124,7 @@ fn carve_out_keys_pass_the_lexing_gate() {
 /// (docs/permissions.md).
 #[test]
 fn path_grant_table_names_an_unknown_key() {
-    let error = super::parse(Path::new("bad.toml"), "[paths]\n\".\" = { raed = true }\n")
+    let error = parse(Path::new("bad.toml"), "[paths]\n\".\" = { raed = true }\n")
         .unwrap_err()
         .to_string();
     assert!(error.contains("unknown field `raed`"), "{error}");

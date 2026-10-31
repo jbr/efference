@@ -10,7 +10,7 @@ use trillium_testing::TestServer;
 /// A temp file for one test, named for this process and cleared of what an earlier
 /// process with the same id left. A fixed name is shared by every process running the
 /// suite, so a concurrent run (another worktree's) would write over it mid-test.
-fn temp_file(name: &str) -> std::path::PathBuf {
+fn temp_file(name: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!("efference-{}-{name}", std::process::id()));
     let _ = std::fs::remove_file(&path);
     path
@@ -120,7 +120,7 @@ async fn test_client_at(shared: &Arc<Session>, id: &str) -> ControlClient {
             let shared = Arc::clone(&shared);
             async move { info.with_shared_state(shared) }
         }),
-        trillium_router::Router::new().all(
+        Router::new().all(
             format!("/sessions/{id}/*"),
             handler(
                 Transport::Socket { auth: None },

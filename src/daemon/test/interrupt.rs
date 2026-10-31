@@ -210,7 +210,7 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
         control: Some("stop-button".into()),
     });
     wait_until("the loop is idle", || {
-        session.loop_phase() == crate::daemon::LoopPhase::Idle
+        session.loop_phase() == LoopPhase::Idle
     })
     .await;
     // Room for a request the loop should not make.
@@ -320,7 +320,7 @@ async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
     session.interrupt(Default::default());
     open.store(true, Ordering::SeqCst);
     wait_until("the loop is idle", || {
-        session.loop_phase() == crate::daemon::LoopPhase::Idle
+        session.loop_phase() == LoopPhase::Idle
     })
     .await;
     release.store(true, Ordering::SeqCst);

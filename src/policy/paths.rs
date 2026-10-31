@@ -162,7 +162,7 @@ pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
-                out.push(component.as_os_str())
+                out.push(component.as_os_str());
             }
             Component::CurDir => {}
             Component::ParentDir => {

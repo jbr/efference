@@ -44,7 +44,7 @@ pub(crate) fn report(installed: &str, newest: &Release) -> Result<String, CliErr
         )),
         std::cmp::Ordering::Equal => out.push_str("\nThis is the newest release.\n"),
         std::cmp::Ordering::Less => {
-            out.push_str("\nThis build is newer than the newest release.\n")
+            out.push_str("\nThis build is newer than the newest release.\n");
         }
     }
     Ok(out)

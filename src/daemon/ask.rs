@@ -103,7 +103,7 @@ impl Session {
         self.moment(
             crate::log::MomentKind::Ask,
             self.supervisor(),
-            super::push::ask_body(&question_for_push),
+            push::ask_body(&question_for_push),
         );
         AskWait {
             session: self,
@@ -114,21 +114,16 @@ impl Session {
 
     /// The queued turns the pending ask returned undelivered, each with its sender
     /// (docs/process-monitor.md).
-    pub(crate) fn returned_by_ask(&self) -> Vec<super::status::Returned> {
-        self.ask
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|ask| {
-                ask.recalled
-                    .iter()
-                    .map(|turn| super::status::Returned {
-                        source: turn.source.clone(),
-                        text: turn.text.clone(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
+    pub(crate) fn returned_by_ask(&self) -> Vec<status::Returned> {
+        self.ask.lock().unwrap().as_ref().map_or_default(|ask| {
+            ask.recalled
+                .iter()
+                .map(|turn| status::Returned {
+                    source: turn.source.clone(),
+                    text: turn.text.clone(),
+                })
+                .collect()
+        })
     }
 
     /// The pending ask, if any.

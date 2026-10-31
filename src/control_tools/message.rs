@@ -79,8 +79,7 @@ impl Tool<Control> for Message {
                 let view = status_in(&state_of(&client).await?).ok();
                 let id = view
                     .as_ref()
-                    .map(|view| view.id.clone())
-                    .unwrap_or_else(|| self.agent.clone());
+                    .map_or_else(|| self.agent.clone(), |view| view.id.clone());
                 if blank && self.reply_to.is_none() {
                     return match client
                         .continue_loop(turn_source(&context).as_deref())

@@ -347,15 +347,19 @@ impl Client {
     /// same turn.
     pub fn begin_turn(&self) {
         if let Some(cell) = &self.turn_routing {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            *cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         }
     }
 
     /// The turn-routing token in hand, for tests and the daemon's view.
     pub fn turn_routing_token(&self) -> Option<String> {
-        self.turn_routing
-            .as_ref()
-            .and_then(|cell| cell.lock().unwrap_or_else(|e| e.into_inner()).clone())
+        self.turn_routing.as_ref().and_then(|cell| {
+            cell.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+        })
     }
 
     /// Clone the transport diagnostic cell the daemon exposes through `GET /state`.
@@ -385,7 +389,7 @@ impl Client {
     /// Carry the provider's app-attribution headers, if it has any
     /// ([`Provider::attribution`], docs/transport.md). Constant per provider, and
     /// headers rather than body, so they sit outside the cached prefix.
-    fn with_attribution(&self, conn: trillium_client::Conn) -> trillium_client::Conn {
+    fn with_attribution(&self, conn: Conn) -> Conn {
         self.endpoint
             .provider
             .attribution()
@@ -400,7 +404,7 @@ impl Client {
     /// no conversation to pin, and Anthropic has no sticky-routing concept at all —
     /// gating on the provider rather than sending the header everywhere keeps the
     /// design off the assumption that an unrecognized header is ignored.
-    fn with_session_id(&self, conn: trillium_client::Conn) -> trillium_client::Conn {
+    fn with_session_id(&self, conn: Conn) -> Conn {
         match (
             self.endpoint.provider.session_header(),
             &self.endpoint.session_id,
@@ -437,7 +441,10 @@ impl Client {
         let chain = self.cache_chain.as_ref()?;
         (self.origin.sends_the_loop_prompt() && self.endpoint.provider.cache_diagnostics_field())
             .then(|| CacheDiagnostics {
-                previous_message_id: chain.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                previous_message_id: chain
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
             })
     }
 
@@ -459,7 +466,9 @@ impl Client {
         else {
             return;
         };
-        *chain.lock().unwrap_or_else(|e| e.into_inner()) = Some(id.to_string());
+        *chain
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(id.to_string());
     }
 
     /// This client, off the cache chain (docs/transport.md): it sends no `diagnostics`
@@ -487,7 +496,7 @@ impl Client {
     /// The authenticated POST every request starts from. The `anthropic-version`
     /// header is part of the Messages dialect, not a provider identity, so it rides
     /// only that dialect (docs/transport.md).
-    fn post(&self) -> trillium_client::Conn {
+    fn post(&self) -> Conn {
         let conn = self
             .endpoint
             .authorize(self.http.post(self.url()), self.endpoint.auth_value.get())
@@ -517,7 +526,7 @@ impl Client {
     /// on every request, and the turn's sticky token once the backend has issued
     /// one. Both are transport-only — neither reaches the body, so neither can
     /// move the cached prefix; what they move is which machine sees it.
-    fn with_turn_routing(&self, conn: trillium_client::Conn) -> trillium_client::Conn {
+    fn with_turn_routing(&self, conn: Conn) -> Conn {
         let provider = &self.endpoint.provider;
         let conn = match provider.routing_hint_header() {
             Some(header) => conn.with_request_header(header, format!("model={}", self.model)),

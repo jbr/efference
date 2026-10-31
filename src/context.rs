@@ -283,8 +283,7 @@ pub fn resolve_with_child_env(
                 fields: split
                     .frontmatter
                     .as_ref()
-                    .map(|fm| fm.fields.clone())
-                    .unwrap_or_default(),
+                    .map_or_default(|fm| fm.fields.clone()),
             });
             items.push(match split.mode(&basename) {
                 Mode::Inline => Item::Inline {
@@ -377,7 +376,7 @@ fn walk_md(
         .map_err(|e| ResolveError::Io(dir.to_path_buf(), e))?
         .filter_map(Result::ok)
         .collect();
-    entries.sort_by_key(|e| e.file_name());
+    entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
         let name = entry.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {

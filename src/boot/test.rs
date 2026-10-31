@@ -61,12 +61,12 @@ impl Drop for Root {
 }
 
 /// `attempt`'s output, and the scratch dirs it minted, whether or not they still exist.
-pub(super) async fn minting<T>(attempt: impl std::future::Future<Output = T>) -> (T, Vec<PathBuf>) {
+pub(super) async fn minting<T>(attempt: impl Future<Output = T>) -> (T, Vec<PathBuf>) {
     use super::mint::MINTED_SCRATCH;
     MINTED_SCRATCH
         .scope(Default::default(), async {
             let output = attempt.await;
-            (output, MINTED_SCRATCH.with(|dirs| dirs.take()))
+            (output, MINTED_SCRATCH.with(std::cell::RefCell::take))
         })
         .await
 }
@@ -510,10 +510,7 @@ async fn concurrent_creations_of_one_name_yield_one_session() {
         "the winner's config snapshot survives"
     );
     assert!(
-        winner
-            .toolbox
-            .scratch_dir()
-            .is_some_and(|scratch| scratch.is_dir()),
+        winner.toolbox.scratch_dir().is_some_and(Path::is_dir),
         "and its scratch dir survives the loser's rollback"
     );
     drop_boot(winner);
@@ -552,7 +549,7 @@ fn the_attachment_store_is_readable_through_the_self_surface_deny() {
 fn the_header_records_detached() {
     let root = Root::new("detached-header");
     let mut detached = request(root.path(), "free", None);
-    assert!(!super::metadata::metadata(&detached).detached);
+    assert!(!metadata::metadata(&detached).detached);
     detached.detached = true;
-    assert!(super::metadata::metadata(&detached).detached);
+    assert!(metadata::metadata(&detached).detached);
 }

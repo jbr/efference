@@ -37,7 +37,7 @@ fn adopt_child(
         dir,
     )
     .unwrap();
-    boot.log = crate::persist::Log::create(&path, None).expect("a fresh log");
+    boot.log = Log::create(&path, None).expect("a fresh log");
     register.reserve(id, &roots.0).unwrap();
     host.adopt_with(
         id.into(),
@@ -66,7 +66,7 @@ fn adopt_worktree(
         dir.clone(),
     )
     .unwrap();
-    boot.log = crate::persist::Log::create(dir.join(crate::boot::LOG_NAME), None).unwrap();
+    boot.log = Log::create(dir.join(crate::boot::LOG_NAME), None).unwrap();
     register.reserve(id, &roots.0).unwrap();
     host.adopt(id.into(), SessionRuntime::start(boot, host.swansong()))
         .unwrap();

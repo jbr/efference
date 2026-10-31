@@ -163,7 +163,7 @@ async fn cancel_at_any_prompt_writes_nothing() {
 
 #[test]
 fn provider_errors_read_as_one_line() {
-    let describe = super::flow::describe;
+    let describe = flow::describe;
     assert_eq!(
         describe(
             r#"GET https://api.openai.com/v1/models returned 401 Unauthorized: {"error":{"message":"Incorrect API key","type":"invalid_request_error"}}"#
@@ -194,10 +194,7 @@ fn a_described_connection_without_auth_reads_as_no_credential() {
         "[connections.ollama]\ndialect = \"completions\"\nbase-url = \"http://localhost:11434/v1\"\n",
     )
     .expect("a described connection may omit auth");
-    assert_eq!(
-        existing.connections["ollama"].auth,
-        crate::setup::ExistingAuth::None
-    );
+    assert_eq!(existing.connections["ollama"].auth, ExistingAuth::None);
 }
 
 /// A connection setup cannot read is named, not skipped. Silently omitting it

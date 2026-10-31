@@ -146,7 +146,7 @@ fn an_artifact_url_reprojects_only_its_committed_assistant_entry() {
     let before = transcript.counts[0];
     let target_end = before + transcript.counts[1];
 
-    let coordinate = crate::tui::artifacts::Coordinate {
+    let coordinate = Coordinate {
         seq: 7,
         text_block: 0,
         fence: 0,
@@ -312,7 +312,7 @@ fn untouched_entries_keep_their_cached_layout() {
         "appending a turn must not invalidate the layout of anything before it"
     );
     assert!(
-        doc.layouts[n..].iter().all(|l| l.is_none()),
+        doc.layouts[n..].iter().all(Option::is_none),
         "the new node has no layout yet"
     );
 }

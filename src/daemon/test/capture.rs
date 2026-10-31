@@ -45,12 +45,12 @@ fn completion(calls: &[(&str, &str)]) -> String {
             .to_string(),
     );
     data.push(r#"{"type":"message_stop"}"#.to_string());
-    super::upstream_hold::events(&data)
+    upstream_hold::events(&data)
 }
 
 /// A `retain` call answering for each label of a multi-result triage.
 pub(super) fn verdict(keeps: &[&str]) -> String {
-    let results: Vec<serde_json::Value> = keeps
+    let results: Vec<Value> = keeps
         .iter()
         .enumerate()
         .map(|(index, keep)| serde_json::json!({ "result": format!("r{}", index + 1), "keep": keep }))
@@ -87,7 +87,7 @@ fn start(addr: SocketAddr, env: crate::env_table::EnvPolicy) -> (Swansong, Sessi
     (host, runtime)
 }
 
-fn cwd() -> std::path::PathBuf {
+fn cwd() -> PathBuf {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
     let dir = std::env::temp_dir().join(format!("efference-capture-{nonce:016x}"));
@@ -140,7 +140,7 @@ async fn triage_is_shown_the_masked_result() {
     // what it did rather than by the phase, which is idle in both states.
     wait_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3).await;
     wait_until("the turn finishes", || {
-        session.loop_phase() == crate::daemon::LoopPhase::Idle
+        session.loop_phase() == LoopPhase::Idle
     })
     .await;
     host.shut_down().await;
@@ -197,7 +197,7 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
 
     wait_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3).await;
     wait_until("the turn finishes", || {
-        session.loop_phase() == crate::daemon::LoopPhase::Idle
+        session.loop_phase() == LoopPhase::Idle
     })
     .await;
     let through_the_loop = session.project_messages();

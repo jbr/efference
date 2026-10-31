@@ -272,7 +272,7 @@ impl InferenceRegistry {
         triage: Option<TriageChoice>,
     ) -> Result<SessionInference, Error> {
         self.prepare(self.resolve_options(
-            &options::SessionOptions {
+            &SessionOptions {
                 model: model.map(str::to_string),
                 spotter_model: spotter.map(str::to_string),
                 triage,

@@ -468,7 +468,7 @@ fn render_context_without_a_cwd_names_no_directory() {
 /// (docs/permissions.md).
 #[test]
 fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
-    let cwd = std::path::Path::new("/work/proj");
+    let cwd = Path::new("/work/proj");
     let into = ToolCall::new(
         bash::NAME,
         "c1",

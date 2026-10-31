@@ -34,7 +34,7 @@ impl<'a> InteractiveState<'a> {
         let current_theme_name = render_context
             .current_theme_name()
             .as_ref()
-            .map(|s| s.to_string());
+            .map(ToString::to_string);
         Self {
             document: DocumentState {
                 document: Document::new(),
@@ -271,7 +271,7 @@ impl<'a> InteractiveState<'a> {
     /// Open the theme picker on the current theme — shared by the `t` key and the
     /// strip's `theme` item.
     pub(in crate::tui) fn open_theme_picker(&mut self) {
-        let themes = crate::tui::render_context::RenderContext::available_themes();
+        let themes = RenderContext::available_themes();
         let current_theme = self
             .current_theme_name
             .clone()

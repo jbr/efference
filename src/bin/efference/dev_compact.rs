@@ -30,7 +30,7 @@ pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -
         })
         .ok_or("log predates the boot-preamble snapshot; no recorded system prompt")?;
 
-    let inference = crate::inference::resolve(Some(&selection), None, None)?;
+    let inference = inference::resolve(Some(&selection), None, None)?;
     let (_, mut endpoint) = inference.main();
     if let Some(dir) = path.parent() {
         endpoint.session_id = Some(efference::api::sticky_session_id(dir));
@@ -45,13 +45,12 @@ pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -
         .with_max_output(caps.max_output_tokens.unwrap_or(UNKNOWN_OUTPUT_CAP))
         .with_context_window(caps.context_length);
     let (tools, _) = efference::agent::recorded_or_rebuilt_tools(&entries, || {
-        efference::tools::Toolbox::bash_and_mcps(std::env::current_dir()?, None)
+        Toolbox::bash_and_mcps(std::env::current_dir()?, None)
     })?;
 
     eprintln!(
         "compacting {label} on {selection}{}",
-        cut.map(|c| format!(", summary through seq {c}"))
-            .unwrap_or_default()
+        cut.map_or_default(|c| format!(", summary through seq {c}"))
     );
     let started = std::time::Instant::now();
     let compaction = efference::compact::summarize(&client, &tools, &entries, cut, |_| {}).await?;

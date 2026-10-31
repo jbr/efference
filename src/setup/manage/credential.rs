@@ -70,10 +70,10 @@ pub(super) async fn edit_connection<P: Prompter, Q: Probe>(
             match &connection.auth {
                 ExistingAuth::Oauth { name: item } => {
                     let item = item.clone().unwrap_or_else(|| name.to_string());
-                    crate::setup::flow::oauth_source(prompter, probe, &item).await?;
+                    flow::oauth_source(prompter, probe, &item).await?;
                 }
                 _ => {
-                    crate::setup::flow::codex_cache_source(prompter, probe)?;
+                    flow::codex_cache_source(prompter, probe)?;
                 }
             }
             Ok(())
@@ -209,9 +209,7 @@ async fn update_credential<P: Prompter, Q: Probe>(
     // A described endpoint reports `custom-<dialect>`, which `from_name` does not
     // take: its provider is rebuilt from the dialect half.
     let resolved = match connection.provider.strip_prefix("custom-") {
-        Some(dialect) => crate::api::WireDialect::from_name(dialect)
-            .ok()
-            .map(Provider::Custom),
+        Some(dialect) => WireDialect::from_name(dialect).ok().map(Provider::Custom),
         None => Provider::from_name(&connection.provider).ok(),
     };
     let Some(provider) = resolved else {
@@ -233,7 +231,7 @@ async fn update_credential<P: Prompter, Q: Probe>(
         // The management flow edits a credential on a connection that already
         // exists, and a described endpoint's base URL is not re-asked here: the
         // check runs against the connection as configured.
-        crate::setup::flow::api_key_source(
+        flow::api_key_source(
             prompter,
             probe,
             &Target {
@@ -331,7 +329,7 @@ async fn reveal_and_switch_to_env<P: Prompter, Q: Probe>(
         }
     };
     prompter.say(Tone::Note, &format!("{item}: {secret}"));
-    let variable = crate::setup::flow::ask_variable_name(prompter, None)?;
+    let variable = flow::ask_variable_name(prompter, None)?;
     draft.record(Change::SetAuth {
         name: name.to_string(),
         auth: AuthSource::Env {

@@ -117,7 +117,9 @@ pub(super) enum Next {
 
 impl Watch {
     fn agents(&self) -> MutexGuard<'_, BTreeMap<String, Watched>> {
-        self.agents.lock().unwrap_or_else(|e| e.into_inner())
+        self.agents
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Whether `id` is watched.
@@ -309,7 +311,7 @@ async fn follow_for(watch: Weak<Watch>, host: Client, id: String) {
         }
         ControlFlow::Continue(())
     })
-    .await
+    .await;
 }
 
 /// The status view a `state` frame for the `status` topic carries.

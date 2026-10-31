@@ -42,7 +42,7 @@ fn adopt_logged(
         dir,
     )
     .unwrap();
-    boot.log = crate::persist::Log::create(&path, None).expect("a fresh log");
+    boot.log = Log::create(&path, None).expect("a fresh log");
     register.reserve(id, &roots.0).unwrap();
     host.adopt_with(
         id.into(),
@@ -62,8 +62,8 @@ fn adopt_logged(
 
 /// Adopt `host` as an island whose owner is a pipe; the returned writer is the
 /// launcher's end, and dropping it is the owner going.
-fn island(host: &Arc<Host>) -> std::io::PipeWriter {
-    let (reader, writer) = std::io::pipe().unwrap();
+fn island(host: &Arc<Host>) -> io::PipeWriter {
+    let (reader, writer) = io::pipe().unwrap();
     let watch = OwnerWatch::spawn(reader, || panic!("the host already existed"));
     watch.adopt(host);
     writer
@@ -176,7 +176,7 @@ async fn an_islands_exit_archives_a_session_mid_turn() {
         for stream in listener.incoming() {
             let Ok(stream) = stream else { return };
             held.push(stream);
-            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            counted.fetch_add(1, Ordering::SeqCst);
         }
     });
     let mut boot = runtime::boot(&roots.0.join("one"));
@@ -202,8 +202,7 @@ async fn an_islands_exit_archives_a_session_mid_turn() {
     let owner = island(&host);
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     tokio::time::timeout(Duration::from_secs(10), async {
-        while session.loop_phase() != LoopPhase::Requesting
-            || accepted.load(std::sync::atomic::Ordering::SeqCst) == 0
+        while session.loop_phase() != LoopPhase::Requesting || accepted.load(Ordering::SeqCst) == 0
         {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }

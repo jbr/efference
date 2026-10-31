@@ -120,7 +120,7 @@ impl Session {
     /// it precedes the request it causes; a declined one writes nothing.
     pub(crate) fn request_continue(&self, origin: ContinueOrigin) -> Result<(), NotContinuable> {
         let verdict = self.continue_verdict();
-        self.person_acted(super::PersonAction::Continue);
+        self.person_acted(PersonAction::Continue);
         let verdict = verdict?;
         let entry = Payload::Telemetry(crate::log::Telemetry::Continue(origin));
         // The record must not stop what it describes.

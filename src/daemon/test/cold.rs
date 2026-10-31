@@ -11,17 +11,14 @@ async fn cold_session() -> (Arc<Session>, mpsc::UnboundedReceiver<SubmittedTurn>
     let (shared, rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::ZERO);
     append_compactable_history(&shared);
-    shared.record_request(
-        RequestOrigin::Turn,
-        crate::api::RequestUsage::new(crate::api::Usage::default()),
-    );
+    shared.record_request(RequestOrigin::Turn, RequestUsage::new(Usage::default()));
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert!(shared.cold_since().is_some());
     (shared, rx)
 }
 
-fn no_usage() -> crate::api::RequestUsage {
-    crate::api::RequestUsage::new(crate::api::Usage::default())
+fn no_usage() -> RequestUsage {
+    RequestUsage::new(Usage::default())
 }
 
 /// A triage on the agent's own client reads the main prefix, so it ends the session's
@@ -89,7 +86,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
         async move { shared.await_warm_or_person().await }
     });
     tokio::time::timeout(Duration::from_secs(2), async {
-        while shared.loop_phase() != crate::daemon::LoopPhase::ColdParked {
+        while shared.loop_phase() != LoopPhase::ColdParked {
             tokio::task::yield_now().await;
         }
     })
@@ -106,7 +103,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
         panic!("a parked loop is not running: {:?}", shared.status());
     };
     assert_eq!(Some(since), shared.cold_since());
-    let state: serde_json::Value = serde_json::from_str(&shared.state_json()).unwrap();
+    let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(state["loop_phase"]["phase"], "cold_parked");
     assert_eq!(state["cold"]["since"], serde_json::json!(since));
     assert_eq!(state["status"]["condition"]["kind"], "parked");
@@ -114,7 +111,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
     shared.release_cold(crate::log::ReleasedBy::Turn);
     assert_eq!(
         shared.loop_phase(),
-        crate::daemon::LoopPhase::Requesting,
+        LoopPhase::Requesting,
         "the person's action ends the park before the loop wakes"
     );
     assert!(!shared.is_settled());
@@ -122,7 +119,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
         .await
         .expect("released")
         .unwrap();
-    assert_eq!(shared.loop_phase(), crate::daemon::LoopPhase::Requesting);
+    assert_eq!(shared.loop_phase(), LoopPhase::Requesting);
     assert_eq!(
         shared.status(),
         crate::daemon::status::SessionStatus::Running
@@ -140,7 +137,7 @@ async fn a_fold_leaves_the_park_folded() {
         async move { shared.await_warm_or_person().await }
     });
     tokio::time::timeout(Duration::from_secs(2), async {
-        while shared.loop_phase() != crate::daemon::LoopPhase::ColdParked {
+        while shared.loop_phase() != LoopPhase::ColdParked {
             tokio::task::yield_now().await;
         }
     })
@@ -202,10 +199,7 @@ async fn nothing_to_fold_is_not_cold() {
     shared
         .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
         .unwrap();
-    shared.record_request(
-        RequestOrigin::Turn,
-        crate::api::RequestUsage::new(crate::api::Usage::default()),
-    );
+    shared.record_request(RequestOrigin::Turn, RequestUsage::new(Usage::default()));
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert_eq!(shared.cold_since(), None);
 }
@@ -245,7 +239,7 @@ async fn an_approval_releases_the_next_check_and_no_park_follows() {
     tokio::time::timeout(Duration::from_secs(2), shared.await_warm_or_person())
         .await
         .expect("the approval releases the check at once");
-    assert!(shared.loop_phase() != crate::daemon::LoopPhase::ColdParked);
+    assert!(shared.loop_phase() != LoopPhase::ColdParked);
     assert_eq!(
         cold_records(&shared),
         vec![
@@ -274,7 +268,7 @@ async fn every_person_action_releases_a_park_and_is_recorded() {
             async move { shared.await_warm_or_person().await }
         });
         tokio::time::timeout(Duration::from_secs(2), async {
-            while shared.loop_phase() != crate::daemon::LoopPhase::ColdParked {
+            while shared.loop_phase() != LoopPhase::ColdParked {
                 tokio::task::yield_now().await;
             }
         })

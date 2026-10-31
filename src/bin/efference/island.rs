@@ -182,7 +182,7 @@ pub(crate) async fn start(
         }
         Creation::Resume { id } => {
             end_status(true);
-            super::picker::resume_on(&ControlClient::new(island.socket()), &id)
+            picker::resume_on(&ControlClient::new(island.socket()), &id)
                 .await
                 .map(|()| Some(id))
         }

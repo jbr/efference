@@ -33,7 +33,7 @@ fn a_gated_call_shows_its_decision_trail_and_raw_result() {
             ),
         ],
     ));
-    log.add(Payload::Spot(crate::log::Spot {
+    log.add(Payload::Spot(Spot {
         call_id: "toolu_1".into(),
         stance: Stance::Gate,
         reason: "level 2 (scope fit, 21%): needs 1 approved call like it, found none.".into(),

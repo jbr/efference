@@ -11,7 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 struct ScratchDir(std::path::PathBuf);
 
 impl std::ops::Deref for ScratchDir {
-    type Target = std::path::Path;
+    type Target = Path;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -20,8 +20,8 @@ impl std::ops::Deref for ScratchDir {
 
 /// For the `AsRef<Path>` call sites (`set_permissions` and friends), where
 /// deref coercion does not reach a generic.
-impl AsRef<std::path::Path> for ScratchDir {
-    fn as_ref(&self) -> &std::path::Path {
+impl AsRef<Path> for ScratchDir {
+    fn as_ref(&self) -> &Path {
         &self.0
     }
 }
@@ -39,7 +39,7 @@ fn scratch() -> ScratchDir {
     ScratchDir(dir)
 }
 
-fn mode(path: &std::path::Path) -> u32 {
+fn mode(path: &Path) -> u32 {
     std::fs::metadata(path)
         .expect("the path exists")
         .permissions()
@@ -47,7 +47,7 @@ fn mode(path: &std::path::Path) -> u32 {
         & 0o777
 }
 
-fn seed(path: &std::path::Path, mode: u32) {
+fn seed(path: &Path, mode: u32) {
     std::fs::write(path, b"x").expect("write");
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("chmod");
 }

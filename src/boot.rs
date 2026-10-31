@@ -215,8 +215,7 @@ async fn prepare_minting(
     // in the system prompt all use, so it is read once here.
     let session_id = session_dir
         .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|name| name.to_string_lossy().into_owned());
 
     // The session's own worktree, made before the log exists so a refusal (not a git
     // work tree) fails creation with only the session dir to roll back. Git runs the

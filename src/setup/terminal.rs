@@ -121,19 +121,13 @@ impl Terminal {
     /// Write one line that stays on screen, counting the rows it takes.
     fn keep(&mut self, line: &str) -> std::io::Result<()> {
         writeln!(self.out, "{line}")?;
-        let columns = size()
-            .map(|(columns, _)| columns as usize)
-            .unwrap_or(80)
-            .max(1);
+        let columns = size().map_or(80, |(columns, _)| columns as usize).max(1);
         self.rows += visible_width(line).div_ceil(columns).max(1);
         Ok(())
     }
 
     fn width(&self) -> usize {
-        size()
-            .map(|(columns, _)| columns as usize)
-            .unwrap_or(80)
-            .max(20)
+        size().map_or(80, |(columns, _)| columns as usize).max(20)
     }
 
     fn paint(&self, text: &str, style: fn(&str) -> String) -> String {

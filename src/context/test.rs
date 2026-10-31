@@ -27,7 +27,7 @@ fn bare(path: &str) -> ContextEntry {
 fn labeled(heading: &str, paths: &[&str]) -> ContextEntry {
     ContextEntry {
         heading: Some(heading.into()),
-        source: ContextSource::Files(paths.iter().map(|s| s.to_string()).collect()),
+        source: ContextSource::Files(paths.iter().map(ToString::to_string).collect()),
         grants: ContextGrants::default(),
         sort: None,
         exclude: Vec::new(),

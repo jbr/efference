@@ -52,8 +52,7 @@ impl Watch {
             self.last = Some(count);
             let types: Vec<String> = pasteboard
                 .types()
-                .map(|types| types.iter().map(|ty| ty.to_string()).collect())
-                .unwrap_or_default();
+                .map_or_default(|types| types.iter().map(|ty| ty.to_string()).collect());
             Some(holds_image(types.iter().map(String::as_str)))
         })
     }

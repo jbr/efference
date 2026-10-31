@@ -137,12 +137,12 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
     let mut log = efference::persist::Log::create(&log_path, None).unwrap();
     log.append(
         0,
-        efference::log::Payload::preamble("", "sys", Default::default(), Some(identity)),
+        Payload::preamble("", "sys", Default::default(), Some(identity)),
     )
     .unwrap();
     log.append(
         1,
-        efference::log::Payload::Assistant {
+        Payload::Assistant {
             output: efference::log::AssistantOutput::Responses(vec![]),
             excluded: None,
         },
@@ -168,7 +168,7 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
     let _ = std::fs::remove_file(&log_path);
 }
 
-fn write_openrouter_image_log(path: &std::path::Path) {
+fn write_openrouter_image_log(path: &Path) {
     use efference::log::{
         AssistantOutput, ContentBlock, Payload, RawResult, ResultImage, ToolCall, WireState,
     };
@@ -356,8 +356,8 @@ async fn wire_full_uses_recorded_identity_without_loading_config() {
 
 // ---- spotter-log survey ----
 
-fn entry(seq: u64, payload: efference::log::Payload) -> efference::log::LogEntry {
-    efference::log::LogEntry {
+fn entry(seq: u64, payload: Payload) -> LogEntry {
+    LogEntry {
         seq,
         turn: 1,
         at: efference::log::Timestamp(0),
@@ -369,7 +369,7 @@ fn entry(seq: u64, payload: efference::log::Payload) -> efference::log::LogEntry
 
 /// A log with one bash call, a `Gate`(model) verdict on it, and a `Clear`(fallback)
 /// verdict on a call id that isn't in the log (the fail-closed-on-a-missing-call shape).
-fn spot_fixture() -> Vec<efference::log::LogEntry> {
+fn spot_fixture() -> Vec<LogEntry> {
     use efference::log::{CallId, Origin, Payload, Spot, Stance, ToolCall};
     vec![
         entry(
@@ -647,10 +647,10 @@ fn a_completion_with_no_results_opens_no_triage() {
 #[test]
 fn ladder_gaps_parse_comma_separated_seconds() {
     assert_eq!(
-        crate::primer_ladder::parse_gaps("0,120,300,480").unwrap(),
+        primer_ladder::parse_gaps("0,120,300,480").unwrap(),
         vec![0, 120, 300, 480]
     );
-    assert!(crate::primer_ladder::parse_gaps("60, banana").is_err());
+    assert!(primer_ladder::parse_gaps("60, banana").is_err());
 }
 
 /// A display flag on `view` or `gallery` overrides its `[tui]` key alone; an

@@ -131,7 +131,7 @@ impl Host {
     /// count until the host shuts down, then put back the one it found
     /// (docs/operating.md). Another reader of the listing signal: a status wake
     /// that leaves the count alone writes nothing.
-    pub async fn title_terminal(self: Arc<Self>, mut out: impl std::io::Write) {
+    pub async fn title_terminal(self: Arc<Self>, mut out: impl io::Write) {
         use crate::terminal_title::{self, TerminalTitle};
         let _ = terminal_title::save(&mut out);
         let mut title = TerminalTitle::default();

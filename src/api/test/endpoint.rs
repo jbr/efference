@@ -279,10 +279,10 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
         provider: Provider::Anthropic,
         url: Some(format!("http://{addr}/v1/messages")),
         auth_header: "x-api-key".into(),
-        auth_value: crate::api::AuthValue::reloadable(
+        auth_value: AuthValue::reloadable(
             Provider::Anthropic,
             "stale".into(),
-            crate::api::sync_reload(move || {
+            sync_reload(move || {
                 counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok("refreshed".into())
             }),

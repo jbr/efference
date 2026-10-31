@@ -31,13 +31,13 @@ fn the_tools_are_mounted_only_when_the_config_enables_them() {
 /// they are left out.
 #[test]
 fn advertised_tools_name_no_repository_path() {
-    fn without_examples(value: &mut serde_json::Value) {
+    fn without_examples(value: &mut Value) {
         match value {
-            serde_json::Value::Object(map) => {
+            Value::Object(map) => {
                 map.remove("examples");
                 map.values_mut().for_each(without_examples);
             }
-            serde_json::Value::Array(items) => items.iter_mut().for_each(without_examples),
+            Value::Array(items) => items.iter_mut().for_each(without_examples),
             _ => {}
         }
     }

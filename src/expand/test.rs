@@ -53,7 +53,7 @@ fn shell_default_syntax_and_unclosed_braces_error() {
     assert!(e.expand("${}").is_err(), "empty name");
 }
 
-fn call(name: &str, input: serde_json::Value) -> ToolCall {
+fn call(name: &str, input: Value) -> ToolCall {
     ToolCall::new(name, "toolu_x", input)
 }
 

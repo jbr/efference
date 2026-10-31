@@ -29,7 +29,7 @@ impl Host {
         self: &Arc<Self>,
         mut body: CreateSession,
         lineage: crate::env::Lineage,
-    ) -> std::result::Result<Arc<Starting>, String> {
+    ) -> Result<Arc<Starting>, String> {
         if !body.cwd.is_absolute() {
             return Err(format!("cwd must be absolute: {}", body.cwd.display()));
         }
@@ -56,7 +56,7 @@ impl Host {
         // when any root holds it.
         let id = match body.name.clone() {
             Some(id) => {
-                if !super::tcp::plain_id(&id) {
+                if !tcp::plain_id(&id) {
                     return Err(format!(
                         "session name {id:?} is not a single plain path segment"
                     ));
@@ -107,7 +107,7 @@ impl Host {
         &self,
         body: &CreateSession,
         project: &std::path::Path,
-    ) -> std::result::Result<CreationPlan, String> {
+    ) -> Result<CreationPlan, String> {
         // The same resolution preview reports, then credentials for the roles it
         // selected. Project effort is boot's to apply, so it is not resolved here.
         // History is resolved here: the omitted branch defaults to past picks
@@ -192,7 +192,7 @@ impl Host {
         lineage: crate::env::Lineage,
         supplied_env: Option<crate::env_table::EnvSnapshot>,
         directories: crate::policy::Directories,
-    ) -> std::result::Result<(), String> {
+    ) -> Result<(), String> {
         let id = starting.id().to_string();
         let project = directories.project().to_path_buf();
         // An omitted environment is established here, for the session's project,
@@ -271,7 +271,7 @@ impl Host {
 
 /// What [`Host::plan_creation`] resolved, carried into the background preparation.
 struct CreationPlan {
-    options: crate::inference::SessionOptions,
+    options: SessionOptions,
     inference: crate::inference::SessionInference,
     pick: Option<crate::history::Pick>,
     triage_pick: Option<crate::history::TriagePick>,

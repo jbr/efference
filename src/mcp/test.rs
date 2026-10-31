@@ -14,7 +14,7 @@ use crate::log::ToolCall;
 /// The client half of an in-memory duplex — the framing and mount logic
 /// without a subprocess (`Transport::Loopback`).
 pub(super) type LoopbackPipe =
-    JsonRpcPipe<tokio::io::BufReader<ReadHalf<DuplexStream>>, WriteHalf<DuplexStream>>;
+    JsonRpcPipe<BufReader<ReadHalf<DuplexStream>>, WriteHalf<DuplexStream>>;
 
 /// Everything a scripted server sends in reaction to one client request.
 type Script = dyn FnMut(&JsonRpcRequest) -> Vec<JsonRpcMessage> + Send;
@@ -47,7 +47,7 @@ fn loopback(mut script: Box<Script>) -> (Transport, Arc<Mutex<Vec<JsonRpcMessage
         }
     });
     let (read, write) = tokio::io::split(client_end);
-    let pipe = JsonRpcPipe::new(tokio::io::BufReader::new(read), write);
+    let pipe = JsonRpcPipe::new(BufReader::new(read), write);
     (Transport::Loopback(pipe), inbox)
 }
 
@@ -138,7 +138,7 @@ fn call(name: &str, input: Value) -> ToolCall {
     ToolCall::new(name, "toolu_1", input)
 }
 
-async fn run(provider: &ConnectedProvider, tool_call: &ToolCall) -> crate::log::RawResult {
+async fn run(provider: &ConnectedProvider, tool_call: &ToolCall) -> RawResult {
     run_capturing(provider, tool_call, std::future::pending())
         .await
         .0
@@ -150,11 +150,7 @@ async fn run_capturing(
     provider: &ConnectedProvider,
     tool_call: &ToolCall,
     abort: impl Future<Output = Interrupt> + Send,
-) -> (
-    crate::log::RawResult,
-    Vec<String>,
-    Vec<crate::log::Notification>,
-) {
+) -> (RawResult, Vec<String>, Vec<Notification>) {
     let output = Arc::new(Mutex::new(Vec::new()));
     let notifications = Arc::new(Mutex::new(Vec::new()));
     let (seen_output, seen_notifications) = (Arc::clone(&output), Arc::clone(&notifications));
@@ -166,7 +162,7 @@ async fn run_capturing(
                 seen_output
                     .lock()
                     .unwrap()
-                    .push(String::from_utf8_lossy(chunk).into_owned())
+                    .push(String::from_utf8_lossy(chunk).into_owned());
             },
             move |notification| seen_notifications.lock().unwrap().push(notification),
         )
@@ -474,10 +470,10 @@ async fn an_interim_result_lands_as_an_error_naming_what_was_asked_for() {
 async fn live_ferritin_mount_and_call() {
     let provider = ConnectedProvider::mount(
         "ferritin",
-        &crate::config::McpTransport::Http {
+        &McpTransport::Http {
             url: "https://ferritin.rs/mcp".into(),
         },
-        std::path::Path::new("."),
+        Path::new("."),
         None,
         &crate::env_table::ChildEnv::default(),
     )
@@ -525,12 +521,12 @@ async fn live_cargo_mcp_stdio_mount_and_call() {
     std::fs::create_dir_all(&home).unwrap();
     let provider = ConnectedProvider::mount(
         "cargo",
-        &crate::config::McpTransport::Stdio {
+        &McpTransport::Stdio {
             command: "cargo-mcp".into(),
             args: vec!["serve".into()],
             env: [("HOME".to_string(), home.display().to_string())].into(),
         },
-        std::path::Path::new("."),
+        Path::new("."),
         None,
         &crate::env_table::ChildEnv::default(),
     )
@@ -576,8 +572,8 @@ fn image_blocks_realize_and_structured_content_renders_as_json() {
         .unwrap();
     let result = CallToolResult {
         content: vec![
-            mcplease::types::ContentBlock::text("plain"),
-            mcplease::types::ContentBlock::Image {
+            ContentBlock::text("plain"),
+            ContentBlock::Image {
                 data: base64::engine::general_purpose::STANDARD.encode(&png),
                 mime_type: "image/png".into(),
                 annotations: None,
@@ -602,7 +598,7 @@ fn image_blocks_realize_and_structured_content_renders_as_json() {
     // Not an image: `aGVsbG8=` decodes to "hello". The block degrades to a
     // placeholder and nothing lands in `images`.
     let undecodable = CallToolResult {
-        content: vec![mcplease::types::ContentBlock::Image {
+        content: vec![ContentBlock::Image {
             data: "aGVsbG8=".into(),
             mime_type: "image/png".into(),
             annotations: None,
@@ -813,7 +809,7 @@ async fn an_abandoned_call_is_cancelled_on_the_wire() {
     // Resolved well after the request has gone out (its first poll sends it),
     // so the cancellation is about a call the server has actually seen.
     let abort = async {
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
         Interrupt::Kill
     };
     let (result, _, _) = run_capturing(&provider, &call("fake__zeta", json!({})), abort).await;
@@ -847,7 +843,7 @@ async fn an_abandoned_call_is_cancelled_on_the_wire() {
         if cancelled {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        tokio::time::sleep(Duration::from_millis(5)).await;
     }
     assert!(cancelled, "no cancellation named the abandoned call");
 }

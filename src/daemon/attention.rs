@@ -144,10 +144,7 @@ impl Session {
     /// The clients attending, per the host's table; empty for a session outside
     /// a host.
     pub(super) fn attentive_clients(&self) -> Vec<AttentiveClient> {
-        self.attention
-            .get()
-            .map(|a| a.attentive())
-            .unwrap_or_default()
+        self.attention.get().map_or_default(|a| a.attentive())
     }
 }
 

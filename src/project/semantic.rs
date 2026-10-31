@@ -155,9 +155,8 @@ pub fn render_result(
         seq: Some(seq),
         content: match reply.filter(|_| !matches!(wire, WireState::Elided)) {
             Some(AskReply { question, source }) => {
-                let from = source
-                    .map(|s| format!("{}: ", crate::frontend::wire_label(s)))
-                    .unwrap_or_default();
+                let from =
+                    source.map_or_default(|s| format!("{}: ", crate::frontend::wire_label(s)));
                 format!("[{seq}] asked: {question}\n{from}{content}")
             }
             None => format!("[{seq}] {content}"),

@@ -9,8 +9,7 @@ fn session() -> Arc<Session> {
 }
 
 fn turn(text: &str) -> SubmittedTurn {
-    SubmittedTurn::new(text, crate::daemon::mint_submission_id())
-        .sourced(Some("session[parent]".into()))
+    SubmittedTurn::new(text, mint_submission_id()).sourced(Some("session[parent]".into()))
 }
 
 /// Log an assistant turn issuing an `ask` with `call_id`; returns its seq, the handle.

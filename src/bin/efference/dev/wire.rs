@@ -16,20 +16,19 @@ pub(super) fn wire_placements(
     efference::project::ImagePlacement,
     efference::project::BreakpointPlacement,
 ) {
-    identity
-        .map(|selection| {
-            (
-                selection.provider.image_placement(&selection.model),
-                selection.provider.breakpoint_placement(&selection.model),
-            )
-        })
-        .unwrap_or_default()
+    identity.map_or_default(|selection| {
+        (
+            selection.provider.image_placement(&selection.model),
+            selection.provider.breakpoint_placement(&selection.model),
+        )
+    })
 }
 
 pub(super) fn wire_model(identity: Option<&efference::log::LoggedInference>) -> String {
-    identity
-        .map(|selection| selection.model.clone())
-        .unwrap_or_else(|| LEGACY_WIRE_MODEL.to_string())
+    identity.map_or_else(
+        || LEGACY_WIRE_MODEL.to_string(),
+        |selection| selection.model.clone(),
+    )
 }
 
 /// Reconstruct the wire request for a recorded session JSONL — the
@@ -171,8 +170,7 @@ pub(crate) async fn wire(
         let session_id = path
             .parent()
             .and_then(|dir| dir.file_name())
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            .map_or_default(|name| name.to_string_lossy().into_owned());
         // No creator: `created_by` is host control state, never logged
         // (docs/tools.md), so an offline rebuild from a log cannot recover it —
         // a child's rebuilt preamble is missing the creator sentence its live

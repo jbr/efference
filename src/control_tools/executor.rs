@@ -102,7 +102,10 @@ impl ClientExecutor {
     /// session: nothing names a session for this mount.
     pub(super) fn host_wide(&self) -> bool {
         !matches!(
-            &*self.fallback.lock().unwrap_or_else(|e| e.into_inner()),
+            &*self
+                .fallback
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
             Fallback::Client(_)
         )
     }
@@ -122,13 +125,16 @@ impl ClientExecutor {
         let fallback = self
             .fallback
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         match fallback {
             Fallback::Client(client) => Ok(client),
             Fallback::Discover => {
                 let client = self.discover().await?;
-                *self.fallback.lock().unwrap_or_else(|e| e.into_inner()) =
+                *self
+                    .fallback
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
                     Fallback::Client(client.clone());
                 Ok(client)
             }
@@ -210,7 +216,7 @@ impl ClientExecutor {
     pub(super) fn cursor(&self, id: &str) -> Option<u64> {
         self.cursors
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(id)
             .copied()
     }
@@ -219,7 +225,7 @@ impl ClientExecutor {
     pub(super) fn set_cursor(&self, id: &str, seq: u64) {
         self.cursors
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(id.to_string(), seq);
     }
 

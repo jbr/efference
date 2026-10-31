@@ -286,8 +286,7 @@ impl HostExecutor {
                     "gate moved: {expected} is not the call {previous} is holding{}",
                     gate.handle
                         .as_deref()
-                        .map(|handle| format!("; it holds {handle}"))
-                        .unwrap_or_default()
+                        .map_or_default(|handle| format!("; it holds {handle}"))
                 ));
             }
             if !super::allows(&gate.call) {

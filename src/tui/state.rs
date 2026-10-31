@@ -280,7 +280,7 @@ pub(super) struct ViewportState {
     pub strip_hovered: bool,
     /// The strip item under the pointer, which draws its hover surface. Held by
     /// verb, as the strip's focus and clicks are.
-    pub strip_hover: Option<super::control_strip::StripVerb>,
+    pub strip_hover: Option<StripVerb>,
     /// Scrollbar hover/drag state
     pub scrollbar_hovered: bool,
     pub scrollbar_dragging: bool,

@@ -62,7 +62,7 @@ pub async fn run<P: Prompter, Q: Probe>(
         let choices = vec![
             Choice::new("Connections").detail(summarize_connections(&working)),
             Choice::new("Default spotter").detail(summarize_defaults(&working)),
-            Choice::new("Update check").detail(super::updates::summary(working.update_check)),
+            Choice::new("Update check").detail(updates::summary(working.update_check)),
             Choice::new("Done"),
         ];
         match prompter.select("Setup", &choices)? {
@@ -81,14 +81,14 @@ pub async fn run<P: Prompter, Q: Probe>(
                 }
             }
             2 => {
-                let check = super::updates::ask(prompter, working.update_check)?;
+                let check = updates::ask(prompter, working.update_check)?;
                 draft.update_check = Some(check);
                 working.update_check = Some(check);
             }
             // A file without an answer is asked on the way out, once whatever the
             // person came to change is done.
             _ => {
-                super::updates::ask_unless_answered(prompter, existing, &mut draft)?;
+                updates::ask_unless_answered(prompter, existing, &mut draft)?;
                 return Ok(draft);
             }
         }
@@ -228,7 +228,7 @@ async fn act_on_connection<P: Prompter, Q: Probe>(
                     match probe.delete_secret(&item) {
                         Ok(()) => prompter.say(Tone::Good, &format!("Deleted `{item}`.")),
                         Err(error) => {
-                            prompter.say(Tone::Bad, &format!("Could not delete `{item}`: {error}"))
+                            prompter.say(Tone::Bad, &format!("Could not delete `{item}`: {error}"));
                         }
                     }
                 }

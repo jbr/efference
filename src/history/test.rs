@@ -9,10 +9,9 @@ fn dir() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "efference-history-test-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
+        SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_nanos())
-            .unwrap_or(0)
+            .map_or(0, |elapsed| elapsed.as_nanos())
     ));
     std::fs::create_dir_all(&dir).unwrap();
     dir

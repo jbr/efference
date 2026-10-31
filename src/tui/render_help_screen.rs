@@ -107,7 +107,7 @@ impl<'a> InteractiveState<'a> {
                 if key.is_empty() {
                     desc.len()
                 } else {
-                    format!("{:20} {}", key, desc).len()
+                    format!("{key:20} {desc}").len()
                 }
             })
             .max()
@@ -123,7 +123,7 @@ impl<'a> InteractiveState<'a> {
             }
 
             let text = if key.is_empty() {
-                format!("{:width$}", desc, width = max_width)
+                format!("{desc:max_width$}")
             } else {
                 format!("{:20} {:width$}", key, desc, width = max_width - 21)
             };

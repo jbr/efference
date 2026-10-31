@@ -42,7 +42,7 @@ fn a_verdict_frame_carries_the_counts_of_the_result_it_names() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), log);
 
     // What the tail resolves for this entry, and what the `/log` window serves for it.
-    let resolved = crate::daemon::stream::result_raw(&entries[1], &shared);
+    let resolved = stream::result_raw(&entries[1], &shared);
     let frame = Frame::log(&entries[1], resolved.as_ref(), None);
     let window: Vec<Value> =
         serde_json::from_str(&shared.log_json(&LogSelect::default())).expect("a JSON array");
@@ -265,12 +265,12 @@ fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized()
     let frame = Frame::log(&small, None, None);
     assert_eq!(
         frame.data.get(),
-        serde_json::to_string(&crate::daemon::entry_view::EntryView::new(&small)).unwrap(),
+        serde_json::to_string(&EntryView::new(&small)).unwrap(),
         "the frame is the window element"
     );
     assert_eq!(
         frame.data.get(),
-        serde_json::to_string(&crate::daemon::entry_view::EntryView::full(&small)).unwrap(),
+        serde_json::to_string(&EntryView::full(&small)).unwrap(),
         "below the threshold the entry route is the same bytes"
     );
     assert!(!frame.data.get().contains("content_elided"));
@@ -283,7 +283,7 @@ fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized()
     let frame = Frame::log(&big, None, None);
     assert_eq!(
         frame.data.get(),
-        serde_json::to_string(&crate::daemon::entry_view::EntryView::new(&big)).unwrap(),
+        serde_json::to_string(&EntryView::new(&big)).unwrap(),
         "the frame is still the window element"
     );
     assert!(

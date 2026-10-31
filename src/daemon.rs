@@ -121,7 +121,7 @@ pub enum StreamDelta {
 /// announcements use (docs/control-channel.md). Empty when there is no id —
 /// tests, offline sessions — leaving the line unattributed.
 pub(crate) fn session_id_prefix(id: Option<&str>) -> String {
-    id.map(|id| format!("session {id}: ")).unwrap_or_default()
+    id.map_or_default(|id| format!("session {id}: "))
 }
 
 /// Code a test interleaves at one point inside a session method, run once there
@@ -246,7 +246,7 @@ pub struct Session {
     /// the `/settle` long-poll's "at a decision point?" predicate ([`Session::is_settled`]).
     ///
     /// [`PhaseAndQueue`]: settle::PhaseAndQueue
-    phase: Mutex<phase::LoopPhase>,
+    phase: Mutex<LoopPhase>,
     /// How many trajectories have ended into idle: what tells a status watcher that the
     /// idle it reads followed a turn, rather than an idle triage that pinned nothing
     /// (`subscriptions.rs`).
@@ -417,7 +417,7 @@ pub struct Session {
     /// `child.wait()`), so teardown can await the children actually being gone
     /// rather than the kill signal merely having been sent
     /// (docs/process-monitor.md).
-    reaped: tokio::sync::Notify,
+    reaped: Notify,
     /// The resolved role config and where it came from (docs/permissions.md).
     /// Read-only for the session's lifetime — the scope is already frozen into the
     /// cached preamble; this copy backs the `GET /state` report ("which role am I?") and
@@ -541,7 +541,7 @@ impl Session {
     /// The path a push notification opens for this session (docs/web-push.md):
     /// the web path the client addresses it by, `/` before a host has named it.
     pub fn web_path(&self) -> &str {
-        self.web_path.get().map(String::as_str).unwrap_or("/")
+        self.web_path.get().map_or("/", String::as_str)
     }
 
     /// Record the session's storage base — the parent of `SessionPaths::storage`,
@@ -550,8 +550,7 @@ impl Session {
     pub fn set_storage_base(&self, storage: &std::path::Path) {
         let base = storage
             .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| storage.to_path_buf());
+            .map_or_else(|| storage.to_path_buf(), std::path::Path::to_path_buf);
         let _ = self.storage_base.set(base);
     }
 
@@ -590,7 +589,7 @@ impl Session {
         before: Option<u64>,
         tail: Option<u64>,
         me: &str,
-    ) -> std::result::Result<String, String> {
+    ) -> Result<String, String> {
         if since.is_some() && tail.is_some() {
             return Err("since and tail are mutually exclusive".into());
         }
@@ -610,8 +609,8 @@ impl Session {
     /// Called once by the runtime, before `toolbox` moves into the loop — the
     /// same "only a served session has this" reason as
     /// [`Self::set_capabilities`]/[`Self::set_identity`], which it sits beside.
-    pub fn set_tool_catalog(&self, toolbox: &crate::tools::Toolbox) {
-        *self.tools.lock().unwrap() = crate::agent::tool_catalog(toolbox);
+    pub fn set_tool_catalog(&self, toolbox: &Toolbox) {
+        *self.tools.lock().unwrap() = agent::tool_catalog(toolbox);
     }
 
     /// One tool's full definition, addressed by its wire name — the answer to

@@ -66,7 +66,7 @@ fn the_ask_topic_carries_the_question_and_what_was_recalled() {
 async fn the_topic_differ_publishes_an_ask_and_its_end() {
     let shared = session();
     let mut rx = shared.subscribe_state();
-    tokio::spawn(topics::watch_topics(Arc::clone(&shared)));
+    tokio::spawn(watch_topics(Arc::clone(&shared)));
     let mut latest = HashMap::new();
     let mut settle = async |latest: &mut HashMap<Topic, String>| {
         while let Ok(Ok(update)) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
@@ -97,7 +97,7 @@ async fn the_topic_differ_publishes_an_ask_and_its_end() {
 #[test]
 fn asking_is_a_status_and_a_decision_point() {
     let shared = session();
-    shared.set_phase(crate::daemon::LoopPhase::Requesting);
+    shared.set_phase(LoopPhase::Requesting);
     assert!(!shared.is_settled());
 
     let wait = shared.begin_ask("ask_1", "Sure?".into(), 1, 1);
@@ -139,14 +139,14 @@ fn continue_is_declined_while_asking() {
 #[tokio::test]
 async fn an_ask_sends_a_push_carrying_the_question() {
     let shared = session();
-    let attention = Arc::new(crate::daemon::attention::Attention::default());
+    let attention = Arc::new(attention::Attention::default());
     attention.report_at(
-        &crate::daemon::attention::AttentionReport {
+        &attention::AttentionReport {
             client: "c1".into(),
             session: None,
             active: true,
         },
-        std::time::Instant::now(),
+        Instant::now(),
     );
     shared.set_attention(attention);
     let _wait = shared.begin_ask("ask_1", "Which branch?".into(), 1, 1);

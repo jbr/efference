@@ -37,7 +37,7 @@ impl<'a> super::InteractiveState<'a> {
                 };
 
                 // In ThemePicker mode, use absolute screen coordinates (no scroll offset)
-                if matches!(self.ui_mode, super::UiMode::ThemePicker { .. }) {
+                if matches!(self.ui_mode, UiMode::ThemePicker { .. }) {
                     self.viewport.cursor_pos = Some(Position::new(column, row));
                     return;
                 }
@@ -440,9 +440,9 @@ impl<'a> super::InteractiveState<'a> {
                         TuiAction::FocusEntry(_) => {
                             "navigate — ↑/↓ unit · ←/→ verb · esc compose".into()
                         }
-                        TuiAction::OpenUrl(url) => format!("Open: {} (⏎ to activate)", url).into(),
+                        TuiAction::OpenUrl(url) => format!("Open: {url} (⏎ to activate)").into(),
                         TuiAction::SelectTheme(theme_name) => {
-                            format!("Preview theme: {} (⏎ to activate)", theme_name).into()
+                            format!("Preview theme: {theme_name} (⏎ to activate)").into()
                         }
                         TuiAction::ExpandItem(_) => "⏎ show it whole".into(),
                     };
@@ -466,10 +466,8 @@ impl<'a> super::InteractiveState<'a> {
         {
             self.ui.debug_message = match action {
                 TuiAction::FocusEntry(_) => "click to focus this entry".into(),
-                TuiAction::OpenUrl(url) => format!("Open: {}", url).into(),
-                TuiAction::SelectTheme(theme_name) => {
-                    format!("Preview theme: {}", theme_name).into()
-                }
+                TuiAction::OpenUrl(url) => format!("Open: {url}").into(),
+                TuiAction::SelectTheme(theme_name) => format!("Preview theme: {theme_name}").into(),
                 TuiAction::ExpandItem(_) => "click to show it whole".into(),
             };
         }
@@ -506,16 +504,12 @@ impl<'a> super::InteractiveState<'a> {
                 let scrollbar_drag = self.viewport.scrollbar_dragging;
 
                 // When not loading, check hover state
-                let content_hover = self
-                    .viewport
-                    .cursor_pos
-                    .map(|pos| {
-                        self.render_cache
-                            .actions
-                            .iter()
-                            .any(|(rect, _)| rect.contains(pos))
-                    })
-                    .unwrap_or(false);
+                let content_hover = self.viewport.cursor_pos.is_some_and(|pos| {
+                    self.render_cache
+                        .actions
+                        .iter()
+                        .any(|(rect, _)| rect.contains(pos))
+                });
 
                 // A strip item, the header's button, and a call or thinking item
                 // are all click targets, so the pointer says so over them.

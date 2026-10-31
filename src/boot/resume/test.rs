@@ -312,12 +312,12 @@ async fn a_gate_held_log_resumes_at_the_gate() {
             .iter()
             .all(|e| !matches!(e.payload, Payload::ToolResult { .. }))
     );
-    assert!(crate::recovery::pending_batch(entries).is_some());
+    assert!(pending_batch(entries).is_some());
     drop_boot(boot);
 }
 
-fn at(seq: u64, payload: Payload) -> crate::log::LogEntry {
-    crate::log::LogEntry {
+fn at(seq: u64, payload: Payload) -> LogEntry {
+    LogEntry {
         seq,
         turn: 1,
         at: Timestamp(seq),
@@ -327,7 +327,7 @@ fn at(seq: u64, payload: Payload) -> crate::log::LogEntry {
     }
 }
 
-fn user(seq: u64) -> crate::log::LogEntry {
+fn user(seq: u64) -> LogEntry {
     at(seq, Payload::User(vec![ContentBlock::Text("hi".into())]))
 }
 
@@ -364,7 +364,7 @@ fn result(id: &str, wire: WireState) -> Payload {
     Payload::tool_result(id, RawResult::text("out"), wire)
 }
 
-fn states(entries: &[crate::log::LogEntry]) -> Vec<CallState> {
+fn states(entries: &[LogEntry]) -> Vec<CallState> {
     last_live_completion(entries)
         .unwrap()
         .unwrap()

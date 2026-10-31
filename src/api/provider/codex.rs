@@ -287,8 +287,7 @@ fn cache_key(endpoint: &Endpoint) -> String {
         .extra_headers
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("ChatGPT-Account-ID"))
-        .map(|(_, value)| value.as_str())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.as_str());
     cache_key_parts(endpoint.provider, endpoint.base.as_deref(), account)
 }
 

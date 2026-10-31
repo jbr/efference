@@ -499,8 +499,8 @@ fn a_listening_socket_answers_and_a_stale_or_absent_one_does_not() {
         use std::hash::{BuildHasher, Hasher, RandomState};
         RandomState::new().build_hasher().finish()
     };
-    let socket = std::path::PathBuf::from(format!("/tmp/eprb-{n:08x}.sock"));
-    let stale = std::path::PathBuf::from(format!("/tmp/eprb-{n:08x}.stale"));
+    let socket = PathBuf::from(format!("/tmp/eprb-{n:08x}.sock"));
+    let stale = PathBuf::from(format!("/tmp/eprb-{n:08x}.stale"));
 
     assert!(
         !local_daemon_is_listening(&socket),
@@ -541,19 +541,19 @@ fn help_text_names_no_repository_path() {
             command.get_before_long_help(),
             command.get_after_long_help(),
         ];
-        texts.extend(styled.into_iter().flatten().map(|text| text.to_string()));
+        texts.extend(styled.into_iter().flatten().map(ToString::to_string));
         for arg in command.get_arguments() {
             texts.extend(
                 [arg.get_help(), arg.get_long_help()]
                     .into_iter()
                     .flatten()
-                    .map(|text| text.to_string()),
+                    .map(ToString::to_string),
             );
             texts.extend(
                 arg.get_possible_values()
                     .iter()
                     .filter_map(|value| value.get_help())
-                    .map(|text| text.to_string()),
+                    .map(ToString::to_string),
             );
         }
         for text in texts {

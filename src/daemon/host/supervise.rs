@@ -61,7 +61,7 @@ impl Host {
         &self,
         id: &str,
         supervisor: Option<String>,
-    ) -> std::result::Result<Option<String>, SupervisorRefused> {
+    ) -> Result<Option<String>, SupervisorRefused> {
         let (session, previous) = {
             let mut sessions = self.sessions_mut();
             let Some(hosted) = sessions.hosted(id) else {
@@ -114,7 +114,7 @@ impl Host {
 /// would: `next`'s supervisor pointers are followed until they reach `id`, end, or
 /// leave the host. A pre-existing loop that does not pass through `id` ends the walk
 /// rather than spinning.
-fn cycle_through(sessions: &super::Sessions, id: &str, next: &str) -> Option<Vec<String>> {
+fn cycle_through(sessions: &Sessions, id: &str, next: &str) -> Option<Vec<String>> {
     let mut chain = vec![id.to_string(), next.to_string()];
     let mut seen = std::collections::HashSet::new();
     let mut current = next.to_string();
@@ -145,8 +145,7 @@ impl Session {
     /// write is reported and dropped: the record must not fail what it describes.
     fn record_supervisor(&self, supervisor: Option<String>) {
         let turn = self.latest_turn();
-        let entry =
-            crate::log::Payload::Telemetry(crate::log::Telemetry::SupervisorSet { supervisor });
+        let entry = Payload::Telemetry(crate::log::Telemetry::SupervisorSet { supervisor });
         if let Err(e) = self.append(turn, entry) {
             log::warn!("supervisor record: append failed: {e}");
         }

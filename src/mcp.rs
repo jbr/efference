@@ -358,28 +358,25 @@ impl ConnectedProvider {
                 },
             }
         };
-        let result = match outcome {
-            Some(result) => result,
-            None => {
-                // Tell the server to stop work on the abandoned call. On a
-                // single-channel transport this is the only way it can tell
-                // an abandoned call from a slow one; over streamable HTTP the
-                // dropped response stream is itself the signal (mcplease's
-                // `cancel` documents the split).
-                if session.transport.cancellation_is_notification() {
-                    let cancellation = session
-                        .protocol
-                        .cancel(&request_id, Some("cancelled by the operator"));
-                    if let Err(e) = session
-                        .transport
-                        .notify(&JsonRpcMessage::Notification(cancellation))
-                        .await
-                    {
-                        log::debug!("could not send cancellation: {e}");
-                    }
+        let Some(result) = outcome else {
+            // Tell the server to stop work on the abandoned call. On a
+            // single-channel transport this is the only way it can tell
+            // an abandoned call from a slow one; over streamable HTTP the
+            // dropped response stream is itself the signal (mcplease's
+            // `cancel` documents the split).
+            if session.transport.cancellation_is_notification() {
+                let cancellation = session
+                    .protocol
+                    .cancel(&request_id, Some("cancelled by the operator"));
+                if let Err(e) = session
+                    .transport
+                    .notify(&JsonRpcMessage::Notification(cancellation))
+                    .await
+                {
+                    log::debug!("could not send cancellation: {e}");
                 }
-                return RawResult::error(format!("`{wire_name}` call cancelled by the operator"));
             }
+            return RawResult::error(format!("`{wire_name}` call cancelled by the operator"));
         };
         // Two failure layers flatten to one: the connection or framing giving
         // out, and the server answering with a protocol error. Both are the

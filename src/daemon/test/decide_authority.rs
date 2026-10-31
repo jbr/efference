@@ -103,7 +103,7 @@ fn leaf() -> ToolCall {
 
 /// Hold the leaf at `c`'s gate, logged first so it has a handle; returns the handle and
 /// the gate's receiver.
-fn hold(c: &Session) -> (String, tokio::sync::oneshot::Receiver<Approval>) {
+fn hold(c: &Session) -> (String, oneshot::Receiver<Approval>) {
     let seq = c
         .append(
             1,

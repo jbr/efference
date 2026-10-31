@@ -20,7 +20,7 @@ impl Form {
         } else {
             match value.parse::<u8>() {
                 Ok(n) if crate::inference::TEMPERATURE.contains(&n) => {
-                    self.draft.temperature = Some(n)
+                    self.draft.temperature = Some(n);
                 }
                 _ => {
                     self.note = Some(format!(

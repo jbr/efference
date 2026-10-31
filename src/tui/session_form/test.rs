@@ -268,7 +268,11 @@ fn render_is_rect_relative_and_survives_small_viewports() {
     let area = Rect::new(0, 0, 50, 9);
     let mut buf = Buffer::empty(area);
     form.render(&mut buf, area, styles);
-    let text: String = buf.content.iter().map(|c| c.symbol()).collect();
+    let text: String = buf
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
     assert!(text.contains("triage model"), "{text}");
 }
 

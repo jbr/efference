@@ -115,7 +115,7 @@ pub fn render_responses_request_pretty(
     let request = responses::ResponsesRequest {
         model,
         instructions: None,
-        input: responses::encode_responses(turns, system, cache),
+        input: encode_responses(turns, system, cache),
         tools: responses::tool_definitions(tools),
         tool_choice: responses::tool_choice_value(&tool_choice),
         parallel_tool_calls: tool_choice.forced().is_none(),

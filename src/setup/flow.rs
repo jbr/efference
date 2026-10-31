@@ -55,10 +55,10 @@ pub async fn run<P: Prompter, Q: Probe>(
         // A first run ends with no default model: the new-session form names
         // the current one, prefilled from past picks where they apply
         // (docs/operating.md).
-        super::updates::ask_unless_answered(prompter, existing, &mut draft)?;
+        updates::ask_unless_answered(prompter, existing, &mut draft)?;
         Ok(draft)
     } else {
-        super::manage::run(prompter, probe, existing).await
+        manage::run(prompter, probe, existing).await
     }
 }
 
@@ -366,10 +366,7 @@ async fn check_key<P: Prompter, Q: Probe>(
 ) -> Result<Option<String>, Cancelled> {
     match probe.check_key(target, &key).await {
         Ok(Some(report)) => {
-            let label = report
-                .label
-                .map(|label| format!(" ({label})"))
-                .unwrap_or_default();
+            let label = report.label.map_or_default(|label| format!(" ({label})"));
             prompter.say(Tone::Good, &format!("{who} accepted the key{label}."));
             Ok(Some(key))
         }
@@ -417,15 +414,13 @@ pub(super) async fn choose_model<P: Prompter, Q: Probe>(
         Some(home) => crate::history::History::user(std::path::Path::new(&home)),
         None => crate::history::History::disabled(),
     };
-    let recents: Vec<String> = scope
-        .map(|scope| {
-            store
-                .recent(&scope, connection, crate::history::now(), 5)
-                .into_iter()
-                .map(|candidate| candidate.model)
-                .collect()
-        })
-        .unwrap_or_default();
+    let recents: Vec<String> = scope.map_or_default(|scope| {
+        store
+            .recent(&scope, connection, crate::history::now(), 5)
+            .into_iter()
+            .map(|candidate| candidate.model)
+            .collect()
+    });
     let listing = match key {
         Some(key) => probe.list_models(target, key).await.unwrap_or_default(),
         None => Vec::new(),
@@ -483,14 +478,13 @@ pub(super) async fn check_model<P: Prompter, Q: Probe>(
         Ok(report) => {
             let output = report
                 .max_output_tokens
-                .map(|tokens| format!(", {} output", tokens_short(tokens)))
-                .unwrap_or_default();
+                .map_or_default(|tokens| format!(", {} output", tokens_short(tokens)));
             // An endpoint that reports no window is accepted and said so: the
             // model answered the check, which is what this step asks.
-            let context = report
-                .context_length
-                .map(|tokens| format!("{} context", tokens_short(tokens)))
-                .unwrap_or_else(|| "context window not reported".to_string());
+            let context = report.context_length.map_or_else(
+                || "context window not reported".to_string(),
+                |tokens| format!("{} context", tokens_short(tokens)),
+            );
             prompter.say(Tone::Good, &format!("{model}: {context}{output}."));
             Ok(true)
         }

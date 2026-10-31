@@ -110,8 +110,7 @@ async fn resume_minting(
     let directories = session_directories(metadata, &session_dir)?;
     let session_id = session_dir
         .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|name| name.to_string_lossy().into_owned());
     // A session's own worktree that archiving removed is re-created below, once the
     // child environment exists; any other missing directory refuses here. A working
     // directory inside another session's worktree is not this session's to re-create.
@@ -162,7 +161,7 @@ async fn resume_minting(
     let system = format!("{identity}{body}");
     endpoint.session_id = Some(crate::api::sticky_session_id(&session_dir));
 
-    let upstream = metadata.map(|m| m.upstream.clone()).unwrap_or_default();
+    let upstream = metadata.map_or_default(|m| m.upstream.clone());
     let temperature = metadata.and_then(|m| m.temperature);
     let autonomous = metadata.is_some_and(|m| m.autonomous);
     let keep_scratch = metadata.is_some_and(|m| m.keep_scratch);

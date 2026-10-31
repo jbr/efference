@@ -14,7 +14,7 @@ struct EventsRequest {
 /// continues into the session's once it starts (`starting.rs`).
 enum Source {
     Session(Arc<Session>),
-    Starting(Arc<crate::daemon::starting::Starting>),
+    Starting(Arc<starting::Starting>),
 }
 
 /// Live tail of the append-only log (docs/README.md — the log *is* the event
@@ -40,9 +40,7 @@ pub(super) fn events(heartbeat: Duration) -> impl trillium::Handler {
                 since,
             }) => match source {
                 Source::Session(shared) => control_stream(shared, include, since),
-                Source::Starting(starting) => {
-                    crate::daemon::starting::starting_stream(starting, include, since)
-                }
+                Source::Starting(starting) => starting::starting_stream(starting, include, since),
             },
             // Unreachable: the validating half halts before this runs.
             None => Box::pin(futures_lite::stream::empty()),

@@ -87,7 +87,7 @@ fn an_image_is_classified_with_its_dimensions() {
     let mut png = Vec::new();
     let img = image::RgbaImage::new(7, 3);
     image::DynamicImage::ImageRgba8(img)
-        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .write_to(&mut io::Cursor::new(&mut png), image::ImageFormat::Png)
         .unwrap();
     let path = store(&dir, "shot.png", &png).unwrap();
     let arrival = inspect("attachments/shot.png", &path).unwrap();

@@ -87,7 +87,7 @@ async fn only_an_active_report_viewing_the_session_cancels_its_delayed_push() {
     let seen = session.log.lock().unwrap().entries().iter().any(|e| {
         matches!(
             &e.payload,
-            crate::log::Payload::Telemetry(Telemetry::Push(crate::log::PushRecord {
+            Payload::Telemetry(Telemetry::Push(crate::log::PushRecord {
                 event: crate::log::PushEvent::Cancelled {
                     cause: crate::log::PushCancel::Seen { client },
                 },

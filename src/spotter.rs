@@ -355,9 +355,10 @@ fn render_context(
     }
 
     s.push_str("\n\nScope for this session:\n");
-    let cwd_display = dirs
-        .map(|d| d.judged_working().display().to_string())
-        .unwrap_or_else(|| "unknown".into());
+    let cwd_display = dirs.map_or_else(
+        || "unknown".into(),
+        |d| d.judged_working().display().to_string(),
+    );
     s.push_str(&format!("- working directory: {cwd_display}\n"));
     s.push_str(&format!(
         "- a relative path in a proposed move resolves against the working directory, by \
@@ -523,8 +524,7 @@ fn render_move(
                 // Paths from the command as shown, so the dropped `cd` target is not
                 // listed back.
                 let facts = dirs
-                    .map(|dirs| path_facts(rest.unwrap_or(cmd), role, dirs, scratch))
-                    .unwrap_or_default();
+                    .map_or_default(|dirs| path_facts(rest.unwrap_or(cmd), role, dirs, scratch));
                 format!("{shown}{facts}")
             }
             None => format!(

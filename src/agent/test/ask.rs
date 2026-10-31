@@ -203,7 +203,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
             &mut self,
             call: &ToolCall,
             _: Option<&crate::control_tools::BoundAction>,
-            _: Option<crate::policy::GateGrant>,
+            _: Option<policy::GateGrant>,
         ) -> Approval {
             panic!("an ask reached the human gate: {}", call.name)
         }

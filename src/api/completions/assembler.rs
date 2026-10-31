@@ -150,13 +150,10 @@ impl CompletionsAssembler {
         }
         if let Some(error) = chunk.get("error") {
             let field = |name: &str| error.get(name).and_then(Value::as_str);
-            let code = error
-                .get("code")
-                .map(|code| match code {
-                    Value::String(code) => code.clone(),
-                    other => other.to_string(),
-                })
-                .unwrap_or_default();
+            let code = error.get("code").map_or_default(|code| match code {
+                Value::String(code) => code.clone(),
+                other => other.to_string(),
+            });
             self.failure_class = classify(field("type"), Some(&code));
             let message = field("message").unwrap_or("(no message)");
             return Err(format!("upstream stream error [{code}]: {message} — {data}").into());

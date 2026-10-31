@@ -148,7 +148,9 @@ struct Route {
 
 impl Routes {
     fn streams(&self) -> MutexGuard<'_, HashMap<String, Route>> {
-        self.streams.lock().unwrap_or_else(|e| e.into_inner())
+        self.streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// `agent`'s token: the one already minted for it, else a new one.
@@ -228,7 +230,7 @@ async fn stream(mut conn: WebSocketConn) {
             Ok(()) => ControlFlow::Continue(()),
             Err(_) => ControlFlow::Break(()),
         })
-        .await
+        .await;
     });
     let _follower = AbortOnDrop(follower.abort_handle());
     // The mark of the last frame sent; `None` before the first.

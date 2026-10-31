@@ -88,7 +88,7 @@ pub struct Host {
     /// they left the map so a client that attaches after the failure still reads it
     /// (`preparation.rs`). Served on `/state` and `/events` only; neither listed nor
     /// holding an id.
-    failed: Mutex<BTreeMap<String, (Arc<crate::daemon::starting::Starting>, std::time::Instant)>>,
+    failed: Mutex<BTreeMap<String, (Arc<starting::Starting>, Instant)>>,
     /// Why the last resume of a dormant session failed, by project root and id, until
     /// a resume succeeds or the session is archived. The dormant listing carries it as
     /// `resume_failure` (`archived.rs`).
@@ -102,7 +102,7 @@ pub struct Host {
     /// Set when an owner watch adopts this host, which makes it an island
     /// (`island_exit.rs`, docs/operating.md): it runs no boot resume, and it
     /// archives its sessions when its owner goes (docs/resumption.md).
-    island: std::sync::atomic::AtomicBool,
+    island: AtomicBool,
     /// The host's own environment, captured once at start (docs/env.md).
     ///
     /// This is the base a session launched without a caller-supplied environment
@@ -123,11 +123,11 @@ pub struct Host {
     /// What every client has last said about whether anyone is attending
     /// (`attention.rs`, docs/web-push.md). Shared with each adopted session, so
     /// a push for any of them reads one table.
-    pub(super) attention: Arc<super::attention::Attention>,
+    pub(super) attention: Arc<attention::Attention>,
     /// What the update check last found newer than this host (`update_check.rs`,
     /// docs/update-check.md). Shared with each adopted session, which publishes it as
     /// its `newer_version` topic; empty on a host that does not check.
-    newer_version: Arc<super::newer_version::NewerVersion>,
+    newer_version: Arc<newer_version::NewerVersion>,
     /// The artifact-only loopback listener's origin (docs/artifacts.md): started by
     /// the first adopt, under this host's `Swansong`; `None` once its bind failed, so
     /// the bind is tried once.
@@ -165,16 +165,16 @@ pub(super) struct Hosted {
     /// session outside its descendants this one may archive.
     pub(super) succeeds: Option<String>,
     /// Who hears this session's status, and on what terms (`subscriptions.rs`).
-    pub(super) subscribers: BTreeMap<String, super::subscriptions::Subscription>,
+    pub(super) subscribers: BTreeMap<String, subscriptions::Subscription>,
     /// The last seq each reading session was shown of this one's transcript
     /// (`agents.rs`, docs/tools.md). Control state only: never logged, gone with a
     /// restart, when a reader's next default read starts over at the tail.
-    pub(super) read_cursors: BTreeMap<String, crate::log::Seq>,
+    pub(super) read_cursors: BTreeMap<String, Seq>,
     /// The inference options this session was created with — model, spotter,
     /// triage, effort, temperature — which a `hand_off` successor is created
     /// with in turn (docs/tools.md). Empty for a session adopted without a
     /// creation request.
-    pub(super) options: crate::inference::SessionOptions,
+    pub(super) options: SessionOptions,
 }
 
 impl Host {
@@ -213,7 +213,7 @@ impl Host {
             resume_failures: Mutex::new(BTreeMap::new()),
             inventory: crate::inventory::Inventory::new(),
             start_pass,
-            island: std::sync::atomic::AtomicBool::new(false),
+            island: AtomicBool::new(false),
             host_env,
             listing_changed: Notify::new(),
             attention: Arc::default(),
@@ -240,7 +240,7 @@ impl Host {
     /// any host, with or without a TCP bind.
     pub(crate) fn artifact_origin(self: &Arc<Self>) -> Option<&str> {
         self.artifact_origin
-            .get_or_init(|| match super::artifacts::spawn_listener(self) {
+            .get_or_init(|| match artifacts::spawn_listener(self) {
                 Ok(origin) => {
                     log::info!("artifacts: {origin}");
                     Some(origin)
@@ -315,7 +315,7 @@ impl Host {
         runtime: SessionRuntime,
         created_by: Option<String>,
         detached: bool,
-        from: Option<&Arc<crate::daemon::starting::Starting>>,
+        from: Option<&Arc<starting::Starting>>,
     ) -> Result<(), String> {
         let session = Arc::clone(runtime.session());
         // The web client addresses an adopted session under the host's own
@@ -336,7 +336,7 @@ impl Host {
             succeeds: None,
             subscribers: BTreeMap::new(),
             read_cursors: BTreeMap::new(),
-            options: crate::inference::SessionOptions::default(),
+            options: SessionOptions::default(),
         };
         // First one in wins: an id held by anything but the starting entry this
         // runtime was prepared from refuses, rather than being replaced and leaving a
@@ -368,25 +368,21 @@ impl Host {
         }
         // The status watcher (`subscriptions.rs`), stopped by the runtime's
         // shutdown like its other tasks.
-        tokio::spawn(
-            runtime
-                .swansong()
-                .interrupt(super::subscriptions::watch_status(
-                    Arc::downgrade(self),
-                    id.clone(),
-                    Arc::clone(&session),
-                )),
-        );
+        tokio::spawn(runtime.swansong().interrupt(subscriptions::watch_status(
+            Arc::downgrade(self),
+            id.clone(),
+            Arc::clone(&session),
+        )));
         let host = Arc::clone(self);
         tokio::spawn(async move {
             let status = match runtime.finished().await {
                 Ok(()) => {
                     log::info!("session {id}: ended");
-                    super::status::SessionStatus::Ended
+                    status::SessionStatus::Ended
                 }
                 Err(e) => {
                     log::warn!("session {id}: ended with error: {e}");
-                    super::status::SessionStatus::Failed {
+                    status::SessionStatus::Failed {
                         error: e.to_string(),
                     }
                 }
@@ -463,7 +459,7 @@ impl Host {
         from: &str,
         mut body: CreateSession,
         brief: String,
-    ) -> std::result::Result<String, String> {
+    ) -> Result<String, String> {
         let Some(hosted) = self.hosted(from) else {
             return Err(format!("session {from:?} is not hosted"));
         };
@@ -484,7 +480,7 @@ impl Host {
 
     /// Record the inference options `id` was created with, which a `hand_off`
     /// successor is created with in turn.
-    pub(super) fn record_options(&self, id: &str, options: crate::inference::SessionOptions) {
+    pub(super) fn record_options(&self, id: &str, options: SessionOptions) {
         if let Some(hosted) = self.sessions.lock().unwrap().hosted_mut(id) {
             hosted.options = options;
         }
@@ -499,7 +495,7 @@ impl Host {
         }
         if let Some(session) = self.session(successor) {
             session.submit_turn(
-                crate::frontend::SubmittedTurn::new(brief, super::mint_submission_id())
+                SubmittedTurn::new(brief, mint_submission_id())
                     .sourced(Some(crate::frontend::handoff_source(from))),
             );
         }
@@ -555,22 +551,21 @@ impl Host {
         &self,
         id: &str,
         cwd: &std::path::Path,
-    ) -> Arc<crate::daemon::starting::Starting> {
-        let starting =
-            crate::daemon::starting::Starting::new(crate::daemon::starting::StartingParts {
-                id: id.to_string(),
-                directories: crate::policy::Directories::at(cwd),
-                resume: false,
-                created_by: None,
-                detached: false,
-            });
+    ) -> Arc<starting::Starting> {
+        let starting = starting::Starting::new(starting::StartingParts {
+            id: id.to_string(),
+            directories: crate::policy::Directories::at(cwd),
+            resume: false,
+            created_by: None,
+            detached: false,
+        });
         assert!(self.sessions.lock().unwrap().insert_starting(&starting));
         self.touch_listing();
         starting
     }
 
     /// The session under `id` while it is starting.
-    pub(crate) fn starting(&self, id: &str) -> Option<Arc<crate::daemon::starting::Starting>> {
+    pub(crate) fn starting(&self, id: &str) -> Option<Arc<starting::Starting>> {
         match self.entry(id)? {
             Entry::Starting(starting) => Some(starting),
             Entry::Hosted(_) => None,
@@ -583,7 +578,7 @@ impl Host {
 pub async fn serve_host(
     host: Arc<Host>,
     socket: PathBuf,
-    bind: Option<tcp::TcpBind>,
+    bind: Option<TcpBind>,
 ) -> Result<(), Error> {
     // The state beside this socket and the socket itself are the host's whole
     // on-disk footprint; tighten them before anything is served from here

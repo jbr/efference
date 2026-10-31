@@ -47,7 +47,7 @@ async fn a_supervisors_deny_names_the_supervisor() {
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     wait_until("the call is held", || session.pending_gate().is_some()).await;
     assert!(session.resolve_approval(
-        &crate::log::CallId("toolu_1".into()),
+        &CallId("toolu_1".into()),
         Approval::Redirect("use trash instead".into()),
         Some("session[parent]".into()),
         None,

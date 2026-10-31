@@ -39,7 +39,7 @@ impl BindFlags {
 pub(crate) fn resolve_bind(
     flags: BindFlags,
     secrets: &efference::secrets::Secrets,
-) -> Result<Option<efference::daemon::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Option<daemon::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
     // An empty bind is the explicit "UDS-only" spelling: `--bind ""` overrides a
     // configured `[host] bind` (e.g. for a second concurrent host).
     let Some(addr) = flags.bind.filter(|a| !a.trim().is_empty()) else {
@@ -56,7 +56,7 @@ pub(crate) fn resolve_bind(
         .collect();
     let loopback = !resolved.is_empty() && resolved.iter().all(|a| a.ip().is_loopback());
     let tls = match (flags.tls_cert, flags.tls_key) {
-        (Some(cert), Some(key)) => Some(efference::daemon::TlsPem {
+        (Some(cert), Some(key)) => Some(daemon::TlsPem {
             cert: std::fs::read(&cert)
                 .map_err(|e| format!("could not read tls-cert {}: {e}", cert.display()))?,
             key: std::fs::read(&key)
@@ -97,7 +97,7 @@ pub(crate) fn resolve_bind(
     // is not the `[secrets]` commands.
     let root = efference::auth::Root::load(secrets)?;
     efference::auth::Root::install(Some(root.clone()));
-    Ok(Some(efference::daemon::TcpBind {
+    Ok(Some(daemon::TcpBind {
         addr,
         tls,
         public_url,
@@ -207,10 +207,7 @@ pub(crate) async fn spotter_check(
         paths: if paths.is_empty() {
             base.paths
         } else {
-            paths
-                .iter()
-                .map(|s| crate::dev::parse_path_grant(s))
-                .collect()
+            paths.iter().map(|s| dev::parse_path_grant(s)).collect()
         },
         mcp_servers: base.mcp_servers,
         ..Default::default()
@@ -282,7 +279,7 @@ pub(crate) async fn spotter_check(
     // missing key. They come before the preview because what gets previewed depends on
     // which rung the model is: the prose spotter reads a rendered move block, the
     // decision model reads a JSON state (docs/permissions.md).
-    let (model, endpoint) = crate::inference::spotter_endpoint(model)?;
+    let (model, endpoint) = inference::spotter_endpoint(model)?;
     let kind = endpoint.spotter_kind(&model).await?;
     let thinking = endpoint.spotter_thinking(&model, kind).await?;
     // The tester has one directory, so it stands as both.
@@ -375,9 +372,9 @@ pub(crate) async fn host(
     };
     let owner = island.then(|| {
         let socket = socket.clone();
-        efference::daemon::island::OwnerWatch::spawn(std::io::stdin(), move || {
+        daemon::island::OwnerWatch::spawn(std::io::stdin(), move || {
             // No sessions exist yet, so there is nothing to wind down.
-            efference::daemon::island::remove_island_files(&socket);
+            daemon::island::remove_island_files(&socket);
             std::process::exit(0);
         })
     });
@@ -413,7 +410,7 @@ pub(crate) async fn host(
         log::info!("{name}: renewing its credential ahead of expiry while the host runs");
         tokio::spawn(auth.keep_renewed());
     }
-    let host = efference::daemon::Host::new(inference, launch_baseline);
+    let host = daemon::Host::new(inference, launch_baseline);
     // Only with the user's answer: a configuration without one never checks
     // (docs/update-check.md). An island is a host like any other here.
     if efference::inference::UpdatesConfig::load(Path::new(&home))?.check {
@@ -444,7 +441,7 @@ pub(crate) async fn host(
     }
     served?;
     if island {
-        efference::daemon::island::remove_island_files(&socket);
+        daemon::island::remove_island_files(&socket);
     }
     Ok(())
 }

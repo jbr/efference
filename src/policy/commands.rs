@@ -351,7 +351,7 @@ pub(crate) fn without_cd_into<'a>(command: &'a str, dirs: &Directories) -> Optio
     if program != "cd" {
         return None;
     }
-    let lexical = super::lexical_normalize;
+    let lexical = lexical_normalize;
     let cwd = dirs.working();
     if lexical(&cwd.join(target)) != lexical(cwd) {
         return None;
@@ -518,7 +518,7 @@ fn literal_pieces(
             // The sequence is the backslash plus the character it escapes.
             WordPiece::EscapeSequence(sequence) => out.push_str(sequence.strip_prefix('\\')?),
             WordPiece::DoubleQuotedSequence(inner) => {
-                out.push_str(&literal_pieces(inner, true, pattern)?)
+                out.push_str(&literal_pieces(inner, true, pattern)?);
             }
             _ => return None, // expansion, substitution, tilde, $'…'
         }

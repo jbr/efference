@@ -28,7 +28,7 @@ fn temp_path(name: &str) -> std::path::PathBuf {
 
 /// The file's lines from the second on: what an assertion about *entries*
 /// means, since line 1 is the header (docs/log-and-projection.md).
-fn entry_lines(path: &std::path::Path) -> Vec<String> {
+fn entry_lines(path: &Path) -> Vec<String> {
     std::fs::read_to_string(path)
         .unwrap()
         .lines()
@@ -38,7 +38,7 @@ fn entry_lines(path: &std::path::Path) -> Vec<String> {
 }
 
 /// Line 1 on its own, for an assertion that a header was left as it was.
-fn header_line(path: &std::path::Path) -> String {
+fn header_line(path: &Path) -> String {
     std::fs::read_to_string(path)
         .unwrap()
         .lines()
@@ -49,7 +49,7 @@ fn header_line(path: &std::path::Path) -> String {
 
 /// Why loading `path` failed, as the typed error a caller branches on — the
 /// class, not the message.
-fn load_error(path: &std::path::Path) -> LoadError {
+fn load_error(path: &Path) -> LoadError {
     load(path).unwrap_err()
 }
 

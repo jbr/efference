@@ -56,7 +56,10 @@ pub(crate) struct RenderContext {
 impl RenderContext {
     /// Get the list of available theme names
     pub(crate) fn available_themes() -> Vec<String> {
-        themes::THEME_NAMES.iter().map(|s| s.to_string()).collect()
+        themes::THEME_NAMES
+            .iter()
+            .map(ToString::to_string)
+            .collect()
     }
 
     pub(crate) fn with_theme_name(mut self, theme_name_or_path: &str) -> Result<Self, ThemeError> {

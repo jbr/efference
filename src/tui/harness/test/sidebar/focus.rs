@@ -343,12 +343,7 @@ fn view_jumps_transcript_focus_to_the_processs_entry() {
             json!({ "command": "npm run dev", "background": true }),
         )],
     );
-    play.tool_result(
-        "toolu_bg",
-        "backgrounded as p#3.",
-        false,
-        crate::log::WireState::Raw,
-    );
+    play.tool_result("toolu_bg", "backgrounded as p#3.", false, WireState::Raw);
     play.event(TuiEvent::Processes(vec![BgProc {
         id: 3,
         command: "npm run dev".into(),

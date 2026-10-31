@@ -32,7 +32,7 @@ pub(super) async fn land(
     let mut shown_through: crate::log::Seq = 0;
     let mut deferred: Option<(
         Vec<ShownNotification>,
-        Vec<crate::process_monitor::BgView>,
+        Vec<process_monitor::BgView>,
         Vec<crate::log::Seq>,
     )> = None;
     let mut triage = if pending.is_empty() {
@@ -150,8 +150,7 @@ pub(super) async fn land(
     // just flags the process monitor.
     let mut inbox_verdict = triage
         .as_mut()
-        .map(|g| std::mem::take(&mut g.inbox))
-        .unwrap_or_default();
+        .map_or_default(|g| std::mem::take(&mut g.inbox));
     force_pins(&mut inbox_verdict, &forced_pins);
     if let Some(g) = &triage {
         for (handle, verdict) in &g.background {
@@ -179,27 +178,21 @@ pub(super) async fn land(
     // when a completion carried a single call.
     let mut verdicts = triage
         .as_mut()
-        .map(|g| std::mem::take(&mut g.results))
-        .unwrap_or_default()
+        .map_or_default(|g| std::mem::take(&mut g.results))
         .into_iter();
-    let surfaced = triage
-        .as_ref()
-        .map(|g| g.surfaced.clone())
-        .unwrap_or_default();
+    let surfaced = triage.as_ref().map_or_default(|g| g.surfaced.clone());
     // Triage-scoped like the inbox riders: the non-compliant-attempt breadcrumbs
     // land on the last `Triage` of the batch — durable even when a retry
     // recovered (docs/triage.md).
     let mut retries = triage
         .as_mut()
-        .map(|g| std::mem::take(&mut g.retries))
-        .unwrap_or_default();
+        .map_or_default(|g| std::mem::take(&mut g.retries));
     // Triage-scoped for the same reason: one triage reasoned about the whole batch,
     // so its thinking rides the last `Triage` rather than being copied per
     // result (docs/triage.md).
     let mut thinking = triage
         .as_mut()
-        .map(|g| std::mem::take(&mut g.thinking))
-        .unwrap_or_default();
+        .map_or_default(|g| std::mem::take(&mut g.thinking));
     let last_ran = steps
         .iter()
         .rposition(|s| matches!(s, Step::Ran { .. }))
@@ -323,13 +316,13 @@ pub(super) fn after_landing(
     shared: &Session,
     turn: &mut Turn,
     abort_turn: bool,
-    redirect: Option<super::batch::Redirect>,
+    redirect: Option<Redirect>,
 ) -> std::io::Result<bool> {
     if abort_turn {
         log::debug!("turn aborted");
         return Ok(true);
     }
-    if let Some(super::batch::Redirect { message, source }) = redirect {
+    if let Some(Redirect { message, source }) = redirect {
         // The rejection `tool_result`(s) answer the orphaned call(s); this
         // user turn carries the steer, under its decider's source, so it opens as that
         // decider's messages do (docs/permissions.md). The trajectory goes on:

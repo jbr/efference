@@ -16,7 +16,7 @@ async fn left(
     id: &str,
     created_by: Option<&str>,
     archived: bool,
-    extra: impl FnOnce(&mut crate::persist::Log),
+    extra: impl FnOnce(&mut Log),
 ) {
     let mut asked = request(root.path(), id, None);
     asked.lineage.created_by = created_by.map(String::from);
@@ -160,7 +160,7 @@ async fn an_island_leaves_an_interrupted_session_dormant_and_another_host_resume
     let log = root.session_dir("open").join(crate::boot::LOG_NAME);
     let before = std::fs::read(&log).unwrap();
     let island = host_over(&root);
-    let (reader, owner) = std::io::pipe().unwrap();
+    let (reader, owner) = io::pipe().unwrap();
     let watch =
         crate::daemon::island::OwnerWatch::spawn(reader, || panic!("the host already existed"));
     watch.adopt(&island);

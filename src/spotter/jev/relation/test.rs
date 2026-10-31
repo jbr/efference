@@ -7,7 +7,7 @@ fn bash(command: &str) -> ToolCall {
 
 #[test]
 fn a_bash_family_is_the_program_after_cd_and_assignments() {
-    let family = |command: &str| super::family(&bash(command));
+    let family = |command: &str| family(&bash(command));
     assert_eq!(family("cargo test"), "bash:cargo");
     assert_eq!(family("  cargo test --lib"), "bash:cargo");
     assert_eq!(family("cd /work/proj && cargo test"), "bash:cargo");
@@ -23,7 +23,7 @@ fn a_bash_family_is_the_program_after_cd_and_assignments() {
 #[test]
 fn any_other_tool_is_its_own_family_by_display_name() {
     let call = ToolCall::new("fs__read", "c", json!({ "path": "a" }));
-    assert_eq!(super::family(&call), "fs.read");
+    assert_eq!(family(&call), "fs.read");
 }
 
 #[test]

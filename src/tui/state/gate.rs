@@ -52,9 +52,8 @@ impl<'a> InteractiveState<'a> {
         // Mint the submission id here (docs/tui.md): the echo below and any later recall both
         // address this exact submission, which text equality could not do once a recalled turn
         // can be edited and re-sent.
-        let submitted =
-            crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
-                .with_attachments(self.staged.ready());
+        let submitted = SubmittedTurn::new(text, crate::daemon::mint_submission_id())
+            .with_attachments(self.staged.ready());
         // A send while a question shows answers that question, by name (docs/tui.md).
         let submission = crate::tui::senders::Submission {
             turn: submitted.clone(),

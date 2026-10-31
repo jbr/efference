@@ -23,7 +23,7 @@ fn endpoint(addr: std::net::SocketAddr) -> crate::api::Endpoint {
     }
 }
 
-fn state(session: &Session) -> serde_json::Value {
+fn state(session: &Session) -> Value {
     serde_json::from_str(&session.state_json()).unwrap()
 }
 
@@ -109,10 +109,7 @@ fn a_shared_triage_publishes_no_triage_readings() {
 #[test]
 fn the_triage_lineage_has_its_own_cold_streak() {
     let (session, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    session.set_triage_client((
-        crate::api::upstream_failure_state(),
-        crate::api::plan_state(),
-    ));
+    session.set_triage_client((upstream_failure_state(), crate::api::plan_state()));
     let streak = |session: &Session| state(session)["usage"]["triage_cold_streak"].clone();
     assert_eq!(streak(&session), 0);
 

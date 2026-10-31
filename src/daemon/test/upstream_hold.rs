@@ -47,7 +47,7 @@ pub(super) fn end_turn() -> String {
 pub(super) fn events(data: &[String]) -> String {
     data.iter()
         .map(|d| {
-            let kind: serde_json::Value = serde_json::from_str(d).unwrap();
+            let kind: Value = serde_json::from_str(d).unwrap();
             format!("event: {}\ndata: {d}\n\n", kind["type"].as_str().unwrap())
         })
         .collect()
@@ -177,14 +177,14 @@ pub(super) async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
     .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
 }
 
-pub(super) fn start(addr: std::net::SocketAddr) -> (Swansong, SessionRuntime) {
+pub(super) fn start(addr: SocketAddr) -> (Swansong, SessionRuntime) {
     start_with(addr, |_| {})
 }
 
 /// [`start`], with the boot adjusted first: a review level, a spotter's stance.
 pub(super) fn start_with(
-    addr: std::net::SocketAddr,
-    adjust: impl FnOnce(&mut crate::daemon::SessionBoot<crate::spotter::StaticSpotter>),
+    addr: SocketAddr,
+    adjust: impl FnOnce(&mut SessionBoot<crate::spotter::StaticSpotter>),
 ) -> (Swansong, SessionRuntime) {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
@@ -230,8 +230,8 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    let held = crate::daemon::LoopPhase::Blocked {
-        reason: crate::daemon::BlockedReason::TriageUnavailable,
+    let held = LoopPhase::Blocked {
+        reason: BlockedReason::TriageUnavailable,
     };
     wait_until("the triage is held", || session.loop_phase() == held).await;
     let stall = session.stall().unwrap();
@@ -272,7 +272,7 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
         "continue retries the hold"
     );
     wait_until("the turn finishes", || {
-        session.loop_phase() == crate::daemon::LoopPhase::Idle
+        session.loop_phase() == LoopPhase::Idle
     })
     .await;
     assert!(
@@ -368,7 +368,7 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
         .unwrap();
     assert_eq!(session.request_continue(Default::default()), Ok(()));
     wait_until("the turn finishes", || {
-        session.loop_phase() == crate::daemon::LoopPhase::Idle
+        session.loop_phase() == LoopPhase::Idle
     })
     .await;
 
@@ -416,7 +416,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
         "continue retries now"
     );
     wait_until("the turn finishes", || {
-        session.loop_phase() == crate::daemon::LoopPhase::Idle
+        session.loop_phase() == LoopPhase::Idle
     })
     .await;
     assert!(session.stall().is_none());

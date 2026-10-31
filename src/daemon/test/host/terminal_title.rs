@@ -8,12 +8,12 @@ use std::sync::Mutex;
 #[derive(Clone, Default)]
 struct Terminal(Arc<Mutex<Vec<u8>>>);
 
-impl std::io::Write for Terminal {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+impl io::Write for Terminal {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.0.lock().unwrap().extend_from_slice(bytes);
         Ok(bytes.len())
     }
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }

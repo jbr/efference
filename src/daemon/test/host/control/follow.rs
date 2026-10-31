@@ -12,13 +12,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[derive(Clone, Default)]
 struct Shared(Arc<Mutex<Vec<u8>>>);
 
-impl std::io::Write for Shared {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+impl io::Write for Shared {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.0.lock().unwrap().extend_from_slice(bytes);
         Ok(bytes.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
@@ -46,7 +46,7 @@ impl Shared {
 }
 
 fn agents(ids: &[&str]) -> Vec<String> {
-    ids.iter().map(|id| id.to_string()).collect()
+    ids.iter().map(ToString::to_string).collect()
 }
 
 /// The current status, then a gate's block, then the end: blocks separated by a blank
@@ -100,7 +100,7 @@ async fn follow_fails_when_the_host_goes_away() {
     let down = Arc::new(AtomicBool::new(false));
     let front = {
         let down = Arc::clone(&down);
-        move |conn: trillium::Conn| {
+        move |conn: Conn| {
             let down = Arc::clone(&down);
             async move {
                 match down.load(Ordering::SeqCst) {

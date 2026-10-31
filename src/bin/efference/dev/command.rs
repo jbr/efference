@@ -132,11 +132,11 @@ pub(crate) enum DevCommand {
         /// like creation scopes it: an explicit `--config` names the config
         /// key, else the checkout's `efference.toml` when present.
         #[arg(long)]
-        cwd: Option<std::path::PathBuf>,
+        cwd: Option<PathBuf>,
         /// An explicit `--config` path, resolved against the root like boot
         /// resolves it.
         #[arg(long)]
-        config: Option<std::path::PathBuf>,
+        config: Option<PathBuf>,
         /// A connection to narrow the recent menu to, omitting the default.
         #[arg(long)]
         connection: Option<String>,

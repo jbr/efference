@@ -73,8 +73,14 @@ pub(crate) struct PendingAsk {
 pub(super) fn parse_ask(ask: &serde_json::Value) -> Option<PendingAsk> {
     Some(PendingAsk {
         call_id: ask.get("call_id")?.as_str()?.to_string(),
-        n: ask.get("n").and_then(|n| n.as_u64()).unwrap_or(1) as usize,
-        of: ask.get("of").and_then(|n| n.as_u64()).unwrap_or(1) as usize,
+        n: ask
+            .get("n")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(1) as usize,
+        of: ask
+            .get("of")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(1) as usize,
         recalled: ask
             .get("recalled")
             .and_then(|r| serde_json::from_value(r.clone()).ok())
@@ -83,11 +89,11 @@ pub(super) fn parse_ask(ask: &serde_json::Value) -> Option<PendingAsk> {
 }
 
 /// Parse the `cold` topic: `null` is warm.
-pub(super) fn parse_cold(data: &serde_json::Value) -> Option<super::ColdView> {
+pub(super) fn parse_cold(data: &serde_json::Value) -> Option<ColdView> {
     if data.is_null() {
         return None;
     }
-    Some(super::ColdView {
+    Some(ColdView {
         context_tokens: data["context_tokens"].as_u64(),
     })
 }
@@ -130,13 +136,12 @@ fn parse_acting_on(value: &serde_json::Value) -> Option<ActingOn> {
         chain: value
             .get("chain")
             .and_then(|c| c.as_array())
-            .map(|chain| {
+            .map_or_default(|chain| {
                 chain
                     .iter()
                     .filter_map(|id| id.as_str().map(String::from))
                     .collect()
-            })
-            .unwrap_or_default(),
+            }),
     })
 }
 
@@ -185,27 +190,26 @@ pub(super) fn parse_policy(
     let mut tools: Vec<PolicyEntry> = role
         .get("tools")
         .and_then(|t| t.as_object())
-        .map(|m| {
+        .map_or_default(|m| {
             m.iter()
                 .map(|(key, entry)| PolicyEntry {
                     label: tool_label(
                         key,
-                        entry.get("enabled").and_then(|b| b.as_bool()),
-                        entry.get("granted").and_then(|b| b.as_bool()),
+                        entry.get("enabled").and_then(serde_json::Value::as_bool),
+                        entry.get("granted").and_then(serde_json::Value::as_bool),
                     ),
                     proposed: false,
                     seq: None,
                 })
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     // `commands` arrives as key → stance (docs/control-api.md). A `clear` entry renders as the
     // bare key — the common case, and what the operator wrote — while any other stance is
     // tagged, the same way a path carries its perms: an untagged carve-out would read as a grant.
     let mut commands: Vec<PolicyEntry> = role
         .get("commands")
         .and_then(|c| c.as_object())
-        .map(|m| {
+        .map_or_default(|m| {
             m.iter()
                 .map(|(key, stance)| PolicyEntry {
                     label: match stance.as_str() {
@@ -216,18 +220,20 @@ pub(super) fn parse_policy(
                     seq: None,
                 })
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     let mut paths: Vec<PolicyEntry> = role
         .get("paths")
         .and_then(|p| p.as_object())
-        .map(|m| {
+        .map_or_default(|m| {
             m.iter()
                 .map(|(path, perms)| {
-                    let r = perms.get("read").and_then(|b| b.as_bool()).unwrap_or(false);
+                    let r = perms
+                        .get("read")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false);
                     let w = perms
                         .get("write")
-                        .and_then(|b| b.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false);
                     PolicyEntry {
                         label: format!("{path}  {}", perm_str(r, w)),
@@ -236,15 +242,15 @@ pub(super) fn parse_policy(
                     }
                 })
                 .collect()
-        })
-        .unwrap_or_default();
+        });
 
     let mut scope_proposal = None;
     if let Some(arr) = proposals.as_array() {
         for prop in arr {
-            let (Some(seq), Some(change)) =
-                (prop.get("seq").and_then(|s| s.as_u64()), prop.get("change"))
-            else {
+            let (Some(seq), Some(change)) = (
+                prop.get("seq").and_then(serde_json::Value::as_u64),
+                prop.get("change"),
+            ) else {
                 continue;
             };
             if let Some(c) = change
@@ -259,8 +265,14 @@ pub(super) fn parse_policy(
                 });
             } else if let Some(p) = change.get("Path") {
                 let path = p.get("path").and_then(|s| s.as_str()).unwrap_or("");
-                let r = p.get("read").and_then(|b| b.as_bool()).unwrap_or(false);
-                let w = p.get("write").and_then(|b| b.as_bool()).unwrap_or(false);
+                let r = p
+                    .get("read")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                let w = p
+                    .get("write")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
                 paths.push(PolicyEntry {
                     label: format!("{path}  {}", perm_str(r, w)),
                     proposed: true,
@@ -428,25 +440,31 @@ pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {
         usage
             .get("retention")
             .and_then(|r| r.get(field))
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0)
     };
-    let last_request_at = usage.get("last_request_at").and_then(|v| v.as_u64());
+    let last_request_at = usage
+        .get("last_request_at")
+        .and_then(serde_json::Value::as_u64);
     Some(UsageStats {
         input_tokens: cumulative.get("input_tokens")?.as_u64()?,
         output_tokens: cumulative.get("output_tokens")?.as_u64()?,
         cache_read_input_tokens: cumulative.get("cache_read_input_tokens")?.as_u64()?,
         cache_creation_input_tokens: cumulative.get("cache_creation_input_tokens")?.as_u64()?,
         last_request_at,
-        seconds_since_last_request: last_request_at.map(super::secs_since),
+        seconds_since_last_request: last_request_at.map(secs_since),
         context_limit: context
             .and_then(|c| c.get("limit"))
-            .and_then(|v| v.as_u64()),
-        context_used: context.and_then(|c| c.get("used")).and_then(|v| v.as_u64()),
-        cost_usd: cost.and_then(|c| c.get("usd")).and_then(|v| v.as_f64()),
+            .and_then(serde_json::Value::as_u64),
+        context_used: context
+            .and_then(|c| c.get("used"))
+            .and_then(serde_json::Value::as_u64),
+        cost_usd: cost
+            .and_then(|c| c.get("usd"))
+            .and_then(serde_json::Value::as_f64),
         cost_unpriced: cost
             .and_then(|c| c.get("unpriced"))
-            .and_then(|v| v.as_u64()),
+            .and_then(serde_json::Value::as_u64),
         kept_lines: retention("kept_lines"),
         shown_lines: retention("shown_lines"),
         withheld_results: retention("withheld"),
@@ -454,7 +472,7 @@ pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {
         // warn about, which is the same as a warm read.
         cold_streak: usage
             .get("cold_streak")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32,
         keepalive_note: usage
             .get("keepalive_skipped")
@@ -466,19 +484,23 @@ pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {
 /// The sidebar's wording for a `usage.keepalive_skipped` value: what the loop is doing
 /// in place of pinging, with the figure that decided it.
 fn keepalive_note(skipped: &serde_json::Value) -> String {
-    let tokens = |field: &str| skipped.get(field).and_then(|v| v.as_u64()).unwrap_or(0);
+    let tokens = |field: &str| {
+        skipped
+            .get(field)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
     match skipped.get("reason").and_then(|v| v.as_str()) {
         Some("rejected") => "keepalive off: ping rejected".to_string(),
         Some("exhausted") => "keepalive paused: usage limit".to_string(),
         _ => {
             let cost = skipped
                 .get("completion_usd")
-                .and_then(|v| v.as_f64())
-                .map(|usd| format!(" (${usd:.4})"))
-                .unwrap_or_default();
+                .and_then(serde_json::Value::as_f64)
+                .map_or_default(|usd| format!(" (${usd:.4})"));
             format!(
                 "keepalive paused: {} out{cost}",
-                super::render_sidebar::num(tokens("output_tokens"))
+                render_sidebar::num(tokens("output_tokens"))
             )
         }
     }

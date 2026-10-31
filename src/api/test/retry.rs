@@ -39,7 +39,7 @@ fn latest_failure_replaces_detail_and_a_stream_can_fail_after_recovery() {
     let latest = failure.lock().unwrap().clone().unwrap();
     assert_eq!(latest.count, 2);
     assert_eq!(latest.detail, "second");
-    super::client::clear_upstream_failure(&failure);
+    client::clear_upstream_failure(&failure);
     record_upstream_failure(&failure, None, "stream closed");
     assert_eq!(
         *failure.lock().unwrap(),
@@ -56,7 +56,7 @@ fn upstream_failure_clears_on_recovery() {
     record_upstream_failure(&failure, Some(429), "");
     assert!(failure.lock().unwrap().is_some());
 
-    super::client::clear_upstream_failure(&failure);
+    client::clear_upstream_failure(&failure);
     assert_eq!(*failure.lock().unwrap(), None);
 
     // A later failure starts a fresh run rather than resuming the cleared count.

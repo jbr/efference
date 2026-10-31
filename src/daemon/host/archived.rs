@@ -100,7 +100,7 @@ impl Host {
 /// The roots an archived read covers: the `cwd` query when given, else every
 /// remembered root, most recently used first.
 fn scan_roots(host: &Host, query: &str) -> Result<Vec<PathBuf>, &'static str> {
-    match crate::daemon::http::query_value(query, "cwd") {
+    match http::query_value(query, "cwd") {
         Some(cwd) => {
             let cwd = PathBuf::from(cwd);
             if !cwd.is_absolute() {
@@ -182,7 +182,7 @@ pub(super) async fn read_session(conn: Conn) -> Conn {
 /// set changes only when a log does, and there is no stream of it to subscribe to.
 pub(super) async fn archived_listing(conn: Conn) -> Conn {
     let query = conn.querystring().to_string();
-    match crate::daemon::http::query_value(&query, "state").as_deref() {
+    match http::query_value(&query, "state").as_deref() {
         None | Some("active") => conn,
         Some("archived") => {
             let Some(host) = host_of(&conn) else {

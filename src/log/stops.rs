@@ -52,7 +52,7 @@ pub fn classify(entries: &[LogEntry]) -> Vec<(Stop, Option<String>)> {
             Payload::Assistant { output, .. } => {
                 // A call still to run means the loop continues — including a call
                 // held at a permission gate, which is a pause, not an ending.
-                let ended = output.tool_calls().map(|c| c.is_empty()).unwrap_or(false);
+                let ended = output.tool_calls().is_ok_and(|c| c.is_empty());
                 if ended {
                     pending = true;
                     if asks(&output.text()) {

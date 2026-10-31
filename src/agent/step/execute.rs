@@ -150,7 +150,7 @@ pub(super) async fn run_approved<F: Frontend>(
                 // telemetry row, which is where a foreground process's
                 // ordinal survives the removal (docs/process-monitor.md).
                 if let Some(id) = fg_id.lock().unwrap().take() {
-                    process_handle = Some(crate::process_monitor::handle(id));
+                    process_handle = Some(process_monitor::handle(id));
                     shared.conclude_foreground(id);
                 }
                 result

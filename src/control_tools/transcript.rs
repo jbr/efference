@@ -122,8 +122,7 @@ impl Tool<Control> for Transcript {
                 let state_now = state_of(&client).await?;
                 let id = state_now["session_identity"]["id"]
                     .as_str()
-                    .map(str::to_string)
-                    .unwrap_or_else(|| self.agent.clone());
+                    .map_or_else(|| self.agent.clone(), str::to_string);
                 let last = state_now["last_seq"].as_u64();
                 let cursor = state.cursor(&id);
                 let plan = ReadPlan::new(cursor, self.since, self.tail, last);

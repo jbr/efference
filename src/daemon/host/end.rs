@@ -40,10 +40,7 @@ impl Host {
     /// A session still starting has its preparation cancelled instead
     /// (`preparation.rs`), leaving nothing a creation minted and a resumed session as
     /// dormant as it was.
-    pub fn end(
-        self: &Arc<Self>,
-        id: &str,
-    ) -> Option<Pin<Box<dyn std::future::Future<Output = Ended> + Send>>> {
+    pub fn end(self: &Arc<Self>, id: &str) -> Option<Pin<Box<dyn Future<Output = Ended> + Send>>> {
         self.end_by(id, None)
     }
 
@@ -54,7 +51,7 @@ impl Host {
         self: &Arc<Self>,
         id: &str,
         source: Option<String>,
-    ) -> Option<Pin<Box<dyn std::future::Future<Output = Ended> + Send>>> {
+    ) -> Option<Pin<Box<dyn Future<Output = Ended> + Send>>> {
         Some(match self.entry(id)? {
             Entry::Hosted(hosted) => Box::pin(self.end_hosted(hosted, id.to_string(), source)),
             Entry::Starting(starting) => {
@@ -69,7 +66,7 @@ impl Host {
         hosted: Hosted,
         id: String,
         archived_by: Option<String>,
-    ) -> impl std::future::Future<Output = Ended> + use<> {
+    ) -> impl Future<Output = Ended> + use<> {
         let archiving = self.swansong.state().is_running();
         let ids = self.session_ids.clone();
         async move {
@@ -141,7 +138,7 @@ async fn retire_worktree(session: &Arc<Session>, id: &str) -> Option<crate::work
             .await
             .unwrap_or_else(|e| crate::worktree::Retired::Failed(format!("worktree task: {e}")));
     if let Some(event) = retired.clone().into_event(&project, id)
-        && let Err(e) = session.append(0, crate::log::Payload::Worktree(event))
+        && let Err(e) = session.append(0, Payload::Worktree(event))
     {
         log::warn!("session {id}: could not log the worktree outcome: {e}");
     }

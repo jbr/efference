@@ -156,8 +156,7 @@ impl Store {
                 auth: row.get(2)?,
             })
         })
-        .map(|rows| rows.filter_map(Result::ok).collect())
-        .unwrap_or_default()
+        .map_or_default(|rows| rows.filter_map(Result::ok).collect())
     }
 
     /// Record a subscription, replacing any row with the same endpoint. The

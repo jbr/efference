@@ -69,8 +69,8 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 }
 
 /// What `session` sends from here on, in place of the push services.
-fn capture(session: &Session) -> Arc<std::sync::Mutex<Vec<crate::push::Message>>> {
-    let sent = Arc::new(std::sync::Mutex::new(Vec::new()));
+fn capture(session: &Session) -> Arc<Mutex<Vec<crate::push::Message>>> {
+    let sent = Arc::new(Mutex::new(Vec::new()));
     let into = Arc::clone(&sent);
     session.set_push_transport(Arc::new(move |message| {
         into.lock().unwrap().push(message);

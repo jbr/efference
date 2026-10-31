@@ -68,7 +68,7 @@ async fn a_settled_session_answers_settled_true_at_once() {
 #[tokio::test]
 async fn an_unsettled_session_answers_settled_false_at_the_cap() {
     let session = session();
-    session.set_phase(crate::daemon::LoopPhase::Requesting);
+    session.set_phase(LoopPhase::Requesting);
     let (header, state) = settle_answer(&session, CAP).await;
     assert_eq!(header.as_deref(), Some("false"));
     assert_eq!(
@@ -80,11 +80,11 @@ async fn an_unsettled_session_answers_settled_false_at_the_cap() {
 #[tokio::test]
 async fn a_session_that_settles_inside_the_cap_answers_true() {
     let session = session();
-    session.set_phase(crate::daemon::LoopPhase::Requesting);
+    session.set_phase(LoopPhase::Requesting);
     let waker = Arc::clone(&session);
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(20)).await;
-        waker.set_phase(crate::daemon::LoopPhase::Idle);
+        waker.set_phase(LoopPhase::Idle);
     });
     let (header, _) = settle_answer(&session, Duration::from_secs(30)).await;
     assert_eq!(header.as_deref(), Some("true"));

@@ -9,7 +9,7 @@ use crate::env_table::{EnvPolicy, Resolver};
 /// auth error, with nothing connecting the two. The error names the *reference*,
 /// which is a pointer and safe to print.
 pub(super) fn resolve_env_table(
-    resolver: &crate::env_table::Resolver,
+    resolver: &Resolver,
     table: &std::collections::BTreeMap<String, crate::env_table::EnvEntry>,
 ) -> Result<Vec<crate::env_table::ResolvedValue>, Error> {
     let (values, errors) = resolver.resolve_table(table);
@@ -18,7 +18,7 @@ pub(super) fn resolve_env_table(
         // is where the operator reads it, and no print repeats it.
         let detail = errors
             .iter()
-            .map(|e| e.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join("; ");
         return Err(format!("could not resolve [env] references: {detail}").into());
@@ -29,7 +29,7 @@ pub(super) fn resolve_env_table(
 /// [`resolve_env_table`] as a name → value map, for the credential lookup that
 /// runs before the session's policy exists.
 pub(super) fn resolve_env_values(
-    resolver: &crate::env_table::Resolver,
+    resolver: &Resolver,
     table: &std::collections::BTreeMap<String, crate::env_table::EnvEntry>,
 ) -> Result<std::collections::BTreeMap<String, String>, Error> {
     Ok(resolve_env_table(resolver, table)?
@@ -89,7 +89,7 @@ pub(super) fn build_env_policy(
         let detail = env_report
             .conflicts
             .iter()
-            .map(|c| c.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join("; ");
         return Err(format!("ambiguous [env] table: {detail}").into());

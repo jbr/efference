@@ -22,7 +22,7 @@ static SPAWN: Mutex<()> = Mutex::new(());
 pub fn std(cmd: &mut std::process::Command) -> io::Result<std::process::Child> {
     let _serialized = SPAWN
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // The one sanctioned spawn: the lock above is held (clippy.toml).
     #[allow(clippy::disallowed_methods)]
     cmd.spawn()
@@ -43,7 +43,7 @@ pub fn std_output(cmd: &mut std::process::Command) -> io::Result<std::process::O
 pub fn tokio(cmd: &mut tokio::process::Command) -> io::Result<tokio::process::Child> {
     let _serialized = SPAWN
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // The one sanctioned spawn: the lock above is held (clippy.toml).
     #[allow(clippy::disallowed_methods)]
     cmd.spawn()

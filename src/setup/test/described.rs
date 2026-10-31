@@ -38,10 +38,7 @@ async fn a_described_endpoint_is_named_after_its_host() {
     assert!(script.said("accepted the key (test key)"));
     let (name, connection) = &draft.connections[0];
     assert_eq!(name, "meta");
-    assert_eq!(
-        connection.provider,
-        crate::api::Provider::Custom(WireDialect::Messages)
-    );
+    assert_eq!(connection.provider, Provider::Custom(WireDialect::Messages));
     assert_eq!(
         connection.base_url.as_deref(),
         Some("https://api.meta.ai/v1")
@@ -69,14 +66,14 @@ async fn a_described_endpoint_is_named_after_its_host() {
             "sk-real".to_string(),
         )]))
         .unwrap(),
-        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        &std::sync::Arc::new(Secrets::in_memory()),
     )
     .unwrap();
     let inventory = registry.inventory();
     assert_eq!(inventory[0].name, "meta");
     assert_eq!(
         inventory[0].provider,
-        crate::api::Provider::Custom(WireDialect::Messages)
+        Provider::Custom(WireDialect::Messages)
     );
     assert!(inventory[0].available);
 }
@@ -112,6 +109,6 @@ async fn a_base_url_that_is_not_a_url_is_refused_at_the_prompt() {
     assert_eq!(name, "example");
     assert_eq!(
         connection.provider,
-        crate::api::Provider::Custom(WireDialect::Responses)
+        Provider::Custom(WireDialect::Responses)
     );
 }

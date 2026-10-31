@@ -90,10 +90,10 @@ impl Project {
     /// back to the full path where a basename says nothing — at a filesystem root
     /// there isn't one.
     pub fn label(&self) -> String {
-        self.cwd
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| self.cwd.to_string_lossy().into_owned())
+        self.cwd.file_name().map_or_else(
+            || self.cwd.to_string_lossy().into_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        )
     }
 }
 
@@ -156,12 +156,11 @@ impl Projects {
         let Some(connection) = self.connect() else {
             return Vec::new();
         };
-        let mut statement = match connection.prepare(
+        let Ok(mut statement) = connection.prepare(
             "SELECT last_used_at, cwd, config_key, config FROM remembered_projects
              ORDER BY last_used_at DESC LIMIT ?1",
-        ) {
-            Ok(statement) => statement,
-            Err(_) => return Vec::new(),
+        ) else {
+            return Vec::new();
         };
         statement
             .query_map([INDEX_LIMIT as i64], |row| {
@@ -172,8 +171,7 @@ impl Projects {
                     config: row.get::<_, Option<String>>(3)?.map(PathBuf::from),
                 })
             })
-            .map(|rows| rows.filter_map(Result::ok).collect())
-            .unwrap_or_default()
+            .map_or_default(|rows| rows.filter_map(Result::ok).collect())
     }
 
     /// Every distinct remembered root, most recently used first, without the
@@ -189,8 +187,7 @@ impl Projects {
         };
         statement
             .query_map([], |row| row.get::<_, String>(0))
-            .map(|rows| rows.filter_map(Result::ok).map(PathBuf::from).collect())
-            .unwrap_or_default()
+            .map_or_default(|rows| rows.filter_map(Result::ok).map(PathBuf::from).collect())
     }
 
     /// Whether `identity` — a `cwd` and a `config_key` as the index reported them

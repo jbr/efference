@@ -11,11 +11,10 @@ fn create_refuses_an_existing_file_without_changing_it() {
     let existing = "a prior log\n";
     std::fs::write(&path, existing).unwrap();
 
-    let error = match Log::create(&path, None) {
-        Ok(_) => panic!("create must refuse a file that already exists"),
-        Err(error) => error,
+    let Err(error) = Log::create(&path, None) else {
+        panic!("create must refuse a file that already exists");
     };
-    assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
     assert!(
         error.to_string().contains(&path.display().to_string()),
         "the refusal names the file it refused: {error}"
@@ -144,7 +143,7 @@ fn a_gapped_seq_is_refused() {
 fn a_missing_file_is_an_io_error() {
     let path = temp_path("absent-reader");
     match load_error(&path) {
-        LoadError::Io { error, .. } => assert_eq!(error.kind(), std::io::ErrorKind::NotFound),
+        LoadError::Io { error, .. } => assert_eq!(error.kind(), io::ErrorKind::NotFound),
         other => panic!("expected an io error, got {other:?}"),
     }
 }

@@ -48,7 +48,7 @@ pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
     tool_definitions(toolbox)
         .iter()
         .filter_map(|d| d.get("name")?.as_str().map(str::to_string))
-        .filter(|name| !crate::triage::is_triage_tool(name))
+        .filter(|name| !is_triage_tool(name))
         .collect()
 }
 

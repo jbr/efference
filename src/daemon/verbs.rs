@@ -43,7 +43,7 @@ impl Session {
         // live, so only a request that says `warm: true` compacts.
         let compact_verb = match self.compaction_verdict(false) {
             Ok(_) => json!({ "accepted": true, "warm": false }),
-            Err(super::compact::NotCompactable::NotCold) => match self.compaction_verdict(true) {
+            Err(compact::NotCompactable::NotCold) => match self.compaction_verdict(true) {
                 Ok(_) => json!({ "accepted": true, "warm": true }),
                 Err(why) => refused(why.message()),
             },

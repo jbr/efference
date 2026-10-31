@@ -45,8 +45,7 @@ impl<'a> InteractiveState<'a> {
     pub(in crate::tui) fn scrollbar_visible(&self) -> bool {
         self.viewport
             .cached_layout
-            .map(|cache| cache.document_height > self.viewport.last_viewport_height)
-            .unwrap_or(false)
+            .is_some_and(|cache| cache.document_height > self.viewport.last_viewport_height)
     }
 
     /// Check if a link (by action index) is visible in the current viewport

@@ -253,8 +253,8 @@ pub(super) fn cap_head_is_char_boundary_safe() {
 #[test]
 pub(super) fn callable_names_are_the_advertised_ones_minus_the_triage_tools() {
     let toolbox = Toolbox::bash_only();
-    let callable = super::callable_names(&toolbox);
-    for advertised in [crate::bash::NAME, crate::consolidate::NAME] {
+    let callable = callable_names(&toolbox);
+    for advertised in [bash::NAME, consolidate::NAME] {
         assert!(
             callable.iter().any(|n| n == advertised),
             "{advertised} is advertised, so a call may name it: {callable:?}"

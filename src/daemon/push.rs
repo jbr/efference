@@ -262,14 +262,14 @@ pub(super) fn gate_body(
 /// fit. `source` is the escalator as a turn's `source` spells it; the operator's own
 /// command line sends none.
 pub(super) fn escalated_body(source: Option<&str>, note: Option<&str>, gate: &str) -> String {
-    let by = source
-        .map(|source| crate::frontend::source_name(source).to_string())
-        .unwrap_or_else(|| "the operator".to_string());
+    let by = source.map_or_else(
+        || "the operator".to_string(),
+        |source| crate::frontend::source_name(source).to_string(),
+    );
     let note = note
         .map(str::trim)
         .filter(|note| !note.is_empty())
-        .map(|note| format!(" (\"{note}\")"))
-        .unwrap_or_default();
+        .map_or_default(|note| format!(" (\"{note}\")"));
     truncate(&format!("escalated by {by}{note}: {gate}"))
 }
 

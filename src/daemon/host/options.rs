@@ -48,13 +48,13 @@ struct DecodedOptions {
 }
 
 fn options_string(
-    object: &serde_json::Map<String, serde_json::Value>,
+    object: &serde_json::Map<String, Value>,
     field: &'static str,
     issues: &mut Vec<Issue>,
 ) -> Option<String> {
     match object.get(field) {
-        None | Some(serde_json::Value::Null) => None,
-        Some(serde_json::Value::String(value)) => Some(value.clone()),
+        None | Some(Value::Null) => None,
+        Some(Value::String(value)) => Some(value.clone()),
         Some(_) => {
             issues.push(Issue::new(
                 field,
@@ -66,11 +66,11 @@ fn options_string(
     }
 }
 
-fn decode_session_options(body: &serde_json::Value) -> Option<DecodedOptions> {
+fn decode_session_options(body: &Value) -> Option<DecodedOptions> {
     let object = body.as_object()?;
     let mut issues = Vec::new();
     let cwd = match object.get("cwd") {
-        None | Some(serde_json::Value::Null) => {
+        None | Some(Value::Null) => {
             issues.push(Issue::new(
                 "cwd",
                 IssueCode::Required,
@@ -78,7 +78,7 @@ fn decode_session_options(body: &serde_json::Value) -> Option<DecodedOptions> {
             ));
             None
         }
-        Some(serde_json::Value::String(path)) => {
+        Some(Value::String(path)) => {
             let path = PathBuf::from(path);
             if path.is_absolute() {
                 Some(path)
@@ -102,7 +102,7 @@ fn decode_session_options(body: &serde_json::Value) -> Option<DecodedOptions> {
     };
     let config = options_string(object, "config", &mut issues).map(PathBuf::from);
     let triage = match object.get("triage") {
-        None | Some(serde_json::Value::Null) => None,
+        None | Some(Value::Null) => None,
         Some(value) => match serde_json::from_value(value.clone()) {
             Ok(choice) => Some(choice),
             Err(_) => {
@@ -124,8 +124,8 @@ fn decode_session_options(body: &serde_json::Value) -> Option<DecodedOptions> {
         crate::inference::TEMPERATURE.end()
     );
     let temperature = match object.get("temperature") {
-        None | Some(serde_json::Value::Null) => None,
-        Some(serde_json::Value::Number(value)) => {
+        None | Some(Value::Null) => None,
+        Some(Value::Number(value)) => {
             match value.as_u64().and_then(|value| u8::try_from(value).ok()) {
                 Some(value) => Some(value),
                 None => {
@@ -168,7 +168,7 @@ fn decode_session_options(body: &serde_json::Value) -> Option<DecodedOptions> {
 /// is the project config it would select, read to answer where effort comes from.
 pub(super) async fn preview_session(mut conn: Conn) -> Conn {
     let body = conn.request_body_string().await.unwrap_or_default();
-    let body: serde_json::Value = match serde_json::from_str(&body) {
+    let body: Value = match serde_json::from_str(&body) {
         Ok(body) => body,
         Err(error) => {
             return fail(

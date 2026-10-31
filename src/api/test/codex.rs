@@ -507,7 +507,7 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
     let requests = server.join().unwrap();
     let body_of = |request: &str| {
         let (_, body) = request.split_once("\r\n\r\n").unwrap();
-        serde_json::from_str::<serde_json::Value>(body).unwrap()
+        serde_json::from_str::<Value>(body).unwrap()
     };
     let mut turn_body = body_of(&requests[0]);
     let mut primer_body = body_of(&requests[1]);

@@ -23,15 +23,15 @@ fn settle(session: &Arc<Session>) -> tokio::task::JoinHandle<Value> {
 /// Holds a scripted answer until the test opens it, so a `settle` that should block is
 /// seen blocking however the threads are scheduled. One static per test: the scripts
 /// are plain `fn`s.
-pub(super) struct Latch(std::sync::atomic::AtomicBool);
+pub(super) struct Latch(AtomicBool);
 
 impl Latch {
     pub(super) const fn new() -> Self {
-        Self(std::sync::atomic::AtomicBool::new(false))
+        Self(AtomicBool::new(false))
     }
 
     pub(super) fn wait(&self) {
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         while !self.0.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(20) {
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -255,7 +255,7 @@ async fn settle_returns_on_a_config_repair_park() {
     let addr = scripted(Arc::clone(&requests), |_| Answer::Stream(end_turn()));
     let (host, runtime) = start(addr);
     let session = Arc::clone(runtime.session());
-    session.require_config_repair(crate::daemon::ConfigRepair {
+    session.require_config_repair(ConfigRepair {
         path: "/repo/config.toml".into(),
         at: 0,
         message: "config unparseable".into(),

@@ -34,7 +34,7 @@ pub async fn run(
             Exit::Quit => return Ok(()),
             // The terminal is restored by now, so the line lands on the shell.
             Exit::Closed => {
-                eprintln!("{}", super::closed::ask(&client).await.line());
+                eprintln!("{}", closed::ask(&client).await.line());
                 return Ok(());
             }
             Exit::Switch { id } => {
@@ -134,11 +134,11 @@ async fn attach(
     // never its contents — polled because nothing announces a change.
     let watch_events = tx.clone();
     let clipboard_watcher = tokio::spawn(async move {
-        if !crate::tui::pasteboard::Watch::SUPPORTED {
+        if !pasteboard::Watch::SUPPORTED {
             return;
         }
-        let mut watch = crate::tui::pasteboard::Watch::default();
-        let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
+        let mut watch = pasteboard::Watch::default();
+        let mut tick = tokio::time::interval(Duration::from_millis(500));
         loop {
             tick.tick().await;
             if let Some(found) = watch.poll()
@@ -156,7 +156,7 @@ async fn attach(
     let attacher = tokio::spawn(async move {
         while let Some(cmd) = attachments_rx.recv().await {
             match cmd {
-                crate::tui::staged::AttachCmd::Upload { key, name, bytes } => {
+                staged::AttachCmd::Upload { key, name, bytes } => {
                     // An image's thumbnail is decoded and scaled here, off the UI thread —
                     // a full-resolution screenshot is a noticeable decode.
                     if ::image::guess_format(&bytes).is_ok() {
@@ -180,7 +180,7 @@ async fn attach(
                         break; // UI thread gone.
                     }
                 }
-                crate::tui::staged::AttachCmd::Remove { name } => {
+                staged::AttachCmd::Remove { name } => {
                     let _ = attach_client.remove_attachment(&name).await;
                 }
             }
@@ -335,7 +335,7 @@ async fn attach(
     // Host verbs (`host_dispatch.rs`): the routes addressed to the host rather
     // than to this session, so they run against a client re-based at the socket
     // root, where those routes live under either binding.
-    let host_dispatcher = tokio::spawn(super::host_dispatch::serve(
+    let host_dispatcher = tokio::spawn(host_dispatch::serve(
         client.clone().with_prefix(""),
         host_rx,
         tx.clone(),
@@ -359,7 +359,7 @@ async fn attach(
         }
     });
     let attender = Attender::new(
-        super::attention::process_client_id(),
+        attention::process_client_id(),
         client.session_id().map(str::to_string),
         std::time::Instant::now(),
     );
@@ -382,7 +382,7 @@ async fn attach(
     // The loop's senders are gone, so the task ends once it has sent what the
     // loop left queued (the inactive report on quitting); bounded so a stalled
     // host cannot hold the process open.
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), attention_task).await;
+    let _ = tokio::time::timeout(Duration::from_secs(1), attention_task).await;
     bridge.abort();
     sender.abort();
     recaller.abort();

@@ -169,9 +169,8 @@ pub(crate) fn shared_of(conn: &Conn) -> Option<Arc<Session>> {
 
 /// The starting session a conn addresses, when the host's `/sessions/:id` stage
 /// resolved one that is still being prepared (`starting.rs`).
-pub(crate) fn starting_of(conn: &Conn) -> Option<Arc<super::starting::Starting>> {
-    conn.state::<Arc<super::starting::Starting>>()
-        .map(Arc::clone)
+pub(crate) fn starting_of(conn: &Conn) -> Option<Arc<starting::Starting>> {
+    conn.state::<Arc<starting::Starting>>().map(Arc::clone)
 }
 
 /// The answer when no session is in conn state — the one condition every route
@@ -311,11 +310,11 @@ impl LogSelect {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct TranscriptQuery {
     pub(crate) select: LogSelect,
-    pub(crate) grain: super::transcript::Grain,
+    pub(crate) grain: transcript::Grain,
     /// The reader, as a `source` or a session id (`transcript.rs`).
     pub(crate) me: Option<String>,
     /// The entry to zoom into, in place of a window.
-    pub(crate) seq: Option<super::transcript::Handle>,
+    pub(crate) seq: Option<transcript::Handle>,
 }
 
 impl TranscriptQuery {
@@ -425,16 +424,12 @@ async fn settle_and_state_within(shared: &Arc<Session>, conn: Conn, cap: Duratio
 /// [`settle_and_state`] for a session still starting: wait for it to start and then to
 /// settle, under the one cap. A failure is where it stops, and the starting state that
 /// carries it is the answer, marked settled (docs/control-api.md).
-pub(crate) async fn settle_starting(starting: &super::starting::Starting, conn: Conn) -> Conn {
+pub(crate) async fn settle_starting(starting: &starting::Starting, conn: Conn) -> Conn {
     settle_starting_within(starting, conn, SETTLE_TIMEOUT).await
 }
 
 /// [`settle_starting`] under a cap the caller names.
-async fn settle_starting_within(
-    starting: &super::starting::Starting,
-    conn: Conn,
-    cap: Duration,
-) -> Conn {
+async fn settle_starting_within(starting: &starting::Starting, conn: Conn, cap: Duration) -> Conn {
     let waited = tokio::time::timeout(cap, async {
         match starting.finished().await {
             Ok(session) => {

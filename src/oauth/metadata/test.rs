@@ -302,9 +302,7 @@ async fn serving_document(token_endpoint: Option<&'static str>) -> String {
                 let document = serde_json::json!({
                     "issuer": base,
                     "authorization_endpoint": format!("{base}/authorize"),
-                    "token_endpoint": token_endpoint
-                        .map(str::to_string)
-                        .unwrap_or_else(|| format!("{base}/token")),
+                    "token_endpoint": token_endpoint.map_or_else(|| format!("{base}/token"), str::to_string),
                     "code_challenge_methods_supported": ["S256"],
                 });
                 conn.with_status(200)

@@ -18,7 +18,7 @@ fn main() {
             generate_themes_module(&theme_set, out_dir);
         }
         Err(e) => {
-            eprintln!("Warning: Failed to build theme set: {}", e);
+            eprintln!("Warning: Failed to build theme set: {e}");
             eprintln!("This is likely because git submodules weren't fetched.");
             eprintln!("Run: git submodule update --init --recursive");
             eprintln!("Creating empty theme set as fallback (ferritin will fail at runtime)");
@@ -51,11 +51,11 @@ fn build_theme_set() -> Result<syntect::highlighting::ThemeSet, Box<dyn std::err
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown")
                         .to_string();
-                    println!("Loaded theme: {}", theme_name);
+                    println!("Loaded theme: {theme_name}");
                     theme_set.themes.insert(theme_name, theme);
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to load theme {:?}: {}", path, e);
+                    eprintln!("Warning: Failed to load theme {path:?}: {e}");
                 }
             }
         }
@@ -101,9 +101,9 @@ fn generate_themes_module(theme_set: &syntect::highlighting::ThemeSet, out_dir: 
     for (name, theme) in &theme_set.themes {
         let theme_bytes = syntect::dumps::dump_binary(theme);
         let safe_filename = name.replace(' ', "_").replace("(", "").replace(")", "");
-        let theme_path = themes_dir.join(format!("{}.bin", safe_filename));
+        let theme_path = themes_dir.join(format!("{safe_filename}.bin"));
         fs::write(&theme_path, theme_bytes)
-            .unwrap_or_else(|e| panic!("Failed to write theme {}: {}", name, e));
+            .unwrap_or_else(|e| panic!("Failed to write theme {name}: {e}"));
     }
 
     // Generate the themes.rs module
@@ -123,8 +123,7 @@ fn generate_themes_module(theme_set: &syntect::highlighting::ThemeSet, out_dir: 
         for name in &theme_names {
             let safe_filename = name.replace(' ', "_").replace("(", "").replace(")", "");
             content.push_str(&format!(
-                "        {:?} => Some(syntect::dumps::from_binary(include_bytes!(concat!(env!(\"OUT_DIR\"), \"/themes/{}.bin\")))),\n",
-                name, safe_filename
+                "        {name:?} => Some(syntect::dumps::from_binary(include_bytes!(concat!(env!(\"OUT_DIR\"), \"/themes/{safe_filename}.bin\")))),\n"
             ));
         }
 
@@ -137,7 +136,7 @@ fn generate_themes_module(theme_set: &syntect::highlighting::ThemeSet, out_dir: 
     // Generate THEME_NAMES constant
     content.push_str("pub const THEME_NAMES: &[&str] = &[\n");
     for name in &theme_names {
-        content.push_str(&format!("    {:?},\n", name));
+        content.push_str(&format!("    {name:?},\n"));
     }
     content.push_str("];\n");
 

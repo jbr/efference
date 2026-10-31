@@ -75,7 +75,7 @@ pub(super) fn scripted(
     let client =
         Client::new(endpoint, "claude-sonnet-5-5", "sys", None).with_thinking(ThinkingSupport {
             adaptive: true,
-            off: super::thinking::ThinkingOff::BetweenTools,
+            off: ThinkingOff::BetweenTools,
         });
     (client, server)
 }

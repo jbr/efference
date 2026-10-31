@@ -7,7 +7,7 @@ use crate::devices::{Device, Joined, Kind};
 use trillium_testing::TestServer;
 
 /// The body of an answer, as JSON.
-fn json(body: &str) -> serde_json::Value {
+fn json(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {body}"))
 }
 
@@ -349,7 +349,7 @@ async fn a_script_enrolled_at_the_socket_authenticates_until_revoked() {
             .get_str(KnownHeaderName::CacheControl),
         Some("no-store")
     );
-    let enrolled: crate::devices::Enrolled = serde_json::from_str(added.body()).unwrap();
+    let enrolled: Enrolled = serde_json::from_str(added.body()).unwrap();
     assert_eq!(
         (enrolled.device.kind, enrolled.device.joined),
         (Kind::Script, Joined::Add)
@@ -369,7 +369,7 @@ async fn a_script_enrolled_at_the_socket_authenticates_until_revoked() {
         !listing.body().contains(&enrolled.token),
         "the listing never carries a token"
     );
-    let listed: serde_json::Value = serde_json::from_str(listing.body()).unwrap();
+    let listed: Value = serde_json::from_str(listing.body()).unwrap();
     let listed: Vec<Device> = serde_json::from_value(listed["devices"].clone()).unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, enrolled.device.id);

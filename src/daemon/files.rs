@@ -321,7 +321,7 @@ impl Eventable for ChangeEvent {
 /// is a conditional GET, so a spurious one costs a 304 and a missed one would
 /// cost correctness.
 fn changes(
-    rx: tokio::sync::broadcast::Receiver<FsChange>,
+    rx: broadcast::Receiver<FsChange>,
     guard: WatchGuard,
     file: PathBuf,
     rel: String,
@@ -354,7 +354,7 @@ fn changes(
 /// for a path that no longer exists; the cost of getting it wrong is one
 /// spurious poke.
 fn dir_changes(
-    rx: tokio::sync::broadcast::Receiver<FsChange>,
+    rx: broadcast::Receiver<FsChange>,
     guard: WatchGuard,
     dir: PathBuf,
     root: Arc<PathBuf>,
@@ -398,13 +398,13 @@ fn etag(meta: &std::fs::Metadata) -> String {
 /// handed from the validating stage to the `Sse` stage through conn state.
 enum StreamTarget {
     File {
-        rx: tokio::sync::broadcast::Receiver<FsChange>,
+        rx: broadcast::Receiver<FsChange>,
         guard: WatchGuard,
         file: PathBuf,
         rel: String,
     },
     Dir {
-        rx: tokio::sync::broadcast::Receiver<FsChange>,
+        rx: broadcast::Receiver<FsChange>,
         guard: WatchGuard,
         dir: PathBuf,
         root: Arc<PathBuf>,

@@ -96,7 +96,7 @@ async fn tools_call_status_reaches_the_daemon() {
     let result = result.expect("a result");
     assert_ne!(
         result.get("isError"),
-        Some(&serde_json::Value::Bool(true)),
+        Some(&Value::Bool(true)),
         "the tool call failed: {result}"
     );
     assert!(result.get("structuredContent").is_none(), "{result}");
@@ -110,7 +110,7 @@ async fn tools_call_status_reaches_the_daemon() {
 
 /// One JSON-RPC request through mcplease's dispatch against the MCP tool set, mounted
 /// against a host with no session: the schema and the argument parse are what answer.
-async fn mcp_call(method: &str, params: serde_json::Value) -> JsonRpcResponse {
+async fn mcp_call(method: &str, params: Value) -> JsonRpcResponse {
     let request: JsonRpcRequest = serde_json::from_value(serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -122,7 +122,7 @@ async fn mcp_call(method: &str, params: serde_json::Value) -> JsonRpcResponse {
     let context = RequestContext::from_request(&request);
     let state = Control::new(
         Executor::client(
-            std::path::PathBuf::from("/nonexistent/efference/host.sock"),
+            PathBuf::from("/nonexistent/efference/host.sock"),
             Fallback::None,
         ),
         false,
@@ -339,7 +339,7 @@ async fn proposal_commits_and_cancels_through_the_client_executor() {
 #[tokio::test]
 async fn an_unbound_mount_requires_agent() {
     let executor = ClientExecutor::new(
-        std::path::PathBuf::from("/nonexistent/efference/host.sock"),
+        PathBuf::from("/nonexistent/efference/host.sock"),
         Fallback::None,
     );
     let err = match executor.client(None).await {

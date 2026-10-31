@@ -160,7 +160,7 @@ pub fn run() -> io::Result<()> {
         Action::Create { options, worktree } => {
             println!(
                 "Accepted (no host attached, so nothing was created): {options:?} · worktree: {worktree}"
-            )
+            );
         }
         _ => println!("Cancelled."),
     }

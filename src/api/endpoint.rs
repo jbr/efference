@@ -123,7 +123,7 @@ pub(crate) fn codex_cached_credentials(
         )
         .into()
     })?;
-    let json: serde_json::Value = serde_json::from_str(&text)?;
+    let json: Value = serde_json::from_str(&text)?;
     let tokens = json.get("tokens").unwrap_or(&json);
     let token = tokens
         .get("access_token")
@@ -284,7 +284,7 @@ impl Endpoint {
 
     /// Add the credential header to a request, when the connection has one. `auth`
     /// is the value read for this attempt ([`AuthValue::current`]).
-    pub fn authorize(&self, conn: trillium_client::Conn, auth: String) -> trillium_client::Conn {
+    pub fn authorize(&self, conn: Conn, auth: String) -> Conn {
         if self.sends_credential() {
             conn.with_request_header(self.auth_header.clone(), auth)
         } else {

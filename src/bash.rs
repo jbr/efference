@@ -73,7 +73,7 @@ pub const NAME: &str = "bash";
 pub const KILLED: &str = "[aborted by user — process group killed]";
 
 /// Whether `result` is a command an interrupt killed ([`KILLED`]).
-pub fn was_killed(result: &crate::log::RawResult) -> bool {
+pub fn was_killed(result: &RawResult) -> bool {
     result.content.ends_with(KILLED)
 }
 

@@ -4,7 +4,7 @@
 use super::*;
 
 fn user(text: &str) -> Payload {
-    Payload::User(vec![crate::log::ContentBlock::Text(text.into())])
+    Payload::User(vec![ContentBlock::Text(text.into())])
 }
 
 /// An assistant turn carrying one tool call — the shape `/tool_calls/:call_id` addresses
@@ -222,7 +222,7 @@ fn result_with_image() -> Payload {
     use base64::Engine;
     Payload::tool_result(
         "toolu_img",
-        crate::log::RawResult::text("2×2 image/webp, 1 visual tokens").with_images(vec![
+        RawResult::text("2×2 image/webp, 1 visual tokens").with_images(vec![
             crate::log::ResultImage {
                 media_type: "image/webp".into(),
                 data: base64::engine::general_purpose::STANDARD.encode(IMAGE_BYTES),
@@ -310,7 +310,7 @@ async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
             1,
             Payload::tool_result(
                 "toolu_1",
-                crate::log::RawResult::text(&content),
+                RawResult::text(&content),
                 crate::log::WireState::Pending,
             ),
         )
@@ -366,7 +366,7 @@ async fn a_result_logged_with_its_verdict_serves_the_counts_on_itself() {
             1,
             Payload::tool_result(
                 "toolu_1",
-                crate::log::RawResult::text(&content),
+                RawResult::text(&content),
                 crate::log::WireState::from(crate::log::Triaged::new(crate::log::Keep::Ranges(
                     vec![(1, 6)],
                 ))),
@@ -386,11 +386,11 @@ async fn a_result_logged_with_its_verdict_serves_the_counts_on_itself() {
 #[tokio::test]
 async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    let big = "z".repeat(crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES * 2);
+    let big = "z".repeat(entry_view::MAX_INLINE_RESULT_BYTES * 2);
     let result = |call_id: &str, content: &str| {
         Payload::tool_result(
             call_id,
-            crate::log::RawResult::text(content),
+            RawResult::text(content),
             crate::log::WireState::Raw,
         )
     };
@@ -412,12 +412,12 @@ async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
     let elided = &entries[1]["payload"]["ToolResult"]["raw"];
     assert_eq!(
         elided["content"].as_str().unwrap().len(),
-        crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES,
+        entry_view::MAX_INLINE_RESULT_BYTES,
         "the window carries the prefix"
     );
     assert_eq!(
         elided["content_elided"]["kept_bytes"],
-        crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES
+        entry_view::MAX_INLINE_RESULT_BYTES
     );
     assert_eq!(elided["content_elided"]["total_bytes"], big.len());
 

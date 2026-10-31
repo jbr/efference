@@ -105,7 +105,7 @@ fn bash(call_id: &str, command: &str) -> ToolCall {
 
 /// Hold `call` on `id` for a decision, logged first so it has a handle; returns the
 /// handle's seq and the receiver the decision arrives on.
-fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, tokio::sync::oneshot::Receiver<Approval>) {
+fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, oneshot::Receiver<Approval>) {
     let session = host.session(id).expect(id);
     let seq = session
         .append(

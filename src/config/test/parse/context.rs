@@ -98,7 +98,7 @@ fn parses_context_group_with_description() {
 /// `description` on a bare path fails — it's group-only, like `create` and `sort`.
 #[test]
 fn context_description_on_bare_path_fails() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[context]\n\"./notes.md\" = { description = \"how to use\" }\n",
     )
@@ -135,7 +135,7 @@ fn parses_context_group_with_exclude() {
 /// one file; group-only like `create`, `sort`, and `description`.
 #[test]
 fn context_exclude_on_bare_path_fails() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[context]\n\"./notes.md\" = { exclude = [\"x.md\"] }\n",
     )
@@ -149,7 +149,7 @@ fn context_exclude_on_bare_path_fails() {
 /// `exclude` beside `exec` fails — command stdout has no files to prune.
 #[test]
 fn context_exclude_on_exec_fails() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[context]\nDate = { exec = \"date\", exclude = [\"x.md\"] }\n",
     )
@@ -213,7 +213,7 @@ fn context_preserves_document_order() {
 /// `create` on a bare path (key-is-path, no `path`/`paths`) fails — it's group-only.
 #[test]
 fn context_create_on_bare_path_fails() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[context]\n\"./notes.md\" = { create = true }\n",
     )
@@ -227,7 +227,7 @@ fn context_create_on_bare_path_fails() {
 /// `sort` on a bare path fails for the same reason — nothing to order.
 #[test]
 fn context_sort_on_bare_path_fails() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[context]\n\"./notes.md\" = { sort = \"modified desc\" }\n",
     )
@@ -241,7 +241,7 @@ fn context_sort_on_bare_path_fails() {
 /// `exec` mixed with a file source is ambiguous and fails.
 #[test]
 fn context_exec_with_files_fails() {
-    let err = super::parse(
+    let err = parse(
         Path::new("bad.toml"),
         "[context]\nBad = { exec = \"date\", path = \"./x\" }\n",
     )
@@ -255,7 +255,7 @@ fn context_exec_with_files_fails() {
 /// A `false` context entry is rejected — nothing to disable.
 #[test]
 fn context_false_is_rejected() {
-    let err = super::parse(Path::new("bad.toml"), "[context]\n\"./x.md\" = false\n").unwrap_err();
+    let err = parse(Path::new("bad.toml"), "[context]\n\"./x.md\" = false\n").unwrap_err();
     assert!(matches!(
         err,
         LoadError::Validate(_, ValidationError::ContextDisabled(_))
@@ -266,7 +266,7 @@ fn context_false_is_rejected() {
 /// being ignored or reported as matching neither spelling (docs/context.md).
 #[test]
 fn context_table_names_an_unknown_key() {
-    let error = super::parse(
+    let error = parse(
         Path::new("bad.toml"),
         "[context]\nNotes = { pth = \"notes/\" }\n",
     )

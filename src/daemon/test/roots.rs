@@ -52,7 +52,7 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
             .resolve_table(&session.effective_config().env);
         assert!(errors.is_empty(), "{errors:?}");
         assert_eq!(values[0].value, label);
-        let toolbox = crate::tools::Toolbox::bash_and_mcps(cwd.clone(), None).unwrap();
+        let toolbox = Toolbox::bash_and_mcps(cwd.clone(), None).unwrap();
         let foreground = toolbox
             .run(
                 &ToolCall::new(
@@ -172,18 +172,15 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
         .unwrap();
         let resolver = Arc::new(Resolver::with_environment(cwd.clone(), base.clone()));
         let policy = EnvPolicy::build_snapshot(&Default::default(), base, &[], resolver).policy;
-        let toolbox = crate::tools::Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))
+        let toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))
             .unwrap()
             .with_child_env(policy.child_env());
         let role = LoadedConfig::default();
-        let (session, _turns) = Session::full(crate::daemon::SessionParts {
+        let (session, _turns) = Session::full(SessionParts {
             role,
             scratch: Some(scratch.clone()),
             env_policy: policy,
-            ..crate::daemon::SessionParts::new(
-                crate::policy::Directories::at(&cwd),
-                Log::in_memory(),
-            )
+            ..SessionParts::new(crate::policy::Directories::at(&cwd), Log::in_memory())
         });
         let state = session.state_json();
         assert!(!state.contains(&format!("private-{label}-credential")));

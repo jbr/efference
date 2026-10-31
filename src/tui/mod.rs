@@ -137,7 +137,7 @@ pub struct ColdView {
 #[derive(Debug)]
 pub(crate) enum TuiEvent {
     /// A committed log entry (a `log` frame — the durable class).
-    Entry(crate::log::LogEntry),
+    Entry(LogEntry),
     /// A fragment of in-progress assistant prose (`assistant_delta`).
     AssistantDelta(String),
     /// A fragment of in-progress extended thinking (`thinking_delta`). Kept distinct
@@ -440,7 +440,7 @@ impl BgProc {
     /// panel's state changes, and once a second by the clock tick (`refresh_clocks`).
     pub fn refresh_elapsed(&mut self) {
         self.running_secs = secs_since(self.spawned_at);
-        self.idle_secs = self.last_chunk_at.map(secs_since).unwrap_or(0);
+        self.idle_secs = self.last_chunk_at.map_or(0, secs_since);
     }
 
     /// The prose form of the id (`p#3`) — what the panel shows, matching the

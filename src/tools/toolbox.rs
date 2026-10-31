@@ -137,7 +137,7 @@ impl Toolbox {
 
     /// Mount the `lsp` built-ins (docs/tools.md) over a session's binding. Mounted before
     /// the first projection, like every provider, so `tools[]` is fixed from turn one.
-    pub fn mount_lsp(&mut self, lsp: super::lsp::Lsp) {
+    pub fn mount_lsp(&mut self, lsp: lsp::Lsp) {
         self.providers.push(Provider::Lsp(Box::new(lsp)));
     }
 

@@ -353,7 +353,7 @@ impl Starting {
     /// The `status` topic while starting (docs/control-api.md): the preparation, its
     /// failure, or a cancellation, which reads as an end; `null` once started, when the
     /// session's own topic takes over.
-    pub(crate) fn status_view(&self) -> Option<super::status::StatusView> {
+    pub(crate) fn status_view(&self) -> Option<status::StatusView> {
         use super::status::{Condition, Footer, StatusView};
         let inner = self.inner.lock().unwrap();
         let condition = match &inner.outcome {

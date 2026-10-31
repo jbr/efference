@@ -34,7 +34,7 @@ fn parses_scope_watch_for_and_trust_threshold() {
 
 #[test]
 fn malformed_toml_is_a_parse_error_not_a_panic() {
-    let err = super::parse(Path::new("bad.toml"), "scope = ").unwrap_err();
+    let err = parse(Path::new("bad.toml"), "scope = ").unwrap_err();
     assert!(matches!(err, LoadError::Parse(..)));
 }
 
@@ -42,7 +42,7 @@ fn malformed_toml_is_a_parse_error_not_a_panic() {
 fn unknown_key_is_rejected() {
     // A typo'd key should fail loudly rather than be silently ignored — the typed schema
     // is the contract (deny_unknown_fields).
-    let err = super::parse(Path::new("bad.toml"), r#"breif = "typo""#).unwrap_err();
+    let err = parse(Path::new("bad.toml"), r#"breif = "typo""#).unwrap_err();
     assert!(matches!(err, LoadError::Parse(..)));
 }
 
@@ -51,7 +51,7 @@ fn unknown_key_is_rejected() {
 /// instead of replacing it wholesale.
 #[test]
 fn the_env_table_parses_the_inline_table_form() {
-    let config = super::parse(
+    let config = parse(
         Path::new("ok.toml"),
         "[env]\n\
          \"*_KEY\" = { mask = true, strip = false }\n\
@@ -87,7 +87,7 @@ fn the_env_table_parses_the_inline_table_form() {
 /// here.
 #[test]
 fn the_env_table_parses_the_value_forms() {
-    let config = super::parse(
+    let config = parse(
         Path::new("ok.toml"),
         "[env]\n\
          SOME_KEY = \"op://Private/Thing/credential\"\n\
@@ -119,10 +119,10 @@ fn the_env_table_parses_the_value_forms() {
 /// (docs/env.md), so it is a parse error rather than a guess. Same for a typo'd key.
 #[test]
 fn the_env_table_rejects_the_bare_bool_shorthand_and_unknown_keys() {
-    assert!(super::parse(Path::new("bad.toml"), "[env]\n\"*_KEY\" = false\n").is_err());
-    assert!(super::parse(Path::new("bad.toml"), "[env]\n\"*_KEY\" = true\n").is_err());
+    assert!(parse(Path::new("bad.toml"), "[env]\n\"*_KEY\" = false\n").is_err());
+    assert!(parse(Path::new("bad.toml"), "[env]\n\"*_KEY\" = true\n").is_err());
     assert!(
-        super::parse(Path::new("bad.toml"), "[env]\nA_KEY = { msak = true }\n").is_err(),
+        parse(Path::new("bad.toml"), "[env]\nA_KEY = { msak = true }\n").is_err(),
         "deny_unknown_fields makes a typo loud"
     );
 }
@@ -205,7 +205,7 @@ fn first_turn_parses_and_an_empty_one_is_refused() {
     let role = parse_str(r#"first-turn = "Greet the operator.""#);
     assert_eq!(role.first_turn.as_deref(), Some("Greet the operator."));
     assert!(parse_str("").first_turn.is_none());
-    let err = crate::config::Config::from_toml(r#"first-turn = "  ""#)
+    let err = Config::from_toml(r#"first-turn = "  ""#)
         .unwrap_err()
         .to_string();
     assert!(err.contains("`first-turn` is empty"), "{err}");
@@ -222,5 +222,5 @@ fn consolidation_budget_is_optional_and_measured_in_bytes() {
         parse_str("consolidation-bytes = 0").consolidation_bytes,
         Some(0)
     );
-    assert!(crate::config::Config::from_toml("consolidation-bytes = -1").is_err());
+    assert!(Config::from_toml("consolidation-bytes = -1").is_err());
 }

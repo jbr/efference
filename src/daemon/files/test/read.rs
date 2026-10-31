@@ -159,7 +159,7 @@ async fn an_edit_changes_the_validator() {
 
     // Same length, different content: the validator has to move on mtime alone, or
     // the viewer would poll forever and never see the edit.
-    std::thread::sleep(std::time::Duration::from_millis(5));
+    std::thread::sleep(Duration::from_millis(5));
     scratch.write("moving.txt", "after!");
 
     server

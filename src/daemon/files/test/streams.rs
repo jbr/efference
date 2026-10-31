@@ -22,7 +22,7 @@ async fn read_until(conn: &mut trillium_client::Conn, needle: &str) -> String {
     use futures_lite::AsyncReadExt;
     let mut body = Vec::new();
     let mut buf = [0u8; 1024];
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(10), async {
         while !String::from_utf8_lossy(&body).contains(needle) {
             let n = conn
                 .response_body()
@@ -251,10 +251,10 @@ async fn a_closed_stream_releases_its_watch() {
     assert!(body.contains("data: sub/held.txt"), "{body}");
 
     drop(conn);
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+    tokio::time::timeout(Duration::from_secs(10), async {
         while watch.watched_count() != 0 {
             scratch.write("sub/held.txt", "again");
-            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            tokio::time::sleep(Duration::from_millis(150)).await;
         }
     })
     .await

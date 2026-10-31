@@ -9,12 +9,12 @@ async fn missing_session_pages_reach_the_shell_but_content_stays_missing() {
             .get(path)
             .await
             .assert_status(200)
-            .assert_header_with(trillium::KnownHeaderName::ContentType, |content_type| {
+            .assert_header_with(KnownHeaderName::ContentType, |content_type| {
                 assert!(
                     content_type
                         .as_str()
                         .is_some_and(|value| value.starts_with("text/html"))
-                )
+                );
             });
     }
     server

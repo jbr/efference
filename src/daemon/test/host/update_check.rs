@@ -94,7 +94,7 @@ async fn the_answer_is_the_hosts_and_clears() {
 /// wake when a daily check finds what the last one did.
 #[test]
 fn the_cell_says_whether_it_moved() {
-    let cell = crate::daemon::newer_version::NewerVersion::default();
+    let cell = newer_version::NewerVersion::default();
     let release = Release {
         version: "9.0.0".into(),
         tag: "v9.0.0".into(),

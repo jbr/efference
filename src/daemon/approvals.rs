@@ -26,7 +26,7 @@ pub(super) struct Pending {
     /// Each time the call was passed up undecided, in order (`decide` with `escalate`,
     /// docs/permissions.md); the last names whom it is routed to now.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(super) escalations: Vec<super::status::Escalated>,
+    pub(super) escalations: Vec<status::Escalated>,
     /// Whom the gate's latest push moment went to: the session that answers it, or
     /// `None` for the operator (docs/web-push.md). A routing change that moves the
     /// gate's reviewer away from this is a moment of its own (`Session::gate_rerouted`).
@@ -39,16 +39,14 @@ impl Pending {
     /// with its last escalation's escalator and note when it was escalated.
     pub(super) fn push_body(&self) -> String {
         let call = ToolCall::new(&self.name, self.call_id.as_str(), self.input.clone());
-        let gate = super::push::gate_body(
+        let gate = push::gate_body(
             &self.name,
             call.intent(),
             self.reason.as_deref(),
             self.acting_on.as_ref(),
         );
         match self.escalations.last() {
-            Some(last) => {
-                super::push::escalated_body(last.source.as_deref(), last.note.as_deref(), &gate)
-            }
+            Some(last) => push::escalated_body(last.source.as_deref(), last.note.as_deref(), &gate),
             None => gate,
         }
     }
@@ -167,7 +165,7 @@ impl Session {
             let Some(pending) = pending.as_mut().filter(|pending| pending.call_id == id.0) else {
                 return false;
             };
-            pending.escalations.push(super::status::Escalated {
+            pending.escalations.push(status::Escalated {
                 source: source.clone(),
                 to: to.clone(),
                 note: note.clone(),
@@ -273,7 +271,7 @@ impl Session {
                 log::warn!("gate decision record: append failed: {e}");
             }
         }
-        self.person_acted(super::PersonAction::Decision {
+        self.person_acted(PersonAction::Decision {
             aborted: matches!(decision, Approval::Abort),
         });
         {

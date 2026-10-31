@@ -57,7 +57,7 @@ fn tail_with_riders() -> (Vec<String>, Vec<String>) {
     for b in &tail.content {
         match b {
             ApiBlock::ToolResult { content, .. } => {
-                results.push(content.as_text().unwrap_or_default().to_string())
+                results.push(content.as_text().unwrap_or_default().to_string());
             }
             ApiBlock::Text { text, .. } => texts.push(text.clone()),
             _ => {}

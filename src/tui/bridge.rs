@@ -72,17 +72,14 @@ fn unseeded_panel_rows(
     if frame["class"] != "state" || frame["kind"] != "processes" {
         return Vec::new();
     }
-    frame["data"]
-        .as_array()
-        .map(|procs| {
-            procs
-                .iter()
-                .filter(|p| p["background"] == true && p["muted"] == false)
-                .filter_map(|p| p["id"].as_u64())
-                .filter(|id| seeded.insert(*id))
-                .collect()
-        })
-        .unwrap_or_default()
+    frame["data"].as_array().map_or_default(|procs| {
+        procs
+            .iter()
+            .filter(|p| p["background"] == true && p["muted"] == false)
+            .filter_map(|p| p["id"].as_u64())
+            .filter(|id| seeded.insert(*id))
+            .collect()
+    })
 }
 
 /// The latest value of each topic that feeds [`PolicyView`]. `role` starts absent —
@@ -136,7 +133,7 @@ fn decode_frame(
             };
             // The view's artifact links ride beside the entry, not in it: they are
             // derived on every read, never logged (docs/artifacts.md).
-            let links = super::artifacts::external_links(data);
+            let links = artifacts::external_links(data);
             if tx.send(TuiEvent::Entry(entry)).is_err() {
                 return Break(());
             }
@@ -181,17 +178,17 @@ fn decode_frame(
             ))),
             // Level-triggered: `null` means nothing is open.
             "current_operations" => Some(send(TuiEvent::Operations(
-                super::operations::parse_current_operations(data),
+                operations::parse_current_operations(data),
             ))),
             "pace" => parse::parse_pace(data).map(|pace| send(TuiEvent::Pace(pace))),
             "loop_phase" => serde_json::from_value(data.clone())
                 .ok()
                 .map(|phase| send(TuiEvent::Phase(phase))),
-            "verbs" => Some(send(TuiEvent::Verbs(super::VerbsView::parse(data)))),
+            "verbs" => Some(send(TuiEvent::Verbs(VerbsView::parse(data)))),
             // Level-triggered: `null` once the session has started.
-            "starting" => Some(send(TuiEvent::Starting(
-                super::starting::StartingView::parse(data),
-            ))),
+            "starting" => Some(send(TuiEvent::Starting(starting::StartingView::parse(
+                data,
+            )))),
             // The three policy-shaped topics update the held copy, then re-emit the
             // merged view. The connect snapshot delivers them in topic order (role
             // first), so the first emission already has a role to merge around.

@@ -139,7 +139,7 @@ fn narrow_widths_drop_facts_then_the_name_before_the_id() {
 #[test]
 fn a_refresh_action_reaches_the_host_from_either_container() {
     let (commands, mut received) = tokio::sync::mpsc::unbounded_channel();
-    super::super::inline::dispatch(
+    inline::dispatch(
         &commands,
         Action::RefreshCatalog {
             connection: "lab".into(),

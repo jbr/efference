@@ -398,10 +398,7 @@ impl<'a> InteractiveState<'a> {
         terminal: &mut Terminal<impl Backend + Write>,
         sidebar_only: bool,
     ) {
-        let (w, h) = terminal
-            .size()
-            .map(|s| (s.width, s.height))
-            .unwrap_or((80, 24));
+        let (w, h) = terminal.size().map_or((80, 24), |s| (s.width, s.height));
         let grid = if sidebar_only {
             self.capture_sidebar_grid(w, h)
         } else {
@@ -409,8 +406,7 @@ impl<'a> InteractiveState<'a> {
         };
         let millis = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_millis());
         let dir = std::path::Path::new(".efference/screenshots");
         let kind = if sidebar_only { "sidebar" } else { "tui" };
         let path = dir.join(format!("{kind}-{millis}.txt"));
@@ -494,7 +490,7 @@ impl<'a> InteractiveState<'a> {
             (KeyCode::Char('d'), KeyModifiers::CONTROL)
             | (KeyCode::Char('v'), KeyModifiers::CONTROL)
             | (KeyCode::PageDown, _) => {
-                let page = terminal.size().map(|s| s.height / 2).unwrap_or(10);
+                let page = terminal.size().map_or(10, |s| s.height / 2);
                 self.set_scroll_offset(self.viewport.scroll_offset.saturating_add(page));
                 self.sync_stuck_to_bottom();
             }
@@ -503,7 +499,7 @@ impl<'a> InteractiveState<'a> {
             (KeyCode::Char('u'), KeyModifiers::CONTROL)
             | (KeyCode::Char('v'), KeyModifiers::ALT)
             | (KeyCode::PageUp, _) => {
-                let page = terminal.size().map(|s| s.height / 2).unwrap_or(10);
+                let page = terminal.size().map_or(10, |s| s.height / 2);
                 self.set_scroll_offset(self.viewport.scroll_offset.saturating_sub(page));
                 self.sync_stuck_to_bottom();
             }

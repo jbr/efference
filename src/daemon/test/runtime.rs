@@ -176,7 +176,7 @@ async fn a_first_turn_is_submitted_into_an_empty_log() {
     let session = Arc::clone(runtime.session());
     wait_until("the kickoff is recorded", || {
         session.snapshot().iter().any(|entry| {
-            matches!(entry.payload, crate::log::Payload::User(_))
+            matches!(entry.payload, Payload::User(_))
                 && entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE)
         })
     })
@@ -192,13 +192,13 @@ async fn a_first_turn_is_not_repeated_on_a_log_that_has_begun() {
     let host = Swansong::new();
     let mut boot = boot(&roots.0.join("one"));
     boot.role.role.first_turn = Some("say hello".into());
-    boot.log = Log::in_memory_with(vec![crate::log::LogEntry {
+    boot.log = Log::in_memory_with(vec![LogEntry {
         seq: 0,
         turn: 1,
         at: crate::log::Timestamp(0),
         submission_id: None,
         source: None,
-        payload: crate::log::Payload::User(vec![crate::log::ContentBlock::Text("earlier".into())]),
+        payload: Payload::User(vec![ContentBlock::Text("earlier".into())]),
     }]);
     let runtime = SessionRuntime::start(boot, &host);
     assert!(runtime.session().queued_turns().is_empty());

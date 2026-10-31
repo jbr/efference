@@ -328,10 +328,7 @@ impl Session {
 
     /// The `status` topic (docs/control-api.md).
     pub(in crate::daemon) fn status_json(&self) -> Value {
-        let id = self
-            .identity()
-            .map(|identity| identity.id)
-            .unwrap_or_default();
+        let id = self.identity().map_or_default(|identity| identity.id);
         serde_json::to_value(self.status_view(&id, &self.status())).unwrap_or(Value::Null)
     }
 
@@ -356,25 +353,20 @@ impl Session {
             let pending = pending
                 .as_ref()
                 .filter(|pending| pending.call_id == call_id);
-            let escalations = pending
-                .map(|pending| pending.escalations.clone())
-                .unwrap_or_default();
+            let escalations = pending.map_or_default(|pending| pending.escalations.clone());
             let summary = pending.and_then(|pending| match &pending.acting_on {
                 // A bound approval decides the child's move, so that is what it does.
                 Some(bound) => {
                     let leaf = ToolCall::new(&bound.name, call_id, bound.input.clone());
-                    let leaf_summary = super::super::transcript::call_summary(&leaf)
-                        .map(|summary| {
-                            format!(" {}", super::super::transcript::code_span(&summary))
-                        })
-                        .unwrap_or_default();
+                    let leaf_summary = transcript::call_summary(&leaf)
+                        .map_or_default(|summary| format!(" {}", transcript::code_span(&summary)));
                     Some(format!(
                         "{}'s {}{leaf_summary}",
                         bound.session,
                         crate::mcp::display_name(&bound.name)
                     ))
                 }
-                None => super::super::transcript::call_summary(&ToolCall::new(
+                None => transcript::call_summary(&ToolCall::new(
                     &pending.name,
                     call_id,
                     pending.input.clone(),
@@ -405,7 +397,7 @@ impl Session {
     /// chooses the entry). `None` when that entry holds no prose.
     fn closing(&self) -> Option<Closing> {
         let log = self.log.lock().unwrap();
-        let (seq, output) = super::super::push::closing_output(log.entries())?;
+        let (seq, output) = push::closing_output(log.entries())?;
         let text: Vec<&str> = output
             .text()
             .into_iter()

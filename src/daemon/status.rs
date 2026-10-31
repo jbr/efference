@@ -53,7 +53,7 @@ pub(crate) enum SessionStatus {
     /// The loop stopped at its cold check mid-turn and waits for a person to act
     /// before it reads the expired cache, or for a compaction (backlog: cold-session.md); after a compaction it
     /// waits for the next turn or continue. The `cold_parked` loop phase.
-    Parked { reason: super::cold::ParkReason },
+    Parked { reason: cold::ParkReason },
     /// The loop is stopped until someone outside acts, for a reason that is neither a
     /// held triage (which is [`Stalled`](Self::Stalled)) nor a park: the config file
     /// needs repair, or the operator's pace is held. The `blocked` loop phase.

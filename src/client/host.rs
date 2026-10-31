@@ -221,14 +221,11 @@ impl Client {
             .send_at(Method::Delete, &format!("/sessions/{id}"), request)
             .await?;
         let answer: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-        Ok(answer["ended_with"]
-            .as_array()
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| id.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default())
+        Ok(answer["ended_with"].as_array().map_or_default(|ids| {
+            ids.iter()
+                .filter_map(|id| id.as_str().map(str::to_string))
+                .collect()
+        }))
     }
 
     /// Report whether a person is attending (`POST /attention`,

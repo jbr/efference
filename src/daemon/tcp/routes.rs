@@ -145,7 +145,7 @@ const UNKNOWN_CLAIM: &str = "no pending sign-in answers to that claim: it was cl
 /// An answer carrying a credential, which is never stored for reuse — the
 /// token-endpoint rule (RFC 6749 §5.1). `/auth` and `/pair` sit outside the `/v1`
 /// prefix that `SecurityHeaders` covers, so each such answer says so itself.
-fn credential_answer(conn: Conn, status: u16, body: serde_json::Value) -> Conn {
+fn credential_answer(conn: Conn, status: u16, body: Value) -> Conn {
     conn.with_status(status)
         .with_response_header(KnownHeaderName::ContentType, "application/json")
         .with_response_header(KnownHeaderName::CacheControl, "no-store")

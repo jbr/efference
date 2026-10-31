@@ -52,7 +52,7 @@ pub(crate) async fn follow_status(
                     Err(_) => ControlFlow::Break(()),
                 }
             })
-            .await
+            .await;
         });
     }
     drop(readings);

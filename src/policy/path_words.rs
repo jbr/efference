@@ -277,7 +277,7 @@ fn under_scratch(text: &str, scratch: &Path) -> Option<PathBuf> {
 }
 
 /// The scratch directory's grant: always read-write (docs/tools.md).
-const SCRATCH: crate::config::Perms = crate::config::Perms {
+const SCRATCH: Perms = Perms {
     read: true,
     write: true,
 };
@@ -286,7 +286,7 @@ const SCRATCH: crate::config::Perms = crate::config::Perms {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Decided<'a> {
     /// The deepest grant containing the path (every path a pattern can match).
-    Grant(PathBuf, &'a crate::config::Perms),
+    Grant(PathBuf, &'a Perms),
     /// No grant contains it.
     NoGrant,
     /// The word expands when the command runs; nothing can be said here.

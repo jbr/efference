@@ -28,7 +28,7 @@ impl Host {
     pub(super) fn prepare_in_background(
         self: &Arc<Self>,
         starting: &Arc<Starting>,
-        work: impl std::future::Future<Output = std::result::Result<(), String>> + Send + 'static,
+        work: impl Future<Output = Result<(), String>> + Send + 'static,
     ) {
         let host = Arc::clone(self);
         let starting = Arc::clone(starting);
@@ -60,7 +60,7 @@ impl Host {
         &self,
         starting: &Starting,
         root: &std::path::Path,
-    ) -> std::result::Result<crate::env_table::EnvSnapshot, String> {
+    ) -> Result<crate::env_table::EnvSnapshot, String> {
         let shutting_down = self.swansong.shutting_down();
         let abort = async move {
             tokio::select! {
@@ -161,7 +161,7 @@ impl Host {
         self: Arc<Self>,
         starting: Arc<Starting>,
         source: Option<String>,
-    ) -> super::Ended {
+    ) -> Ended {
         starting.cancel();
         if starting.finished().await.is_ok()
             && let Some(Entry::Hosted(hosted)) = self.entry(starting.id())
@@ -170,7 +170,7 @@ impl Host {
                 .end_hosted(hosted, starting.id().to_string(), source)
                 .await;
         }
-        super::Ended {
+        Ended {
             retired: None,
             discarded: !starting.resume(),
         }
@@ -194,9 +194,9 @@ pub(super) fn authorization_for(starting: &Arc<Starting>, refuse: bool) -> Autho
 
 /// End a dormant session's log in `Archived`, unless its last lifecycle entry already
 /// is one (docs/resumption.md).
-fn append_archived(session_dir: &std::path::Path) -> std::io::Result<()> {
-    let mut opened = crate::persist::Log::open(session_dir.join(crate::boot::LOG_NAME))
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+fn append_archived(session_dir: &std::path::Path) -> io::Result<()> {
+    let mut opened = Log::open(session_dir.join(crate::boot::LOG_NAME))
+        .map_err(|e| io::Error::other(e.to_string()))?;
     let log = &mut opened.log;
     let last_lifecycle = log.entries().iter().rev().find(|entry| {
         matches!(

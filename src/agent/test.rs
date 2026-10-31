@@ -6,7 +6,7 @@ pub(super) fn call(name: &str) -> ToolCall {
 
 pub(super) fn bash_call(command: &str) -> ToolCall {
     ToolCall::new(
-        crate::bash::NAME,
+        bash::NAME,
         "toolu_b",
         serde_json::json!({ "command": command }),
     )

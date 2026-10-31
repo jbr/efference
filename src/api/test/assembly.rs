@@ -207,7 +207,7 @@ fn assembles_text_and_split_tool_use() {
     assert_eq!(completion.model, "claude-haiku-4-5");
     assert_eq!(
         completion.finish.as_ref().map(|f| &f.reason),
-        Some(&crate::api::FinishReason::ToolCalls)
+        Some(&FinishReason::ToolCalls)
     );
     assert_eq!(completion.usage.input_tokens, 3);
     assert_eq!(completion.usage.cache_read_input_tokens, 9407); // message_start
@@ -255,7 +255,7 @@ fn tool_call_cut_at_the_output_cap_is_a_record_only_partial() {
     .unwrap();
     assert_eq!(
         completion.finish.as_ref().map(|f| &f.reason),
-        Some(&crate::api::FinishReason::OutputCap)
+        Some(&FinishReason::OutputCap)
     );
     let why = completion
         .upstream_failure()

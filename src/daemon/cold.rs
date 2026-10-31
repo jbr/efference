@@ -80,7 +80,7 @@ impl Session {
             None => believed_cold_since(last_touch, Timestamp::now(), ttl)?,
         };
         let log = self.log.lock().unwrap();
-        super::compact::compaction_cut(log.entries(), super::compact::COMPACTION_TAIL_TOKENS)?;
+        compact::compaction_cut(log.entries(), compact::COMPACTION_TAIL_TOKENS)?;
         Some(since)
     }
 

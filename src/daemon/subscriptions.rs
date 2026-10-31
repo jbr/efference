@@ -57,16 +57,13 @@ impl Host {
 
     /// `target`'s subscribers and their terms, sorted by id.
     pub(crate) fn subscribers(&self, target: &str) -> Vec<(String, Subscription)> {
-        self.sessions_mut()
-            .hosted(target)
-            .map(|hosted| {
-                hosted
-                    .subscribers
-                    .iter()
-                    .map(|(id, terms)| (id.clone(), *terms))
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.sessions_mut().hosted(target).map_or_default(|hosted| {
+            hosted
+                .subscribers
+                .iter()
+                .map(|(id, terms)| (id.clone(), *terms))
+                .collect()
+        })
     }
 
     /// Post `status` of `id` to each subscriber's inbox, on the session's slot so
@@ -185,8 +182,7 @@ impl Host {
             }
             sessions
                 .hosted_mut(id)
-                .map(|hosted| std::mem::take(&mut hosted.subscribers))
-                .unwrap_or_default()
+                .map_or_default(|hosted| std::mem::take(&mut hosted.subscribers))
         };
         for subscriber in subscribers.keys() {
             if let Some(session) = self.session(subscriber) {
@@ -314,8 +310,7 @@ impl Session {
             .lock()
             .unwrap()
             .as_ref()
-            .map(|pending| pending.escalations.clone())
-            .unwrap_or_default();
+            .map_or_default(|pending| pending.escalations.clone());
         match escalations.is_empty() {
             true => Routing::Dial(self.resolved_review_level(), self.supervisor()),
             false => Routing::Escalated {

@@ -318,9 +318,9 @@ fn notes_and_summaries_are_one_line_and_mechanism_is_hidden() {
         "the opening, summarized",
     )));
     log.add(Payload::ConfigEdit(crate::log::ConfigEdit {
-        state: crate::log::EditState::Proposed,
+        state: EditState::Proposed,
         resolves: None,
-        change: crate::log::ConfigChange::Command {
+        change: ConfigChange::Command {
             command: "grep -n".into(),
         },
         note: String::new(),
@@ -425,7 +425,7 @@ fn a_continue_reads_as_its_sender() {
     let mut log = Fixture::new();
     log.user("go on when ready", None);
     log.add(turn("Done.", vec![]));
-    log.add(Payload::Telemetry(crate::log::Telemetry::Continue(
+    log.add(Payload::Telemetry(Telemetry::Continue(
         crate::log::ContinueOrigin {
             source: Some("mcp[claude-code]".into()),
         },

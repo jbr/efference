@@ -61,7 +61,7 @@ async fn a_malformed_subscription_is_refused() {
         let conn = server.post("/v1/push/subscriptions").with_body(body).await;
         conn.assert_status(400);
         conn.assert_json_body_with(|answer: &Value| {
-            assert_eq!(answer["code"], "bad_request", "refusing {body}")
+            assert_eq!(answer["code"], "bad_request", "refusing {body}");
         });
     }
 }

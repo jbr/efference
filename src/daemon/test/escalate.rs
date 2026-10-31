@@ -129,7 +129,7 @@ fn curl(id: &str) -> ToolCall {
 
 /// Hold `call` at `holder`'s gate, logged first so it has a handle; returns the handle
 /// and the gate's receiver.
-fn hold(holder: &Session, call: &ToolCall) -> (String, tokio::sync::oneshot::Receiver<Approval>) {
+fn hold(holder: &Session, call: &ToolCall) -> (String, oneshot::Receiver<Approval>) {
     let seq = holder
         .append(
             1,
@@ -361,7 +361,7 @@ async fn the_grandparent_decides_only_the_escalated_gate() {
 async fn a_one_level_chain_reaches_the_operator_with_a_push() {
     let fixture = Fixture::new().await;
     let (q, k) = (fixture.session("q"), fixture.session("k"));
-    let sent = Arc::new(std::sync::Mutex::new(Vec::<crate::push::Message>::new()));
+    let sent = Arc::new(Mutex::new(Vec::<crate::push::Message>::new()));
     {
         let sent = Arc::clone(&sent);
         k.set_push_transport(Arc::new(move |message| {

@@ -84,14 +84,14 @@ pub(super) fn lines(
             blocks
                 .iter()
                 .filter_map(|b| match b {
-                    crate::log::ContentBlock::Text(t) => {
+                    ContentBlock::Text(t) => {
                         let body = match source.take() {
                             Some(source) => format!("{source}: {t}"),
                             None => t.clone(),
                         };
                         Some(line("user", body))
                     }
-                    crate::log::ContentBlock::Attachment(arrival) => {
+                    ContentBlock::Attachment(arrival) => {
                         Some(line("user", format!("attached {}", arrival.path)))
                     }
                     _ => None,

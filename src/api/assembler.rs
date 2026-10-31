@@ -388,10 +388,10 @@ impl Assembler {
             match block {
                 BlockAccum::Text(text) => output.push(MessagesOutputBlock::Text(text)),
                 BlockAccum::Thinking { text: t, signature } => {
-                    output.push(MessagesOutputBlock::Thinking { text: t, signature })
+                    output.push(MessagesOutputBlock::Thinking { text: t, signature });
                 }
                 BlockAccum::Redacted { data } => {
-                    output.push(MessagesOutputBlock::RedactedThinking { data })
+                    output.push(MessagesOutputBlock::RedactedThinking { data });
                 }
                 BlockAccum::ToolUse {
                     id,

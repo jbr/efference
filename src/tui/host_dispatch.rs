@@ -38,8 +38,7 @@ pub(super) async fn serve(
                 // provider holds up nothing else.
                 let stale = context
                     .as_ref()
-                    .map(|context| unfresh_connections(&context.catalog))
-                    .unwrap_or_default();
+                    .map_or_default(|context| unfresh_connections(&context.catalog));
                 if events.send(TuiEvent::NewSession(context)).is_err() {
                     break;
                 }

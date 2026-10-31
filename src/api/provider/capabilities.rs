@@ -494,8 +494,7 @@ impl ModelCapabilities {
                 levels.join(", "),
                 self.default_effort
                     .as_deref()
-                    .map(|default| format!(" (provider default: {default})"))
-                    .unwrap_or_default()
+                    .map_or_default(|default| format!(" (provider default: {default})"))
             )),
             None => Err(format!(
                 "{model}'s metadata declares no supported effort levels — a configured \

@@ -72,14 +72,8 @@ async fn a_triage_ping_sends_the_stored_request() {
         ping_at: Duration::from_millis(1),
         prices: None,
     };
-    let task = tokio::spawn(crate::daemon::keepalive::keepalive_loop(
-        spec,
-        Arc::clone(&shared),
-    ));
-    wait_until("the ping", || {
-        count.load(std::sync::atomic::Ordering::SeqCst) == 1
-    })
-    .await;
+    let task = tokio::spawn(keepalive_loop(spec, Arc::clone(&shared)));
+    wait_until("the ping", || count.load(Ordering::SeqCst) == 1).await;
     task.abort();
 
     let body: Value = serde_json::from_str(&bodies.lock().unwrap()[0]).unwrap();
@@ -233,7 +227,7 @@ fn start_with_triage_model(addr: std::net::SocketAddr) -> (Swansong, SessionRunt
     let cwd = std::env::temp_dir().join(format!("efference-triage-keepalive-{nonce:016x}"));
     std::fs::create_dir_all(cwd.join("scratch")).unwrap();
     let cwd = cwd.canonicalize().unwrap();
-    let mut boot = super::runtime::boot(&cwd);
+    let mut boot = runtime::boot(&cwd);
     boot.client = Client::new(messages_endpoint(addr), "m", "sys", None);
     boot.triager = Triager::own(
         Client::new(messages_endpoint(addr), TRIAGE_MODEL, "triage sys", None)
@@ -281,7 +275,7 @@ async fn triage_then_ping(script: fn(usize) -> Answer) -> (Value, Value, Duratio
                 .any(|e| matches!(e.payload, Payload::Triage(_)))
     })
     .await;
-    let triaged = std::time::Instant::now();
+    let triaged = Instant::now();
     wait_until("the triage ping", || {
         triage_bodies(&bodies).iter().any(is_ping)
     })

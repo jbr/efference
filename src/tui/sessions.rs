@@ -22,10 +22,10 @@ use crate::client::ListedSession;
 pub(crate) struct SessionMenu {
     /// The new-session form, while it is open over the listing (docs/tui.md).
     /// It owns every key it is given, including Escape and Ctrl-C.
-    pub(super) form: Option<Box<super::session_form::Form>>,
+    pub(super) form: Option<Box<session_form::Form>>,
     /// The resume page, while it is open over the listing (docs/tui.md). Like
     /// the form it owns every key, Escape and Ctrl-C included.
-    pub(super) resume: Option<Box<super::resume_list::ResumePage>>,
+    pub(super) resume: Option<Box<resume_list::ResumePage>>,
     /// The listing as the host last answered it, sorted by id. Empty while the
     /// first read is out.
     pub rows: Vec<ListedSession>,
@@ -137,20 +137,20 @@ impl InteractiveState<'_> {
     /// was pressed — the form is overlay state and has nowhere else to live.
     pub(super) fn open_new_session_form(
         &mut self,
-        context: Result<super::session_form::NewSessionContext, String>,
+        context: Result<session_form::NewSessionContext, String>,
     ) {
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return;
         };
         match context {
             Ok(context) => {
-                let mut form = Box::new(super::session_form::Form::new(context));
+                let mut form = Box::new(session_form::Form::new(context));
                 menu.note = None;
                 // Resolve the empty draft before the operator touches anything:
                 // the defaults are most of what the form shows, and they are the
                 // host's answer rather than something the client can assume
                 // (docs/control-api.md).
-                if let super::session_form::Action::Preview(options) = form.initial_preview() {
+                if let session_form::Action::Preview(options) = form.initial_preview() {
                     let _ = self.host_tx.send(HostCmd::Preview(options));
                 }
                 menu.form = Some(form);
@@ -172,7 +172,7 @@ impl InteractiveState<'_> {
             return;
         };
         // A superseded reply asks for the current draft to be resolved instead.
-        if let super::session_form::Action::Preview(options) = form.preview_returned(resolved) {
+        if let session_form::Action::Preview(options) = form.preview_returned(resolved) {
             let _ = self.host_tx.send(HostCmd::Preview(options));
         }
     }
@@ -219,10 +219,7 @@ impl InteractiveState<'_> {
 
     /// The resume page's rows landed (or the read failed). Dropped when the page
     /// has been closed since `r` was pressed.
-    pub(super) fn apply_archived(
-        &mut self,
-        rows: Result<Vec<super::resume_list::ResumeRow>, String>,
-    ) {
+    pub(super) fn apply_archived(&mut self, rows: Result<Vec<resume_list::ResumeRow>, String>) {
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return;
         };
@@ -273,7 +270,7 @@ impl InteractiveState<'_> {
 
     /// A key while the resume page is open. Esc on an empty query and Ctrl-C
     /// close it back to the listing; Enter asks the host to revive the row.
-    pub(super) fn handle_resume_key(&mut self, key: crossterm::event::KeyEvent) {
+    pub(super) fn handle_resume_key(&mut self, key: event::KeyEvent) {
         use super::resume_list::ResumeKey;
         use crossterm::event::{KeyCode, KeyModifiers};
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
@@ -298,7 +295,7 @@ impl InteractiveState<'_> {
 
     /// The switcher's keys. Returns whether the UI loop should end — which a
     /// switch does, with [`switch_to`](Self::switch_to) naming where to go next.
-    pub(super) fn handle_sessions_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+    pub(super) fn handle_sessions_key(&mut self, key: event::KeyEvent) -> bool {
         use crossterm::event::KeyCode;
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return false;
@@ -326,7 +323,7 @@ impl InteractiveState<'_> {
         // `r` opens the resume page over the listing: archived sessions here,
         // read from the host. It paints at once with a "reading…" line.
         if key.code == KeyCode::Char('r') {
-            menu.resume = Some(Box::new(super::resume_list::ResumePage::loading()));
+            menu.resume = Some(Box::new(resume_list::ResumePage::loading()));
             let _ = self.host_tx.send(HostCmd::Archived);
             return false;
         }
