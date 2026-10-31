@@ -84,10 +84,17 @@ impl Session {
     /// The phase now: the stored phase, read as [`LoopPhase::Delayed`] while a request
     /// waits between upstream attempts.
     pub fn loop_phase(&self) -> LoopPhase {
+        self.phase_and_retry_pause().0
+    }
+
+    /// [`loop_phase`](Self::loop_phase), with whether it reads `delayed` for a pause between
+    /// upstream attempts rather than a pace delay: both from one read of the retry cell's
+    /// mark, which can clear between two.
+    pub(super) fn phase_and_retry_pause(&self) -> (LoopPhase, bool) {
         let phase = *self.phase.lock().unwrap();
         match (phase, self.upstream_retry.delaying()) {
-            (LoopPhase::Requesting, Some(until)) => LoopPhase::Delayed { until },
-            _ => phase,
+            (LoopPhase::Requesting, Some(until)) => (LoopPhase::Delayed { until }, true),
+            _ => (phase, false),
         }
     }
 

@@ -226,6 +226,10 @@ impl Session {
             turns_ended: std::sync::atomic::AtomicU64::new(0),
             #[cfg(test)]
             loop_idled: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            between_reads: Mutex::new(None),
+            #[cfg(test)]
+            between_pushes: Mutex::new(None),
             queue: Mutex::new(std::collections::VecDeque::new()),
             ask: Mutex::new(None),
             settle_changed: Notify::new(),

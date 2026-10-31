@@ -204,6 +204,7 @@ mod mcp_verbs;
 mod metrics;
 mod notifications;
 mod pace;
+mod phase_and_queue;
 mod processes;
 mod push;
 mod push_routing;

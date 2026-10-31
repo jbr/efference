@@ -82,11 +82,16 @@ impl Session {
     /// attempts, or a triage held after its budget ran out. The same gesture that
     /// retries a stalled trajectory then retries that wait now (docs/transport.md), so
     /// the operator has one "try again" whichever side of the give-up they are on.
+    ///
+    /// The flag, the phase, and the queue come from one
+    /// [`phase_and_queue`](Self::phase_and_queue), so a turn the loop is claiming reads as
+    /// queued or running, never as an idle loop with nothing queued.
     pub(crate) fn continue_verdict(&self) -> Result<Continues, NotContinuable> {
-        if self.continue_pending() {
+        let now = self.phase_and_queue();
+        if now.continue_pending {
             return Ok(Continues::Already);
         }
-        match self.loop_phase() {
+        match now.phase {
             LoopPhase::Gated => Err(NotContinuable::Gated),
             LoopPhase::Asking => Err(NotContinuable::Asking),
             LoopPhase::ColdParked => Ok(Continues::Release),
@@ -100,12 +105,10 @@ impl Session {
             {
                 Ok(Continues::RetryNow)
             }
-            LoopPhase::Idle if self.queue.lock().unwrap().is_empty() => {
-                match self.continuable_tail() {
-                    Some(why) => Err(why),
-                    None => Ok(Continues::Start),
-                }
-            }
+            LoopPhase::Idle if !now.queued => match self.continuable_tail() {
+                Some(why) => Err(why),
+                None => Ok(Continues::Start),
+            },
             _ => Err(NotContinuable::Busy),
         }
     }
@@ -144,7 +147,12 @@ impl Session {
                 );
             }
             Continues::Start => {
-                self.continue_pending.store(true, Ordering::SeqCst);
+                // Under the queue lock, which `phase_and_queue` holds while it reads the
+                // flag beside the phase, so the flag cannot change under it.
+                {
+                    let _queue = self.queue.lock().unwrap();
+                    self.continue_pending.store(true, Ordering::SeqCst);
+                }
                 self.continue_signal.notify_waiters();
                 // The daemon is no longer at a decision point, so a `?wait=settled`
                 // long-poll must not answer with this instant.
@@ -219,19 +227,21 @@ impl Session {
         }
     }
 
-    /// The loop took the continue: leave idle, then clear the flag — in that order, so
-    /// [`is_settled`](Self::is_settled) never reads an idle loop with no continue
-    /// pending in between, the way `claim_turn` orders it for a submitted turn.
+    /// The loop took the continue: leave idle and clear the flag, both with the queue lock
+    /// held, as [`claim_turn`](Self::claim_turn) takes a submitted turn — so
+    /// [`phase_and_queue`](Self::phase_and_queue), which holds that lock, sees the continue
+    /// pending or taken, never an idle loop with no continue pending in between.
     /// Clearing is what keeps one gesture to one extra turn — a flag left set
     /// would re-continue at every return to idle.
     pub fn take_continue(&self) {
+        let _queue = self.queue.lock().unwrap();
         self.set_phase(LoopPhase::Requesting);
         self.continue_pending.store(false, Ordering::SeqCst);
     }
 
     /// Whether a continue is waiting to be consumed — read by
-    /// [`is_settled`](Self::is_settled), so the daemon does not report a decision
-    /// point between the request and the loop picking it up.
+    /// [`phase_and_queue`](Self::phase_and_queue), so the daemon does not report a
+    /// decision point between the request and the loop picking it up.
     pub(super) fn continue_pending(&self) -> bool {
         self.continue_pending.load(Ordering::SeqCst)
     }

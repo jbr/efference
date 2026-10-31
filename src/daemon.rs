@@ -124,6 +124,11 @@ pub(crate) fn session_id_prefix(id: Option<&str>) -> String {
     id.map(|id| format!("session {id}: ")).unwrap_or_default()
 }
 
+/// Code a test interleaves at one point inside a session method, run once there
+/// (`between_reads`, `between_pushes`).
+#[cfg(test)]
+type Interleaving = Box<dyn FnOnce(&Session) + Send>;
+
 /// A session's state and control surface (docs/control-channel.md).
 /// The loop and HTTP handlers hold the same `Arc<Session>`; the runtime owns the
 /// listener and wires the agent future and auxiliary tasks.
@@ -237,8 +242,10 @@ pub struct Session {
     /// the push services.
     pushes: push::PushState,
     /// Where the loop is (`phase.rs`, docs/control-api.md): one exclusive value the loop
-    /// sets from its control flow. With `queue`, it drives the `/settle` long-poll's
-    /// "at a decision point?" predicate ([`Session::is_settled`]).
+    /// sets from its control flow. Read with `queue` as one [`PhaseAndQueue`], it drives
+    /// the `/settle` long-poll's "at a decision point?" predicate ([`Session::is_settled`]).
+    ///
+    /// [`PhaseAndQueue`]: settle::PhaseAndQueue
     phase: Mutex<phase::LoopPhase>,
     /// How many trajectories have ended into idle: what tells a status watcher that the
     /// idle it reads followed a turn, rather than an idle triage that pinned nothing
@@ -249,6 +256,14 @@ pub struct Session {
     /// the loop's first idle writes the phase and would overwrite what the test wrote.
     #[cfg(test)]
     loop_idled: AtomicBool,
+    /// Run once by the next [`Session::phase_and_queue`], between its read of the phase and
+    /// its read of the queue: a test's stand-in for a writer landing there.
+    #[cfg(test)]
+    between_reads: Mutex<Option<Interleaving>>,
+    /// Run once by the next [`Session::queue_turn`], between its push onto the queue and the
+    /// hold's decision: a test's stand-in for a reader landing there.
+    #[cfg(test)]
+    between_pushes: Mutex<Option<Interleaving>>,
     /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
     /// the **authority** on what is pending, mirroring what was pushed into `turns_tx`. It closes
     /// the cross-task race in [`Session::is_settled`] (a turn exists even in the instant before the
@@ -260,7 +275,7 @@ pub struct Session {
     queue: Mutex<std::collections::VecDeque<SubmittedTurn>>,
     /// The `ask` awaiting a reply, if any (docs/process-monitor.md). Taken by the next
     /// submitted turn, which it resolves instead of queueing. Lock order: this before
-    /// `queue`.
+    /// `pace` and `queue`.
     ask: Mutex<Option<ask::AskState>>,
     /// Pinged whenever the daemon may have reached a **settled** state — a gate appeared
     /// ([`register_pending`]) or the loop went idle ([`going_idle`]). The `/settle` long-poll waits on it.
@@ -274,7 +289,8 @@ pub struct Session {
     /// nothing — two presses are one continue — and because it must survive the gap
     /// between the request and the idle `select!` registering its waiter. Cleared by
     /// [`Session::take_continue`] when the loop consumes it; never logged, never
-    /// projected (nothing is appended for it at all).
+    /// projected (nothing is appended for it at all). Written only under the `queue`
+    /// lock, so [`Session::phase_and_queue`] reads it at the instant it reads the phase.
     continue_pending: AtomicBool,
     /// Wakes the idle loop when [`continue_pending`](Self::continue_pending) is set.
     /// Paired with the flag rather than standing alone: `notify_waiters` stores no
@@ -690,6 +706,7 @@ mod operations;
 mod pace;
 mod person;
 mod phase;
+mod settle;
 pub(crate) mod status;
 mod subscriptions;
 // Whether any client is attending the host (docs/web-push.md), and how a moment's

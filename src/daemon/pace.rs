@@ -1,4 +1,5 @@
-//! Operator pacing, the between-step juncture, and settle/interrupt (docs/control-channel.md).
+//! Operator pacing, the turn queue, the between-step juncture, and the interrupt
+//! (docs/control-channel.md).
 
 use super::*;
 
@@ -28,6 +29,16 @@ impl Pace {
             let _ = turns.send(turn);
         }
     }
+
+    /// Whether `queue` holds a turn the loop will run: one not held back behind the hold.
+    pub(super) fn turn_to_run_in(&self, queue: &std::collections::VecDeque<SubmittedTurn>) -> bool {
+        queue.iter().any(|queued| {
+            !self
+                .held_back
+                .iter()
+                .any(|held| held.submission_id == queued.submission_id)
+        })
+    }
 }
 
 impl Session {
@@ -53,18 +64,32 @@ impl Session {
     /// ([`agent_source`](crate::frontend::agent_source)) submitted while held is queued but
     /// not sent until the hold is released (docs/control-channel.md). Any other turn
     /// releases the hold.
+    ///
+    /// The pace lock is taken before the push (ask, pace, queue: the order every path takes
+    /// them in) and held through the hold's decision, so to
+    /// [`phase_and_queue`](Self::phase_and_queue), which holds it, an agent's turn is queued
+    /// and held back in one change. Pushed apart, a `settle` checking between the two reads
+    /// the turn as one about to run and waits for a wake that holding it back never sends.
     pub(super) fn queue_turn(
         &self,
         ask: std::sync::MutexGuard<'_, Option<super::ask::AskState>>,
         turn: SubmittedTurn,
     ) -> bool {
-        // Record the turn as queued *before* sending, so `is_settled` reads "busy" the instant
-        // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
-        // docs/permissions.md).
-        self.queue.lock().unwrap().push_back(turn.clone());
-        drop(ask);
         {
             let mut pace = self.pace.lock().unwrap();
+            // Record the turn as queued *before* sending, so `is_settled` reads "busy" the
+            // instant the turn is accepted — even before the loop dequeues it (the `/settle`
+            // submit race, docs/permissions.md).
+            self.queue.lock().unwrap().push_back(turn.clone());
+            drop(ask);
+            // Where a test lands a reader between the two pushes (`between_pushes`).
+            #[cfg(test)]
+            {
+                let interleaved = self.between_pushes.lock().unwrap().take();
+                if let Some(interleaved) = interleaved {
+                    interleaved(self);
+                }
+            }
             if !crate::frontend::agent_source(turn.source.as_deref()) {
                 pace.release(&self.turns_tx);
             } else if pace.held {
@@ -149,10 +174,11 @@ impl Session {
     /// Claim a turn the loop just received off the channel: `true` when it is still pending (and
     /// it is removed from the queue), `false` when it was withdrawn while in flight — the caller
     /// then drops it unappended. With `leaves_idle` (a turn the idle loop is about to run) the
-    /// phase moves to `requesting` **before** the removal, so [`is_settled`] never sees an empty
-    /// queue and an idle loop while a turn is in flight.
+    /// phase moves to `requesting` while the queue lock that covers the removal is held, so
+    /// [`phase_and_queue`], which holds that lock, sees the turn queued or running and never an
+    /// idle loop with an empty queue while a turn is in flight.
     ///
-    /// [`is_settled`]: Session::is_settled
+    /// [`phase_and_queue`]: Session::phase_and_queue
     pub(super) fn claim_turn(&self, submission_id: &str, leaves_idle: bool) -> bool {
         let claimed = {
             let mut q = self.queue.lock().unwrap();
@@ -273,11 +299,13 @@ impl Session {
 
     /// The loop is going idle (about to await the next user turn): move the phase to idle and
     /// wake any `/settle` waiter. If a turn is already queued, `recv` resolves at once and
-    /// [`claim_turn`] moves the phase on again, and [`is_settled`] reads the non-empty queue as
-    /// busy meanwhile.
+    /// [`claim_turn`] moves the phase on again; meanwhile [`is_settled`] reads the idle phase
+    /// with the queue as it stood at the same instant ([`phase_and_queue`]), so a turn
+    /// submitted during the turn just ended reads as busy.
     ///
     /// [`claim_turn`]: Session::claim_turn
     /// [`is_settled`]: Session::is_settled
+    /// [`phase_and_queue`]: Session::phase_and_queue
     pub(super) fn going_idle(&self) {
         // The phase left is what distinguishes the two ways the loop arrives here: a turn
         // just ended, or the daemon booted (or an idle triage pinned nothing) and no turn
@@ -311,31 +339,12 @@ impl Session {
         self.loop_idled.load(Ordering::SeqCst)
     }
 
-    /// Whether the daemon is at a **decision point** a client can act on: the loop phase is one
-    /// that waits on someone outside the loop — gated, asking, cold-parked, blocked — or idle
-    /// with nothing queued (docs/control-api.md). A request, a running batch, and a timed delay
-    /// are *not* settled. The predicate behind `/settle` and the `?wait` flag.
-    pub(super) fn is_settled(&self) -> bool {
-        match self.loop_phase() {
-            LoopPhase::Idle => {
-                // An accepted `POST /loop/continue` (docs/control-api.md) is a turn
-                // about to run, exactly as a queued submission is.
-                self.no_turn_queued_to_run() && !self.continue_pending()
-            }
-            phase => phase.settles(),
-        }
-    }
-
     /// Whether no queued turn is about to run: the queue is empty, or holds only agent turns
     /// held back behind the operator's hold, which wait on the operator as the idle loop
     /// does (docs/control-channel.md).
     fn no_turn_queued_to_run(&self) -> bool {
         let pace = self.pace.lock().unwrap();
-        self.queue.lock().unwrap().iter().all(|queued| {
-            pace.held_back
-                .iter()
-                .any(|held| held.submission_id == queued.submission_id)
-        })
+        !pace.turn_to_run_in(&self.queue.lock().unwrap())
     }
 
     /// Whether a queued turn is about to run: [`turn_wake`](Self::turn_wake)'s condition.
@@ -356,25 +365,6 @@ impl Session {
                 return;
             }
             waiter.await;
-        }
-    }
-
-    /// Block until [`is_settled`]. Uses `Notified::enable` to register the waiter **before** the
-    /// condition check: `settle_changed` is a `notify_waiters` (no stored permit), so a
-    /// `going_idle`/`register_pending` that fires between the check and the await would otherwise be
-    /// lost. With the waiter pre-registered, the wake is delivered to the pending future.
-    ///
-    /// [`is_settled`]: Session::is_settled
-    pub(super) async fn await_settled(&self) {
-        loop {
-            let notified = self.settle_changed.notified();
-            tokio::pin!(notified);
-            // Register on the waiter queue now, so a notify racing the check below isn't missed.
-            notified.as_mut().enable();
-            if self.is_settled() {
-                return;
-            }
-            notified.await;
         }
     }
 

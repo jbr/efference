@@ -12,20 +12,23 @@ use serde_json::json;
 impl Session {
     /// Whether a turn submitted now is delivered at once — to the idle loop, as the
     /// answer to a pending `ask`, at a cold park or a held pace it releases, or at a pace
-    /// delay it ends — or waits in the queue for the loop's next juncture.
+    /// delay it ends — or waits in the queue for the loop's next juncture. The phase and the
+    /// queue come from one [`phase_and_queue`](Self::phase_and_queue), so a turn the loop is
+    /// claiming reads as one the new turn waits behind.
     pub(crate) fn turn_delivery(&self) -> &'static str {
-        let now = match self.loop_phase() {
-            LoopPhase::Idle => self.queue.lock().unwrap().is_empty(),
+        let now = self.phase_and_queue();
+        let at_once = match now.phase {
+            LoopPhase::Idle => !now.queued,
             LoopPhase::Asking
             | LoopPhase::ColdParked
             | LoopPhase::Blocked {
                 reason: BlockedReason::PaceHeld,
             } => true,
             // A pace delay ends on a submit; the pause between upstream attempts does not.
-            LoopPhase::Delayed { .. } => self.upstream_retry.delaying().is_none(),
+            LoopPhase::Delayed { .. } => !now.retry_pause,
             _ => false,
         };
-        if now { "now" } else { "queued" }
+        if at_once { "now" } else { "queued" }
     }
 
     /// The `verbs` topic: `turn`, `continue`, and `compact`, each `{accepted: true, …}` or

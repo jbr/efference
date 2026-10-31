@@ -236,3 +236,16 @@ fn a_turn_is_accepted_and_says_when_it_lands() {
         );
     }
 }
+
+/// The pause between upstream attempts reads `delayed` as a pace delay does, but a submit
+/// does not end it: a turn sent during it waits in the queue.
+#[tokio::test]
+async fn a_turn_during_a_retry_pause_is_queued() {
+    let shared = unanswered();
+    shared.set_phase(LoopPhase::Requesting);
+    let retry = Arc::clone(&shared.upstream_retry);
+    let mut pause = std::pin::pin!(retry.delay(Duration::from_secs(60)));
+    assert_eq!(futures_lite::future::poll_once(pause.as_mut()).await, None);
+    assert!(matches!(shared.loop_phase(), LoopPhase::Delayed { .. }));
+    assert_eq!(verbs(&shared)["turn"]["delivery"], "queued");
+}
