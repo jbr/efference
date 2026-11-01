@@ -18,17 +18,17 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-#[cfg(feature = "dev")]
-use efference::api::Client;
 use efference::client::Client as ControlClient;
+#[cfg(feature = "dev")]
+use efference::curation::spotter::MountedSpotter;
+#[cfg(feature = "dev")]
+use efference::curation::spotter::Spotter;
 use efference::daemon;
+#[cfg(feature = "dev")]
+use efference::inference::api::Client;
 #[cfg(feature = "dev")]
 use efference::record::session_dir::LOG_NAME;
 use efference::record::session_dir::SESSION_BASE;
-#[cfg(feature = "dev")]
-use efference::spotter::MountedSpotter;
-#[cfg(feature = "dev")]
-use efference::spotter::Spotter;
 use efference::tools::Toolbox;
 
 type CliError = Box<dyn std::error::Error + Send + Sync>;
@@ -100,7 +100,7 @@ fn rotate() -> CliResult {
         .into());
     }
     let secrets = efference::platform::secrets::Secrets::configured(
-        efference::user_config::InferenceConfig::user_secret_commands()?,
+        efference::config::user_config::InferenceConfig::user_secret_commands()?,
     );
     efference::platform::auth::Root::rotate(&secrets)?;
     // The root goes first: no token verifies under the new one, so a table that

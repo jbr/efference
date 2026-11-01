@@ -2,7 +2,7 @@
 //! (docs/transport.md).
 
 use super::describe_window;
-use crate::api::{Endpoint, Error, ModelCapabilities, UNKNOWN_OUTPUT_CAP};
+use crate::inference::api::{Endpoint, Error, ModelCapabilities, UNKNOWN_OUTPUT_CAP};
 
 /// Look up the main model's capabilities and check the session's sampling
 /// temperature and effort level against them, reporting the result on the boot
@@ -60,7 +60,7 @@ pub(super) async fn resolve_capabilities(
     {
         return Err(why.into());
     }
-    if let Err(why) = crate::api::check_effort_thinking(
+    if let Err(why) = crate::inference::api::check_effort_thinking(
         effort,
         model,
         capabilities.thinking.auto_turns_send_thinking_off(),

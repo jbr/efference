@@ -11,7 +11,7 @@ const PICKS: &str = "CREATE TABLE IF NOT EXISTS picks (connection TEXT PRIMARY K
 const COUNTS: &str = "CREATE TABLE IF NOT EXISTS counts (n INTEGER PRIMARY KEY);";
 
 fn dir() -> tempfile::TempDir {
-    crate::testing::temp_dir("state")
+    crate::inference::testing::temp_dir("state")
 }
 
 #[test]

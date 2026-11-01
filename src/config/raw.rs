@@ -92,7 +92,7 @@ pub(crate) struct RawConfig {
     // docs/env.md. A bare `"*_KEY" = false` is a parse error: it cannot say which of the two
     // questions it answers.
     #[serde(default)]
-    env: BTreeMap<String, crate::env_table::EnvEntry>,
+    env: BTreeMap<String, env_table::EnvEntry>,
 }
 
 /// `[bash]`: how long a foreground bash command may hold the turn before it moves to
@@ -228,9 +228,9 @@ pub(super) struct RawContextEntry {
     /// Documents compiled into efference: `"guide"` lists them all as stubs, and
     /// `"guide/<name>"` puts one document's whole text in the preamble. Takes no other key.
     // Like `exec`, it names a source rather than files, so it mixes with nothing else
-    // (docs/context.md, [`crate::guide`]).
+    // (docs/context.md, [`crate::config::guide`]).
     #[serde(default)]
-    #[schemars(schema_with = "crate::guide::builtin_schema")]
+    #[schemars(schema_with = "crate::config::guide::builtin_schema")]
     builtin: Option<String>,
     /// Let the session edit the listed files that exist. Default `false`.
     #[serde(default)]
@@ -455,8 +455,8 @@ impl std::fmt::Display for ValidationError {
                 "context entry `{key}` names builtin `{name}`, which this binary does not ship \
                  — the builtins are `{}` (every document, listed) and `{}/<slug>` (one \
                  document, in full)",
-                crate::guide::BUILTIN,
-                crate::guide::BUILTIN
+                guide::BUILTIN,
+                guide::BUILTIN
             ),
             ValidationError::ContextBarePathGrant(key, which) => write!(
                 f,
@@ -536,7 +536,7 @@ pub(super) fn parse(path: &Path, text: &str) -> Result<Config, LoadError> {
 pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
     let mut commands = BTreeMap::new();
     for (key, raw_value) in raw.commands {
-        if crate::policy::simple_command_tokens(&key).is_none() {
+        if policy::simple_command_tokens(&key).is_none() {
             return Err(ValidationError::CommandNotSimple(key));
         }
         commands.insert(key, raw_value.into_stance());
@@ -699,7 +699,7 @@ pub(super) fn validate_context_entry(
                 {
                     return Err(ValidationError::ContextBuiltinConflict(key));
                 }
-                if !crate::guide::is_builtin(&builtin) {
+                if !guide::is_builtin(&builtin) {
                     return Err(ValidationError::ContextBuiltinUnknown(key, builtin));
                 }
                 return Ok(ContextEntry {

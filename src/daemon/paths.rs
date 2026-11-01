@@ -3,7 +3,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::policy::Directories;
+use crate::config::policy::Directories;
 
 /// Boot paths supplied by the caller, independent of the host process cwd.
 /// Storage does not follow the socket: a host may place its listener elsewhere.

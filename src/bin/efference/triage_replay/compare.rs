@@ -2,9 +2,9 @@
 //! table (docs/triage.md).
 
 use super::Recorded;
+use efference::curation::triage::ReplayVerdict;
 use efference::record::log::{Keep, WireState};
 use efference::record::project::selection;
-use efference::triage::ReplayVerdict;
 use std::collections::BTreeSet;
 
 /// Collapse `s` onto one line and cap it at `max` characters — a failing draw's arguments
@@ -35,7 +35,7 @@ pub(super) fn tail_chars(turns: &[efference::record::project::WireTurn]) -> usiz
 }
 
 /// The one-line description of what a replayed attempt did.
-pub(super) fn outcome(attempt: &efference::triage::TriageAttempt) -> String {
+pub(super) fn outcome(attempt: &efference::curation::triage::TriageAttempt) -> String {
     match &attempt.why {
         None => format!(
             "ok · keep {}",

@@ -170,7 +170,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // answer could make the call run — and a gate spent on it would ask the operator a
     // question with no second option. The corrective text names the paths that do work,
     // and rides to the wire verbatim as a `Direct` payload.
-    if let Some(result) = crate::guide::reject_non_read(call) {
+    if let Some(result) = crate::config::guide::reject_non_read(call) {
         return Ok(Decision::Direct(vec![Payload::tool_result(
             call.id.clone(),
             result,

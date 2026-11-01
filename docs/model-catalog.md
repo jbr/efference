@@ -3,9 +3,9 @@
 The host keeps each connection's model listing, reduced to one row shape, in the user
 state database and serves it to clients. A client shows the rows as suggestions: a model
 absent from the catalog is still accepted as a typed id, and a listing in no case
-authorizes or refuses a model. Modules: `src/catalog.rs` (+ `src/catalog/`) for storage,
+authorizes or refuses a model. Modules: `src/inference/catalog.rs` (+ `src/inference/catalog/`) for storage,
 age, and refresh; `src/daemon/host_http/catalog.rs` for the routes; the per-provider
-normalization in `src/api/provider/` (`row.rs`, `openrouter.rs`, `anthropic.rs`,
+normalization in `src/inference/api/provider/` (`row.rs`, `openrouter.rs`, `anthropic.rs`,
 `codex.rs`, `listing.rs`, `typesafe.rs`), selected in `models.rs`.
 
 ## The table
@@ -102,7 +102,7 @@ a provider that serves no turns is `decisions`, and an OpenRouter entry declares
 an entry with the `decisions` modality skips the `tools` filter (it declares no supported
 parameters at all).
 
-`ModelRole` (`src/catalog/view.rs`) is the one statement of which role may be offered what:
+`ModelRole` (`src/inference/catalog/view.rs`) is the one statement of which role may be offered what:
 `main` and `triage` take text rows on connections whose provider serves turns, `spotter`
 takes every row. The catalog routes apply it as `?role=` ([control-api.md](control-api.md));
 the terminal form reads the unfiltered catalog once and applies the same function per

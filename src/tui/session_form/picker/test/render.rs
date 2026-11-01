@@ -63,14 +63,14 @@ fn facts_are_formatted_for_a_row() {
     assert_eq!(context_label(131_072), "131k");
     assert_eq!(context_label(512), "512");
     assert_eq!(
-        price_label(crate::api::Price {
+        price_label(crate::inference::api::Price {
             input: 0.15,
             output: 0.5
         }),
         "$0.15/$0.50"
     );
     assert_eq!(
-        price_label(crate::api::Price {
+        price_label(crate::inference::api::Price {
             input: 3.0,
             output: 15.0
         }),
@@ -307,7 +307,7 @@ fn an_empty_result_says_nothing_matches_unless_there_are_no_connections() {
 fn a_free_price_and_an_unset_date_read_plainly() {
     use super::super::picker_render::price_label;
     assert_eq!(
-        price_label(crate::api::Price {
+        price_label(crate::inference::api::Price {
             input: 0.0,
             output: 0.0
         }),

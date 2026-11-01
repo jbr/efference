@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::{CacheMissReason, PlanSnapshot, Usage};
+use crate::inference::api::{CacheMissReason, PlanSnapshot, Usage};
 use crate::record::log::Timestamp;
 use crate::record::project::Retention;
 

@@ -57,11 +57,11 @@ async fn a_described_endpoint_is_named_after_its_host() {
 
     // And the host reads back what setup wrote, which is the only test that
     // matters for the file: the two halves resolve to the same connection.
-    let config = crate::user_config::InferenceConfig::from_toml(&rendered).unwrap();
+    let config = crate::config::user_config::InferenceConfig::from_toml(&rendered).unwrap();
     let registry = crate::inference::InferenceRegistry::from_config(
         config,
         std::path::Path::new("/host"),
-        &crate::env_table::EnvSnapshot::new(BTreeMap::from([(
+        &crate::config::env_table::EnvSnapshot::new(BTreeMap::from([(
             "META_API_KEY".to_string(),
             "sk-real".to_string(),
         )]))

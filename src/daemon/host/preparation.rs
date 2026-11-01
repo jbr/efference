@@ -61,7 +61,7 @@ impl Host {
         &self,
         starting: &Starting,
         root: &std::path::Path,
-    ) -> Result<crate::env_table::EnvSnapshot, String> {
+    ) -> Result<crate::config::env_table::EnvSnapshot, String> {
         let shutting_down = self.swansong.shutting_down();
         let abort = async move {
             tokio::select! {
@@ -69,9 +69,14 @@ impl Host {
                 () = shutting_down => {}
             }
         };
-        crate::env_table::environment_at(root, self.inference.env_hook(), &self.host_env, abort)
-            .await
-            .map_err(|e| format!("env: {e}"))
+        crate::config::env_table::environment_at(
+            root,
+            self.inference.env_hook(),
+            &self.host_env,
+            abort,
+        )
+        .await
+        .map_err(|e| format!("env: {e}"))
     }
 
     /// Preparation failed: the entry leaves the map, a creation gives its id back, a

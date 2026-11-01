@@ -62,7 +62,7 @@ pub(crate) fn compaction_cut(entries: &[LogEntry], budget: usize) -> Option<Seq>
         }
     }
     let mut cut = cut?;
-    while !crate::consolidate::split_calls(entries, cut).is_empty() {
+    while !crate::curation::consolidate::split_calls(entries, cut).is_empty() {
         cut = entries.iter().rev().map(|e| e.seq).find(|&seq| seq < cut)?;
     }
     // Something besides earlier summaries has to lie between the last compaction and
@@ -239,12 +239,8 @@ async fn compact_once(
     // The summary as it is written goes to `output` subscribers and nowhere else: the
     // entry below stays its only durable record (docs/summary.md).
     let compaction =
-        crate::compact::summarize(
-            client,
-            tools,
-            &entries,
-            Some(cut),
-            |streamed| match streamed {
+        crate::curation::compact::summarize(client, tools, &entries, Some(cut), |streamed| {
+            match streamed {
                 Streamed::Text { text, .. } => {
                     session.publish_delta(StreamDelta::CompactionText { text });
                 }
@@ -252,8 +248,8 @@ async fn compact_once(
                     session.publish_delta(StreamDelta::CompactionThinking { text });
                 }
                 Streamed::ToolStart { .. } | Streamed::ToolInput { .. } => {}
-            },
-        )
+            }
+        })
         .await
         .map_err(|e| e.to_string())?;
     session.record_request(RequestOrigin::Compaction, compaction.usage);
@@ -264,7 +260,7 @@ async fn compact_once(
         return Err("superseded: a request read the cache while the summary was written".into());
     }
     let now = session.snapshot();
-    if !crate::consolidate::split_calls(&now, cut).is_empty() {
+    if !crate::curation::consolidate::split_calls(&now, cut).is_empty() {
         return Err("superseded: the log moved across the cut".into());
     }
     let model = crate::record::log::recorded_inference(&now)

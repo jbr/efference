@@ -1292,7 +1292,7 @@ acting at the cold park, a repaired config, a continue at a held triage — move
 at the moment it is taken, before the loop wakes, so a `settle` racing that wake does not
 read the wait that just ended. `cold_parked` with `cold` null is a park a compaction
 ended the belief behind: the next turn or continue resumes it. The pause between upstream
-attempts is marked by the retry cell itself (`src/api/diagnostics.rs`), because a
+attempts is marked by the retry cell itself (`src/inference/api/diagnostics.rs`), because a
 triage's attempts run where no session is held; its `until` is the retry's
 `next_attempt_at`.
 
@@ -1760,7 +1760,7 @@ falls back to showing only what a call sent, not an error state.
 
 **A mounted server's description, annotations, and title are third-party
 prose** — written by whoever wrote the server, not by efference
-(`src/process_monitor.rs` draws the same line for the built-ins' own annotations).
+(`src/tools/process_monitor.rs` draws the same line for the built-ins' own annotations).
 A client renders them as plain text, never markdown, and attributes them to
 `server`.
 

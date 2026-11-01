@@ -71,7 +71,7 @@ pub(crate) struct Starting {
 /// Who a starting session is: what the host knows before anything is prepared.
 pub(crate) struct StartingParts {
     pub(crate) id: String,
-    pub(crate) directories: crate::policy::Directories,
+    pub(crate) directories: crate::config::policy::Directories,
     /// Reopening a dormant session rather than creating one.
     pub(crate) resume: bool,
     pub(crate) created_by: Option<String>,

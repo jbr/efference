@@ -10,9 +10,9 @@
 //! in. A topic serialized any other way would reorder its keys and fail here.
 
 use super::*;
-use crate::api::{CacheMiss, CacheMissReason, PlanLimit, PlanSnapshot, PlanWindow};
+use crate::config::policy::ReviewLevel;
 use crate::config::{CommandStance, ConfigSource, testing::ConfigFixture};
-use crate::policy::ReviewLevel;
+use crate::inference::api::{CacheMiss, CacheMissReason, PlanLimit, PlanSnapshot, PlanWindow};
 use crate::protocol::agents::BoundAction;
 use crate::record::log::attachment::{Arrival, Kind, Shape};
 use crate::record::log::{AssistantOutput, ConfigChange, Spot, Stance, Telemetry, Timestamp};
@@ -146,11 +146,11 @@ fn the_usage_topic_keeps_its_bytes() {
     // Every field set: a context window, a cold streak, the triage client's cells, a
     // priced session, a plan, an attributed miss, and both keepalive stances.
     let (shared, _turns) = Session::in_memory();
-    shared.set_capabilities(crate::api::ModelCapabilities {
+    shared.set_capabilities(crate::inference::api::ModelCapabilities {
         context_length: Some(200_000),
-        ..crate::api::ModelCapabilities::unknown()
+        ..crate::inference::api::ModelCapabilities::unknown()
     });
-    let triage_plan = crate::api::plan_state();
+    let triage_plan = crate::inference::api::plan_state();
     *triage_plan.lock().unwrap() = Some(plan(AT + 5));
     shared.set_triage_client((upstream_failure_state(), triage_plan));
     shared.record_request(RequestOrigin::Turn, usage(10, 20, 30, 0));
@@ -163,7 +163,7 @@ fn the_usage_topic_keeps_its_bytes() {
         }),
     );
     shared.record_request(RequestOrigin::Spot, usage(1, 2, 0, 3));
-    shared.enable_cost_tracking(crate::api::Endpoint::at(
+    shared.enable_cost_tracking(crate::inference::api::Endpoint::at(
         crate::record::log::Provider::OpenRouter,
         "http://127.0.0.1:9/api/v1/messages",
     ));
@@ -202,8 +202,11 @@ fn the_usage_topic_keeps_its_bytes() {
     // A window the provider did not report, an unpriced-free cost, a triage client with
     // no plan, a miss with no estimate, and the stances' other reasons.
     let (shared, _turns) = Session::in_memory();
-    shared.set_capabilities(crate::api::ModelCapabilities::unknown());
-    shared.set_triage_client((upstream_failure_state(), crate::api::plan_state()));
+    shared.set_capabilities(crate::inference::api::ModelCapabilities::unknown());
+    shared.set_triage_client((
+        upstream_failure_state(),
+        crate::inference::api::plan_state(),
+    ));
     shared.record_request(
         RequestOrigin::Turn,
         usage(5, 6, 0, 7).with_cache_miss(CacheMiss {
@@ -211,7 +214,7 @@ fn the_usage_topic_keeps_its_bytes() {
             cache_missed_input_tokens: None,
         }),
     );
-    shared.enable_cost_tracking(crate::api::Endpoint::at(
+    shared.enable_cost_tracking(crate::inference::api::Endpoint::at(
         crate::record::log::Provider::OpenRouter,
         "http://127.0.0.1:9/api/v1/messages",
     ));
@@ -504,7 +507,7 @@ fn the_gate_topic_keeps_its_bytes() {
         session: "child".into(),
         chain: vec!["child".into(), "grand".into()],
     };
-    let grant = crate::policy::GateGrant {
+    let grant = crate::config::policy::GateGrant {
         change: ConfigChange::Command {
             command: "git push".into(),
         },
@@ -694,7 +697,7 @@ fn the_identity_topic_keeps_its_bytes() {
         bytes(&shared, Topic::SessionIdentity),
         r#"{"cwd":"/work","id":"amber-heron","model":"anthropic/claude-opus-4"}"#
     );
-    let selection = |model: &str| crate::user_config::ModelSelection {
+    let selection = |model: &str| crate::config::user_config::ModelSelection {
         connection: "work".into(),
         provider: crate::record::log::Provider::OpenRouter,
         model: model.into(),

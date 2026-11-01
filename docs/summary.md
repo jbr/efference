@@ -12,8 +12,8 @@ carries it (`Payload::Summary`, `src/record/log/summary.rs`). Two operations wri
   connection, provider and model that wrote it.
 
 The rest of this file is the record, how it projects, and compaction.
-`src/compact.rs` writes the summary from the prompt and header in `assets/prompts/`;
-`src/digest.rs` supplies what the model reads; `src/daemon/compact.rs` chooses the cut and
+`src/curation/compact.rs` writes the summary from the prompt and header in `assets/prompts/`;
+`src/curation/digest.rs` supplies what the model reads; `src/daemon/compact.rs` chooses the cut and
 appends the entry (`POST /loop/compact`, docs/control-api.md); `src/record/project.rs` projects it.
 
 ## The record

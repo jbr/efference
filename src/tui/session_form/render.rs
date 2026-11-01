@@ -22,8 +22,8 @@
 //! column rather than sitting beside it.
 
 use super::*;
+use crate::config::user_config::ModelSelection;
 use crate::inference::{EffectiveTriage, SelectionSource};
-use crate::user_config::ModelSelection;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},

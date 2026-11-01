@@ -1,4 +1,4 @@
-//! A [`Draft`] as the TOML `src/user_config.rs` reads (docs/operating.md).
+//! A [`Draft`] as the TOML `src/config/user_config.rs` reads (docs/operating.md).
 //!
 //! Rendering goes through a format-preserving document so an existing file keeps
 //! its comments and order: new `[connections.<name>]` tables are appended, and
@@ -74,16 +74,17 @@ pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
             .ok_or("[updates] is not a table")?
             .insert("check", value(check));
     }
-    let body = crate::config_schemas::keep_directives_first(existing_text, doc.to_string());
+    let body = crate::config::config_schemas::keep_directives_first(existing_text, doc.to_string());
     Ok(if fresh {
-        let directive = crate::config_schemas::directive(crate::config_schemas::USER);
+        let directive =
+            crate::config::config_schemas::directive(crate::config::config_schemas::USER);
         format!("{directive}\n{HEADER}{body}")
     } else {
         body
     })
 }
 
-/// `auth = { kind = "…" }` as `src/user_config.rs` reads it.
+/// `auth = { kind = "…" }` as `src/config/user_config.rs` reads it.
 fn auth_inline_table(auth: &AuthSource) -> InlineTable {
     let mut table = InlineTable::new();
     match auth {

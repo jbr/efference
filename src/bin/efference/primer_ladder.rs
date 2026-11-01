@@ -9,8 +9,8 @@
 
 use super::*;
 use crate::dev::PrimerLadderArgs;
+use efference::curation::triage::{Pending, TriageView, Triager};
 use efference::inference::TriageModel;
-use efference::triage::{Pending, TriageView, Triager};
 use std::io::Write;
 
 /// Parse `--gaps` (`"0,120,300,480"`) into seconds between primer pairs.
@@ -25,7 +25,7 @@ pub(crate) fn parse_gaps(gaps: &str) -> Result<Vec<u64>, CliError> {
 }
 
 /// One ladder report line off a primer's usage.
-fn line(label: &str, usage: &efference::api::RequestUsage) -> String {
+fn line(label: &str, usage: &efference::inference::api::RequestUsage) -> String {
     format!(
         "{label:<24} in {:<8} read {:<8} out {:<6}",
         usage.usage.input_tokens, usage.usage.cache_read_input_tokens, usage.usage.output_tokens
@@ -38,8 +38,8 @@ async fn plant(
     triage: &Triager,
     turns: &[efference::record::project::WireTurn],
     tools: &[serde_json::Value],
-    choice: efference::api::ToolChoice,
-) -> Option<Result<efference::api::RequestUsage, efference::api::Error>> {
+    choice: efference::inference::api::ToolChoice,
+) -> Option<Result<efference::inference::api::RequestUsage, efference::inference::api::Error>> {
     let outcome = triage.prime_with(turns, tools, choice).await?;
     Some(outcome.usage.ok_or_else(|| {
         Box::new(std::io::Error::other(
@@ -47,7 +47,7 @@ async fn plant(
                 .error
                 .as_deref()
                 .unwrap_or("primer sent but recorded no usage"),
-        )) as efference::api::Error
+        )) as efference::inference::api::Error
     }))
 }
 
@@ -180,7 +180,7 @@ fn emit_row(rows: &mut Vec<String>, row: String) {
 
 /// The own triage the ladder plants on, and the client the measuring triage runs through.
 async fn ladder_clients(
-    inference: Result<efference::inference::SessionInference, efference::api::Error>,
+    inference: Result<efference::inference::SessionInference, efference::inference::api::Error>,
     path: &Path,
     recorded_identity: Option<&efference::record::log::LoggedInference>,
     system: String,
@@ -190,7 +190,7 @@ async fn ladder_clients(
     let (main_selection, mut endpoint) = inference.main();
     let model = main_selection.model.as_str();
     if let Some(dir) = path.parent() {
-        endpoint.session_id = Some(efference::api::sticky_session_id(dir));
+        endpoint.session_id = Some(efference::inference::api::sticky_session_id(dir));
     }
     let agent_model = recorded_identity
         .map(|identity| identity.model.clone())
@@ -201,7 +201,8 @@ async fn ladder_clients(
     )?;
     let (_, mut triage_endpoint, t) = triage_selection;
     triage_endpoint.session_id = endpoint.session_id.clone();
-    let triage_system = efference::env::triage_system_prompt(&t.model, &agent_model, context_block);
+    let triage_system =
+        efference::config::env::triage_system_prompt(&t.model, &agent_model, context_block);
     let (triage, _) = Triager::for_triage_model(
         &triage_endpoint,
         t,
@@ -237,7 +238,7 @@ impl Ladder<'_> {
                 self.triage,
                 self.turns,
                 self.tools,
-                efference::api::ToolChoice::auto(),
+                efference::inference::api::ToolChoice::auto(),
             )
             .await
             {
@@ -256,7 +257,7 @@ impl Ladder<'_> {
                 self.triage,
                 self.turns,
                 self.tools,
-                efference::api::ToolChoice::auto(),
+                efference::inference::api::ToolChoice::auto(),
             )
             .await
             {
@@ -272,7 +273,7 @@ impl Ladder<'_> {
                 self.triage,
                 self.turns,
                 self.tools,
-                efference::api::ToolChoice::auto(),
+                efference::inference::api::ToolChoice::auto(),
             )
             .await
             {
@@ -289,10 +290,13 @@ impl Ladder<'_> {
     /// after a forced primer (the choice fix). First attempt only — the measurement.
     async fn arms_c_and_d(&mut self) {
         for (label, choice) in [
-            ("C auto→triage", efference::api::ToolChoice::auto()),
+            (
+                "C auto→triage",
+                efference::inference::api::ToolChoice::auto(),
+            ),
             (
                 "D forced→triage",
-                efference::api::ToolChoice::force("retain"),
+                efference::inference::api::ToolChoice::force("retain"),
             ),
         ] {
             match plant(self.triage, self.turns, self.tools, choice).await {
@@ -313,13 +317,13 @@ impl Ladder<'_> {
     /// triage tools plus forced choice, sharing only the input prefix. If the backend
     /// keys the full envelope, this is the plant the triage resumes.
     async fn arm_e(&mut self) {
-        use efference::triage::{retain_tool, triage_tool};
+        use efference::curation::triage::{retain_tool, triage_tool};
         let triage_tools = vec![retain_tool(), triage_tool()];
         match plant(
             self.triage,
             self.turns,
             &triage_tools,
-            efference::api::ToolChoice::force("retain"),
+            efference::inference::api::ToolChoice::force("retain"),
         )
         .await
         {
@@ -334,7 +338,7 @@ impl Ladder<'_> {
     }
 
     /// The recorded triage's first attempt, on the lineage the last plant wrote.
-    async fn measure(&self) -> Result<efference::triage::TriageAttempt, String> {
+    async fn measure(&self) -> Result<efference::curation::triage::TriageAttempt, String> {
         self.triage
             .attempt(
                 self.client,

@@ -620,7 +620,7 @@ fn ladder_gaps_parse_comma_separated_seconds() {
 /// absent one leaves the configured value standing (docs/tui.md).
 #[test]
 fn a_display_flag_overrides_its_tui_key_alone() {
-    use efference::user_config::{ImageMode, InferenceConfig};
+    use efference::config::user_config::{ImageMode, InferenceConfig};
     let config = InferenceConfig::from_toml("[tui]\ntheme = \"Nord\"\nimages = \"off\"\n")
         .unwrap()
         .tui()

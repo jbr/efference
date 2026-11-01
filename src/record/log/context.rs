@@ -2,13 +2,13 @@
 //! docs/log-and-projection.md).
 //!
 //! These are the shapes the log stores. Reading the configured files into them, and
-//! rendering them as the preamble's `<name>…</name>` tags, is [`crate::context`].
+//! rendering them as the preamble's `<name>…</name>` tags, is [`crate::config::context`].
 
 use serde::{Deserialize, Serialize};
 
 /// A fully-resolved `[context]` ready to render into the preamble: sections in **document order**
 /// (docs/context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.
-/// This is what [`crate::env`] builds from disk at boot and freezes into the cached prefix.
+/// This is what [`crate::config::env`] builds from disk at boot and freezes into the cached prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(
     test,

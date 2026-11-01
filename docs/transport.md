@@ -416,7 +416,7 @@ non-retryable 429s — exhausted credit, spend and usage limits — are the body
 veto in `api/failure.rs` (below), and Codex CLI retries all 5xx the same way.
 Both Responses profiles ride the same handler: the bearer header, the account
 header, the `originator` attribution, and the absence of `anthropic-version` are
-pinned over a mock upstream in `src/api/test/codex.rs`, as are a 400 open returning
+pinned over a mock upstream in `src/inference/api/test/codex.rs`, as are a 400 open returning
 its body once, a 503 open retried and queued, and the ceiling cutting a
 Responses stream mid-text.
 
@@ -781,7 +781,7 @@ a login to redo, naming `efference setup`; a transport failure or 5xx is not.
 
 ## The Responses dialect
 
-A provider speaks one of three turn dialects (`log::WireDialect`, with its behavior in `src/api/provider/dialect.rs`), fixed by the
+A provider speaks one of three turn dialects (`log::WireDialect`, with its behavior in `src/inference/api/provider/dialect.rs`), fixed by the
 declared provider: Anthropic and OpenRouter speak **Messages** (everything above);
 OpenAI speaks **Responses** (`POST /v1/responses`); a described connection may also
 speak **Chat Completions** (below). There is no independent knob —
@@ -1049,7 +1049,7 @@ by a heuristic that never reaches the wire.
 - any other value: the last wins.
 
 Each clause was measured on 2026-10-09 against captures now kept as test fixtures
-(`src/api/completions/*.sse`), and the assembler tests run each one:
+(`src/inference/api/completions/*.sse`), and the assembler tests run each one:
 
 - OpenRouter repeats `role` in every delta and `type` / `format` in every
   `reasoning_details` fragment, which concatenation would turn into
@@ -1130,7 +1130,7 @@ authenticates, and **which metadata source** answers questions about the selecte
 model. All derive from one declared identity: `log::Provider`, an enum
 (`anthropic`, `openrouter`, `openai`, `openai-codex`, `typesafe`, and `custom`)
 grown in code as providers are added; the log defines it because a boot records it, and
-what each variant does is `src/api/provider.rs`. Identity is an input, never inferred from URL
+what each variant does is `src/inference/api/provider.rs`. Identity is an input, never inferred from URL
 shape (sniffing fails for proxies and custom URLs). `api::Endpoint` carries the
 derived `url` + `auth_header` + `auth_value` alongside the provider; its `Debug`
 redacts the credential and extra headers.
@@ -1198,7 +1198,7 @@ validating here would make `effort` unusable rather than merely unverified.
 `GET /state` and the boot line report the provider as `custom-messages` or
 `custom-responses` — the bare word would not say what the session speaks.
 
-#### Capabilities from a model listing (`src/api/provider/listing.rs`)
+#### Capabilities from a model listing (`src/inference/api/provider/listing.rs`)
 
 A named provider has a capability source whose shape this crate knows. A custom
 endpoint has only what `GET {base}/models` returns, and that ranges from the bare
@@ -1290,7 +1290,7 @@ the encoders, the assemblers, `Client::dialect`, `Client::url` — therefore tre
 the dialect and the URL as present, because the only way to reach them is through
 a role that already refused the alternative.
 
-### The decisions route (`src/api/decisions.rs`)
+### The decisions route (`src/inference/api/decisions.rs`)
 
 A **decision model** is an LLM with generation replaced by a classifier head. One
 POST of `{model, state, questions}` returns one JSON body: a calibrated
@@ -1352,7 +1352,7 @@ listed by name), so a misspelled decision-model id fails session creation naming
 ids that exist, rather than booting clean and failing every gate closed. The listing
 GET is authenticated, so it is the credential check too.
 
-**Host-owned connections (`src/user_config.rs`, `src/inference.rs`).** A host names its connections in
+**Host-owned connections (`src/config/user_config.rs`, `src/inference.rs`).** A host names its connections in
 `~/.efference/config.toml`, read from the host's startup `HOME` — a secret-free
 file `efference setup` writes interactively ([operating.md](operating.md)): each `[connections.<name>]` declares a `provider` and where its credential
 comes from (`auth = { kind = "env", key = "VAR" }` reads the named variable from
@@ -1490,7 +1490,7 @@ OpenRouter is free to route elsewhere — reading a cache write back against an
 upstream that never saw it. Sending the key explicitly is what pins it.
 
 The value is `<session id>-<hash of the session dir's canonical path>`, derived
-once at boot by `sticky_session_id` in `src/api/endpoint.rs`. Session ids are
+once at boot by `sticky_session_id` in `src/inference/api/endpoint.rs`. Session ids are
 unique per `.efference/` dir, not per account, so two repos both served
 `--name work` would otherwise collide; the hash separates them while the
 human-chosen name stays readable in OpenRouter's Sessions view, the other thing
@@ -1928,7 +1928,7 @@ each with a byte-derived `cache_missed_input_tokens` estimate, plus
 produced. The object *is* the opt-in — the provider stores a fingerprint of a request
 only when it carries one — so a chain sends it on every request: the session's first
 turn opts in with an explicit `"previous_message_id": null`, and each turn after names
-the previous turn's response id (`src/api/client.rs`, the client's `cache_chain`, shared
+the previous turn's response id (`src/inference/api/client.rs`, the client's `cache_chain`, shared
 across clones).
 
 Three properties decide how it is sent.

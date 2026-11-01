@@ -1,19 +1,23 @@
 //! Host-owned inference connections and role selection (docs/transport.md).
 //!
-//! The user configuration ([`crate::user_config`]) names provider connections and
+//! The user configuration ([`crate::config::user_config`]) names provider connections and
 //! credential *sources*; resolved credentials live only in the host process. Session
 //! creation resolves model selections through this registry before boot touches
 //! project configuration or mints a session directory.
+//!
+//! This module is also the root of the inference group: the upstream wire (`api`), the model
+//! catalog (`catalog`) and, under test, the scripted upstream and scratch helpers (`testing`)
+//! (docs/README.md, *Dependency direction*).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::api::{AuthValue, Endpoint, Error, Reload, RequestOptions, Reread};
-use crate::env_table::EnvSnapshot;
+use crate::config::env_table::EnvSnapshot;
+use crate::config::user_config::{ConnectionConfig, ModelSelection};
+use crate::inference::api::{AuthValue, Endpoint, Error, Reload, RequestOptions, Reread};
 use crate::platform::secrets::Secrets;
 use crate::record::log::{Provider, WireDialect};
-use crate::user_config::{ConnectionConfig, ModelSelection};
 
 /// The triage choice a session creator makes. Omission inherits the configured
 /// default; `Shared` explicitly bypasses a configured separate default; `Separate`
@@ -125,12 +129,12 @@ pub struct InferenceRegistry {
     /// Past explicit model picks (docs/transport.md): the store behind the
     /// omitted-branch default and the recent menus. Opened from the config
     /// file's own directory, so a test config names no store.
-    history: crate::history::History,
+    history: crate::config::history::History,
     /// The host's model catalog, when this registry serves one
     /// ([`Self::with_catalog`]): where the spotter default reads the newest model
     /// in a provider's cheap band (docs/model-catalog.md). `None` for the CLI and
     /// the offline verbs, which take the compiled-in default.
-    catalog: Option<crate::catalog::Catalog>,
+    catalog: Option<catalog::Catalog>,
     /// The configured `env_hook`, retained as written (docs/env.md). User-wide
     /// because the command that reconstructs an operator's shell environment is
     /// a property of the operator, not of any one project; it travels with the
@@ -252,7 +256,7 @@ impl SessionInference {
     /// that expires mid-session is replaced in place (`AuthValue`), and the
     /// replacement has to be masked in the session that was protected from the
     /// old one (docs/secrets.md).
-    pub fn absorb_secrets(&self, masker: &Arc<crate::env_table::Masker>) {
+    pub fn absorb_secrets(&self, masker: &Arc<crate::config::env_table::Masker>) {
         masker.absorb_secret(&self.secret_values);
         for role in self.roles() {
             for (name, _) in &role.secret_values {
@@ -402,6 +406,11 @@ fn validate_connection_name(name: &str) -> Result<(), Error> {
     }
     Ok(())
 }
+
+pub mod api;
+pub mod catalog;
+#[cfg(test)]
+pub(crate) mod testing;
 
 pub mod chatgpt;
 pub mod options;

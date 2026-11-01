@@ -17,7 +17,7 @@ fn add_makes_a_worktree_on_a_new_branch_at_head_and_remove_undoes_it() {
     git(&project, &["add", "f.txt"]);
     commit(&project, "one");
     let head = git(&project, &["rev-parse", "HEAD"]);
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
 
     let added = add(&project, "quiet-fox", &project, &env).unwrap();
     assert_eq!(
@@ -52,7 +52,7 @@ fn add_ignores_a_git_dir_in_the_environment() {
     for repo in [&project, &other] {
         repository(repo);
     }
-    let env = crate::env_table::ChildEnv::default().with_inject(
+    let env = crate::config::env_table::ChildEnv::default().with_inject(
         [(
             "GIT_DIR".to_string(),
             other.join(".git").to_string_lossy().into_owned(),
@@ -74,7 +74,7 @@ fn add_ignores_a_git_dir_in_the_environment() {
 fn project_with_worktree() -> (PathBuf, Added) {
     let project = temp_dir("retire");
     repository(&project);
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     let added = add(&project, "quiet-fox", &project, &env).unwrap();
     (project, added)
 }
@@ -86,7 +86,7 @@ fn branches(project: &Path) -> String {
 #[test]
 fn retire_removes_a_clean_worktree_and_a_branch_with_no_unique_commits() {
     let (project, added) = project_with_worktree();
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     // An ignored file does not make the tree dirty.
     std::fs::write(project.join(".git/info/exclude"), "target/\n").unwrap();
     std::fs::create_dir(added.path.join("target")).unwrap();
@@ -107,7 +107,7 @@ fn retire_removes_a_clean_worktree_and_a_branch_with_no_unique_commits() {
 #[test]
 fn retire_keeps_a_branch_holding_a_unique_commit() {
     let (project, added) = project_with_worktree();
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     commit(&added.path, "only here");
 
     assert_eq!(
@@ -124,7 +124,7 @@ fn retire_keeps_a_branch_holding_a_unique_commit() {
 #[test]
 fn retire_keeps_a_dirty_worktree_untouched() {
     let (project, added) = project_with_worktree();
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     std::fs::write(added.path.join("scratch.txt"), "work").unwrap();
 
     let Retired::Kept { reason } = retire(&project, "quiet-fox", &env) else {
@@ -139,7 +139,7 @@ fn retire_keeps_a_dirty_worktree_untouched() {
 #[test]
 fn restore_re_adds_from_the_kept_branch() {
     let (project, added) = project_with_worktree();
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     commit(&added.path, "only here");
     let tip = git(&added.path, &["rev-parse", "HEAD"]);
     retire(&project, "quiet-fox", &env);
@@ -160,7 +160,7 @@ fn restore_re_adds_from_the_kept_branch() {
 #[test]
 fn restore_starts_a_fresh_branch_when_the_branch_is_gone() {
     let (project, added) = project_with_worktree();
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     let head = git(&project, &["rev-parse", "HEAD"]);
     retire(&project, "quiet-fox", &env);
     assert!(!branches(&project).contains("efference/quiet-fox"));
@@ -178,7 +178,7 @@ fn restore_starts_a_fresh_branch_when_the_branch_is_gone() {
 #[test]
 fn restore_recovers_a_directory_deleted_by_hand() {
     let (project, added) = project_with_worktree();
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     std::fs::remove_dir_all(&added.path).unwrap();
 
     let restored = restore(&project, "quiet-fox", &env).unwrap();
@@ -189,7 +189,7 @@ fn restore_recovers_a_directory_deleted_by_hand() {
 #[test]
 fn add_outside_a_git_work_tree_is_refused() {
     let dir = temp_dir("plain");
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     let error = add(&dir, "quiet-fox", &dir, &env).unwrap_err();
     assert!(error.contains("git work tree"), "{error}");
     assert!(!crate::record::session_dir::worktree::path(&dir, "quiet-fox").exists());

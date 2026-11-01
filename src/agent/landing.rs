@@ -2,7 +2,7 @@
 //! inbox triage that rides it, and the log entries that follow, in call order.
 
 use super::*;
-use crate::triage::{HoldOutcome, TriageOutcome};
+use crate::curation::triage::{HoldOutcome, TriageOutcome};
 
 /// Triage the batch's results at one triage and append them to the log with their verdicts,
 /// telemetry, and any handoff notes. Nothing to triage means no round-trip.
@@ -153,7 +153,7 @@ async fn triage_batch(
     // A triage that is only `ask` replies has no triage to carry the inbox
     // (docs/process-monitor.md): triage runs after the results are logged, below,
     // and takes the must-wake pins with it.
-    if crate::triage::reply_only_triage(pending) {
+    if crate::curation::triage::reply_only_triage(pending) {
         triaging.deferred = Some(Deferred {
             shown: shown.clone(),
             background: shared.bg_snapshot(),
@@ -162,7 +162,7 @@ async fn triage_batch(
     } else {
         triaging.forced_pins = forced;
         // A batch the shape rule decided without the model shows no rider.
-        if crate::triage::shows_rider(pending) {
+        if crate::curation::triage::shows_rider(pending) {
             triaging.shown_through = rider_mark(&shown);
         }
     }

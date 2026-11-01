@@ -2,7 +2,7 @@
 //! (docs/transport.md).
 
 use super::*;
-use crate::user_config::{AuthConfig, CONFIG_RELATIVE_PATH, InferenceConfig};
+use crate::config::user_config::{AuthConfig, CONFIG_RELATIVE_PATH, InferenceConfig};
 
 impl InferenceRegistry {
     /// Load the host's user configuration and credentials from the environment
@@ -56,7 +56,7 @@ impl InferenceRegistry {
         // (`~/.efference/state.db`), so a relocated config carries its history
         // along rather than keying it off wherever the host happened to start.
         if let Some(dir) = path.parent() {
-            registry.history = crate::history::History::at(dir.join("state.db"));
+            registry.history = crate::config::history::History::at(dir.join("state.db"));
         }
         Ok(registry)
     }
@@ -64,13 +64,13 @@ impl InferenceRegistry {
     /// Point this registry at a history store, for the recent ranks in the model catalog and
     /// for tests that seed past picks. Production registries open the store
     /// beside their config file in [`load_at`](Self::load_at).
-    pub fn with_history(mut self, history: crate::history::History) -> Self {
+    pub fn with_history(mut self, history: crate::config::history::History) -> Self {
         self.history = history;
         self
     }
 
     /// Read the spotter default from the host's catalog (docs/model-catalog.md).
-    pub fn with_catalog(mut self, catalog: crate::catalog::Catalog) -> Self {
+    pub fn with_catalog(mut self, catalog: catalog::Catalog) -> Self {
         self.catalog = Some(catalog);
         self
     }
@@ -84,7 +84,11 @@ impl InferenceRegistry {
             .as_ref()
             .and_then(|catalog| {
                 catalog
-                    .snapshot(&main.connection, main.provider, crate::history::now())
+                    .snapshot(
+                        &main.connection,
+                        main.provider,
+                        crate::config::history::now(),
+                    )
                     .rows
             })
             .and_then(|rows| main.provider.newest_spotter_model(&rows))
@@ -163,7 +167,7 @@ impl InferenceRegistry {
             connections,
             defaults,
             credential_variables,
-            history: crate::history::History::disabled(),
+            history: crate::config::history::History::disabled(),
             catalog: None,
             env_hook: config.env_hook,
             secrets: Arc::clone(secrets),
@@ -253,7 +257,7 @@ impl InferenceRegistry {
             connections: BTreeMap::new(),
             defaults: ResolvedDefaults::default(),
             credential_variables: BTreeSet::new(),
-            history: crate::history::History::disabled(),
+            history: crate::config::history::History::disabled(),
             catalog: None,
             env_hook: None,
             secrets: Arc::new(Secrets::in_memory()),
@@ -287,7 +291,7 @@ impl InferenceRegistry {
     /// The history store behind the omitted-branch default and the recent
     /// menus. The host reads it for preview and creation; the write path
     /// records explicit picks through it after a session starts.
-    pub fn history(&self) -> &crate::history::History {
+    pub fn history(&self) -> &crate::config::history::History {
         &self.history
     }
 

@@ -6,7 +6,7 @@
 //! RFC 8414 / OIDC authorization-server metadata, RFC 7636 PKCE, RFC 7591
 //! dynamic registration, RFC 8707 resource indicators, RFC 9207 issuer
 //! identification. What is MCP-specific is *when* the dance runs and what the
-//! resource indicator points at, and that lives in `crate::mcp::auth`.
+//! resource indicator points at, and that lives in `crate::tools::mcp::auth`.
 //!
 //! The interface is drawn so this half can be lifted into a standalone crate once a
 //! second consumer exists; the eventual home is a `trillium-oauth-client`

@@ -7,9 +7,9 @@ use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, events, tool_call};
 use crate::record::log::Telemetry;
 use crate::record::log::{AssistantOutput, ContentBlock, Keep, RawResult, Triaged, WireState};
-use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, events, tool_call};
 use std::collections::BTreeMap;
 use tempfile::TempDir;
 use trillium_tokio::Swansong;
@@ -65,7 +65,7 @@ pub(super) fn verdict(keeps: &[&str]) -> String {
 /// session's `[env]` table, which is what installs the masker over the session's appends.
 async fn start(
     upstream: &ScriptedUpstream,
-    env: crate::env_table::EnvPolicy,
+    env: crate::config::env_table::EnvPolicy,
 ) -> (Swansong, SessionRuntime, TempDir) {
     let (cwd, dir) = workdir("capture");
     let mut boot = boot(&cwd);
@@ -81,17 +81,17 @@ async fn start(
 }
 
 /// An `[env]` table masking one literal value.
-fn masking(value: &str) -> crate::env_table::EnvPolicy {
+fn masking(value: &str) -> crate::config::env_table::EnvPolicy {
     let mut table = BTreeMap::new();
     table.insert(
         "API_TOKEN".to_string(),
-        crate::env_table::EnvEntry {
+        crate::config::env_table::EnvEntry {
             mask: Some(true),
             value: Some(value.to_string()),
             ..Default::default()
         },
     );
-    crate::env_table::EnvPolicy::build(&table).policy
+    crate::config::env_table::EnvPolicy::build(&table).policy
 }
 
 /// **The triage reads the bytes the log holds.** A result is masked on the way into the

@@ -95,7 +95,7 @@ impl Create {
         here: PathBuf,
         env: std::collections::BTreeMap<String, String>,
     ) -> CreateSession {
-        let cwd = crate::policy::lexical_normalize(&match &self.cwd {
+        let cwd = crate::config::policy::lexical_normalize(&match &self.cwd {
             Some(cwd) => here.join(cwd),
             None => here,
         });
@@ -143,7 +143,7 @@ impl ControlVerb for Create {
     async fn client(self, state: &ClientExecutor, call: &VerbCall<'_>) -> Result<String> {
         let now = super::now();
         let here = std::env::current_dir().context("reading the working directory")?;
-        let env = crate::env_table::EnvSnapshot::capture()
+        let env = crate::config::env_table::EnvSnapshot::capture()
             .map_err(anyhow::Error::msg)?
             .into_entries();
         let request = self.request(here, env);
@@ -233,7 +233,7 @@ impl ControlVerb for Create {
         let base = child_project.join(crate::record::session_dir::SESSION_BASE);
         let project = caller
             .storage_base()
-            .map(crate::policy::lexical_normalize)
+            .map(crate::config::policy::lexical_normalize)
             .ok_or_else(|| anyhow!("the calling session has no project base"))?;
         if base != project {
             anyhow::bail!(

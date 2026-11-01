@@ -486,7 +486,7 @@ fn record_only_partial_projects_to_nothing() {
 fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
     let clean = serde_json::to_string(&project(&sample_log())).unwrap();
 
-    let failure = crate::api::UpstreamAttemptFailure {
+    let failure = crate::inference::api::UpstreamAttemptFailure {
         status: 429,
         body: r#"{"error":{"message":"rate limited"}}"#.into(),
     };

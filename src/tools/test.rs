@@ -554,7 +554,7 @@ fn mounted_toolbox_advertises_unique_tool_names() {
 /// model retries the same call.
 #[tokio::test]
 async fn read_image_refuses_when_the_model_takes_no_images() {
-    let dir = crate::testing::temp_dir("image-gate");
+    let dir = crate::inference::testing::temp_dir("image-gate");
     let box_ = Toolbox::new(vec![Provider::ReadImage(ReadImage {
         cwd: dir.path().to_path_buf(),
     })])
@@ -684,7 +684,7 @@ async fn the_sessions_provider_mounts_the_agent_verbs_namespaced() {
     // `Host::new` already returns an `Arc<Host>`.
     let host = crate::daemon::Host::new(
         crate::inference::InferenceRegistry::empty(),
-        crate::env_table::EnvSnapshot::new(Default::default())
+        crate::config::env_table::EnvSnapshot::new(Default::default())
             .expect("an empty environment is valid"),
     );
     let mut toolbox = Toolbox::bash_and_mcps(dir.clone(), None).unwrap();

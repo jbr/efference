@@ -11,7 +11,7 @@ use trillium_testing::TestServer;
 /// guard drops: a name that is neither shared with another process running the suite (a
 /// concurrent run in another worktree) nor with another test.
 fn temp_file(name: &str) -> (PathBuf, tempfile::TempDir) {
-    let dir = crate::testing::temp_dir("daemon");
+    let dir = crate::inference::testing::temp_dir("daemon");
     (dir.path().join(name), dir)
 }
 
@@ -23,8 +23,9 @@ fn user(text: &str) -> Payload {
 /// session inherits when its creation omits one. Stated rather than captured, so
 /// that path is reproducible instead of following whatever the test process was
 /// launched with.
-fn baseline_env() -> crate::env_table::EnvSnapshot {
-    crate::env_table::EnvSnapshot::new(BTreeMap::new()).expect("an empty environment is valid")
+fn baseline_env() -> crate::config::env_table::EnvSnapshot {
+    crate::config::env_table::EnvSnapshot::new(BTreeMap::new())
+        .expect("an empty environment is valid")
 }
 
 /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.

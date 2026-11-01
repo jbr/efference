@@ -406,14 +406,14 @@ fn primer_requests_land_in_the_usage_record_as_triage_primer() {
 /// the fields existed still parses.
 #[test]
 fn inline_cost_prices_a_request_and_is_recorded() {
-    use crate::api::{InlineCost, Receipt};
+    use crate::inference::api::{InlineCost, Receipt};
     let (usage_path, _usage_path_dir) = temp_file("inline-cost-test-usage.jsonl");
     let (shared, _turns_rx) = Session::in_memory();
     shared.attach_usage_log(&usage_path);
     // Armed, so the request without an inline cost would be queued for the lookup
     // (not run here: no runtime). The first two must reach the total by themselves.
     shared.enable_cost_tracking(
-        crate::api::Endpoint::at(
+        crate::inference::api::Endpoint::at(
             crate::record::log::Provider::OpenRouter,
             "http://127.0.0.1:9/api/v1/messages",
         )
@@ -463,7 +463,7 @@ fn inline_cost_prices_a_request_and_is_recorded() {
 /// appear only for records that have one.
 #[test]
 fn an_attributed_cache_miss_round_trips_through_the_usage_line() {
-    use crate::api::{CacheMiss, CacheMissReason};
+    use crate::inference::api::{CacheMiss, CacheMissReason};
 
     let miss = CacheMiss {
         reason: CacheMissReason::ToolsChanged,

@@ -103,7 +103,7 @@ impl Session {
         if let Some(last) = escalations.last() {
             return last.to.clone().filter(|id| self.host_holds(id));
         }
-        if self.resolved_review_level() != crate::policy::ReviewLevel::Supervisor {
+        if self.resolved_review_level() != crate::config::policy::ReviewLevel::Supervisor {
             return None;
         }
         self.supervisor()
@@ -261,7 +261,7 @@ pub(crate) fn held_because(spot: &Spot) -> Option<String> {
     match &spot.axes {
         // Answers that fold to a clear under the table in force (an entry recorded under
         // another fold) still held this call; its own reason says why.
-        Some(axes) => crate::spotter::jev::plain_reason(axes).or_else(written),
+        Some(axes) => crate::curation::spotter::jev::plain_reason(axes).or_else(written),
         None => written(),
     }
 }

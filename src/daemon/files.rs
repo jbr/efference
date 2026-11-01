@@ -37,7 +37,7 @@
 //! the range requests that lifting it would require.
 //!
 //! The root is the supplied session working directory — the same root
-//! the built-in tools resolve relative paths against (`src/policy.rs`). Path
+//! the built-in tools resolve relative paths against (`src/config/policy.rs`). Path
 //! resolution canonicalizes and then **re-checks containment**, because the
 //! escape worth closing is a symlink inside the root pointing out of it, not `..`.
 //!

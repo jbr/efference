@@ -1,5 +1,5 @@
 use super::*;
-use crate::user_config::InferenceConfig;
+use crate::config::user_config::InferenceConfig;
 
 fn environment(values: &[(&str, &str)]) -> EnvSnapshot {
     EnvSnapshot::new(
@@ -777,7 +777,7 @@ body = { parallel_tool_calls = false, safe_prompt = true }"#,
     let (_, endpoint) = registry.endpoint("mistral").unwrap();
     assert_eq!(
         endpoint.request.output_cap_field,
-        crate::user_config::OutputCapField::MaxCompletionTokens
+        crate::config::user_config::OutputCapField::MaxCompletionTokens
     );
     assert_eq!(
         endpoint.request.body.get("parallel_tool_calls"),

@@ -7,14 +7,14 @@ use super::*;
 /// (docs/permissions.md).
 #[test]
 fn appending_a_config_edit_updates_the_effective_config() {
-    use crate::policy::{Verdict, classify};
+    use crate::config::policy::{Verdict, classify};
     let call = bash_call("npm install");
 
     // Empty base role → npm gates.
     let (shared, _rx) = Session::in_memory();
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -25,7 +25,7 @@ fn appending_a_config_edit_updates_the_effective_config() {
     shared.append(0, allow_grant("npm")).unwrap();
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -88,7 +88,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
 /// both applies the change *and* drains the proposal from the queue.
 #[test]
 fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
-    use crate::policy::{Verdict, classify};
+    use crate::config::policy::{Verdict, classify};
     let call = bash_call("npm install");
     let (shared, _rx) = Session::in_memory();
 
@@ -103,7 +103,7 @@ fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
         .unwrap();
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -134,7 +134,7 @@ fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
         .unwrap();
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -153,7 +153,7 @@ fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
 /// the notify thread drives — so there's no filesystem-event timing in the test.
 #[test]
 fn reload_emits_committed_edits_for_file_deltas() {
-    use crate::policy::{Verdict, classify};
+    use crate::config::policy::{Verdict, classify};
     let path = std::env::temp_dir().join(format!("efference-watch-{}.toml", std::process::id()));
     std::fs::write(
         &path,
@@ -166,7 +166,7 @@ fn reload_emits_committed_edits_for_file_deltas() {
     let (shared, _rx) = Session::in_memory_with_role(file_role(&path));
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("cargo build")
         ),
@@ -177,7 +177,7 @@ fn reload_emits_committed_edits_for_file_deltas() {
     refresh_and_emit(&shared);
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("cargo build")
         ),
@@ -210,7 +210,7 @@ fn reload_emits_committed_edits_for_file_deltas() {
 /// always-valid record: the operator reads it to see the perimeter the session ran under.
 #[test]
 fn reload_failure_keeps_policy_reverts_file_and_notifies() {
-    use crate::policy::{Verdict, classify};
+    use crate::config::policy::{Verdict, classify};
     let path =
         std::env::temp_dir().join(format!("efference-watch-bad-{}.toml", std::process::id()));
 
@@ -222,7 +222,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
     refresh_and_emit(&shared);
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("cargo build")
         ),
@@ -241,7 +241,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
     // Effective policy is unchanged (last good still in force) — fail-closed…
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("cargo build")
         ),
@@ -269,7 +269,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
 /// A `Cancelled` decision drains the proposal from the queue and never touches policy.
 #[test]
 fn cancelling_a_proposal_drains_the_queue_without_applying() {
-    use crate::policy::{Verdict, classify};
+    use crate::config::policy::{Verdict, classify};
     let call = bash_call("npm install");
     let (shared, _rx) = Session::in_memory();
 
@@ -303,7 +303,7 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
     );
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -317,7 +317,7 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
 /// `seq` resolves nothing.
 #[test]
 fn resolve_proposal_decision_commits_and_cancels() {
-    use crate::policy::{Verdict, classify};
+    use crate::config::policy::{Verdict, classify};
     let (shared, _rx) = Session::in_memory();
 
     assert!(
@@ -339,7 +339,7 @@ fn resolve_proposal_decision_commits_and_cancels() {
         .unwrap();
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &npm
         ),
@@ -352,7 +352,7 @@ fn resolve_proposal_decision_commits_and_cancels() {
     );
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &npm
         ),
@@ -381,7 +381,7 @@ fn resolve_proposal_decision_commits_and_cancels() {
     );
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &cargo
         ),
@@ -398,14 +398,14 @@ fn resolve_proposal_decision_commits_and_cancels() {
 /// construction — the policy survives a restart even before any new grant lands.
 #[test]
 fn resumed_log_edits_fold_into_the_initial_effective_config() {
-    use crate::policy::{Verdict, classify};
+    use crate::config::policy::{Verdict, classify};
     let mut log = Log::in_memory();
     log.append(0, allow_grant("npm")).unwrap();
 
     let (shared, _rx) = Session::from_log(log);
     assert_eq!(
         classify(
-            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            &crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("npm install")
         ),

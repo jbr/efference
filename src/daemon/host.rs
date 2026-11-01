@@ -61,7 +61,7 @@ pub struct Host {
     pub(super) inference: crate::inference::InferenceRegistry,
     /// Each connection's model listing, stored in the user state database
     /// (docs/model-catalog.md).
-    pub(super) catalog: crate::catalog::Catalog,
+    pub(super) catalog: crate::inference::catalog::Catalog,
     /// Where sessions have been launched, in the same database (docs/control-api.md).
     /// Written by every successful creation and read by the index route.
     pub(super) remembered: crate::remembered::Projects,
@@ -98,9 +98,9 @@ pub struct Host {
     /// process happens to be carrying at request time. `EnvSnapshot` omits Debug
     /// and Serialize, so it cannot be logged or echoed, and the credential
     /// variables in it are stripped and masked for every session by the same
-    /// [`crate::env_table::EnvPolicy::build_session`] call as any other base
+    /// [`crate::config::env_table::EnvPolicy::build_session`] call as any other base
     /// (docs/env.md).
-    host_env: crate::env_table::EnvSnapshot,
+    host_env: crate::config::env_table::EnvSnapshot,
     /// Signalled when the session listing may have moved (`listing.rs`): a
     /// session arriving or leaving, and every wake of a session's status
     /// watcher. Every listing subscriber recomputes and diffs for itself, so
@@ -131,7 +131,7 @@ pub struct Host {
     /// One lock per MCP server for refreshing its stored grant, shared by the token
     /// store every session here mounts with, so the host's sessions refresh a
     /// server's grant once however many find it expired (docs/mcp-auth.md).
-    mcp_refresh_locks: crate::mcp::auth::store::RefreshLocks,
+    mcp_refresh_locks: crate::tools::mcp::auth::store::RefreshLocks,
     /// The language servers behind the `lsp` built-ins (docs/tools.md). Workspaces are
     /// keyed by project root, so the sessions in one project share one set of servers;
     /// each session's binding releases its interest when its toolbox drops, and
@@ -191,10 +191,11 @@ impl Host {
     /// that loaded the inference registry from it (docs/env.md).
     pub fn new(
         inference: crate::inference::InferenceRegistry,
-        host_env: crate::env_table::EnvSnapshot,
+        host_env: crate::config::env_table::EnvSnapshot,
     ) -> Arc<Self> {
-        let catalog =
-            crate::catalog::Catalog::new(inference.history().state_path().map(ToOwned::to_owned));
+        let catalog = crate::inference::catalog::Catalog::new(
+            inference.history().state_path().map(ToOwned::to_owned),
+        );
         let inference = inference.with_catalog(catalog.clone());
         let session_ids = inference
             .history()
@@ -242,7 +243,7 @@ impl Host {
     }
 
     /// The MCP refresh locks a session's token store shares (docs/mcp-auth.md).
-    pub(crate) fn mcp_refresh_locks(&self) -> crate::mcp::auth::store::RefreshLocks {
+    pub(crate) fn mcp_refresh_locks(&self) -> crate::tools::mcp::auth::store::RefreshLocks {
         self.mcp_refresh_locks.clone()
     }
 
@@ -488,7 +489,7 @@ impl Host {
         };
         body.detached = hosted.detached;
         body.options = hosted.options.clone();
-        let lineage = crate::env::Lineage {
+        let lineage = crate::config::env::Lineage {
             created_by: hosted.created_by.clone(),
             succeeds: Some(from.to_string()),
         };
@@ -577,7 +578,7 @@ impl Host {
     ) -> Arc<starting::Starting> {
         let starting = starting::Starting::new(starting::StartingParts {
             id: id.to_string(),
-            directories: crate::policy::Directories::at(cwd),
+            directories: crate::config::policy::Directories::at(cwd),
             resume: false,
             created_by: None,
             detached: false,

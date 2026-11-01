@@ -286,7 +286,7 @@ pub enum Payload {
     /// surfaces as an [`Ambient`] notification (an optional tail append — never a re-render of
     /// the cached preamble; see [`crate::daemon`]) so the session learns its perimeter moved.
     ///
-    /// [`effective_config`]: crate::policy::effective_config
+    /// [`effective_config`]: crate::config::policy::effective_config
     /// [`Ambient`]: Payload::Ambient
     ConfigEdit(ConfigEdit),
     /// The boot preamble snapshot (docs/context.md): the system prompt exactly as this

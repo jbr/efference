@@ -25,13 +25,13 @@ pub(super) async fn put_title(mut conn: Conn) -> Conn {
     if text.is_empty() {
         return fail(conn, ErrorCode::BadRequest, "title must not be empty");
     }
-    if text.chars().count() > crate::triage::TITLE_MAX_CHARS {
+    if text.chars().count() > crate::curation::triage::TITLE_MAX_CHARS {
         return fail(
             conn,
             ErrorCode::BadRequest,
             format!(
                 "title must be at most {} characters",
-                crate::triage::TITLE_MAX_CHARS
+                crate::curation::triage::TITLE_MAX_CHARS
             ),
         );
     }

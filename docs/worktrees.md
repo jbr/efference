@@ -5,7 +5,7 @@ branch, so its edits do not land in the checkout another session or the operator
 using. `POST /sessions {"worktree": true}` asks for one (`efference` CLI `--worktree`,
 the `create` control tool's `worktree`). Worktree placement lives in
 `src/record/session_dir/worktree.rs` and the git operations in `src/worktree.rs`; the directory
-pair lives in `src/policy/directories.rs`.
+pair lives in `src/config/policy/directories.rs`.
 
 ## Project and working directory
 

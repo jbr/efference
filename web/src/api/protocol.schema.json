@@ -1505,7 +1505,7 @@
       ]
     },
     "ConfigChange": {
-      "description": "What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape\n(docs/permissions.md). Each variant addresses one section of the config table;\n[`crate::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).\nMost variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the\nnarrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace\nsemantics over a list are an unsettled question; add it when an initiator needs it).\n\n**Session-visibility** (which edits notify the session) is decided by variant in\n[`crate::daemon`]: `Scope` and `Path` are the perimeter the session should learn moved;\n`Command` and `Tool` reach the model only through the classifier.",
+      "description": "What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape\n(docs/permissions.md). Each variant addresses one section of the config table;\n[`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).\nMost variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the\nnarrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace\nsemantics over a list are an unsettled question; add it when an initiator needs it).\n\n**Session-visibility** (which edits notify the session) is decided by variant in\n[`crate::daemon`]: `Scope` and `Path` are the perimeter the session should learn moved;\n`Command` and `Tool` reach the model only through the classifier.",
       "oneOf": [
         {
           "additionalProperties": false,
@@ -1602,7 +1602,7 @@
       ]
     },
     "ConfigEdit": {
-      "description": "One config edit: a single, durable change to the policy table (docs/permissions.md).\nThe change vocabulary lives here, in the log types, deliberately — like [`Stance`] and\n[`Origin`], the log owns its own serialized types so the wire format isn't hostage to a\nconfig struct's layout. [`crate::policy::apply_config_change`] applies each [`ConfigChange`] to\nthe config it folds into.",
+      "description": "One config edit: a single, durable change to the policy table (docs/permissions.md).\nThe change vocabulary lives here, in the log types, deliberately — like [`Stance`] and\n[`Origin`], the log owns its own serialized types so the wire format isn't hostage to a\nconfig struct's layout. [`crate::config::policy::apply_config_change`] applies each [`ConfigChange`] to\nthe config it folds into.",
       "properties": {
         "change": {
           "allOf": [
@@ -4700,7 +4700,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "A config edit — the durable record of one change to the policy table\n(docs/permissions.md). The config-edit loop turns a deny into\nnegotiation: an orchestrator (human or coordinating session) edits the session's\nconfig, and the change lands here. Effective policy = base config + the fold of these\n(see [`effective_config`]); the log is the source of truth for what changed, exactly as\nit is for everything else (docs/log-and-projection.md). The fold is **replace-at-key**\n(last-write-wins, order-defined) — materializing a table from an ordered log, like a\ndatabase replaying its write-ahead log. Audit-only on the wire — it projects to nothing,\nlike [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only\nthrough the classifier, while a **session-visible** edit (`scope`, `paths`) *also*\nsurfaces as an [`Ambient`] notification (an optional tail append — never a re-render of\nthe cached preamble; see [`crate::daemon`]) so the session learns its perimeter moved.\n\n[`effective_config`]: crate::policy::effective_config\n[`Ambient`]: Payload::Ambient",
+          "description": "A config edit — the durable record of one change to the policy table\n(docs/permissions.md). The config-edit loop turns a deny into\nnegotiation: an orchestrator (human or coordinating session) edits the session's\nconfig, and the change lands here. Effective policy = base config + the fold of these\n(see [`effective_config`]); the log is the source of truth for what changed, exactly as\nit is for everything else (docs/log-and-projection.md). The fold is **replace-at-key**\n(last-write-wins, order-defined) — materializing a table from an ordered log, like a\ndatabase replaying its write-ahead log. Audit-only on the wire — it projects to nothing,\nlike [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only\nthrough the classifier, while a **session-visible** edit (`scope`, `paths`) *also*\nsurfaces as an [`Ambient`] notification (an optional tail append — never a re-render of\nthe cached preamble; see [`crate::daemon`]) so the session learns its perimeter moved.\n\n[`effective_config`]: crate::config::policy::effective_config\n[`Ambient`]: Payload::Ambient",
           "properties": {
             "ConfigEdit": {
               "$ref": "#/definitions/ConfigEdit"
@@ -4912,7 +4912,7 @@
       "type": "object"
     },
     "Perms": {
-      "description": "Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check\ntime (see [`crate::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.\nSerialized as the `role` topic reports a grant (docs/control-api.md).",
+      "description": "Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check\ntime (see [`crate::config::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.\nSerialized as the `role` topic reports a grant (docs/control-api.md).",
       "properties": {
         "read": {
           "type": "boolean"
@@ -5106,7 +5106,7 @@
       "description": "One lifecycle fact about one background process, addressed by the\nspawn-minted ordinal (docs/process-monitor.md).",
       "properties": {
         "id": {
-          "description": "The spawn-minted ordinal — bare, as routes and frames carry it; rendered\n`p#<n>` in prose by [`crate::process_monitor::handle`].",
+          "description": "The spawn-minted ordinal — bare, as routes and frames carry it; rendered\n`p#<n>` in prose by [`crate::tools::process_monitor::handle`].",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -5153,7 +5153,7 @@
       ]
     },
     "ProcessExit": {
-      "description": "How a process ended and how long it ran (docs/process-monitor.md). Also the\nexit half of a [`ProcessRecord`](crate::process_monitor::ProcessRecord), so the\nlive registry and a log fold answer with one type.",
+      "description": "How a process ended and how long it ran (docs/process-monitor.md). Also the\nexit half of a [`ProcessRecord`](crate::tools::process_monitor::ProcessRecord), so the\nlive registry and a log fold answer with one type.",
       "properties": {
         "at": {
           "allOf": [
@@ -5980,7 +5980,7 @@
       ]
     },
     "ResolvedContext": {
-      "description": "A fully-resolved `[context]` ready to render into the preamble: sections in **document order**\n(docs/context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.\nThis is what [`crate::env`] builds from disk at boot and freezes into the cached prefix.",
+      "description": "A fully-resolved `[context]` ready to render into the preamble: sections in **document order**\n(docs/context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.\nThis is what [`crate::config::env`] builds from disk at boot and freezes into the cached prefix.",
       "properties": {
         "sections": {
           "items": {
@@ -8375,7 +8375,7 @@
       "type": "object"
     },
     "ToolEntry": {
-      "description": "One tool's full definition, addressed by wire name — the payload for\n`GET /v1/tools/:name` (docs/control-api.md). A consumer fetches these\nlazily, one at a time, rather than holding a table pushed at session\nstart: an MCP server may mount dozens of tools with long descriptions.\n\n`description` and `annotations`/`title` are third-party prose for a\nmounted server (`server.is_some()`): a consumer renders them as plain\ntext, never markdown, and attributes them to `server`\n(`src/process_monitor.rs` draws the same untrusted-server line for the\nbuilt-ins' own annotations).",
+      "description": "One tool's full definition, addressed by wire name — the payload for\n`GET /v1/tools/:name` (docs/control-api.md). A consumer fetches these\nlazily, one at a time, rather than holding a table pushed at session\nstart: an MCP server may mount dozens of tools with long descriptions.\n\n`description` and `annotations`/`title` are third-party prose for a\nmounted server (`server.is_some()`): a consumer renders them as plain\ntext, never markdown, and attributes them to `server`\n(`src/tools/process_monitor.rs` draws the same untrusted-server line for the\nbuilt-ins' own annotations).",
       "properties": {
         "annotations": {
           "additionalProperties": true,

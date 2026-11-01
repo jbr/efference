@@ -26,7 +26,7 @@ impl Drop for Roots {
 #[allow(clippy::too_many_lines)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sessions_resolve_policy_config_references_and_children_in_their_own_roots() {
-    use crate::policy::{Verdict, bash_tokens, classify, is_config_write, missing_grants};
+    use crate::config::policy::{Verdict, bash_tokens, classify, is_config_write, missing_grants};
     let roots = Roots::new();
     let first = roots.0.join("one");
     let second = roots.0.join("two");
@@ -38,7 +38,7 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
         )).unwrap();
         let role = crate::config::load_in(cwd, None).unwrap();
         assert_eq!(role.source, ConfigSource::Path(cwd.join("efference.toml")));
-        let resolver = crate::env_table::Resolver::at_cwd(cwd.clone());
+        let resolver = crate::config::env_table::Resolver::at_cwd(cwd.clone());
         let (values, errors) = resolver.resolve_table(&role.role.env);
         assert!(errors.is_empty(), "{errors:?}");
         assert_eq!(values[0].value, label);
@@ -69,7 +69,7 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
                 |_| {},
             )
             .await;
-        let crate::bash::Outcome::Done(result) = foreground else {
+        let crate::tools::bash::Outcome::Done(result) = foreground else {
             session.kill_all_bg();
             panic!("short foreground command unexpectedly detached");
         };
@@ -154,7 +154,7 @@ fn rooted_config_loading_preserves_optional_default_and_required_explicit_paths(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sessions_use_their_own_environment_for_bash_and_context() {
-    use crate::env_table::{EnvPolicy, EnvSnapshot, Resolver};
+    use crate::config::env_table::{EnvPolicy, EnvSnapshot, Resolver};
     let roots = Roots::new();
     let mut sessions = Vec::new();
     for label in ["one", "two"] {
@@ -183,7 +183,10 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
             role,
             scratch: Some(scratch.clone()),
             env_policy: policy,
-            ..SessionParts::new(crate::policy::Directories::at(&cwd), Log::in_memory())
+            ..SessionParts::new(
+                crate::config::policy::Directories::at(&cwd),
+                Log::in_memory(),
+            )
         });
         let state = session.state_json();
         assert!(!state.contains(&format!("private-{label}-credential")));
@@ -200,7 +203,7 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
                 |_| {},
             )
             .await;
-        let crate::bash::Outcome::Done(result) = result else {
+        let crate::tools::bash::Outcome::Done(result) = result else {
             panic!("unexpected detach")
         };
         assert!(!result.is_error, "{}", result.content);
@@ -209,7 +212,7 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
             "[context.identity]\nexec = 'printf %s \"$IDENTITY\"'\n",
         )
         .unwrap();
-        let context = crate::context::resolve_with_child_env(
+        let context = crate::config::context::resolve_with_child_env(
             &config.context,
             &cwd,
             &session.env_policy.child_env(),

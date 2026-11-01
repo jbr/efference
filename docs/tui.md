@@ -3,7 +3,7 @@
 The TUI — what a bare `efference` draws ([operating.md](operating.md)) — is the human-facing client. It is just-another-socket-client: it subscribes to the daemon's SSE streams over the same [control channel](control-channel.md) the `control` tools use, and it drives turns and approvals through the same HTTP verbs. The renderer is vendored-and-adapted from ferritin's interactive renderer into `src/tui/`. Ferritin already had the hard parts — a general-purpose document IR, a markdown→IR parser, syntect theming, a custom scrollbar, and line wrapping — and its render pipeline was domain-free (it renders an IR, not rustdoc), so the lift was strip-the-shell, not rewrite. Improvements flow back cleanly because the IR stays byte-identical to ferritin.
 
 **Display settings** are the `[tui]` table of the user configuration
-(`~/.efference/config.toml`, `src/user_config/tui.rs`), not flags: `theme` (a built-in
+(`~/.efference/config.toml`, `src/config/user_config/tui.rs`), not flags: `theme` (a built-in
 name or a `.tmTheme` path, `~/` expanded; "Catppuccin Frappe" when omitted), `images`
 (below), and `frame-cost` (below). A TUI is drawn by more than one surface — the picker's
 attach, `--name`, a terminal island, setup's offer — and each reads the same table once at

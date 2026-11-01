@@ -226,7 +226,7 @@ fn summary_replaces_named_range_and_injects_text() {
 /// consolidate exchange itself project as before.
 #[test]
 fn a_responses_summary_replaces_whole_replay_units() {
-    use crate::api::{PromptCachePolicy, encode_responses};
+    use crate::inference::api::{PromptCachePolicy, encode_responses};
     use crate::record::log::ResponsesOutputItem;
 
     fn call(call_id: &str, encrypted: &str) -> Payload {
@@ -263,7 +263,7 @@ fn a_responses_summary_replaces_whole_replay_units() {
         ),
         entry(6, 1, result("consolidate_1", "consolidated")),
     ];
-    assert!(crate::consolidate::split_calls(&log, 2).is_empty());
+    assert!(crate::curation::consolidate::split_calls(&log, 2).is_empty());
 
     let input = encode_responses(&project_semantic(&log), "", PromptCachePolicy::None);
     let items: Vec<Value> = input
@@ -309,7 +309,7 @@ fn a_responses_summary_replaces_whole_replay_units() {
 /// (docs/consolidate.md); a persisted summary is projected as written.
 #[test]
 fn a_summary_inside_a_responses_step_orphans_its_output() {
-    use crate::api::{PromptCachePolicy, encode_responses};
+    use crate::inference::api::{PromptCachePolicy, encode_responses};
     use crate::record::log::ResponsesOutputItem;
     let log = vec![
         entry(0, 0, Payload::user("go")),
@@ -335,7 +335,7 @@ fn a_summary_inside_a_responses_step_orphans_its_output() {
         entry(4, 1, Payload::user("on")),
     ];
     assert_eq!(
-        crate::consolidate::split_calls(&log, 1),
+        crate::curation::consolidate::split_calls(&log, 1),
         vec![CallId("call_x".into())]
     );
     let input = encode_responses(&project_semantic(&log), "", PromptCachePolicy::None);

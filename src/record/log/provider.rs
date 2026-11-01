@@ -6,7 +6,7 @@
 //! two enums are part of what the log is written in. What a provider *does* — its URLs,
 //! auth, cache lifetime, placements and defaults — is the transport's: the `impl` blocks,
 //! including the serde impls that write and read a provider's name, are in
-//! `src/api/provider.rs` and `src/api/provider/dialect.rs`.
+//! `src/inference/api/provider.rs` and `src/inference/api/provider/dialect.rs`.
 //!
 //! [`LoggedInference`]: super::LoggedInference
 //! [`AssistantOutput`]: super::AssistantOutput
@@ -58,7 +58,7 @@ pub enum Provider {
     /// platform balance. Auth is the OAuth access token Codex CLI caches in
     /// `~/.codex/auth.json` plus its `ChatGPT-Account-ID`; the request shape
     /// mirrors what Codex CLI sends
-    /// ([`ResponsesProfile::Codex`](crate::api::ResponsesProfile::Codex)).
+    /// ([`ResponsesProfile::Codex`](crate::inference::api::ResponsesProfile::Codex)).
     OpenAICodex,
     /// TypeSafe's System One API (`/v1/systemone`): `authorization: Bearer`
     /// auth, and **no inference dialect at all**. It serves decision models —
@@ -71,7 +71,7 @@ pub enum Provider {
     /// dialect plus a base URL from `[connections.<name>]`
     /// (docs/transport.md). The dialect is the payload because it is the one fact
     /// no default can supply — everything else a custom connection needs is either
-    /// owned data on [`Endpoint`](crate::api::Endpoint) (the URL, the auth header,
+    /// owned data on [`Endpoint`](crate::inference::api::Endpoint) (the URL, the auth header,
     /// extra headers) or derived from the dialect here.
     ///
     /// Every per-provider quirk takes its conservative arm for this variant, and

@@ -20,7 +20,7 @@ fn state_reports_upstream_failure() {
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["upstream_failure"].is_null());
 
-    let mut diagnostic = crate::api::UpstreamFailure::new(Some(429), "");
+    let mut diagnostic = crate::inference::api::UpstreamFailure::new(Some(429), "");
     diagnostic.count = 2;
     *failure.lock().unwrap() = Some(diagnostic);
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -39,7 +39,7 @@ fn state_reports_the_retry_in_flight() {
     let (shared, _turns_rx) = Session::full(SessionParts {
         upstream_retry: Arc::clone(&retry),
         ..SessionParts::new(
-            crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             Log::in_memory(),
         )
     });
@@ -47,8 +47,8 @@ fn state_reports_the_retry_in_flight() {
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["upstream_retry"].is_null());
 
-    retry.set(crate::api::UpstreamRetry {
-        surface: crate::api::RetrySurface::Triage,
+    retry.set(crate::inference::api::UpstreamRetry {
+        surface: crate::inference::api::RetrySurface::Triage,
         attempt: 2,
         budget: 12,
         next_attempt_at: 1_754_300_000_000,
@@ -68,7 +68,7 @@ fn state_reports_the_retry_in_flight() {
         })
     );
 
-    retry.clear(crate::api::RetrySurface::Triage);
+    retry.clear(crate::inference::api::RetrySurface::Triage);
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(
         v["upstream_retry"].is_null(),
@@ -234,7 +234,7 @@ fn state_reports_cache_telemetry() {
     // (docs/transport.md): the reason in the provider's own spelling, the magnitude it
     // estimated, and an absolute stamp — a client judges staleness against its own clock,
     // since an elapsed-time field would re-emit this topic on every read.
-    use crate::api::{CacheMiss, CacheMissReason};
+    use crate::inference::api::{CacheMiss, CacheMissReason};
     shared.record_request(
         RequestOrigin::Turn,
         RequestUsage::new(Usage {
@@ -273,12 +273,12 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["usage"]["context"].is_null());
 
-    shared.set_capabilities(crate::api::ModelCapabilities {
+    shared.set_capabilities(crate::inference::api::ModelCapabilities {
         context_length: Some(200_000),
         max_output_tokens: Some(64_000),
         supports_image_input: true,
-        prompt_cache: crate::api::PromptCachePolicy::Explicit,
-        ..crate::api::ModelCapabilities::unknown()
+        prompt_cache: crate::inference::api::PromptCachePolicy::Explicit,
+        ..crate::inference::api::ModelCapabilities::unknown()
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["context"]["limit"], 200_000);
@@ -325,12 +325,12 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
 #[test]
 fn context_occupancy_ignores_side_channel_requests() {
     let (shared, _turns_rx) = Session::in_memory();
-    shared.set_capabilities(crate::api::ModelCapabilities {
+    shared.set_capabilities(crate::inference::api::ModelCapabilities {
         context_length: Some(200_000),
         max_output_tokens: Some(64_000),
         supports_image_input: true,
-        prompt_cache: crate::api::PromptCachePolicy::Explicit,
-        ..crate::api::ModelCapabilities::unknown()
+        prompt_cache: crate::inference::api::PromptCachePolicy::Explicit,
+        ..crate::inference::api::ModelCapabilities::unknown()
     });
     let usage = |input, read| {
         RequestUsage::new(Usage {
@@ -384,7 +384,7 @@ fn state_reports_session_cost_only_when_armed() {
     assert!(v["usage"]["cost"].is_null());
 
     shared.enable_cost_tracking(
-        crate::api::Endpoint::at(
+        crate::inference::api::Endpoint::at(
             crate::record::log::Provider::OpenRouter,
             "https://openrouter.ai/api/v1/messages",
         )
@@ -501,7 +501,7 @@ fn state_reports_autonomous_mode() {
 /// the single representation of who reviews a gated call: default `spotter_human`.
 #[test]
 fn state_reports_the_review_level_dial() {
-    use crate::policy::ReviewLevel;
+    use crate::config::policy::ReviewLevel;
     let (shared, _rx) = Session::in_memory();
 
     // Default: supervised, not autonomous.
@@ -672,25 +672,25 @@ fn state_is_last_seq_plus_exactly_the_topics() {
 /// is `null` until a Codex response has named them (docs/transport.md).
 #[test]
 fn state_reports_plan_windows_under_usage() {
-    let plan = crate::api::plan_state();
+    let plan = crate::inference::api::plan_state();
     let (shared, _turns_rx) = Session::full(SessionParts {
         plan: Arc::clone(&plan),
         ..SessionParts::new(
-            crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             Log::in_memory(),
         )
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["usage"]["plan"].is_null());
 
-    *plan.lock().unwrap() = Some(crate::api::PlanSnapshot {
+    *plan.lock().unwrap() = Some(crate::inference::api::PlanSnapshot {
         plan_type: Some("plus".into()),
         active: None,
         limits: BTreeMap::from([(
             "codex".into(),
-            crate::api::PlanLimit {
+            crate::inference::api::PlanLimit {
                 name: None,
-                primary: Some(crate::api::PlanWindow {
+                primary: Some(crate::inference::api::PlanWindow {
                     used_percent: 12.5,
                     window_minutes: Some(300),
                     resets_at: Some(1_788_677_725_000),

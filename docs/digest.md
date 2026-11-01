@@ -4,7 +4,7 @@ A session's log folded to a compact text: one line per tool call, plus the turns
 operator wrote and the agent's prose. It is the substrate for
 summarizing a session without reading its whole context — the cold session's compaction
 and the compaction-fidelity evaluation (`eval/compaction/`) both start from it.
-`src/digest.rs` implements it; `efference dev digest <session> [--upto <seq>] [--seqs]`
+`src/curation/digest.rs` implements it; `efference dev digest <session> [--upto <seq>] [--seqs]`
 prints it. A separate triage model reads it as the older part of its text view
 ([triage.md](triage.md)); the digest at a triage extends the digest at every earlier
 triage byte for byte, which is what lets that request resume a cached prefix.
@@ -68,4 +68,4 @@ a head summary covers). `render` is one span over the log.
 The digest reads the log alone and asks no model anything, so the same log and options
 yield the same text. It is not on the agent's wire. The separate triage's text view sends
 it ([triage.md](triage.md)), where what matters is that a later triage's digest extends an
-earlier one's; `src/triage/text_view/test.rs` pins that.
+earlier one's; `src/curation/triage/text_view/test.rs` pins that.

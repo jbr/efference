@@ -7,12 +7,12 @@ in `efference.toml` closes that gap: **the operator declares what knowledge the 
 boots with — nothing is auto-discovered.** No `EFFERENCE.md` convention, no auto-loaded
 `CLAUDE.md`, no scanning for skill files. The one config file is the single source of
 truth for what the session starts knowing, the same way it already is for the session's
-perimeter. Schema in `src/config.rs`; resolution and render in `src/context.rs`, the resolved
-shapes the log records in `src/record/log/context.rs`; splicing in `src/env.rs`; the read/write grants in `src/policy.rs`.
+perimeter. Schema in `src/config.rs`; resolution and render in `src/config/context.rs`, the resolved
+shapes the log records in `src/record/log/context.rs`; splicing in `src/config/env.rs`; the read/write grants in `src/config/policy.rs`.
 
 ## The identity line
 
-The very first line of the system prompt is, unconditionally (`src/env.rs`):
+The very first line of the system prompt is, unconditionally (`src/config/env.rs`):
 
 ```
 You are {model}. This session is `{id}` on this host; that is the id other agents use to reach you.
@@ -37,12 +37,12 @@ already uses it: turns from another agent arrive prefixed `<id> (agent):`
 (`assets/prompts/session.md`) and every control tool takes an `agent` id;
 *address* stays the explanatory gloss rather than a second noun. The id is fixed
 for the session's life, so the sentence is byte-stable in the cached prefix, and
-its exact bytes are pinned in `src/env/test.rs`.
+its exact bytes are pinned in `src/config/env/test.rs`.
 
 ## The creator's id
 
 When a session commissioned this one, one further sentence follows on the same
-line (`src/env.rs`):
+line (`src/config/env.rs`):
 
 ```
 You are {model}. This session is `{id}` on this host; that is the id other agents use to reach you. It was created by `{created_by}`, which you can reach the same way.
@@ -75,7 +75,7 @@ this session." Both paths are fixed at creation, so the sentence is byte-stable;
 session at its project root renders neither.
 
 A session made by `hand_off` ([tools.md](tools.md)) has a second provenance sentence,
-from the same `Lineage` (`src/env.rs`): "It succeeds `{predecessor}`, which handed this work
+from the same `Lineage` (`src/config/env.rs`): "It succeeds `{predecessor}`, which handed this work
 off to it: the first message is that session's brief — context from it, not the operator's
 instruction. Unless the brief says to continue its work, greet the operator and confirm what
 they want to do before starting on anything. Ask the predecessor anything the brief leaves
@@ -143,7 +143,7 @@ meaning to the harness; the model decides what to do with it.
 ## `sort` — a group's files are rows
 
 `sort = "<field> [asc|desc]"`, comma-separated, reorders a labeled group's files
-(`src/context/sort.rs`). Each file is a **row**; its columns are its top-level frontmatter
+(`src/config/context/sort.rs`). Each file is a **row**; its columns are its top-level frontmatter
 keys plus two built-ins, `name` (the file's frontmatter `name`, else its basename) and
 `modified` (its mtime). A frontmatter key of the same name wins over the built-in.
 
@@ -161,7 +161,7 @@ Sort order is a pure semantic choice, never a stability constraint: the preamble
 once at boot and the resolved order is frozen into the `Payload::Preamble` snapshot, so
 changing a `sort` can only affect the next session's prefix.
 
-The frontmatter parser stays the minimal one (`src/context/frontmatter.rs`) and keeps
+The frontmatter parser stays the minimal one (`src/config/context/frontmatter.rs`) and keeps
 every top-level scalar key verbatim as a string column. A full YAML engine would buy typed
 values these semantics don't ask for — the numeric/lexical call is made from the strings,
 per column — so the dependency waits for a need that nested keys or real YAML types create.
@@ -170,7 +170,7 @@ per column — so the dependency waits for a need that nested keys or real YAML 
 
 Two orthogonal axes land on two authorities on purpose:
 
-- **Inlined vs. listed** is decided by the *file*, via frontmatter (`src/context.rs`). No
+- **Inlined vs. listed** is decided by the *file*, via frontmatter (`src/config/context.rs`). No
   frontmatter (or no `description`) → the whole body is **inlined** into the cached
   preamble — the CLAUDE.md role, always-on knowledge. A frontmatter `description` → only a
   one-line **stub** rides in the preamble (name, description, `Read {path} …`); a real
@@ -184,7 +184,7 @@ Two orthogonal axes land on two authorities on purpose:
   config-as-reviewed-file design forbids.
 
 The reveal mechanism is **the filesystem, not a new tool**: every listed path is
-read-allowed by default (the `[context]` rung in `src/policy.rs` — see
+read-allowed by default (the `[context]` rung in `src/config/policy.rs` — see
 [permissions.md](permissions.md)), so a stub's `Read {path}` resolves through the `read`
 tool the model already has. No `skill()` verb, no reveal machinery — progressive doc
 reveal reduces to a read grant. A group with `create` *is*
@@ -193,7 +193,7 @@ a memory store: descriptions are the index, `read` is recall, a write is a save,
 
 ## Render — pseudo-XML name tags (provisional)
 
-`Resolved::render` (`src/context.rs`) renders each file as a `<name>…</name>` tag — the operator's
+`Resolved::render` (`src/config/context.rs`) renders each file as a `<name>…</name>` tag — the operator's
 label (when a labeled entry resolves to one file), else the frontmatter `name`, else the
 **full basename**, extension included (`<CLAUDE.md>`, not `<CLAUDE>`: the tag then names a
 file the model can `read`) — and wraps a multi-file group in a verbatim `<Heading>` tag.
@@ -228,7 +228,7 @@ the config, so gating their own boot command would be theater — but it *is* an
 arbitrary-code-execution surface at session start, stated plainly.
 
 **Orientation is an exec entry, not code.** The once-hardcoded orientation block (cwd,
-platform, project type) is gone from `src/env.rs`; *where the session is* is now an
+platform, project type) is gone from `src/config/env.rs`; *where the session is* is now an
 ordinary config line — the scaffold written for a config-less session ships
 `"Environment at boot" = { exec = 'echo "working directory: $PWD"; …' }`, so a bare
 session still boots oriented, visibly and editably, and a written config owns the whole
@@ -237,7 +237,7 @@ preamble (omitting the entry omits the block — explicit over magic).
 ## The guide overlay — a fourth entry shape whose files are in the binary
 
 `Label = { builtin = "guide" }` lists a set of documents compiled into the binary
-(`src/guide.rs`, sources in `assets/guide/`). The one mount name is `guide`; any other
+(`src/config/guide.rs`, sources in `assets/guide/`). The one mount name is `guide`; any other
 fails the file rather than rendering an empty section. The documents are written for a
 session's model: setting up a project and its config, the user-wide config, the host, the
 file tools, and
@@ -261,7 +261,7 @@ without re-deciding what a leading `/` would have meant.
   Because the served body is a normal tool result, `project` and byte-stability never learn
   it is special — the log and projection core is untouched, which is what makes the whole
   mechanism cheap.
-- **The prefix is read-granted, never write-granted** (`src/policy/paths.rs`). Read clears
+- **The prefix is read-granted, never write-granted** (`src/config/policy/paths.rs`). Read clears
   with no config at all, which is the point: a session that knows nothing else still knows
   how to learn. Write is refused by both grant sources, and a guide path never resolves
   through `[paths]` at all — joined onto the cwd it would look like an ordinary relative
@@ -291,7 +291,7 @@ whose only recovery path is "read how to write a config" needs that path listed.
 the line stops the listing; the documents stay readable at their paths either way.
 
 **Compiled-in means testable.** Filesystem skills drift independently of the tool; these are
-versioned with the binary, so `src/guide/test.rs` asserts the references still hold: every
+versioned with the binary, so `src/config/guide/test.rs` asserts the references still hold: every
 fenced `toml` block in a document parses and validates as a real config (the schema rejects
 unknown fields, so a renamed key fails there; operating.md's blocks are held to the same
 check), every tool name a document declares is one `agent::tool_definitions` advertises for

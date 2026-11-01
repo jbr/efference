@@ -18,8 +18,8 @@ use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::{SessionRuntime, StallReason};
 use crate::frontend::SubmittedTurn;
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 use crate::record::log::{Origin, Provider, WireState};
-use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 use tempfile::TempDir;
 use trillium_tokio::Swansong;
 
@@ -32,7 +32,7 @@ pub(super) async fn start(upstream: &ScriptedUpstream) -> (Swansong, SessionRunt
 /// [`start`], with the boot adjusted first: a review level, a spotter's stance.
 pub(super) async fn start_with(
     upstream: &ScriptedUpstream,
-    adjust: impl FnOnce(&mut SessionBoot<crate::spotter::StaticSpotter>),
+    adjust: impl FnOnce(&mut SessionBoot<crate::curation::spotter::StaticSpotter>),
 ) -> (Swansong, SessionRuntime, TempDir) {
     let (cwd, dir) = workdir("upstream");
     let mut boot = boot(&cwd);
@@ -301,7 +301,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
 /// `TriageDefect`, and still nothing reaches the agent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
-    use crate::triage::TRIAGE_RESTARTS;
+    use crate::curation::triage::TRIAGE_RESTARTS;
     let upstream = ScriptedUpstream::new(|n| match n {
         0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
         // Prose, not a verdict: unusable every time.

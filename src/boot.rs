@@ -16,13 +16,13 @@
 
 use std::path::PathBuf;
 
-use crate::api::Error;
+use crate::curation::spotter::MountedSpotter;
 use crate::daemon::SessionBoot;
 use crate::inference::SessionOptions;
+use crate::inference::api::Error;
 use crate::protocol::sessions::CreateSession;
 use crate::record::persist::Log;
 use crate::record::session_dir::LOG_NAME;
-use crate::spotter::MountedSpotter;
 
 mod env;
 pub mod mcp_mount;
@@ -54,9 +54,9 @@ pub struct SessionRequest {
     pub create: CreateSession,
     /// The session's project (config, grants, the session base) and working directory
     /// (tools, MCP mounts, children) (docs/control-channel.md).
-    pub directories: crate::policy::Directories,
+    pub directories: crate::config::policy::Directories,
     /// The session's base environment (docs/env.md).
-    pub base_env: crate::env_table::EnvSnapshot,
+    pub base_env: crate::config::env_table::EnvSnapshot,
     /// The session dir to mint: `<project>/.efference/<id>`.
     pub session_dir: PathBuf,
     /// The resolved role selections: each role's endpoint and native model, and
@@ -72,7 +72,7 @@ pub struct SessionRequest {
     /// session made it (docs/tools.md). Both reach the prompt's identity line
     /// (docs/context.md); the host records the same values when it adopts the
     /// started runtime. Default for a human root.
-    pub lineage: crate::env::Lineage,
+    pub lineage: crate::config::env::Lineage,
 }
 
 /// Prepare a session: everything from the origin config to the provider client,
@@ -169,7 +169,7 @@ async fn prepare_minting(
     // prompts (1Password's Touch ID) does it here, at session open, never inside
     // a turn. The resolver's cache is shared with the session policy below and
     // with every later config edit, so an unchanged reference never re-prompts.
-    let resolver = std::sync::Arc::new(crate::env_table::Resolver::with_environment(
+    let resolver = std::sync::Arc::new(crate::config::env_table::Resolver::with_environment(
         directories.project().to_path_buf(),
         base_env.clone(),
     ));
@@ -183,7 +183,7 @@ async fn prepare_minting(
     // OpenRouter would otherwise derive by hashing them — can't re-route mid-session.
     // Whether it rides a request is the provider's call; a session that never talks to
     // a provider with sticky routing simply derives a key nothing reads.
-    endpoint.session_id = Some(crate::api::sticky_session_id(&session_dir));
+    endpoint.session_id = Some(crate::inference::api::sticky_session_id(&session_dir));
 
     // The session's effort level (docs/transport.md): the flag if given, else the
     // config's `[transport] effort`, else nothing on the wire at all. Boot-time and
@@ -243,7 +243,7 @@ async fn prepare_minting(
             branch: added.branch.clone(),
             env: env_policy.child_env(),
         });
-        directories = crate::policy::Directories::new(project, added.path.clone());
+        directories = crate::config::policy::Directories::new(project, added.path.clone());
         metadata.working = Some(added.path.clone());
         worktree_added = Some(added);
     }
@@ -288,9 +288,9 @@ async fn prepare_minting(
         &loaded,
         &env_policy,
         directories.project(),
-        crate::env::PromptInputs::new(model, &session_id)
+        crate::config::env::PromptInputs::new(model, &session_id)
             .with_lineage(lineage)
-            .with_whereabouts(crate::env::Whereabouts {
+            .with_whereabouts(crate::config::env::Whereabouts {
                 project: directories.project(),
                 working: directories.working(),
                 created_branch: worktree_added.as_ref().map(|added| added.branch.as_str()),

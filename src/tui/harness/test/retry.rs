@@ -2,7 +2,7 @@
 //! upstream-failure chip (docs/transport.md).
 
 use super::*;
-use crate::api::{RetrySurface, UpstreamFailure, UpstreamRetry};
+use crate::inference::api::{RetrySurface, UpstreamFailure, UpstreamRetry};
 use crate::protocol::state::{Stall, StallReason};
 
 fn retry(surface: RetrySurface, message: &str) -> TuiEvent {

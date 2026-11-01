@@ -3,7 +3,7 @@
 You can check on a running session from your phone, answer a permission prompt, or
 continue a conversation from another computer. The web client connects to the host on
 your machine; browser access stays off until you turn it on.
-<!-- src: src/inference/host.rs::HostConfig; src/bin/efference/serve.rs::resolve_bind -->
+<!-- src: src/config/user_config/host.rs::HostConfig; src/bin/efference/serve.rs::resolve_bind -->
 
 ## Choose where you’ll connect from
 
@@ -36,7 +36,7 @@ Then start the host with `efference --host --open`. It prints a sign-in link and
 your browser; without `--open`, open the printed link yourself. The link works once, and
 only for about a minute and a half. A host that has been running a while needs no new
 link: open its address, and approve the code the page shows ([Sign-in](#sign-in)).
-<!-- src: src/inference/host.rs::HostConfig; src/bin/efference/serve.rs::resolve_bind (--open); src/daemon/host.rs::serve_host (logs the link); src/daemon/tcp.rs::TcpAuth::mint_link; src/platform/sign_ins.rs::Store::approved_link, TTL_SECS; web/src/ui/Login.tsx -->
+<!-- src: src/config/user_config/host.rs::HostConfig; src/bin/efference/serve.rs::resolve_bind (--open); src/daemon/host.rs::serve_host (logs the link); src/daemon/tcp.rs::TcpAuth::mint_link; src/platform/sign_ins.rs::Store::approved_link, TTL_SECS; web/src/ui/Login.tsx -->
 
 Use a different port if you prefer; there is no default. You can also pass `--bind` on the
 command line to override the table for one launch.
@@ -113,7 +113,7 @@ tls-key = "~/.tls/laptop.key"
 Bind to the Tailscale address, not to `0.0.0.0`, which would serve the sign-in page on
 every network this machine is on. The host reads the certificate once, at start.
 Tailscale's certificates expire; renew with `tailscale cert` again and restart the host.
-<!-- src: src/inference/host.rs::HostConfig, expand_home; src/bin/efference/serve.rs::resolve_bind (read once; TLS accepts any address); src/daemon/tcp.rs::bind; tailscale cert --help (1.104.1) -->
+<!-- src: src/config/user_config/host.rs::HostConfig, expand_home; src/bin/efference/serve.rs::resolve_bind (read once; TLS accepts any address); src/daemon/tcp.rs::bind; tailscale cert --help (1.104.1) -->
 
 ### Sign in on the other device
 
@@ -131,7 +131,7 @@ shows. If the page answers 403, `public-url` does not match the name in the addr
 | `bind` | `--bind` | `ADDR:PORT` to listen on. A bare port means `127.0.0.1`; port `0` lets the system choose. `--bind ""` turns the listener off for one launch. |
 | `public-url` | `--public-url` | The origin browsers use, `https://name[:port]`, no path. The base of printed links, and the host name the listener answers to. Required with TLS; defaults to `http://localhost:<port>` without it. |
 | `tls-cert`, `tls-key` | `--tls-cert`, `--tls-key` | PEM certificate chain and private key. Both or neither. In the table, a leading `~/` is your home directory. |
-<!-- src: src/inference/host.rs::HostConfig, expand_home; src/bin/efference/cli.rs::HostFlags; src/bin/efference/serve.rs::resolve_bind, checked_public_url, loopback_addr, BindFlags::over -->
+<!-- src: src/config/user_config/host.rs::HostConfig, expand_home; src/bin/efference/cli.rs::HostFlags; src/bin/efference/serve.rs::resolve_bind, checked_public_url, loopback_addr, BindFlags::over -->
 
 Each flag overrides its key for one launch. A standalone host ignores the table; only
 `--bind` reaches it, and it serves plain HTTP on loopback. The host reads the table when it

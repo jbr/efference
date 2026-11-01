@@ -41,8 +41,12 @@ fn only_the_toolbox_half_of_the_catalog_carries_injected_intent() {
     for name in [
         CONSOLIDATE,
         CHECK_INBOX,
-        crate::triage::retain_tool()["name"].as_str().unwrap(),
-        crate::triage::triage_tool()["name"].as_str().unwrap(),
+        crate::curation::triage::retain_tool()["name"]
+            .as_str()
+            .unwrap(),
+        crate::curation::triage::triage_tool()["name"]
+            .as_str()
+            .unwrap(),
     ] {
         let entry = &catalog[name];
         assert!(

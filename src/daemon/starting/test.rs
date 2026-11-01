@@ -13,7 +13,7 @@ const AT: u64 = 1_754_300_000_000;
 fn entry(resume: bool) -> Arc<Starting> {
     let mut entry = Starting::new(StartingParts {
         id: "amber-heron".into(),
-        directories: crate::policy::Directories::new("/work".into(), "/work/tree".into()),
+        directories: crate::config::policy::Directories::new("/work".into(), "/work/tree".into()),
         resume,
         created_by: None,
         detached: false,

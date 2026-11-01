@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 
 use super::*;
-use crate::api::Completion;
+use crate::inference::api::Completion;
 use crate::record::recovery;
 
 /// What waiting for work came to.

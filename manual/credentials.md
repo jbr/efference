@@ -4,12 +4,12 @@ You can connect a model without putting its API key in an efference configuratio
 Setup records *where* to find the key, not the key itself. Choose the storage that fits
 how you run efference: a desktop keychain, environment variables supplied by a secrets
 manager, or secret commands for a server without a keychain.
-<!-- src: src/inference.rs::ConnectionConfig, AuthConfig; src/platform/secrets.rs::Secrets::configured; src/platform/secrets/commands.rs::SecretCommands; src/setup/render.rs::HEADER -->
+<!-- src: src/config/user_config.rs::ConnectionConfig, AuthConfig; src/platform/secrets.rs::Secrets::configured; src/platform/secrets/commands.rs::SecretCommands; src/setup/render.rs::HEADER -->
 
 ## Choose how to sign in
 
 For an API key, start with one of these two options:
-<!-- src: src/inference.rs::ConnectionConfig, AuthConfig (deny_unknown_fields; no literal-key field); src/setup/render.rs::HEADER -->
+<!-- src: src/config/user_config.rs::ConnectionConfig, AuthConfig (deny_unknown_fields; no literal-key field); src/setup/render.rs::HEADER -->
 
 - **Your OS keychain** — the login keychain on macOS. On desktop Linux it is the Secret
   Service your desktop already runs: GNOME's keyring, KDE's wallet, or KeePassXC.
@@ -40,7 +40,7 @@ keychain key is the one that works there.
 A key replaced in `efference setup` reaches a host that is already running: the next time
 the provider refuses the old key, the host reads the keychain again and retries with what
 it finds. A refusal for another reason, such as a spending limit, reads nothing.
-<!-- src: src/api/failure.rs::rejects_credential; src/api/auth_value.rs; src/inference/credential.rs::load_credential (keychain arm re-reads; env arm has no reloader) -->
+<!-- src: src/inference/api/failure.rs::rejects_credential; src/inference/api/auth_value.rs; src/inference/credential.rs::load_credential (keychain arm re-reads; env arm has no reloader) -->
 <!-- TODO: macOS keychain access prompts depend on how release binaries are signed; describe once dist signing is settled. -->
 
 On a Linux server, there may be no Secret Service, or the keyring may stay locked without
@@ -78,7 +78,7 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
 
 The host reads the key once, when it starts, and every session it runs uses it. A host keeps
 the environment it started with: after changing a key, restart the host.
-<!-- src: src/bin/efference/serve.rs::host (EnvSnapshot::capture at start); src/inference/credential.rs (env arm, no reload); src/api/endpoint.rs (op run substitutes a whole-value reference); op run --help (2.39.0) -->
+<!-- src: src/bin/efference/serve.rs::host (EnvSnapshot::capture at start); src/inference/credential.rs (env arm, no reload); src/inference/api/endpoint.rs (op run substitutes a whole-value reference); op run --help (2.39.0) -->
 
 In standalone mode, wrap `efference` itself, with `--no-masking`, because the terminal
 interface needs `op run` to leave its output alone:
@@ -92,7 +92,7 @@ efference does not resolve `op://` references in connection settings itself; `op
 something like it) must have done that before the host starts. A project's
 `efference.toml` can also give the agent's commands secrets as `op://` references, and
 efference resolves those with `op read` when a session starts.
-<!-- src: src/inference/credential.rs::load_credential; src/env_table/resolve.rs::SCHEMES, run_command; src/boot/env.rs::resolve_env_table -->
+<!-- src: src/inference/credential.rs::load_credential; src/config/env_table/resolve.rs::SCHEMES, run_command; src/boot/env.rs::resolve_env_table -->
 
 ## Secret commands
 
@@ -106,7 +106,7 @@ Add a `[secrets]` table to `~/.efference/config.toml` before setup. It names com
 read (`get`), store (`set`), and optionally remove (`delete`) a secret. These commands
 replace the keychain for all of efference’s stored secrets. Even a connection configured
 with `auth = { kind = "keychain" }` uses them when the table is present.
-<!-- src: src/platform/secrets/commands.rs::SecretCommands; src/platform/secrets.rs::Secrets::configured, from_table; src/inference.rs::InferenceConfig (secrets); src/setup/probe.rs::LiveProbe::capture -->
+<!-- src: src/platform/secrets/commands.rs::SecretCommands; src/platform/secrets.rs::Secrets::configured, from_table; src/config/user_config.rs::InferenceConfig (secrets); src/setup/probe.rs::LiveProbe::capture -->
 
 Each command is a program and its arguments, run directly rather than by a shell. `{name}`
 in any argument becomes the name of the secret, such as `oauth:codex` or `root`. The
@@ -187,14 +187,14 @@ host with a bind refuses to start and says to run it.
 The agent's commands do not inherit the host's model keys: every variable a connection
 reads its key from is removed from the environment of the commands a session runs. A
 project can opt one back in, for a project that calls the provider itself.
-<!-- src: src/boot/env.rs::build_env_policy; src/env_table.rs::Table::merge_with_host; src/env_table/child.rs::ChildEnv::apply -->
+<!-- src: src/boot/env.rs::build_env_policy; src/config/env_table.rs::Table::merge_with_host; src/config/env_table/child.rs::ChildEnv::apply -->
 
 ### Masking secrets in the record
 
 Before anything is written to a session's log, efference replaces the secret values it
 knows with a marker, such as `⟦anthropic (ANTHROPIC_API_KEY): elided by harness⟧` for a
 connection's key. The values it knows are:
-<!-- src: src/record/persist.rs::Log::append_submission; src/env_table/mask.rs::Masker::mask_payload, marker, secret_marker -->
+<!-- src: src/record/persist.rs::Log::append_submission; src/config/env_table/mask.rs::Masker::mask_payload, marker, secret_marker -->
 
 - the keys the session's model connections use, however they are stored;
 - environment variables whose names end in `_KEY`, `_SECRET`, `_TOKEN`, `_PASSWORD`, or
@@ -205,13 +205,13 @@ The last two apply to values of at least 8 characters.
 
 A key that is replaced while a session runs, such as a refreshed ChatGPT sign-in or a key
 you changed in the keychain, is masked from that moment on, the same way as the original.
-<!-- src: src/env_table.rs::BUILT_IN, EnvPolicy::build_session; src/env_table/mask.rs::MASKABILITY_FLOOR, Masker::absorb_secret; src/inference.rs::SessionInference::absorb_secrets -->
+<!-- src: src/config/env_table.rs::BUILT_IN, EnvPolicy::build_session; src/config/env_table/mask.rs::MASKABILITY_FLOOR, Masker::absorb_secret; src/inference.rs::SessionInference::absorb_secrets -->
 
 A value is also caught in its common encodings: URL-encoded, JSON-escaped, base64. What the
 model is sent and what triage reads come from the log, so they carry the masked text too.
 While a turn runs, the clients you have open show its output live, before masking; the
 record they reload is masked.
-<!-- src: src/env_table/mask.rs::needles_for; src/agent/batch.rs (triage reads the entry back from the log); src/daemon/frames.rs (Class::Output stream deltas, pre-append) -->
+<!-- src: src/config/env_table/mask.rs::needles_for; src/agent/batch.rs (triage reads the entry back from the log); src/daemon/frames.rs (Class::Output stream deltas, pre-append) -->
 
 Masking is a guard against accidents, not against an agent trying to get a secret out. A
 secret efference does not know about reaches the log as the agent saw it: a key in a file
@@ -219,7 +219,7 @@ the agent reads, a variable named outside the patterns above (`DATABASE_URL`), o
 transformed in a way the encodings above do not cover. Signed reasoning blocks from the
 model and image data are stored as received. Files you attach to a message are stored in
 the session's directory as you sent them.
-<!-- src: src/env_table/mask.rs::mask_blocks, mask_payload; src/attachments.rs; src/env_table.rs::EnvPolicy::build_session -->
+<!-- src: src/config/env_table/mask.rs::mask_blocks, mask_payload; src/attachments.rs; src/config/env_table.rs::EnvPolicy::build_session -->
 
 ### Where those protections stop
 
@@ -227,12 +227,12 @@ The agent's commands run as you. Programs running as you can read the host's env
 through the operating system, and on Linux can read the Secret Service once it is
 unlocked; a command that reads a keychain item directly passes through the same permission
 checks as any other ([Permissions](permissions.md)).
-<!-- src: src/platform/secrets.rs (module doc); src/policy.rs (no keychain special case) -->
+<!-- src: src/platform/secrets.rs (module doc); src/config/policy.rs (no keychain special case) -->
 
 With secret commands, any program running as you can run the same `get` command,
 including a command the agent runs, which passes through the same permission checks. What
 stands in its way is whatever your tool asks for before it answers.
-<!-- src: src/platform/secrets/commands.rs::run (inherits the host's environment and user); src/policy.rs (no special case) -->
+<!-- src: src/platform/secrets/commands.rs::run (inherits the host's environment and user); src/config/policy.rs (no special case) -->
 <!-- TODO: macOS item access depends on release signing (src/platform/secrets.rs::identity_signed). -->
 
 ### Secret commands, precisely
@@ -255,7 +255,7 @@ costs at most a sign-in: a failed read taken for a missing one asks you to sign 
 For the web address's secret, creating a new one over a read that failed would sign out
 every browser, so a host never does; only `efference auth rotate` writes it, and it
 writes rather than deletes, so it needs no `delete` command.
-<!-- src: src/platform/auth.rs::Root::load, Root::rotate, RootError; src/mcp/auth/credentials.rs::stored_credentials; src/inference/credential.rs::load_credential; password-store.sh (die exits 1; cmd_show); 1password.community "Exit code documentation" (op uses 0 and 1); AWS CLI return codes -->
+<!-- src: src/platform/auth.rs::Root::load, Root::rotate, RootError; src/tools/mcp/auth/credentials.rs::stored_credentials; src/inference/credential.rs::load_credential; password-store.sh (die exits 1; cmd_show); 1password.community "Exit code documentation" (op uses 0 and 1); AWS CLI return codes -->
 
 Without a `delete` command, the few operations that remove a secret fail, naming the
 secret for you to remove by hand: `--reauth` for an MCP server, and a connection renamed
@@ -267,7 +267,7 @@ whose key or sign-in is stored; when a session starts with an MCP server that is
 over HTTP; before it refreshes a sign-in; and when a provider refuses a stored key. A tool
 that asks you to approve each read asks at each of these. efference sets no time limit on
 a command.
-<!-- src: src/inference/credential.rs::load_credential (keychain reload, oauth reload re-reads); src/boot/mcp_mount.rs::mount_one; src/mcp/auth/credentials.rs::stored_credentials; src/platform/secrets/commands.rs (no cache, no timeout) -->
+<!-- src: src/inference/credential.rs::load_credential (keychain reload, oauth reload re-reads); src/boot/mcp_mount.rs::mount_one; src/tools/mcp/auth/credentials.rs::stored_credentials; src/platform/secrets/commands.rs (no cache, no timeout) -->
 
 ### What is stored where
 
@@ -278,7 +278,7 @@ a command.
 | `~/.efference/state.db` | Model choices per directory, model lists, the projects and sessions efference has run, each notifying browser's push subscription, the devices signed in to the web address, the browsers waiting to sign in | No model keys; the push subscriptions are per-browser secrets |
 | `<project>/.efference/<session>/` | The session's log, its configuration, its usage record, and attached files | Your project's content and the agent's work |
 | `<project>/efference.toml` | The project's settings. A value written here literally is stored in plain text, and copied into each session's directory. | Only if you put one there; use an `op://` reference instead |
-<!-- src: src/platform/secrets.rs::inference_name, oauth_name, mcp_name; src/platform/auth.rs::ROOT_ITEM (module doc); src/setup/render.rs::write (0600 on create); src/platform/state.rs; src/history.rs; src/catalog/store.rs; src/remembered.rs; src/session_ids.rs; src/platform/push.rs::SCHEMA; src/platform/devices.rs::SCHEMA; src/platform/sign_ins.rs::SCHEMA; src/record/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/daemon/metrics/usage_line.rs; src/attachments.rs; src/boot/scaffold.rs -->
+<!-- src: src/platform/secrets.rs::inference_name, oauth_name, mcp_name; src/platform/auth.rs::ROOT_ITEM (module doc); src/setup/render.rs::write (0600 on create); src/platform/state.rs; src/config/history.rs; src/inference/catalog/store.rs; src/remembered.rs; src/session_ids.rs; src/platform/push.rs::SCHEMA; src/platform/devices.rs::SCHEMA; src/platform/sign_ins.rs::SCHEMA; src/record/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/daemon/metrics/usage_line.rs; src/attachments.rs; src/boot/scaffold.rs -->
 
 A project's `.efference/` directory is readable only by you (mode `0700`), and the files
 efference writes in a session's directory — the log, the configuration copy, the usage
@@ -290,7 +290,7 @@ or resumes in it, and a stricter mode is left alone.
 
 A ChatGPT connection that reuses Codex's sign-in reads Codex's own file,
 `~/.codex/auth.json`; efference never writes it.
-<!-- src: src/api/endpoint.rs::codex_cached_credentials, codex_auth_path -->
+<!-- src: src/inference/api/endpoint.rs::codex_cached_credentials, codex_auth_path -->
 
 Two edge cases are worth knowing when you’re checking where keys might end up:
 
@@ -299,5 +299,5 @@ Two edge cases are worth knowing when you’re checking where keys might end up:
 - Setup’s “Variable name” prompt expects a name, not a key. It accepts letters, digits,
   and `_`, with no leading digit. If you paste something that looks like a key there,
   setup refuses it without repeating it or writing it to `config.toml`.
-<!-- src: src/setup/flow/variable.rs::ask_variable_name; src/api/client/send.rs::open_error; src/bin/efference/island.rs::Island::launch (stderr to host.log) -->
+<!-- src: src/setup/flow/variable.rs::ask_variable_name; src/inference/api/client/send.rs::open_error; src/bin/efference/island.rs::Island::launch (stderr to host.log) -->
 <!-- Not planned (backlog/parked/config-grant-written-before-masking.md): an approved grant is written to the session config before masking; a secret in a command has already reached the provider. -->

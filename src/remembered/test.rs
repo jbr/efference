@@ -5,7 +5,7 @@
 use super::*;
 
 fn dir() -> tempfile::TempDir {
-    crate::testing::temp_dir("remembered")
+    crate::inference::testing::temp_dir("remembered")
 }
 
 fn store() -> (Projects, tempfile::TempDir) {
@@ -19,7 +19,7 @@ fn launch(cwd: &Path, at: i64) -> Project {
     Project {
         last_used_at: at,
         cwd: cwd.to_path_buf(),
-        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        config_key: crate::config::history::BUILTIN_CONFIG_KEY.to_string(),
         config: None,
     }
 }
@@ -131,13 +131,16 @@ fn the_configuration_recorded_is_the_template_not_a_session_copy() {
 fn the_identity_is_the_scope_creation_computed() {
     let dir = dir();
     let cwd = project_dir(dir.path(), "one");
-    let unnamed = crate::history::Scope::for_request(&cwd, None);
-    assert_eq!(unnamed.config_key, crate::history::BUILTIN_CONFIG_KEY);
+    let unnamed = crate::config::history::Scope::for_request(&cwd, None);
+    assert_eq!(
+        unnamed.config_key,
+        crate::config::history::BUILTIN_CONFIG_KEY
+    );
 
     let named = Path::new("nested/eff.toml");
     std::fs::create_dir_all(cwd.join("nested")).unwrap();
     std::fs::write(cwd.join(named), "").unwrap();
-    let scope = crate::history::Scope::for_request(&cwd, Some(named));
+    let scope = crate::config::history::Scope::for_request(&cwd, Some(named));
     // Canonicalized, so the key survives a symlinked path spelling (`/tmp` on
     // macOS) — which is also why a client is handed `config`, not this key, to
     // create with.

@@ -32,12 +32,12 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
                 .ok_or_else(|| CliError::from("name a session to digest"))?;
             let (path, _) = resolve_session_log(&target)?;
             let entries = efference::record::persist::load(&path)?;
-            let options = efference::digest::Options {
+            let options = efference::curation::digest::Options {
                 upto,
                 seqs,
                 ..Default::default()
             };
-            print!("{}", efference::digest::render(&entries, options));
+            print!("{}", efference::curation::digest::render(&entries, options));
             Ok(())
         }
         DevCommand::Compact {

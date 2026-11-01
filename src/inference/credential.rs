@@ -1,7 +1,7 @@
 //! Reading a connection's credential from its declared source (docs/transport.md).
 
 use super::*;
-use crate::user_config::AuthConfig;
+use crate::config::user_config::AuthConfig;
 
 pub(super) fn load_credential(
     name: &str,
@@ -25,7 +25,7 @@ pub(super) fn load_credential(
             // The store is outside this process, so an operator who replaces the
             // item repairs a running host (docs/transport.md).
             let (store, key) = (secrets.clone(), item.clone());
-            let reload: Option<Reload> = Some(crate::api::sync_reload(move || {
+            let reload: Option<Reload> = Some(api::sync_reload(move || {
                 match store.get(&key).map_err(|error| error.to_string())? {
                     Some(token) => Ok(provider.auth_header_value(&token)),
                     None => Err(format!("{} has no `{key}`", store.describe())),
@@ -90,7 +90,7 @@ pub(super) fn load_credential(
                 return Err("auth kind codex-cache requires provider openai-codex".to_string());
             }
             let read = |name: &str| host_env.get(name).map(str::to_string);
-            let (token, account) = crate::api::codex_cached_credentials(host_cwd, &read)
+            let (token, account) = api::codex_cached_credentials(host_cwd, &read)
                 .map_err(|error| format!("could not load Codex cache: {error}"))?;
             // Codex CLI rewrites the file on its own refresh, so re-reading it is
             // how a host outlives an expired token: the operator runs `codex
@@ -98,9 +98,9 @@ pub(super) fn load_credential(
             // not re-read — it rides `extra_headers` and is stable across a
             // refresh of the same login.
             let (cwd, env) = (host_cwd.to_path_buf(), host_env.clone());
-            let reload: Option<Reload> = Some(crate::api::sync_reload(move || {
+            let reload: Option<Reload> = Some(api::sync_reload(move || {
                 let read = |name: &str| env.get(name).map(str::to_string);
-                crate::api::codex_cached_credentials(&cwd, &read)
+                api::codex_cached_credentials(&cwd, &read)
                     .map_err(|error| format!("could not re-read the Codex cache: {error}"))
                     .map(|(token, _)| provider.auth_header_value(&token))
             }));

@@ -22,7 +22,10 @@ fn session(id: Option<&str>) -> Arc<Session> {
     let cwd = std::env::current_dir().unwrap();
     Session::full(SessionParts {
         id: id.map(str::to_owned),
-        ..SessionParts::new(crate::policy::Directories::at(&cwd), Log::in_memory())
+        ..SessionParts::new(
+            crate::config::policy::Directories::at(&cwd),
+            Log::in_memory(),
+        )
     })
     .0
 }
@@ -206,7 +209,10 @@ async fn an_artifact_gets_a_file_only_as_its_session_could_read_it() {
             role,
             ..crate::config::LoadedConfig::default()
         },
-        ..SessionParts::new(crate::policy::Directories::at(&scratch.0), Log::in_memory())
+        ..SessionParts::new(
+            crate::config::policy::Directories::at(&scratch.0),
+            Log::in_memory(),
+        )
     })
     .0;
     let seq = work.append(1, assistant(TWO_FENCES, None)).unwrap();

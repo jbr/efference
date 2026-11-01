@@ -5,10 +5,10 @@ use super::*;
 
 impl Session {
     /// Resolve `$TMPDIR` in a structured call's path fields against the frozen
-    /// session env map ([`crate::expand`]) — the loop's one expansion choke
+    /// session env map ([`crate::tools::expand`]) — the loop's one expansion choke
     /// point, upstream of classify/spot/exec. `Ok(None)` = untouched.
     pub fn expand_call(&self, call: &ToolCall) -> Result<Option<ToolCall>, String> {
-        crate::expand::expand_call(&self.expander, call)
+        crate::tools::expand::expand_call(&self.expander, call)
     }
 
     /// Append a user turn the loop writes on someone's behalf, a redirect's message,
@@ -112,7 +112,7 @@ impl Session {
                     {
                         let mut eff = self.effective.lock().unwrap();
                         let mut role = (**eff).clone();
-                        crate::policy::apply_config_change(&mut role, &change);
+                        crate::config::policy::apply_config_change(&mut role, &change);
                         *eff = Arc::new(role);
                     }
                     // Resolving a proposal: drop the referenced proposal from the pending queue.
@@ -184,7 +184,7 @@ impl Session {
     pub(crate) fn adopt_consolidation(
         &self,
         frozen: &[LogEntry],
-        span: crate::consolidate::Span,
+        span: crate::curation::consolidate::Span,
         note: String,
     ) -> io::Result<bool> {
         {
@@ -257,6 +257,6 @@ impl Session {
     /// the whole log is never cloned (docs/permissions.md). The decision rung's
     /// precedent evidence.
     pub(crate) fn consented_calls(&self) -> Vec<ToolCall> {
-        crate::spotter::precedent::consented(self.log.lock().unwrap().entries())
+        crate::curation::spotter::precedent::consented(self.log.lock().unwrap().entries())
     }
 }

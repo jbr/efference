@@ -257,7 +257,7 @@ async fn the_client_reads_a_compaction_refusal_as_a_decline() {
 /// (docs/summary.md), never as the main loop's response.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_compaction_streams_its_writers_deltas() {
-    use crate::testing::upstream::{Canned, ScriptedUpstream, events};
+    use crate::inference::testing::upstream::{Canned, ScriptedUpstream, events};
     let upstream = ScriptedUpstream::new(|_| {
         Canned::stream(events(&[
             r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
@@ -311,12 +311,12 @@ async fn a_compaction_streams_its_writers_deltas() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
     use super::upstream_hold::start;
-    use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn};
+    use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn};
     let upstream = ScriptedUpstream::new(|_| Canned::stream(end_turn()));
     let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     assert!(
-        !crate::api::ModelCapabilities::unknown()
+        !crate::inference::api::ModelCapabilities::unknown()
             .prompt_cache
             .is_supported(),
         "the boot's capabilities name no prompt cache"

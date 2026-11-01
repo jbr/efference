@@ -10,7 +10,7 @@
 
 use super::*;
 
-use efference::api::Endpoint;
+use efference::inference::api::Endpoint;
 use efference::record::log::Provider;
 use serde_json::Value;
 
@@ -32,11 +32,11 @@ pub(crate) fn history(
     };
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let store = match home.as_deref() {
-        Some(home) => efference::history::History::user(home),
-        None => efference::history::History::disabled(),
+        Some(home) => efference::config::history::History::user(home),
+        None => efference::config::history::History::disabled(),
     };
-    let scope = efference::history::Scope::for_request(&cwd, config);
-    let now = efference::history::now();
+    let scope = efference::config::history::Scope::for_request(&cwd, config);
+    let now = efference::config::history::now();
     println!("scope: {}", scope.cwd.display());
     println!("config: {}", scope.config_key);
     match connection {

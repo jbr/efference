@@ -131,7 +131,7 @@ pub struct GateOptions<'a> {
     pub bound: Option<&'a BoundAction>,
     /// The one config change the gate offers as "always allow", decided by the rung that
     /// held the call.
-    pub grant: Option<crate::policy::GateGrant>,
+    pub grant: Option<crate::config::policy::GateGrant>,
 }
 
 impl<'a> GateOptions<'a> {
@@ -142,7 +142,7 @@ impl<'a> GateOptions<'a> {
     }
 
     /// This gate, offering `grant`.
-    pub fn with_grant(mut self, grant: Option<crate::policy::GateGrant>) -> Self {
+    pub fn with_grant(mut self, grant: Option<crate::config::policy::GateGrant>) -> Self {
         self.grant = grant;
         self
     }

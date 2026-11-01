@@ -1,6 +1,6 @@
 //! Opportunistic consolidation at complete conversational junctures (docs/consolidate.md).
 use super::*;
-use crate::api::{FinishReason, Streamed};
+use crate::inference::api::{FinishReason, Streamed};
 use crate::protocol::stream::StreamDelta;
 use crate::record::log::Telemetry;
 
@@ -182,7 +182,7 @@ fn event(
 
 fn account(
     output: &AssistantOutput,
-    finish: Option<&crate::api::Finish>,
+    finish: Option<&crate::inference::api::Finish>,
     failure: Option<&str>,
 ) -> Result<String, String> {
     if let Some(why) = failure {

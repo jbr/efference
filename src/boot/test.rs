@@ -1,8 +1,8 @@
 use super::scaffold::self_surface_grants;
 use super::*;
 use crate::config::testing::ConfigFixture;
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
 use crate::record::session_dir::{LOG_NAME, SESSION_BASE};
-use crate::testing::upstream::{Canned, ScriptedUpstream};
 use crate::worktree::testing::{commit, git};
 use std::path::Path;
 
@@ -86,19 +86,19 @@ pub(crate) fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionReq
     create.options.effort = effort.map(str::to_string);
     SessionRequest {
         create,
-        directories: crate::policy::Directories::at(root),
+        directories: crate::config::policy::Directories::at(root),
         base_env: base_env(),
         session_dir: root.join(SESSION_BASE).join(id),
         inference,
         authorization: Default::default(),
         host: None,
-        lineage: crate::env::Lineage::default(),
+        lineage: crate::config::env::Lineage::default(),
     }
 }
 
 /// The caller environment a test session starts from.
-pub(crate) fn base_env() -> crate::env_table::EnvSnapshot {
-    crate::env_table::EnvSnapshot::new(
+pub(crate) fn base_env() -> crate::config::env_table::EnvSnapshot {
+    crate::config::env_table::EnvSnapshot::new(
         ["HOME", "PATH"]
             .into_iter()
             .filter_map(|name| Some((name.to_string(), std::env::var(name).ok()?)))
@@ -120,8 +120,8 @@ pub(crate) fn codex_registry(root: &Path, id: &str) -> crate::inference::Inferen
         .to_string(),
     )
     .unwrap();
-    crate::api::seed_codex_catalog(crate::record::log::Provider::OpenAICodex, &account);
-    let config = crate::user_config::InferenceConfig::from_toml(
+    crate::inference::api::seed_codex_catalog(crate::record::log::Provider::OpenAICodex, &account);
+    let config = crate::config::user_config::InferenceConfig::from_toml(
         r#"
 [connections.oai]
 provider = "openai-codex"
@@ -129,7 +129,7 @@ auth = { kind = "codex-cache" }
 "#,
     )
     .unwrap();
-    let host_env = crate::env_table::EnvSnapshot::new(
+    let host_env = crate::config::env_table::EnvSnapshot::new(
         [(
             "CODEX_HOME".to_string(),
             codex_home.to_string_lossy().into_owned(),
@@ -165,7 +165,7 @@ fn listing_endpoint(body: &'static str) -> (ScriptedUpstream, String) {
 /// configuration because a described endpoint publishes no catalog to pick a
 /// default from, which is a resolution failure before any capability read.
 fn request_for(base: &str, root: &Path, id: &str, temperature: Option<u8>) -> SessionRequest {
-    let config = crate::user_config::InferenceConfig::from_toml(&format!(
+    let config = crate::config::user_config::InferenceConfig::from_toml(&format!(
         r#"
 [defaults]
 spotter = "edge/m"
@@ -177,7 +177,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
 "#
     ))
     .unwrap();
-    let host_env = crate::env_table::EnvSnapshot::new(
+    let host_env = crate::config::env_table::EnvSnapshot::new(
         [(
             "EFFERENCE_BOOT_TEST_KEY".to_string(),
             "not-a-real-credential".to_string(),
@@ -199,13 +199,13 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
     create.options.temperature = temperature;
     SessionRequest {
         create,
-        directories: crate::policy::Directories::at(root),
+        directories: crate::config::policy::Directories::at(root),
         base_env: base_env(),
         session_dir: root.join(SESSION_BASE).join(id),
         inference,
         authorization: Default::default(),
         host: None,
-        lineage: crate::env::Lineage::default(),
+        lineage: crate::config::env::Lineage::default(),
     }
 }
 
@@ -443,14 +443,14 @@ fn the_attachment_store_is_readable_through_the_self_surface_deny() {
     let cwd = PathBuf::from("/work/proj");
     let call = |tool: &str, path: PathBuf| {
         let input = serde_json::json!({ "path": path, "paths": [path], "content": "x" });
-        crate::policy::classify(
-            &crate::policy::Directories::at(&cwd),
+        crate::config::policy::classify(
+            &crate::config::policy::Directories::at(&cwd),
             &role,
             &crate::record::log::ToolCall::new(tool, "c", input),
         )
     };
     let attached = session_dir.join("attachments/composer/shot.png");
-    use crate::policy::Verdict::{Clear, Gate};
+    use crate::config::policy::Verdict::{Clear, Gate};
     assert_eq!(call("read_image", attached.clone()), Clear);
     assert_eq!(call("read", attached.clone()), Clear);
     assert_eq!(call("write", attached), Gate);

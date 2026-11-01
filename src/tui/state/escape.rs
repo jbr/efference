@@ -90,7 +90,7 @@ impl<'a> InteractiveState<'a> {
     pub(in crate::tui) fn esc_interrupt(&mut self) {
         let _ = self.interrupt_tx.send(Interrupt::Kill);
         self.ui.debug_message = match self.in_flight_call() {
-            Some(call) if crate::bash::is_foreground_call(&call) => {
+            Some(call) if crate::tools::bash::is_foreground_call(&call) => {
                 "interrupting — killing the running command · type to steer".into()
             }
             Some(_) => "interrupting — its output won't reach the model · type to steer".into(),

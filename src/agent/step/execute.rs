@@ -129,7 +129,7 @@ async fn acquire_result<F: Frontend>(
 ) -> Acquired {
     if bash::is_background_call(call) {
         spawn_background(shared, call)
-    } else if let Some(r) = crate::guide::read_documents(call) {
+    } else if let Some(r) = crate::config::guide::read_documents(call) {
         // The guide overlay (docs/context.md): a `read` of the virtual mount is
         // answered from the binary, before the real `read` sees a path it could
         // not stat. What comes back is an ordinary `RawResult` on an ordinary

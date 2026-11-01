@@ -232,7 +232,7 @@ impl<'a, 'r> Out<'a, 'r> {
         }
         for (i, call) in calls.iter().enumerate() {
             let handle = call_label(seq, i, calls.len());
-            match crate::process_monitor::ask_of_call(&calls, i) {
+            match crate::tools::process_monitor::ask_of_call(&calls, i) {
                 Some((question, n, of)) => self.ask(&handle, &call.id.0, &question, n, of),
                 None => {
                     let line = self.call_line(call);

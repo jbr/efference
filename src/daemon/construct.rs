@@ -12,18 +12,18 @@ use super::*;
 /// it rather than every site that constructs one.
 pub(crate) struct SessionParts {
     /// The project and working directories (docs/control-channel.md).
-    pub directories: crate::policy::Directories,
+    pub directories: crate::config::policy::Directories,
     pub log: Log,
     pub role: LoadedConfig,
     pub scratch: Option<PathBuf>,
     pub upstream_failure: UpstreamFailureState,
     pub upstream_retry: UpstreamRetryState,
-    pub plan: crate::api::PlanState,
+    pub plan: crate::inference::api::PlanState,
     /// Chosen from the provider at boot and fixed thereafter, so the canonical
     /// wire and the fork's cached prefix project byte-identically
     /// (docs/log-and-projection.md).
     pub image_placement: ImagePlacement,
-    pub env_policy: crate::env_table::EnvPolicy,
+    pub env_policy: crate::config::env_table::EnvPolicy,
     /// The session's id — the storage directory's name, known at boot
     /// (docs/control-channel.md). None in tests and offline sessions, whose
     /// log lines print unattributed.
@@ -34,7 +34,7 @@ impl SessionParts {
     /// The session's own two pieces, with every shared cell freshly allocated —
     /// the shape a caller with no provider client behind it wants. A caller that
     /// has one overrides the cells it holds.
-    pub(crate) fn new(directories: crate::policy::Directories, log: Log) -> Self {
+    pub(crate) fn new(directories: crate::config::policy::Directories, log: Log) -> Self {
         Self {
             directories,
             id: None,
@@ -43,9 +43,9 @@ impl SessionParts {
             scratch: None,
             upstream_failure: upstream_failure_state(),
             upstream_retry: upstream_retry_state(),
-            plan: crate::api::plan_state(),
+            plan: crate::inference::api::plan_state(),
             image_placement: ImagePlacement::default(),
-            env_policy: crate::env_table::EnvPolicy::default(),
+            env_policy: crate::config::env_table::EnvPolicy::default(),
         }
     }
 }
@@ -121,19 +121,25 @@ impl Session {
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        let directories = crate::policy::Directories::new(cwd.clone(), cwd);
+        let directories = crate::config::policy::Directories::new(cwd.clone(), cwd);
         // Tests and the convenience constructors resolve the `[env]` policy from
         // the role they were handed (docs/env.md); boot builds one earlier —
         // it needs the strip set for the toolbox and the masker for the boot
         // preamble — and passes it to [`Session::full`] so the session has exactly
         // one, whose needle set is append-only for its lifetime.
-        let base = crate::env_table::EnvSnapshot::capture().expect("valid local environment");
-        let resolver = Arc::new(crate::env_table::Resolver::with_environment(
+        let base =
+            crate::config::env_table::EnvSnapshot::capture().expect("valid local environment");
+        let resolver = Arc::new(crate::config::env_table::Resolver::with_environment(
             directories.project().to_path_buf(),
             base.clone(),
         ));
-        let env_policy =
-            crate::env_table::EnvPolicy::build_snapshot(&role.role.env, base, &[], resolver).policy;
+        let env_policy = crate::config::env_table::EnvPolicy::build_snapshot(
+            &role.role.env,
+            base,
+            &[],
+            resolver,
+        )
+        .policy;
         Self::full(SessionParts {
             role,
             scratch,
@@ -187,10 +193,13 @@ impl Session {
         // Fold any grants already in the log (a resumed session) into the initial effective
         // role; from here it's maintained incrementally on append. Computed before `log` is
         // moved into the struct.
-        let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
+        let effective = Arc::new(crate::config::policy::effective_config(
+            &role.role,
+            log.entries(),
+        ));
         // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
         // incrementally as the loop assesses moves (docs/permissions.md).
-        let probes = crate::policy::probe_ledger(&directories, &effective, log.entries());
+        let probes = crate::config::policy::probe_ledger(&directories, &effective, log.entries());
         // Seed the process-id mint past every `p#<n>` a resumed log mentions, so a restarted
         // daemon never re-mints an ordinal the durable record already refers to
         // (docs/process-monitor.md). Scanned over the serialized entry because
@@ -200,7 +209,7 @@ impl Session {
             .iter()
             .map(|e| {
                 serde_json::to_string(e)
-                    .map_or(0, |s| crate::process_monitor::max_handle_mention(&s))
+                    .map_or(0, |s| crate::tools::process_monitor::max_handle_mention(&s))
             })
             .max()
             .unwrap_or(0);
@@ -298,10 +307,10 @@ impl Session {
             config_file: Mutex::new(config_file),
             probes: Mutex::new(probes),
             env_policy,
-            review_level: AtomicU8::new(crate::policy::ReviewLevel::SpotterHuman.as_u8()),
+            review_level: AtomicU8::new(crate::config::policy::ReviewLevel::SpotterHuman.as_u8()),
             pace: Mutex::new(Pace::default()),
             pace_interrupt: Notify::new(),
-            expander: crate::expand::Expander::new(
+            expander: crate::tools::expand::Expander::new(
                 scratch
                     .iter()
                     .map(|p| ("TMPDIR".to_string(), p.to_string_lossy().into_owned()))

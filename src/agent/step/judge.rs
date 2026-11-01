@@ -2,8 +2,8 @@
 //! spotter, and the human gate.
 
 use super::*;
+use crate::curation::spotter::{Read, Spotting};
 use crate::record::names::tools::BASH;
-use crate::spotter::{Read, Spotting};
 
 /// The permission cascade for one call (docs/permissions.md). `bound` is the leaf
 /// action an allowing `agents__decide` authorizes, when the call is one: a granted

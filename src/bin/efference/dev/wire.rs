@@ -66,7 +66,7 @@ pub(crate) async fn wire(
     }
     // Responses caching is model-specific; the offline view assumes the explicit
     // policy every model in the compiled catalog reports.
-    let cache = efference::api::PromptCachePolicy::Explicit;
+    let cache = efference::inference::api::PromptCachePolicy::Explicit;
 
     // Check the recorded provider once, before either rendering path. A legacy log
     // has already been checked by `recorded_dialect`; with an identity, this is the
@@ -177,7 +177,7 @@ fn rebuilt_system(
     let role_section = loaded.role.preamble_section();
     // Best-effort for the dev view: if the [context] files don't resolve from the current cwd
     // (e.g. inspecting a session recorded elsewhere), note it and omit the block rather than fail.
-    let context_block = match efference::context::resolve(&loaded.role.context, cwd) {
+    let context_block = match efference::config::context::resolve(&loaded.role.context, cwd) {
         Ok(resolved) => resolved.render(),
         Err(e) => {
             eprintln!("note: [context] not resolved ({e}); omitting from the rebuilt envelope");
@@ -204,8 +204,8 @@ fn rebuilt_system(
     // a child's rebuilt preamble is missing the creator sentence its live
     // one carried. Sessions logged since the boot-preamble snapshot read
     // back the recorded `system` instead and are unaffected.
-    Ok(efference::env::system_prompt(
-        efference::env::PromptInputs::new(model, &session_id)
+    Ok(efference::config::env::system_prompt(
+        efference::config::env::PromptInputs::new(model, &session_id)
             .with_context_block(context_block.as_deref())
             .with_role_section(role_section.as_deref()),
     ))
@@ -220,7 +220,7 @@ struct Rendering<'a> {
     turns: &'a [efference::record::project::WireTurn],
     messages: &'a [efference::record::project::ApiMessage],
     model: &'a str,
-    cache: efference::api::PromptCachePolicy,
+    cache: efference::inference::api::PromptCachePolicy,
 }
 
 impl Rendering<'_> {
@@ -228,40 +228,44 @@ impl Rendering<'_> {
     fn messages_only(&self) -> WireResult {
         let rendered = match (self.view_dialect, self.dialect, self.format) {
             (Some(ViewDialect::Completions), _, _) => serde_json::to_string_pretty(
-                &efference::api::translate_completions(self.turns, "", self.model)?,
+                &efference::inference::api::translate_completions(self.turns, "", self.model)?,
             )?,
             (None, efference::record::log::WireDialect::Responses, _) => {
-                serde_json::to_string_pretty(&efference::api::encode_responses(
+                serde_json::to_string_pretty(&efference::inference::api::encode_responses(
                     self.turns, "", self.cache,
                 ))?
             }
-            (None, _, WireFormat::Json) => efference::api::render_messages_pretty(self.messages)?,
-            (None, _, WireFormat::Yaml) => efference::api::render_messages_yaml(self.messages)?,
+            (None, _, WireFormat::Json) => {
+                efference::inference::api::render_messages_pretty(self.messages)?
+            }
+            (None, _, WireFormat::Yaml) => {
+                efference::inference::api::render_messages_yaml(self.messages)?
+            }
         };
         Ok(rendered)
     }
 
     /// The request envelope around the messages.
     fn request(&self, system: &str, tools: &[serde_json::Value]) -> WireResult {
-        let choice = efference::api::ToolChoice::auto();
+        let choice = efference::inference::api::ToolChoice::auto();
         let (model, turns, messages) = (self.model, self.turns, self.messages);
         let rendered = match (self.view_dialect, self.dialect, self.format) {
             (Some(ViewDialect::Completions), _, _) => {
-                efference::api::render_completions_request_pretty(
+                efference::inference::api::render_completions_request_pretty(
                     model, system, tools, choice, turns,
                 )?
             }
             (None, efference::record::log::WireDialect::Responses, _) => {
-                efference::api::render_responses_request_pretty(
+                efference::inference::api::render_responses_request_pretty(
                     model, system, tools, choice, turns, self.cache,
                 )?
             }
-            (None, _, WireFormat::Json) => {
-                efference::api::render_request_pretty(model, system, tools, choice, messages)?
-            }
-            (None, _, WireFormat::Yaml) => {
-                efference::api::render_request_yaml(model, system, tools, choice, messages)
-            }
+            (None, _, WireFormat::Json) => efference::inference::api::render_request_pretty(
+                model, system, tools, choice, messages,
+            )?,
+            (None, _, WireFormat::Yaml) => efference::inference::api::render_request_yaml(
+                model, system, tools, choice, messages,
+            ),
         };
         Ok(rendered)
     }

@@ -3,9 +3,9 @@
 //! standing title answers it.
 
 use super::*;
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream, Turnstile};
 use crate::protocol::state::SessionIdentity;
 use crate::record::log::{Provider, Title, TitleAuthor};
-use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile};
 
 fn session() -> Arc<Session> {
     let (shared, _rx) = Session::in_memory();

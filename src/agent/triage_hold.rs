@@ -9,7 +9,7 @@
 
 use super::*;
 
-use crate::triage::{HoldFailure, HoldOutcome, TRIAGE_RESTARTS, TriageFailure};
+use crate::curation::triage::{HoldFailure, HoldOutcome, TRIAGE_RESTARTS, TriageFailure};
 
 /// What the held triage's attempts accumulated before one of them succeeded: carried
 /// onto the successful triage's `Triage`, so a recovered hold is still in the record.

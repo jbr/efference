@@ -21,8 +21,8 @@
 
 use serde_json::Value;
 
-use crate::api::{UpstreamFailure, UpstreamRetry};
-use crate::policy::ReviewLevel;
+use crate::config::policy::ReviewLevel;
+use crate::inference::api::{UpstreamFailure, UpstreamRetry};
 use crate::protocol::state::ProcessState;
 use crate::protocol::state::{
     AskView, Cold, CurrentOperations, Gate, LoopPhase, NewerVersion, PaceView, PendingProposal,

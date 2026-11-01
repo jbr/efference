@@ -3,7 +3,7 @@
 //! moved, and one hang guard bounds a wait that can never succeed.
 
 use super::*;
-use crate::testing::upstream::ScriptedUpstream;
+use crate::inference::testing::upstream::ScriptedUpstream;
 use std::future::Future;
 use std::task::Poll;
 use tokio::sync::futures::Notified;

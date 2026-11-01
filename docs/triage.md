@@ -116,7 +116,7 @@ judges such a result reasonably — a short refusal is exactly the boilerplate t
 compresses — and the paraphrase is silently useless.
 
 So the decision is taken away from the fork rather than delegated to a prompt.
-`src/triage/handles.rs` holds one entry per known handle-bearing shape, matched as a
+`src/curation/triage/handles.rs` holds one entry per known handle-bearing shape, matched as a
 sentinel plus a fixed-width hex digest anywhere in the result text. The shipped entry is
 fs-mcp's refused-`write` retry token, `write-retry-` followed by 16 hex digits: a `write`
 refused because the path exists (or because `overwrite` and `append` were both set)
@@ -192,7 +192,7 @@ What forcing bought is re-bought harness-side:
   recovered from** — is recorded attempt-stamped on the triage's `Triage` (`retries`)
   and rendered as a `⚠ triage retry` annotation in the TUI transcript: a runtime
   triage failure is a harness defect signal, never silently accepted, and the
-  compliance record is a fold over that field. Implemented in `src/triage/request.rs`.
+  compliance record is a fold over that field. Implemented in `src/curation/triage/request.rs`.
 
 Un-forcing also lifts the forced-choice-excludes-thinking constraint
 ([transport.md](transport.md)): the fork may think, and the thinking is discarded with
@@ -246,7 +246,7 @@ triage model with thinking off answered the idle ask in 23–32 output tokens an
 opposite verdicts on the same self-scheduled timer exit two cycles apart
 (journal/2026-09-14-idle-triage-on-the-agent-lineage.md).
 
-The ask follows the view's framing (`Framing` in `src/triage/prompt.rs`): first person
+The ask follows the view's framing (`Framing` in `src/curation/triage/prompt.rs`): first person
 on the shared triage's transcript ("the call you just made", "the task continues on your
 NEXT turn"), third person in the text view ("the call the agent just made", the inbox,
 background and surfacing rows said of the agent), with the same structure and fields.
@@ -297,7 +297,7 @@ whole.
 
 ### The text view
 
-What a separate triage model reads (`src/triage/text_view.rs`). It holds no assistant
+What a separate triage model reads (`src/curation/triage/text_view.rs`). It holds no assistant
 turn and no tool block, only user-role text, so a triage model of any wire format reads
 it: creation accepts a triage model whose dialect differs from main's. It is two user
 turns:
@@ -356,7 +356,7 @@ reads the main projection.
 ## Two answer shapes, and one scoped ask
 
 The schema is static while triage size is not, so `retain` carries both shapes and the
-tail instruction (`retain_instruction` in `src/triage/prompt.rs`) names which one this
+tail instruction (`retain_instruction` in `src/curation/triage/prompt.rs`) names which one this
 triage wants.
 
 **The ask is shaped against the pull of the turn it interrupts.** It carries its own
@@ -419,7 +419,7 @@ line belongs in `keep`"), and `keep` is told that a partial keep of an enumerati
 match list, a listing, a candidate set — reads afterwards as the whole set, so either the
 enumeration is kept whole or the note says how many of how many survived. That is the case
 where a lean verdict changes the answer rather than shortening it. Both clauses are pinned
-in `src/triage/test.rs`. Where the result header carries the call's `intent`, the note
+in `src/curation/triage/test.rs`. Where the result header carries the call's `intent`, the note
 answers it, and when the output does not contain what the intent asked for the ask prefers
 saying so over summarizing what the output does contain.
 
@@ -577,7 +577,7 @@ Line-per-line numbering inflates the canonical wire — a keep-all verdict on a
 small result would be larger than the raw it replaces. The two renderings are
 therefore split:
 
-- **The margin view** (`12 │ text` per line, `result_view` in `src/triage/prompt.rs`) —
+- **The margin view** (`12 │ text` per line, `result_view` in `src/curation/triage/prompt.rs`) —
   shown only in the throwaway triage; the coordinate system `keep` addresses.
 
 - **`render_hunks`** (the canonical wire form) — a `@@ lines a-b @@` header per
@@ -695,7 +695,7 @@ Deciding what to perceive next also runs *forward*: the same triage can pull an
 [context.md](context.md)) into view when it bears on the work in flight. A cheap
 model that recalls a stub's description but answers from memory anyway is missing a
 *decision* step, not a fact; the rider lands the nudge adjacent to the moment of
-need. Implemented in `src/triage.rs` (the roster + verdict) and `src/record/project.rs`
+need. Implemented in `src/curation/triage.rs` (the roster + verdict) and `src/record/project.rs`
 (the render).
 
 - **Roster.** The triage view lists the surfaceable items — every `Item::Listed`

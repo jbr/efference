@@ -62,7 +62,7 @@ impl Session {
     pub fn has_pending_notifications(&self) -> bool {
         !self.inbox.lock().unwrap().pending.is_empty() || {
             let log = self.log.lock().unwrap();
-            crate::inbox::has_unshown(log.entries())
+            crate::curation::inbox::has_unshown(log.entries())
         }
     }
 
@@ -87,7 +87,7 @@ impl Session {
     fn has_new_notifications(&self) -> bool {
         !self.inbox.lock().unwrap().pending.is_empty() || {
             let log = self.log.lock().unwrap();
-            crate::inbox::unshown(log.entries())
+            crate::curation::inbox::unshown(log.entries())
                 .iter()
                 .any(|n| n.seq as usize >= self.restored_len)
         }
@@ -109,7 +109,7 @@ impl Session {
     pub(super) fn pending_notifications(&self) -> Vec<PendingNotification> {
         let unshown = {
             let log = self.log.lock().unwrap();
-            crate::inbox::unshown(log.entries())
+            crate::curation::inbox::unshown(log.entries())
         };
         let queued = self.inbox.lock().unwrap().pending.clone();
         unshown
@@ -146,7 +146,7 @@ impl Session {
         let pending = self.pending_notifications();
         let active = {
             let log = self.log.lock().unwrap();
-            crate::inbox::active_shown(log.entries())
+            crate::curation::inbox::active_shown(log.entries())
         };
         if pending.is_empty() && active.is_empty() {
             return "Inbox empty — no pending notifications.".to_string();

@@ -125,7 +125,7 @@ impl Session {
     pub fn absorb_env_table(
         &self,
         config: &crate::config::Config,
-    ) -> Vec<crate::env_table::ResolveError> {
+    ) -> Vec<crate::config::env_table::ResolveError> {
         self.env_policy.absorb_config(&config.env)
     }
 
@@ -158,13 +158,13 @@ impl Session {
     /// gated call. Runtime-mutable (the `PATCH /loop {review_level}` verb); read by the loop's cascade and
     /// reported on `GET /state`. Relaxed ordering: a lone dial with no happens-before tie to other
     /// state, read on the loop task and written by a handler task.
-    pub fn review_level(&self) -> crate::policy::ReviewLevel {
-        crate::policy::ReviewLevel::from_u8(self.review_level.load(Ordering::Relaxed))
+    pub fn review_level(&self) -> crate::config::policy::ReviewLevel {
+        crate::config::policy::ReviewLevel::from_u8(self.review_level.load(Ordering::Relaxed))
     }
 
     /// Set the review level — the runtime `PATCH /loop {review_level}` verb, or `serve --autonomous` at
     /// boot via [`set_autonomous`](Self::set_autonomous).
-    pub fn set_review_level(&self, level: crate::policy::ReviewLevel) {
+    pub fn set_review_level(&self, level: crate::config::policy::ReviewLevel) {
         self.review_level.store(level.as_u8(), Ordering::Relaxed);
         self.touch_state();
     }
@@ -174,16 +174,16 @@ impl Session {
     /// redirect-vs-block distinction; `GET /state` carries `review_level` itself
     /// rather than restating this as a second field.
     pub fn autonomous(&self) -> bool {
-        self.review_level() == crate::policy::ReviewLevel::Autonomous
+        self.review_level() == crate::config::policy::ReviewLevel::Autonomous
     }
 
     /// Set autonomous mode at boot (`serve --autonomous`): maps to the `Autonomous` review level,
     /// else the supervised default (`SpotterHuman`).
     pub fn set_autonomous(&self, on: bool) {
         self.set_review_level(if on {
-            crate::policy::ReviewLevel::Autonomous
+            crate::config::policy::ReviewLevel::Autonomous
         } else {
-            crate::policy::ReviewLevel::SpotterHuman
+            crate::config::policy::ReviewLevel::SpotterHuman
         });
     }
 
@@ -207,9 +207,9 @@ impl Session {
         &self,
         role: &crate::config::Config,
         call: &ToolCall,
-    ) -> Option<crate::policy::GateGrant> {
+    ) -> Option<crate::config::policy::GateGrant> {
         let probes = self.probes.lock().unwrap();
-        crate::policy::gate_grant(&self.directories(), role, &probes, call)
+        crate::config::policy::gate_grant(&self.directories(), role, &probes, call)
     }
 
     /// Record a probe's vote (`safe` iff the spotter answered `clear_always`) and report whether the

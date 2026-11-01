@@ -3,8 +3,8 @@
 //! to its reviewer, and a gate that comes to rest with the operator later is pushed then.
 
 use super::*;
+use crate::config::policy::ReviewLevel;
 use crate::daemon::Host;
-use crate::policy::ReviewLevel;
 use crate::protocol::state::LoopPhase;
 use crate::record::log::{Approval, MomentKind, PushEvent, PushRecord, Telemetry};
 

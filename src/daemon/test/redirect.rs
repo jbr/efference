@@ -4,8 +4,8 @@
 use super::upstream_hold::start_with;
 use super::*;
 use crate::frontend::SubmittedTurn;
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 use crate::record::log::{Approval, ContentBlock, Stance, Telemetry};
-use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 
 fn script(n: usize) -> Canned {
     match n {

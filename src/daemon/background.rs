@@ -15,7 +15,7 @@ pub(crate) async fn drain_background(
     mut stdout: tokio::process::ChildStdout,
     mut stderr: tokio::process::ChildStderr,
 ) {
-    crate::bash::drain_pipes(
+    crate::tools::bash::drain_pipes(
         &mut stdout,
         &mut stderr,
         std::future::pending::<()>(),
@@ -56,7 +56,7 @@ pub(crate) async fn drain_background(
             id,
             kind: crate::record::log::ProcessEventKind::Exited(finished.exit),
         });
-        let slot = crate::process_monitor::handle(id);
+        let slot = crate::tools::process_monitor::handle(id);
         shared.notify(Notification::new(
             finished.source,
             finished.body,
@@ -111,7 +111,7 @@ impl Session {
             stdout,
             stderr,
         ));
-        Ok(crate::process_monitor::handle(id))
+        Ok(crate::tools::process_monitor::handle(id))
     }
 
     /// Register the loop's freshly-spawned *foreground* command in the process
@@ -150,7 +150,7 @@ impl Session {
     /// (`watch_process`, docs/process-monitor.md). `false` if the handle is unparseable,
     /// unknown, or already exited; the count is what the process is now waiting on.
     pub fn watch_bg(&self, handle: &str, pattern: String) -> Option<usize> {
-        let id = crate::process_monitor::parse_handle(handle)?;
+        let id = crate::tools::process_monitor::parse_handle(handle)?;
         let mut process_monitor = self.process_monitor.lock().unwrap();
         process_monitor
             .watch(id, pattern)
@@ -173,10 +173,10 @@ impl Session {
     /// resuming from exactly the byte boundary the foreground drain stopped at.
     pub fn adopt_background(
         self: &Arc<Self>,
-        detached: crate::bash::DetachedBash,
+        detached: crate::tools::bash::DetachedBash,
         id: u64,
     ) -> String {
-        let crate::bash::DetachedBash {
+        let crate::tools::bash::DetachedBash {
             child,
             stdout,
             stderr,
@@ -196,7 +196,7 @@ impl Session {
             stdout,
             stderr,
         ));
-        crate::process_monitor::handle(id)
+        crate::tools::process_monitor::handle(id)
     }
 
     /// `PATCH /processes/:id {background: true}` (docs/process-monitor.md): ask the loop to detach the
@@ -234,14 +234,14 @@ impl Session {
     /// handle string is the model's vocabulary; an unparseable one answers like an
     /// unknown process.
     pub fn bg_pin_snapshot(&self, handle: &str) -> Option<(String, String)> {
-        let id = crate::process_monitor::parse_handle(handle)?;
+        let id = crate::tools::process_monitor::parse_handle(handle)?;
         self.process_monitor.lock().unwrap().pin_snapshot(id)
     }
 
     /// Mute a process's running tail (`dismiss` for a live process, docs/process-monitor.md — it keeps
     /// running and still notifies on exit).
     pub fn mute_bg(&self, handle: &str) {
-        if let Some(id) = crate::process_monitor::parse_handle(handle) {
+        if let Some(id) = crate::tools::process_monitor::parse_handle(handle) {
             self.process_monitor.lock().unwrap().set_muted(id, true);
             self.touch_state();
         }
@@ -264,7 +264,7 @@ impl Session {
     /// Cursor-based read of one process's output (`read_since`, docs/process-monitor.md). `None` if the
     /// handle is unknown.
     pub fn bg_read_since(&self, handle: &str, cursor: Option<u64>) -> Option<String> {
-        let id = crate::process_monitor::parse_handle(handle)?;
+        let id = crate::tools::process_monitor::parse_handle(handle)?;
         self.process_monitor.lock().unwrap().read_since(id, cursor)
     }
 
@@ -280,12 +280,12 @@ impl Session {
     /// capture the sibling output route reads); a log fold answers for a recorded
     /// session, or for a handle this daemon minted before a restart dropped the
     /// registry. `None` only when nothing anywhere names the id.
-    pub fn process_record(&self, id: u64) -> Option<crate::process_monitor::ProcessRecord> {
+    pub fn process_record(&self, id: u64) -> Option<crate::tools::process_monitor::ProcessRecord> {
         let live = self.process_monitor.lock().unwrap().record(id);
         if live.is_some() {
             return live;
         }
-        crate::process_monitor::from_log(self.log.lock().unwrap().entries(), id)
+        crate::tools::process_monitor::from_log(self.log.lock().unwrap().entries(), id)
     }
 
     /// Append the **mint** half of a process's durable record, read from the live
@@ -321,7 +321,7 @@ impl Session {
         &self,
         id: u64,
         cursor: Option<u64>,
-    ) -> Option<crate::process_monitor::OutputRead> {
+    ) -> Option<crate::tools::process_monitor::OutputRead> {
         self.process_monitor.lock().unwrap().read_output(id, cursor)
     }
 
@@ -353,7 +353,7 @@ impl Session {
     /// [`kill_process`](Self::kill_process) addressed by the model's `p#<n>`
     /// vocabulary; an unparseable handle answers like an unknown process.
     pub fn kill_bg(&self, handle: &str) -> bool {
-        crate::process_monitor::parse_handle(handle).is_some_and(|id| self.kill_process(id))
+        crate::tools::process_monitor::parse_handle(handle).is_some_and(|id| self.kill_process(id))
     }
 
     /// `killpg` every still-running background child — daemon teardown (docs/process-monitor.md

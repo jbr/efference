@@ -7,16 +7,16 @@
 use super::*;
 use crate::daemon::island::OwnerWatch;
 use crate::frontend::SubmittedTurn;
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
 use crate::protocol::state::LoopPhase;
 use crate::record::log::{Payload, Provider, WorktreeEventKind};
 use crate::session_ids::SessionIds;
-use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// A host over a state database in `roots`, and the register it reserves in.
 fn host_and_register(roots: &Roots) -> (Arc<Host>, SessionIds) {
     let state = roots.0.join("state.db");
     let host = Host::new(
-        one_connection_registry().with_history(crate::history::History::at(state.clone())),
+        one_connection_registry().with_history(crate::config::history::History::at(state.clone())),
         baseline_env(),
     );
     (host, SessionIds::at(state))
@@ -39,7 +39,7 @@ async fn adopt_logged(
     let path = dir.join(crate::record::session_dir::LOG_NAME);
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.paths = SessionPaths::new(
-        crate::policy::Directories::new(roots.0.clone(), working.to_path_buf()),
+        crate::config::policy::Directories::new(roots.0.clone(), working.to_path_buf()),
         dir,
     )
     .unwrap();
@@ -118,7 +118,7 @@ async fn an_islands_exit_archives_each_session_before_it_shuts_down() {
     )
     .await;
     let empty = adopt_logged(&host, &register, &roots, "empty", &one, None, false).await;
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     let worktree = crate::worktree::add(&roots.0, "wt-fox", &roots.0, &env)
         .unwrap()
         .path;

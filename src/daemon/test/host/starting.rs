@@ -146,8 +146,9 @@ async fn a_failed_preparation_hands_back_the_turns_sent_while_starting() {
     let roots = Roots::new();
     let gate = roots.0.join("gate");
     let host = Host::new(
-        registry_with_hook(&gated_hook(&gate))
-            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        registry_with_hook(&gated_hook(&gate)).with_history(crate::config::history::History::at(
+            roots.0.join("state.db"),
+        )),
         marked_baseline(),
     );
     let register = crate::session_ids::SessionIds::at(roots.0.join("state.db"));
@@ -218,8 +219,9 @@ async fn a_failed_preparation_hands_back_the_turns_sent_while_starting() {
 async fn archiving_a_starting_creation_cancels_it_and_leaves_nothing() {
     let roots = Roots::new();
     let host = Host::new(
-        registry_with_hook(&endless_hook())
-            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        registry_with_hook(&endless_hook()).with_history(crate::config::history::History::at(
+            roots.0.join("state.db"),
+        )),
         marked_baseline(),
     );
     let register = crate::session_ids::SessionIds::at(roots.0.join("state.db"));

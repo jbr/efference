@@ -85,7 +85,11 @@ pub fn branch(id: &str) -> String {
     format!("efference/{id}")
 }
 
-fn git(dir: &Path, env: &crate::env_table::ChildEnv, args: &[&str]) -> Result<Output, String> {
+fn git(
+    dir: &Path,
+    env: &crate::config::env_table::ChildEnv,
+    args: &[&str],
+) -> Result<Output, String> {
     let mut cmd = Command::new("git");
     cmd.args(args).current_dir(dir);
     env.apply(&mut cmd);
@@ -169,7 +173,7 @@ pub fn add(
     project: &Path,
     id: &str,
     from: &Path,
-    env: &crate::env_table::ChildEnv,
+    env: &crate::config::env_table::ChildEnv,
 ) -> Result<Added, String> {
     let inside = git(from, env, &["rev-parse", "--is-inside-work-tree"])?;
     if !inside.status.success() || String::from_utf8_lossy(&inside.stdout).trim() != "true" {
@@ -216,7 +220,7 @@ pub fn add(
 
 /// Undo [`add`] after a failed boot: remove the worktree, then its branch. Best effort;
 /// a failure is named on the log (`warn`).
-pub fn remove(project: &Path, path: &Path, branch: &str, env: &crate::env_table::ChildEnv) {
+pub fn remove(project: &Path, path: &Path, branch: &str, env: &crate::config::env_table::ChildEnv) {
     let path = path.to_string_lossy();
     for args in [
         vec!["worktree", "remove", "--force", &path],
@@ -259,7 +263,7 @@ const SUMMARY_LINES: usize = 5;
 ///
 /// `--force` on the removal is for git's refusal to remove a tree holding initialized
 /// submodules even when clean; the porcelain check is the safety.
-pub fn retire(project: &Path, id: &str, env: &crate::env_table::ChildEnv) -> Retired {
+pub fn retire(project: &Path, id: &str, env: &crate::config::env_table::ChildEnv) -> Retired {
     let path = crate::record::session_dir::worktree::path(project, id);
     let branch = branch(id);
     if !path.is_dir() {
@@ -275,7 +279,7 @@ fn retire_in(
     project: &Path,
     path: &Path,
     branch: &str,
-    env: &crate::env_table::ChildEnv,
+    env: &crate::config::env_table::ChildEnv,
 ) -> Result<Retired, String> {
     let status = git_ok(path, env, &["status", "--porcelain"])?;
     let lines: Vec<&str> = status.lines().filter(|l| !l.trim().is_empty()).collect();
@@ -322,7 +326,7 @@ fn retire_in(
 fn delete_branch_if_contained(
     project: &Path,
     branch: &str,
-    env: &crate::env_table::ChildEnv,
+    env: &crate::config::env_table::ChildEnv,
 ) -> bool {
     let Ok(holders) = git_ok(
         project,
@@ -336,7 +340,11 @@ fn delete_branch_if_contained(
 }
 
 /// Stdout of a git command that must succeed; its combined output as the error if not.
-fn git_ok(dir: &Path, env: &crate::env_table::ChildEnv, args: &[&str]) -> Result<String, String> {
+fn git_ok(
+    dir: &Path,
+    env: &crate::config::env_table::ChildEnv,
+    args: &[&str],
+) -> Result<String, String> {
     let output = git(dir, env, args)?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -357,7 +365,7 @@ fn git_ok(dir: &Path, env: &crate::env_table::ChildEnv, args: &[&str]) -> Result
 pub fn restore(
     project: &Path,
     id: &str,
-    env: &crate::env_table::ChildEnv,
+    env: &crate::config::env_table::ChildEnv,
 ) -> Result<Added, String> {
     let path = crate::record::session_dir::worktree::path(project, id);
     let branch = branch(id);

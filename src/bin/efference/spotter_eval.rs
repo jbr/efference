@@ -17,8 +17,8 @@
 use super::*;
 use crate::dev::SpotterEvalArgs;
 use efference::config::Perms;
+use efference::curation::spotter::{MountedSpotter, Spotter};
 use efference::record::log::{Origin, Stance};
-use efference::spotter::{MountedSpotter, Spotter};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -215,7 +215,7 @@ pub(crate) fn dump_states(
             );
             let brief = efference::agent::brief(&toolbox, &call.name);
             let scratch = case.scratch.then(|| PathBuf::from(SCRATCH_PLACEHOLDER));
-            let state = efference::spotter::jev::preview_state(
+            let state = efference::curation::spotter::jev::preview_state(
                 &role(&case),
                 &call,
                 brief.as_ref(),
@@ -223,7 +223,7 @@ pub(crate) fn dump_states(
                 // A recorded case holds one directory, which stands as both.
                 case.cwd
                     .as_deref()
-                    .map(|cwd| efference::policy::Directories::at(Path::new(cwd)))
+                    .map(|cwd| efference::config::policy::Directories::at(Path::new(cwd)))
                     .as_ref(),
                 scratch.as_deref(),
             );

@@ -6,8 +6,10 @@ use super::upstream_hold::{FIRST_PAUSE, start, start_with};
 use super::*;
 use crate::daemon::{BlockedReason, LoopPhase};
 use crate::frontend::SubmittedTurn;
+use crate::inference::testing::upstream::{
+    Canned, ScriptedUpstream, Turnstile, end_turn, tool_call,
+};
 use crate::record::log::Stance;
-use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile, end_turn, tool_call};
 
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
 

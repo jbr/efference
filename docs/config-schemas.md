@@ -7,11 +7,11 @@ reads the file.
 
 | Schema | Describes | Generated from |
 | --- | --- | --- |
-| `user.v1.json` | `~/.efference/config.toml` | `InferenceConfig` (`src/user_config.rs`) |
+| `user.v1.json` | `~/.efference/config.toml` | `InferenceConfig` (`src/config/user_config.rs`) |
 | `project.v1.json` | a project's `efference.toml`, and each session's `config.toml`, which starts as a copy of it | `RawConfig` (`src/config/raw.rs`) |
 
 Both are served from `https://efference.net/schemas/`, and a config file names one with a
-first line of `#:schema <url>`. `src/config_schemas.rs` generates them; they are committed
+first line of `#:schema <url>`. `src/config/config_schemas.rs` generates them; they are committed
 under `assets/schemas/`.
 
 ## Generation

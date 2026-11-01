@@ -13,13 +13,13 @@ project without one, it offers a setup session that asks questions and writes th
 with you ([Quick start](quick-start.md)). Later, you can ask any session in the project to
 help revise it. The agent can read a description of every key through its `read` tool at
 `efference://guide/config-format`.
-<!-- src: src/setup/handoff.rs::offer_project_setup; assets/guide/new-project.md; assets/guide/config-format.md; src/guide.rs::MOUNT; src/policy/paths.rs::context_granted (the guide prefix is read-granted) -->
+<!-- src: src/setup/handoff.rs::offer_project_setup; assets/guide/new-project.md; assets/guide/config-format.md; src/config/guide.rs::MOUNT; src/config/policy/paths.rs::context_granted (the guide prefix is read-granted) -->
 
 Review the changes before starting your next session: this file decides what future
 sessions can do without asking. If you’re opening someone else’s project, read its
 `efference.toml` before starting a session, too. Some settings run commands at startup,
 without a permission prompt; [the details below](#what-runs-at-startup) explain which ones.
-<!-- src: src/config/load.rs; src/context.rs::run_exec; src/mcp/stdio.rs; src/boot/mcp_mount.rs::mount_one; src/env_table/resolve.rs::run_command; absence of a project-trust check in src/boot/ -->
+<!-- src: src/config/load.rs; src/config/context.rs::run_exec; src/tools/mcp/stdio.rs; src/boot/mcp_mount.rs::mount_one; src/config/env_table/resolve.rs::run_command; absence of a project-trust check in src/boot/ -->
 
 ## Choose what sessions start with
 
@@ -70,7 +70,7 @@ With a TOML language server, your editor can complete keys, explain them on hove
 mark misspellings, just as for [your own configuration](configuration.md#editor-support).
 The setup session asks before adding the line, because it makes the editor fetch that
 description from efference.net.
-<!-- src: assets/guide/new-project.md (the interview asks first); src/config_schemas.rs -->
+<!-- src: assets/guide/new-project.md (the interview asks first); src/config/config_schemas.rs -->
 
 ## Startup details
 
@@ -80,7 +80,7 @@ An unknown key or an invalid entry stops the session from starting rather than b
 ignored. So does an unreadable `[context]` file, a failing `[context]` command, or an MCP
 server that cannot connect. You can mark an MCP server `optional = true` if a session
 should be able to start without it.
-<!-- src: src/config/raw.rs::RawConfig (deny_unknown_fields), validate; src/context.rs; src/boot/mcp_mount.rs::mount_all (optional) -->
+<!-- src: src/config/raw.rs::RawConfig (deny_unknown_fields), validate; src/config/context.rs; src/boot/mcp_mount.rs::mount_all (optional) -->
 
 ### What runs at startup
 
@@ -92,7 +92,7 @@ Starting a session runs these commands from the configuration without asking you
 
 That’s why a project’s configuration deserves the same review as other code you run from
 that project.
-<!-- src: src/context.rs::run_exec (bash -c at boot, no review); src/mcp/stdio.rs; src/boot/mcp_mount.rs::mount_one; src/env_table/resolve.rs::run_command; absence of a project-trust check in src/boot/ -->
+<!-- src: src/config/context.rs::run_exec (bash -c at boot, no review); src/tools/mcp/stdio.rs; src/boot/mcp_mount.rs::mount_one; src/config/env_table/resolve.rs::run_command; absence of a project-trust check in src/boot/ -->
 
 ### If there is no project configuration
 

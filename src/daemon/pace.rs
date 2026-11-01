@@ -441,7 +441,7 @@ impl Session {
         crate::record::log::Interruption {
             by: self.interrupter(),
             after_ms: Some(elapsed.as_millis() as u64),
-            killed: crate::bash::was_killed(result),
+            killed: crate::tools::bash::was_killed(result),
         }
     }
 

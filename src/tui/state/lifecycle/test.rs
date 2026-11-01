@@ -62,7 +62,7 @@ fn a_responses_bash_call_is_a_foreground_bash() {
         r#"{"command":"cargo test"}"#,
     );
     let call = play.state.in_flight_call().expect("in flight");
-    assert!(crate::bash::is_foreground_call(&call));
+    assert!(crate::tools::bash::is_foreground_call(&call));
     assert_eq!(&labels(&play)[..2], ["background", "kill"]);
 }
 

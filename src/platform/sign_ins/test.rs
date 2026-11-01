@@ -6,7 +6,7 @@ use std::time::Duration;
 
 /// A throwaway store in a directory of its own, which goes when the returned guard drops.
 fn scratch() -> (Store, tempfile::TempDir) {
-    let dir = crate::testing::temp_dir("sign-ins");
+    let dir = crate::inference::testing::temp_dir("sign-ins");
     (Store::new(dir.path().join("state.db")), dir)
 }
 

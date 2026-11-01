@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::api::UpstreamFailure;
+use crate::inference::api::UpstreamFailure;
 use crate::protocol::state::ProcessState;
 use crate::protocol::state::{LoopPhase, PaceView, SessionIdentity, UsageView};
 use crate::record::log::Timestamp;

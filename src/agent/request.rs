@@ -3,7 +3,9 @@
 //! ends in when no attempt gives a usable turn.
 
 use super::*;
-use crate::api::{Completion, STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry};
+use crate::inference::api::{
+    Completion, STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry,
+};
 
 /// What one model request came to.
 enum Attempt {
@@ -193,7 +195,8 @@ async fn attempt(
                     Exclusion::Upstream(error.to_string().into()),
                 ),
             )?;
-            let terminal = (crate::api::error_class(&error) != crate::api::FailureClass::Transient)
+            let terminal = (crate::inference::api::error_class(&error)
+                != crate::inference::api::FailureClass::Transient)
                 .then_some(StallReason::RequestFailed);
             Ok(Attempt::Failed {
                 why: error.to_string(),

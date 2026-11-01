@@ -9,11 +9,11 @@ use serde_json::Value;
 
 /// Host a session named `id` whose working directory is a worktree it made.
 async fn hosting_worktree(roots: &Roots, host: &Arc<Host>, id: &str) -> PathBuf {
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     let added = crate::worktree::add(&roots.0, id, &roots.0, &env).unwrap();
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.paths = SessionPaths::new(
-        crate::policy::Directories::new(roots.0.clone(), added.path.clone()),
+        crate::config::policy::Directories::new(roots.0.clone(), added.path.clone()),
         roots.0.join(".efference").join(id),
     )
     .unwrap();

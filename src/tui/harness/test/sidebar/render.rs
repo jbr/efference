@@ -4,11 +4,12 @@
 //! demand, and the background process panel.
 
 use super::*;
-use crate::api::Usage;
 use crate::config::CommandStance;
+use crate::config::policy::ReviewLevel;
+use crate::config::user_config::ModelSelection;
 use crate::config::{Perms, ToolSettings};
+use crate::inference::api::Usage;
 use crate::inference::{InferenceIdentity, TriageIdentity};
-use crate::policy::ReviewLevel;
 use crate::protocol::state::{
     ContextWindow, Cost, CurrentOperations, KeepaliveSkip, KeepaliveSkipReason, LoopPhase,
     OpenCompaction, PendingProposal, RoleView, SessionIdentity, UsageView, VerbAnswer, Verbs,
@@ -16,7 +17,6 @@ use crate::protocol::state::{
 use crate::record::log::{ConfigChange, Provider, Timestamp};
 use crate::record::project::Retention;
 use crate::tui::harness::{cold, process, session_identity};
-use crate::user_config::ModelSelection;
 
 /// The session drawer (docs/tui.md): PROCESSES and STATS render in the panel over
 /// the transcript's right side, with a `│` divider. The process panel above the

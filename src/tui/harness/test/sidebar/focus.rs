@@ -8,7 +8,7 @@
 use super::*;
 
 use crate::config::CommandStance;
-use crate::policy::ReviewLevel;
+use crate::config::policy::ReviewLevel;
 use crate::protocol::state::ProcessState;
 use crate::protocol::state::{PendingProposal, RoleView};
 use crate::record::log::ConfigChange;

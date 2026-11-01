@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::api::Error;
+use crate::inference::api::Error;
 use crate::record::session_dir::LOG_NAME;
 
 #[cfg(test)]
@@ -37,7 +37,7 @@ pub(super) struct MintedWorktree {
     pub(super) project: PathBuf,
     pub(super) path: PathBuf,
     pub(super) branch: String,
-    pub(super) env: crate::env_table::ChildEnv,
+    pub(super) env: crate::config::env_table::ChildEnv,
 }
 
 impl Minted {

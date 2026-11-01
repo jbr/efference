@@ -156,7 +156,7 @@ async fn the_fold_of_state_frames_equals_get_state() {
     );
 
     // Move several topics, through the same methods the routes call.
-    shared.set_review_level(crate::policy::ReviewLevel::HumanOnly);
+    shared.set_review_level(crate::config::policy::ReviewLevel::HumanOnly);
     shared.set_pace(Some(Duration::from_millis(1500)), Some(true));
     shared.notify(Notification::new("watch", "cargo test finished", None));
 
@@ -203,7 +203,7 @@ async fn no_state_frame_arrives_before_the_log_it_reflects() {
     // frame's watermark sits at the far end of a replay the connection has not sent yet.
     let mut stream = control_stream(Arc::clone(&shared), Include::default(), 0);
 
-    shared.set_review_level(crate::policy::ReviewLevel::HumanOnly);
+    shared.set_review_level(crate::config::policy::ReviewLevel::HumanOnly);
 
     let seen = collect(&mut stream).await;
     let delivered_before_first_state = seen
@@ -248,7 +248,7 @@ async fn state_only_subscribers_are_not_gated_on_the_log() {
         Include::parse(Some("state:review_level")).unwrap(),
         0,
     );
-    shared.set_review_level(crate::policy::ReviewLevel::Autonomous);
+    shared.set_review_level(crate::config::policy::ReviewLevel::Autonomous);
 
     let seen = collect(&mut stream).await;
     assert!(
@@ -285,7 +285,7 @@ async fn an_update_arriving_while_parked_is_not_dropped() {
     // Drain the connect snapshot until quiet, leaving the stream parked in its wait.
     collect(&mut stream).await;
 
-    shared.set_review_level(crate::policy::ReviewLevel::Autonomous);
+    shared.set_review_level(crate::config::policy::ReviewLevel::Autonomous);
 
     let seen = collect(&mut stream).await;
     assert_eq!(

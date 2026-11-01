@@ -14,8 +14,8 @@
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
 use super::{InteractiveState, UiMode};
-use crate::bash;
 use crate::protocol::state::PaceView;
+use crate::tools::bash;
 
 /// A verb the strip can carry — and the thing strip focus, a click target, and a
 /// sidebar return all hold, in place of a position (docs/tui.md). Dispatch happens

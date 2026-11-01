@@ -507,7 +507,7 @@ hold when a user turn is appended right after a turn's results (a queued turn de
 [operator participation](control-channel.md#operator-participation--the-intervention-points) —
 the mid-trajectory injection and the redirect steer both rely on this shape).
 
-Each **encoder** (`src/record/project/messages.rs`, `src/api/responses.rs`) copies the turns
+Each **encoder** (`src/record/project/messages.rs`, `src/inference/api/responses.rs`) copies the turns
 onto its wire and owns what differs there: the Messages encoder groups a user turn's
 parts into one message, applies the three image placements and their interposed
 turn, omits `is_error: false`, and attaches a `Breakpoint` per `BreakpointPlacement`;
@@ -779,7 +779,7 @@ and must not be weakened:
   that change would silently bust the production cache, so it must break a
   test first.
 
-Both pins, and the whole-envelope pin in `src/api/test/envelope.rs`, answer one question:
+Both pins, and the whole-envelope pin in `src/inference/api/test/envelope.rs`, answer one question:
 does the harness still emit the bytes it emitted yesterday? They cannot answer
 whether the **provider** still matches those bytes — a dependency's serialization
 changing under us, a provider-side normalization, a field that varies per session.
@@ -813,7 +813,7 @@ the expected-bytes pin deliberately.
 > be chosen at a cold write. Keeping the cache warm across idle (a
 > `max_tokens:0` keepalive read that refreshes the sliding TTL while generating
 > nothing) and making cache usage legible are transport concerns realized in
-> [`src/api.rs`](transport.md) — never log or projection changes, so they
+> [`src/inference/api.rs`](transport.md) — never log or projection changes, so they
 > cannot perturb the byte-stability pins.
 
 ---
@@ -970,7 +970,7 @@ answers `prompt_cache_options.comparison_response_id` with a `prompt_cache_diagn
 reason naming what diverged.
 
 Anthropic answers a top-level `diagnostics` object on the Messages dialect with its own
-naming of the first divergence, which is wired here: `src/api/client.rs` carries the
+naming of the first divergence, which is wired here: `src/inference/api/client.rs` carries the
 previous response id per client and `CacheMiss` rides the usage line as `cache_miss`
 (docs/transport.md, under "The provider's own cache diagnostics").
 `efference dev cache` counts those reasons across a record — the four `*_changed` ones

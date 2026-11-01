@@ -1,4 +1,4 @@
-use crate::api::{RetrySurface, UpstreamFailure, UpstreamRetry};
+use crate::inference::api::{RetrySurface, UpstreamFailure, UpstreamRetry};
 use crate::protocol::state::{Stall, StallReason};
 use crate::tui::state::{stall_indicator, upstream_failure_indicator, upstream_retry_indicator};
 

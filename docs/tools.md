@@ -148,7 +148,7 @@ direct access to the result structure.
 
 ### `read_image`
 
-`read_image` (`src/tools/read_image.rs` over the engine in `src/vision.rs`)
+`read_image` (`src/tools/read_image.rs` over the engine in `src/tools/vision.rs`)
 pulls an on-disk image into context as a `tool_result` image block
 ([log-and-projection.md](log-and-projection.md)) — the pull half of the
 attachments design: an image enters the transcript only when the model asks,
@@ -397,7 +397,7 @@ after a host restart — gets the last 40 conversation lines, and the header say
 `tail` counts conversation lines as the transcript prints them, not log entries
 (docs/control-api.md). `since`/`tail`
 reads move the cursor to the end of what they returned; a `seq` read does not
-(`src/daemon/transcript/cursor.rs`). `interrupt` answers with what it stopped, read from
+(`src/protocol/transcript.rs`). `interrupt` answers with what it stopped, read from
 the status just before it signals, and signals nothing at an idle session. `archive`
 answers with the sessions that ended with it, its non-detached descendants
 (`Host::ending_with`).
@@ -595,8 +595,8 @@ the name and arguments as `{"name", "arguments"}`, deserializes to the typed
 shared state with a `RequestContext` naming efference and declaring no client
 capabilities (no wire, so the context that would ride in a request's `_meta` is
 handed over directly). The resulting `CallToolResult` is folded by the same
-renderer the connected providers use (`render_result` in `src/mcp.rs`): text
-blocks land verbatim; image blocks are realized through the `src/vision.rs`
+renderer the connected providers use (`render_result` in `src/tools/mcp.rs`): text
+blocks land verbatim; image blocks are realized through the `src/tools/vision.rs`
 engine at `read_image`'s default long edge — sized, encoded once, and stored in
 the result's `images` alongside a header line reporting realized size and
 visual-token cost; audio and binary-resource blocks land as placeholders naming
@@ -828,7 +828,7 @@ project root, with its own servers, as it has its own build directory.
 Besides the embedded crates, efference mounts servers it did *not* compile in —
 an arbitrary set the user declares in the config (`[mcp.servers.<name>]`,
 `src/config.rs`), spawned over stdio or reached over streamable HTTP. The
-implementation is `src/mcp.rs` (+ `src/mcp/stdio.rs`, `src/mcp/http.rs`);
+implementation is `src/tools/mcp.rs` (+ `src/tools/mcp/stdio.rs`, `src/tools/mcp/http.rs`);
 `Provider::Connected` is the toolbox variant. The MCP `client`/`server` role
 names describe wire direction only and stay inside that module; efference's
 vocabulary is *host mounts provider*.
@@ -855,7 +855,7 @@ as `=?base64?<standard base64 of the UTF-8 bytes>?=`.
 
 The derivation and value encoding are `mcplease::headers::standard_headers` —
 the same code a server validates with, so client and server cannot drift.
-`src/mcp/http.rs` attaches them at the one point that already holds the
+`src/tools/mcp/http.rs` attaches them at the one point that already holds the
 message, because what makes them useful is that they *agree* with the body: a
 server that enforces them answers a disagreement with a `HeaderMismatch` naming
 which field mismatched.
@@ -912,10 +912,10 @@ or nothing. `mcplease::client::Negotiation` runs the
 `initialize` handshake when a server answers that it has no such method —
 which is what deployed servers do today. Neither type performs I/O.
 
-That leaves `src/mcp.rs` one loop — `Session::round_trip`: send a request, read
+That leaves `src/tools/mcp.rs` one loop — `Session::round_trip`: send a request, read
 frames until the response with a matching id arrives — shared by both
 transports, and leaves the transports themselves as framing alone
-(`src/mcp/stdio.rs` reads and writes lines; `src/mcp/http.rs` POSTs and exposes
+(`src/tools/mcp/stdio.rs` reads and writes lines; `src/tools/mcp/http.rs` POSTs and exposes
 whatever the server answered with, one JSON body or a stream of SSE events, as
 a source of frames). Requests are strictly serialized — the loop issues one
 tool call at a time — so there is no demux task. Mounting is negotiation, then
@@ -956,7 +956,7 @@ interim result lands as an `is_error` result naming what the server asked for.
 
 Both revisions are reachable: a server that answers `server/discover` is
 mounted statelessly (no handshake, no `notifications/initialized`), and one
-that does not gets the handshake. Loopback tests in `src/mcp/test.rs` cover
+that does not gets the handshake. Loopback tests in `src/tools/mcp/test.rs` cover
 each path.
 
 Tool names reach the wire namespaced `<server>__<tool>`. Two underscores are
@@ -1035,7 +1035,7 @@ three ways — the env var, the path grant, and the expansion value are all view
   spotter's scope block additionally renders the alias line (`$TMPDIR` → the literal
   path), because a *bash* move writes `$TMPDIR/…` and the shell expands in-child — the
   spotter sees the variable, and the alias is what connects it to the granted path.
-- **Expanded in structured tool paths** (`src/expand.rs`). Bash gets the variable from
+- **Expanded in structured tool paths** (`src/tools/expand.rs`). Bash gets the variable from
   the child env; `read`/`write`/`edit`/… don't go through a shell, so the loop expands
   `$NAME`/`${NAME}` in their *path fields only* (per the same `path_spec` key map the
   classifier uses — file content is never rewritten) at one choke point upstream of

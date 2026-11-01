@@ -109,8 +109,7 @@ impl ConfigFile {
         let invalid = |e: String| std::io::Error::new(std::io::ErrorKind::InvalidData, e);
         let mut doc = self.doc.clone();
         apply_to_document(&mut doc, change);
-        let text =
-            crate::config_schemas::keep_directives_first(&self.doc.to_string(), doc.to_string());
+        let text = config_schemas::keep_directives_first(&self.doc.to_string(), doc.to_string());
         let config = parse(&self.path, &text).map_err(|e| invalid(e.to_string()))?;
         self.doc = text
             .parse()

@@ -79,7 +79,7 @@ export interface AskQuestion {
 }
 
 /** The question an `ask` call puts, when `calls[index]` is one with a usable
- * `question` — `process_monitor::ask_of_call` in src/process_monitor.rs. Anything else,
+ * `question` — `process_monitor::ask_of_call` in src/tools/process_monitor.rs. Anything else,
  * including an ask the loop answers with an error, stays an ordinary call. */
 export function askOfCall(
   calls: ToolCall[],

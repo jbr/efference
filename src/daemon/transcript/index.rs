@@ -64,7 +64,7 @@ impl<'a> Index<'a> {
                 } => {
                     let (_, calls) = assistant(output);
                     for (i, call) in calls.iter().enumerate() {
-                        let ask = crate::process_monitor::ask_of_call(&calls, i);
+                        let ask = crate::tools::process_monitor::ask_of_call(&calls, i);
                         let indexed = Call {
                             seq: entry.seq,
                             handle: call_label(entry.seq, i, calls.len()),

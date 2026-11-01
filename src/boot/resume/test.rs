@@ -528,7 +528,7 @@ async fn an_archived_worktree_is_restored_on_resume() {
     let preamble_before =
         frozen_preamble(&crate::record::persist::load(dir.join(LOG_NAME)).unwrap()).unwrap();
 
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     assert!(matches!(
         crate::worktree::retire(root.path(), "wt-fox", &env),
         crate::worktree::Retired::Removed { .. }

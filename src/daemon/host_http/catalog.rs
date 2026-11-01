@@ -2,9 +2,9 @@
 //! every connection's normalized listing with recent picks folded in.
 
 use super::{ErrorCode, Host, fail, host_of, missing_host};
-use crate::catalog::{ConnectionCatalog, ModelRole, Recent, assemble};
 use crate::daemon::views;
 use crate::inference::ConnectionInventory;
+use crate::inference::catalog::{ConnectionCatalog, ModelRole, Recent, assemble};
 use crate::protocol::answers::CatalogList;
 use std::time::Duration;
 use trillium::Conn;
@@ -21,13 +21,13 @@ fn recents(host: &Host, query: &str) -> Vec<(String, Recent)> {
     let Some(cwd) = param("cwd") else {
         return Vec::new();
     };
-    let scope = crate::history::Scope::for_request(
+    let scope = crate::config::history::Scope::for_request(
         std::path::Path::new(&cwd),
         param("config").as_deref().map(std::path::Path::new),
     );
     host.inference
         .history()
-        .recent_all(&scope, crate::history::now(), RECENT_LIMIT)
+        .recent_all(&scope, crate::config::history::now(), RECENT_LIMIT)
         .into_iter()
         .enumerate()
         .map(|(index, candidate)| {
@@ -80,11 +80,11 @@ async fn entry(
         (Some(endpoint), None) => {
             host.catalog.kick(&row.name, row.provider, endpoint.clone());
             host.catalog
-                .snapshot(&row.name, row.provider, crate::history::now())
+                .snapshot(&row.name, row.provider, crate::config::history::now())
         }
         (None, _) => host
             .catalog
-            .snapshot(&row.name, row.provider, crate::history::now()),
+            .snapshot(&row.name, row.provider, crate::config::history::now()),
     };
     assemble(
         &row.name,
@@ -179,7 +179,7 @@ pub(crate) async fn catalog_one(conn: Conn) -> Conn {
                 );
             }
         },
-        None => crate::catalog::CATALOG_TTL,
+        None => crate::inference::catalog::CATALOG_TTL,
     };
     let picks = recents(&host, query);
     let mut answer = entry(&host, &row, &picks, Some(max_age)).await;

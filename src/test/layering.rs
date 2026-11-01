@@ -2,16 +2,17 @@
 //! direction*).
 //!
 //! The rows of [`TABLE`] hold. `record::names` imports no other module. `record::log`
-//! imports none but `record::names`, which is placed below it. `platform` imports no other
-//! group, and `record` imports only `platform`. And a module outside [`OUTER`] imports
-//! nothing from [`OUTER`], apart from the imports named in [`OPEN_EDGES`]: a new one fails
-//! here instead of joining them, and a named one that goes away fails until its line is
-//! deleted.
+//! imports none but `record::names`, which is placed below it. Each group imports only the
+//! groups before it in this order: `platform`, `record`, `config`, `inference`, `protocol`,
+//! `tools`, `curation`. And a module outside [`OUTER`] imports nothing from [`OUTER`], apart
+//! from the imports named in [`OPEN_EDGES`]: a new one fails here instead of joining them,
+//! and a named one that goes away fails until its line is deleted.
 //!
 //! A row names a group (`platform`), a module (`agent`) or a module inside a group
-//! (`record::log`), and matches by module-path prefix: the scan keys a file by its module
-//! path from the crate root (`record/log/summary.rs` is `record::log::summary`) and an
-//! import by the path it spells.
+//! (`record::log`), and matches by module-path prefix. A group named for one of its modules
+//! (`config`) has that module's path. The scan keys a file by its module path from the
+//! crate root (`record/log/summary.rs` is `record::log::summary`) and an import by the path
+//! it spells.
 //!
 //! The scan is over text, as `daemon/test/statics.rs` is: it skips test files and
 //! comments, and reads every spelling of a path that names a module of the crate
@@ -104,6 +105,51 @@ const TABLE: &[Row] = &[
         importers: Modules::These(&["record"]),
         imports: Modules::Except(&["platform", "record"]),
         why: "record imports only platform",
+        open: &[],
+    },
+    Row {
+        importers: Modules::These(&["config"]),
+        imports: Modules::Except(&["platform", "record", "config"]),
+        why: "config imports only platform and record",
+        open: &[],
+    },
+    Row {
+        importers: Modules::These(&["inference"]),
+        imports: Modules::Except(&["platform", "record", "config", "inference"]),
+        why: "inference imports only platform, record and config",
+        open: &[],
+    },
+    Row {
+        importers: Modules::These(&["protocol"]),
+        imports: Modules::Except(&["platform", "record", "config", "inference", "protocol"]),
+        why: "protocol imports only platform, record, config and inference",
+        open: &[],
+    },
+    Row {
+        importers: Modules::These(&["tools"]),
+        imports: Modules::Except(&[
+            "platform",
+            "record",
+            "config",
+            "inference",
+            "protocol",
+            "tools",
+        ]),
+        why: "tools imports only platform, record, config, inference and protocol",
+        open: &[],
+    },
+    Row {
+        importers: Modules::These(&["curation"]),
+        imports: Modules::Except(&[
+            "platform",
+            "record",
+            "config",
+            "inference",
+            "protocol",
+            "tools",
+            "curation",
+        ]),
+        why: "curation imports only platform, record, config, inference, protocol and tools",
         open: &[],
     },
     Row {
@@ -219,7 +265,7 @@ fn the_table_forbids_what_it_names() {
     assert!(forbidden("record::names", "platform::state"));
     assert!(forbidden("record::names", "protocol"));
     assert!(!forbidden("record::names::sources", "record::names::tools"));
-    assert!(forbidden("record::log", "api"));
+    assert!(forbidden("record::log", "inference::api"));
     assert!(forbidden("record::log", "record::persist"));
     assert!(forbidden(
         "record::log::summary",
@@ -243,6 +289,54 @@ fn the_table_forbids_what_it_names() {
         "record::project::render",
         "record::names::tools"
     ));
+    // `config` imports platform and record, and its own modules.
+    assert!(forbidden("config::policy", "inference::registry"));
+    assert!(forbidden("config::user_config", "inference::api::Provider"));
+    assert!(forbidden("config", "tools::Toolbox"));
+    assert!(!forbidden("config::policy", "platform::state"));
+    assert!(!forbidden("config::policy", "record::log::Payload"));
+    assert!(!forbidden("config::raw", "config::policy::Role"));
+    assert!(!forbidden("config", "config::env_table::Table"));
+    assert!(forbidden("platform::secrets", "config::user_config"));
+    assert!(forbidden("record::persist", "config::env_table::Masker"));
+    // `inference` imports platform, record and config, and its own modules; `protocol` those
+    // and `inference`.
+    assert!(forbidden("inference::api", "protocol::stream"));
+    assert!(forbidden("inference::catalog", "tools::Toolbox"));
+    assert!(!forbidden(
+        "inference::api",
+        "config::user_config::Defaults"
+    ));
+    assert!(!forbidden("inference::api", "record::log::Provider"));
+    assert!(!forbidden(
+        "inference::registry",
+        "inference::api::Endpoint"
+    ));
+    assert!(!forbidden("inference", "inference::catalog::Catalog"));
+    assert!(forbidden("protocol::state", "tools::Toolbox"));
+    assert!(forbidden("protocol", "triage"));
+    assert!(!forbidden("protocol::sessions", "inference::api::Error"));
+    assert!(!forbidden("protocol::state", "record::log::Payload"));
+    assert!(!forbidden("protocol", "protocol::turns"));
+    // `tools` imports those and `protocol`, and its own modules.
+    assert!(forbidden("tools::bash", "curation::triage"));
+    assert!(forbidden("tools::mcp", "agent::Frontend"));
+    assert!(forbidden("tools", "daemon::Host"));
+    assert!(!forbidden("tools::bash", "protocol::state"));
+    assert!(!forbidden("tools::mcp", "inference::api::Error"));
+    assert!(!forbidden("tools::process_monitor", "config::policy"));
+    assert!(!forbidden("tools", "tools::mcp::ConnectedProvider"));
+    assert!(!forbidden("tools::toolbox", "tools::bash::Bash"));
+    assert!(forbidden("protocol::state", "tools::process_monitor"));
+    // `curation` imports those and `tools`, and its own modules.
+    assert!(forbidden("curation::triage", "agent::Frontend"));
+    assert!(forbidden("curation::compact", "daemon::Session"));
+    assert!(forbidden("curation", "session::Session"));
+    assert!(!forbidden("curation::triage", "tools::process_monitor"));
+    assert!(!forbidden("curation::spotter", "config::policy::Verdict"));
+    assert!(!forbidden("curation::compact", "curation::digest::digest"));
+    assert!(!forbidden("curation::triage", "inference::api::Error"));
+    assert!(forbidden("tools::mcp", "curation::triage::is_triage_tool"));
     // Modules outside both groups may import them, the outer modules included.
     assert!(!forbidden("agent", "record::log"));
     assert!(!forbidden("agent", "record::names"));

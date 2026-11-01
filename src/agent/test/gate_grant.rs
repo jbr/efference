@@ -16,7 +16,7 @@ async fn gate_on(
         shared.set_review_level(level);
     }
     let mut frontend = RecordingFrontend::answering(Approval::Abort);
-    let spotter = crate::spotter::StaticSpotter {
+    let spotter = crate::curation::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "outside the mission".into(),
     };
@@ -113,7 +113,7 @@ async fn a_command_in_an_ungranted_path_and_a_deny_offer_nothing() {
 async fn a_bound_gate_offers_nothing() {
     let shared = parent_with(crate::config::Config::default());
     let mut frontend = RecordingFrontend::answering(Approval::Abort);
-    let spotter = crate::spotter::StaticSpotter {
+    let spotter = crate::curation::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "outside the mission".into(),
     };

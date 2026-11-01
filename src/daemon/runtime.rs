@@ -7,8 +7,8 @@
 //! owner holds, and its own child `Swansong` is the one handle that stops it.
 
 use super::*;
-use crate::api::{Client, Error, ModelCapabilities};
-use crate::triage::Triager;
+use crate::curation::triage::Triager;
+use crate::inference::api::{Client, Error, ModelCapabilities};
 use tokio::sync::oneshot;
 use trillium_tokio::Swansong;
 
@@ -28,12 +28,12 @@ pub struct SessionBoot<S: Spotter> {
     pub model: String,
     /// The role selections behind `model`; `None` only for a boot built by hand (tests).
     pub inference: Option<crate::inference::InferenceIdentity>,
-    pub env_policy: crate::env_table::EnvPolicy,
+    pub env_policy: crate::config::env_table::EnvPolicy,
     /// Leave the scratch dir on disk when the session ends (docs/tools.md).
     pub keep_scratch: bool,
     /// The triage model's prices, for its keepalive's affordability check
     /// (docs/transport.md). `None` on a shared triage, which has no keepalive of its own.
-    pub triage_prices: Option<crate::api::TokenPrices>,
+    pub triage_prices: Option<crate::inference::api::TokenPrices>,
     /// When the session's main prefix was abandoned: set by a resume on another main
     /// model, so the session starts cold (docs/resumption.md).
     pub cache_lost_at: Option<crate::record::log::Timestamp>,
@@ -230,11 +230,11 @@ struct CachePolicy {
     cacheable: bool,
     /// The main lineage's ping interval.
     ping_at: Duration,
-    prices: Option<crate::api::TokenPrices>,
+    prices: Option<crate::inference::api::TokenPrices>,
     /// `[transport] keepalive-interval`, which applies to both lineages.
     configured_interval: Option<Duration>,
     /// The triage model's prices, for its own lineage's affordability check.
-    triage_prices: Option<crate::api::TokenPrices>,
+    triage_prices: Option<crate::inference::api::TokenPrices>,
 }
 
 /// The kickoff: with a `first-turn` and nothing yet said, the harness submits

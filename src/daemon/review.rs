@@ -15,7 +15,7 @@
 
 use super::*;
 
-use crate::policy::ReviewLevel;
+use crate::config::policy::ReviewLevel;
 
 /// What a session's review reads of the host that adopted it (docs/permissions.md): the
 /// supervisor pointer the host holds for each session, and whether a session is hosted.

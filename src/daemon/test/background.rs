@@ -75,7 +75,7 @@ async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
             .await;
         Interrupt::Detach
     };
-    let outcome = crate::bash::Bash::default()
+    let outcome = crate::tools::bash::Bash::default()
         .run(
             &serde_json::json!({ "command": "echo early; sleep 0.6; echo late" }),
             detach,
@@ -94,8 +94,8 @@ async fn adopt_background_continues_the_drain_and_notifies_on_exit() {
         )
         .await;
     let detached = match outcome {
-        crate::bash::Outcome::Detached(d) => d,
-        crate::bash::Outcome::Done(r) => panic!("expected a detach, got {:?}", r.content),
+        crate::tools::bash::Outcome::Detached(d) => d,
+        crate::tools::bash::Outcome::Done(r) => panic!("expected a detach, got {:?}", r.content),
     };
     let id = fg_id.lock().unwrap().take().expect("registered at spawn");
     let handle = shared.adopt_background(*detached, id);

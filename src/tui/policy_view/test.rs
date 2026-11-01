@@ -156,7 +156,7 @@ fn proposals_as_the_host_sends_them_join_their_sections() {
 /// The position in force is reported only where it differs from the dial.
 #[test]
 fn the_position_in_force_is_stated_only_when_it_differs() {
-    use crate::policy::ReviewLevel::{HumanOnly, SpotterHuman, Supervisor};
+    use crate::config::policy::ReviewLevel::{HumanOnly, SpotterHuman, Supervisor};
     let mut topics = Topics {
         role: Some(RoleView::default()),
         review_level: Some(HumanOnly),

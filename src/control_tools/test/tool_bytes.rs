@@ -56,7 +56,7 @@ fn pinned(name: &str, array: &Value) {
 fn the_in_session_tools_array_is_pinned() {
     let host = crate::daemon::Host::new(
         crate::inference::InferenceRegistry::empty(),
-        crate::env_table::EnvSnapshot::new(Default::default())
+        crate::config::env_table::EnvSnapshot::new(Default::default())
             .expect("an empty environment is valid"),
     );
     let mut toolbox = crate::tools::Toolbox::new(Vec::new());

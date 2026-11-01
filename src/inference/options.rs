@@ -16,8 +16,8 @@ use super::{
     Connection, InferenceRegistry, ModelReference, ResolvedRole, ResolvedTriage, SessionInference,
     TriageChoice, TriageModel, role_secret_values,
 };
-use crate::api::Error;
-use crate::user_config::ModelSelection;
+use crate::config::user_config::ModelSelection;
+use crate::inference::api::Error;
 
 /// The accepted temperature, stated once. Both control routes and the CLI reach
 /// it through [`InferenceRegistry::resolve_options`], so none of them carries its
@@ -254,7 +254,10 @@ impl InferenceRegistry {
         &self,
         options: &SessionOptions,
         project_effort: Option<&str>,
-        history: Option<(&crate::history::History, &crate::history::Scope)>,
+        history: Option<(
+            &crate::config::history::History,
+            &crate::config::history::Scope,
+        )>,
     ) -> ResolvedOptions {
         let mut issues = Vec::new();
         let main = self.resolve_main(options, history, &mut issues);
@@ -300,7 +303,10 @@ impl InferenceRegistry {
     fn resolve_main(
         &self,
         options: &SessionOptions,
-        history: Option<(&crate::history::History, &crate::history::Scope)>,
+        history: Option<(
+            &crate::config::history::History,
+            &crate::config::history::Scope,
+        )>,
         issues: &mut Vec<Issue>,
     ) -> Effective<ModelSelection> {
         match self.requested(
@@ -321,7 +327,7 @@ impl InferenceRegistry {
             // (docs/transport.md).
             Requested::Omitted => {
                 if let Some((store, scope)) = history
-                    && let Some(candidate) = store.default(scope, crate::history::now())
+                    && let Some(candidate) = store.default(scope, crate::config::history::now())
                     && let Some(selected) =
                         self.select_if_usable(&candidate.connection, &candidate.model)
                 {
@@ -679,7 +685,7 @@ impl InferenceRegistry {
     pub fn resolve_spotter_role(
         &self,
         spotter: Option<&str>,
-    ) -> Result<(ModelSelection, crate::api::Endpoint), Error> {
+    ) -> Result<(ModelSelection, crate::inference::api::Endpoint), Error> {
         let resolved = self.resolve_options(
             &SessionOptions {
                 spotter_model: spotter.map(str::to_string),

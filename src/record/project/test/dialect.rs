@@ -93,6 +93,10 @@ fn each_encoder_drops_the_foreign_arm_silently() {
     );
 
     let turns = vec![WireTurn::text("hello"), messages_turn()];
-    let input = crate::api::encode_responses(&turns, "", crate::api::PromptCachePolicy::None);
+    let input = crate::inference::api::encode_responses(
+        &turns,
+        "",
+        crate::inference::api::PromptCachePolicy::None,
+    );
     assert_eq!(input.len(), 1, "only the user turn survives: {input:?}");
 }

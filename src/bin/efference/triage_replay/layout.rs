@@ -2,11 +2,11 @@
 //! report, and the per-triage line a live replay prints before its draws.
 
 use super::Recorded;
-use efference::record::log::LogEntry;
-use efference::record::project::Reader;
-use efference::triage::{
+use efference::curation::triage::{
     Pending, TRIAGED_TAIL_HIGH_WATER, TRIAGED_TAIL_LOW_WATER, text_view_layout,
 };
+use efference::record::log::LogEntry;
+use efference::record::project::Reader;
 
 /// One line for the triage `g`: the history's sizes and the cuts made so far.
 pub(super) fn describe(entries: &[LogEntry], g: &Recorded, reader: Reader) -> String {

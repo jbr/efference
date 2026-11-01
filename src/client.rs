@@ -17,8 +17,10 @@ use anyhow::{Context, Result, anyhow};
 use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
-pub use crate::catalog::{CatalogModel, ConnectionCatalog, ModelRole, Status as CatalogStatus};
 use crate::frontend::SubmittedTurn;
+pub use crate::inference::catalog::{
+    CatalogModel, ConnectionCatalog, ModelRole, Status as CatalogStatus,
+};
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 use crate::protocol::sessions::{
     ArchivedSession, CreateSession, ListedSession, PatchSession, SessionOptionsRequest,

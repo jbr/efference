@@ -29,7 +29,7 @@ impl Host {
     pub(crate) fn create(
         self: &Arc<Self>,
         mut body: CreateSession,
-        lineage: crate::env::Lineage,
+        lineage: crate::config::env::Lineage,
     ) -> Result<Arc<Starting>, String> {
         if !body.cwd.is_absolute() {
             return Err(format!("cwd must be absolute: {}", body.cwd.display()));
@@ -39,12 +39,13 @@ impl Host {
         // (docs/worktrees.md).
         let project = crate::record::session_dir::worktree::project_of(&body.cwd)
             .unwrap_or_else(|| body.cwd.clone());
-        let directories = crate::policy::Directories::new(project.clone(), body.cwd.clone());
+        let directories =
+            crate::config::policy::Directories::new(project.clone(), body.cwd.clone());
         // An environment the caller supplied is the base, and nothing is run.
         let supplied_env = match body.env.take() {
-            Some(env) => {
-                Some(crate::env_table::EnvSnapshot::new(env).map_err(|e| format!("env: {e}"))?)
-            }
+            Some(env) => Some(
+                crate::config::env_table::EnvSnapshot::new(env).map_err(|e| format!("env: {e}"))?,
+            ),
             None => None,
         };
         let plan = self.plan_creation(&body, &project)?;
@@ -114,7 +115,7 @@ impl Host {
         // selected. Project effort is boot's to apply, so it is not resolved here.
         // History is resolved here: the omitted branch defaults to past picks
         // in this project, and the write below records an explicit pick.
-        let scope = crate::history::Scope::for_request(project, body.config.as_deref());
+        let scope = crate::config::history::Scope::for_request(project, body.config.as_deref());
         let resolved = self.inference.resolve_options(
             &body.options,
             None,
@@ -144,8 +145,8 @@ impl Host {
         // never fails a creation.
         let pick = main_explicit.then(|| {
             let (selection, _) = inference.main();
-            crate::history::Pick {
-                at: crate::history::now(),
+            crate::config::history::Pick {
+                at: crate::config::history::now(),
                 cwd: scope.cwd.to_string_lossy().into_owned(),
                 config_key: scope.config_key.clone(),
                 connection: selection.connection.clone(),
@@ -156,8 +157,8 @@ impl Host {
         // The explicit separate triage beside the main model it runs with, kept
         // for later pairing defaults (docs/state-store.md). Never the shared
         // fallback, which has no triage client to name.
-        let triage_pick = crate::history::TriagePick::for_creation(
-            crate::history::now(),
+        let triage_pick = crate::config::history::TriagePick::for_creation(
+            crate::config::history::now(),
             &scope,
             triage_explicit,
             inference.main().0,
@@ -170,7 +171,7 @@ impl Host {
         // the template configuration's spelling, never the session's own copy, so
         // the index can hand a client back exactly what to create with.
         let launch = crate::remembered::Project {
-            last_used_at: crate::history::now(),
+            last_used_at: crate::config::history::now(),
             cwd: scope.cwd.clone(),
             config_key: scope.config_key.clone(),
             config: body.config.clone(),
@@ -191,9 +192,9 @@ impl Host {
         starting: &Arc<Starting>,
         body: CreateSession,
         plan: CreationPlan,
-        lineage: crate::env::Lineage,
-        supplied_env: Option<crate::env_table::EnvSnapshot>,
-        directories: crate::policy::Directories,
+        lineage: crate::config::env::Lineage,
+        supplied_env: Option<crate::config::env_table::EnvSnapshot>,
+        directories: crate::config::policy::Directories,
     ) -> Result<(), String> {
         let id = starting.id().to_string();
         let project = directories.project().to_path_buf();
@@ -269,7 +270,7 @@ impl Host {
 struct CreationPlan {
     options: SessionOptions,
     inference: crate::inference::SessionInference,
-    pick: Option<crate::history::Pick>,
-    triage_pick: Option<crate::history::TriagePick>,
+    pick: Option<crate::config::history::Pick>,
+    triage_pick: Option<crate::config::history::TriagePick>,
     launch: crate::remembered::Project,
 }

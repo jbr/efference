@@ -216,7 +216,7 @@ pub(crate) async fn start(
 pub(crate) async fn run(
     bind: Option<&str>,
     creation: Creation,
-    display: efference::user_config::TuiConfig,
+    display: efference::config::user_config::TuiConfig,
 ) -> CliResult {
     if let Some(bind) = bind {
         return run_browser(bind, creation).await;

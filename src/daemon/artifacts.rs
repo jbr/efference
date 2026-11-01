@@ -26,7 +26,7 @@ use trillium::{Conn, KnownHeaderName};
 use trillium_router::{Router, RouterConnExt};
 
 use super::{Host, Session};
-use crate::policy::Verdict;
+use crate::config::policy::Verdict;
 use crate::record::artifact::{Fence, Kind, fences};
 use crate::record::log::{LogEntry, Payload, ToolCall};
 
@@ -285,7 +285,7 @@ async fn file_text(session: &Session, path: &str) -> Result<String, String> {
         serde_json::json!({ "paths": [path] }),
     );
     let verdict =
-        crate::policy::classify(&session.directories(), &session.effective_config(), &read);
+        crate::config::policy::classify(&session.directories(), &session.effective_config(), &read);
     if !matches!(verdict, Verdict::Clear) {
         return Err("this session cannot read it without asking".into());
     }

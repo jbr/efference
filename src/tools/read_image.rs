@@ -1,6 +1,6 @@
 //! `read_image`: pull an on-disk image into context as a `tool_result` image
 //! block (docs/tools.md). The thin tool half — reading, sizing knobs, and the
-//! result header — over [`crate::vision`], which owns decode/size/encode.
+//! result header — over [`crate::tools::vision`], which owns decode/size/encode.
 //!
 //! Pull-based on purpose: an image enters the transcript only when the model
 //! asks, at the resolution it asks for, and the header reports the realized
@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 
 use crate::record::log::{RawResult, ResultImage};
-use crate::vision::{
+use crate::tools::vision::{
     self, Crop, DEFAULT_LONG_EDGE, HIGH_RES_MAX_EDGE, HIGH_RES_MAX_TOKENS, resized_size,
 };
 use base64::Engine;
@@ -96,7 +96,7 @@ impl ReadImage {
             Ok(region) => region,
             Err(message) => return RawResult::error(message),
         };
-        let absolute = crate::policy::absolutize(path, &self.cwd);
+        let absolute = crate::config::policy::absolutize(path, &self.cwd);
         let bytes = match std::fs::read(&absolute) {
             Ok(bytes) => bytes,
             Err(e) => {

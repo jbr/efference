@@ -3,7 +3,7 @@
 Consolidation replaces newly completed working material with a summary for
 continuation: the agent writes it, having seen the region in full. (The harness
 writing a summary from the digest is compaction, [summary.md](summary.md).)
-`src/consolidate.rs` advertises the agent-called tool; `src/consolidate/span.rs` selects inclusive ranges and measures projected tool
+`src/curation/consolidate.rs` advertises the agent-called tool; `src/curation/consolidate/span.rs` selects inclusive ranges and measures projected tool
 content. `src/agent/consolidation.rs` schedules opportunistic checks. Projection
 lives in `src/record/project.rs` and `src/record/project/semantic.rs`.
 

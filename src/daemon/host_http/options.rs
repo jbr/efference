@@ -182,7 +182,7 @@ fn session_options_response(host: &Host, decoded: DecodedOptions) -> String {
     // will not scope reads as no history, never an error.
     let scope = cwd
         .as_ref()
-        .map(|cwd| crate::history::Scope::for_request(cwd, config.as_deref()));
+        .map(|cwd| crate::config::history::Scope::for_request(cwd, config.as_deref()));
     // Effort can be inherited from the project config, so preview reads the one
     // creation would select. A config that will not load is an issue, never its
     // contents or the parser's view of them.

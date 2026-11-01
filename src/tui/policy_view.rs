@@ -8,7 +8,7 @@
 //! key resolves a row, so nothing here goes stale.
 
 use super::topics::Topics;
-use crate::policy::ReviewLevel;
+use crate::config::policy::ReviewLevel;
 use crate::record::log::ConfigChange;
 
 /// One line in a section: a committed grant, or a *proposed* one (rendered tentatively). A

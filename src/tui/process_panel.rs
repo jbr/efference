@@ -66,7 +66,7 @@ impl BgProc {
     /// The prose form of the id (`p#3`) — what the panel shows, matching the vocabulary
     /// the model and the transcript use.
     pub(crate) fn handle(&self) -> String {
-        crate::process_monitor::handle(self.process.id)
+        crate::tools::process_monitor::handle(self.process.id)
     }
 
     /// Append a `process_output` chunk to the tail and stamp the arrival. The tail is

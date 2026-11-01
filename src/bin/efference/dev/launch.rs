@@ -6,7 +6,7 @@ use super::*;
 /// Launch the TUI on the fixed element gallery — no daemon, no socket. With
 /// `stream`, a scripted emitter plays live tool-call events over it on a timer.
 pub(crate) async fn gallery(
-    display: efference::user_config::TuiConfig,
+    display: efference::config::user_config::TuiConfig,
     stream: bool,
     chunk: usize,
     interval: u64,
@@ -42,7 +42,7 @@ pub(super) async fn open(print: bool) -> CliResult {
 pub(super) async fn view(
     session: Option<String>,
     name: Option<String>,
-    display: efference::user_config::TuiConfig,
+    display: efference::config::user_config::TuiConfig,
 ) -> CliResult {
     let Some(target) = session.or(name) else {
         return Err(format!(

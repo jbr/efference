@@ -6,7 +6,7 @@ use crate::record::persist::SessionMetadata;
 
 /// The spotter and triage selections `inference` resolved, in the shape the log records.
 pub(super) fn roles(inference: &crate::inference::SessionInference) -> RecordedRoles {
-    let selection = |value: &crate::user_config::ModelSelection| {
+    let selection = |value: &crate::config::user_config::ModelSelection| {
         LoggedInference::new(&*value.connection, value.provider, &*value.model)
     };
     RecordedRoles {

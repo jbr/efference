@@ -2,7 +2,7 @@
 
 use super::*;
 
-use crate::process_monitor::BgView;
+use crate::tools::process_monitor::BgView;
 
 /// Where a triage request's text and thinking go: the `output` class, as
 /// `triage_delta` and `triage_thinking_delta` (docs/control-api.md). `call_ids` are the
@@ -104,8 +104,8 @@ pub(super) fn open_rider(shared: &Arc<Session>, turn: Turn) -> Result<Rider, Err
         shared.append(turn, Payload::Ambient(queued))?;
     }
     let entries = shared.snapshot();
-    let shown = crate::inbox::rider(&entries);
-    let forced = crate::inbox::unshown(&entries)
+    let shown = crate::curation::inbox::rider(&entries);
+    let forced = crate::curation::inbox::unshown(&entries)
         .into_iter()
         .filter(|n| n.wake)
         .map(|n| n.seq)
@@ -207,13 +207,13 @@ pub(super) async fn triage_and_record(
     Ok(starts_trajectory)
 }
 
-/// Dismiss the notifications that [`MAX_UNMENTIONED_SHOWS`](crate::inbox::MAX_UNMENTIONED_SHOWS)
+/// Dismiss the notifications that [`MAX_UNMENTIONED_SHOWS`](crate::curation::inbox::MAX_UNMENTIONED_SHOWS)
 /// triages have shown without any verdict mentioning them (docs/inbox.md). Each gets a
 /// `Telemetry::InboxExpired` entry, which projects to nothing and takes the notification
-/// out of [`active_shown`](crate::inbox::active_shown). Run after a triage's entries are
+/// out of [`active_shown`](crate::curation::inbox::active_shown). Run after a triage's entries are
 /// written, so the count includes it.
 pub(super) fn expire_unmentioned(shared: &Arc<Session>, turn: Turn) -> Result<(), Error> {
-    for (seq, shows) in crate::inbox::unmentioned_past_cap(&shared.snapshot()) {
+    for (seq, shows) in crate::curation::inbox::unmentioned_past_cap(&shared.snapshot()) {
         shared.append(
             turn,
             Payload::Telemetry(crate::record::log::Telemetry::InboxExpired { seq, shows }),

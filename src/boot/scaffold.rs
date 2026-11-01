@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use super::CONFIG_NAME;
-use crate::api::Error;
 use crate::config::{ConfigSource, LoadedConfig};
+use crate::inference::api::Error;
 use crate::record::session_dir::SESSION_BASE;
 
 /// Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).

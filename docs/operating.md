@@ -486,7 +486,7 @@ exists, else to the provider's cheap band, so that is a working configuration
 rather than a gap. The first run asks no role at all: a new user cannot yet
 know what a spotter is, and the new-session form names the current main model.
 Declining the whole visit is a complete answer and writes no `[defaults]` at
-all: `src/user_config.rs` treats the table as optional, and an omitted model
+all: `src/config/user_config.rs` treats the table as optional, and an omitted model
 with no past pick is a refusal naming the choice.
 
 **Managing what is already there** opens on a top level of three entries —

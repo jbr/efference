@@ -2,7 +2,7 @@
 //! `~/.efference/config.toml` and startup environment a host loads
 //! (docs/transport.md), resolved once per invocation.
 
-use efference::api::{Endpoint, Error};
+use efference::inference::api::{Endpoint, Error};
 use efference::inference::{InferenceRegistry, SessionInference, TriageChoice};
 
 /// Load the operator's connections from this process's environment, with the
@@ -10,13 +10,14 @@ use efference::inference::{InferenceRegistry, SessionInference, TriageChoice};
 /// (the spotter's, docs/model-catalog.md) is the one a host session would get.
 pub(crate) fn registry() -> Result<InferenceRegistry, Error> {
     let cwd = std::env::current_dir()?;
-    let env = efference::env_table::EnvSnapshot::capture()?;
+    let env = efference::config::env_table::EnvSnapshot::capture()?;
     let secrets = std::sync::Arc::new(efference::platform::secrets::Secrets::configured(
-        efference::user_config::InferenceConfig::user_secret_commands()?,
+        efference::config::user_config::InferenceConfig::user_secret_commands()?,
     ));
     let registry = InferenceRegistry::load(&cwd, &env, &secrets)?;
-    let catalog =
-        efference::catalog::Catalog::new(registry.history().state_path().map(ToOwned::to_owned));
+    let catalog = efference::inference::catalog::Catalog::new(
+        registry.history().state_path().map(ToOwned::to_owned),
+    );
     Ok(registry.with_catalog(catalog))
 }
 

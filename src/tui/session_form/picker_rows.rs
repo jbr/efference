@@ -9,8 +9,8 @@
 
 use super::matcher::{Kind, Node, rank};
 use super::*;
-use crate::api::Price;
 use crate::client::{CatalogModel, CatalogStatus};
+use crate::inference::api::Price;
 
 /// Recents the root lists above the connections, main role only.
 pub(super) const ROOT_RECENTS: usize = 5;

@@ -31,14 +31,14 @@ use trillium_router::{Router, RouterConnExt};
 use trillium_sse::{Eventable, sse};
 
 use crate::agent;
-use crate::api::{
+use crate::inference::api::{
     Client, Error, RequestUsage, Streamed, ToolChoice, UpstreamFailureState, UpstreamRetryState,
     Usage, upstream_failure_state, upstream_retry_state,
 };
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
+use crate::curation::spotter::Spotter;
 use crate::frontend::{Frontend, GateOptions, SubmittedTurn};
-use crate::process_monitor::{BgView, ProcessMonitor};
 use crate::protocol::state::{
     BlockedReason, ConfigRepair, LoopPhase, PendingProposal, SessionIdentity, Stall, StallReason,
     Topic,
@@ -53,7 +53,7 @@ use crate::record::persist::Log;
 use crate::record::project::{
     ApiMessage, ImagePlacement, Retention, WireTurn, project_semantic, project_with,
 };
-use crate::spotter::Spotter;
+use crate::tools::process_monitor::{BgView, ProcessMonitor};
 use crate::tools::{Interrupt, Toolbox};
 
 /// The prefix session-scoped log lines carry, the shape the lifecycle
@@ -74,7 +74,7 @@ type Interleaving = Box<dyn FnOnce(&Session) + Send>;
 pub struct Session {
     /// Immutable: the project (config, grants) and the working directory (tools and
     /// child execution), which differ only inside a worktree (docs/control-channel.md).
-    directories: crate::policy::Directories,
+    directories: crate::config::policy::Directories,
     /// The session's id — the storage directory's name, known at boot
     /// (docs/control-channel.md). None in tests and offline sessions.
     id: Option<String>,
@@ -296,12 +296,12 @@ pub struct Session {
     /// The Codex backend's subscription windows as of the last response that
     /// carried them (`api/plan.rs`), shared with the HTTP client and published
     /// under `usage.plan`. `None` for every other provider. Transport-only.
-    plan: crate::api::PlanState,
+    plan: crate::inference::api::PlanState,
     /// The separate triage client's own failure and plan cells (docs/control-api.md),
     /// set once at boot when the triage runs on its own model and never set when it
     /// borrows the agent's client. Their presence is what makes `triage_upstream_failure`,
     /// `usage.triage_plan`, and `usage.triage_cold_streak` non-null. Transport-only.
-    triage_client: std::sync::OnceLock<(UpstreamFailureState, crate::api::PlanState)>,
+    triage_client: std::sync::OnceLock<(UpstreamFailureState, crate::inference::api::PlanState)>,
     /// Cumulative triage retention (docs/triage.md), folded lazily from the
     /// log behind a cursor rather than accumulated at the append sites. Unlike the
     /// transport telemetry above this is **derived from the canonical record**, so a
@@ -314,7 +314,7 @@ pub struct Session {
     /// via [`Session::set_capabilities`]. `None` only in tests and offline verbs
     /// that never fetched; `GET /state` then reports `context: null`.
     /// Transport-only: never logged or projected.
-    capabilities: Mutex<Option<crate::api::ModelCapabilities>>,
+    capabilities: Mutex<Option<crate::inference::api::ModelCapabilities>>,
     /// Session cost telemetry (docs/transport.md): the running sum of
     /// per-generation **billed** costs fetched from the provider's accounting
     /// endpoint — authoritative, never modeled from a rate card. Behind its own
@@ -391,15 +391,15 @@ pub struct Session {
     /// The prefix-promotion probe ledger (docs/permissions.md): per-prefix
     /// seen-counts + probe votes, the state the descent reads to decide which prefix (if any) to ask
     /// the spotter to vouch for. Derived from the log's `Spot` entries (folded at startup via
-    /// [`crate::policy::probe_ledger`], maintained incrementally as the loop assesses moves), never on
+    /// [`crate::config::policy::probe_ledger`], maintained incrementally as the loop assesses moves), never on
     /// the wire — like `effective`, behind a lock because the loop mutates it mid-session.
-    probes: Mutex<crate::policy::ProbeLedger>,
+    probes: Mutex<crate::config::policy::ProbeLedger>,
     /// The session's resolved `[env]` policy (docs/env.md): the strip set every
     /// background spawn applies, and the masker installed on the log. Not behind
     /// a lock — the strip list is fixed at boot, and the masker owns its own
     /// append-only interior state, so a config edit adds needles without
     /// replacing the policy.
-    env_policy: crate::env_table::EnvPolicy,
+    env_policy: crate::config::env_table::EnvPolicy,
     /// The operator's **review level** (docs/permissions.md), stored as an
     /// `AtomicU8` ordinal so it is lock-free and **runtime-mutable** (the `PATCH /loop {review_level}` verb,
     /// not just a boot flag). The loop's cascade reads it ([`Session::review_level`]) to decide who
@@ -431,9 +431,9 @@ pub struct Session {
     /// projections of this one value. `None` in tests and non-executing contexts.
     scratch: Option<PathBuf>,
     /// The frozen env map for structured-tool path expansion
-    /// ([`crate::expand`]): `{TMPDIR: scratch}` when a scratch dir exists, else
+    /// ([`crate::tools::expand`]): `{TMPDIR: scratch}` when a scratch dir exists, else
     /// empty — every `$NAME` then errors, which is the fail-closed default.
-    expander: crate::expand::Expander,
+    expander: crate::tools::expand::Expander,
     /// The session's full tool catalog, keyed by wire name — every name the
     /// turn's `tools[]` can carry, the toolbox's mounted providers *and* the
     /// harness's own loop-owned family (`consolidate`, the process-monitor/inbox
@@ -455,7 +455,7 @@ impl Session {
         self.directories.working()
     }
     /// The directories the permission classifier resolves against (docs/permissions.md).
-    pub fn directories(&self) -> crate::policy::Directories {
+    pub fn directories(&self) -> crate::config::policy::Directories {
         self.directories.clone()
     }
     /// Name the session's web path (docs/web-bind.md): `/sessions/<id>/` under
@@ -524,7 +524,7 @@ impl Session {
     /// The environment every child this session spawns receives — the base its
     /// `bash` children get, strips and injections applied (docs/env.md). Handed
     /// to a session-driven `create` as the new session's base.
-    pub fn child_env(&self) -> crate::env_table::ChildEnv {
+    pub fn child_env(&self) -> crate::config::env_table::ChildEnv {
         self.env_policy.child_env()
     }
 
@@ -551,7 +551,7 @@ impl Session {
     /// Store the boot-fetched model capabilities (docs/transport.md). Called once
     /// by the runtime before the loop starts; the value is immutable
     /// thereafter and read by `GET /state`'s context readout.
-    pub fn set_capabilities(&self, capabilities: crate::api::ModelCapabilities) {
+    pub fn set_capabilities(&self, capabilities: crate::inference::api::ModelCapabilities) {
         *self.capabilities.lock().unwrap() = Some(capabilities);
     }
 
@@ -579,7 +579,7 @@ impl Session {
     /// spawns a fetch of its billed cost from this endpoint's accounting
     /// surface. Called by the runtime only when the provider has one
     /// (OpenRouter today); unarmed, `GET /state` reports `cost: null`.
-    pub fn enable_cost_tracking(&self, endpoint: crate::api::Endpoint) {
+    pub fn enable_cost_tracking(&self, endpoint: crate::inference::api::Endpoint) {
         self.cost.lock().unwrap().endpoint = Some(endpoint);
     }
 }

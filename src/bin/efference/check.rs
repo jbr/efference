@@ -31,7 +31,7 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
     };
     let role = loaded.role;
     let cwd = std::env::current_dir()?;
-    let resolved = match efference::context::resolve(&role.context, &cwd) {
+    let resolved = match efference::config::context::resolve(&role.context, &cwd) {
         Ok(resolved) => resolved,
         Err(e) => {
             eprintln!("error: {e}");
@@ -71,10 +71,10 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
 /// namespaced `<server>__<tool>` by construction, so attribution is exact.
 /// Stored credentials are reused; the dance is not run (see module docs).
 async fn mount_servers(role: &efference::config::Config, cwd: &Path, path: &Path) -> CliResult {
-    let store: std::sync::Arc<dyn efference::mcp::auth::store::TokenStore> =
-        std::sync::Arc::new(efference::mcp::auth::store::KeychainStore::new(
+    let store: std::sync::Arc<dyn efference::tools::mcp::auth::store::TokenStore> =
+        std::sync::Arc::new(efference::tools::mcp::auth::store::KeychainStore::new(
             std::sync::Arc::new(efference::platform::secrets::Secrets::configured(
-                efference::user_config::InferenceConfig::user_secret_commands()?,
+                efference::config::user_config::InferenceConfig::user_secret_commands()?,
             )),
         ));
     let mut toolbox = Toolbox::bash_and_mcps(cwd.to_path_buf(), None)?;
@@ -83,7 +83,7 @@ async fn mount_servers(role: &efference::config::Config, cwd: &Path, path: &Path
         // As at boot, only an HTTP server's grant is read (docs/mcp-auth.md).
         let credentials = match &entry.transport {
             efference::config::McpTransport::Http { .. } => {
-                efference::mcp::auth::stored_credentials(&store, name).await?
+                efference::tools::mcp::auth::stored_credentials(&store, name).await?
             }
             efference::config::McpTransport::Stdio { .. } => None,
         };
@@ -93,7 +93,7 @@ async fn mount_servers(role: &efference::config::Config, cwd: &Path, path: &Path
             .await;
         if let Err(e) = mount {
             let reason = if e
-                .downcast_ref::<efference::mcp::auth::AuthorizationRequired>()
+                .downcast_ref::<efference::tools::mcp::auth::AuthorizationRequired>()
                 .is_some()
             {
                 "requires authorization — starting a session here opens its sign-in".to_string()
@@ -131,7 +131,7 @@ fn print_server(role: &efference::config::Config, name: &str, mounted: &[serde_j
     let total: usize = weights.iter().sum();
     let cleared = advertised
         .iter()
-        .filter(|tool| efference::policy::tool_granted(role, tool))
+        .filter(|tool| efference::config::policy::tool_granted(role, tool))
         .count();
     println!(
         "  [mcp:{name}]: {} tool(s), {} granted in `[tools]`; {} bytes of definitions",
@@ -162,7 +162,7 @@ fn print_server(role: &efference::config::Config, name: &str, mounted: &[serde_j
 fn grant_mark(role: &efference::config::Config, wire_name: &str) -> &'static str {
     if !role.tool_enabled(wire_name) {
         "x"
-    } else if efference::policy::tool_granted(role, wire_name) {
+    } else if efference::config::policy::tool_granted(role, wire_name) {
         "+"
     } else {
         "-"

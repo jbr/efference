@@ -4,8 +4,10 @@
 use super::upstream_hold::start;
 use super::*;
 use crate::frontend::SubmittedTurn;
+use crate::inference::testing::upstream::{
+    Canned, ScriptedUpstream, Turnstile, end_turn, events, tool_call,
+};
 use crate::record::log::WireState;
-use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile, end_turn, events, tool_call};
 
 /// A Messages upstream that answers by arrival order: request 0 calls a tool, so the loop
 /// runs it and opens a triage; request 1, the triage, waits at `open`, then sends its

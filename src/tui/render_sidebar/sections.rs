@@ -4,6 +4,7 @@
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
 use super::{LABEL_W, Panel, num, put};
+use crate::config::user_config::ModelSelection;
 use crate::inference::TriageIdentity;
 use crate::protocol::state::{KeepaliveSkip, KeepaliveSkipReason};
 use crate::tui::SidebarRow;
@@ -11,7 +12,6 @@ use crate::tui::policy_view::PolicyView;
 use crate::tui::process_panel::BgProc;
 use crate::tui::render_frame::fmt_secs;
 use crate::tui::state::InteractiveState;
-use crate::user_config::ModelSelection;
 
 /// Lines the session title may wrap to before it is cut.
 const TITLE_LINES: usize = 2;

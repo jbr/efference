@@ -239,7 +239,7 @@ async fn create_session(
     let cwd = origin
         .map_err(|e| format!("reading the working directory: {e}"))?
         .to_path_buf();
-    let env = crate::env_table::EnvSnapshot::capture()
+    let env = crate::config::env_table::EnvSnapshot::capture()
         .map_err(|e| format!("capturing the environment: {e}"))?
         .into_entries();
     // A session created by a person at a keyboard has no creator to end with, so it

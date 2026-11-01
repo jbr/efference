@@ -18,7 +18,7 @@ would strand reusable code inside a harness.
 | --- | --- | --- |
 | `WWW-Authenticate` challenge parsing (RFC 9110 §11.6.1) | `src/platform/www_authenticate.rs` | HTTP only — no OAuth, no MCP |
 | OAuth 2.1 public client | `src/platform/oauth.rs` (+ `src/platform/oauth/`) | OAuth RFCs only — no MCP |
-| MCP glue | `src/mcp/auth.rs` | when the dance runs, and what the resource indicator points at |
+| MCP glue | `src/tools/mcp/auth.rs` | when the dance runs, and what the resource indicator points at |
 
 The bottom two are written to be lifted out: the challenge parser wants a standalone
 crate alongside `trillium-basic-auth` (which hand-rolls the emit half of the same
@@ -116,13 +116,13 @@ a new path.
 
 `ClientMetadata` renders both the dynamic-registration request body and the hosted
 document from one struct, so the redirect URIs an authorization server validates
-against cannot drift from the ones the binary listens on. A test in `src/mcp/auth.rs`
+against cannot drift from the ones the binary listens on. A test in `src/tools/mcp/auth.rs`
 pins the rendered document against what is hosted; that test failing means the hosted
 file needs updating, not the test.
 
 ## Who decides what
 
-`src/mcp/auth.rs` runs the sequence but does not decide how to reach a human: it
+`src/tools/mcp/auth.rs` runs the sequence but does not decide how to reach a human: it
 hands the authorization URL to a `present` callback and waits. A terminal can open a
 browser; a log-captured boot can only print a URL. Keeping that at the call site is
 what makes the sequence testable.
@@ -170,8 +170,8 @@ exactly where the escape is least likely to be honored.
 
 ## Renewal while a session runs
 
-A mount hands the HTTP transport (`src/mcp/http.rs`) the server's stored credentials
-(`auth::Credentials`, `src/mcp/auth/credentials.rs`) rather than a bare header, and the
+A mount hands the HTTP transport (`src/tools/mcp/http.rs`) the server's stored credentials
+(`auth::Credentials`, `src/tools/mcp/auth/credentials.rs`) rather than a bare header, and the
 transport renews them through the same refresh the mount runs on a stale grant
 (`oauth::token::refresh`): before a request when the grant is past its expiry, and when
 the server answers `401`, after which the request is sent once more with the renewed
@@ -199,7 +199,7 @@ without credentials renews nothing.
 
 ## Credential storage
 
-`src/mcp/auth/store.rs` keeps one item per server in the secret store
+`src/tools/mcp/auth/store.rs` keeps one item per server in the secret store
 ([secrets.md](secrets.md)), named `mcp:<server>` and holding the `StoredAuth`
 record as JSON. `TokenStore` is the interface the flow is written against;
 `KeychainStore` is its one implementation. The item is per user: an authorization

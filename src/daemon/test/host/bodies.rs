@@ -10,8 +10,8 @@
 
 use super::starting::endless_hook;
 use super::*;
-use crate::api::{ListedModel, ModelKind, Price};
-use crate::history::{BUILTIN_CONFIG_KEY, History, Pick};
+use crate::config::history::{BUILTIN_CONFIG_KEY, History, Pick};
+use crate::inference::api::{ListedModel, ModelKind, Price};
 use crate::record::log::{Payload, Provider};
 
 fn quoted(text: &str) -> String {
@@ -49,8 +49,8 @@ async fn the_catalog_keeps_its_bytes() {
         provider: "anthropic".into(),
         model: model.into(),
     };
-    history.record(&pick("claude-x", crate::history::now()));
-    history.record(&pick("typed-id", crate::history::now() - 86_400));
+    history.record(&pick("claude-x", crate::config::history::now()));
+    history.record(&pick("typed-id", crate::config::history::now() - 86_400));
     let rows = vec![
         ListedModel {
             group: Some("anthropic".into()),
@@ -75,7 +75,7 @@ async fn the_catalog_keeps_its_bytes() {
         ListedModel::new("bare"),
     ];
     // The stored copy goes in through a handle on the file the host reads.
-    crate::catalog::Catalog::new(Some(state))
+    crate::inference::catalog::Catalog::new(Some(state))
         .refresh_with(
             "test",
             Provider::Anthropic,
@@ -127,7 +127,7 @@ async fn the_catalog_keeps_its_bytes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unavailable_connection_keeps_its_bytes() {
     let roots = Roots::new();
-    let config = crate::user_config::InferenceConfig::from_toml(
+    let config = crate::config::user_config::InferenceConfig::from_toml(
         r#"
 [connections.off]
 provider = "openrouter"
@@ -136,7 +136,7 @@ disabled = true
 "#,
     )
     .unwrap();
-    let env = crate::env_table::EnvSnapshot::new(
+    let env = crate::config::env_table::EnvSnapshot::new(
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();

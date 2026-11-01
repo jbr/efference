@@ -108,7 +108,7 @@ pub trait Prompter {
 }
 
 /// Where a connection's credential comes from — the setup-side twin of the
-/// `auth` table `src/user_config.rs` parses. Never a value.
+/// `auth` table `src/config/user_config.rs` parses. Never a value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthSource {
     /// `auth = { kind = "env", key = "NAME" }`: read from the host's launch environment.
@@ -315,7 +315,7 @@ impl std::fmt::Display for DefaultRole {
 }
 
 /// Where an existing connection's credential comes from, as read back out of
-/// the TOML (the setup-side twin of `src/user_config.rs`'s `AuthConfig`, minus
+/// the TOML (the setup-side twin of `src/config/user_config.rs`'s `AuthConfig`, minus
 /// the value).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExistingAuth {
@@ -497,7 +497,7 @@ impl Existing {
 }
 
 /// `auth = { kind = "env", key = "X" }` and friends, as written by
-/// `src/setup/render.rs` and read by `src/user_config.rs`. `None` for a shape
+/// `src/setup/render.rs` and read by `src/config/user_config.rs`. `None` for a shape
 /// this build does not recognize.
 /// The `auth` table, or why it could not be read. An unrecognized `kind` is an
 /// error rather than a skipped connection: the kinds grow (an OAuth grant is

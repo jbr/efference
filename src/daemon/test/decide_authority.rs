@@ -3,9 +3,9 @@
 //! docs/tools.md).
 
 use super::*;
+use crate::config::policy::ReviewLevel;
 use crate::control_tools::{Control, Decide, Executor, Message, Status};
 use crate::daemon::Host;
-use crate::policy::ReviewLevel;
 use crate::protocol::agents::Decision;
 use crate::protocol::status::{Condition, Reviewer};
 use crate::record::log::{Approval, Telemetry};

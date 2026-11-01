@@ -2,15 +2,15 @@
 //! held at the gate, the config edits awaiting an orchestrator, and the effective policy
 //! in force — the `gate`, `proposals`, and `role` topics. The review dial and the
 //! supervisor are the other permission topics; the dial is a
-//! [`ReviewLevel`](crate::policy::ReviewLevel).
+//! [`ReviewLevel`](crate::config::policy::ReviewLevel).
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::config::policy::GateGrant;
 use crate::config::{CommandStance, Perms, ToolSettings};
-use crate::policy::GateGrant;
 use crate::protocol::agents::BoundAction;
 use crate::protocol::status::Escalated;
 use crate::record::log::{ConfigChange, Seq};

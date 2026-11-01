@@ -298,7 +298,7 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Routing {
     /// By the dial: the resolved review position and the live supervisor.
-    Dial(crate::policy::ReviewLevel, Option<String>),
+    Dial(crate::config::policy::ReviewLevel, Option<String>),
     /// By the held call's escalations: how many there have been, and the session the
     /// last went to while it is hosted (`None`: the operator). The dial is not read, so
     /// turning it does not route the call back. The live supervisor is still read: it

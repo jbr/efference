@@ -67,7 +67,7 @@ pub(crate) struct PendingGate {
     pub(crate) call: ToolCall,
     /// The handle a decision names it by (`seq` or `seq.n`).
     pub(crate) handle: Option<String>,
-    pub(crate) directories: crate::policy::Directories,
+    pub(crate) directories: crate::config::policy::Directories,
 }
 
 /// The `source` the loop's own permission review decides under, at the review level in
@@ -75,7 +75,7 @@ pub(crate) struct PendingGate {
 /// or agent wrote (the autonomous redirect, a `[commands]` deny, a config edit's
 /// outcome), so a reader is not told the operator wrote them.
 /// [`is_review_source`](crate::record::names::sources::is_review_source) recognizes the label.
-fn review_source(level: crate::policy::ReviewLevel) -> String {
+fn review_source(level: crate::config::policy::ReviewLevel) -> String {
     format!("review[{}]", level.as_str())
 }
 

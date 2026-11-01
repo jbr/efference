@@ -58,7 +58,7 @@ impl Host {
         if connections.is_empty() {
             return "this host has no connections configured".to_string();
         }
-        let now = crate::history::now();
+        let now = crate::config::history::now();
         let offered: Vec<String> = connections
             .iter()
             .map(|connection| {

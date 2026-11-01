@@ -39,7 +39,7 @@ pub(super) fn context_label(tokens: u64) -> String {
 }
 
 /// `$0.15/$0.50`: USD per million input and output tokens.
-pub(super) fn price_label(price: crate::api::Price) -> String {
+pub(super) fn price_label(price: crate::inference::api::Price) -> String {
     if price.input == 0.0 && price.output == 0.0 {
         return "free".to_string();
     }
@@ -73,7 +73,7 @@ impl Form {
         else {
             return;
         };
-        let now = crate::history::now();
+        let now = crate::config::history::now();
         let rows: Vec<ListRow> = self
             .picker_rows()
             .iter()

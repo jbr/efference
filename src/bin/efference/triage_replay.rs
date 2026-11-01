@@ -16,9 +16,9 @@ mod sweep;
 
 use super::*;
 use crate::dev::TriageArgs;
+use efference::curation::triage::{Pending, TriageView, Triager, triage_request};
 use efference::inference::TriageModel;
 use efference::record::project::Reader;
-use efference::triage::{Pending, TriageView, Triager, triage_request};
 use std::io::Write;
 
 use compare::*;
@@ -116,7 +116,7 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
     // own lineage's key. Without it a provider with sticky routing re-derives a key
     // per request and the replay wanders between upstreams, cold every time.
     if let Some(dir) = path.parent() {
-        endpoint.session_id = Some(efference::api::sticky_session_id(dir));
+        endpoint.session_id = Some(efference::inference::api::sticky_session_id(dir));
     }
     // The own triage replays the exact live shape (docs/triage.md): the same
     // constructor boot uses, the same system prompt over the recorded context
@@ -293,7 +293,10 @@ fn dry_run_report(
         _ => &messages[..],
     };
     let messages = efference::record::project::encode_messages(shown, placement, breakpoint);
-    println!("{}", efference::api::render_messages_pretty(&messages)?);
+    println!(
+        "{}",
+        efference::inference::api::render_messages_pretty(&messages)?
+    );
     Ok(())
 }
 
@@ -312,7 +315,7 @@ async fn replayed_triager<'a>(
         Some((_, mut triage_endpoint, t)) => {
             triage_endpoint.session_id = session_id.map(str::to_string);
             let triage_system =
-                efference::env::triage_system_prompt(&t.model, agent_model, context_block);
+                efference::config::env::triage_system_prompt(&t.model, agent_model, context_block);
             let (triage, caps) = Triager::for_triage_model(
                 &triage_endpoint,
                 t,

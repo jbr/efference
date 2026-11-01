@@ -61,7 +61,7 @@ fn the_env_table_parses_the_inline_table_form() {
     .unwrap();
     assert_eq!(
         config.env["*_KEY"],
-        crate::env_table::EnvEntry {
+        env_table::EnvEntry {
             mask: Some(true),
             strip: Some(false),
             ..Default::default()
@@ -69,16 +69,13 @@ fn the_env_table_parses_the_inline_table_form() {
     );
     assert_eq!(
         config.env["EFFERENCE_*"],
-        crate::env_table::EnvEntry {
+        env_table::EnvEntry {
             mask: None,
             strip: Some(true),
             ..Default::default()
         }
     );
-    assert_eq!(
-        config.env["RUST_LOG"],
-        crate::env_table::EnvEntry::default()
-    );
+    assert_eq!(config.env["RUST_LOG"], env_table::EnvEntry::default());
 }
 
 /// The value forms (docs/env.md): a bare string names the value and is
@@ -97,7 +94,7 @@ fn the_env_table_parses_the_value_forms() {
     .unwrap();
     assert_eq!(
         config.env["SOME_KEY"].source(),
-        Some(crate::env_table::Source::Command {
+        Some(env_table::Source::Command {
             command: "op read 'op://Private/Thing/credential'".into(),
             reference: "op://Private/Thing/credential".into(),
         })
@@ -105,13 +102,13 @@ fn the_env_table_parses_the_value_forms() {
     // `{ value = … }` is the escape hatch: a literal even for a registered scheme.
     assert_eq!(
         config.env["NOTE"].source(),
-        Some(crate::env_table::Source::Literal(
+        Some(env_table::Source::Literal(
             "op://Private/Thing/credential".into()
         ))
     );
     assert!(matches!(
         config.env["OTHER"].source(),
-        Some(crate::env_table::Source::Command { .. })
+        Some(env_table::Source::Command { .. })
     ));
 }
 

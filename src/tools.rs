@@ -16,6 +16,11 @@
 //! The mounted set is fixed for the session (chosen once in `main`), so the
 //! request's `tools[]` is byte-stable and never perturbs the tools cache tier
 //! (docs/log-and-projection.md).
+//!
+//! This module is also the root of the tools group: the bash tool (`bash`), connected MCP
+//! providers (`mcp`), image preparation (`vision`), the background-process monitor
+//! (`process_monitor`) and path expansion (`expand`)
+//! (docs/README.md, *Dependency direction*).
 
 use std::borrow::Cow;
 use std::future::Future;
@@ -28,9 +33,9 @@ use mcplease::types::{RequestContext, Tool as ToolDefinition};
 use semantic_edit_mcp::SemanticEditTools;
 use serde_json::{Value, json};
 
-use crate::bash::{Bash, Outcome};
 use crate::record::log::{Notification, RawResult, ToolCall};
 use crate::record::names::tools::{BASH, INTENT};
+use crate::tools::bash::{Bash, Outcome};
 use read_image::ReadImage;
 
 /// The `intent` property's schema `description`. Deliberately a pointer, not the
@@ -136,7 +141,7 @@ pub enum Provider {
     Lsp(Box<lsp::Lsp>),
     /// A connected provider (docs/tools.md): a user-declared server reached
     /// over stdio or HTTP, its tool table discovered at mount.
-    Connected(Box<crate::mcp::ConnectedProvider>),
+    Connected(Box<mcp::ConnectedProvider>),
 }
 
 /// An in-process MCP server (docs/tools.md) adapted to the toolbox, generic over the
@@ -186,7 +191,7 @@ pub struct ToolBrief<'a> {
 /// `description` and `annotations`/`title` are third-party prose for a
 /// mounted server (`server.is_some()`): a consumer renders them as plain
 /// text, never markdown, and attributes them to `server`
-/// (`src/process_monitor.rs` draws the same untrusted-server line for the
+/// (`src/tools/process_monitor.rs` draws the same untrusted-server line for the
 /// built-ins' own annotations).
 #[derive(Debug, Clone, serde::Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -350,7 +355,7 @@ pub struct Toolbox {
     /// subprocess this toolbox spawns: the `bash` child and each stdio MCP
     /// server (docs/env.md). Held here as well as on the bash provider so a
     /// server mounted *after* the toolbox was built still gets it.
-    child_env: crate::env_table::ChildEnv,
+    child_env: crate::config::env_table::ChildEnv,
     /// Whether the session's model accepts image blocks
     /// (`ModelCapabilities::supports_image_input`, docs/transport.md). `true`
     /// unless a boot lookup said otherwise, which is what the dev views (`wire`,
@@ -363,6 +368,12 @@ pub struct Toolbox {
     /// through (docs/tools.md).
     image_input: bool,
 }
+
+pub mod bash;
+pub mod expand;
+pub mod mcp;
+pub mod process_monitor;
+pub mod vision;
 
 #[cfg(test)]
 mod test;

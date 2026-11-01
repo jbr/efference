@@ -130,7 +130,7 @@ fn call_nodes(
     for (i, call) in calls.iter().enumerate() {
         // A question put to the operator is drawn as the assistant's prose
         // and the operator's reply, not as a call (docs/tui.md).
-        if let Some(question) = crate::process_monitor::ask_of_call(&calls, i) {
+        if let Some(question) = crate::tools::process_monitor::ask_of_call(&calls, i) {
             let reply = index.result_entry(log, call.id.0.as_str());
             let state = ask::AskState::pending(call.id.0.as_str(), gate.ask);
             nodes.extend(ask::ask_nodes(question, reply, state));

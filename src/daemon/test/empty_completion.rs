@@ -4,8 +4,8 @@
 use super::upstream_hold::start;
 use super::*;
 use crate::frontend::SubmittedTurn;
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, events};
 use crate::record::log::Exclusion;
-use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, events};
 
 /// A finalized turn that only thinks.
 fn thinking_only() -> String {

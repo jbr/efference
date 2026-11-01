@@ -25,14 +25,14 @@ use std::path::PathBuf;
 
 use super::mint::Minted;
 use super::{CONFIG_NAME, env, model, parts, scaffold};
-use crate::api::Error;
+use crate::curation::spotter::MountedSpotter;
 use crate::daemon::SessionBoot;
+use crate::inference::api::Error;
 use crate::inference::{InferenceRegistry, ResumeSwitch, SessionOptions};
 use crate::record::log::{LogEntry, LoggedInference, Payload, Resumed, Timestamp};
 use crate::record::persist::{LoadedRecording, Log, SessionMetadata};
 use crate::record::recovery::{Resumption, resume_point};
 use crate::record::session_dir::{LOG_NAME, SESSION_BASE};
-use crate::spotter::MountedSpotter;
 
 /// What a resume needs from whoever resumes. The session's working directory, role
 /// selections, and flags come from the log's header; what the header cannot hold (a
@@ -41,7 +41,7 @@ pub struct ResumeRequest<'a> {
     /// The existing session dir, absolute: `<project>/.efference/<id>`.
     pub session_dir: PathBuf,
     /// The base environment the resumed session's commands start from (docs/env.md).
-    pub base_env: crate::env_table::EnvSnapshot,
+    pub base_env: crate::config::env_table::EnvSnapshot,
     /// The connections the recorded role selections are re-resolved against.
     pub inference: &'a InferenceRegistry,
     pub reauth: Vec<String>,
@@ -163,12 +163,12 @@ async fn resume_minting(
         options.model = Some(main.model.clone());
     }
     let identity = if main_switched {
-        crate::env::identity_line(model)
+        crate::config::env::identity_line(model)
     } else {
         recorded_identity.clone()
     };
     let system = format!("{identity}{body}");
-    endpoint.session_id = Some(crate::api::sticky_session_id(&session_dir));
+    endpoint.session_id = Some(crate::inference::api::sticky_session_id(&session_dir));
 
     let upstream = metadata.map_or_default(|m| m.upstream.clone());
     let temperature = metadata.and_then(|m| m.temperature);
@@ -186,7 +186,7 @@ async fn resume_minting(
 
     let scratch = scaffold::mint_scratch(minted, &mut loaded)?;
 
-    let resolver = std::sync::Arc::new(crate::env_table::Resolver::with_environment(
+    let resolver = std::sync::Arc::new(crate::config::env_table::Resolver::with_environment(
         directories.project().to_path_buf(),
         base_env.clone(),
     ));
@@ -337,10 +337,10 @@ async fn resume_minting(
 fn session_directories(
     metadata: Option<&SessionMetadata>,
     session_dir: &std::path::Path,
-) -> Result<crate::policy::Directories, Error> {
+) -> Result<crate::config::policy::Directories, Error> {
     if let Some(metadata) = metadata {
         let working = metadata.working.clone().unwrap_or(metadata.cwd.clone());
-        return Ok(crate::policy::Directories::new(
+        return Ok(crate::config::policy::Directories::new(
             metadata.cwd.clone(),
             working,
         ));
@@ -348,7 +348,7 @@ fn session_directories(
     let base = session_dir.parent();
     match base.and_then(|base| Some((base, base.parent()?))) {
         Some((base, root)) if base.ends_with(SESSION_BASE) => {
-            Ok(crate::policy::Directories::at(root))
+            Ok(crate::config::policy::Directories::at(root))
         }
         _ => Err(format!(
             "cannot resume {}: the log header records no working directory",
@@ -412,7 +412,7 @@ fn frozen_preamble(entries: &[LogEntry]) -> Option<(String, String, Option<Strin
 fn check_main_switch(
     entries: &[LogEntry],
     recorded_identity: &str,
-    target: &crate::user_config::ModelSelection,
+    target: &crate::config::user_config::ModelSelection,
 ) -> Result<(), String> {
     if recorded_identity.is_empty() {
         return Err(
@@ -466,7 +466,7 @@ fn resumed_entry(
             gap_ms,
             lost_processes: running
                 .into_iter()
-                .map(crate::process_monitor::handle)
+                .map(crate::tools::process_monitor::handle)
                 .collect(),
             resumes_after: resumption.resumes_after,
             pending_calls: resumption.pending,

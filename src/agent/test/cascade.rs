@@ -34,7 +34,7 @@ impl Spotter for NeverAsked {
         _chain: &[String],
         _probe: Option<&str>,
         _precedents: &[ToolCall],
-    ) -> crate::spotter::Spotting {
+    ) -> crate::curation::spotter::Spotting {
         panic!("a call naming no tool reached the spotter: {}", call.name)
     }
 }
@@ -92,13 +92,13 @@ impl Spotter for RecordingSpotter {
         chain: &[String],
         _probe: Option<&str>,
         _precedents: &[ToolCall],
-    ) -> crate::spotter::Spotting {
+    ) -> crate::curation::spotter::Spotting {
         self.seen
             .lock()
             .unwrap()
             .push((call.name.clone(), chain.to_vec()));
-        crate::spotter::Spotting {
-            read: crate::spotter::Read {
+        crate::curation::spotter::Spotting {
+            read: crate::curation::spotter::Read {
                 stance: self.stance,
                 reason: self.reason.clone(),
             },
@@ -155,7 +155,7 @@ async fn a_granted_decide_clears_blind() {
     role.tools.grant(crate::protocol::agents::DECIDE_WIRE_NAME);
     let shared = parent_with(role);
     let mut frontend = RecordingFrontend::answering(Approval::Abort);
-    let spotter = crate::spotter::StaticSpotter {
+    let spotter = crate::curation::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "would gate".into(),
     };
@@ -187,7 +187,7 @@ async fn an_ungranted_approve_clears_on_the_leafs_fast_path() {
         .insert("cargo".into(), crate::config::CommandStance::Clear);
     let shared = parent_with(role);
     let mut frontend = RecordingFrontend::answering(Approval::Abort);
-    let spotter = crate::spotter::StaticSpotter {
+    let spotter = crate::curation::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "would gate".into(),
     };
@@ -222,7 +222,7 @@ async fn an_ungranted_approve_clears_on_the_leafs_fast_path() {
 async fn a_leaf_outside_the_grants_gates_with_the_bound_action() {
     let shared = parent_with(crate::config::Config::default());
     let mut frontend = RecordingFrontend::answering(Approval::Approve);
-    let spotter = crate::spotter::StaticSpotter {
+    let spotter = crate::curation::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "outside the mission".into(),
     };
@@ -344,7 +344,7 @@ async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
 async fn an_archive_without_a_succession_goes_to_the_spotter() {
     let shared = parent_with(crate::config::Config::default());
     let mut frontend = RecordingFrontend::answering(Approval::Abort);
-    let spotter = crate::spotter::StaticSpotter {
+    let spotter = crate::curation::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "would gate".into(),
     };
@@ -377,7 +377,7 @@ async fn an_archive_without_a_succession_goes_to_the_spotter() {
 fn with_agent_verbs(caller: &str) -> Toolbox {
     let host = crate::daemon::Host::new(
         crate::inference::InferenceRegistry::empty(),
-        crate::env_table::EnvSnapshot::new(Default::default()).unwrap(),
+        crate::config::env_table::EnvSnapshot::new(Default::default()).unwrap(),
     );
     let mut toolbox = Toolbox::bash_only();
     toolbox.mount_sessions(crate::control_tools::Control::in_session(

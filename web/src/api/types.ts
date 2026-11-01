@@ -67,7 +67,7 @@ export type Approval =
 /**
  * What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape
  * (docs/permissions.md). Each variant addresses one section of the config table;
- * [`crate::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
+ * [`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
  * Most variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the
  * narrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace
  * semantics over a list are an unsettled question; add it when an initiator needs it).
@@ -2261,7 +2261,7 @@ export interface Returned {
  * One config edit: a single, durable change to the policy table (docs/permissions.md).
  * The change vocabulary lives here, in the log types, deliberately — like [`Stance`] and
  * [`Origin`], the log owns its own serialized types so the wire format isn't hostage to a
- * config struct's layout. [`crate::policy::apply_config_change`] applies each [`ConfigChange`] to
+ * config struct's layout. [`crate::config::policy::apply_config_change`] applies each [`ConfigChange`] to
  * the config it folds into.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
@@ -3640,7 +3640,7 @@ export interface Spot {
 export interface ProcessEvent {
   /**
    * The spawn-minted ordinal — bare, as routes and frames carry it; rendered
-   * `p#<n>` in prose by [`crate::process_monitor::handle`].
+   * `p#<n>` in prose by [`crate::tools::process_monitor::handle`].
    */
   id: number;
   kind: ProcessEventKind;
@@ -3674,7 +3674,7 @@ export interface ProcessSpawn {
 }
 /**
  * How a process ended and how long it ran (docs/process-monitor.md). Also the
- * exit half of a [`ProcessRecord`](crate::process_monitor::ProcessRecord), so the
+ * exit half of a [`ProcessRecord`](crate::tools::process_monitor::ProcessRecord), so the
  * live registry and a log fold answer with one type.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
@@ -3694,7 +3694,7 @@ export interface ProcessExit {
 /**
  * A fully-resolved `[context]` ready to render into the preamble: sections in **document order**
  * (docs/context.md). Each [`Section`] is a bare entry (no heading) or a labeled group.
- * This is what [`crate::env`] builds from disk at boot and freezes into the cached prefix.
+ * This is what [`crate::config::env`] builds from disk at boot and freezes into the cached prefix.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "ResolvedContext".
@@ -3963,7 +3963,7 @@ export interface PendingSignInList {
 }
 /**
  * Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check
- * time (see [`crate::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.
+ * time (see [`crate::config::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.
  * Serialized as the `role` topic reports a grant (docs/control-api.md).
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
@@ -4936,7 +4936,7 @@ export interface VerbAnswer {
  * `description` and `annotations`/`title` are third-party prose for a
  * mounted server (`server.is_some()`): a consumer renders them as plain
  * text, never markdown, and attributes them to `server`
- * (`src/process_monitor.rs` draws the same untrusted-server line for the
+ * (`src/tools/process_monitor.rs` draws the same untrusted-server line for the
  * built-ins' own annotations).
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema

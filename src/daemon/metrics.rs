@@ -88,7 +88,7 @@ pub(super) struct Metrics {
 /// undercount rather than silently wrong).
 #[derive(Default)]
 pub(super) struct CostCell {
-    pub(super) endpoint: Option<crate::api::Endpoint>,
+    pub(super) endpoint: Option<crate::inference::api::Endpoint>,
     pub(super) total_usd: f64,
     pub(super) unpriced: u32,
 }
@@ -579,7 +579,10 @@ impl Session {
     /// Record that the triage runs on its own client, handing over that client's failure
     /// and plan cells for `GET /state` (docs/control-api.md). Set once at boot; a second
     /// call is ignored.
-    pub(crate) fn set_triage_client(&self, cells: (UpstreamFailureState, crate::api::PlanState)) {
+    pub(crate) fn set_triage_client(
+        &self,
+        cells: (UpstreamFailureState, crate::inference::api::PlanState),
+    ) {
         let _ = self.triage_client.set(cells);
     }
 

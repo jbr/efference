@@ -19,7 +19,7 @@ fn session() -> Arc<Session> {
 fn starting() -> Arc<Starting> {
     Starting::new(StartingParts {
         id: "s".to_string(),
-        directories: crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+        directories: crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
         resume: false,
         created_by: None,
         detached: false,

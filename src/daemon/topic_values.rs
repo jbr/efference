@@ -11,7 +11,7 @@
 //! "unchanged" by omission.
 
 use super::*;
-use crate::api::UpstreamFailure;
+use crate::inference::api::UpstreamFailure;
 use crate::protocol::channel_value;
 use crate::protocol::state::{
     ContextWindow, Cost, Gate, LoopResource, PaceView, RoleView, StateTopics, UsageView,

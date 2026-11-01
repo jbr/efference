@@ -29,7 +29,7 @@ pub(crate) async fn create_session(mut conn: Conn) -> Conn {
     };
     // A human root: no session commissioned it, so it has no `created_by`
     // (docs/tools.md).
-    match host.create(body, crate::env::Lineage::default()) {
+    match host.create(body, crate::config::env::Lineage::default()) {
         Ok(starting) => views::answer(
             conn,
             201,

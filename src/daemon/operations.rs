@@ -31,7 +31,7 @@ use std::sync::{Arc, Weak};
 use serde_json::Value;
 
 use super::Session;
-use crate::api::{StageRecorder, StageSink};
+use crate::inference::api::{StageRecorder, StageSink};
 use crate::protocol::state::{
     CurrentOperations, OpenCompaction, OpenRequest, OpenStage, RunningTool,
 };

@@ -401,7 +401,7 @@ fn persist_tool_sets_granted_on_an_existing_entry() {
 /// first table, or the first item of a file that held only comments.
 #[test]
 fn persist_keeps_the_schema_line_first() {
-    let directive = crate::config_schemas::directive(crate::config_schemas::PROJECT);
+    let directive = config_schemas::directive(config_schemas::PROJECT);
     let changes = [
         // A tool the loop always mounts, so the grant is valid in a file that enables nothing.
         ConfigChange::Tool {

@@ -12,9 +12,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::{UpstreamFailure, UpstreamRetry};
+use crate::config::policy::ReviewLevel;
 use crate::inference::InferenceIdentity;
-use crate::policy::ReviewLevel;
+use crate::inference::api::{UpstreamFailure, UpstreamRetry};
 use crate::protocol::status::StatusView;
 use crate::protocol::turns::{Landing, QueuedTurn};
 use crate::record::log::Seq;

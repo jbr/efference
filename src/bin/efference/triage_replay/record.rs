@@ -1,6 +1,6 @@
 //! Rebuilding recorded triages from a session log (docs/triage.md).
 
-use efference::inbox::{ShownNotification, rider_after};
+use efference::curation::inbox::{ShownNotification, rider_after};
 use efference::record::log::{Payload, ProcessEventKind, RawResult, ToolCall, WireState};
 use std::collections::BTreeSet;
 
@@ -41,11 +41,11 @@ pub(crate) struct Recorded {
 
 impl Recorded {
     /// The results this triage was asked to triage, each beside the call that made it.
-    pub(crate) fn pending(&self) -> Vec<efference::triage::Pending<'_>> {
+    pub(crate) fn pending(&self) -> Vec<efference::curation::triage::Pending<'_>> {
         self.calls
             .iter()
             .zip(&self.raws)
-            .map(|(call, raw)| efference::triage::Pending { call, raw })
+            .map(|(call, raw)| efference::curation::triage::Pending { call, raw })
             .collect()
     }
 }

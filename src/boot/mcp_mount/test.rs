@@ -1,5 +1,5 @@
 use super::*;
-use crate::testing::upstream::{Canned, ScriptedUpstream};
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
 
 /// The visible text of the hyperlink is the URL itself, so a terminal that
 /// ignores OSC 8 still prints something copy-pasteable — which is the whole

@@ -9,8 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::ConnectionCatalog;
 use crate::inference::ConnectionInventory;
+use crate::inference::catalog::ConnectionCatalog;
 use crate::record::log::{EditState, Seq, ToolCall};
 
 /// The word a route answers `status` with when it has acted on a request.

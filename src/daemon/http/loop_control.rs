@@ -122,7 +122,7 @@ pub(super) async fn patch_loop(mut conn: Conn) -> Conn {
         }
     };
     let level = match patch.review_level.as_deref() {
-        Some(level) => match crate::policy::ReviewLevel::parse(level) {
+        Some(level) => match crate::config::policy::ReviewLevel::parse(level) {
             Some(level) => Some(level),
             // An out-of-range value on a well-formed body — `BadRequest`
             // rather than `InvalidDecision`, which is reserved for a

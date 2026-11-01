@@ -77,13 +77,15 @@ fn held_triage(shared: Arc<Session>) -> Arc<Session> {
 
 fn retrying(shared: Arc<Session>) -> Arc<Session> {
     shared.set_phase(LoopPhase::Requesting);
-    shared.upstream_retry.set(crate::api::stream_abort_retry(
-        crate::api::RetrySurface::Turn,
-        1,
-        12,
-        Duration::from_secs(1),
-        "503",
-    ));
+    shared
+        .upstream_retry
+        .set(crate::inference::api::stream_abort_retry(
+            crate::inference::api::RetrySurface::Turn,
+            1,
+            12,
+            Duration::from_secs(1),
+            "503",
+        ));
     shared
 }
 

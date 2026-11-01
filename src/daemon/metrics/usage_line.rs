@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::{CacheMiss, Usage};
+use crate::inference::api::{CacheMiss, Usage};
 use crate::record::log::RequestOrigin;
 
 /// The usage record's file name in a session directory.
@@ -72,7 +72,7 @@ impl UsageLine {
         origin: RequestOrigin,
         at_ms: u128,
         main_prefix: bool,
-        request: &crate::api::RequestUsage,
+        request: &crate::inference::api::RequestUsage,
     ) -> Self {
         Self {
             at_ms,

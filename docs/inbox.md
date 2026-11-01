@@ -123,7 +123,7 @@ alone.
 
 ## The inbox as a fold
 
-The live inbox is a fold over the log (`src/inbox.rs`) plus the slot queue:
+The live inbox is a fold over the log (`src/curation/inbox.rs`) plus the slot queue:
 
 - **Unresolved**: every `Ambient` entry whose `seq` no `Triage` verdict has pinned or
   dismissed and no `InboxExpired` has expired. "Left" notifications, not named in any
@@ -179,7 +179,7 @@ of the session (one session re-showed a test-exit notice from seq 423 to seq 467
 triage that shows a notification and does not pin or dismiss it, the loop appends
 `Telemetry::InboxExpired { seq, shows }` and the notification leaves `active_shown`, as a
 `Dismiss` would. The entry projects to nothing and records that the harness, not the
-model, made the choice. `unmentioned_past_cap` in `src/inbox.rs` folds the count from the
+model, made the choice. `unmentioned_past_cap` in `src/curation/inbox.rs` folds the count from the
 log: one show per idle `Triage`, and one per run of result-carrying `Triage` entries with
 no `Assistant` or `User` entry between them (a batch writes one per result, and the
 verdict rides the last). A show counts for the notifications at or below the triage's

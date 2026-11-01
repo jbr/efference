@@ -39,7 +39,7 @@ async fn publishes_the_full_set_once_then_only_changes() {
     // One dial moves; only the topics that moved with it are republished. The
     // resolved position is derived from the dial, so it moves too — and only it
     // (docs/permissions.md).
-    shared.set_review_level(crate::policy::ReviewLevel::HumanOnly);
+    shared.set_review_level(crate::config::policy::ReviewLevel::HumanOnly);
     let changed = drain(&mut rx).await;
     assert_eq!(changed.len(), 2, "only the topics that moved: {changed:?}");
     assert_eq!(&*changed[&Topic::ReviewLevel].json, r#""human_only""#);
@@ -97,7 +97,7 @@ async fn updates_are_stamped_with_the_log_position_they_reflect() {
     for i in 0..3 {
         shared.append(1, Payload::user(format!("e{i}"))).unwrap();
     }
-    shared.set_review_level(crate::policy::ReviewLevel::Autonomous);
+    shared.set_review_level(crate::config::policy::ReviewLevel::Autonomous);
 
     let changed = drain(&mut rx).await;
     let update = changed
@@ -131,7 +131,7 @@ async fn an_append_alone_wakes_the_diff() {
     tokio::spawn(watch_topics(Arc::clone(&shared)));
     drain(&mut rx).await; // the startup snapshot
 
-    let mut diagnostic = crate::api::UpstreamFailure::new(Some(429), "");
+    let mut diagnostic = crate::inference::api::UpstreamFailure::new(Some(429), "");
     diagnostic.count = 2;
     *failure.lock().unwrap() = Some(diagnostic);
     // Then append, as a request that failed and retried would.
@@ -153,7 +153,7 @@ async fn a_retry_publishes_without_an_append() {
     let (shared, _turns_rx) = Session::full(SessionParts {
         upstream_retry: Arc::clone(&retry),
         ..SessionParts::new(
-            crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            crate::config::policy::Directories::at(&std::env::current_dir().unwrap()),
             Log::in_memory(),
         )
     });
@@ -162,10 +162,10 @@ async fn a_retry_publishes_without_an_append() {
     drain(&mut rx).await; // the startup snapshot
 
     // Exactly what the turn loop does before sleeping: no log append anywhere.
-    retry.set(crate::api::stream_abort_retry(
-        crate::api::RetrySurface::Turn,
+    retry.set(crate::inference::api::stream_abort_retry(
+        crate::inference::api::RetrySurface::Turn,
         2,
-        crate::api::STREAM_ABORT_ATTEMPTS,
+        crate::inference::api::STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(2),
         "upstream SSE stream failed mid-stream",
     ));
@@ -182,7 +182,7 @@ async fn a_retry_publishes_without_an_append() {
         "{published}"
     );
 
-    retry.clear(crate::api::RetrySurface::Turn);
+    retry.clear(crate::inference::api::RetrySurface::Turn);
     let changed = drain(&mut rx).await;
     assert_eq!(
         changed

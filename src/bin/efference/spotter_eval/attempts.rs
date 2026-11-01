@@ -6,11 +6,11 @@ use super::*;
 pub(super) struct Eval {
     pub(super) cases: Vec<Labeled>,
     pub(super) toolbox: Toolbox,
-    pub(super) endpoint: efference::api::Endpoint,
+    pub(super) endpoint: efference::inference::api::Endpoint,
     pub(super) model: String,
     pub(super) persona: Option<String>,
-    pub(super) kind: efference::api::ModelKind,
-    pub(super) thinking: efference::api::ThinkingSupport,
+    pub(super) kind: efference::inference::api::ModelKind,
+    pub(super) thinking: efference::inference::api::ThinkingSupport,
     pub(super) runs: usize,
     /// Bounds the attempts in flight across cases.
     pub(super) semaphore: tokio::sync::Semaphore,
@@ -86,7 +86,9 @@ impl Eval {
         // behavior (the process cwd, via the rung's fallback);
         // the count is warned about up front.
         let spot = match &case.cwd {
-            Some(cwd) => spot.with_directories(efference::policy::Directories::at(Path::new(cwd))),
+            Some(cwd) => {
+                spot.with_directories(efference::config::policy::Directories::at(Path::new(cwd)))
+            }
             None => spot,
         };
         let brief = efference::agent::brief(&self.toolbox, &call.name);
@@ -155,7 +157,7 @@ impl Eval {
         let total = lookups.len();
         eprintln!("cost: fetching {total} generation id(s) (--concurrency {concurrency})");
         let semaphore = Rc::new(tokio::sync::Semaphore::new(concurrency.max(1)));
-        let results: Vec<(usize, Result<f64, efference::api::Error>)> = local
+        let results: Vec<(usize, Result<f64, efference::inference::api::Error>)> = local
             .run_until(async {
                 let mut handles = Vec::with_capacity(total);
                 for (index, id) in lookups {

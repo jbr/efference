@@ -352,7 +352,7 @@ impl HostExecutor {
     /// error rather than finding the child gone later (docs/tools.md).
     pub(super) async fn create(&self, body: CreateSession) -> Result<(Arc<Session>, String)> {
         let host = self.host()?;
-        let lineage = crate::env::Lineage {
+        let lineage = crate::config::env::Lineage {
             created_by: Some(self.caller.clone()),
             succeeds: None,
         };

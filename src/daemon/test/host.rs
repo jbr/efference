@@ -30,12 +30,12 @@ mod worktree;
 
 /// A scratch root holding the working directories `one` and `two`, each with its
 /// `scratch`: the canonical path, and the guard that removes it all when the roots drop
-/// (`crate::testing::temp_dir`). The guard is never read; it is held for its drop.
+/// (`crate::inference::testing::temp_dir`). The guard is never read; it is held for its drop.
 struct Roots(PathBuf, #[allow(dead_code)] tempfile::TempDir);
 
 impl Roots {
     fn new() -> Self {
-        let dir = crate::testing::temp_dir("host");
+        let dir = crate::inference::testing::temp_dir("host");
         for label in ["one", "two"] {
             std::fs::create_dir_all(dir.path().join(label).join("scratch")).unwrap();
         }
@@ -48,7 +48,7 @@ impl Roots {
 /// resolution and into `boot::prepare`. The credential never reaches a provider:
 /// every case here fails before the first request.
 fn one_connection_registry() -> crate::inference::InferenceRegistry {
-    let config = crate::user_config::InferenceConfig::from_toml(
+    let config = crate::config::user_config::InferenceConfig::from_toml(
         r#"
 [connections.test]
 provider = "anthropic"
@@ -56,7 +56,7 @@ auth = { kind = "env", key = "TEST_KEY" }
 "#,
     )
     .unwrap();
-    let env = crate::env_table::EnvSnapshot::new(
+    let env = crate::config::env_table::EnvSnapshot::new(
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();
@@ -77,14 +77,14 @@ fn registry_with_hook(argv: &[String]) -> crate::inference::InferenceRegistry {
         .map(|part| format!("{part:?}"))
         .collect::<Vec<_>>()
         .join(", ");
-    let config = crate::user_config::InferenceConfig::from_toml(&format!(
+    let config = crate::config::user_config::InferenceConfig::from_toml(&format!(
         "\nenv_hook = [{listed}]\n\n\
          [connections.test]\n\
          provider = \"anthropic\"\n\
          auth = {{ kind = \"env\", key = \"TEST_KEY\" }}\n"
     ))
     .expect("a config naming a hook parses");
-    let env = crate::env_table::EnvSnapshot::new(
+    let env = crate::config::env_table::EnvSnapshot::new(
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();
@@ -99,8 +99,8 @@ fn registry_with_hook(argv: &[String]) -> crate::inference::InferenceRegistry {
 
 /// A host environment carrying one marker, so a hook's inheritance of the launch
 /// baseline is observable (docs/env.md).
-fn marked_baseline() -> crate::env_table::EnvSnapshot {
-    crate::env_table::EnvSnapshot::new(
+fn marked_baseline() -> crate::config::env_table::EnvSnapshot {
+    crate::config::env_table::EnvSnapshot::new(
         [("FROM_BASELINE".to_string(), "inherited".to_string())].into(),
     )
     .expect("a valid environment")
@@ -143,7 +143,7 @@ async fn network_host_server(
 ) {
     use crate::platform::auth::Root;
     use crate::platform::devices::{Joined, Kind};
-    let scratch = crate::testing::temp_dir("net-host");
+    let scratch = crate::inference::testing::temp_dir("net-host");
     let (auth, _listener) = tcp::arm_with_state(
         TcpBind {
             addr: "127.0.0.1:0".into(),
@@ -308,7 +308,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
 "#,
     )
     .unwrap();
-    let host_env = crate::env_table::EnvSnapshot::new(
+    let host_env = crate::config::env_table::EnvSnapshot::new(
         [
             ("HOME".to_string(), home.to_string_lossy().into_owned()),
             (
@@ -326,7 +326,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     // The Codex connection's capabilities come from the provider's catalog, so
     // the test seeds the cache that lookup reads: these sessions boot without a
     // provider. Seeded under the account `auth.json` above names.
-    crate::api::seed_codex_catalog(crate::record::log::Provider::OpenAICodex, "acct-1");
+    crate::inference::api::seed_codex_catalog(crate::record::log::Provider::OpenAICodex, "acct-1");
     let registry = crate::inference::InferenceRegistry::load(
         &roots.0,
         &host_env,
@@ -372,7 +372,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     // The platform arm reads the same catalog under its own cache key, seeded
     // here so the creation makes no request; the key it holds stays out of the
     // response.
-    crate::api::seed_codex_catalog(crate::record::log::Provider::OpenAI, "");
+    crate::inference::api::seed_codex_catalog(crate::record::log::Provider::OpenAI, "");
     let platform = server
         .post("/sessions")
         .with_json_body(&serde_json::json!({
@@ -487,7 +487,7 @@ async fn the_catalog_role_filter_drops_decision_only_connections_for_turn_roles(
     use crate::client::ModelRole;
     let roots = Roots::new();
     let cwd = roots.0.join("one");
-    let config = crate::user_config::InferenceConfig::from_toml(
+    let config = crate::config::user_config::InferenceConfig::from_toml(
         r#"
 [connections.text]
 provider = "openrouter"
@@ -501,7 +501,7 @@ disabled = true
 "#,
     )
     .unwrap();
-    let env = crate::env_table::EnvSnapshot::new(
+    let env = crate::config::env_table::EnvSnapshot::new(
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();
@@ -554,7 +554,7 @@ disabled = true
 async fn the_catalog_reports_an_unavailable_connection_with_its_recent_picks() {
     let roots = Roots::new();
     let cwd = roots.0.join("one");
-    let config = crate::user_config::InferenceConfig::from_toml(
+    let config = crate::config::user_config::InferenceConfig::from_toml(
         r#"
 [connections.off]
 provider = "openrouter"
@@ -563,15 +563,15 @@ disabled = true
 "#,
     )
     .unwrap();
-    let env = crate::env_table::EnvSnapshot::new(
+    let env = crate::config::env_table::EnvSnapshot::new(
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();
-    let history = crate::history::History::at(roots.0.join("state.db"));
-    history.record(&crate::history::Pick {
-        at: crate::history::now(),
+    let history = crate::config::history::History::at(roots.0.join("state.db"));
+    history.record(&crate::config::history::Pick {
+        at: crate::config::history::now(),
         cwd: cwd.to_string_lossy().into_owned(),
-        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        config_key: crate::config::history::BUILTIN_CONFIG_KEY.to_string(),
         connection: "off".into(),
         provider: "openrouter".into(),
         model: "z-ai/glm-5.3".into(),
@@ -657,7 +657,7 @@ async fn a_process_id_survives_the_session_prefix() {
 /// listed as unavailable rather than omitted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn inference_inventory_is_sorted_and_secret_free() {
-    let config = crate::user_config::InferenceConfig::from_toml(
+    let config = crate::config::user_config::InferenceConfig::from_toml(
         r#"
 [connections.test]
 provider = "anthropic"
@@ -670,7 +670,7 @@ disabled = true
 "#,
     )
     .unwrap();
-    let env = crate::env_table::EnvSnapshot::new(
+    let env = crate::config::env_table::EnvSnapshot::new(
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();

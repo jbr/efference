@@ -100,8 +100,9 @@ async fn a_hosted_session_is_not_archived() {
 async fn without_a_cwd_every_remembered_root_is_covered_once() {
     let roots = Roots::new();
     let host = Host::new(
-        one_connection_registry()
-            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        one_connection_registry().with_history(crate::config::history::History::at(
+            roots.0.join("state.db"),
+        )),
         baseline_env(),
     );
     let server = host_server(&host).await;
@@ -239,8 +240,9 @@ async fn one_session_reads_as_its_hosted_or_dormant_row() {
 async fn a_dormant_session_is_found_under_a_remembered_root() {
     let roots = Roots::new();
     let host = Host::new(
-        one_connection_registry()
-            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        one_connection_registry().with_history(crate::config::history::History::at(
+            roots.0.join("state.db"),
+        )),
         baseline_env(),
     );
     let server = host_server(&host).await;
@@ -430,8 +432,9 @@ async fn an_archive_records_who_asked_and_the_tui_can_read_it_back() {
     let roots = Roots::new();
     let root = roots.0.join("one");
     let host = Host::new(
-        one_connection_registry()
-            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        one_connection_registry().with_history(crate::config::history::History::at(
+            roots.0.join("state.db"),
+        )),
         baseline_env(),
     );
     crate::remembered::Projects::at(roots.0.join("state.db")).record(&crate::remembered::Project {

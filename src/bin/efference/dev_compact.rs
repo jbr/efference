@@ -8,7 +8,7 @@
 
 use super::*;
 
-use efference::api::{Client, UNKNOWN_OUTPUT_CAP};
+use efference::inference::api::{Client, UNKNOWN_OUTPUT_CAP};
 use efference::record::log::Payload;
 
 pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -> CliResult {
@@ -33,7 +33,7 @@ pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -
     let inference = inference::resolve(Some(&selection), None, None)?;
     let (_, mut endpoint) = inference.main();
     if let Some(dir) = path.parent() {
-        endpoint.session_id = Some(efference::api::sticky_session_id(dir));
+        endpoint.session_id = Some(efference::inference::api::sticky_session_id(dir));
     }
     // The output cap follows the model's report, as the agent client's does: a
     // reasoning model's thinking bills against it, and the client's small default
@@ -53,7 +53,8 @@ pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -
         cut.map_or_default(|c| format!(", summary through seq {c}"))
     );
     let started = std::time::Instant::now();
-    let compaction = efference::compact::summarize(&client, &tools, &entries, cut, |_| {}).await?;
+    let compaction =
+        efference::curation::compact::summarize(&client, &tools, &entries, cut, |_| {}).await?;
     let usage = &compaction.usage.usage;
     eprintln!(
         "{:.0}s · input {} (cache read {}, write {}) · output {}",

@@ -7,8 +7,8 @@ use std::path::Path;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
-use crate::api::Endpoint;
-use crate::env_table::EnvSnapshot;
+use crate::config::env_table::EnvSnapshot;
+use crate::inference::api::Endpoint;
 use crate::platform::secrets::Secrets;
 use crate::record::log::Provider;
 
@@ -133,14 +133,14 @@ pub struct LiveProbe {
 impl LiveProbe {
     /// The probe for a run that edits the configuration `config_text`, whose
     /// `[secrets]` table names the store a pasted key or a sign-in goes to.
-    pub fn capture(config_text: &str) -> Result<Self, crate::api::Error> {
+    pub fn capture(config_text: &str) -> Result<Self, crate::inference::api::Error> {
         Ok(Self {
             env: EnvSnapshot::capture()?,
             cwd: std::env::current_dir()?,
             // Opened here rather than by the first write, which is the
             // default (docs/secrets.md): setup offers to keep a value only
             // where keeping one can work, and says why not otherwise.
-            secrets: crate::user_config::InferenceConfig::from_toml(config_text)
+            secrets: crate::config::user_config::InferenceConfig::from_toml(config_text)
                 .map_err(|error| error.to_string())
                 .map(|config| Secrets::configured(config.secrets))
                 .and_then(|secrets| secrets.open().map(|()| secrets)),
@@ -182,8 +182,9 @@ impl Probe for LiveProbe {
 
     fn codex_cache(&self) -> Result<String, String> {
         let read = |name: &str| self.env.get(name).map(str::to_string);
-        let (token, account) = crate::api::codex_cached_credentials(Path::new(&self.cwd), &read)
-            .map_err(|error| error.to_string())?;
+        let (token, account) =
+            crate::inference::api::codex_cached_credentials(Path::new(&self.cwd), &read)
+                .map_err(|error| error.to_string())?;
         if let Some(expiry) = jwt_exp(&token)
             && expiry <= now_unix()
         {

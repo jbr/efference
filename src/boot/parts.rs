@@ -5,13 +5,15 @@
 use std::path::Path;
 
 use super::{describe_window, mcp_mount};
-use crate::api::{Client, Endpoint, Error, ModelCapabilities, TokenPrices, UNKNOWN_OUTPUT_CAP};
 use crate::config::LoadedConfig;
-use crate::env_table::EnvPolicy;
+use crate::config::env_table::EnvPolicy;
+use crate::curation::spotter::MountedSpotter;
+use crate::curation::triage::Triager;
 use crate::inference::SessionInference;
-use crate::spotter::MountedSpotter;
+use crate::inference::api::{
+    Client, Endpoint, Error, ModelCapabilities, TokenPrices, UNKNOWN_OUTPUT_CAP,
+};
 use crate::tools::Toolbox;
-use crate::triage::Triager;
 
 /// What [`mount_toolbox`] needs from the boot so far.
 pub(super) struct ToolboxInputs<'a> {
@@ -66,7 +68,8 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         .with_image_input(capabilities.supports_image_input);
     // Credentials live in the user's secret store (docs/secrets.md): an
     // authorization belongs to the operator and the server, not to one session.
-    let mut store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::clone(secrets));
+    let mut store =
+        crate::tools::mcp::auth::store::KeychainStore::new(std::sync::Arc::clone(secrets));
     if let Some(host) = host {
         // A hosted session refreshes under the host's locks, so the host's
         // sessions share one refresh of a server's grant (docs/mcp-auth.md).
@@ -91,7 +94,8 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
             toolbox.mount_lsp(lsp);
         }
     }
-    let store: std::sync::Arc<dyn crate::mcp::auth::store::TokenStore> = std::sync::Arc::new(store);
+    let store: std::sync::Arc<dyn crate::tools::mcp::auth::store::TokenStore> =
+        std::sync::Arc::new(store);
     let unmounted = mcp_mount::mount_all(
         &mut toolbox,
         &loaded.role.mcp_servers,
@@ -105,7 +109,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
     // only when enabled, a declared server's unless an entry turns tools off. Applied once,
     // here, so `tools[]` is fixed from turn one.
     toolbox.retain_enabled(|name| loaded.role.tool_enabled(name));
-    let unmounted_section = crate::mcp::unmounted_section(&unmounted);
+    let unmounted_section = crate::tools::mcp::unmounted_section(&unmounted);
     // The frozen toolbox against the dialect's name rule (docs/tools.md): a name the
     // request would reject fails the boot here, by its display name, instead of the
     // first turn failing with a 400 that names nothing.
@@ -155,14 +159,14 @@ pub(super) fn freeze_preamble(
     loaded: &LoadedConfig,
     env_policy: &EnvPolicy,
     project: &Path,
-    inputs: crate::env::PromptInputs<'_>,
+    inputs: crate::config::env::PromptInputs<'_>,
 ) -> Result<FrozenPreamble, Error> {
     let role_section = loaded.role.preamble_section();
     // The [context] preamble builder (docs/context.md): resolve the operator's listed
     // files from the project directory and fold the rendered block into the frozen
     // prefix. Fail closed — configured context that can't be read aborts startup rather
     // than silently vanishing.
-    let mut resolved = match crate::context::resolve_with_child_env(
+    let mut resolved = match crate::config::context::resolve_with_child_env(
         &loaded.role.context,
         project,
         &env_policy.child_env(),
@@ -182,11 +186,12 @@ pub(super) fn freeze_preamble(
     // `[context]` exec that prints the environment is the concrete case.
     env_policy.mask_context(&mut resolved);
     let context_block = resolved.render();
-    let crate::env::SystemPrompt { identity, body } = crate::env::system_prompt_parts(
-        inputs
-            .with_context_block(context_block.as_deref())
-            .with_role_section(role_section.as_deref()),
-    );
+    let crate::config::env::SystemPrompt { identity, body } =
+        crate::config::env::system_prompt_parts(
+            inputs
+                .with_context_block(context_block.as_deref())
+                .with_role_section(role_section.as_deref()),
+        );
     Ok(FrozenPreamble {
         identity: env_policy.mask(&identity),
         body: env_policy.mask(&body),
@@ -222,7 +227,7 @@ pub(super) fn build_client(
     // endpoint slugs are per-model, the spotter runs a different (Haiku-band)
     // model, and an order naming endpoints that do not serve it would fail
     // outright with fallbacks disabled.
-    let upstream = crate::api::Upstream::pinned(upstream);
+    let upstream = crate::inference::api::Upstream::pinned(upstream);
     if let Some(pin) = &upstream {
         log::debug!("upstream: {} (fallbacks disabled)", pin.order.join(", "));
     }
@@ -263,7 +268,7 @@ pub(super) async fn mount_spotter(
     inference: &SessionInference,
     main_endpoint: &Endpoint,
     scratch: &Path,
-    directories: &crate::policy::Directories,
+    directories: &crate::config::policy::Directories,
 ) -> Result<MountedSpotter, Error> {
     let (spotter_selection, mut spotter_endpoint) = inference.spotter();
     let spotter_model = spotter_selection.model.clone();
@@ -340,7 +345,7 @@ pub(super) async fn mount_triager(
     Ok(match inference.triage() {
         Some((selection, mut triage_endpoint, triage)) => {
             triage_endpoint.session_id = main_endpoint.session_id.clone();
-            let system = env_policy.mask(&crate::env::triage_system_prompt(
+            let system = env_policy.mask(&crate::config::env::triage_system_prompt(
                 &triage.model,
                 model,
                 context_block,

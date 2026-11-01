@@ -75,7 +75,7 @@ async fn logging_in_here_records_the_oauth_kind() {
     );
     let text = render("", &draft).unwrap();
     assert!(text.contains(r#"auth = { kind = "oauth" }"#), "{text}");
-    let parsed = crate::user_config::InferenceConfig::from_toml(&text);
+    let parsed = crate::config::user_config::InferenceConfig::from_toml(&text);
     assert!(parsed.is_ok(), "{text}");
 }
 

@@ -3,9 +3,9 @@
 //! builds), so most of these assert one field while a neighbour stays resolved.
 
 use super::*;
-use crate::env_table::EnvSnapshot;
+use crate::config::env_table::EnvSnapshot;
+use crate::config::user_config::InferenceConfig;
 use crate::platform::secrets::Secrets;
-use crate::user_config::InferenceConfig;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -54,16 +54,16 @@ fn historied(
     toml: &str,
 ) -> (
     InferenceRegistry,
-    crate::history::History,
-    crate::history::Scope,
+    crate::config::history::History,
+    crate::config::history::Scope,
     tempfile::TempDir,
 ) {
-    let dir = crate::testing::temp_dir("resolve");
-    let store = crate::history::History::at(dir.path().join("state.db"));
+    let dir = crate::inference::testing::temp_dir("resolve");
+    let store = crate::config::history::History::at(dir.path().join("state.db"));
     let registry = registry(toml);
-    let scope = crate::history::Scope {
+    let scope = crate::config::history::Scope {
         cwd: dir.path().to_path_buf(),
-        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        config_key: crate::config::history::BUILTIN_CONFIG_KEY.to_string(),
     };
     (registry, store, scope, dir)
 }
@@ -199,11 +199,11 @@ provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     );
-    let now = crate::history::now();
-    store.record(&crate::history::Pick {
+    let now = crate::config::history::now();
+    store.record(&crate::config::history::Pick {
         at: now,
         cwd: "/code/elsewhere".to_string(),
-        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        config_key: crate::config::history::BUILTIN_CONFIG_KEY.to_string(),
         connection: "main".to_string(),
         provider: "anthropic".to_string(),
         model: "claude-opus-4-5".to_string(),
@@ -233,9 +233,9 @@ provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     );
-    let now = crate::history::now();
+    let now = crate::config::history::now();
     for _ in 0..6 {
-        store.record(&crate::history::Pick {
+        store.record(&crate::config::history::Pick {
             at: now,
             cwd: scope.cwd.to_string_lossy().into_owned(),
             config_key: scope.config_key.clone(),
@@ -245,10 +245,10 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
         });
     }
     for _ in 0..20 {
-        store.record(&crate::history::Pick {
+        store.record(&crate::config::history::Pick {
             at: now,
             cwd: "/code/elsewhere".to_string(),
-            config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+            config_key: crate::config::history::BUILTIN_CONFIG_KEY.to_string(),
             connection: "other".to_string(),
             provider: "anthropic".to_string(),
             model: "claude-opus-4-5".to_string(),
@@ -277,8 +277,8 @@ provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     );
-    let now = crate::history::now();
-    store.record(&crate::history::Pick {
+    let now = crate::config::history::now();
+    store.record(&crate::config::history::Pick {
         at: now,
         cwd: scope.cwd.to_string_lossy().into_owned(),
         config_key: scope.config_key.clone(),
@@ -895,18 +895,18 @@ auth = {{ kind = "env", key = "ANTHROPIC_KEY" }}
 /// compiled-in default (docs/model-catalog.md).
 #[tokio::test]
 async fn the_borrowed_spotter_default_reads_the_catalog() {
-    let catalog = crate::catalog::Catalog::new(None);
-    let haiku = |id: &str, created: i64| crate::api::ListedModel {
+    let catalog = crate::inference::catalog::Catalog::new(None);
+    let haiku = |id: &str, created: i64| crate::inference::api::ListedModel {
         created: Some(created),
         line: Some("haiku".into()),
         lifecycle: Some("active".into()),
-        ..crate::api::ListedModel::new(id)
+        ..crate::inference::api::ListedModel::new(id)
     };
     catalog
         .refresh_with(
             "main",
             crate::record::log::Provider::Anthropic,
-            crate::catalog::CATALOG_TTL,
+            crate::inference::catalog::CATALOG_TTL,
             || async {
                 Ok(vec![
                     haiku("claude-haiku-4-5", 1),
@@ -924,7 +924,7 @@ async fn the_borrowed_spotter_default_reads_the_catalog() {
         Some("claude-haiku-5-5")
     );
     let unheld = one_connection()
-        .with_catalog(crate::catalog::Catalog::new(None))
+        .with_catalog(crate::inference::catalog::Catalog::new(None))
         .resolve_options(&main_options(), None, None);
     assert_eq!(
         unheld.effective.spotter.value.map(|s| s.model).as_deref(),

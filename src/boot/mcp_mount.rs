@@ -20,10 +20,10 @@
 use std::io::IsTerminal;
 use std::sync::Arc;
 
-use crate::mcp::Unmounted;
-use crate::mcp::auth::store::TokenStore;
-use crate::mcp::auth::{self, AuthorizationRequired};
 use crate::tools::Toolbox;
+use crate::tools::mcp::Unmounted;
+use crate::tools::mcp::auth::store::TokenStore;
+use crate::tools::mcp::auth::{self, AuthorizationRequired};
 use trillium_client::Url;
 
 /// Told which server an authorization waits on as the wait begins, and `None` as it

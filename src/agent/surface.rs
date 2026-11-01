@@ -23,8 +23,8 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     // conversation continued with a different tail and reads the agent lineage's cache
     // instead of keying its own (docs/log-and-projection.md). Their schemas are static
     // for the same reason. An un-asked call is paired with a nudge result in the loop.
-    tools.push(crate::triage::retain_tool());
-    tools.push(crate::triage::triage_tool());
+    tools.push(crate::curation::triage::retain_tool());
+    tools.push(crate::curation::triage::triage_tool());
     tools
 }
 
@@ -122,7 +122,10 @@ pub fn tool_catalog(
             );
         }
     }
-    for raw in [crate::triage::retain_tool(), crate::triage::triage_tool()] {
+    for raw in [
+        crate::curation::triage::retain_tool(),
+        crate::curation::triage::triage_tool(),
+    ] {
         if let Some(name) = raw.get("name").and_then(Value::as_str) {
             catalog.insert(
                 name.to_string(),

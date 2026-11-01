@@ -1,12 +1,12 @@
 //! Session runtimes stop independently inside one process (docs/control-channel.md).
 
 use super::*;
-use crate::api::ModelCapabilities;
+use crate::curation::spotter::StaticSpotter;
+use crate::curation::triage::Triager;
 use crate::daemon::{SessionBoot, SessionRuntime};
+use crate::inference::api::ModelCapabilities;
 use crate::platform::spawn::group_alive;
 use crate::record::log::{Provider, Stance};
-use crate::spotter::StaticSpotter;
-use crate::triage::Triager;
 use std::path::Path;
 use trillium_tokio::Swansong;
 
@@ -33,11 +33,12 @@ impl Drop for Roots {
 /// A boot that never reaches a provider: the loop parks in `read_user_turn`
 /// until shutdown, which is the state a hosted idle session sits in. A request it is
 /// woken to send goes to a port nothing listens on, refused in process
-/// (`crate::testing::refusing_endpoint`): it fails after the transport's retries, as it
+/// (`crate::inference::testing::refusing_endpoint`): it fails after the transport's retries, as it
 /// would against a real closed port, and no socket is involved.
 pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
     let scratch = cwd.join("scratch");
-    let endpoint = crate::testing::refusing_endpoint(Provider::Anthropic, "/v1/messages");
+    let endpoint =
+        crate::inference::testing::refusing_endpoint(Provider::Anthropic, "/v1/messages");
     SessionBoot {
         client: Client::new(endpoint, "m", "sys"),
         toolbox: Toolbox::bash_and_mcps(cwd.to_path_buf(), Some(scratch)).unwrap(),
@@ -47,7 +48,11 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
             reason: "test".into(),
         },
         log: Log::in_memory(),
-        paths: SessionPaths::new(crate::policy::Directories::at(cwd), cwd.to_path_buf()).unwrap(),
+        paths: SessionPaths::new(
+            crate::config::policy::Directories::at(cwd),
+            cwd.to_path_buf(),
+        )
+        .unwrap(),
         role: LoadedConfig::default(),
         autonomous: false,
         capabilities: ModelCapabilities {
@@ -56,7 +61,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
         },
         model: "m".into(),
         inference: None,
-        env_policy: crate::env_table::EnvPolicy::default(),
+        env_policy: crate::config::env_table::EnvPolicy::default(),
         keep_scratch: false,
         triage_prices: None,
         cache_lost_at: None,
@@ -69,7 +74,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
 pub(super) fn boot_in(cwd: &Path, session_dir: &Path) -> SessionBoot<StaticSpotter> {
     let mut boot = boot(cwd);
     boot.paths = SessionPaths::new(
-        crate::policy::Directories::at(cwd),
+        crate::config::policy::Directories::at(cwd),
         session_dir.to_path_buf(),
     )
     .unwrap();
@@ -77,10 +82,10 @@ pub(super) fn boot_in(cwd: &Path, session_dir: &Path) -> SessionBoot<StaticSpott
 }
 
 /// A working directory of a session's own, holding the `scratch` directory [`boot`]
-/// names, and the guard that removes both when it drops (`crate::testing::temp_dir`).
+/// names, and the guard that removes both when it drops (`crate::inference::testing::temp_dir`).
 /// The path is canonical, as a session's working directory is.
 pub(super) fn workdir(label: &str) -> (PathBuf, tempfile::TempDir) {
-    let dir = crate::testing::temp_dir(label);
+    let dir = crate::inference::testing::temp_dir(label);
     std::fs::create_dir_all(dir.path().join("scratch")).unwrap();
     (dir.path().canonicalize().unwrap(), dir)
 }

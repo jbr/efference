@@ -2,13 +2,13 @@
 
 A session is parameterized by `(config, cwd, orchestrator)`. The **config** is the
 portable-policy half: what a session is *for* and what it may do, kept separate from cwd
-(the per-invocation spatial scope, see [env](../src/env.rs) / the system preamble) so the
+(the per-invocation spatial scope, see [env](../src/config/env.rs) / the system preamble) so the
 config stays portable. Policy is **data the classifier interprets**, never special-cased in
 code — there are no privileged program names or directories in the mechanism, only config
 the mechanism reads.
 
 This doc covers what is built now: the config (`src/config.rs`), the deterministic
-approval fast-path (`src/policy.rs`), and the independent spotter (`src/spotter.rs`),
+approval fast-path (`src/config/policy.rs`), and the independent spotter (`src/curation/spotter.rs`),
 wired into the turn loop's gate (`src/agent.rs`). The watch-window and the rest of the
 config-edit loop are planned; see [`../backlog/inbox/permissions/`](../backlog/inbox/permissions/).
 
@@ -147,7 +147,7 @@ that doesn't modify state or escape the repo"), and `spotter-log` counted that a
 clear. A rung that judges intent against `scope` and `watch-for` has nothing in its inputs
 that says the target does not exist.
 
-## The fast-path (`src/policy.rs`)
+## The fast-path (`src/config/policy.rs`)
 
 `classify(&Path, &Config, &ToolCall) -> Verdict` is a **pure function** — no I/O, no model —
 returning `Clear` (auto-approve: no human gate, no model round-trip), `Gate` (fall
@@ -512,7 +512,7 @@ the child's own probe ledger. The logged `ToolCall` is untouched throughout — 
 carries what the model wrote, and the binding lives only in flight and in the ephemeral
 gate view.
 
-## The spotter (`src/spotter.rs`)
+## The spotter (`src/curation/spotter.rs`)
 
 What the fast-path can't `Clear` falls to the **spotter** before it reaches the human — a
 one-shot, **fresh-context** model call (the provider's cheap band by default, on its own
@@ -540,12 +540,12 @@ instead — the first-party listing, or OpenRouter's per-model endpoints route, 
 ### Two rungs behind one trait
 
 `Spotter::assess` has two implementations, and which one a session mounts is decided once
-at boot by `MountedSpotter::mount` (`src/spotter/mount.rs`) from the `ModelKind` that
+at boot by `MountedSpotter::mount` (`src/curation/spotter/mount.rs`) from the `ModelKind` that
 `Endpoint::spotter_kind` reports for the spotter selection:
 
 - **`ForkSpot`** — the prose rung, described in the rest of this section. A generative
   model reads a rendered persona + scope + move and answers with a stance and a sentence.
-- **`JevSpot`** (`src/spotter/jev.rs`) — the **decision** rung. A decision model reads a
+- **`JevSpot`** (`src/curation/spotter/jev.rs`) — the **decision** rung. A decision model reads a
   JSON state and answers typed questions — yes/no, a choice among options, a score on
   described levels — with a probability for each answer
   ([transport.md](transport.md): the decisions route). Selected when the spotter model is a
@@ -566,7 +566,7 @@ than a model swap:
 
 **The judgement is decomposed, and part of it is precedent.** A decision model answers
 fixed questions with probabilities, so the stance is a fold in code
-(`src/spotter/jev/questions.rs`) over two requests sent concurrently:
+(`src/curation/spotter/jev/questions.rs`) over two requests sent concurrently:
 
 - **Cold** — the state above, asked `sketch` (a Score: how concerning the move is, five
   described levels from routine to severe) and the axes `in_scope`, `path_outside`,
@@ -579,9 +579,9 @@ fixed questions with probabilities, so the stance is a fold in code
   range, term, or record), `wider` (goes further: writes where it read, sends where it
   fetched, a different host, account, or directory), and `different`. Each is asked in
   both option orders, because a decision model leans toward the first option, and the two
-  are averaged (`src/spotter/jev/relation.rs`).
+  are averaged (`src/curation/spotter/jev/relation.rs`).
 
-**Consent** is read off the log (`src/spotter/precedent.rs`): a call that ran and either
+**Consent** is read off the log (`src/curation/spotter/precedent.rs`): a call that ran and either
 reached no spotter — the fast path, a granted tool, the human under `human_only` — or was
 held by the spotter and then approved. A call the spotter cleared is not consent, so a
 clear never becomes the evidence for the next one. A bound leaf (`agents__decide`) has
@@ -831,7 +831,7 @@ grant only: an earlier wording that also said "outside the working directory" mo
 gates 568 → 527 with misses 4 → 5, the added one being `./target/release/efference log`, whose
 path is in-tree and whose harm is what the binary does.
 
-## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon/config_edits.rs`)
+## The config-edit loop (`src/config/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon/config_edits.rs`)
 
 A deny is not a dead-end: the orchestrator can **edit the config** at a gate. A
 `Payload::ConfigEdit` carries one `ConfigChange` (`command` / `path` / `tool` / `scope`).
@@ -880,7 +880,7 @@ commits or cancels it (referencing the proposal's `seq` via `resolves`) — over
 the human gate, fs-watch, and an approved session edit — append `Committed` directly; the
 asynchronous proposers go `Proposed → commit/cancel`.
 
-### The grant a gate offers (`src/policy/gate_grant.rs`)
+### The grant a gate offers (`src/config/policy/gate_grant.rs`)
 
 A gate offers at most **one** grant beside approve and abort: the `ConfigChange` that would
 clear the held call and calls like it, with a label naming what it allows ("always allow
@@ -1131,7 +1131,7 @@ without eliminating:
   confidently fits, so the route serves plain `SpotterHuman` too; under `HumanOnly` it is the
   only way the allowlist grows during the session.
 
-## Prefix-promotion: the harness learns its allowlist (`src/policy.rs`, `src/agent.rs`, `src/spotter.rs`)
+## Prefix-promotion: the harness learns its allowlist (`src/config/policy.rs`, `src/agent.rs`, `src/curation/spotter.rs`)
 
 The allowlist grows by *probing*, so the spotter-call rate decays as a session's real toolchain
 saturates. The cognitive load on the spotter stays a single extra yes/no, and the "learning" is

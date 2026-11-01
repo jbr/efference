@@ -7,7 +7,7 @@ impl Toolbox {
     pub fn new(providers: Vec<Provider>) -> Self {
         Self {
             providers,
-            child_env: crate::env_table::ChildEnv::default(),
+            child_env: crate::config::env_table::ChildEnv::default(),
             image_input: true,
         }
     }
@@ -42,7 +42,7 @@ impl Toolbox {
     /// (docs/env.md). Separate from construction for the same reason as
     /// [`with_bash_limits`](Self::with_bash_limits): only a served session has a
     /// config, and the dev views never spawn anything.
-    pub fn with_child_env(mut self, child_env: crate::env_table::ChildEnv) -> Self {
+    pub fn with_child_env(mut self, child_env: crate::config::env_table::ChildEnv) -> Self {
         for provider in &mut self.providers {
             if let Provider::Bash(bash) = provider {
                 bash.child_env = child_env.clone();
@@ -112,11 +112,10 @@ impl Toolbox {
         name: &str,
         config: &crate::config::McpTransport,
         cwd: &std::path::Path,
-        credentials: Option<crate::mcp::auth::Credentials>,
+        credentials: Option<mcp::auth::Credentials>,
     ) -> anyhow::Result<()> {
         let provider =
-            crate::mcp::ConnectedProvider::mount(name, config, cwd, credentials, &self.child_env)
-                .await?;
+            mcp::ConnectedProvider::mount(name, config, cwd, credentials, &self.child_env).await?;
         self.providers.push(Provider::Connected(Box::new(provider)));
         Ok(())
     }

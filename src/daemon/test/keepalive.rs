@@ -1,16 +1,16 @@
 //! Tests for `keepalive.rs` — the two pure predicates the ping is built on.
 
 use super::*;
-use crate::api::KeepaliveError;
-use crate::api::{RequestUsage, TokenPrices};
 use crate::daemon::keepalive::{
     CacheLineage, KeepaliveSpec, PingCost, discard_is_affordable, lop_trailing_model_turns,
     prefix_tokens, skip_reason,
 };
+use crate::inference::api::KeepaliveError;
+use crate::inference::api::{RequestUsage, TokenPrices};
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
 use crate::protocol::state::KeepaliveSkipReason;
 use crate::record::log::{AssistantOutput, MessagesOutputBlock};
 use crate::record::project::{Role, WireTurn};
-use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 fn message(role: Role, text: &str) -> WireTurn {
     match role {
@@ -228,8 +228,8 @@ fn unpriced_sessions_fall_back_to_the_token_ratio() {
 /// session's completion price over the discarded tokens.
 #[test]
 fn completion_cost_prefers_the_receipt() {
-    use crate::api::{InlineCost, Receipt};
     use crate::daemon::keepalive::completion_cost;
+    use crate::inference::api::{InlineCost, Receipt};
     let usage = Usage {
         output_tokens: 1_000,
         ..Usage::default()
@@ -274,7 +274,7 @@ pub(super) fn pinged_session(
     upstream: &ScriptedUpstream,
     prefix: u64,
 ) -> (Arc<Session>, Arc<Client>) {
-    use crate::api::Client;
+    use crate::inference::api::Client;
     use crate::record::log::Provider;
     let (shared, _rx) = Session::in_memory();
     shared.append(1, Payload::user("hi")).unwrap();

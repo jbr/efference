@@ -1,7 +1,7 @@
 //! `[env]` table resolution (docs/env.md).
 
-use crate::api::Error;
-use crate::env_table::{EnvPolicy, Resolver};
+use crate::config::env_table::{EnvPolicy, Resolver};
+use crate::inference::api::Error;
 
 /// Resolve every value the `[env]` table names, failing the boot on the first
 /// unresolvable reference (docs/env.md). Loud rather than silent: a reference
@@ -10,8 +10,8 @@ use crate::env_table::{EnvPolicy, Resolver};
 /// which is a pointer and safe to print.
 pub(super) fn resolve_env_table(
     resolver: &Resolver,
-    table: &std::collections::BTreeMap<String, crate::env_table::EnvEntry>,
-) -> Result<Vec<crate::env_table::ResolvedValue>, Error> {
+    table: &std::collections::BTreeMap<String, crate::config::env_table::EnvEntry>,
+) -> Result<Vec<crate::config::env_table::ResolvedValue>, Error> {
     let (values, errors) = resolver.resolve_table(table);
     if !errors.is_empty() {
         // Each reference's failure rides the returned error: the create response
@@ -30,7 +30,7 @@ pub(super) fn resolve_env_table(
 /// runs before the session's policy exists.
 pub(super) fn resolve_env_values(
     resolver: &Resolver,
-    table: &std::collections::BTreeMap<String, crate::env_table::EnvEntry>,
+    table: &std::collections::BTreeMap<String, crate::config::env_table::EnvEntry>,
 ) -> Result<std::collections::BTreeMap<String, String>, Error> {
     Ok(resolve_env_table(resolver, table)?
         .into_iter()
@@ -47,9 +47,9 @@ pub(super) fn resolve_env_values(
 /// second vault prompt.
 pub(super) fn build_env_policy(
     resolver: &std::sync::Arc<Resolver>,
-    table: &std::collections::BTreeMap<String, crate::env_table::EnvEntry>,
+    table: &std::collections::BTreeMap<String, crate::config::env_table::EnvEntry>,
     inference: &crate::inference::SessionInference,
-    base_env: crate::env_table::EnvSnapshot,
+    base_env: crate::config::env_table::EnvSnapshot,
 ) -> Result<EnvPolicy, Error> {
     let session_values = resolve_env_table(resolver, table)?;
     let host_credentials = inference.credential_variables().to_vec();
@@ -98,7 +98,7 @@ pub(super) fn build_env_policy(
         log::debug!(
             "env: `{name}` is set to fewer than {} characters and will not be masked — \
              too short a needle would shred unrelated output",
-            crate::env_table::MASKABILITY_FLOOR
+            crate::config::env_table::MASKABILITY_FLOOR
         );
     }
     Ok(env_report.policy)

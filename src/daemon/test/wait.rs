@@ -4,8 +4,8 @@
 //! the test at the guard.
 
 use super::*;
-use crate::api::RetrySurface;
 use crate::daemon::{Host, LoopPhase};
+use crate::inference::api::RetrySurface;
 
 /// Run `wake` on another task, after the waiter has had its first look, and wait for the
 /// session to hold what `wake` does.
@@ -69,13 +69,15 @@ async fn a_state_ping_wakes_the_wait() {
 async fn a_retry_change_wakes_the_wait() {
     woken_by(
         |session| {
-            session.upstream_retry.set(crate::api::stream_abort_retry(
-                RetrySurface::Turn,
-                1,
-                3,
-                Duration::from_secs(1),
-                "stream aborted",
-            ));
+            session
+                .upstream_retry
+                .set(crate::inference::api::stream_abort_retry(
+                    RetrySurface::Turn,
+                    1,
+                    3,
+                    Duration::from_secs(1),
+                    "stream aborted",
+                ));
         },
         |session| session.upstream_retry.get().is_some(),
     )

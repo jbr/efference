@@ -1,11 +1,11 @@
 //! The catalog, config, and key helpers every form test drives with.
 
 use super::*;
-use crate::api::{ListedModel, Price};
 use crate::client::{CatalogModel, CatalogStatus, ConnectionCatalog};
+use crate::config::user_config::InferenceConfig;
+use crate::inference::api::{ListedModel, Price};
 use crate::inference::{ConnectionInventory, InferenceRegistry, ResolvedOptions, SessionOptions};
 use crate::record::log::Provider;
-use crate::user_config::InferenceConfig;
 use ratatui::{buffer::Buffer, layout::Rect};
 
 /// The host's configuration behind both the inventory and the preview resolver.
@@ -32,7 +32,7 @@ disabled = true
 
 fn registry() -> InferenceRegistry {
     let config = InferenceConfig::from_toml(CONFIG).unwrap();
-    let env = crate::env_table::EnvSnapshot::new(
+    let env = crate::config::env_table::EnvSnapshot::new(
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();
@@ -60,16 +60,16 @@ pub(in crate::tui::session_form) fn connections() -> Vec<ConnectionInventory> {
 /// resolves (as `History`) rather than refusing.
 pub(in crate::tui::session_form) fn resolve(options: &SessionOptions) -> ResolvedOptions {
     let registry = registry();
-    let dir = crate::testing::temp_dir("session-form");
-    let store = crate::history::History::at(dir.path().join("state.db"));
-    let scope = crate::history::Scope {
+    let dir = crate::inference::testing::temp_dir("session-form");
+    let store = crate::config::history::History::at(dir.path().join("state.db"));
+    let scope = crate::config::history::Scope {
         cwd: PathBuf::from("/code/example"),
-        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        config_key: crate::config::history::BUILTIN_CONFIG_KEY.to_string(),
     };
-    store.record(&crate::history::Pick {
-        at: crate::history::now(),
+    store.record(&crate::config::history::Pick {
+        at: crate::config::history::now(),
         cwd: "/code/example".to_string(),
-        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        config_key: crate::config::history::BUILTIN_CONFIG_KEY.to_string(),
         connection: "work".to_string(),
         provider: "anthropic".to_string(),
         model: "claude-sonnet-4-5".to_string(),
@@ -117,7 +117,7 @@ pub(in crate::tui::session_form) fn entry(
 /// OpenAI models and two Anthropic ones, three of them recently picked, and the
 /// disabled connection unavailable.
 pub(in crate::tui::session_form) fn catalog() -> Vec<ConnectionCatalog> {
-    let now = crate::history::now();
+    let now = crate::config::history::now();
     let days_ago = |days: i64| Some(now - days * 86_400 - 3_600);
     let mut router = vec![
         listed(

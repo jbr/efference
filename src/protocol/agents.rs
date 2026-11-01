@@ -81,8 +81,8 @@ pub struct BoundAction {
 
 impl BoundAction {
     /// The leaf session's project and working directories, for classification.
-    pub fn directories(&self) -> crate::policy::Directories {
-        crate::policy::Directories::new(self.project.clone(), self.cwd.clone())
+    pub fn directories(&self) -> crate::config::policy::Directories {
+        crate::config::policy::Directories::new(self.project.clone(), self.cwd.clone())
     }
 }
 

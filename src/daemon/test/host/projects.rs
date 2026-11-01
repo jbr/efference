@@ -15,8 +15,9 @@ use super::*;
 /// is a file under this test's root.
 fn host_with_store(roots: &Roots) -> Arc<Host> {
     Host::new(
-        one_connection_registry()
-            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        one_connection_registry().with_history(crate::config::history::History::at(
+            roots.0.join("state.db"),
+        )),
         baseline_env(),
     )
 }
@@ -35,7 +36,7 @@ fn launch(cwd: &Path, config: Option<&str>, at: i64) -> crate::remembered::Proje
         cwd: cwd.to_path_buf(),
         config_key: match config {
             Some(config) => cwd.join(config).to_string_lossy().into_owned(),
-            None => crate::history::BUILTIN_CONFIG_KEY.to_string(),
+            None => crate::config::history::BUILTIN_CONFIG_KEY.to_string(),
         },
         config: config.map(PathBuf::from),
     }
@@ -309,13 +310,13 @@ async fn forgetting_uses_the_reported_identity_rather_than_recomputing_it() {
     // is the identity.
     let row = launch(&cwd, None, 100);
     store(&roots).record(&row);
-    assert_eq!(row.config_key, crate::history::BUILTIN_CONFIG_KEY);
+    assert_eq!(row.config_key, crate::config::history::BUILTIN_CONFIG_KEY);
 
     // The directory gains a template afterwards, so re-probing resolves to a key
     // this row was never stored under.
     std::fs::write(cwd.join("efference.toml"), "").unwrap();
     assert_eq!(
-        crate::history::Scope::for_request(&cwd, None).config_key,
+        crate::config::history::Scope::for_request(&cwd, None).config_key,
         cwd.join("efference.toml").to_string_lossy(),
         "the probe finds it now"
     );

@@ -360,8 +360,9 @@ async fn creation_enforces_the_temperature_range() {
 /// this test's root.
 fn host_with_register(roots: &Roots) -> Arc<Host> {
     Host::new(
-        one_connection_registry()
-            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        one_connection_registry().with_history(crate::config::history::History::at(
+            roots.0.join("state.db"),
+        )),
         baseline_env(),
     )
 }

@@ -2,7 +2,7 @@
 //! closes once with one record, and a resumed session restores both halves.
 use super::*;
 
-use crate::api::Endpoint;
+use crate::inference::api::Endpoint;
 use crate::record::log::Provider;
 
 fn session() -> Arc<Session> {

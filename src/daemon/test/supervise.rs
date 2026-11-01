@@ -2,10 +2,10 @@
 //! authority, and a wake subscription (docs/permissions.md, docs/tools.md).
 
 use super::*;
+use crate::config::policy::ReviewLevel;
 use crate::control_tools::{Control, Decide, Executor, Interrupt, Message};
 use crate::daemon::Host;
 use crate::daemon::host::SupervisorRefused;
-use crate::policy::ReviewLevel;
 use crate::protocol::agents::Decision;
 use crate::record::log::{Approval, InterruptOrigin, Telemetry};
 use mcplease::traits::Tool as _;

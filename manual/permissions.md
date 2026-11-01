@@ -4,7 +4,7 @@ You don’t have to choose between approving every step and letting an agent do 
 A project can allow routine work, ask a second model to review calls outside those
 permissions, and bring held calls to you. The place to describe that balance is your
 project’s `efference.toml`.
-<!-- src: src/agent/step/judge.rs::judge; src/policy.rs::classify, Verdict; src/spotter.rs -->
+<!-- src: src/agent/step/judge.rs::judge; src/config/policy.rs::classify, Verdict; src/curation/spotter.rs -->
 
 ## Decide what needs your attention
 
@@ -18,7 +18,7 @@ a session’s own configuration:
    reads the call against the project's `scope` — a sentence saying what sessions here are
    for — and either lets it run or holds it.
 3. **You.** A held call waits at a **gate** until you decide. There is no timeout.
-<!-- src: src/agent/step.rs::run_call; src/agent/step/judge.rs::judge; src/policy.rs::classify, Verdict; src/spotter.rs -->
+<!-- src: src/agent/step.rs::run_call; src/agent/step/judge.rs::judge; src/config/policy.rs::classify, Verdict; src/curation/spotter.rs -->
 
 When a call reaches you, read the call itself, not just the agent’s description of what it
 wants. Then you can:
@@ -37,7 +37,7 @@ agent. Allowed commands run with your full access, the spotter can be wrong, and
 rules compare text rather than enforce filesystem isolation. If the project handles
 content you don’t trust — including instructions hidden in files or web pages — grant less
 and inspect held calls carefully.
-<!-- src: docs/permissions.md ("Threat model: error, not deception"), checked against src/spotter.rs (module doc) and src/policy.rs -->
+<!-- src: docs/permissions.md ("Threat model: error, not deception"), checked against src/curation/spotter.rs (module doc) and src/config/policy.rs -->
 
 ## Start with routine work
 
@@ -63,7 +63,7 @@ efference = { enabled = true, granted = true }   # efference's own tools, withou
 "git log" = true
 "git push" = "deny"         # skip the spotter; always ask
 ```
-<!-- src: src/config/raw.rs; src/policy/paths.rs::governing_grant; src/policy/commands.rs::command_stance; src/spotter.rs::render_context (watch-for) -->
+<!-- src: src/config/raw.rs; src/config/policy/paths.rs::governing_grant; src/config/policy/commands.rs::command_stance; src/curation/spotter.rs::render_context (watch-for) -->
 
 Here, `scope` tells the spotter what the sessions are for, and `watch-for` names changes
 that deserve attention. The agent can read, build, and test without interrupting you;
@@ -73,7 +73,7 @@ You can allow writes outright with `"." = true`, but those edits then pass witho
 That includes files that can run code later: `efference.toml`, git hooks and config, build
 scripts, and CI definitions. Choose this based on what you’re comfortable letting the
 agent change, not just how many prompts you’d like to avoid.
-<!-- src: src/policy.rs::classify_structured (a cleared write never reaches the spotter); src/config/load.rs (efference.toml read at session start) -->
+<!-- src: src/config/policy.rs::classify_structured (a cleared write never reaches the spotter); src/config/load.rs (efference.toml read at session start) -->
 
 The setup session efference offers in a new project writes this file with you
 ([Quick start](quick-start.md)). A session started in a directory with no `efference.toml`
@@ -87,14 +87,14 @@ A command permission is trust in a program, not a check on what it does. `"cargo
 runs your build scripts and tests; `cargo = true` also allows `cargo install`, which
 downloads and builds code. A permitted command's arguments aren't checked against
 `[paths]`: with `cat = true`, `cat /etc/hosts` runs.
-<!-- src: src/policy/commands.rs::command_stance, classify_bash (no argument-path check) -->
+<!-- src: src/config/policy/commands.rs::command_stance, classify_bash (no argument-path check) -->
 
 Some programs run other programs, or write files, given only an argument: shells and
 interpreters (`bash`, `python`, `node`), `env`, `xargs`, `sudo`, `ssh`, `docker`, `make`,
 `find`, `sed`, and tools with a `-c` or `--config` option, such as `git` and `cargo`.
 Permitting one by name permits whatever the agent can make it do. Permit the narrowest
 prefix that covers the work: `"git log"`, not `git`.
-<!-- src: src/policy/commands.rs::command_stance (prefix only) -->
+<!-- src: src/config/policy/commands.rs::command_stance (prefix only) -->
 
 Don't permit `efference`, `curl`, or an interpreter in a project whose agent you don't
 want reaching the host: the host's control socket doesn't tell the agent apart from you, so
@@ -105,12 +105,12 @@ a program that can reach it can approve the agent's own held calls.
 efference is not a sandbox. Everything the agent runs, runs as you, with your files and your
 network. Nothing restricts which hosts a command can reach. A command you allow once can
 also leave something running — a server, a watcher — after it returns.
-<!-- src: absence of sandboxing in src/; src/bash.rs; src/policy/commands.rs (no network rule) -->
+<!-- src: absence of sandboxing in src/; src/tools/bash.rs; src/config/policy/commands.rs (no network rule) -->
 
 `[paths]` and `[commands]` don't apply to MCP tools. Granting a tool, or a whole server with
 `server = { granted = true }`, trusts it with everything it can do, including tools the server
 adds later.
-<!-- src: src/policy.rs::classify_structured, tool_granted -->
+<!-- src: src/config/policy.rs::classify_structured, tool_granted -->
 
 ### When you want a call held
 
@@ -119,13 +119,13 @@ the call. (An autonomous session, with no one to ask, declines it.) It matches a
 that starts with exactly those words. It does not match the same action written another
 way — `git -C dir push`, `git add . && git push`, or a script that pushes — which the
 spotter judges instead.
-<!-- src: src/agent/step/judge.rs::judge (Verdict::Deny arm); src/policy/commands.rs::command_stance, classify_bash -->
+<!-- src: src/agent/step/judge.rs::judge (Verdict::Deny arm); src/config/policy/commands.rs::command_stance, classify_bash -->
 
 `false` in `[paths]` removes access under that path, so a call that needs it goes to the
 spotter. The spotter is shown the restriction and will normally hold the call, but it is a
 model, not a lock. To keep a file out of the agent's reach, keep it outside the project and
 out of the environment efference runs in.
-<!-- src: src/policy.rs::classify_structured; src/policy/paths.rs::path_granted_at; src/spotter.rs::render_context -->
+<!-- src: src/config/policy.rs::classify_structured; src/config/policy/paths.rs::path_granted_at; src/curation/spotter.rs::render_context -->
 
 ## Review calls from your phone
 
@@ -153,12 +153,12 @@ For each call:
 3. Your settings: the call runs, goes to the spotter, or (`deny`) skips to step 5.
 4. The spotter: runs it, or holds it.
 5. Whoever decides this session's gates — you, or a supervising session — decides.
-<!-- src: src/agent/step.rs::run_call (ask, config_write, hand_off); src/agent/step/judge.rs::judge; src/policy.rs::is_config_write -->
+<!-- src: src/agent/step.rs::run_call (ask, config_write, hand_off); src/agent/step/judge.rs::judge; src/config/policy.rs::is_config_write -->
 <!-- TODO: blocked on backlog/inbox/config-write-by-cleared-command.md — a permitted shell command that rewrites the session config is adopted without step 2. -->
 
 Step 3 costs nothing and asks no model. Decisions from the spotter and from people are
 recorded in the session's log.
-<!-- src: src/policy.rs::classify; src/agent/step/judge.rs::judge (Payload::Spot); src/daemon/approvals.rs -->
+<!-- src: src/config/policy.rs::classify; src/agent/step/judge.rs::judge (Payload::Spot); src/daemon/approvals.rs -->
 
 ### What clears without asking
 
@@ -175,7 +175,7 @@ recorded in the session's log.
 - **`[commands]`**: shell commands by prefix, each `true` (or `"clear"`), `"deny"` (or
   `false`), or `"gate"`/`"watch"` (send to the spotter even under a broader `true`).
 - The session's scratch directory (`$TMPDIR`) is always readable and writable.
-<!-- src: src/policy.rs::tool_granted, classify_structured; src/config/tools.rs::ToolsTable, Config::tool_enabled; src/policy/paths.rs::path_spec, context_granted, governing_grant; src/policy/commands.rs::command_stance; src/config.rs::CommandStance; src/boot/scaffold.rs::mint_scratch -->
+<!-- src: src/config/policy.rs::tool_granted, classify_structured; src/config/tools.rs::ToolsTable, Config::tool_enabled; src/config/policy/paths.rs::path_spec, context_granted, governing_grant; src/config/policy/commands.rs::command_stance; src/config.rs::CommandStance; src/boot/scaffold.rs::mint_scratch -->
 
 ### Shell commands
 
@@ -188,12 +188,12 @@ clear without the spotter:
 - One leading `cd <dir> &&`, if `[paths]` allows reading that directory.
 - One `>` or `>>` write to a file, with or without a here-doc, if the command itself is
   permitted and `[paths]` allows writing the file.
-<!-- src: src/policy/commands.rs::single_and_or_list, simple_command_tokens, is_safe_fd_dup, bash_tokens_in, classify_redirect_write, redirect_write_in, literal_heredoc -->
+<!-- src: src/config/policy/commands.rs::single_and_or_list, simple_command_tokens, is_safe_fd_dup, bash_tokens_in, classify_redirect_write, redirect_write_in, literal_heredoc -->
 
 Prefixes match whole words from the start, as written: `"git diff"` matches
 `git diff HEAD~1` but not `git -C dir diff`. The longest matching prefix decides, so a
 narrow entry can carve an exception out of a broad one.
-<!-- src: src/policy/commands.rs::command_stance -->
+<!-- src: src/config/policy/commands.rs::command_stance -->
 
 ### Files
 
@@ -204,7 +204,7 @@ read its own configuration and attachments; a deeper entry of your own can overr
 `~/.efference/` and paths outside the project have no special protection: they are
 ungranted, so a call reaching them goes to the spotter unless something you permitted
 covers it.
-<!-- src: src/policy/paths.rs::lexical_normalize, path_granted; src/boot/scaffold.rs::self_surface_grants; absence of a ~/.efference rule in src/policy/ -->
+<!-- src: src/config/policy/paths.rs::lexical_normalize, path_granted; src/boot/scaffold.rs::self_surface_grants; absence of a ~/.efference rule in src/config/policy/ -->
 
 ### The spotter
 
@@ -214,7 +214,7 @@ project's `scope` and `watch-for`, the working directory, and your `[paths]` set
 does not see the conversation, or the reason the agent gave for the call. An MCP server's
 own claims about its tools are grounds to hold, never to run. The spotter can let a call run
 or hold it; it cannot refuse one. If it fails or gives no usable answer, the call is held.
-<!-- src: src/spotter.rs::render_context, render_move, render_brief, parse_spot, Spotting::fail_closed; src/policy/path_words.rs -->
+<!-- src: src/curation/spotter.rs::render_context, render_move, render_brief, parse_spot, Spotting::fail_closed; src/config/policy/path_words.rs -->
 
 Each review is a model request on the spotter’s connection, so that provider receives the
 command text, scope, and path settings. To choose the model, efference uses the first
@@ -228,12 +228,12 @@ available option in this order:
 
 Adding an OpenRouter connection can therefore change where spotter requests go. A decision
 model also compares the call with earlier calls you approved in the session.
-<!-- src: src/inference/options.rs::resolve_spotter, decision_spotter; src/api/provider.rs::default_spotter_model; src/agent/step/judge.rs::judge (RequestOrigin::Spot); src/spotter/precedent.rs -->
+<!-- src: src/inference/options.rs::resolve_spotter, decision_spotter; src/inference/api/provider.rs::default_spotter_model; src/agent/step/judge.rs::judge (RequestOrigin::Spot); src/curation/spotter/precedent.rs -->
 
 When the spotter sees a command prefix more than once, it may propose permitting it in the
 session. A proposal changes nothing until you accept it, in the terminal interface's sidebar
 or with `efference control proposal`.
-<!-- src: src/policy.rs::MIN_SIGHTINGS_TO_PROBE; src/agent/step/judge.rs::judge (probe); src/tui/sidebar.rs (Proposal); src/control_tools (proposal) -->
+<!-- src: src/config/policy.rs::MIN_SIGHTINGS_TO_PROBE; src/agent/step/judge.rs::judge (probe); src/tui/sidebar.rs (Proposal); src/control_tools (proposal) -->
 
 ### Changing permissions during a session
 
@@ -255,7 +255,7 @@ access to a directory (read-only for a read), or the shortest shell command pref
 spotter hasn’t judged unsafe. That prefix is often just the program’s name, allowing any
 arguments. Calls held for several reasons, or with no single permission that would clear
 them, have no suggestion.
-<!-- src: src/policy/gate_grant.rs::gate_grant; src/agent/config_edit.rs::commit_config_edit; src/tui/control_strip.rs::strip_context_verbs; web/src/ui/Gate.tsx -->
+<!-- src: src/config/policy/gate_grant.rs::gate_grant; src/agent/config_edit.rs::commit_config_edit; src/tui/control_strip.rs::strip_context_verbs; web/src/ui/Gate.tsx -->
 <!-- TODO: blocked on backlog/gate-grant-clients.md — restate as the clients' control once both offer it. -->
 
 A lasting permission applied through this mechanism is written to the session’s own
@@ -275,7 +275,7 @@ A session's review level sets who answers a held call:
 | `human_only` | no | you, for every call your settings don't cover |
 | `supervisor` | yes | the session that supervises this one; the default for a session another session created. It can pass a call up to its own supervisor, and so on up to you. With no supervisor running, you. |
 | `autonomous` | yes | no one: the call is declined, and the agent is told what to change in its configuration |
-<!-- src: src/policy.rs::ReviewLevel; src/daemon/config_edits.rs::set_autonomous; src/daemon/host/supervise.rs; src/control_tools/decide.rs (escalate); src/daemon/approvals.rs::escalate; src/daemon/review.rs::resolved_review_level; src/agent/config_edit.rs::missing_grant_message, autonomous_gate_message -->
+<!-- src: src/config/policy.rs::ReviewLevel; src/daemon/config_edits.rs::set_autonomous; src/daemon/host/supervise.rs; src/control_tools/decide.rs (escalate); src/daemon/approvals.rs::escalate; src/daemon/review.rs::resolved_review_level; src/agent/config_edit.rs::missing_grant_message, autonomous_gate_message -->
 
 `efference control create --autonomous` starts a session that way; `efference control review-level` changes it. An
 autonomous session runs whatever your settings or the spotter allow, with no one watching.
@@ -293,4 +293,4 @@ A session started in its own worktree works in a separate git checkout and branc
 is not a permission boundary. It carries the project's settings, so it can still reach your
 checkout by path, and it shares the repository, its hooks, and everything else on the
 machine.
-<!-- src: src/worktree.rs; src/policy/directories.rs::Directories::target, judged -->
+<!-- src: src/worktree.rs; src/config/policy/directories.rs::Directories::target, judged -->

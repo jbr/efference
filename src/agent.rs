@@ -15,15 +15,17 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::api::{Client, Error, RetrySurface, Streamed, ToolChoice};
-use crate::bash;
 use crate::config::Refreshed;
-use crate::consolidate;
+use crate::config::policy::{self, ReviewLevel, Verdict};
+use crate::curation::consolidate;
+use crate::curation::inbox::ShownNotification;
+use crate::curation::spotter::Spotter;
+use crate::curation::triage::{
+    BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager,
+};
 use crate::daemon::Session;
 use crate::frontend::{Frontend, GateOptions, SubmittedTurn};
-use crate::inbox::ShownNotification;
-use crate::policy::{self, ReviewLevel, Verdict};
-use crate::process_monitor;
+use crate::inference::api::{Client, Error, RetrySurface, Streamed, ToolChoice};
 use crate::protocol::state::{BlockedReason, LoopPhase, Stall, StallReason};
 use crate::protocol::stream::StreamDelta;
 use crate::record::log::{
@@ -32,9 +34,9 @@ use crate::record::log::{
     ToolCall, Triage, Turn, WireState,
 };
 use crate::record::project::WireTurn;
-use crate::spotter::Spotter;
 use crate::tools::Toolbox;
-use crate::triage::{BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager};
+use crate::tools::bash;
+use crate::tools::process_monitor;
 
 /// Hard cap on a single tool result's bytes (defense in depth). The triage caps
 /// *line count* (`TRIAGE_LINE_CAP`), but not a pathological single huge line; an

@@ -5,7 +5,7 @@ use super::*;
 /// One config edit: a single, durable change to the policy table (docs/permissions.md).
 /// The change vocabulary lives here, in the log types, deliberately — like [`Stance`] and
 /// [`Origin`], the log owns its own serialized types so the wire format isn't hostage to a
-/// config struct's layout. [`crate::policy::apply_config_change`] applies each [`ConfigChange`] to
+/// config struct's layout. [`crate::config::policy::apply_config_change`] applies each [`ConfigChange`] to
 /// the config it folds into.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -53,7 +53,7 @@ pub enum EditState {
 
 /// What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape
 /// (docs/permissions.md). Each variant addresses one section of the config table;
-/// [`crate::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
+/// [`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
 /// Most variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the
 /// narrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace
 /// semantics over a list are an unsettled question; add it when an initiator needs it).

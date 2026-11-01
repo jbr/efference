@@ -42,7 +42,8 @@ fn host_over(root: &Root) -> Arc<Host> {
         config: None,
     });
     Host::new(
-        codex_registry(root.path(), "boot").with_history(crate::history::History::at(state)),
+        codex_registry(root.path(), "boot")
+            .with_history(crate::config::history::History::at(state)),
         baseline_env(),
     )
 }

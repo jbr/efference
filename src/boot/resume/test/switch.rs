@@ -132,7 +132,7 @@ async fn a_switch_creation_would_refuse_refuses_the_resume() {
 fn two_dialect_registry(root: &std::path::Path, id: &str) -> InferenceRegistry {
     let codex_home = root.join(format!("codex-home-{id}"));
     let _ = codex_registry(root, id);
-    let config = crate::user_config::InferenceConfig::from_toml(
+    let config = crate::config::user_config::InferenceConfig::from_toml(
         r#"
 [connections.oai]
 provider = "openai-codex"
@@ -145,7 +145,7 @@ auth = { kind = "env", key = "EFFERENCE_SWITCH_TEST_KEY" }
 "#,
     )
     .unwrap();
-    let host_env = crate::env_table::EnvSnapshot::new(
+    let host_env = crate::config::env_table::EnvSnapshot::new(
         [
             (
                 "CODEX_HOME".to_string(),

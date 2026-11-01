@@ -7,7 +7,7 @@ use std::time::Duration;
 fn bare_host() -> Arc<Host> {
     Host::new(
         crate::inference::InferenceRegistry::empty(),
-        crate::env_table::EnvSnapshot::new(Default::default()).unwrap(),
+        crate::config::env_table::EnvSnapshot::new(Default::default()).unwrap(),
     )
 }
 

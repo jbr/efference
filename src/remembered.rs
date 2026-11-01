@@ -8,7 +8,7 @@
 //! row's timestamp rather than adding one, which is what makes the index read as
 //! most-recently-used and keeps one project's launches from crowding out another's.
 //!
-//! The identity is [`crate::history::Scope`], unchanged: a canonicalized working
+//! The identity is [`crate::config::history::Scope`], unchanged: a canonicalized working
 //! root and the *template* configuration the boot consumed — never the per-session
 //! snapshot, whose path is unique per session. `config` is stored beside it
 //! because the key alone cannot say whether the configuration was named: an
@@ -54,7 +54,7 @@ pub struct Project {
     pub last_used_at: i64,
     /// The working root, canonicalized — the `cwd` `POST /sessions` takes.
     pub cwd: PathBuf,
-    /// The identity's configuration half ([`crate::history::Scope::config_key`]).
+    /// The identity's configuration half ([`crate::config::history::Scope::config_key`]).
     pub config_key: String,
     /// The configuration the creation named, as it was named, or `None` when it
     /// named none and the probe in effect will run again. `POST /sessions` takes

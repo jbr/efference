@@ -9,7 +9,7 @@ use efference::setup::{Existing, LiveProbe, Prompter as _, Tone, terminal::Termi
 /// The user configuration path under this process's `HOME`.
 fn default_config_path() -> Result<PathBuf, CliError> {
     let home = std::env::var_os("HOME").ok_or("HOME is not set; pass --config <path>")?;
-    Ok(PathBuf::from(home).join(efference::user_config::CONFIG_RELATIVE_PATH))
+    Ok(PathBuf::from(home).join(efference::config::user_config::CONFIG_RELATIVE_PATH))
 }
 
 /// Bare `efference`: setup on a machine with no configuration. Configured, a
@@ -49,17 +49,17 @@ async fn offer_here(
     terminal: &mut Terminal,
     kept: Option<String>,
     bind: Option<&str>,
-    display: efference::user_config::TuiConfig,
+    display: efference::config::user_config::TuiConfig,
 ) -> CliResult {
     let here = std::env::current_dir()?;
     // The history default is named in the question because it is what the
     // conversation is billed on; with no past pick the form names the current
     // model instead. Best-effort: an unreadable store reads as no history.
     let model = std::env::var_os("HOME").and_then(|home| {
-        let store = efference::history::History::user(Path::new(&home));
-        let scope = efference::history::Scope::for_request(&here, None);
+        let store = efference::config::history::History::user(Path::new(&home));
+        let scope = efference::config::history::Scope::for_request(&here, None);
         store
-            .default(&scope, efference::history::now())
+            .default(&scope, efference::config::history::now())
             .map(|candidate| format!("{}/{}", candidate.connection, candidate.model))
     });
     // Esc at the question is a decline like any other.

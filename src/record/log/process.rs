@@ -31,7 +31,7 @@ use super::{CallId, Timestamp};
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcessEvent {
     /// The spawn-minted ordinal — bare, as routes and frames carry it; rendered
-    /// `p#<n>` in prose by [`crate::process_monitor::handle`].
+    /// `p#<n>` in prose by [`crate::tools::process_monitor::handle`].
     pub id: u64,
     pub kind: ProcessEventKind,
 }
@@ -71,7 +71,7 @@ pub struct ProcessSpawn {
 }
 
 /// How a process ended and how long it ran (docs/process-monitor.md). Also the
-/// exit half of a [`ProcessRecord`](crate::process_monitor::ProcessRecord), so the
+/// exit half of a [`ProcessRecord`](crate::tools::process_monitor::ProcessRecord), so the
 /// live registry and a log fold answer with one type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]

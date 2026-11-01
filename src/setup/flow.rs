@@ -408,15 +408,15 @@ pub(super) async fn choose_model<P: Prompter, Q: Probe>(
     // process's root — the project the new config will serve. A root that will
     // not read scopes nothing: the menu falls back to listing plus typed.
     let scope = std::env::current_dir()
-        .map(|cwd| crate::history::Scope::for_request(&cwd, None))
+        .map(|cwd| crate::config::history::Scope::for_request(&cwd, None))
         .ok();
     let store = match std::env::var_os("HOME") {
-        Some(home) => crate::history::History::user(std::path::Path::new(&home)),
-        None => crate::history::History::disabled(),
+        Some(home) => crate::config::history::History::user(std::path::Path::new(&home)),
+        None => crate::config::history::History::disabled(),
     };
     let recents: Vec<String> = scope.map_or_default(|scope| {
         store
-            .recent(&scope, connection, crate::history::now(), 5)
+            .recent(&scope, connection, crate::config::history::now(), 5)
             .into_iter()
             .map(|candidate| candidate.model)
             .collect()

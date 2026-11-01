@@ -233,7 +233,7 @@ fn the_scaffold_parses_and_lists_the_guide() {
     assert!(
         config.context.iter().any(|entry| matches!(
             &entry.source,
-            efference::config::ContextSource::Builtin(name) if name == efference::guide::BUILTIN
+            efference::config::ContextSource::Builtin(name) if name == efference::config::guide::BUILTIN
         )),
         "the scaffold must list the guide overlay"
     );
@@ -296,8 +296,8 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
 #[cfg(feature = "dev")]
 #[test]
 fn cache_report_counts_the_provider_attribution_by_reason() {
-    use efference::api::{CacheMiss, CacheMissReason};
     use efference::daemon::UsageLine;
+    use efference::inference::api::{CacheMiss, CacheMissReason};
     use efference::record::log::RequestOrigin::Turn;
 
     let line = |at_ms, cache_read, miss: Option<(CacheMissReason, u64)>| {
@@ -368,8 +368,8 @@ fn cache_report_does_not_join_streaks_across_sessions() {
 ///
 /// [`UsageLine`]: efference::daemon::UsageLine
 #[cfg(feature = "dev")]
-fn usage(input: u64, output: u64, cache_read: u64) -> efference::api::RequestUsage {
-    efference::api::RequestUsage::new(efference::api::Usage {
+fn usage(input: u64, output: u64, cache_read: u64) -> efference::inference::api::RequestUsage {
+    efference::inference::api::RequestUsage::new(efference::inference::api::Usage {
         input_tokens: input,
         output_tokens: output,
         cache_creation_input_tokens: 0,
@@ -391,7 +391,7 @@ fn bind_flags(bind: Option<&str>) -> serve::BindFlags {
 /// the table's name and certificate, and `--bind ""` switches the table's bind off.
 #[test]
 fn bind_flags_override_the_host_table_key_by_key() {
-    let table = efference::user_config::HostConfig {
+    let table = efference::config::user_config::HostConfig {
         bind: Some("100.64.0.1:7878".into()),
         public_url: Some("https://box.example.ts.net:7878".into()),
         tls_cert: Some("/c.crt".into()),

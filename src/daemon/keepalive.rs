@@ -3,9 +3,9 @@
 mod session;
 
 use super::*;
-use crate::api::{SentRequest, TokenPrices};
+use crate::curation::triage::Triager;
+use crate::inference::api::{SentRequest, TokenPrices};
 use crate::protocol::state::{KeepaliveSkip, KeepaliveSkipReason};
-use crate::triage::Triager;
 
 /// How long the cached prefix may go untouched before the keepalive pings it,
 /// absent a `[transport] keepalive-interval` (docs/transport.md): four fifths of the

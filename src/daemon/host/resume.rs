@@ -101,7 +101,7 @@ impl Host {
         // An environment the caller supplied is the base, and nothing is run.
         let supplied_env = match body.env.clone() {
             Some(env) => Some(
-                crate::env_table::EnvSnapshot::new(env)
+                crate::config::env_table::EnvSnapshot::new(env)
                     .map_err(|e| ResumeRefused::Refused(format!("env: {e}")))?,
             ),
             None => None,
@@ -110,7 +110,7 @@ impl Host {
         let recorded = self.recorded_lineage(&session_dir);
         let starting = Starting::new(StartingParts {
             id: id.to_string(),
-            directories: crate::policy::Directories::new(
+            directories: crate::config::policy::Directories::new(
                 cwd.clone(),
                 recorded.working.clone().unwrap_or_else(|| cwd.clone()),
             ),
@@ -139,7 +139,7 @@ impl Host {
         starting: &Arc<Starting>,
         session_dir: PathBuf,
         body: PatchSession,
-        supplied_env: Option<crate::env_table::EnvSnapshot>,
+        supplied_env: Option<crate::config::env_table::EnvSnapshot>,
         recorded: RecordedLineage,
     ) -> Result<(), String> {
         let id = starting.id().to_string();

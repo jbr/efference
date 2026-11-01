@@ -1,7 +1,7 @@
 //! A notification no triage verdict mentions is dismissed by the harness after a bounded
 //! number of shows, and the dismissal is a log entry (docs/inbox.md).
 use super::*;
-use crate::inbox::MAX_UNMENTIONED_SHOWS;
+use crate::curation::inbox::MAX_UNMENTIONED_SHOWS;
 use crate::record::log::Telemetry;
 
 fn idle_triage() -> Payload {
@@ -42,7 +42,7 @@ fn an_unmentioned_notification_expires_with_a_log_entry_after_the_cap() {
         "the breadcrumb names the notification and the show count"
     );
     assert!(
-        crate::inbox::active_shown(&log).is_empty(),
+        crate::curation::inbox::active_shown(&log).is_empty(),
         "it no longer resurfaces"
     );
     // Running the fold again appends nothing: the entry resolved it.

@@ -23,7 +23,7 @@ fn rejects_skip_short_tools_failures_and_caps() {
     );
     let text = "supported ".repeat(100);
     assert_eq!(account(&response(&text), None, None).unwrap(), text.trim());
-    let capped = crate::api::Finish {
+    let capped = crate::inference::api::Finish {
         reason: FinishReason::OutputCap,
         raw: "max_tokens".into(),
     };
@@ -38,9 +38,9 @@ fn rejects_skip_short_tools_failures_and_caps() {
     assert_eq!(account(&called, None, None).unwrap_err(), "tool call");
 }
 
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
 use crate::record::log::{RawResult, Summary, WireState};
 use crate::record::names::tools::CONSOLIDATE;
-use crate::testing::upstream::{Canned, ScriptedUpstream};
 use std::sync::Arc;
 
 fn session() -> Arc<Session> {

@@ -3,7 +3,7 @@
 //! A session is parameterized by `(config, cwd, orchestrator)`. The **config** is the
 //! portable-policy half: what a session is *for* and what it may do, reusable across
 //! projects and sessions. It is deliberately kept separate from `cwd` (the per-invocation
-//! spatial scope, see [`crate::env`]) so the config stays portable — tweak in place or
+//! spatial scope, see [`crate::config::env`]) so the config stays portable — tweak in place or
 //! fork by copy.
 //!
 //! ## The file is TOML, and it is a materialized table
@@ -45,7 +45,7 @@
 //! - [`Config::watch_for`] — the spotter's "things to watch for", **spotter-only**.
 //!   Kept off the session's preamble for attention-division (the focused session
 //!   doesn't carry peripheral hazards; the spotter does). Consumed by the spotter
-//!   rung ([`crate::spotter`]).
+//!   rung ([`crate::curation::spotter`]).
 //! - [`Config::commands`] — the bash prefix-allowlist the deterministic fast-path matches
 //!   against (docs/permissions.md). A **map** from command-prefix key to [`CommandStance`],
 //!   resolved longest-prefix-wins. Consumed by that rung.
@@ -66,6 +66,12 @@
 //! the config is loaded once at startup and frozen, and the rendering is a pure function
 //! of the scope text. Changing configs is a cold cache write, which is fine: configs do
 //! not change mid-session.
+//!
+//! This module is also the root of the config group, which holds configuration and what is
+//! built from it: the permission policy (`policy`), the system preamble and its `[context]`
+//! entries (`env`, `context`, `guide`), the `[env]` table (`env_table`), the recorded model
+//! picks (`history`), the user configuration (`user_config`) and the published schemas
+//! (`config_schemas`) (docs/README.md, *Dependency direction*).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -216,7 +222,7 @@ impl CommandStance {
 /// file by [`validate`](raw::validate)-ing a [`RawConfig`]; every field is optional/empty
 /// so a minimal — or absent — file yields [`Config::default`]. This is what the cascade
 /// consults; the config-edit fold mutates it by key
-/// ([`crate::policy::apply_config_change`]).
+/// ([`crate::config::policy::apply_config_change`]).
 #[derive(Debug, Default, Clone)]
 pub struct Config {
     /// Positive scope, shared with the acting session (self-alignment). Projects into the
@@ -248,7 +254,7 @@ pub struct Config {
     /// that sub-verb, and resolution is **longest-prefix-wins**, so a longer key carves its
     /// subtree out of a broader one (`git = "clear"`, `"git push" = "deny"`). Each key is
     /// guaranteed (at [`validate`](raw::validate) time) to lex to a single simple-command
-    /// token vector; [`crate::policy`] re-lexes at match time to compare token-prefixes.
+    /// token vector; [`crate::config::policy`] re-lexes at match time to compare token-prefixes.
     /// TOML `[commands]` table; a `bool` value is sugar (`true` = `clear`, `false` = `deny`).
     pub commands: BTreeMap<String, CommandStance>,
 
@@ -281,9 +287,9 @@ pub struct Config {
     /// The `[env]` table as the operator wrote it (docs/env.md): per-variable
     /// `strip` (does a spawned child see it?) and `mask` (does the log ever store
     /// its value?). Held **unmerged** — the built-in defaults and the exact-beats-glob
-    /// precedence are resolved by [`crate::env_table::Table`], so this map stays a
+    /// precedence are resolved by [`crate::config::env_table::Table`], so this map stays a
     /// faithful record of the file. Keys may be exact names or `*` globs.
-    pub env: BTreeMap<String, crate::env_table::EnvEntry>,
+    pub env: BTreeMap<String, env_table::EnvEntry>,
 
     /// Foreground-lifetime limits for the `bash` tool (docs/process-monitor.md).
     pub bash: BashLimits,
@@ -373,7 +379,7 @@ pub enum ContextSource {
     /// A command whose stdout is the section body, run once at boot (docs/context.md).
     Exec(String),
     /// A set of documents compiled into the binary, listed as stubs at virtual paths
-    /// (`{ builtin = "guide" }` — docs/context.md, [`crate::guide`]). The string is the
+    /// (`{ builtin = "guide" }` — docs/context.md, [`crate::config::guide`]). The string is the
     /// mount name; `guide` is the only one, and [`validate_context_entry`] rejects any
     /// other rather than rendering an empty section.
     ///
@@ -392,7 +398,7 @@ pub struct ContextGrants {
 }
 
 /// Read/write permission a [`Config::paths`] grant carries. `write` implies `read` at check
-/// time (see [`crate::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.
+/// time (see [`crate::config::policy`]); both default `false`, so a bare `{ }` / `false` grants nothing.
 /// Serialized as the `role` topic reports a grant (docs/control-api.md).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -447,6 +453,15 @@ pub(crate) fn parse_text(text: &str) -> Config {
 pub(crate) fn try_parse_text(text: &str) -> Result<Config, LoadError> {
     parse(Path::new("test.toml"), text)
 }
+
+pub mod config_schemas;
+pub mod context;
+pub mod env;
+pub mod env_table;
+pub mod guide;
+pub mod history;
+pub mod policy;
+pub mod user_config;
 
 #[cfg(test)]
 mod test;

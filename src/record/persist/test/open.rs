@@ -5,7 +5,7 @@ use super::*;
 use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 
-use crate::env_table::Masker;
+use crate::config::env_table::Masker;
 
 /// Where a dropped fragment is kept, computed the way an open does — so a test
 /// can clear a leftover from an earlier run, or leave a decoy there.

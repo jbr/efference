@@ -3,7 +3,7 @@
 //! reads them is in `keepalive.rs`.
 
 use super::*;
-use crate::api::SentRequest;
+use crate::inference::api::SentRequest;
 use crate::protocol::state::{KeepaliveSkip, KeepaliveSkipReason};
 
 impl Session {

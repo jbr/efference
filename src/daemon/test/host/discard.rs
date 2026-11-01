@@ -9,7 +9,7 @@ use serde_json::Value;
 fn host_and_register(roots: &Roots) -> (Arc<Host>, SessionIds) {
     let state = roots.0.join("state.db");
     let host = Host::new(
-        one_connection_registry().with_history(crate::history::History::at(state.clone())),
+        one_connection_registry().with_history(crate::config::history::History::at(state.clone())),
         baseline_env(),
     );
     (host, SessionIds::at(state))
@@ -33,7 +33,7 @@ async fn adopt_child(
     let path = dir.join(crate::record::session_dir::LOG_NAME);
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.paths = SessionPaths::new(
-        crate::policy::Directories::new(roots.0.clone(), roots.0.join("one")),
+        crate::config::policy::Directories::new(roots.0.clone(), roots.0.join("one")),
         dir,
     )
     .unwrap();
@@ -56,13 +56,13 @@ async fn adopt_worktree(
     roots: &Roots,
     id: &str,
 ) -> (PathBuf, PathBuf) {
-    let env = crate::env_table::ChildEnv::default();
+    let env = crate::config::env_table::ChildEnv::default();
     let added = crate::worktree::add(&roots.0, id, &roots.0, &env).unwrap();
     let dir = roots.0.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.paths = SessionPaths::new(
-        crate::policy::Directories::new(roots.0.clone(), added.path.clone()),
+        crate::config::policy::Directories::new(roots.0.clone(), added.path.clone()),
         dir.clone(),
     )
     .unwrap();

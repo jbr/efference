@@ -29,7 +29,7 @@ pub(super) fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) 
 /// believes the tool is broken has no reason to fix its config; one that reads which grant
 /// is missing does. So this variant leads with the diagnosis, names the missing grant in the
 /// vocabulary the config uses, and — for a write — says outright that the bash route lands
-/// on the same grant ([`crate::policy`]'s redirection carve-out).
+/// on the same grant ([`crate::config::policy`]'s redirection carve-out).
 pub(super) fn missing_grant_message(
     config_path: Option<&Path>,
     reason: &str,

@@ -15,7 +15,7 @@ curl -fsSL https://efference.net/install.sh | sh
 efference runs on macOS and Linux. You’ll need `bash` for the agent’s commands. Git is
 needed only if you want a session to work in its own **worktree**, a separate checkout of
 your project.
-<!-- src: src/bash.rs; src/worktree.rs; src/bin/efference/island.rs (std::os::unix); src/platform/secrets.rs (macOS and Linux stores only) -->
+<!-- src: src/tools/bash.rs; src/worktree.rs; src/bin/efference/island.rs (std::os::unix); src/platform/secrets.rs (macOS and Linux stores only) -->
 
 To update later, run the install command again. To check for a newer version without
 installing it, run `efference update --check`.
@@ -83,7 +83,7 @@ For a first task, try asking the agent to help you get oriented:
 From there, you can ask it to investigate a bug, make a change, or run checks. Your
 project’s permissions decide which tool calls run without asking; calls held for review
 wait for your decision. [Permissions](permissions.md) explains how to choose that balance.
-<!-- src: src/agent/step.rs::run_call; src/agent/step/judge.rs::judge; src/policy.rs::classify -->
+<!-- src: src/agent/step.rs::run_call; src/agent/step/judge.rs::judge; src/config/policy.rs::classify -->
 
 As it works, you’ll see tool results labelled with the lines the agent was shown.
 [Triage](triage.md) explains how those excerpts are selected and how you can compare them

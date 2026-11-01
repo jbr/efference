@@ -110,7 +110,7 @@ fn unknown_command_stance_fails_the_file() {
 fn carve_out_keys_pass_the_lexing_gate() {
     let role = parse_str("[commands]\ngit = true\n\"git push --force\" = \"deny\"\n");
     assert_eq!(
-        crate::policy::simple_command_tokens("git push --force"),
+        policy::simple_command_tokens("git push --force"),
         Some(vec![
             "git".to_string(),
             "push".to_string(),

@@ -31,11 +31,11 @@ string, which names the value (`SOME_KEY = "op://Vault/Item/field"`). A bare
 *boolean* — `"*_KEY" = false` — cannot say which question it is answering, so it
 is a parse error rather than a guess.
 
-Implemented in `src/env_table.rs` (the table, precedence, the child-env policy),
-`src/env_table/child.rs` (spawn replacement),
-`src/env_table/snapshot.rs` (the in-memory base),
-`src/env_table/mask.rs` (needles, the marker, the scan), and
-`src/env_table/resolve.rs` (the scheme registry, the runner, the cache).
+Implemented in `src/config/env_table.rs` (the table, precedence, the child-env policy),
+`src/config/env_table/child.rs` (spawn replacement),
+`src/config/env_table/snapshot.rs` (the in-memory base),
+`src/config/env_table/mask.rs` (needles, the marker, the scan), and
+`src/config/env_table/resolve.rs` (the scheme registry, the runner, the cache).
 
 ## Session base environment
 
@@ -202,7 +202,7 @@ paths funnel through. That single point covers tool results, the boot
 every downstream surface reads the log, one choke point secures all of them: the
 wire, the jsonl on disk, the TUI, and the `control transcript`/`entries` reads.
 The log holds the mask as a `PayloadMask`, a one-method trait `src/record/persist.rs` defines
-and `Masker` (`src/env_table/mask.rs`) implements, so the log imports nothing from the
+and `Masker` (`src/config/env_table/mask.rs`) implements, so the log imports nothing from the
 `[env]` table; a log with none installed masks nothing.
 
 The payload paths it filters, exhaustively: `User` text blocks; `Assistant` text
@@ -416,10 +416,10 @@ and applied at every place the harness starts a subprocess:
 
 | Site | Module |
 | --- | --- |
-| the foreground `bash` tool | `src/bash.rs` |
+| the foreground `bash` tool | `src/tools/bash.rs` |
 | a backgrounded `bash` command | `src/daemon/background.rs` |
-| a stdio MCP server | `src/mcp/stdio.rs` |
-| a `[context]` `exec` entry at boot | `src/context.rs` |
+| a stdio MCP server | `src/tools/mcp/stdio.rs` |
+| a `[context]` `exec` entry at boot | `src/config/context.rs` |
 
 At the MCP site the table is applied *before* the stanza's own `env` map: a
 server explicitly handed a variable in its own config is being given it

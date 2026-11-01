@@ -487,8 +487,9 @@ async fn a_host_shutdown_does_not_log_archived() {
 async fn an_active_patch_for_an_id_registered_elsewhere_is_a_conflict() {
     let roots = Roots::new();
     let host = Host::new(
-        one_connection_registry()
-            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        one_connection_registry().with_history(crate::config::history::History::at(
+            roots.0.join("state.db"),
+        )),
         baseline_env(),
     );
     let server = host_server(&host).await;

@@ -19,7 +19,7 @@ impl BindFlags {
     /// Each flag given wins over its `[host]` key, one key at a time
     /// (docs/web-bind.md), so `--bind 127.0.0.1:0` keeps a configured name and
     /// `--bind ""` turns the table's bind off.
-    pub(crate) fn over(self, table: efference::user_config::HostConfig) -> Self {
+    pub(crate) fn over(self, table: efference::config::user_config::HostConfig) -> Self {
         Self {
             bind: self.bind.or(table.bind),
             public_url: self.public_url.or(table.public_url),
@@ -220,7 +220,7 @@ async fn mount_declared_servers(
 /// promotion probe would have done, and the request's usage.
 #[cfg(feature = "dev")]
 fn print_verdict(
-    spotting: &efference::spotter::Spotting,
+    spotting: &efference::curation::spotter::Spotting,
     probe: Option<&str>,
     role: &efference::config::Config,
 ) {
@@ -240,7 +240,7 @@ fn print_verdict(
             && spotting.read.stance == efference::record::log::Stance::ClearAlways;
         let verdict = if !safe {
             "not a safe-vote (stance wasn't clear_always) — no promotion".to_string()
-        } else if let Some(key) = efference::policy::promotable_command(role, prefix) {
+        } else if let Some(key) = efference::config::policy::promotable_command(role, prefix) {
             format!("safe-vote → would queue `{key}` as a Proposed(Command) at K=1")
         } else {
             "safe-vote, but already covered by the allowlist — nothing to queue".to_string()
@@ -344,12 +344,12 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
     let kind = endpoint.spotter_kind(&model).await?;
     let thinking = endpoint.spotter_thinking(&model, kind).await?;
     // The tester has one directory, so it stands as both.
-    let dirs = efference::policy::Directories::at(&cwd);
+    let dirs = efference::config::policy::Directories::at(&cwd);
     let spotter =
         MountedSpotter::mount(endpoint, &model, kind, None, dirs.clone()).with_thinking(thinking);
     if show_move || tool.is_some() {
         let preview = match &spotter {
-            MountedSpotter::Jev(_) => efference::spotter::jev::preview_state(
+            MountedSpotter::Jev(_) => efference::curation::spotter::jev::preview_state(
                 &role,
                 &call,
                 sent,
@@ -357,9 +357,13 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
                 Some(&dirs),
                 None,
             ),
-            MountedSpotter::Fork(_) => {
-                efference::spotter::preview_move(&role, &call, sent, probe.as_deref(), &dirs)
-            }
+            MountedSpotter::Fork(_) => efference::curation::spotter::preview_move(
+                &role,
+                &call,
+                sent,
+                probe.as_deref(),
+                &dirs,
+            ),
         };
         println!("{preview}\n");
     }
@@ -396,7 +400,9 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     let bind_flags = if island {
         bind_flags
     } else {
-        bind_flags.over(efference::user_config::HostConfig::load(Path::new(&home))?)
+        bind_flags.over(efference::config::user_config::HostConfig::load(
+            Path::new(&home),
+        )?)
     };
     let owner = island.then(|| {
         let socket = socket.clone();
@@ -411,7 +417,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     // host reads `[secrets]`, an island included: it names where this user's
     // secrets are, not the machine's bind.
     let secrets = std::sync::Arc::new(efference::platform::secrets::Secrets::configured(
-        efference::user_config::InferenceConfig::secret_commands(Path::new(&home))?,
+        efference::config::user_config::InferenceConfig::secret_commands(Path::new(&home))?,
     ));
     let bind = resolve_bind(bind_flags, &secrets)?;
     if let Some(dir) = socket.parent().filter(|dir| !dir.as_os_str().is_empty()) {
@@ -429,7 +435,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     )
     .try_init();
     let host_cwd = std::env::current_dir()?;
-    let host_env = efference::env_table::EnvSnapshot::capture()?;
+    let host_env = efference::config::env_table::EnvSnapshot::capture()?;
     let inference = efference::inference::InferenceRegistry::load(&host_cwd, &host_env, &secrets)?;
     refuse_broken_connections(&inference)?;
     for (name, auth) in inference.renewing() {
@@ -447,7 +453,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     host.set_session_control(efference::control_tools::in_session_server);
     // Only with the user's answer: a configuration without one never checks
     // (docs/update-check.md). An island is a host like any other here.
-    if efference::user_config::UpdatesConfig::load(Path::new(&home))?.check {
+    if efference::config::user_config::UpdatesConfig::load(Path::new(&home))?.check {
         host.check_for_updates(efference::platform::update_check::UpdateCheck::published());
     }
     // Adopted first: an island archives its sessions when its owner goes, and so
@@ -490,7 +496,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
 /// exists (backlog/inbox/host-process.md).
 fn refuse_broken_connections(
     inference: &efference::inference::InferenceRegistry,
-) -> Result<(), efference::api::Error> {
+) -> Result<(), efference::inference::api::Error> {
     let broken = inference.unavailable();
     if broken.is_empty() {
         return Ok(());

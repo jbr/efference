@@ -31,7 +31,7 @@ impl AskState {
 
 /// The nodes for one `ask` call: the question, then — once its result is committed —
 /// the reply, or a note that there was none. `question` is
-/// [`crate::process_monitor::ask_of_call`]'s `(text, n, of)`; `result` is the entry carrying
+/// [`crate::tools::process_monitor::ask_of_call`]'s `(text, n, of)`; `result` is the entry carrying
 /// the call's result; `state` applies only while there is no result.
 ///
 /// A reply is a result whose entry carries a `submission_id`; the error results an

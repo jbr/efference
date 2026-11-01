@@ -3,7 +3,7 @@
 Setup gets you connected to a model without having to write a configuration file. When
 you want to adjust how efference runs — prepare project environments, use a different
 permission spotter, or change the terminal’s appearance — your settings are here.
-<!-- src: src/setup/render.rs::render; src/inference.rs::InferenceConfig; src/inference/tui.rs::TuiConfig -->
+<!-- src: src/setup/render.rs::render; src/config/user_config.rs::InferenceConfig; src/config/user_config/tui.rs::TuiConfig -->
 
 ## Find the right file
 
@@ -14,7 +14,7 @@ There are two places for settings, depending on whether they belong to you or th
 - **`efference.toml`**, in a project: what sessions there are for, what they may do without
   asking you, and what they start out knowing. [Project configuration](project-configuration.md)
   describes it.
-<!-- src: src/inference.rs::CONFIG_RELATIVE_PATH, InferenceConfig; src/config/raw.rs::RawConfig -->
+<!-- src: src/config/user_config.rs::CONFIG_RELATIVE_PATH, InferenceConfig; src/config/raw.rs::RawConfig -->
 
 For most changes to connections, run `efference setup` again. It can add, edit, rename,
 disable, or remove a connection, choose a default spotter model, and change whether
@@ -26,14 +26,14 @@ session to help: it can read efference’s description of every key at
 `efference://guide/user-config`. Edits to this file normally go to the permission spotter
 because the file sits outside the project; [Permissions](permissions.md) explains how
 review works.
-<!-- src: src/bin/efference/setup.rs::default_verb; src/setup/render.rs::render, apply_change; src/setup/manage.rs::run; src/setup/updates.rs; src/guide.rs::DOCUMENTS (user-config); src/policy/paths.rs::context_granted (the guide prefix is read-granted); absence of a ~/.efference grant in src/policy/ -->
+<!-- src: src/bin/efference/setup.rs::default_verb; src/setup/render.rs::render, apply_change; src/setup/manage.rs::run; src/setup/updates.rs; src/config/guide.rs::DOCUMENTS (user-config); src/config/policy/paths.rs::context_granted (the guide prefix is read-granted); absence of a ~/.efference grant in src/config/policy/ -->
 
 A host reads the file when it starts. A change takes effect the next time you run
 `efference` in standalone mode, or, with `efference --host`, once you stop the host and
 start it again. The terminal interface reads `[tui]` each time it opens. A key efference
 does not know, or a value it cannot read, stops it from starting, with an error naming the
 file: a misspelled key is never ignored.
-<!-- src: src/inference.rs::InferenceConfig (deny_unknown_fields), read_user, from_toml; src/bin/efference/serve.rs::host (InferenceRegistry::load); src/bin/efference/island.rs::Island::launch (a standalone host is a new --host process); src/bin/efference/verbs.rs (TuiConfig::load) -->
+<!-- src: src/config/user_config.rs::InferenceConfig (deny_unknown_fields), read_user, from_toml; src/bin/efference/serve.rs::host (InferenceRegistry::load); src/bin/efference/island.rs::Island::launch (a standalone host is a new --host process); src/bin/efference/verbs.rs (TuiConfig::load) -->
 
 ## Connect the models you want to use
 
@@ -42,7 +42,7 @@ or another endpoint that speaks one of the same APIs, and where its key comes fr
 session names its model as `<connection>/<model>`, such as `anthropic/claude-sonnet-4-5`.
 `efference setup` writes these, and [Credentials](credentials.md) explains where keys can
 come from.
-<!-- src: src/inference.rs::InferenceConfig (connections), ConnectionConfig; src/setup/render.rs::render -->
+<!-- src: src/config/user_config.rs::InferenceConfig (connections), ConnectionConfig; src/setup/render.rs::render -->
 
 ```toml
 [connections.anthropic]
@@ -53,7 +53,7 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
 dialect = "completions"
 base-url = "http://localhost:11434/v1"   # a local server that takes no key: no auth
 ```
-<!-- src: src/inference.rs::ConnectionConfig; src/inference/registry.rs (a described endpoint with no auth sends no credential); src/setup/render.rs::render (dialect and base-url for a described endpoint) -->
+<!-- src: src/config/user_config.rs::ConnectionConfig; src/inference/registry.rs (a described endpoint with no auth sends no credential); src/setup/render.rs::render (dialect and base-url for a described endpoint) -->
 
 A host refuses to start while any connection's key cannot be read, and names each one.
 `disabled = true`, which setup writes when you turn a connection off, keeps a connection in
@@ -78,13 +78,13 @@ Sessions without a terminal to copy from get their environment from the host ins
 That can explain a session finding `cargo` or `node` at first, but not after a resume.
 Without an `env_hook`, the host passes on the environment it started with — perhaps set up
 for a different project, or supplied by a service manager with a `PATH` missing your tools.
-<!-- src: src/env_table/launch.rs::run_hook (no hook: the host environment as given); src/bin/efference/serve.rs::host (EnvSnapshot::capture once at start) -->
+<!-- src: src/config/env_table/launch.rs::run_hook (no hook: the host environment as given); src/bin/efference/serve.rs::host (EnvSnapshot::capture once at start) -->
 
 Use **`env_hook`** to prepare the right environment for these sessions. It names a command
 that runs in the project directory and prints the environment to use. Pick the example
 below that matches your tools. The setting applies to every project, so the command must
 also work in projects without that tool’s configuration, as these examples do.
-<!-- src: src/inference.rs::InferenceConfig (env_hook); src/env_table/launch.rs::run_hook (current_dir); src/daemon/host/preparation.rs::establish_environment -->
+<!-- src: src/config/user_config.rs::InferenceConfig (env_hook); src/config/env_table/launch.rs::run_hook (current_dir); src/daemon/host/preparation.rs::establish_environment -->
 
 Before choosing a hook, there are four requirements to know:
 
@@ -98,7 +98,7 @@ Before choosing a hook, there are four requirements to know:
 - **A failing hook stops the session from starting.** The reason names the hook and how it
   failed, such as ``env: env_hook `direnv` exited 1``; the hook's own error messages are
   discarded. Run the hook yourself in the project to see them.
-<!-- src: src/env_table/launch.rs::run_hook (Command::new(program).args(args); stderr null; host_env applied, so PATH is the host's), LaunchError (Display: Spawn, Exited, Unterminated); src/daemon/host/preparation.rs::establish_environment ("env: …"), preparation_failed -->
+<!-- src: src/config/env_table/launch.rs::run_hook (Command::new(program).args(args); stderr null; host_env applied, so PATH is the host's), LaunchError (Display: Spawn, Exited, Unterminated); src/daemon/host/preparation.rs::establish_environment ("env: …"), preparation_failed -->
 
 ### With direnv, Nix, devenv, devbox, or Flox
 
@@ -116,7 +116,7 @@ them too: Nix flakes through nix-direnv (`use flake`), devenv (`use devenv`), de
 (`devbox generate direnv`), and Flox (`use flox`). Building a Nix environment the first
 time can take longer than the hook's 30 seconds. nix-direnv caches it, so enter the project
 in your shell once before a session needs it.
-<!-- src: github.com/nix-community/nix-direnv README (use flake; caches the environment after the first run); devenv.sh/integrations/direnv (use devenv); jetify.com/docs/devbox/ide-configuration/direnv (devbox generate direnv); flox.dev/docs/concepts/activation (use flox); src/env_table/launch.rs::HOOK_TIMEOUT -->
+<!-- src: github.com/nix-community/nix-direnv README (use flake; caches the environment after the first run); devenv.sh/integrations/direnv (use devenv); jetify.com/docs/devbox/ide-configuration/direnv (devbox generate direnv); flox.dev/docs/concepts/activation (use flox); src/config/env_table/launch.rs::HOOK_TIMEOUT -->
 
 ### With mise
 
@@ -160,7 +160,7 @@ sends the shell's own output away and only the environment back:
 ```toml
 env_hook = ["/bin/sh", "-c", "exec /bin/zsh -l -i -c 'env -0 >&3' 3>&1 >/dev/null"]
 ```
-<!-- src: zsh(1) STARTUP/SHUTDOWN FILES; checked 2026-10-27: a .zshrc that echoes a line left the first record named "welcome back\nSHELL" with the plain form, and no stray record with the fd 3 form; src/env_table/snapshot.rs::EnvSnapshot::new (a name with a newline is accepted) -->
+<!-- src: zsh(1) STARTUP/SHUTDOWN FILES; checked 2026-10-27: a .zshrc that echoes a line left the first record named "welcome back\nSHELL" with the plain form, and no stray record with the fd 3 form; src/config/env_table/snapshot.rs::EnvSnapshot::new (a name with a newline is accepted) -->
 
 A login shell can also start one of the tools above when the host's `PATH` lacks it:
 
@@ -187,7 +187,7 @@ want setup to keep a key for you; keys in environment variables need neither.
 
 `[host]` turns on the web client: where a host started with `efference --host` listens for
 browsers, and with which certificate. [Remote access](remote-access.md) covers it.
-<!-- src: src/inference/host.rs::HostConfig -->
+<!-- src: src/config/user_config/host.rs::HostConfig -->
 
 ## Choose a default spotter: `[defaults]`
 
@@ -195,7 +195,7 @@ browsers, and with which certificate. [Remote access](remote-access.md) covers i
 doesn't name one, as `<connection>/<model>`. Setup's "Default spotter" entry sets it. A
 connection's own `spotter-model` key names one for sessions whose main model is on that
 connection. [Permissions](permissions.md) has the full order.
-<!-- src: src/inference.rs::Defaults, ConnectionConfig (spotter_model); src/setup/defaults.rs; src/inference/options.rs::resolve_spotter -->
+<!-- src: src/config/user_config.rs::Defaults, ConnectionConfig (spotter_model); src/setup/defaults.rs; src/inference/options.rs::resolve_spotter -->
 
 ## Hear about new versions: `[updates]`
 
@@ -203,7 +203,7 @@ connection. [Permissions](permissions.md) has the full order.
 [updates]
 check = true
 ```
-<!-- src: src/inference/updates.rs::UpdatesConfig -->
+<!-- src: src/config/user_config/updates.rs::UpdatesConfig -->
 
 Turn this on if you’d like the terminal and web clients to tell you when a new version is
 available. The host checks efference.net at startup and about once a day afterwards. It
@@ -222,7 +222,7 @@ setting. [How efference runs](how-it-runs.md) lists what the request sends.
 theme = "Nord"
 images = "kitty"
 ```
-<!-- src: src/inference/tui.rs::TuiConfig; src/inference/tui.rs::ImageMode -->
+<!-- src: src/config/user_config/tui.rs::TuiConfig; src/config/user_config/tui.rs::ImageMode -->
 
 - **`theme`**: a built-in theme's name, or the path to a `.tmTheme` file. An unknown name
   lists the built-in ones when the terminal interface opens. The theme picker in the
@@ -232,7 +232,7 @@ images = "kitty"
   terminal. Inside tmux, which hides the terminal from that question, `"kitty"` or
   `"iterm2"` names the terminal's image protocol. `"off"` shows each image as a one-line
   reference.
-<!-- src: src/inference/tui.rs::TuiConfig (theme, expand_home); src/tui/keyboard.rs (ThemePicker: Enter closes the picker, writes nothing); src/inference/tui.rs::ImageMode -->
+<!-- src: src/config/user_config/tui.rs::TuiConfig (theme, expand_home); src/tui/keyboard.rs (ThemePicker: Enter closes the picker, writes nothing); src/config/user_config/tui.rs::ImageMode -->
 
 ## Editor support
 
@@ -241,7 +241,7 @@ server — Taplo, which Even Better TOML uses, or Tombi — then completes keys,
 on hover, and marks a misspelled one. The editor downloads the description from
 efference.net, so efference.net sees a request from your machine when you edit the file;
 deleting the line stops that, and efference itself does not read it.
-<!-- src: src/setup/render.rs::render (schema line on a fresh file); src/config_schemas.rs; assets/schemas/user.v1.json -->
+<!-- src: src/setup/render.rs::render (schema line on a fresh file); src/config/config_schemas.rs; assets/schemas/user.v1.json -->
 
 ## Configuration reference
 
@@ -263,7 +263,7 @@ deleting the line stops that, and efference itself does not read it.
 | `[updates]` `check` | Whether a host checks efference.net for a newer version once a day | setup |
 | `[tui]` `theme`, `images` | How the terminal interface draws | by hand |
 | `[tui]` `frame-cost` | Time each frame and print a summary on exit, for developing efference | by hand |
-<!-- src: src/inference.rs::InferenceConfig, ConnectionConfig, AuthConfig, Defaults; src/api/provider.rs::Provider::NAMED; src/api/provider/dialect.rs::WireDialect::NAMED; src/inference.rs (body and output-cap-field refused off completions); src/api/request_options.rs::RequestOptions::new; src/platform/secrets/commands.rs::SecretCommands; src/inference/host.rs::HostConfig; src/inference/updates.rs::UpdatesConfig; src/inference/tui.rs::TuiConfig; src/setup/render.rs::render, apply_change -->
+<!-- src: src/config/user_config.rs::InferenceConfig, ConnectionConfig, AuthConfig, Defaults; src/inference/api/provider.rs::Provider::NAMED; src/inference/api/provider/dialect.rs::WireDialect::NAMED; src/inference.rs (body and output-cap-field refused off completions); src/inference/api/request_options.rs::RequestOptions::new; src/platform/secrets/commands.rs::SecretCommands; src/config/user_config/host.rs::HostConfig; src/config/user_config/updates.rs::UpdatesConfig; src/config/user_config/tui.rs::TuiConfig; src/setup/render.rs::render, apply_change -->
 
 `efference setup` creates the file readable only by you, and it holds no keys
 ([Credentials](credentials.md)). `efference setup --config <path>` writes another file.
@@ -283,7 +283,7 @@ output discarded. Its output replaces the host's environment rather than adding 
 variable the host had and the hook did not print is absent from the session. The project's
 `[env]` settings apply afterwards, and the variables connections read their keys from are
 still removed from the agent's commands ([Credentials](credentials.md)).
-<!-- src: src/env_table/launch.rs::run_hook (stdin null, stderr null, host_env applied); src/boot/env.rs::build_env_policy; src/env_table/child.rs::ChildEnv::apply -->
+<!-- src: src/config/env_table/launch.rs::run_hook (stdin null, stderr null, host_env applied); src/boot/env.rs::build_env_policy; src/config/env_table/child.rs::ChildEnv::apply -->
 
 The hook has 30 seconds, and its output may be at most 1 MiB. Past either limit, or if it
 exits with a nonzero status or prints something that is not an environment, the session
@@ -291,4 +291,4 @@ does not start, and nothing falls back to the host's environment. The last recor
 with a NUL byte, since output that stops partway through a record is what a cut-off write
 looks like. A hook that fails or runs out of time is stopped together with the programs
 it started. An empty list, `env_hook = []`, is refused rather than read as "no hook".
-<!-- src: src/env_table/launch.rs::HOOK_TIMEOUT, HOOK_OUTPUT_LIMIT, run_hook, LaunchError::Unterminated, ProcessGroup (killpg on every path but a clean success); src/inference.rs::InferenceConfig::from_toml (empty argv) -->
+<!-- src: src/config/env_table/launch.rs::HOOK_TIMEOUT, HOOK_OUTPUT_LIMIT, run_hook, LaunchError::Unterminated, ProcessGroup (killpg on every path but a clean success); src/config/user_config.rs::InferenceConfig::from_toml (empty argv) -->

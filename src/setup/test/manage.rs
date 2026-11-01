@@ -224,7 +224,7 @@ auth = { kind = "env", key = "BACKUP_KEY" }
     let text = render(existing, &draft).unwrap();
     assert!(text.contains(r#"spotter = "backup/haiku-fresh""#), "{text}");
     assert!(text.contains("disabled = true"), "{text}");
-    let parsed = crate::user_config::InferenceConfig::from_toml(&text);
+    let parsed = crate::config::user_config::InferenceConfig::from_toml(&text);
     assert!(parsed.is_ok(), "{text}");
 }
 
@@ -552,7 +552,7 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
     let text = render(existing, &draft).unwrap();
     assert!(text.contains("[connections.codex]"), "{text}");
     assert!(!text.contains("openai-codex]"), "{text}");
-    let parsed = crate::user_config::InferenceConfig::from_toml(&text);
+    let parsed = crate::config::user_config::InferenceConfig::from_toml(&text);
     assert!(parsed.is_ok(), "{text}");
     let secrets = probe.secrets.as_ref().unwrap();
     assert!(secrets.get("oauth:codex").unwrap().is_some());
@@ -664,6 +664,6 @@ auth = { kind = "codex-cache" }
     assert_eq!(text.matches("[connections.codex]").count(), 1, "{text}");
     assert!(!text.contains(r#"kind = "codex-cache""#), "{text}");
     assert!(text.contains(r#"auth = { kind = "oauth" }"#), "{text}");
-    let parsed = crate::user_config::InferenceConfig::from_toml(&text);
+    let parsed = crate::config::user_config::InferenceConfig::from_toml(&text);
     assert!(parsed.is_ok(), "{text}");
 }

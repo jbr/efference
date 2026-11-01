@@ -3,10 +3,10 @@
 
 use super::runtime::{boot, started, workdir};
 use super::*;
+use crate::curation::triage::Triager;
 use crate::frontend::SubmittedTurn;
+use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 use crate::record::log::Provider;
-use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
-use crate::triage::Triager;
 use trillium_tokio::Swansong;
 
 fn state(session: &Session) -> Value {
@@ -94,7 +94,10 @@ fn a_shared_triage_publishes_no_triage_readings() {
 #[test]
 fn the_triage_lineage_has_its_own_cold_streak() {
     let (session, _rx) = Session::in_memory();
-    session.set_triage_client((upstream_failure_state(), crate::api::plan_state()));
+    session.set_triage_client((
+        upstream_failure_state(),
+        crate::inference::api::plan_state(),
+    ));
     let streak = |session: &Session| state(session)["usage"]["triage_cold_streak"].clone();
     assert_eq!(streak(&session), 0);
 
