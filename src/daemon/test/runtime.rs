@@ -82,10 +82,10 @@ pub(super) fn boot_in(cwd: &Path, session_dir: &Path) -> SessionBoot<StaticSpott
 }
 
 /// A working directory of a session's own, holding the `scratch` directory [`boot`]
-/// names, and the guard that removes both when it drops (`crate::inference::testing::temp_dir`).
+/// names, and the guard that removes both when it drops (`crate::platform::testing::temp_dir`).
 /// The path is canonical, as a session's working directory is.
 pub(super) fn workdir(label: &str) -> (PathBuf, tempfile::TempDir) {
-    let dir = crate::inference::testing::temp_dir(label);
+    let dir = crate::platform::testing::temp_dir(label);
     std::fs::create_dir_all(dir.path().join("scratch")).unwrap();
     (dir.path().canonicalize().unwrap(), dir)
 }

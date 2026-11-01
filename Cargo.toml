@@ -253,7 +253,7 @@ regex = "1.13"
 tokio = { version = "1.54.1", features = ["test-util"] }
 
 # Scratch directories for the tests that need a real filesystem: a name that cannot repeat
-# and a directory removed when its guard drops (`crate::inference::testing::temp_dir`).
+# and a directory removed when its guard drops (`crate::platform::testing::temp_dir`).
 tempfile = "3"
 
 # Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").

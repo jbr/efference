@@ -12,7 +12,7 @@ use trillium_testing::TestServer;
 /// A throwaway state database path in a directory of its own, so tests never write the
 /// real user-scoped file; the directory goes when the returned guard drops.
 pub(super) fn scratch_state() -> (PathBuf, tempfile::TempDir) {
-    let dir = crate::inference::testing::temp_dir("tcp");
+    let dir = crate::platform::testing::temp_dir("tcp");
     (dir.path().join("state.db"), dir)
 }
 

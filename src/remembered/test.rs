@@ -5,7 +5,7 @@
 use super::*;
 
 fn dir() -> tempfile::TempDir {
-    crate::inference::testing::temp_dir("remembered")
+    crate::platform::testing::temp_dir("remembered")
 }
 
 fn store() -> (Projects, tempfile::TempDir) {

@@ -60,7 +60,7 @@ pub(in crate::tui::session_form) fn connections() -> Vec<ConnectionInventory> {
 /// resolves (as `History`) rather than refusing.
 pub(in crate::tui::session_form) fn resolve(options: &SessionOptions) -> ResolvedOptions {
     let registry = registry();
-    let dir = crate::inference::testing::temp_dir("session-form");
+    let dir = crate::platform::testing::temp_dir("session-form");
     let store = crate::config::history::History::at(dir.path().join("state.db"));
     let scope = crate::config::history::Scope {
         cwd: PathBuf::from("/code/example"),

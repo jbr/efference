@@ -18,5 +18,7 @@ pub mod spawn;
 pub mod state;
 pub mod terminal_text;
 pub mod terminal_title;
+#[cfg(test)]
+pub(crate) mod testing;
 pub mod update_check;
 pub mod www_authenticate;

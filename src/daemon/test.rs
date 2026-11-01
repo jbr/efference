@@ -24,7 +24,7 @@ use trillium_testing::TestServer;
 /// guard drops: a name that is neither shared with another process running the suite (a
 /// concurrent run in another worktree) nor with another test.
 fn temp_file(name: &str) -> (PathBuf, tempfile::TempDir) {
-    let dir = crate::inference::testing::temp_dir("daemon");
+    let dir = crate::platform::testing::temp_dir("daemon");
     (dir.path().join(name), dir)
 }
 

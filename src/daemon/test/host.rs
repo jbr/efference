@@ -30,12 +30,12 @@ mod worktree;
 
 /// A scratch root holding the working directories `one` and `two`, each with its
 /// `scratch`: the canonical path, and the guard that removes it all when the roots drop
-/// (`crate::inference::testing::temp_dir`). The guard is never read; it is held for its drop.
+/// (`crate::platform::testing::temp_dir`). The guard is never read; it is held for its drop.
 struct Roots(PathBuf, #[allow(dead_code)] tempfile::TempDir);
 
 impl Roots {
     fn new() -> Self {
-        let dir = crate::inference::testing::temp_dir("host");
+        let dir = crate::platform::testing::temp_dir("host");
         for label in ["one", "two"] {
             std::fs::create_dir_all(dir.path().join(label).join("scratch")).unwrap();
         }
@@ -143,7 +143,7 @@ async fn network_host_server(
 ) {
     use crate::platform::auth::Root;
     use crate::platform::devices::{Joined, Kind};
-    let scratch = crate::inference::testing::temp_dir("net-host");
+    let scratch = crate::platform::testing::temp_dir("net-host");
     let (auth, _listener) = tcp::arm_with_state(
         TcpBind {
             addr: "127.0.0.1:0".into(),

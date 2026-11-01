@@ -554,7 +554,7 @@ fn mounted_toolbox_advertises_unique_tool_names() {
 /// model retries the same call.
 #[tokio::test]
 async fn read_image_refuses_when_the_model_takes_no_images() {
-    let dir = crate::inference::testing::temp_dir("image-gate");
+    let dir = crate::platform::testing::temp_dir("image-gate");
     let box_ = Toolbox::new(vec![Provider::ReadImage(ReadImage {
         cwd: dir.path().to_path_buf(),
     })])

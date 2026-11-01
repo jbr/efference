@@ -6,7 +6,7 @@ use super::*;
 use std::collections::HashMap;
 
 fn dir() -> tempfile::TempDir {
-    crate::inference::testing::temp_dir("history")
+    crate::platform::testing::temp_dir("history")
 }
 
 fn history() -> (History, tempfile::TempDir) {

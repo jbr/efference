@@ -58,7 +58,7 @@ fn historied(
     crate::config::history::Scope,
     tempfile::TempDir,
 ) {
-    let dir = crate::inference::testing::temp_dir("resolve");
+    let dir = crate::platform::testing::temp_dir("resolve");
     let store = crate::config::history::History::at(dir.path().join("state.db"));
     let registry = registry(toml);
     let scope = crate::config::history::Scope {

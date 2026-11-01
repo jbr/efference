@@ -2,7 +2,7 @@ use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn dir() -> tempfile::TempDir {
-    crate::inference::testing::temp_dir("catalog")
+    crate::platform::testing::temp_dir("catalog")
 }
 
 fn rows(ids: &[&str]) -> Vec<ListedModel> {
