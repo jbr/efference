@@ -20,19 +20,22 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # MINISIGN_SECRET_KEY and the R2_* secrets and variables belong to this
+    # environment, released only to v* tags (process/releasing.md).
+    environment: release
     env:
       PLAN: ${{ inputs.plan }}
     steps:
       # Only the file that holds the release key: Verify reads it from the tag.
       # First, because checkout empties a workspace that is not yet a repository.
       - name: Fetch the release key
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
           sparse-checkout: src/platform/update_check.rs
           sparse-checkout-cone-mode: false
       - name: Fetch artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: artifacts-*
           path: target/distrib/

@@ -5,6 +5,11 @@ members = ["cargo:."]
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.32.0"
+# release.yml carries two hand edits dist has no setting for: the build job's
+# `environment: release` and the plan job's public-repository condition. Each
+# is marked "Hand edit" in the file; regenerating means removing this line,
+# `dist generate`, re-applying both, and restoring it (process/releasing.md).
+allow-dirty = ["ci"]
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
@@ -15,14 +20,14 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux
 # Path that installers should place binaries in. `~/.local/bin` is already on
 # PATH for many users, so a first install often needs no new shell.
 install-path = ["$XDG_BIN_HOME/", "~/.local/bin"]
-# The repository is private, so its release assets are unreachable anonymously:
-# installers download from efference.net only, which the
-# publish-efference-net job fills from the R2 bucket.
+# Installers download from efference.net only, which the publish-efference-net
+# job fills from the R2 bucket after checking every signature; the GitHub release
+# carries the same archives.
 hosting = ["simple"]
 simple-download-url = "https://efference.net/releases/{tag}"
 # Whether to install an updater program; `efference update` is the updater.
 install-updater = false
-# The source is not published.
+# The source is the public repository; a tarball of it would duplicate the tag.
 source-tarball = false
 # A release build leaves out the `dev` verb group.
 default-features = false
@@ -37,6 +42,9 @@ host-jobs = ["./notarize"]
 # into their own directory, without moving install.sh or latest.json.
 publish-jobs = ["./publish-efference-net"]
 publish-prereleases = true
+# Build provenance for each archive, signed through GitHub's attestation service,
+# which ties it to the public commit and workflow that built it.
+github-attestations = true
 
 # aarch64-apple-darwin builds on macos-latest rather than dist's default
 # macos-14, which GitHub has left unacquired for want of arm64 capacity while
@@ -48,3 +56,14 @@ aarch64-apple-darwin = "macos-latest"
 # read from the tagged source, so it needs to check the repository out.
 [dist.github-custom-job-permissions]
 publish-efference-net = { contents = "read" }
+# Notarizing reads only the run's own artifacts.
+notarize = { contents = "read" }
+
+# Every action dist writes into release.yml, pinned to the commit its tag named
+# when pinned: a tag can be moved, and these jobs hold the release secrets
+# (process/releasing.md).
+[dist.github-action-commits]
+"actions/checkout" = "d23441a48e516b6c34aea4fa41551a30e30af803"        # v6
+"actions/upload-artifact" = "cf430e030ddbb5b0abf93d22962f4752f3646cd9" # v7
+"actions/download-artifact" = "9000827ccba6bdab643e8b6fd33ac0654aef8333" # v8
+"actions/attest" = "1e69f48acb82d1966a394da916b4c1698aa569d6"          # v4

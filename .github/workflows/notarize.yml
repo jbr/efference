@@ -1,7 +1,7 @@
 # Notarizes the macOS binaries dist built and signed (host-jobs in
 # dist-workspace.toml). publish-efference-net needs it, so a binary the notary
-# service refuses never reaches efference.net. The GitHub release, in the
-# private repository, does not wait: dist creates it in its host job.
+# service refuses never reaches efference.net. The GitHub release does not
+# wait: dist creates it in its host job.
 #
 # A bare Mach-O binary cannot be stapled: the ticket stays with Apple, and
 # Gatekeeper fetches it online the first time a quarantined copy runs. Nothing
@@ -18,9 +18,12 @@ on:
 jobs:
   notarize:
     runs-on: macos-latest
+    # The APPLE_API_* secrets are environment secrets, released only to v* tags
+    # (process/releasing.md).
+    environment: release
     steps:
       - name: Fetch artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: artifacts-*
           path: target/distrib/

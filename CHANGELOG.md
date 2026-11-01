@@ -5,6 +5,8 @@ one line per feature.
 
 ## [Unreleased]
 
+- The source is public at [github.com/jbr/efference](https://github.com/jbr/efference), under MIT OR Apache-2.0.
+- Release archives carry a GitHub build-provenance attestation, checked with `gh attestation verify`.
 - Fixed the TUI's policy drawer, which never showed pending config proposals.
 - Fixed the web client labelling a process with no pid as "pid null".
 - Fixed an archived session leaving the session list before its archive was recorded; an archive now answers once the session and the agents it ends have left.
