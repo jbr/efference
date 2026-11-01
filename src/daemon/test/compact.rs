@@ -1,9 +1,9 @@
 //! Tests for `compact.rs` (backlog: cold-session.md).
 
 use super::*;
-use crate::daemon::compact::{COMPACTION_TAIL_TOKENS, NotCompactable, compaction_cut};
-use crate::daemon::keepalive::CacheLineage;
 use crate::record::log::{AssistantOutput, LogEntry, RawResult, Summary, Timestamp, WireState};
+use crate::session::compact::{COMPACTION_TAIL_TOKENS, NotCompactable, compaction_cut};
+use crate::session::keepalive::CacheLineage;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
     LogEntry::new(seq, payload)
@@ -277,7 +277,7 @@ async fn a_compaction_streams_its_writers_deltas() {
     let endpoint = upstream.endpoint(crate::record::log::Provider::Anthropic, "/v1/messages");
     let client = Arc::new(Client::new(endpoint, "m", "sys"));
     let (session, _rx) = Session::in_memory();
-    tokio::spawn(crate::daemon::compact::compact_loop(
+    tokio::spawn(crate::session::compact::compact_loop(
         client,
         Arc::clone(&session),
         Vec::new(),
@@ -322,7 +322,7 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
         "the boot's capabilities name no prompt cache"
     );
     assert!(
-        session.cache_ttl.get().is_none(),
+        session.cache_ttl_for_test().get().is_none(),
         "no cache lifetime is recorded, so the cold watcher and keepalive were not started"
     );
 
@@ -381,6 +381,6 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
         1,
         "the compaction's request is the only one the upstream saw"
     );
-    assert!(session.cache_ttl.get().is_none());
+    assert!(session.cache_ttl_for_test().get().is_none());
     host.shut_down().await;
 }

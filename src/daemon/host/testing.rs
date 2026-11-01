@@ -10,7 +10,7 @@ impl Host {
     /// woken by it too; one that has a session to wait on should use
     /// [`Session::wait_until`] instead.
     pub(crate) async fn wait_until(&self, what: &str, ready: impl FnMut() -> bool) {
-        crate::daemon::testing::until(
+        crate::session::testing::until(
             what,
             || vec![self.listing_changed.notified()],
             None,
@@ -24,10 +24,10 @@ impl Host {
     /// raises no signal for, such as a directory a session's end removes or the register of
     /// session ids: read again every poll interval as well as at each signal.
     pub(crate) async fn poll_until(&self, what: &str, ready: impl FnMut() -> bool) {
-        crate::daemon::testing::until(
+        crate::session::testing::until(
             what,
             || vec![self.listing_changed.notified()],
-            Some(crate::daemon::testing::POLL),
+            Some(crate::session::testing::POLL),
             ready,
             || format!("sessions: {}", self.listing_json()),
         )

@@ -3,6 +3,7 @@
 //! starts it only when the user configuration answered `[updates] check = true`. It
 //! never installs anything.
 
+use crate::session::Session;
 use std::time::SystemTime;
 
 use super::*;

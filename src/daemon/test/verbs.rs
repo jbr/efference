@@ -4,9 +4,9 @@
 //! checks.
 
 use super::*;
-use crate::daemon::compact::NotCompactable;
-use crate::daemon::{BlockedReason, LoopPhase};
-use crate::frontend::SubmittedTurn;
+use crate::protocol::state::{BlockedReason, LoopPhase};
+use crate::session::compact::NotCompactable;
+use crate::session::submitted::SubmittedTurn;
 use serde_json::json;
 
 fn session() -> Arc<Session> {
@@ -78,7 +78,7 @@ fn held_triage(shared: Arc<Session>) -> Arc<Session> {
 fn retrying(shared: Arc<Session>) -> Arc<Session> {
     shared.set_phase(LoopPhase::Requesting);
     shared
-        .upstream_retry
+        .upstream_retry_for_test()
         .set(crate::inference::api::stream_abort_retry(
             crate::inference::api::RetrySurface::Turn,
             1,
@@ -239,7 +239,7 @@ fn a_turn_is_accepted_and_says_when_it_lands() {
 async fn a_turn_during_a_retry_pause_is_queued() {
     let shared = unanswered();
     shared.set_phase(LoopPhase::Requesting);
-    let retry = Arc::clone(&shared.upstream_retry);
+    let retry = Arc::clone(shared.upstream_retry_for_test());
     let mut pause = std::pin::pin!(retry.delay(Duration::from_secs(60)));
     assert_eq!(futures_lite::future::poll_once(pause.as_mut()).await, None);
     assert!(matches!(shared.loop_phase(), LoopPhase::Delayed { .. }));

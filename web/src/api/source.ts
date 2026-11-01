@@ -27,7 +27,7 @@ export function sessionSource(
   return match === null ? null : { id: match[1], place: match[2] ?? null };
 }
 
-/** Who sent a turn, as the transcript names them (src/daemon/transcript.rs,
+/** Who sent a turn, as the transcript names them (src/session/transcript.rs,
  * `sender`): `you` for the operator's own clients (no source, or `web`), and
  * otherwise the id or client name inside its `source` label — `parent` for
  * `session[parent]` and `session[parent in ~/code/other]`, `claude-code` for

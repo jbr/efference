@@ -1,7 +1,7 @@
 //! A file that arrived in a session's attachment store, as the log records it
 //! (docs/inbox.md).
 //!
-//! Naming, storing and classifying files is [`crate::attachments`]. These are the shapes
+//! Naming, storing and classifying files is [`crate::session::attachments`]. These are the shapes
 //! a turn or an ambient notice keeps, and the two renderings of them the wire carries:
 //! [`describe`] for a notice and [`turn_line`] for a turn.
 

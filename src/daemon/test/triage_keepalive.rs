@@ -6,12 +6,12 @@ use super::runtime::{started, workdir};
 use super::*;
 use crate::curation::triage::Triager;
 use crate::daemon::SessionRuntime;
-use crate::daemon::keepalive::{CacheLineage, KeepaliveSpec, keepalive_interval};
-use crate::frontend::SubmittedTurn;
 use crate::inference::api::{Client, Endpoint, PromptCachePolicy, RequestUsage, SentRequest};
 use crate::inference::testing::upstream::{Canned, Request, ScriptedUpstream, end_turn, tool_call};
 use crate::record::log::{Provider, Summary, Timestamp};
 use crate::record::project::WireTurn;
+use crate::session::keepalive::{CacheLineage, KeepaliveSpec, keepalive_interval};
+use crate::session::submitted::SubmittedTurn;
 use tempfile::TempDir;
 use trillium_tokio::Swansong;
 

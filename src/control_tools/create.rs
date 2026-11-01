@@ -3,10 +3,10 @@ use super::executor::status_in;
 use super::status::operator_relation;
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
-use crate::daemon::status::{Moves, Reader, Relation, answers};
 use crate::protocol::sessions::CreateSession;
 use crate::protocol::status::Condition;
 use crate::protocol::turns::mint_submission_id;
+use crate::session::status::{Moves, Reader, Relation, answers};
 use anyhow::{Context, Result, anyhow};
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
@@ -181,7 +181,8 @@ impl ControlVerb for Create {
             Some(text) => {
                 let source = turn_source(call.context);
                 let turn =
-                    crate::frontend::SubmittedTurn::new(text, mint_submission_id()).sourced(source);
+                    crate::session::submitted::SubmittedTurn::new(text, mint_submission_id())
+                        .sourced(source);
                 match client.submit(&turn, None).await? {
                     Ok(landing) => answers::sent(&id, landing, Some(&view), now),
                     Err(refusal) => format!("first message not delivered: {refusal}"),
@@ -252,8 +253,9 @@ impl ControlVerb for Create {
         let reader = Reader::read(Relation::Driver, &Moves::IN_SESSION, Some(state.caller()));
         let then = match self.first_message() {
             Some(text) => {
-                let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id())
-                    .sourced(Some(state.source_for(&child)));
+                let turn =
+                    crate::session::submitted::SubmittedTurn::new(text, mint_submission_id())
+                        .sourced(Some(state.source_for(&child)));
                 match child.submit_named_turn(turn, None) {
                     Ok(landing) => answers::sent(&id, landing, Some(&view), now),
                     Err(refusal) => format!(

@@ -14,8 +14,8 @@ use std::time::Duration;
 /// (`daemon/test.rs` explains why the tests never bind one). The session is named
 /// `child` and served at `/sessions/child`, as a host serves it; the client is at the
 /// root.
-async fn session_over(log: Log) -> (Arc<crate::daemon::Session>, Client) {
-    let (shared, _turns) = crate::daemon::Session::from_log(log);
+async fn session_over(log: Log) -> (Arc<crate::session::Session>, Client) {
+    let (shared, _turns) = crate::session::Session::from_log(log);
     shared.set_identity(crate::protocol::state::SessionIdentity {
         id: "child".into(),
         title: None,

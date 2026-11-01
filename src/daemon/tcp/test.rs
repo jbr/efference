@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::daemon::{App, Transport, handler};
+use crate::session::Session;
 use trillium::Method;
 use trillium_testing::TestServer;
 

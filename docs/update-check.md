@@ -55,7 +55,7 @@ is logged at `info`. The check never installs anything.
 
 ## Where clients read the answer
 
-The answer is host state: `Host` holds one `NewerVersion` (`src/daemon/newer_version.rs`)
+The answer is host state: `Host` holds one `NewerVersion` (`src/session/newer_version.rs`)
 and hands it to every session it adopts, as it does the attention table. Each hosted
 session publishes it as the `newer_version` state topic — `{version, tag, url,
 update_command}`, or `null` while no newer release is known — and the host wakes every

@@ -316,7 +316,7 @@ async fn resume_minting(
             triager,
             spotter,
             log,
-            paths: crate::daemon::SessionPaths::new(directories, session_dir.canonicalize()?)?,
+            paths: crate::session::SessionPaths::new(directories, session_dir.canonicalize()?)?,
             role: loaded,
             autonomous,
             capabilities,

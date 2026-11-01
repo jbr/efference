@@ -9,12 +9,12 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::frontend::SubmittedTurn;
 use crate::protocol::agents::BoundAction;
 use crate::record::log::{
     AssistantOutput, ContentBlock, Exclusion, LogEntry, MessagesOutputBlock, Payload, RawResult,
     Summary, ToolCall, Triaged, WireState,
 };
+use crate::session::submitted::SubmittedTurn;
 use crate::tui::artifacts::Coordinate;
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, Span, SpanStyle,

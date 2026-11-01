@@ -105,7 +105,7 @@ agent with whatever text is kept. Triage reads the output after secret values ar
   or an unknown tool — has nothing to triage. A call you interrupt while it runs is
   recorded, and the agent is told it was interrupted instead of seeing its output.
 - A separate triage model's answers are capped at 16,384 tokens.
-<!-- src: src/record/project.rs::TRIAGE_LINE_CAP; src/agent/results.rs::cap_tool_result; src/agent.rs::MAX_TOOL_RESULT_BYTES; src/daemon/entry_view.rs::MAX_INLINE_RESULT_BYTES; web/src/ui/ToolBlocks.tsx (fetchWhole); src/curation/triage/handles.rs::bypassed, SHAPES; src/agent/step.rs::run_call (Decision::Withheld); src/curation/triage.rs::TRIAGE_MAX_OUTPUT -->
+<!-- src: src/record/project.rs::TRIAGE_LINE_CAP; src/agent/results.rs::cap_tool_result; src/agent.rs::MAX_TOOL_RESULT_BYTES; src/session/transcript.rs::MAX_INLINE_RESULT_BYTES; web/src/ui/ToolBlocks.tsx (fetchWhole); src/curation/triage/handles.rs::bypassed, SHAPES; src/agent/step.rs::run_call (Decision::Withheld); src/curation/triage.rs::TRIAGE_MAX_OUTPUT -->
 <!-- TODO: the 256 KiB replacement means "raw is never overwritten" holds only below the cap; raised with jbr 2026-10-19. -->
 
 ### Requests you may notice between turns
@@ -121,12 +121,12 @@ Besides one triage per batch, a session makes a few small requests of its own:
 - **Notifications while idle.** When the session is idle and a notification arrives, a
   small triage on the agent's own model decides whether to wake it.
 - **Titles**, written by the triage model as a session goes.
-<!-- src: src/daemon/keepalive.rs::keepalive_interval, skip_reason, CAP, KeepaliveSpec::triage; src/config/raw.rs (keepalive-interval); src/tui/operations.rs::request_text; web/src/ui/operations.ts::requestText; src/agent/triage.rs::run_idle_triage; src/curation/triage.rs::Triager::idle_envelope; src/agent/title.rs -->
+<!-- src: src/session/keepalive.rs::keepalive_interval, skip_reason, CAP, KeepaliveSpec::triage; src/config/raw.rs (keepalive-interval); src/tui/operations.rs::request_text; web/src/ui/operations.ts::requestText; src/agent/triage.rs::run_idle_triage; src/curation/triage.rs::Triager::idle_envelope; src/agent/title.rs -->
 
 When a session's cache is believed to have expired, its next request — a turn or a
 triage — waits for you to continue it or compact it, rather than paying to re-read the
 whole conversation unasked.
-<!-- src: src/daemon/cold.rs::await_warm_or_person -->
+<!-- src: src/session/cold.rs::await_warm_or_person -->
 
 ### Triage, permissions, and summaries
 
@@ -138,4 +138,4 @@ whole conversation unasked.
   built up, or when the agent chooses.
 - **Compaction**: efference summarizes older parts of a session from its record, at your
   request; it never happens on its own.
-<!-- src: src/curation/spotter.rs; src/agent/consolidation.rs::ConsolidationCheck::check, ask; src/curation/consolidate.rs; src/daemon/compact.rs::NotCompactable; web/src/ui/CompactControl.tsx -->
+<!-- src: src/curation/spotter.rs; src/agent/consolidation.rs::ConsolidationCheck::check, ask; src/curation/consolidate.rs; src/session/compact.rs::NotCompactable; web/src/ui/CompactControl.tsx -->

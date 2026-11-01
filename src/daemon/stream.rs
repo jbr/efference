@@ -29,6 +29,8 @@
 
 use super::starting::{Outcome, Starting};
 use super::*;
+use crate::session::Session;
+use crate::session::topics::StateUpdate;
 use std::collections::{BTreeMap, VecDeque};
 
 /// Which classes and topics a connection subscribed to (`?include=`).
@@ -238,7 +240,7 @@ impl Tail {
             // `Notified` created before the call). Held through a cloned `Arc` rather
             // than through `self`, since the rest of the loop needs `&mut self`.
             let shared = Arc::clone(&self.shared);
-            let appended = shared.appended.notified();
+            let appended = shared.appended().notified();
 
             self.absorb_state();
 

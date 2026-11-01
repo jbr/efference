@@ -437,7 +437,7 @@ each aborted attempt's partial is appended to the log first, and its usage
 finalized unparseable) is recorded to `usage.jsonl` under its own
 `aborted_attempt` origin (docs/log-and-projection.md) rather than `turn` — it
 is never evidence about the cache prefix, and tagging it separately is what
-keeps `daemon::metrics` and `efference dev cache` from reading it as a main-loop
+keeps `session::metrics` and `efference dev cache` from reading it as a main-loop
 request. The budget is sized
 to **wait the failure out**, because a mid-stream abort is an ephemeral upstream
 condition and the alternative on exhaustion is worse than waiting: idling on a
@@ -1734,7 +1734,7 @@ provider's own accounting). The record lands some time after the response
 completes and a too-early GET 404s; the lag is the upstream's (seconds for
 Anthropic-served models, over a minute for `meta/muse-spark-1.3`), so
 the fetch backs off across six attempts (2s through 300s, `COST_FETCH_DELAYS`
-in `daemon/metrics.rs`); exhaustion increments `unpriced`, so the total is a
+in `session/metrics.rs`); exhaustion increments `unpriced`, so the total is a
 legible undercount rather than a silent one. On direct Anthropic there is no
 per-request cost surface (the Models API has no pricing; the Usage & Cost
 Admin API reports realized org costs in daily buckets under a separate admin
@@ -1900,7 +1900,7 @@ than it saves.
 
 `[transport] keepalive-interval` (seconds, `config::TransportLimits`) is how long
 the cached prefix may go untouched before the ping. Absent, it is four fifths of the
-provider's cache lifetime (`Provider::cache_ttl`, `daemon::keepalive_interval`): 240
+provider's cache lifetime (`Provider::cache_ttl`, `session::keepalive_interval`): 240
 seconds against the five minutes Anthropic documents and the conservative reading for
 providers that document nothing, 8 minutes on OpenAI's two arms. OpenAI documents 30
 minutes since the last write or reuse, but a gpt-5.6-luna ping 16 minutes after its

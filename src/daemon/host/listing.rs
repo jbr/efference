@@ -17,8 +17,8 @@
 //!
 //! [`status`]: ListedSession::status
 
-use super::super::status::SessionStatus;
 use super::*;
+use crate::session::status::SessionStatus;
 
 /// The one word a row's `status` carries.
 impl From<&SessionStatus> for ListedStatus {

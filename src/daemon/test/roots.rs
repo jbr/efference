@@ -50,7 +50,7 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
             Some(cwd.join("efference.toml").as_path())
         );
         let (values, errors) = session
-            .env_policy
+            .env_policy_for_test()
             .resolver()
             .resolve_table(&session.effective_config().env);
         assert!(errors.is_empty(), "{errors:?}");
@@ -215,7 +215,7 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
         let context = crate::config::context::resolve_with_child_env(
             &config.context,
             &cwd,
-            &session.env_policy.child_env(),
+            &session.env_policy_for_test().child_env(),
         )
         .unwrap();
         assert!(context.render().unwrap().contains(label));

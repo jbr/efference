@@ -1,6 +1,6 @@
 //! What is in flight beside the loop, and how the last compaction ended
 //! (docs/control-api.md): the `current_operations` and `compaction_failure` topics. The
-//! host folds both from the log as entries append (`daemon/operations.rs`).
+//! host folds both from the log as entries append (`session/operations.rs`).
 
 use serde::{Deserialize, Serialize};
 

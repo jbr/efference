@@ -42,12 +42,13 @@ fn files_added_to_a_session_directory_are_owner_only() {
     let dir = root.session_dir("files");
     mint_session_dir(&dir).unwrap();
 
-    let attached = crate::attachments::store(&dir.join("attachments"), "note.txt", b"hi").unwrap();
+    let attached =
+        crate::session::attachments::store(&dir.join("attachments"), "note.txt", b"hi").unwrap();
     assert_eq!(mode(&attached), 0o600, "an attachment");
 
-    let usage = dir.join(crate::daemon::USAGE_NAME);
+    let usage = dir.join(crate::session::USAGE_NAME);
     let log = crate::record::persist::Log::create(dir.join(LOG_NAME), None).unwrap();
-    let (session, _turns) = crate::daemon::Session::new(root.path().to_path_buf(), log);
+    let (session, _turns) = crate::session::Session::new(root.path().to_path_buf(), log);
     session.attach_usage_log(&usage);
     assert_eq!(mode(&usage), 0o600, "the usage record");
 }

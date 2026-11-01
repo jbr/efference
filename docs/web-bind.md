@@ -343,7 +343,7 @@ The `401`/`403` codes are `ErrorCode` variants in the standard error envelope
 
 `src/daemon/files.rs`, mounted on a web transport only, after the routes and before
 the web client's frontend handler. What it reads for a session — the canonical root,
-the watcher, and the ignore set below — is a `Files` value (`src/daemon/files_view.rs`),
+the watcher, and the ignore set below — is a `Files` value (`src/session/files_view.rs`),
 which the host keeps on each session's entry from its adopt and a session bind builds
 for itself. It is a router over one `/files/*` route rather
 than a handler that strips its own prefix, so the mount point is a route spelling
@@ -487,7 +487,7 @@ lagged receiver pokes rather than skips (the cost of a spurious poke is a 304;
 the cost of a missed one would be correctness), and the channel stays shallow.
 
 A file's watch is on its **parent directory** with a filter, for the same
-reasons as the config watcher (`daemon/watch.rs`): notify cannot watch a missing
+reasons as the config watcher (`session/watch.rs`): notify cannot watch a missing
 path, and editors save via rename-replace. The parent must resolve; the file
 need not exist — so a stream opened against a refusal screen reports the file's
 arrival, and one held across a delete reports the restore. The filter compares

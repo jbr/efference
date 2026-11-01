@@ -11,6 +11,9 @@ use super::*;
 use crate::inventory::sort_rows;
 use crate::protocol::inventory::InventoryRow;
 use crate::record::session_dir::SESSION_BASE;
+use crate::session::USAGE_NAME;
+use crate::session::UsageLine;
+use crate::session::last_turn_usage;
 use std::collections::HashSet;
 
 impl DormantSession {

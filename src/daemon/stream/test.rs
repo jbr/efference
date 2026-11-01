@@ -1,6 +1,7 @@
 //! Tests for `stream.rs`.
 
 use super::*;
+use crate::session::topics::watch_topics;
 use futures_lite::StreamExt;
 use std::time::Duration;
 

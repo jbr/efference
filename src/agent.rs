@@ -23,8 +23,7 @@ use crate::curation::spotter::Spotter;
 use crate::curation::triage::{
     BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager,
 };
-use crate::daemon::Session;
-use crate::frontend::{Frontend, GateOptions, SubmittedTurn};
+use crate::frontend::Frontend;
 use crate::inference::api::{Client, Error, RetrySurface, Streamed, ToolChoice};
 use crate::protocol::state::{BlockedReason, LoopPhase, Stall, StallReason};
 use crate::protocol::stream::StreamDelta;
@@ -34,6 +33,8 @@ use crate::record::log::{
     ToolCall, Triage, Turn, WireState,
 };
 use crate::record::project::WireTurn;
+use crate::session::Session;
+use crate::session::{approvals::GateOptions, submitted::SubmittedTurn};
 use crate::tools::Toolbox;
 use crate::tools::bash;
 use crate::tools::process_monitor;

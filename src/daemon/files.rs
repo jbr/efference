@@ -48,11 +48,11 @@
 //! not there, and the same bearer already reaches `/v1`, where the agent can be made
 //! to read any file into the transcript.
 
-use super::files_view::Files;
-use super::files_view::ignores::Scope;
 use super::*;
 use crate::platform::fswatch::{FsChange, FsWatch, WatchGuard};
 use crate::record::log::Timestamp;
+use crate::session::files_view::Files;
+use crate::session::files_view::ignores::Scope;
 use list::{Options, listing, modified_at};
 use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};

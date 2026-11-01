@@ -124,7 +124,11 @@ async fn one_runtime_stops_without_touching_its_sibling() {
     let pgid_of = |runtime: &SessionRuntime| {
         let session = Arc::clone(runtime.session());
         session.spawn_background("sleep 30".into(), None).unwrap();
-        session.process_monitor.lock().unwrap().running_pgids()[0]
+        session
+            .process_monitor_for_test()
+            .lock()
+            .unwrap()
+            .running_pgids()[0]
     };
     let child_one = pgid_of(&one);
     let child_two = pgid_of(&two);
@@ -150,7 +154,7 @@ async fn one_runtime_stops_without_touching_its_sibling() {
     two.session()
         .wait_until("second child registered", || {
             two.session()
-                .process_monitor
+                .process_monitor_for_test()
                 .lock()
                 .unwrap()
                 .running_pgids()

@@ -417,7 +417,7 @@ and applied at every place the harness starts a subprocess:
 | Site | Module |
 | --- | --- |
 | the foreground `bash` tool | `src/tools/bash.rs` |
-| a backgrounded `bash` command | `src/daemon/background.rs` |
+| a backgrounded `bash` command | `src/session/background.rs` |
 | a stdio MCP server | `src/tools/mcp/stdio.rs` |
 | a `[context]` `exec` entry at boot | `src/config/context.rs` |
 

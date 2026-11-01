@@ -248,7 +248,7 @@ fn the_scaffold_parses_and_lists_the_guide() {
 #[cfg(feature = "dev")]
 #[test]
 fn cache_report_separates_explained_cold_reads_from_the_streak() {
-    use efference::daemon::UsageLine;
+    use efference::session::UsageLine;
     let line = |origin, at_ms, cache_read| {
         let request = usage(10, 20, cache_read).with_model("claude-haiku-4-5");
         UsageLine::new(origin, at_ms, false, &request)
@@ -296,9 +296,9 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
 #[cfg(feature = "dev")]
 #[test]
 fn cache_report_counts_the_provider_attribution_by_reason() {
-    use efference::daemon::UsageLine;
     use efference::inference::api::{CacheMiss, CacheMissReason};
     use efference::record::log::RequestOrigin::Turn;
+    use efference::session::UsageLine;
 
     let line = |at_ms, cache_read, miss: Option<(CacheMissReason, u64)>| {
         let request = usage(10, 20, cache_read);
@@ -350,8 +350,8 @@ fn cache_report_counts_the_provider_attribution_by_reason() {
 #[cfg(feature = "dev")]
 #[test]
 fn cache_report_does_not_join_streaks_across_sessions() {
-    use efference::daemon::UsageLine;
     use efference::record::log::RequestOrigin::Turn;
+    use efference::session::UsageLine;
     let cold = |at_ms| UsageLine::new(Turn, at_ms, false, &usage(1, 1, 0));
     let t = 1_800_000_000_000u128;
     let report = cache_report::fold_sessions(&[
@@ -366,7 +366,7 @@ fn cache_report_does_not_join_streaks_across_sessions() {
 
 /// A request's usage with no cache write: the input to a test's [`UsageLine`].
 ///
-/// [`UsageLine`]: efference::daemon::UsageLine
+/// [`UsageLine`]: efference::session::UsageLine
 #[cfg(feature = "dev")]
 fn usage(input: u64, output: u64, cache_read: u64) -> efference::inference::api::RequestUsage {
     efference::inference::api::RequestUsage::new(efference::inference::api::Usage {

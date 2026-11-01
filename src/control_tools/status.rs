@@ -2,8 +2,8 @@ use super::args::{AgentOrAll, reader_name};
 use super::executor::{state_of, status_in};
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
-use crate::daemon::status::{Moves, Reader, Relation, answers};
 use crate::protocol::status::{Condition, Reviewer, StatusView};
+use crate::session::status::{Moves, Reader, Relation, answers};
 use anyhow::{Result, anyhow};
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
@@ -83,7 +83,7 @@ impl ControlVerb for Status {
         let client = state.client(self.agent.id()).await?;
         let view = status_in(&state_of(&client).await?)?;
         let reader = operator_reader(&view, me.as_deref());
-        Ok(crate::daemon::status::render(&view, &reader, now))
+        Ok(crate::session::status::render(&view, &reader, now))
     }
 
     async fn host(self, state: &HostExecutor, _call: &VerbCall<'_>) -> Result<String> {
@@ -113,7 +113,7 @@ impl ControlVerb for Status {
         let view = target.status_view(&id, &target.status());
         let relation = session_relation(state, &view, state.drives(&id)?);
         let reader = Reader::read(relation, &Moves::IN_SESSION, Some(caller));
-        Ok(crate::daemon::status::render(&view, &reader, now))
+        Ok(crate::session::status::render(&view, &reader, now))
     }
 }
 

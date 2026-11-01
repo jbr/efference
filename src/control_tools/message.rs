@@ -2,9 +2,9 @@ use super::args::{NamedAgent, optional_handle, turn_source};
 use super::executor::{state_of, status_in};
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
-use crate::daemon::status::answers;
 use crate::protocol::turns::mint_submission_id;
 use crate::record::log::Notification;
+use crate::session::status::answers;
 use anyhow::{Result, anyhow};
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
@@ -86,7 +86,8 @@ impl ControlVerb for Message {
                 }
             };
         }
-        let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id()).sourced(source);
+        let turn = crate::session::submitted::SubmittedTurn::new(text, mint_submission_id())
+            .sourced(source);
         let sent = client.submit(&turn, self.reply_to.as_deref()).await?;
         match sent {
             Ok(landing) => Ok(answers::sent(&id, landing, view.as_ref(), now)),
@@ -125,7 +126,7 @@ impl ControlVerb for Message {
         }
         let view = target.status_view(&id, &target.status());
         let source = state.source_for(&target);
-        let turn = crate::frontend::SubmittedTurn::new(text, mint_submission_id())
+        let turn = crate::session::submitted::SubmittedTurn::new(text, mint_submission_id())
             .sourced(Some(source.clone()));
         match target.submit_named_turn(turn, self.reply_to.as_deref()) {
             Ok(landing) => Ok(answers::sent(&id, landing, Some(&view), now)),

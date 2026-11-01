@@ -5,8 +5,8 @@
 //! never seen queued before it is held back.
 
 use super::*;
-use crate::daemon::continuation::NotContinuable;
 use crate::protocol::turns::Landing;
+use crate::session::continuation::NotContinuable;
 use std::sync::atomic::AtomicBool;
 
 /// Arm the next `phase_and_queue` to run `writer` between its read of the phase and its read
@@ -22,7 +22,7 @@ fn between_reads(
     let flag = Arc::clone(&reached);
     *session.between_reads.lock().unwrap() = Some(Box::new(move |session: &Session| {
         flag.store(true, Ordering::SeqCst);
-        let queue_free = session.queue.try_lock().is_ok();
+        let queue_free = session.queue_for_test().try_lock().is_ok();
         if queue_free {
             writer(session);
         }
@@ -136,7 +136,8 @@ fn an_agents_turn_is_held_back_as_it_is_queued() {
     let seen = Arc::new(Mutex::new(None));
     let slot = Arc::clone(&seen);
     *session.between_pushes.lock().unwrap() = Some(Box::new(move |session: &Session| {
-        let free = session.pace.try_lock().is_ok() && session.queue.try_lock().is_ok();
+        let free = session.pace_for_test().try_lock().is_ok()
+            && session.queue_for_test().try_lock().is_ok();
         let turn_to_run = free.then(|| session.phase_and_queue().turn_to_run);
         *slot.lock().unwrap() = Some(turn_to_run);
     }));

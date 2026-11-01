@@ -15,6 +15,7 @@
 //! preparation was cancelled on purpose, and the connections end.
 
 use super::*;
+use crate::session::Session;
 use std::sync::atomic::AtomicBool;
 
 use crate::protocol::channel_value;

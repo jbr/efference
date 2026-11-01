@@ -1,6 +1,6 @@
 //! Where the loop is, and what stopped it (docs/control-api.md): the `loop_phase`,
 //! `stall`, and `config_repair` topics. The loop moves the phase and records the stall
-//! and the repair (`daemon/phase.rs`, `daemon/stall.rs`).
+//! and the repair (`session/phase.rs`, `session/stall.rs`).
 
 use serde::{Deserialize, Serialize};
 

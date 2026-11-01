@@ -6477,7 +6477,7 @@
         },
         {
           "const": "supervisor",
-          "description": "The supervisor reviews: a call the spotter holds is routed to the session's\nsupervisor — by default the session that commissioned it, settable after creation\n— which resolves it with `decide`, through the ordinary approval route\n(docs/permissions.md). The\ndefault for a session that has a supervisor.\n\nThe position **resolves at routing time, never at creation**: a session with no live\nsupervisor — a root, a cleared pointer, or a supervisor that has since ended — reviews as\n[`SpotterHuman`](Self::SpotterHuman) instead ([`crate::daemon::Session::resolved_review_level`]).\nResolving once at creation would leave a child whose creator died effectively unreviewed.",
+          "description": "The supervisor reviews: a call the spotter holds is routed to the session's\nsupervisor — by default the session that commissioned it, settable after creation\n— which resolves it with `decide`, through the ordinary approval route\n(docs/permissions.md). The\ndefault for a session that has a supervisor.\n\nThe position **resolves at routing time, never at creation**: a session with no live\nsupervisor — a root, a cleared pointer, or a supervisor that has since ended — reviews as\n[`SpotterHuman`](Self::SpotterHuman) instead ([`crate::session::Session::resolved_review_level`]).\nResolving once at creation would leave a child whose creator died effectively unreviewed.",
           "type": "string"
         },
         {

@@ -16,10 +16,11 @@
 
 use super::runtime::{boot, started, workdir};
 use super::*;
-use crate::daemon::{SessionRuntime, StallReason};
-use crate::frontend::SubmittedTurn;
+use crate::daemon::SessionRuntime;
 use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
+use crate::protocol::state::StallReason;
 use crate::record::log::{Origin, Provider, WireState};
+use crate::session::submitted::SubmittedTurn;
 use tempfile::TempDir;
 use trillium_tokio::Swansong;
 
@@ -251,7 +252,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
 
     session
         .wait_until("the loop is waiting to retry", || {
-            session.upstream_retry.get().is_some()
+            session.upstream_retry_for_test().get().is_some()
         })
         .await;
     let waiting_since = tokio::time::Instant::now();
@@ -262,7 +263,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
     // Most of the first pause passes with the loop still waiting.
     tokio::time::sleep(FIRST_PAUSE * 9 / 10).await;
     assert!(
-        session.upstream_retry.get().is_some(),
+        session.upstream_retry_for_test().get().is_some(),
         "the loop waits out the pause"
     );
     assert_eq!(
@@ -281,7 +282,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
         waiting_since.elapsed()
     );
     assert!(session.stall().is_none());
-    assert!(session.upstream_retry.get().is_none());
+    assert!(session.upstream_retry_for_test().get().is_none());
     assert!(
         session.snapshot().iter().any(|e| matches!(
             &e.payload,

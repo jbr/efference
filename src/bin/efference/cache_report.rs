@@ -10,9 +10,9 @@
 
 use super::*;
 
-use efference::daemon::{CacheRead, ColdStart, ColdStreak, USAGE_NAME, UsageLine};
 use efference::inference::api::{CacheMiss, CacheMissReason};
 use efference::record::log::RequestOrigin;
+use efference::session::{CacheRead, ColdStart, ColdStreak, USAGE_NAME, UsageLine};
 
 /// Per-origin counts for the table: how many requests of this shape, how many of
 /// them read a cached prefix, and what they cost.

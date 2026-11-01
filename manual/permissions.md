@@ -138,7 +138,7 @@ While you’re actively using a client, notifications wait two minutes. Looking 
 deciding the gate cancels the pending notification. For a session supervised by another
 session, you hear only about gates that reach you: ones passed up to you, or left with you
 when the supervisor ends or you take the session back.
-<!-- src: src/daemon/push.rs::push, MomentKind::title, gate_body; src/daemon/delayed_push.rs::PUSH_DELAY, cancel_delayed_push; src/daemon/attention.rs; docs/web-push.md (routing, not_sent), checked against src/daemon/approvals.rs::escalate -->
+<!-- src: src/session/push.rs::push, MomentKind::title, gate_body; src/session/delayed_push.rs::PUSH_DELAY, cancel_delayed_push; src/session/attention.rs; docs/web-push.md (routing, not_sent), checked against src/session/approvals.rs::escalate -->
 
 ## Permission rules in detail
 
@@ -158,7 +158,7 @@ For each call:
 
 Step 3 costs nothing and asks no model. Decisions from the spotter and from people are
 recorded in the session's log.
-<!-- src: src/config/policy.rs::classify; src/agent/step/judge.rs::judge (Payload::Spot); src/daemon/approvals.rs -->
+<!-- src: src/config/policy.rs::classify; src/agent/step/judge.rs::judge (Payload::Spot); src/session/approvals.rs -->
 
 ### What clears without asking
 
@@ -242,7 +242,7 @@ straight to whoever decides the session’s gates. Read the change itself: chang
 changes what the spotter allows, and a whole-file rewrite can change more than the line
 the agent points to. Approved additions take effect at once; removals and new `deny`
 entries take effect when the session next starts.
-<!-- src: src/agent/step.rs::run_call (config_write); src/daemon/watch.rs::config_watch_loop; src/config/edit.rs::diff_changes -->
+<!-- src: src/agent/step.rs::run_call (config_write); src/session/watch.rs::config_watch_loop; src/config/edit.rs::diff_changes -->
 
 ### Suggested permissions at a gate
 
@@ -263,7 +263,7 @@ A lasting permission applied through this mechanism is written to the session’
 session copy; starting a new session copies the project file again. Put permissions you
 want future sessions to have in the project file.
 <!-- src: src/agent/config_edit.rs::commit_config_edit; src/boot/scaffold.rs::snapshot_config -->
-<!-- TODO: an accepted spotter proposal is logged, not written to config.toml (src/daemon/config_edits.rs::resolve_proposal_decision) — asked of jbr. -->
+<!-- TODO: an accepted spotter proposal is logged, not written to config.toml (src/session/config_edits.rs::resolve_proposal_decision) — asked of jbr. -->
 
 ### Choose who reviews held calls
 
@@ -275,7 +275,7 @@ A session's review level sets who answers a held call:
 | `human_only` | no | you, for every call your settings don't cover |
 | `supervisor` | yes | the session that supervises this one; the default for a session another session created. It can pass a call up to its own supervisor, and so on up to you. With no supervisor running, you. |
 | `autonomous` | yes | no one: the call is declined, and the agent is told what to change in its configuration |
-<!-- src: src/config/policy.rs::ReviewLevel; src/daemon/config_edits.rs::set_autonomous; src/daemon/host/supervise.rs; src/control_tools/decide.rs (escalate); src/daemon/approvals.rs::escalate; src/daemon/review.rs::resolved_review_level; src/agent/config_edit.rs::missing_grant_message, autonomous_gate_message -->
+<!-- src: src/config/policy.rs::ReviewLevel; src/session/config_edits.rs::set_autonomous; src/daemon/host/supervise.rs; src/control_tools/decide.rs (escalate); src/session/approvals.rs::escalate; src/session/review.rs::resolved_review_level; src/agent/config_edit.rs::missing_grant_message, autonomous_gate_message -->
 
 `efference control create --autonomous` starts a session that way; `efference control review-level` changes it. An
 autonomous session runs whatever your settings or the spotter allow, with no one watching.

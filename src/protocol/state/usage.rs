@@ -1,6 +1,6 @@
 //! The session's token, cache and cost telemetry (docs/control-api.md, docs/transport.md):
 //! the `usage` topic and the `cold` topic. The host folds it from each request it records
-//! (`daemon/metrics.rs`) and from the keepalive's decisions (`daemon/keepalive.rs`).
+//! (`session/metrics.rs`) and from the keepalive's decisions (`session/keepalive.rs`).
 
 use serde::{Deserialize, Serialize};
 

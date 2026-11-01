@@ -2,6 +2,9 @@
 
 use super::*;
 use crate::protocol::state::SETTLED_HEADER;
+use crate::session::SETTLE_TIMEOUT;
+use crate::session::Session;
+use crate::session::transcript;
 
 #[derive(Deserialize)]
 pub(crate) struct TurnBody {
@@ -184,7 +187,7 @@ fn missing_state(conn: Conn) -> Conn {
 /// consumer ignores — every shape `Eventable` can encode fires `onmessage` — and the one
 /// that stays out of the frame envelope, since a heartbeat *frame* would need a fourth
 /// `class` naming no durability. It is also what makes `?since` past the head safe to
-/// serve as a wait rather than an error. (`daemon/keepalive.rs` is the *upstream* cache
+/// serve as a wait rather than an error. (`session/keepalive.rs` is the *upstream* cache
 /// ping; unrelated.)
 pub(crate) const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
 
@@ -311,8 +314,8 @@ impl TranscriptQuery {
     /// one entry, so a window bound or the audit grain beside `seq` has no reading and
     /// is refused rather than ignored.
     pub(crate) fn parse(query: &str) -> Result<Self, String> {
-        use super::transcript::Grain;
         use crate::protocol::transcript::Handle;
+        use crate::session::transcript::Grain;
         let select = LogSelect::parse(query)?;
         let grain = match query_value(query, "grain").as_deref() {
             None | Some("conversation") => Grain::Conversation,

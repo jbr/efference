@@ -383,7 +383,7 @@ async fn a_result_logged_with_its_verdict_serves_the_counts_on_itself() {
 #[tokio::test]
 async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
     let (shared, _turns_rx) = Session::in_memory();
-    let big = "z".repeat(entry_view::MAX_INLINE_RESULT_BYTES * 2);
+    let big = "z".repeat(crate::session::transcript::MAX_INLINE_RESULT_BYTES * 2);
     let result = |call_id: &str, content: &str| {
         Payload::tool_result(
             call_id,
@@ -409,12 +409,12 @@ async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
     let elided = &entries[1]["payload"]["ToolResult"]["raw"];
     assert_eq!(
         elided["content"].as_str().unwrap().len(),
-        entry_view::MAX_INLINE_RESULT_BYTES,
+        crate::session::transcript::MAX_INLINE_RESULT_BYTES,
         "the window carries the prefix"
     );
     assert_eq!(
         elided["content_elided"]["kept_bytes"],
-        entry_view::MAX_INLINE_RESULT_BYTES
+        crate::session::transcript::MAX_INLINE_RESULT_BYTES
     );
     assert_eq!(elided["content_elided"]["total_bytes"], big.len());
 

@@ -21,7 +21,7 @@ pub(super) async fn read_log_window(conn: Conn) -> Conn {
 }
 
 /// The same window as [`read_log_window`], rendered as `text/plain`
-/// (`daemon/transcript.rs`, docs/control-api.md): at the conversation grain by
+/// (`session/transcript.rs`, docs/control-api.md): at the conversation grain by
 /// default, entry by entry with `grain=audit`, or one entry in full with `seq`. Every
 /// line carries its handle, and the bodies a window leaves out resolve through the
 /// zoom and the routes below.

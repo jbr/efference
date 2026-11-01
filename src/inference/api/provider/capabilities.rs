@@ -130,7 +130,7 @@ fn openrouter_capabilities(body: &str, upstream: &[String]) -> Result<ModelCapab
     // one — report having a cache. **Any**, not all: sticky routing
     // pins a session to one upstream, so the question is whether a
     // reachable endpoint caches, and the runtime tripwire
-    // (`daemon/keepalive.rs`) is what stops a ping that turns out to
+    // (`session/keepalive.rs`) is what stops a ping that turns out to
     // cost something.
     let has_implicit_cache = endpoints.iter().any(|e| e.supports_implicit_caching);
     let has_explicit_cache = endpoints

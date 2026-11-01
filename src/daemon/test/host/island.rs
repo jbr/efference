@@ -6,10 +6,10 @@
 
 use super::*;
 use crate::daemon::island::OwnerWatch;
-use crate::frontend::SubmittedTurn;
 use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
 use crate::protocol::state::LoopPhase;
 use crate::record::log::{Payload, Provider, WorktreeEventKind};
+use crate::session::submitted::SubmittedTurn;
 use crate::session_ids::SessionIds;
 
 /// A host over a state database in `roots`, and the register it reserves in.

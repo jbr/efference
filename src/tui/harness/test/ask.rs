@@ -2,9 +2,9 @@
 //! *asked* mark, the reply is the operator's message, and the composer's send answers it.
 
 use super::*;
-use crate::frontend::SubmittedTurn;
 use crate::protocol::state::AskView;
 use crate::protocol::turns::QueuedTurn;
+use crate::session::submitted::SubmittedTurn;
 use crate::tui::harness::asking;
 
 fn ask(id: &str, question: &str) -> ToolCall {

@@ -364,7 +364,7 @@ answers it. A message naming no question is refused with the question and its ha
 it and how, and is never delivered as a new message, since a stale "yes, delete them"
 read as a new turn reads as consent. Only a driver answers, and a blank reply is
 refused. The check and the answer are one step under the session's ask lock
-(`Session::submit_named_turn`, `src/daemon/named_turns.rs`), so no question can start
+(`Session::submit_named_turn`, `src/session/named_turns.rs`), so no question can start
 between them.
 
 `decide(agent, seq, decision, message?)` resolves the call the target holds: `seq` is
@@ -465,17 +465,17 @@ message of a completed turn, since prose on every child turn would grow the pare
 cached prefix.
 
 **The body is the status view, rendered for its reader.** The host builds one view per
-status — the `status` state topic (docs/control-api.md, `src/daemon/status/view.rs`) —
-and one renderer prints it (`src/daemon/status/render.rs`). The first line names the
+status — the `status` state topic (docs/control-api.md, `src/session/status/view.rs`) —
+and one renderer prints it (`src/session/status/render.rs`). The first line names the
 session, its condition, and what it needs; every later line opens with a label
 (`intent:`, `held because:`, `question:`, `said:`, `cut:`, `next:`), and none relies on
 indentation, since a stream consumer trims leading whitespace. Instants print as
 durations ("3m"), and senders as plain names: `you`, `operator`, or an id. The renderer
 takes the reader's relation and a table of the mount's moves (`Moves`,
-`src/daemon/status/moves.rs`), so the calls it names are the mount's: `agents__<verb>`
+`src/session/status/moves.rs`), so the calls it names are the mount's: `agents__<verb>`
 in-session, the bare verb over `efference mcp` and the command line, each written with
 its arguments filled in. The verbs' own answers are rendered beside it
-(`src/daemon/status/answers.rs`). What each relation reads:
+(`src/session/status/answers.rs`). What each relation reads:
 
 - **Reviewer** — the session a gate is routed to (below, and docs/permissions.md), or
   an operator client for a gate routed to the operator: the held call by tool, command
@@ -526,7 +526,7 @@ subscriber (docs/inbox.md — must-wake):
 The subscriber set is host control state on the target — never logged, never
 projected — and the host runs one watcher per session that reads its status on
 every control-state change and posts it when it moves (`src/daemon/subscriptions.rs`,
-`src/daemon/status.rs`). A subscribed session counts as something that may wake
+`src/session/status.rs`). A subscribed session counts as something that may wake
 the subscriber, so its `wait` tool is not refused while one exists
 (docs/process-monitor.md).
 

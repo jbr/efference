@@ -1,16 +1,16 @@
 //! Tests for `keepalive.rs` — the two pure predicates the ping is built on.
 
 use super::*;
-use crate::daemon::keepalive::{
-    CacheLineage, KeepaliveSpec, PingCost, discard_is_affordable, lop_trailing_model_turns,
-    prefix_tokens, skip_reason,
-};
 use crate::inference::api::KeepaliveError;
 use crate::inference::api::{RequestUsage, TokenPrices};
 use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
 use crate::protocol::state::KeepaliveSkipReason;
 use crate::record::log::{AssistantOutput, MessagesOutputBlock};
 use crate::record::project::{Role, WireTurn};
+use crate::session::keepalive::{
+    CacheLineage, KeepaliveSpec, PingCost, discard_is_affordable, lop_trailing_model_turns,
+    prefix_tokens, skip_reason,
+};
 
 fn message(role: Role, text: &str) -> WireTurn {
     match role {
@@ -149,8 +149,8 @@ fn permanent_classification() {
 /// before it; a session that has sent nothing has nothing to lose.
 #[test]
 fn believed_cold_from_last_touch_plus_lifetime() {
-    use crate::daemon::keepalive::believed_cold_since;
     use crate::record::log::Timestamp;
+    use crate::session::keepalive::believed_cold_since;
     let ttl = Duration::from_secs(300);
     let touch = Timestamp(1_000_000);
     assert_eq!(believed_cold_since(None, Timestamp(9_999_999), ttl), None);
@@ -175,10 +175,7 @@ fn glm() -> TokenPrices {
 }
 
 fn ping(output_tokens: u64, completion_usd: Option<f64>) -> PingCost {
-    PingCost {
-        output_tokens,
-        completion_usd,
-    }
+    PingCost::new(output_tokens, completion_usd)
 }
 
 /// The priced rule (docs/transport.md): a 10k-token ping (~$0.005) against a 200k
@@ -228,8 +225,8 @@ fn unpriced_sessions_fall_back_to_the_token_ratio() {
 /// session's completion price over the discarded tokens.
 #[test]
 fn completion_cost_prefers_the_receipt() {
-    use crate::daemon::keepalive::completion_cost;
     use crate::inference::api::{InlineCost, Receipt};
+    use crate::session::keepalive::completion_cost;
     let usage = Usage {
         output_tokens: 1_000,
         ..Usage::default()
@@ -304,7 +301,7 @@ pub(super) fn idle_for(shared: &Session, idle: Duration) {
     let back = |at: &mut Option<Instant>| {
         *at = at.map(|at| at.checked_sub(idle).expect("a clock that can be set back"));
     };
-    let mut metrics = shared.metrics.lock().unwrap();
+    let mut metrics = shared.metrics_for_test().lock().unwrap();
     back(&mut metrics.last_request_at);
     back(&mut metrics.last_real_turn_at);
     back(&mut metrics.last_triage_at);

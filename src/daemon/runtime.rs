@@ -9,6 +9,18 @@
 use super::*;
 use crate::curation::triage::Triager;
 use crate::inference::api::{Client, Error, ModelCapabilities};
+use crate::session::Session;
+use crate::session::SessionParts;
+use crate::session::SessionPaths;
+use crate::session::attachment_watch::attachments_watch_loop;
+use crate::session::cold;
+use crate::session::compact;
+use crate::session::keepalive::CacheLineage;
+use crate::session::keepalive::KeepaliveSpec;
+use crate::session::keepalive::keepalive_loop;
+use crate::session::keepalive_interval;
+use crate::session::topics::watch_topics;
+use crate::session::watch::config_watch_loop;
 use tokio::sync::oneshot;
 use trillium_tokio::Swansong;
 
@@ -324,7 +336,7 @@ fn spawn_file_watchers(swansong: &Swansong, session: &Arc<Session>, paths: &Sess
     // `.efference/<id>/attachments/`. A file appearing there — pasted, dragged,
     // moved in — becomes a notification naming what arrived; the bytes stay on
     // disk until the model pulls them, so nothing here enters the log.
-    session.set_attachment_store(crate::attachments::Store::new(
+    session.set_attachment_store(crate::session::attachments::Store::new(
         paths.attachments(),
         paths.attachment_display(),
     ));

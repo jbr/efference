@@ -50,21 +50,10 @@
 use super::*;
 use crate::record::log::{ContentElision, RawResult, ResultImage, WireState};
 use crate::record::project::selection;
+use crate::session::Session;
+use crate::session::artifact_links::{Link, links};
+use crate::session::transcript::MAX_INLINE_RESULT_BYTES;
 use serde::ser::{SerializeStruct, SerializeStructVariant, Serializer};
-
-/// How much of a tool result's `content` rides a window read or a `log` frame before
-/// the rest is left to `GET /log/:seq` (docs/control-api.md).
-///
-/// 16 KiB, derived from the result-size distribution of this repo's own sessions
-/// (2,131 results across 124 logs): the median result is ~1 KB and p90 is ~13 KB, so
-/// the threshold sits just past the body of the distribution — ~8% of results elide,
-/// and that 8% is ~35% of all result bytes. Halving it to 8 KiB nearly doubles the
-/// fetch count for 18 more points of bytes; doubling it to 32 KiB halves the bytes
-/// saved. It is the point where a frame's own cost stops being the dominant one:
-/// below it, a payload is comparable to the HTTP round-trip that would fetch it, so
-/// eliding trades a cheap frame for a dereference and an N+1 read over a normal
-/// session.
-pub(crate) const MAX_INLINE_RESULT_BYTES: usize = 16 * 1024;
 
 /// A [`LogEntry`] as served to control-channel clients.
 pub(crate) struct EntryView<'a> {
@@ -136,9 +125,7 @@ impl Serialize for EntryView<'_> {
         if let Some(source) = &entry.source {
             s.serialize_field("source", source)?;
         }
-        let links = self
-            .session
-            .map_or_default(|session| artifacts::links(session, entry));
+        let links = self.session.map_or_default(|session| links(session, entry));
         s.serialize_field(
             "payload",
             &PayloadView(&entry.payload, self.elide_text, self.result_raw, &links),
@@ -151,12 +138,7 @@ impl Serialize for EntryView<'_> {
 /// place a [`ResultImage`] and an oversized `content` live, `ResultVerdict`, whose
 /// line counts come from the result it names, and an `Assistant` entry with artifact
 /// links.
-struct PayloadView<'a>(
-    &'a Payload,
-    bool,
-    Option<&'a RawResult>,
-    &'a [artifacts::Link],
-);
+struct PayloadView<'a>(&'a Payload, bool, Option<&'a RawResult>, &'a [Link]);
 
 impl Serialize for PayloadView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

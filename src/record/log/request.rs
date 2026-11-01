@@ -72,7 +72,7 @@ impl RequestOrigin {
     /// so refreshed it. Turns and keepalive pings do. A triage may run on the agent's own
     /// client (it reads the main prefix) or on a separate triage client with a prefix of
     /// its own; the origin does not say which, so the triage's line carries
-    /// [`UsageLine::main_prefix`](crate::daemon::UsageLine) when it ran on the agent's client. Title and triage
+    /// [`UsageLine::main_prefix`](crate::session::UsageLine) when it ran on the agent's client. Title and triage
     /// requests are left out, which can only make the cache look colder than it is.
     pub fn touches_main_prefix(self) -> bool {
         matches!(self, Self::Turn | Self::Keepalive | Self::Consolidation)

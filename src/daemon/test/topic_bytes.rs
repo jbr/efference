@@ -168,13 +168,13 @@ fn the_usage_topic_keeps_its_bytes() {
         "http://127.0.0.1:9/api/v1/messages",
     ));
     {
-        let mut cost = shared.cost.lock().unwrap();
+        let mut cost = shared.cost_for_test().lock().unwrap();
         cost.total_usd = 0.0421;
         cost.unpriced = 1;
     }
-    *shared.plan.lock().unwrap() = Some(plan(AT));
+    *shared.plan_for_test().lock().unwrap() = Some(plan(AT));
     {
-        let mut metrics = shared.metrics.lock().unwrap();
+        let mut metrics = shared.metrics_for_test().lock().unwrap();
         metrics.last_request_wall = Some(Timestamp(AT));
         metrics.last_cache_miss.as_mut().unwrap().at = Timestamp(AT + 1);
         metrics.keepalive_skipped = Some(crate::protocol::state::KeepaliveSkip {
@@ -219,7 +219,7 @@ fn the_usage_topic_keeps_its_bytes() {
         "http://127.0.0.1:9/api/v1/messages",
     ));
     {
-        let mut metrics = shared.metrics.lock().unwrap();
+        let mut metrics = shared.metrics_for_test().lock().unwrap();
         metrics.last_request_wall = Some(Timestamp(AT));
         metrics.last_cache_miss.as_mut().unwrap().at = Timestamp(AT + 1);
         metrics.keepalive_skipped = Some(crate::protocol::state::KeepaliveSkip {
@@ -329,7 +329,7 @@ fn the_verbs_topic_keeps_its_bytes() {
     let (shared, _turns) = Session::in_memory();
     shared.set_cache_ttl(Duration::from_secs(300));
     append_compactable_history(&shared);
-    shared.metrics.lock().unwrap().last_request_wall = Some(Timestamp(AT));
+    shared.metrics_for_test().lock().unwrap().last_request_wall = Some(Timestamp(AT));
     assert_eq!(
         bytes(&shared, Topic::Verbs),
         r#"{"compact":{"accepted":true,"warm":false},"continue":{"accepted":true},"turn":{"accepted":true,"delivery":"now"}}"#
@@ -348,14 +348,14 @@ fn the_cold_topic_keeps_its_bytes() {
 
     shared.set_cache_ttl(Duration::from_secs(300));
     append_compactable_history(&shared);
-    shared.metrics.lock().unwrap().last_request_wall = Some(Timestamp(AT));
+    shared.metrics_for_test().lock().unwrap().last_request_wall = Some(Timestamp(AT));
     assert_eq!(
         bytes(&shared, Topic::Cold),
         r#"{"context_tokens":null,"since":1754300300000}"#
     );
 
     shared.record_request(RequestOrigin::Turn, usage(100, 5, 200, 300));
-    shared.metrics.lock().unwrap().last_request_wall = Some(Timestamp(AT));
+    shared.metrics_for_test().lock().unwrap().last_request_wall = Some(Timestamp(AT));
     assert_eq!(
         bytes(&shared, Topic::Cold),
         r#"{"context_tokens":600,"since":1754300300000}"#

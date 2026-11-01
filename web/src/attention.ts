@@ -18,7 +18,7 @@ import { subscribe as subscribeRoute } from "./ui/route.ts";
 export const INPUT_WINDOW_MS = 60_000;
 
 /** The longest an active page goes without reporting. The host lets a client
- * lapse 45 s after its last report (`LAPSE`, src/daemon/attention.rs), so two
+ * lapse 45 s after its last report (`LAPSE`, src/session/attention.rs), so two
  * beats fit inside it. */
 export const HEARTBEAT_MS = 20_000;
 

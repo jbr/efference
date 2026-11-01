@@ -10,7 +10,7 @@
 //!
 //! Directories, not files: notify cannot watch a nonexistent path, and editors
 //! save via rename-replace, which orphans an inode-level watch — the same
-//! reasoning as the config watcher (`daemon/watch.rs`). Watching the parent
+//! reasoning as the config watcher (`session/watch.rs`). Watching the parent
 //! also keeps a subscription alive across its file being deleted and restored,
 //! which is a case the file viewer meets in practice.
 //!

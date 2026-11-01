@@ -2,7 +2,7 @@
 //! `status` topic, and what a subscription notification and a status read render.
 //!
 //! The host builds the view from the loop phase and the state each condition needs
-//! (`daemon/status/view.rs`) and prints it with one renderer (`daemon/status/render.rs`).
+//! (`session/status/view.rs`) and prints it with one renderer (`session/status/render.rs`).
 //! Instants are absolute Unix millis, so the topic changes only at a transition; the
 //! renderer subtracts them from its own clock.
 

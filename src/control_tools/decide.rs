@@ -4,12 +4,12 @@ use super::host_executor::names_held;
 use super::status::{operator_relation, session_relation};
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
-use crate::daemon::Decider;
-use crate::daemon::status::{Moves, Reader, answers};
 use crate::protocol::agents::Decision;
 use crate::protocol::status::{Condition, HeldCall, Reviewer, StatusView};
 use crate::protocol::turns::mint_submission_id;
 use crate::record::log::Approval;
+use crate::session::Decider;
+use crate::session::status::{Moves, Reader, answers};
 use anyhow::{Result, anyhow};
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
@@ -137,7 +137,7 @@ impl ControlVerb for Decide {
         if let (Some(note), Some(submission_id)) = (self.note(), note_submission)
             && let Err(refusal) = client
                 .submit(
-                    &crate::frontend::SubmittedTurn::new(note, submission_id)
+                    &crate::session::submitted::SubmittedTurn::new(note, submission_id)
                         .sourced(source.clone()),
                     None,
                 )
@@ -190,8 +190,8 @@ impl ControlVerb for Decide {
             return Err(moved(&target.status_view(&id, &target.status())));
         }
         if let (Some(note), Some(submission_id)) = (self.note(), note_submission) {
-            let turn =
-                crate::frontend::SubmittedTurn::new(note, submission_id).sourced(Some(source));
+            let turn = crate::session::submitted::SubmittedTurn::new(note, submission_id)
+                .sourced(Some(source));
             if let Err(refusal) = target.submit_named_turn(turn, None) {
                 return Err(anyhow!(
                     "{}; your note was not delivered: {}",
@@ -209,7 +209,7 @@ impl ControlVerb for Decide {
 /// operator.
 fn escalate(
     state: &HostExecutor,
-    target: &crate::daemon::Session,
+    target: &crate::session::Session,
     id: &str,
     held: &HeldCall,
     call_id: &crate::record::log::CallId,

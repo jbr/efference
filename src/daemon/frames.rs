@@ -26,7 +26,7 @@
 //! is the whole of it in every ordinary session. Above it the two agree with each
 //! other and diverge from `GET /log/:seq`: both carry a tagged prefix of an oversized
 //! result's `content`, while the entry route serves it whole
-//! (`MAX_INLINE_RESULT_BYTES`, entry_view.rs). That divergence is the feature — a
+//! (`MAX_INLINE_RESULT_BYTES`, transcript.rs). That divergence is the feature — a
 //! multi-megabyte result would otherwise queue every later frame behind it and re-ship
 //! on every replay and window read — and it is deliberately narrow: one field of one
 //! payload, tagged where it happens, dereferenced at the address images already use.
@@ -37,6 +37,7 @@
 
 use super::*;
 use crate::protocol::channel_value;
+use crate::session::Session;
 use serde_json::value::{RawValue, to_raw_value};
 
 /// Serialize to **raw** JSON, preserving the type's own field order.

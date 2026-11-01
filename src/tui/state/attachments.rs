@@ -12,7 +12,7 @@
 //! A staged file uploads at once, so its chip shows what the daemon made of it; the next turn
 //! carries every ready chip.
 //!
-//! [`INLINE_LINE_LIMIT`]: crate::attachments::INLINE_LINE_LIMIT
+//! [`INLINE_LINE_LIMIT`]: crate::session::attachments::INLINE_LINE_LIMIT
 
 use super::*;
 use crate::tui::clipboard::Paste;
@@ -91,7 +91,7 @@ impl<'a> InteractiveState<'a> {
             return;
         }
         let lines = text.lines().count();
-        if lines <= crate::attachments::INLINE_LINE_LIMIT || self.read_only() {
+        if lines <= crate::session::attachments::INLINE_LINE_LIMIT || self.read_only() {
             self.composer.paste_text(text);
             self.set_debug_message("pasted");
             return;

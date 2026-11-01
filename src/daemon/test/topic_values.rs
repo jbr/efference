@@ -399,7 +399,7 @@ fn state_reports_session_cost_only_when_armed() {
     // Fold what the spawned per-generation fetches would write (the fetch
     // itself is network; the fold and readout are what this pins).
     {
-        let mut cell = shared.cost.lock().unwrap();
+        let mut cell = shared.cost_for_test().lock().unwrap();
         cell.total_usd += 0.0421;
         cell.unpriced += 1;
     }

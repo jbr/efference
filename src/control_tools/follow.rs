@@ -17,7 +17,7 @@ use tokio::task::JoinSet;
 use super::status::operator_reader;
 use super::watch::{Followed, Mark, ended, follow, mark};
 use crate::client::Client;
-use crate::daemon::status::render;
+use crate::session::status::render;
 
 /// Print the status blocks of `agents` on `out` as they arrive, blocks separated by a
 /// blank line and `out` flushed after each. `host` is a client at the host's socket

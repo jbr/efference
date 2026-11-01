@@ -157,7 +157,7 @@ async fn a_clean_log_resumes_with_its_state() {
         crate::record::log::latest_title(entries),
         Some("Listing things")
     );
-    let (session, _turns) = crate::daemon::Session::full(crate::daemon::SessionParts::new(
+    let (session, _turns) = crate::session::Session::full(crate::session::SessionParts::new(
         boot.paths.directories(),
         boot.log,
     ));
@@ -217,7 +217,7 @@ async fn a_mid_batch_log_rolls_back() {
     assert!(!wire.contains("call_9"), "{wire}");
 
     // The session's turn and process numbering stay above what is on disk.
-    let (session, _turns) = crate::daemon::Session::full(crate::daemon::SessionParts::new(
+    let (session, _turns) = crate::session::Session::full(crate::session::SessionParts::new(
         boot.paths.directories(),
         boot.log,
     ));

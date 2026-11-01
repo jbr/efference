@@ -2,11 +2,11 @@
 //!
 //! Nothing is stored. An artifact's URL names its session, entry, text block and fence,
 //! with an HMAC over them under the session's own key ([`Session::artifact_key`]), and
-//! the client entry view carries it ([`links`]). Serving checks the tag, finds the
-//! session among the host's, and extracts the fence from the log entry again: an
-//! `html-artifact` fence is the document, and a `mermaid` fence is written into one
-//! that draws it ([`mermaid_document`]). A session that leaves the host takes its key
-//! with it, so its URLs stop resolving with nothing to clean up.
+//! the client entry view carries it ([`links`](crate::session::artifact_links::links)).
+//! Serving checks the tag, finds the session among the host's, and extracts the fence
+//! from the log entry again: an `html-artifact` fence is the document, and a `mermaid`
+//! fence is written into one that draws it ([`mermaid_document`]). A session that leaves
+//! the host takes its key with it, so its URLs stop resolving with nothing to clean up.
 //!
 //! The same routes are served at the web origin's root and on the artifact-only
 //! loopback listener ([`spawn_listener`]), which the host starts under its `Swansong`
@@ -18,20 +18,17 @@ use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use hmac::digest::KeyInit;
-use hmac::{Hmac, Mac};
-use rand::Rng;
-use sha2::Sha256;
+use hmac::Mac;
 use trillium::{Conn, KnownHeaderName};
 use trillium_router::{Router, RouterConnExt};
 
-use super::{Host, Session};
 use crate::config::policy::Verdict;
+use crate::daemon::Host;
 use crate::record::artifact::{Fence, Kind, fences};
-use crate::record::log::{LogEntry, Payload, ToolCall};
+use crate::record::log::{Payload, ToolCall};
+use crate::session::Session;
+use crate::session::artifact_links::mac;
 
-/// The length of a session's signing key.
-pub(crate) const KEY_BYTES: usize = 32;
 /// An HMAC-SHA256 tag in unpadded base64url.
 const TAG_LENGTH: usize = 43;
 /// The largest file `efference.file` hands an artifact.
@@ -65,90 +62,7 @@ pub(super) const ARTIFACT_CSP: &str = "default-src 'none'; \
     connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; \
     object-src 'none'; frame-ancestors 'self'; sandbox allow-scripts";
 
-type HmacSha256 = Hmac<Sha256>;
-
 pub(crate) mod libraries;
-
-/// A fresh signing key, one per [`Session`].
-pub(crate) fn new_key() -> [u8; KEY_BYTES] {
-    let mut key = [0; KEY_BYTES];
-    rand::rng().fill_bytes(&mut key);
-    key
-}
-
-/// One artifact's address, as the client entry view carries it (docs/control-api.md).
-#[derive(Debug, PartialEq, Eq, serde::Serialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema), schemars(rename = "ArtifactLink"))]
-pub(crate) struct Link {
-    pub(crate) text_block: usize,
-    pub(crate) fence: usize,
-    pub(crate) kind: Kind,
-    /// Root-relative: a web client loads it from the origin it already uses.
-    pub(crate) url: String,
-    /// The same document on the artifact-only loopback listener, for a local browser;
-    /// absent for a session outside a host.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) external_url: Option<String>,
-}
-
-/// The links of a committed assistant entry's artifacts, in order. Empty for every
-/// other entry, for a record-only one, and for a session with no id to address it by.
-pub(crate) fn links(session: &Session, entry: &LogEntry) -> Vec<Link> {
-    let Payload::Assistant {
-        output,
-        excluded: None,
-    } = &entry.payload
-    else {
-        return Vec::new();
-    };
-    let Some(id) = session.id() else {
-        return Vec::new();
-    };
-    let mut links = Vec::new();
-    for (text_block, text) in output.text().into_iter().enumerate() {
-        for (fence, Fence { kind, .. }) in fences(text).into_iter().enumerate() {
-            let tag = tag(session.artifact_key(), id, entry.seq, text_block, fence);
-            let url = format!("/artifacts/{id}/{}/{text_block}/{fence}/{tag}", entry.seq);
-            let external_url = session
-                .artifact_origin()
-                .map(|origin| format!("{origin}{url}"));
-            links.push(Link {
-                text_block,
-                fence,
-                kind,
-                url,
-                external_url,
-            });
-        }
-    }
-    links
-}
-
-fn mac(
-    key: &[u8; KEY_BYTES],
-    session: &str,
-    seq: u64,
-    text_block: usize,
-    fence: usize,
-) -> HmacSha256 {
-    let mut mac =
-        <HmacSha256 as KeyInit>::new_from_slice(key).expect("HMAC accepts a key of any length");
-    mac.update(b"efference-html-artifact-v2\0");
-    mac.update(session.as_bytes());
-    mac.update(b"\0");
-    for coordinate in [seq, text_block as u64, fence as u64] {
-        mac.update(&coordinate.to_be_bytes());
-    }
-    mac
-}
-
-fn tag(key: &[u8; KEY_BYTES], session: &str, seq: u64, text_block: usize, fence: usize) -> String {
-    URL_SAFE_NO_PAD.encode(
-        mac(key, session, seq, text_block, fence)
-            .finalize()
-            .into_bytes(),
-    )
-}
 
 /// The routes, mounted at the web origin's root and on the loopback listener. They sit
 /// outside the device-token gate (docs/web-bind.md): a document's tag is its authority,

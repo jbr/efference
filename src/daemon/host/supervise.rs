@@ -15,6 +15,8 @@
 //! a `Telemetry::SupervisorSet` entry, which projects to nothing.
 
 use super::*;
+use crate::session::Session;
+use crate::session::review;
 
 /// Why a supervisor could not be set.
 #[derive(Debug, PartialEq, Eq)]

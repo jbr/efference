@@ -640,7 +640,7 @@ it may expose secret material
 ```
 
 The status shows a prose-rung reason as written, and a fail-closed verdict as "its reviewer
-could not judge it" (`held_because`, `src/daemon/status/view.rs`). A `Spot` whose relation
+could not judge it" (`held_because`, `src/session/status/view.rs`). A `Spot` whose relation
 request failed has no precedent reading, and its phrasing names the cause alone. `Spot::reason`
 is unchanged by any of this.
 
@@ -831,7 +831,7 @@ grant only: an earlier wording that also said "outside the working directory" mo
 gates 568 → 527 with misses 4 → 5, the added one being `./target/release/efference log`, whose
 path is in-tree and whose harm is what the binary does.
 
-## The config-edit loop (`src/config/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon/config_edits.rs`)
+## The config-edit loop (`src/config/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/session/config_edits.rs`)
 
 A deny is not a dead-end: the orchestrator can **edit the config** at a gate. A
 `Payload::ConfigEdit` carries one `ConfigChange` (`command` / `path` / `tool` / `scope`).
@@ -953,7 +953,7 @@ invariant can't reach — the file is invalid *and* the restore failed — is re
 **And it is terminal until a human repairs it.** Effective policy in memory is still the last
 good config, but the file no longer shows it, and the file is what an operator reads to see the
 perimeter a session ran under — so continuing would mean acting under permissions nobody can
-inspect. `refresh_and_emit` therefore sets the **`config_repair` state topic** (`daemon.rs`,
+inspect. `refresh_and_emit` therefore sets the **`config_repair` state topic** (`session.rs`,
 control-api.md): the path, the parse error, the restore error, and a lead line saying a human must
 fix the file. The loop awaits it (`Session::await_config_repair`) at every step, not only at a
 trajectory's start, because an approved config write can land the condition mid-trajectory; it
@@ -969,7 +969,7 @@ blocked-with-nobody-home state, because a config write is the one operation that
 autonomous: it gates for the orchestrator even under `--autonomous`, so a file in this condition
 always has an owner.
 
-## The review-level dial (`src/agent.rs`, `src/daemon/config_edits.rs`)
+## The review-level dial (`src/agent.rs`, `src/session/config_edits.rs`)
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
 `Session` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`,
@@ -1045,7 +1045,7 @@ without eliminating:
   The pointer itself is host control state and is not persisted: a resumed session starts again
   from its creator, if that session is hosted.
 
-  **The position resolves when a call is routed, never at creation** (`daemon/review.rs`). A
+  **The position resolves when a call is routed, never at creation** (`session/review.rs`). A
   session with no live supervisor — a root, a cleared pointer, or a supervisor that has since
   ended — reviews as `SpotterHuman` from that moment, in the same fail-safe direction as
   `ReviewLevel::from_u8`: an unresolvable position moves toward the operator, never toward
@@ -1076,7 +1076,7 @@ without eliminating:
   supervisor, the gate is routed to the operator and the creator may still decide it: the
   gate reaches the creator's subscription without wake (the operator is the one asked), and
   the creator's rendering reads `waiting for a decision from the operator or you`, with the
-  `decide` call (`Relation::MayDecide`, `daemon/status/render.rs`).
+  `decide` call (`Relation::MayDecide`, `session/status/render.rs`).
 
   **Escalation passes one held call up.** The session a gate is routed to may answer it
   with `decide(…, escalate, message?)` instead of deciding it (docs/tools.md). The call
@@ -1090,8 +1090,8 @@ without eliminating:
   person through the gate views and a push ([web-push.md](web-push.md)).
 
   - *Routing.* The held call's escalations live on the pending gate (`Pending::escalations`,
-    `daemon/approvals.rs`), and while it has any, the last one routes it rather than the
-    dial (`Session::gate_reviewer`, `daemon/status/view.rs`): turning the dial or moving
+    `session/approvals.rs`), and while it has any, the last one routes it rather than the
+    dial (`Session::gate_reviewer`, `session/status/view.rs`): turning the dial or moving
     the pointer leaves it with the session it went to. The status watcher re-posts it to
     that session as its reviewer, with wake, and stops posting it to the escalator as one;
     the escalator's subscription reads it without wake, as waiting on the new reviewer,
@@ -1115,7 +1115,7 @@ without eliminating:
   ([web-push.md](web-push.md)). Handing off future approvals is not
   abandoning a call that is holding a child right now. An escalated call is the exception:
   its escalations route it, so the watcher compares those instead of the position
-  (`Routing`, `daemon/subscriptions.rs`), and a dial change does not move it.
+  (`Routing`, `session/review.rs`), and a dial change does not move it.
 
   There is deliberately no `supervisor_only` position mirroring `HumanOnly`: if a nonhuman reviewer
   is acceptable at all, the spotter takes the first shot, being cheap, purpose-briefed, and

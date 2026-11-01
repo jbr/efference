@@ -1,6 +1,6 @@
 use super::*;
-use crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES;
 use crate::record::log::{RawResult, WireState};
+use crate::session::transcript::MAX_INLINE_RESULT_BYTES;
 
 fn one_entry(payload: Payload) -> LogEntry {
     let mut log = Log::in_memory();

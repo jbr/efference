@@ -18,7 +18,7 @@ use crate::protocol::attention::AttentionReport;
 pub(crate) const INPUT_WINDOW: Duration = Duration::from_secs(5 * 60);
 
 /// The longest an active TUI goes without reporting. The host lets a client lapse
-/// 45 s after its last report (`LAPSE`, `src/daemon/attention.rs`), so two beats
+/// 45 s after its last report (`LAPSE`, `src/session/attention.rs`), so two beats
 /// fit inside it.
 pub(crate) const HEARTBEAT: Duration = Duration::from_secs(20);
 

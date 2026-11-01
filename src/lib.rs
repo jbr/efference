@@ -4,7 +4,6 @@
 #![recursion_limit = "256"]
 
 pub mod agent;
-pub mod attachments;
 pub mod boot;
 pub mod client;
 pub mod config;
@@ -19,6 +18,7 @@ pub mod platform;
 pub mod protocol;
 pub mod record;
 pub mod remembered;
+pub mod session;
 pub mod session_ids;
 pub mod setup;
 pub mod tools;

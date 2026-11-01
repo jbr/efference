@@ -159,7 +159,7 @@ re-sampled* view held in an ephemeral `ProcessMonitor` registry inside `Session`
 sibling to `Inbox` and `Metrics`). It is never written to the log. It is dropped on
 restart, at which point `killpg`-on-teardown reaps the children. The async
 spawn/drain orchestration — which needs `Arc<Session>` and the `POST /notifications` path
-— lives in `daemon.rs`; `process_monitor.rs` holds the state: the registry,
+— lives in `session/background.rs`; `process_monitor.rs` holds the state: the registry,
 the bounded per-process capture buffer, and the read projections over it.
 
 **The exit** — status, duration, and final tail — is a discrete immutable event.
@@ -414,7 +414,7 @@ one, otherwise to the operator, and blocks until the reply, which returns as the
 result. The question reaches the supervisor as the session's `asking` status, with the
 `message` call that answers it ([tools.md](tools.md)); the operator's clients show it
 either way. It exists so that ending a turn has one meaning — the work
-is done — and a question has its own spelling (`agent/ask.rs`, `daemon/ask.rs`). It is
+is done — and a question has its own spelling (`agent/ask.rs`, `session/ask.rs`). It is
 always advertised and skips the permission cascade: it acts on nothing, and asking
 permission to ask would gate a question behind a question.
 

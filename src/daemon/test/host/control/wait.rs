@@ -77,7 +77,7 @@ async fn a_wait_with_nothing_new_blocks_until_the_next_decision_point() {
     ));
     assert_eq!(
         session.status(),
-        crate::daemon::status::SessionStatus::Running
+        crate::session::status::SessionStatus::Running
     );
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(

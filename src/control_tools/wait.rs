@@ -4,7 +4,7 @@ use super::status::operator_reader;
 use super::verb::{ControlVerb, VerbCall};
 use super::watch::Next;
 use super::{ClientExecutor, HostExecutor};
-use crate::daemon::status::{answers, render};
+use crate::session::status::{answers, render};
 use anyhow::{Result, anyhow};
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};

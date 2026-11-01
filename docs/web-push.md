@@ -52,7 +52,7 @@ would make it more timely than the next event.
 
 ## When it fires, and what it says
 
-`src/daemon/push.rs`. `Session::moment` takes each moment with the session that answers
+`src/session/push.rs`. `Session::moment` takes each moment with the session that answers
 it, if any ([below](#who-is-pushed)); one the operator answers goes to `Session::push`,
 which decides whether to send now or hold the
 message ([below](#no-push-while-someone-is-attending)); sending short-circuits when
@@ -60,18 +60,18 @@ no root is installed (only a binding host installs one — tests, offline verbs,
 socket-only host look alike) or no runtime is running, and spawns the send so the turn
 loop never waits on a push service.
 
-- **Gate** — the end of `register_pending` (`src/daemon/approvals.rs`). Body: the
+- **Gate** — the end of `register_pending` (`src/session/approvals.rs`). Body: the
   call's name and its `intent` — the model's own statement of purpose
   ([tools.md](tools.md)) — falling back to the spotter's reason (the risk, less useful
   at a glance than the purpose) and then to a plain waiting line, since no reader may
   assume `intent` is present.
-- **Escalated gate** — `Session::escalate` (`src/daemon/approvals.rs`), when a held call is
+- **Escalated gate** — `Session::escalate` (`src/session/approvals.rs`), when a held call is
   escalated ([permissions.md](permissions.md)). A gate moment of its own, so it supersedes
   the gate's earlier push and is delayed and cancelled as any gate's is. Body:
   `escalated by <escalator> ("<note>"): ` and then the gate's body above, truncated; the
   escalator is the id or client name inside its `source`. An escalation to another session
   is that session's to answer, so it pushes nothing.
-- **Rerouted gate** — `Session::gate_rerouted` (`src/daemon/push.rs`), called by the status
+- **Rerouted gate** — `Session::gate_rerouted` (`src/session/push.rs`), called by the status
   watcher (`src/daemon/subscriptions.rs`) when a held gate's routing changes and its
   reviewer is no longer the one its last moment went to: the dial turned, the supervisor
   pointer cleared or moved, the supervisor ended, or the session an escalation reached
@@ -79,8 +79,8 @@ loop never waits on a push service.
   gate's, marked as an escalated gate's when it was escalated. The gate records whom its
   last moment went to (`Pending::moment_to`), set under the same lock as an escalation, so
   an escalation is never announced twice.
-- **Ask** — `begin_ask` (`src/daemon/ask.rs`). Body: the question, truncated.
-- **Settle** — `going_idle()` (`src/daemon/pace.rs`), where the loop phase it leaves
+- **Ask** — `begin_ask` (`src/session/ask.rs`). Body: the question, truncated.
+- **Settle** — `going_idle()` (`src/session/pace.rs`), where the loop phase it leaves
   distinguishes a turn that just ended from boot idle, or from an idle triage that pinned
   nothing (which returns to idle itself); only the former fires. Body: the
   tail `Assistant` entry's prose, truncated to 200 characters. Only the tail entry is
@@ -211,7 +211,7 @@ from what clients report, not from what they have open.
 `POST /attention` ([control-api.md](control-api.md)): `client` a per-page-load id,
 `session` the session the page shows (`null` on the session list), `active` whether a
 person is attending. The host keeps the latest report per client with its arrival time
-(`src/daemon/attention.rs`). A client **lapses** 45 seconds after its last report
+(`src/session/attention.rs`). A client **lapses** 45 seconds after its last report
 (`LAPSE`): the web client heartbeats about every 20 seconds while active, so two missed
 beats lapse it, and a client that dies holding `active` stops counting within the
 minute with nothing to clean up. Someone is **attentive** when any unlapsed client's
@@ -221,12 +221,12 @@ session outside a host has no table and nobody is attentive.
 
 **The delayed push.** `Session::push` sends at once when nobody is attentive. Otherwise it
 holds the message for `PUSH_DELAY` (two minutes, one value for every moment) on
-a task on the host's runtime (`src/daemon/delayed_push.rs`), and sends it if the moment
+a task on the host's runtime (`src/session/delayed_push.rs`), and sends it if the moment
 is still standing when the delay ends. A moment stops standing when it
 **resolves** or is **seen**:
 
 - *Resolves:* a person decides the gate or submits a turn (`Session::person_acted`,
-  `src/daemon/person.rs` — the one hook that also releases the cold check's park; a
+  `src/session/person.rs` — the one hook that also releases the cold check's park; a
   turn also carries an `ask`'s reply and ends a settle), the `ask` ends (`AskWait`
   drop), or the session is archived (the host's teardown).
 - *Seen:* an active report arrives from a client whose `session` is this session

@@ -63,7 +63,7 @@ commands your configuration names (local MCP servers, an environment hook, secre
 lookups such as `op read`). They run as you, with your network access, and efference does
 not sandbox them. What it controls is which of the agent's commands run without asking
 you first ([Permissions](permissions.md)).
-<!-- src: src/tools/bash.rs; src/daemon/background.rs; src/tools/mcp/stdio.rs; src/config/env_table/launch.rs::run_hook; src/config/env_table/resolve.rs::run_command; src/config/context.rs::run_exec; src/config/policy.rs -->
+<!-- src: src/tools/bash.rs; src/session/background.rs; src/tools/mcp/stdio.rs; src/config/env_table/launch.rs::run_hook; src/config/env_table/resolve.rs::run_command; src/config/context.rs::run_exec; src/config/policy.rs -->
 
 ## Host and session details
 
@@ -105,7 +105,7 @@ Starting `efference --host` reopens sessions that were still open when a host la
 across all projects. They wait idle: interrupted work doesn’t continue until you message
 or continue the session. An idle session can still make small requests to keep the
 provider’s conversation cache warm or read an incoming notification.
-<!-- src: src/daemon/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/record/recovery.rs; src/daemon/keepalive.rs; src/daemon/metrics.rs::seed_clocks -->
+<!-- src: src/daemon/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/record/recovery.rs; src/session/keepalive.rs; src/session/metrics.rs::seed_clocks -->
 
 Standalone mode starts fresh rather than reopening sessions automatically. On a normal
 quit, it archives its sessions so no host reopens them later. Sessions with nothing said
@@ -139,7 +139,7 @@ through a proxy blocks it.
 | The push address each notifying browser registered | When a session needs a decision from you, or finishes a turn | The message is encrypted to that browser; the push service sees where and when it is sent |
 | `efference.net/releases/latest.json` and `latest.json.minisig` | When a host starts and about once a day after, if `[updates] check = true`; and each time you run `efference update --check` | Sends nothing beyond the request itself. The answer is believed only when it is signed with efference's release key. To turn the daily check off, set `check = false` under `[updates]` in `~/.efference/config.toml`, or answer no in `efference setup`'s "Update check" entry |
 <!-- src: src/platform/update_check.rs::LATEST_URL, UpdateCheck::newest, verify; src/daemon/host/update_check.rs::INTERVAL, RETRY; src/config/user_config/updates.rs::UpdatesConfig; src/setup/updates.rs; src/bin/efference/update.rs -->
-<!-- src: src/inference/api/provider/http.rs::messages_url, models_url, capabilities_url; src/inference/api/provider/fetch.rs::fetch_capabilities, fetch_generation_cost; src/inference/catalog.rs::CATALOG_TTL; src/daemon/host_http/catalog.rs::entry; src/inference/api/provider/codex.rs::catalog, capabilities; src/daemon/runtime.rs (cost tracking for an OpenRouter main client); src/daemon/metrics.rs::price_request; src/inference/chatgpt.rs::ISSUER, refresh; src/tools/mcp/http.rs; src/tools/mcp/auth.rs::authorize; src/tools/mcp/auth/credentials.rs::Credentials::renew; src/platform/oauth/; src/platform/push.rs::send_one; src/daemon/push.rs -->
+<!-- src: src/inference/api/provider/http.rs::messages_url, models_url, capabilities_url; src/inference/api/provider/fetch.rs::fetch_capabilities, fetch_generation_cost; src/inference/catalog.rs::CATALOG_TTL; src/daemon/host_http/catalog.rs::entry; src/inference/api/provider/codex.rs::catalog, capabilities; src/daemon/runtime.rs (cost tracking for an OpenRouter main client); src/session/metrics.rs::price_request; src/inference/chatgpt.rs::ISSUER, refresh; src/tools/mcp/http.rs; src/tools/mcp/auth.rs::authorize; src/tools/mcp/auth/credentials.rs::Credentials::renew; src/platform/oauth/; src/platform/push.rs::send_one; src/session/push.rs -->
 
 Requests on an OpenRouter connection carry attribution headers naming efference,
 including `HTTP-Referer: https://efference.net`; requests to the ChatGPT backend carry

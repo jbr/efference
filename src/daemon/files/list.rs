@@ -16,9 +16,9 @@
 //! Symlinked directories are listed but never descended: the walk would not
 //! terminate, and a link's target is one request away by its own path.
 
-use crate::daemon::files_view::ignores::Scope;
 use crate::protocol::files::{DirEntry, DirEntryKind, DirListing};
 use crate::record::log::Timestamp;
+use crate::session::files_view::ignores::Scope;
 use std::path::Path;
 
 /// The deepest a recursive listing walks. A finder wants the project's path

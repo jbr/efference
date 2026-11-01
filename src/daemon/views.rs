@@ -2,11 +2,13 @@
 //! reply every handler sends a serialized body through. The `/state` readouts are
 //! `topic_values.rs`.
 
-use super::transcript::{Grain, Reading};
 use super::*;
 use crate::protocol::answers::LocatedToolCall;
 use crate::protocol::channel_value;
 use crate::protocol::transcript::Handle;
+use crate::session::Session;
+use crate::session::transcript;
+use crate::session::transcript::{Grain, Reading};
 
 /// Answer `conn` with `body` as the channel carries it ([`channel_value`]): the status,
 /// the body's JSON with its keys sorted, and the conn halted so a handler mounted later
@@ -23,17 +25,17 @@ impl Session {
     /// through [`Self::image_bytes`], and an oversized result's `content` truncated and
     /// tagged, resolvable through [`Self::entry_json`].
     pub(super) fn log_json(&self, select: &LogSelect) -> String {
-        let log = self.log.lock().unwrap();
-        let entries = log.entries();
-        let views: Vec<_> = window(entries, select)
-            .iter()
-            .map(|entry| {
-                EntryView::new(entry)
-                    .with_result_raw(result_raw(entry, entries))
-                    .with_artifacts(Some(self))
-            })
-            .collect();
-        serde_json::to_string(&views).unwrap_or_else(|_| "[]".into())
+        self.with_entries(|entries| {
+            let views: Vec<_> = window(entries, select)
+                .iter()
+                .map(|entry| {
+                    EntryView::new(entry)
+                        .with_result_raw(result_raw(entry, entries))
+                        .with_artifacts(Some(self))
+                })
+                .collect();
+            serde_json::to_string(&views).unwrap_or_else(|_| "[]".into())
+        })
     }
 
     /// The selected window of the log as text (`GET /transcript`, docs/control-api.md),
@@ -46,9 +48,7 @@ impl Session {
             me,
             held: held.as_deref(),
         };
-        let log = self.log.lock().unwrap();
-        let entries = log.entries();
-        match grain {
+        self.with_entries(|entries| match grain {
             Grain::Audit => transcript::audit::render(window(entries, select)),
             // A tail of the conversation counts its rendered lines, not log entries.
             Grain::Conversation => {
@@ -66,7 +66,7 @@ impl Session {
                     None => transcript::conversation::render(entries, bounded, &reading),
                 }
             }
-        }
+        })
     }
 
     /// The transcript window the in-session `transcript` tool serves
@@ -105,24 +105,7 @@ impl Session {
             me,
             held: held.as_deref(),
         };
-        let log = self.log.lock().unwrap();
-        transcript::zoom::zoom(log.entries(), handle, &reading)
-    }
-
-    /// The session's id and the call held at its gate now: what a reading names and
-    /// shows as waiting. Read before the log is locked.
-    fn reading_state(&self) -> (Option<String>, Option<String>) {
-        let session = self
-            .id
-            .clone()
-            .or_else(|| self.identity().map(|identity| identity.id));
-        let held = self
-            .pending
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(|pending| pending.gate.call_id.clone());
-        (session, held)
+        self.with_entries(|entries| transcript::zoom::zoom(entries, handle, &reading))
     }
 
     /// One entry by `seq`, or `None` if the log has no such position.
@@ -132,13 +115,13 @@ impl Session {
     /// see [`Self::tool_call_json`]. Served as the [`EntryView`], like every
     /// control-channel read of an entry.
     pub(crate) fn entry_json(&self, seq: u64) -> Option<String> {
-        let log = self.log.lock().unwrap();
-        let entries = log.entries();
-        let entry = entries.iter().find(|e| e.seq == seq)?;
-        let view = EntryView::full(entry)
-            .with_result_raw(result_raw(entry, entries))
-            .with_artifacts(Some(self));
-        serde_json::to_string(&view).ok()
+        self.with_entries(|entries| {
+            let entry = entries.iter().find(|e| e.seq == seq)?;
+            let view = EntryView::full(entry)
+                .with_result_raw(result_raw(entry, entries))
+                .with_artifacts(Some(self));
+            serde_json::to_string(&view).ok()
+        })
     }
 
     /// The decoded bytes of one logged result image, addressed by its entry's `seq` and
@@ -146,16 +129,17 @@ impl Session {
     /// the views carry (`GET /log/:seq/images/:idx`, docs/control-api.md).
     pub(crate) fn image_bytes(&self, seq: u64, idx: usize) -> Option<(String, Vec<u8>)> {
         use base64::Engine;
-        let log = self.log.lock().unwrap();
-        let entry = log.entries().iter().find(|e| e.seq == seq)?;
-        let Payload::ToolResult { raw, .. } = &entry.payload else {
-            return None;
-        };
-        let image = raw.images.get(idx)?;
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(&image.data)
-            .ok()?;
-        Some((image.media_type.clone(), bytes))
+        self.with_entries(|entries| {
+            let entry = entries.iter().find(|e| e.seq == seq)?;
+            let Payload::ToolResult { raw, .. } = &entry.payload else {
+                return None;
+            };
+            let image = raw.images.get(idx)?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&image.data)
+                .ok()?;
+            Some((image.media_type.clone(), bytes))
+        })
     }
 
     /// One tool call by its `call_id`, with the `seq` of the entry carrying it.
@@ -171,16 +155,17 @@ impl Session {
     /// verdict rather than flipping it afterward (docs/log-and-projection.md) — so a
     /// returning client never refetches what it has seen.
     pub(super) fn tool_call_json(&self, call_id: &str) -> Option<String> {
-        let log = self.log.lock().unwrap();
-        let (seq, call) = log.entries().iter().find_map(|entry| {
-            let Payload::Assistant { output, .. } = &entry.payload else {
-                return None;
-            };
-            let calls = output.tool_calls().ok()?;
-            let call = calls.into_iter().find(|c| c.id.0 == call_id)?;
-            Some((entry.seq, call))
-        })?;
-        Some(channel_value(LocatedToolCall { seq, call }).to_string())
+        self.with_entries(|entries| {
+            let (seq, call) = entries.iter().find_map(|entry| {
+                let Payload::Assistant { output, .. } = &entry.payload else {
+                    return None;
+                };
+                let calls = output.tool_calls().ok()?;
+                let call = calls.into_iter().find(|c| c.id.0 == call_id)?;
+                Some((entry.seq, call))
+            })?;
+            Some(channel_value(LocatedToolCall { seq, call }).to_string())
+        })
     }
 }
 

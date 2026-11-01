@@ -96,7 +96,7 @@ impl Transcript {
         live: &LiveTail,
         view: &mut ViewState,
         gate: Gate<'_>,
-        pending_turns: &[crate::frontend::SubmittedTurn],
+        pending_turns: &[crate::session::submitted::SubmittedTurn],
     ) {
         // A log that shrank or was replaced is not something this can splice.
         if log.len() < self.counts.len() {

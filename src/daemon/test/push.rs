@@ -96,9 +96,9 @@ async fn an_unsubscribe_without_an_endpoint_is_refused() {
 /// entry's prose and only that entry's — an earlier turn's text would caption
 /// this turn with another one's words.
 mod settle_body {
-    use crate::daemon::push::settle_body;
     use crate::record::log::UpstreamFailureRecord;
     use crate::record::log::{ContentBlock, LogEntry, Payload, Timestamp, ToolCall};
+    use crate::session::push::settle_body;
 
     fn entry(seq: u64, payload: Payload) -> LogEntry {
         LogEntry::new(seq, payload).with_at(Timestamp(1000 + seq))
@@ -177,7 +177,7 @@ mod settle_body {
 /// line.
 #[test]
 fn gate_body_prefers_intent_over_reason() {
-    use crate::daemon::push::gate_body;
+    use crate::session::push::gate_body;
     assert_eq!(
         gate_body(
             "write",

@@ -7,11 +7,11 @@ use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::curation::spotter::StaticSpotter;
 use crate::daemon::SessionRuntime;
-use crate::frontend::SubmittedTurn;
 use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn};
 use crate::record::log::{Approval, Telemetry};
 use crate::record::log::{AssistantOutput, CallId, RawResult, Resumed, Spot, Stance, WireState};
 use crate::record::project::{ApiBlock, Role};
+use crate::session::submitted::SubmittedTurn;
 use tempfile::TempDir;
 use trillium_tokio::Swansong;
 

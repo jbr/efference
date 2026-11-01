@@ -2,6 +2,7 @@
 //! over HTTP (docs/control-channel.md).
 
 use super::*;
+use crate::session::Session;
 
 /// The loop's [`Frontend`], backed entirely by [`Session`]: every input arrives
 /// over HTTP. The loop is pull-shaped — it blocks at `read_user_turn` / `approve`
@@ -60,11 +61,9 @@ impl Frontend for RemoteFrontend {
     }
 
     async fn interrupted(&mut self) -> Interrupt {
-        // Race the two operator intents over the running tool: `POST /loop/interrupt`
-        // kills, `PATCH /processes/:id {background: true}` detaches into the process monitor (docs/process-monitor.md).
-        tokio::select! {
-            _ = self.shared.interrupt.notified() => Interrupt::Kill,
-            _ = self.shared.detach.notified() => Interrupt::Detach,
-        }
+        // The operator's two intents over the running tool: `POST /loop/interrupt` kills,
+        // `PATCH /processes/:id {background: true}` detaches it into the process monitor
+        // (docs/process-monitor.md).
+        self.shared.tool_interrupted().await
     }
 }

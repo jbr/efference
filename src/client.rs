@@ -17,7 +17,6 @@ use anyhow::{Context, Result, anyhow};
 use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
-use crate::frontend::SubmittedTurn;
 pub use crate::inference::catalog::{
     CatalogModel, ConnectionCatalog, ModelRole, Status as CatalogStatus,
 };
@@ -30,6 +29,7 @@ use crate::protocol::transcript::TranscriptRead;
 use crate::protocol::turns::{Landing, QueuedTurn};
 use crate::record::log::Approval;
 use crate::record::log::attachment::Arrival;
+use crate::session::submitted::SubmittedTurn;
 
 mod host;
 mod transport;

@@ -296,7 +296,7 @@ impl CacheMissReason {
     ///
     /// The split matters where a reason is counted as attribution: `Unavailable` and
     /// `PreviousMessageNotFound` say nothing about the prefix, so a cold read carrying
-    /// one is still unexplained ([`crate::daemon::CacheRead`]).
+    /// one is still unexplained ([`crate::session::CacheRead`]).
     pub fn names_a_divergence(self) -> bool {
         matches!(
             self,

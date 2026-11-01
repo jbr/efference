@@ -193,10 +193,10 @@ fn reload_emits_committed_edits_for_file_deltas() {
     );
 
     // A second reload against the unchanged file diffs to nothing — the idempotent echo.
-    let before = shared.log.lock().unwrap().entries().len();
+    let before = shared.log_for_test().lock().unwrap().entries().len();
     refresh_and_emit(&shared);
     assert_eq!(
-        shared.log.lock().unwrap().entries().len(),
+        shared.log_for_test().lock().unwrap().entries().len(),
         before,
         "no-op echo appends nothing"
     );

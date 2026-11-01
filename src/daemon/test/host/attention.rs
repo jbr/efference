@@ -84,17 +84,23 @@ async fn only_an_active_report_viewing_the_session_cancels_its_delayed_push() {
 
     report(Some("one"), true).await;
     assert!(session.pending_delayed_push().is_none(), "seen");
-    let seen = session.log.lock().unwrap().entries().iter().any(|e| {
-        matches!(
-            &e.payload,
-            Payload::Telemetry(Telemetry::Push(crate::record::log::PushRecord {
-                event: crate::record::log::PushEvent::Cancelled {
-                    cause: crate::record::log::PushCancel::Seen { client },
-                },
-                ..
-            })) if client == "c1"
-        )
-    });
+    let seen = session
+        .log_for_test()
+        .lock()
+        .unwrap()
+        .entries()
+        .iter()
+        .any(|e| {
+            matches!(
+                &e.payload,
+                Payload::Telemetry(Telemetry::Push(crate::record::log::PushRecord {
+                    event: crate::record::log::PushEvent::Cancelled {
+                        cause: crate::record::log::PushCancel::Seen { client },
+                    },
+                    ..
+                })) if client == "c1"
+            )
+        });
     assert!(seen, "the sighting is recorded with the client");
 
     // A report that predates a moment does not cancel the next one: nothing is

@@ -4,9 +4,9 @@
 use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::curation::triage::Triager;
-use crate::frontend::SubmittedTurn;
 use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 use crate::record::log::Provider;
+use crate::session::submitted::SubmittedTurn;
 use trillium_tokio::Swansong;
 
 fn state(session: &Session) -> Value {

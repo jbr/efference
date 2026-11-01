@@ -10,9 +10,11 @@
 //! at every control-state change and posts it to the subscribers when it moves.
 
 use super::host::Host;
-use super::status::{Reader, Relation, SessionStatus, render, status_slot};
 use super::*;
 use crate::protocol::status::{Condition, Reviewer};
+use crate::session::Session;
+use crate::session::review::Routing;
+use crate::session::status::{Reader, Relation, SessionStatus, render, status_slot};
 
 /// One subscriber's terms: whether the status must wake it (docs/inbox.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -240,9 +242,9 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
     loop {
         // Arm before reading, so a change landing between the read and the await
         // cannot be lost — the same discipline the topic differ uses.
-        let settled = session.settle_changed.notified();
-        let changed = session.state_changed.notified();
-        let appended = session.appended.notified();
+        let settled = session.settle_changed().notified();
+        let changed = session.state_changed().notified();
+        let appended = session.appended().notified();
         tokio::pin!(settled);
         tokio::pin!(changed);
         tokio::pin!(appended);
@@ -291,59 +293,5 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
             _ = &mut changed => {}
             _ = &mut appended => {}
         }
-    }
-}
-
-/// Where a gate is routed (docs/permissions.md).
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Routing {
-    /// By the dial: the resolved review position and the live supervisor.
-    Dial(crate::config::policy::ReviewLevel, Option<String>),
-    /// By the held call's escalations: how many there have been, and the session the
-    /// last went to while it is hosted (`None`: the operator). The dial is not read, so
-    /// turning it does not route the call back. The live supervisor is still read: it
-    /// may decide the call, and a moved pointer changes who reads it that way.
-    Escalated {
-        hops: usize,
-        reviewer: Option<String>,
-        supervisor: Option<String>,
-    },
-}
-
-impl Session {
-    /// Where this session's gate is routed now, as the status watcher compares it.
-    fn gate_routing(&self) -> Routing {
-        let escalations = self
-            .pending
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map_or_default(|pending| pending.gate.escalations.clone());
-        match escalations.is_empty() {
-            true => Routing::Dial(self.resolved_review_level(), self.supervisor()),
-            false => Routing::Escalated {
-                hops: escalations.len(),
-                reviewer: self.gate_reviewer(&escalations),
-                supervisor: self.supervisor(),
-            },
-        }
-    }
-
-    /// Whether this session is subscribed to any other (docs/tools.md) — a source
-    /// that may wake it, as the `wait` tool counts them (docs/process-monitor.md).
-    pub fn has_subscriptions(&self) -> bool {
-        self.subscriptions.load(Ordering::SeqCst) > 0
-    }
-
-    pub(super) fn subscription_added(&self) {
-        self.subscriptions.fetch_add(1, Ordering::SeqCst);
-    }
-
-    pub(super) fn subscription_removed(&self) {
-        let _ = self
-            .subscriptions
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
-                Some(n.saturating_sub(1))
-            });
     }
 }

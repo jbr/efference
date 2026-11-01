@@ -9,7 +9,6 @@
 //! the unchanged control routes (docs/control-api.md). Nothing is forwarded: the
 //! session's handlers run in this process against its `Session`.
 
-use super::files_view::Files;
 use super::runtime::SessionRuntime;
 use super::*;
 use crate::inference::SessionOptions;
@@ -17,6 +16,11 @@ use crate::protocol::sessions::{
     ArchiveOutcome, ArchivedSession, CreateSession, DormantSession, ListedSession, ListedStatus,
     PatchSession, SessionArchived, SessionState,
 };
+use crate::session::Session;
+use crate::session::attention;
+use crate::session::files_view::Files;
+use crate::session::newer_version;
+use crate::session::status;
 use std::collections::BTreeMap;
 use trillium_tokio::Swansong;
 

@@ -1,9 +1,9 @@
 //! Tests for `cold.rs` and the person actions on the write routes (backlog: cold-session.md).
 
 use super::*;
-use crate::daemon::cold::ParkReason;
 use crate::record::log::Summary;
 use crate::record::log::Telemetry;
+use crate::session::cold::ParkReason;
 
 /// A session whose cache is already believed cold: a zero lifetime and one turn on
 /// the record, a moment ago.
@@ -67,8 +67,8 @@ async fn a_turn_on_a_cold_session_goes_through() {
         .with_body(r#"{"text":"hello"}"#)
         .await;
     conn.assert_status(202);
-    assert_eq!(shared.queue.lock().unwrap().len(), 1, "queued");
-    assert!(shared.person_acted.load(Ordering::SeqCst));
+    assert_eq!(shared.queue_for_test().lock().unwrap().len(), 1, "queued");
+    assert!(shared.person_acted_for_test().load(Ordering::SeqCst));
     assert_eq!(
         cold_records(&shared),
         vec![crate::record::log::ColdEvent::Released {
@@ -97,7 +97,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
 
     // The park is its own phase and status, and rides the `cold` topic so a session
     // view can tell it from a slow request.
-    let crate::daemon::status::SessionStatus::Parked {
+    let crate::session::status::SessionStatus::Parked {
         reason: ParkReason::Expired { since, .. },
     } = shared.status()
     else {
@@ -123,9 +123,12 @@ async fn the_cold_check_parks_until_a_person_acts() {
     assert_eq!(shared.loop_phase(), LoopPhase::Requesting);
     assert_eq!(
         shared.status(),
-        crate::daemon::status::SessionStatus::Running
+        crate::session::status::SessionStatus::Running
     );
-    assert!(!shared.person_acted.load(Ordering::SeqCst), "consumed");
+    assert!(
+        !shared.person_acted_for_test().load(Ordering::SeqCst),
+        "consumed"
+    );
 }
 
 /// A compaction at a mid-turn park ends the cold belief but not the park: the loop waits for
@@ -154,7 +157,7 @@ async fn a_fold_leaves_the_park_folded() {
     );
     assert_eq!(
         shared.status(),
-        crate::daemon::status::SessionStatus::Parked {
+        crate::session::status::SessionStatus::Parked {
             reason: ParkReason::Compacted
         }
     );
@@ -176,7 +179,7 @@ async fn a_person_acting_on_a_warm_session_is_not_kept() {
     let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::ZERO);
     shared.release_cold(crate::record::log::ReleasedBy::Turn);
-    assert!(!shared.person_acted.load(Ordering::SeqCst));
+    assert!(!shared.person_acted_for_test().load(Ordering::SeqCst));
     assert!(cold_records(&shared).is_empty());
 }
 
@@ -188,7 +191,7 @@ async fn the_client_sends_to_a_cold_session_without_a_flag() {
     let client = test_client(&shared).await;
 
     client.turn("hello").await.unwrap();
-    assert!(shared.person_acted.load(Ordering::SeqCst));
+    assert!(shared.person_acted_for_test().load(Ordering::SeqCst));
 }
 
 /// A session with nothing to compact is not cold: with one answer there is no question to
@@ -206,7 +209,7 @@ async fn nothing_to_fold_is_not_cold() {
 /// The `Cold` records in the log, in order.
 fn cold_records(shared: &Session) -> Vec<crate::record::log::ColdEvent> {
     shared
-        .log
+        .log_for_test()
         .lock()
         .unwrap()
         .entries()
@@ -233,7 +236,7 @@ async fn an_approval_releases_the_next_check_and_no_park_follows() {
         .with_body(r#"{"decision":"approve"}"#)
         .await;
     conn.assert_status(200);
-    assert!(shared.person_acted.load(Ordering::SeqCst));
+    assert!(shared.person_acted_for_test().load(Ordering::SeqCst));
 
     tokio::time::timeout(Duration::from_secs(2), shared.await_warm_or_person())
         .await
@@ -313,7 +316,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
         .with_body(r#"{"decision":"approve"}"#)
         .await
         .assert_status(200);
-    assert!(!warm.person_acted.load(Ordering::SeqCst));
+    assert!(!warm.person_acted_for_test().load(Ordering::SeqCst));
     assert!(cold_records(&warm).is_empty());
 
     let (shared, _rx) = cold_session();
@@ -325,7 +328,10 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
         .with_body(r#"{"decision":"abort"}"#)
         .await
         .assert_status(200);
-    assert!(!shared.person_acted.load(Ordering::SeqCst), "abort");
+    assert!(
+        !shared.person_acted_for_test().load(Ordering::SeqCst),
+        "abort"
+    );
 
     let call = bash_call("pwd");
     let _gate = shared.register_pending(&call, Default::default());
@@ -334,7 +340,10 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
         .with_body(r#"{"decision":"redirect","message":"no"}"#)
         .await
         .assert_status(200);
-    assert!(shared.person_acted.load(Ordering::SeqCst), "redirect");
+    assert!(
+        shared.person_acted_for_test().load(Ordering::SeqCst),
+        "redirect"
+    );
 }
 
 /// A decision on a gate that has moved on releases nothing.
@@ -347,7 +356,7 @@ async fn a_moved_gate_releases_nothing() {
         .with_body(r#"{"decision":"approve"}"#)
         .await
         .assert_status(409);
-    assert!(!shared.person_acted.load(Ordering::SeqCst));
+    assert!(!shared.person_acted_for_test().load(Ordering::SeqCst));
     assert!(cold_records(&shared).is_empty());
 }
 
@@ -364,7 +373,7 @@ async fn an_answer_to_an_ask_is_recorded_as_an_answer() {
         .await
         .assert_status(202);
     assert_eq!(wait.reply().await.unwrap().text, "yes");
-    assert!(shared.person_acted.load(Ordering::SeqCst));
+    assert!(shared.person_acted_for_test().load(Ordering::SeqCst));
     assert_eq!(
         cold_records(&shared),
         vec![crate::record::log::ColdEvent::Released {

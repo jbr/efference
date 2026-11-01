@@ -2,8 +2,8 @@
 //! the status a subscriber hears, settle, and the resume a reply performs.
 
 use super::*;
-use crate::daemon::status::SessionStatus;
 use crate::record::log::Approval;
+use crate::session::status::SessionStatus;
 
 fn session() -> Arc<Session> {
     Session::in_memory().0
@@ -133,7 +133,7 @@ fn continue_is_declined_while_asking() {
     let _wait = shared.begin_ask("ask_1", "Sure?".into(), 1, 1);
     assert_eq!(
         shared.request_continue(Default::default()),
-        Err(crate::daemon::continuation::NotContinuable::Asking)
+        Err(crate::session::continuation::NotContinuable::Asking)
     );
 }
 

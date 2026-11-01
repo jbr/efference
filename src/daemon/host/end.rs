@@ -4,6 +4,7 @@
 //! recorded it, and the end resolves once it has left ([`Departure`]).
 
 use super::*;
+use crate::session::Session;
 use tokio::sync::watch;
 
 /// What [`Host::end`] did: the outcome for the session's own worktree, and whether

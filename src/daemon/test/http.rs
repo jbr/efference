@@ -367,7 +367,7 @@ async fn a_turn_carries_the_attachments_it_names() {
     let dir = std::env::temp_dir().join(format!("efference-upload-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let (shared, mut turns_rx) = Session::in_memory();
-    shared.set_attachment_store(crate::attachments::Store::new(&dir, "att"));
+    shared.set_attachment_store(crate::session::attachments::Store::new(&dir, "att"));
     let client = test_client(&shared).await;
 
     let arrival = client

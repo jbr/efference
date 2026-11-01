@@ -442,8 +442,8 @@ it has no Debug, because it carries the environment.
 
 The names and shapes that cross the channel live in `src/protocol/`: one
 submodule per surface — `agents`, `sessions`, `turns`, `state` (with `state/`),
-`status`, `stream`, `transcript`, `attention`. Behaviour that needs the daemon
-stays in `src/daemon/` as impl blocks on these types. Every state topic has a
+`status`, `stream`, `transcript`, `attention`. Behaviour that needs a session
+or the host stays in `src/session/` and `src/daemon/` as impl blocks on these types. Every state topic has a
 type, and `StateTopics` builds `GET /state`: one field per topic under its own
 name, plus `last_seq`, which is the log's cursor rather than control state and
 sits outside the fold.
@@ -563,7 +563,7 @@ question is pending, from every client (below).
   the web client name the question they show, so text written before a question
   appeared is never taken as its answer, and comes back to the composer instead. The
   check and the answer are one step, so no ask can start between them
-  (`src/daemon/named_turns.rs`).
+  (`src/session/named_turns.rs`).
 - `202 {"status":"accepted","submission_id":"<string>","delivery":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may
@@ -1273,7 +1273,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
 
 **`loop_phase` is where the loop is, as one value.** The loop sets it from its own
 control flow, so exactly one phase holds at a time and a client reads it rather than
-reassembling the other topics (`src/daemon/phase.rs`):
+reassembling the other topics (`src/session/phase.rs`):
 
 | phase | the loop is |
 | --- | --- |
@@ -1371,8 +1371,8 @@ supervisor distinguishes it from `stall` on exactly that: `stall` names a
 recovery it can perform, `config_repair` names one it cannot.
 
 **`status` is where the session stands, as one view.** The host builds it from the
-loop phase and the state each condition needs (`src/daemon/status/view.rs`), publishes
-it as the `status` topic through `src/daemon/topic_values.rs`, and registers the topic beside
+loop phase and the state each condition needs (`src/session/status/view.rs`), publishes
+it as the `status` topic through `src/session/topic_values.rs`, and registers the topic beside
 every other one in `src/protocol/state/topic.rs`; the same view is what subscription
 notifications render ([tools.md](tools.md)), so the topic and
 the inbox say the same thing. Per condition it carries:
@@ -1451,7 +1451,7 @@ A window may be cut anywhere because references that dangle across the cut are
 
 #### `GET /transcript`
 The same window as `GET /log` — same `since`/`before`/`tail` query, same `400`s —
-rendered as `text/plain` (`daemon/transcript.rs`) at one of two grains, or one entry
+rendered as `text/plain` (`session/transcript.rs`) at one of two grains, or one entry
 zoomed. A window never carries a result's body; the zoom and the routes below do. At the
 audit grain `tail` counts log entries, as `GET /log` does. At the conversation grain it
 counts the lines that grain prints (below), so the last `n` lines are the same lines
@@ -1467,7 +1467,7 @@ whatever mechanism entries lie between them.
   entry does not have, is `404 not_found` with a message saying which seqs or handles
   exist.
 
-**The conversation grain** (`daemon/transcript/conversation.rs`) opens with a header
+**The conversation grain** (`session/transcript/conversation.rs`) opens with a header
 naming the session and the seqs the window covers — `transcript of child, seq 2–40`, or
 `transcript of child (no entries)` — and a window holding only mechanism says `(nothing
 said or done in this range)`. Every later line opens with the handle it is addressed by, an
@@ -1481,7 +1481,7 @@ a result, a verdict, a gate decision, an ask's reply, a redirect's message, an a
 note — so the window can run past `n` lines and never opens on an outcome without its
 call. When it cut lines off, the header says how many it kept and how many came before:
 `transcript of child, seq 60–99: the last 43 lines; 57 lines before — since: 0 reads from
-the start`. A reader's first read (`ReadPlan` in `daemon/transcript/cursor.rs`) is a tail
+the start`. A reader's first read (`ReadPlan` in `session/transcript/cursor.rs`) is a tail
 of 40 and ends its header with `(your first read)`; a session of fewer lines is shown
 whole.
 
@@ -1508,7 +1508,7 @@ whole.
   backticks is fenced by a backtick run one longer than the longest inside it, with a
   space inside each fence when the text opens or closes with a backtick (CommonMark's
   code-span rule), so the span does not end early. The status prints calls the same way
-  (`code_span` in `daemon/transcript.rs`).
+  (`code_span` in `session/transcript.rs`).
 - A notification is `note from <source>: <body>`; a summary is `summarized seq a–b`;
   an archive and a restart's resume are one line each; a record-only turn is `a reply
   did not complete: <why>`.
@@ -1526,7 +1526,7 @@ redirect's message read without its call or its decision is labelled with its de
 allow's note is on its call's line or its decision's, and read alone is the decider's
 message.
 
-**The audit grain** (`grain=audit`, `daemon/transcript/audit.rs`) is one block per
+**The audit grain** (`grain=audit`, `session/transcript/audit.rs`) is one block per
 entry, `seq tag body`, with a multi-line body indented to the body column. Prose
 (`user`, `assistant`) is whole, except that a `user` entry carrying a `source` opens its
 text with the same `source: ` address the wire uses; a `call` is its tool name, every
@@ -1546,7 +1546,7 @@ malformed call). `notify`, `spot`, `config`, `process`, `summary`, `preamble` an
 are one line each; a `triage` line appears only when the verdict pinned or dismissed a
 notification or the triage retried; telemetry renders to nothing.
 
-**The zoom** (`seq=…`, `daemon/transcript/zoom.rs`) is one entry in full, under the
+**The zoom** (`seq=…`, `session/transcript/zoom.rs`) is one entry in full, under the
 header `transcript of child, seq 8.2`. A call shows its tool, its intent, its exact input
 as pretty JSON without the intent, and its decision trail: the spotter's verdict
 (`reviewer: cleared it`, `reviewer: held it for a decision` with `held because:` in the

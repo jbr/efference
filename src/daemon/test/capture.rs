@@ -6,10 +6,10 @@
 use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::SessionRuntime;
-use crate::frontend::SubmittedTurn;
 use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, events, tool_call};
 use crate::record::log::Telemetry;
 use crate::record::log::{AssistantOutput, ContentBlock, Keep, RawResult, Triaged, WireState};
+use crate::session::submitted::SubmittedTurn;
 use std::collections::BTreeMap;
 use tempfile::TempDir;
 use trillium_tokio::Swansong;

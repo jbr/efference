@@ -1,7 +1,7 @@
 //! Tests for `metrics.rs`.
 
 use super::*;
-use crate::daemon::keepalive::CacheLineage;
+use crate::session::keepalive::CacheLineage;
 
 /// The keepalive's load-bearing invariant (docs/log-and-projection.md): a ping advances the
 /// cache-touch clock (it really did refresh the TTL) but must NOT reset the
@@ -435,7 +435,7 @@ fn inline_cost_prices_a_request_and_is_recorded() {
     shared.record_keepalive(request(Some(0.5)));
     shared.record_request(RequestOrigin::Turn, request(None));
     {
-        let cell = shared.cost.lock().unwrap();
+        let cell = shared.cost_for_test().lock().unwrap();
         assert_eq!(cell.total_usd, 0.75);
         assert_eq!(cell.unpriced, 0);
     }

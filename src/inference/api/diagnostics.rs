@@ -180,7 +180,7 @@ pub(crate) fn stream_abort_retry(
 /// state from inside `triage`, which holds a `Client` and no `Session` — and unlike
 /// the upstream-failure cell, a retry is *not* followed by an append, so the
 /// daemon's wake-on-`appended` fallback would leave the topic late for the whole
-/// pause (daemon/topics.rs). "Retry now" lives here for the same reason: the waits it
+/// pause (session/topics.rs). "Retry now" lives here for the same reason: the waits it
 /// cuts short run in both loops, and only this cell reaches both.
 #[derive(Default, Debug)]
 pub struct UpstreamRetryCell {

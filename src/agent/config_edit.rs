@@ -114,7 +114,7 @@ fn config_request_sentence(config_path: Option<&Path>) -> String {
 /// write failed" invents theories about the tool, where a model that reads "your config didn't
 /// parse, here's the error" fixes the TOML.
 pub(super) fn config_write_outcome(shared: &Session, result: RawResult) -> RawResult {
-    match crate::daemon::refresh_and_emit(shared) {
+    match crate::session::refresh_and_emit(shared) {
         Some(Refreshed::Reverted { error }) => RawResult::error(format!(
             "Your config edit was not adopted: the file did not parse, so it has been restored \
              to the last valid config and your effective permissions are unchanged. Nothing \

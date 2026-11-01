@@ -7,12 +7,12 @@
 //! runs as a pass-through when `None` — so the layering is structural, fixed at
 //! bind time, and never a per-conn guess about which listener a request arrived on.
 
-use super::files_view::Files;
 use super::host_routes::host_routes;
 use super::http::control_routes;
 use super::tcp::{
     SecurityHeaders, Surface, TcpAuth, enrollment_routes, frontend, gate, pair_routes,
 };
+use crate::session::files_view::Files;
 use std::sync::Arc;
 use trillium_caching_headers::Etag;
 use trillium_logger::{Logger, Target};

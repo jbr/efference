@@ -244,7 +244,7 @@ pub struct Enrolled {
 /// (`crate::platform::terminal_text::strip_formatting`, the parser process output goes
 /// through) rather than leaving their text printed, remaining control characters and the [`reorders`] characters become spaces,
 /// whitespace runs collapse, and the result is cut to [`LABEL_MAX_CHARS`]; what is left
-/// empty is `fallback`. `crate::attachments::sanitize` does the same for a file name.
+/// empty is `fallback`. `crate::session::attachments::sanitize` does the same for a file name.
 pub fn clean_label(suggested: &str, fallback: &str) -> String {
     let spaced: String = crate::platform::terminal_text::strip_formatting(suggested)
         .chars()

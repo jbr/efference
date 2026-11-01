@@ -116,7 +116,7 @@ pub(super) struct RawBash {
 
 /// `[transport]`: the connection to the model.
 // docs/transport.md. Absent durations fall back to [`DEFAULT_STREAM_CEILING`] and
-// the provider's derived keepalive interval ([`crate::daemon::keepalive_interval`]).
+// the provider's derived keepalive interval ([`crate::session::keepalive_interval`]).
 #[derive(Deserialize, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "Transport")]

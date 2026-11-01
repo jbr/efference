@@ -96,7 +96,10 @@ pub(super) async fn read(conn: Conn) -> Conn {
     };
     match std::fs::read(&path) {
         Ok(bytes) => conn
-            .with_response_header("content-type", crate::attachments::media_type(&path))
+            .with_response_header(
+                "content-type",
+                crate::session::attachments::media_type(&path),
+            )
             .with_response_header("cache-control", "no-store")
             .with_status(200)
             .with_body(bytes)

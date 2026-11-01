@@ -33,9 +33,9 @@ use crate::record::log::LogEntry;
 use crate::tools::ToolEntry;
 use crate::tools::process_monitor::ProcessRecord;
 
-use super::artifacts::Link;
 use super::entry_view::SelectionLines;
 use super::errors::{ErrorBody, ErrorCode};
+use crate::session::artifact_links::Link;
 
 /// The committed schema, relative to the crate root.
 const PATH: &str = "web/src/api/protocol.schema.json";

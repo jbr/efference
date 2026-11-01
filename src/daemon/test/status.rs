@@ -1,9 +1,9 @@
 //! A session's status as a subscriber hears it (docs/tools.md).
 
 use super::*;
-use crate::daemon::status::SessionStatus;
-use crate::daemon::{BlockedReason, LoopPhase};
+use crate::protocol::state::{BlockedReason, LoopPhase};
 use crate::record::log::Approval;
+use crate::session::status::SessionStatus;
 
 fn session() -> Arc<Session> {
     Session::in_memory().0

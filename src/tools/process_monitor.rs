@@ -12,7 +12,7 @@
 //! ambient auto-show the triage renders each triage), [`ProcessMonitor::pin_snapshot`] (a
 //! frozen tail when the model pins), and [`ProcessMonitor::finish`] (the exit
 //! notification). The async spawn/drain orchestration — which needs `Arc<Session>`
-//! and the `POST /notifications` path — lives in `daemon.rs`.
+//! and the `POST /notifications` path — lives in `session/background.rs`.
 
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};

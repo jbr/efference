@@ -8,11 +8,12 @@ use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 use super::args;
-use crate::daemon::{Host, Session};
+use crate::daemon::Host;
 use crate::protocol::agents::{ARCHIVE_WIRE_NAME, BoundAction, DECIDE_WIRE_NAME, allows};
 use crate::protocol::sessions::CreateSession;
 use crate::protocol::transcript::Handle;
 use crate::record::log::ToolCall;
+use crate::session::Session;
 
 /// The in-process executor (docs/tools.md): the calling session's toolbox reaches
 /// the host directly — the same `Session` methods the HTTP handlers call, never a

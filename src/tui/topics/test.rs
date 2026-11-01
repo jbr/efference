@@ -3,12 +3,12 @@ use std::time::Duration;
 use serde_json::json;
 
 use super::*;
-use crate::daemon::Session;
-use crate::frontend::SubmittedTurn;
 use crate::inference::api::{CacheMiss, CacheMissReason, RequestUsage, Usage};
 use crate::record::log::{
     ConfigChange, ConfigEdit, EditState, Payload, RequestOrigin, Telemetry, ToolCall,
 };
+use crate::session::Session;
+use crate::session::submitted::SubmittedTurn;
 
 fn decoded(kind: &str, data: Value) -> TopicUpdate {
     TopicUpdate::decode(kind, data)

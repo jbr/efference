@@ -4,12 +4,12 @@
 
 use super::upstream_hold::{FIRST_PAUSE, start, start_with};
 use super::*;
-use crate::daemon::{BlockedReason, LoopPhase};
-use crate::frontend::SubmittedTurn;
 use crate::inference::testing::upstream::{
     Canned, ScriptedUpstream, Turnstile, end_turn, tool_call,
 };
+use crate::protocol::state::{BlockedReason, LoopPhase};
 use crate::record::log::Stance;
+use crate::session::submitted::SubmittedTurn;
 
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
 
@@ -233,7 +233,10 @@ async fn settle_waits_through_a_retry_pause() {
     };
     assert_eq!(
         Some(until),
-        session.upstream_retry.get().map(|r| r.next_attempt_at),
+        session
+            .upstream_retry_for_test()
+            .get()
+            .map(|r| r.next_attempt_at),
         "the delay ends when the retry topic says the next attempt fires"
     );
     assert!(!session.is_settled());

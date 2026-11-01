@@ -13,7 +13,7 @@ carries it (`Payload::Summary`, `src/record/log/summary.rs`). Two operations wri
 
 The rest of this file is the record, how it projects, and compaction.
 `src/curation/compact.rs` writes the summary from the prompt and header in `assets/prompts/`;
-`src/curation/digest.rs` supplies what the model reads; `src/daemon/compact.rs` chooses the cut and
+`src/curation/digest.rs` supplies what the model reads; `src/session/compact.rs` chooses the cut and
 appends the entry (`POST /loop/compact`, docs/control-api.md); `src/record/project.rs` projects it.
 
 ## The record
@@ -115,7 +115,7 @@ or an unsummarized read: whether to retry, edit or accept the cost of a cold rea
 operator's, and whatever asks for a compaction asks the operator (the cold session's
 compaction is the intended caller; backlog/inbox/cold-session.md).
 
-The compaction worker (`daemon/compact.rs`) starts with every session, whatever the
+The compaction worker (`session/compact.rs`) starts with every session, whatever the
 connection's capabilities say about a prompt cache. Only the cache-expiry machinery — the
 cache lifetime the cold belief reads, its watcher, the keepalive — is conditional on a known
 prompt cache. A route that accepts `warm: true` needs no cold belief, so an accepted
@@ -168,7 +168,7 @@ the cut, and the compaction is written at that cut. Its request's `RequestStage`
 follow under the `compaction` origin. It ends with the compaction's `Summary`, or with a
 `CompactionFailed` carrying the error (a superseding turn is one). The compaction's state
 — waiting for its request, writing, or failed — is folded from these with the open
-requests (`daemon/operations.rs`) rather than held in memory, so a failure is still
+requests (`session/operations.rs`) rather than held in memory, so a failure is still
 reported after a host restart; a compaction open when the host stopped is not, since the
 process writing it is gone. A failure stands until a turn's request goes out or another
 compaction is asked for. On `/state` (docs/control-api.md), an open compaction —

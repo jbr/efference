@@ -35,7 +35,7 @@ pub(super) fn self_surface_grants(
     paths.insert(SESSION_BASE.to_string(), crate::config::Perms::default());
     for path in [
         session_dir.join(CONFIG_NAME),
-        crate::attachments::dir_for_session(session_dir),
+        crate::session::attachments::dir_for_session(session_dir),
     ] {
         paths.insert(path.to_string_lossy().into_owned(), read_only);
     }

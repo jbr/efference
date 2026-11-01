@@ -1,6 +1,7 @@
 //! `/events`: the live tail of the append-only log as SSE (docs/control-api.md).
 
 use super::*;
+use crate::session::Session;
 
 /// The validated inputs of one `/events` request, handed from the route's validating
 /// half to its `Sse` half through conn state.

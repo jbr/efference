@@ -3,7 +3,7 @@
 use super::*;
 use crate::record::log::Telemetry;
 
-use crate::frontend::SubmittedTurn;
+use crate::session::submitted::SubmittedTurn;
 
 fn session() -> Arc<Session> {
     let (shared, _rx) = Session::in_memory();

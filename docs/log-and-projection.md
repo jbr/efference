@@ -910,7 +910,7 @@ a session is created, but usage remains per request: an upstream may report a
 model alias or a response may be retried, so the per-line value is the
 accounting record. The canonical log carries the boot identity separately;
 `dev wire` does not read this telemetry file.
-Implemented in `src/daemon/metrics.rs` (`record_request` / `record_keepalive`),
+Implemented in `src/session/metrics.rs` (`record_request` / `record_keepalive`),
 fed by `Completion::request_usage`. Transport-only and **never** the canonical
 log — usage must stay out of the projection. The in-memory `Metrics` fold
 surfaced by `GET /state` is unchanged; the file is what makes spend
@@ -943,7 +943,7 @@ nothing touching the prefix (evicted, not moved). Anything else is one
 observation of the prefix having moved.
 
 One observation is noise — a retry, an eviction the TTL heuristic misses — so the
-signal is the **run**. `ColdStreak` (`src/daemon/metrics.rs`) folds each recorded
+signal is the **run**. `ColdStreak` (`src/session/metrics.rs`) folds each recorded
 request into a consecutive-unexplained-cold counter: only `turn` requests move it
 (the side channels carry their own prefixes at their own lineages), `keepalive`,
 `aborted_attempt`, and a `triage` that ran on the agent's client (its usage line

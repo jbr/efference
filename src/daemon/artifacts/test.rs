@@ -1,8 +1,9 @@
 use super::*;
 use crate::config::testing::ConfigFixture;
-use crate::daemon::SessionParts;
 use crate::record::log::{AssistantOutput, ContentBlock, Exclusion};
 use crate::record::persist::Log;
+use crate::session::SessionParts;
+use crate::session::artifact_links::{self, links};
 use trillium_testing::TestServer;
 
 fn assistant(text: &str, excluded: Option<Exclusion>) -> Payload {
@@ -65,12 +66,12 @@ fn links_belong_to_committed_assistant_text_of_an_addressable_session() {
             .starts_with(&format!("/artifacts/work/{assistant_seq}/0/1/"))
     );
     assert_eq!(links[1].external_url, None, "no host, so no listener");
-    assert!(super::links(&work, &entry(user_seq)).is_empty());
-    assert!(super::links(&work, &entry(excluded_seq)).is_empty());
+    assert!(artifact_links::links(&work, &entry(user_seq)).is_empty());
+    assert!(artifact_links::links(&work, &entry(excluded_seq)).is_empty());
 
     let anonymous = session(None);
     let seq = anonymous.append(1, assistant(TWO_FENCES, None)).unwrap();
-    assert!(super::links(&anonymous, &anonymous.entry_at(seq).unwrap()).is_empty());
+    assert!(artifact_links::links(&anonymous, &anonymous.entry_at(seq).unwrap()).is_empty());
 }
 
 /// A document is served only for a tag its session signed over exactly those
@@ -114,7 +115,7 @@ async fn a_document_verifies_its_tag_under_the_named_sessions_key() {
     let other_seq = other.append(1, assistant(TWO_FENCES, None)).unwrap();
     assert_eq!(other_seq, seq);
     assert_ne!(
-        super::links(&other, &other.entry_at(seq).unwrap())[1].url,
+        artifact_links::links(&other, &other.entry_at(seq).unwrap())[1].url,
         links[1].url
     );
 }

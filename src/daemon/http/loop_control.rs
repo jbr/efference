@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::protocol::answers::{StatusBody, StatusWord};
+use crate::session::SETTLE_TIMEOUT;
 
 /// Signal the running tool (docs/control-channel.md). A verb-route on the
 /// loop resource because it *is* a verb — it signals, it doesn't delete

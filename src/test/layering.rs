@@ -4,9 +4,9 @@
 //! The rows of [`TABLE`] hold. `record::names` imports no other module. `record::log`
 //! imports none but `record::names`, which is placed below it. Each group imports only the
 //! groups before it in this order: `platform`, `record`, `config`, `inference`, `protocol`,
-//! `tools`, `curation`. And a module outside [`OUTER`] imports nothing from [`OUTER`], apart
-//! from the imports named in [`OPEN_EDGES`]: a new one fails here instead of joining them,
-//! and a named one that goes away fails until its line is deleted.
+//! `tools`, `curation`, `session`. And a module outside [`OUTER`] imports nothing from
+//! [`OUTER`], apart from the imports named in [`OPEN_EDGES`]: a new one fails here instead
+//! of joining them, and a named one that goes away fails until its line is deleted.
 //!
 //! A row names a group (`platform`), a module (`agent`) or a module inside a group
 //! (`record::log`), and matches by module-path prefix. A group named for one of its modules
@@ -14,7 +14,7 @@
 //! crate root (`record/log/summary.rs` is `record::log::summary`) and an import by the path
 //! it spells.
 //!
-//! The scan is over text, as `daemon/test/statics.rs` is: it skips test files and
+//! The scan is over text, as `test/statics.rs` is: it skips test files and
 //! comments, and reads every spelling of a path that names a module of the crate
 //! — `crate::a::b`, a `use crate::{a, b::c}` group (nested groups and `self`
 //! included), and a `super::` chain that leaves its file's module, resolved from the
@@ -153,6 +153,21 @@ const TABLE: &[Row] = &[
         open: &[],
     },
     Row {
+        importers: Modules::These(&["session"]),
+        imports: Modules::Except(&[
+            "platform",
+            "record",
+            "config",
+            "inference",
+            "protocol",
+            "tools",
+            "curation",
+            "session",
+        ]),
+        why: "session imports only platform, record, config, inference, protocol, tools and curation",
+        open: &[],
+    },
+    Row {
         importers: Modules::Except(OUTER),
         imports: Modules::These(OUTER),
         why: "a module outside the outer set imports from it",
@@ -160,14 +175,12 @@ const TABLE: &[Row] = &[
     },
 ];
 
-/// The imports of an outer module that a module outside the set still makes: the turn
-/// loop reads the session from `daemon` and refreshes its config through it. They stay
-/// until the session's state leaves `daemon`; each is deleted from here when its import
-/// goes.
-const OPEN_EDGES: &[(&str, &str)] = &[
-    ("agent.rs", "daemon::Session"),
-    ("agent/config_edit.rs", "daemon::refresh_and_emit"),
-];
+/// The imports of an outer module that a module outside the set still makes: none now.
+/// The turn loop's two (`agent` reading the `Session`, and refreshing its config) ran
+/// through `daemon` until the session's state moved to `session`. A new one that must be
+/// made against a row is named here by the file that makes it and the path it imports, and
+/// is deleted when its import goes: a named one that no longer runs fails the test.
+const OPEN_EDGES: &[(&str, &str)] = &[];
 
 /// The row that forbids `importer` importing from `imported`, if one does.
 fn row_for(importer: &str, imported: &str) -> Option<&'static Row> {
@@ -337,7 +350,21 @@ fn the_table_forbids_what_it_names() {
     assert!(!forbidden("curation::compact", "curation::digest::digest"));
     assert!(!forbidden("curation::triage", "inference::api::Error"));
     assert!(forbidden("tools::mcp", "curation::triage::is_triage_tool"));
+    // `session` imports those and `curation`, and its own modules.
+    assert!(forbidden("session::pace", "agent::Frontend"));
+    assert!(forbidden("session::topics", "daemon::Host"));
+    assert!(forbidden("session", "frontend::Frontend"));
+    assert!(!forbidden("session::pace", "tools::Interrupt"));
+    assert!(!forbidden("session::push", "platform::push::send"));
+    assert!(!forbidden("session::compact", "curation::digest::digest"));
+    assert!(!forbidden(
+        "session::topic_values",
+        "session::status::render"
+    ));
+    assert!(forbidden("curation::triage", "session::Session"));
+    assert!(forbidden("tools::bash", "session::phase"));
     // Modules outside both groups may import them, the outer modules included.
+    assert!(!forbidden("agent", "session::Session"));
     assert!(!forbidden("agent", "record::log"));
     assert!(!forbidden("agent", "record::names"));
     assert!(!forbidden("agent", "platform::state"));

@@ -2,7 +2,7 @@ use super::args::{NamedAgent, turn_source};
 use super::executor::{state_of, status_in};
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
-use crate::daemon::status::answers;
+use crate::session::status::answers;
 use anyhow::Result;
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};

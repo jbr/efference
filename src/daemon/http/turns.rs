@@ -4,6 +4,8 @@
 use super::*;
 use crate::protocol::answers::{StatusBody, StatusWord};
 use crate::protocol::turns::{Landing, QueuedTurn, TurnAccepted, WithdrawnTurns};
+use crate::session::Decider;
+use crate::session::Session;
 
 /// Enqueue a user turn (also seeds turn 1). 202 — watch the stream for the
 /// response; submission is decoupled from inference. A session still starting queues

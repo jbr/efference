@@ -77,7 +77,7 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// already mirrors it for the spotter. Built once, before the loop starts (the
 /// toolbox's mounted set and this harness's own tool family are both fixed for
 /// the session, docs/log-and-projection.md), and snapshotted into `Session`
-/// ([`crate::daemon::Session::set_tool_catalog`]).
+/// ([`crate::session::Session::set_tool_catalog`]).
 ///
 /// A catalog built from `toolbox.tool_catalog()` alone once missed this whole
 /// family — `check_inbox`, `list_processes`, `consolidate`, the two triage

@@ -219,7 +219,7 @@ the agent reads, a variable named outside the patterns above (`DATABASE_URL`), o
 transformed in a way the encodings above do not cover. Signed reasoning blocks from the
 model and image data are stored as received. Files you attach to a message are stored in
 the session's directory as you sent them.
-<!-- src: src/config/env_table/mask.rs::mask_blocks, mask_payload; src/attachments.rs; src/config/env_table.rs::EnvPolicy::build_session -->
+<!-- src: src/config/env_table/mask.rs::mask_blocks, mask_payload; src/session/attachments.rs; src/config/env_table.rs::EnvPolicy::build_session -->
 
 ### Where those protections stop
 
@@ -278,7 +278,7 @@ a command.
 | `~/.efference/state.db` | Model choices per directory, model lists, the projects and sessions efference has run, each notifying browser's push subscription, the devices signed in to the web address, the browsers waiting to sign in | No model keys; the push subscriptions are per-browser secrets |
 | `<project>/.efference/<session>/` | The session's log, its configuration, its usage record, and attached files | Your project's content and the agent's work |
 | `<project>/efference.toml` | The project's settings. A value written here literally is stored in plain text, and copied into each session's directory. | Only if you put one there; use an `op://` reference instead |
-<!-- src: src/platform/secrets.rs::inference_name, oauth_name, mcp_name; src/platform/auth.rs::ROOT_ITEM (module doc); src/setup/render.rs::write (0600 on create); src/platform/state.rs; src/config/history.rs; src/inference/catalog/store.rs; src/remembered.rs; src/session_ids.rs; src/platform/push.rs::SCHEMA; src/platform/devices.rs::SCHEMA; src/platform/sign_ins.rs::SCHEMA; src/record/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/daemon/metrics/usage_line.rs; src/attachments.rs; src/boot/scaffold.rs -->
+<!-- src: src/platform/secrets.rs::inference_name, oauth_name, mcp_name; src/platform/auth.rs::ROOT_ITEM (module doc); src/setup/render.rs::write (0600 on create); src/platform/state.rs; src/config/history.rs; src/inference/catalog/store.rs; src/remembered.rs; src/session_ids.rs; src/platform/push.rs::SCHEMA; src/platform/devices.rs::SCHEMA; src/platform/sign_ins.rs::SCHEMA; src/record/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/session/metrics/usage_line.rs; src/session/attachments.rs; src/boot/scaffold.rs -->
 
 A project's `.efference/` directory is readable only by you (mode `0700`), and the files
 efference writes in a session's directory — the log, the configuration copy, the usage

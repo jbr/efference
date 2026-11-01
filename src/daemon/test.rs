@@ -1,10 +1,23 @@
 use super::http::DecisionBody;
 use super::*;
 use crate::client::Client as ControlClient;
-use crate::record::log::ContentBlock;
+use crate::config::ConfigSource;
+use crate::inference::api::{
+    Client, RequestUsage, ToolChoice, Usage, upstream_failure_state, upstream_retry_state,
+};
+use crate::protocol::state::{BlockedReason, ConfigRepair, Stall, StallReason};
+use crate::record::log::{ContentBlock, RequestOrigin};
+use crate::session::keepalive::{CacheLineage, keepalive_loop};
+use crate::session::topics::watch_topics;
+use crate::session::{
+    CacheRead, ColdStart, ColdStreak, Decider, Session, SessionParts, SessionPaths, USAGE_NAME,
+    UsageLine, attention, newer_version, refresh_and_emit,
+};
 use futures_lite::StreamExt;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::time::Duration;
+use tokio::sync::oneshot;
 use trillium_testing::TestServer;
 
 /// A path for a file of one test's, in a directory of its own that goes when the returned
@@ -169,7 +182,7 @@ async fn next_event(
 /// History enough that a compaction has something to cover beyond its verbatim tail: two
 /// operator messages, each about the tail's whole budget (backlog: cold-session.md).
 fn append_compactable_history(shared: &Session) {
-    let long = "x".repeat(crate::daemon::compact::COMPACTION_TAIL_TOKENS * 4);
+    let long = "x".repeat(crate::session::compact::COMPACTION_TAIL_TOKENS * 4);
     for _ in 0..2 {
         shared.append(1, Payload::user(long.clone())).unwrap();
     }
@@ -238,7 +251,6 @@ mod resumed_batch;
 mod review;
 mod route_bytes;
 mod schema;
-mod statics;
 mod status;
 mod subscriptions;
 mod supervise;

@@ -75,7 +75,7 @@ pub enum ReviewLevel {
     ///
     /// The position **resolves at routing time, never at creation**: a session with no live
     /// supervisor — a root, a cleared pointer, or a supervisor that has since ended — reviews as
-    /// [`SpotterHuman`](Self::SpotterHuman) instead ([`crate::daemon::Session::resolved_review_level`]).
+    /// [`SpotterHuman`](Self::SpotterHuman) instead ([`crate::session::Session::resolved_review_level`]).
     /// Resolving once at creation would leave a child whose creator died effectively unreviewed.
     Supervisor,
     /// The supervised default: fast-path → spotter → human gate.

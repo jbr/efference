@@ -70,7 +70,7 @@ async fn a_retry_change_wakes_the_wait() {
     woken_by(
         |session| {
             session
-                .upstream_retry
+                .upstream_retry_for_test()
                 .set(crate::inference::api::stream_abort_retry(
                     RetrySurface::Turn,
                     1,
@@ -79,7 +79,7 @@ async fn a_retry_change_wakes_the_wait() {
                     "stream aborted",
                 ));
         },
-        |session| session.upstream_retry.get().is_some(),
+        |session| session.upstream_retry_for_test().get().is_some(),
     )
     .await;
 }
