@@ -76,8 +76,8 @@ pub(crate) enum Topic {
     /// A retry in flight — which surface, which attempt, of what budget
     /// (docs/transport.md). `null` when nothing is being retried.
     UpstreamRetry,
-    /// The session's prompt cache is believed to have expired (backlog:
-    /// cold-session.md): `{since, context_tokens}`, `null` while it is believed warm,
+    /// The session's prompt cache is believed to have expired:
+    /// `{since, context_tokens}`, `null` while it is believed warm,
     /// before the first request, and on a model with no cache.
     Cold,
     /// The last compaction's failure (docs/summary.md): `{error, at}`, or `null` —

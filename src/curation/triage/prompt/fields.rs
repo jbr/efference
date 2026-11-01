@@ -4,8 +4,7 @@
 /// The `keep`/`note` rows of the field block. `note` says *only what it showed* because a
 /// triage once turned a raw `unknown tool: ferritin` into "ferritin is not available as a CLI
 /// tool in this environment" — false, and the raw is discarded, so the invented claim was
-/// the only thing that survived onto the canonical wire
-/// (journal/2026-08-07-session-key-review.md). Dropping the wrong lines is the failure this
+/// the only thing that survived onto the canonical wire. Dropping the wrong lines is the failure this
 /// triage is designed against; asserting past the output is worse, because nothing
 /// downstream can detect it.
 ///
@@ -49,7 +48,7 @@ pub(in crate::curation::triage) const KEEP_FIELDS: &str =
 /// to *see* is kept; what it asks as a *question* is answered in the note, keeping the one
 /// line that proves the answer; lines that only witness something (a run of passing
 /// tests) give way to the fact, and a line the agent may copy, search for, or edit from
-/// never does (backlog: triage-ground-truth). The grounding rules above hold unchanged.
+/// never does. The grounding rules above hold unchanged.
 pub(in crate::curation::triage) const REPORT_FIELDS: &str =
     "keep        \"all\", \"none\", or comma-separated 1-based inclusive line ranges like
               \"40-52,310-318\". Keep what answers the intent and what the task will need

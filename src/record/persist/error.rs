@@ -6,11 +6,11 @@
 //! from a log another writer holds without reading a message — an inventory
 //! lists the first and leaves the second alone (docs/README.md).
 //!
-//! `Display` is the text these errors have always printed — `"{path}:{line}:
-//! …"`, which is what a person wants at a terminal — and the variants are what
-//! a program wants. [`LoadError`] converts into an [`io::Error`] through
-//! [`From`], so a caller whose signature is already `io::Result` keeps its `?`
-//! and its error kind.
+//! `Display` is the text these errors print — `"{path}:{line}: …"`, which is
+//! what a person wants at a terminal — and the variants are what a program
+//! wants. [`LoadError`] converts into an [`io::Error`] through [`From`], so a
+//! caller whose signature is already `io::Result` keeps its `?` and its error
+//! kind.
 
 use std::fmt::Display;
 use std::io;
@@ -27,9 +27,9 @@ pub enum LoadError {
     /// The file could not be opened or read — it is not there, or the
     /// filesystem said no.
     Io { path: PathBuf, error: io::Error },
-    /// Line 1 carries no `format`, so the file is either a log written before
-    /// the header existed or something that is not a session log at all. There
-    /// is no importer for the first case.
+    /// Line 1 carries no `format`, so the file is either a headerless log or
+    /// something that is not a session log at all. There is no importer for the
+    /// first case.
     Unversioned { path: PathBuf },
     /// Line 1 names a different file type: a usage report, another tool's
     /// journal, anything but this one.

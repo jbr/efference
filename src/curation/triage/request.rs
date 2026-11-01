@@ -238,7 +238,7 @@ pub(super) async fn triage_completion(
         };
         failed += 1;
         if terminal {
-            // Named by the provider as unretryable (`api/failure.rs`): stop now rather
+            // `error_class` names it unretryable: stop now rather
             // than repeat the answer up the schedule.
             record
                 .retries

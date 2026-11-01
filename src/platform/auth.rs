@@ -1,17 +1,10 @@
 //! Root-derived credentials for the TCP bind (docs/web-bind.md).
 //!
 //! One machine-scoped root secret lives in the secret store (docs/secrets.md) as the
-//! `root` item: minted from the OS random source the first time a bind needs it (under
-//! the `[secrets]` commands, by `efference auth rotate` instead), read every boot after,
-//! and held only in memory. HKDF with per-purpose context strings derives everything
-//! else — the key device tokens are tagged under, the VAPID push-signing keypair
-//! (docs/web-push.md). Same root in, same credentials out, every boot: signed-in devices
-//! survive restarts, and rotation — writing a fresh item over the old — revokes
-//! everything derived at once. Nobody supplies or sees the root. What is stored beside
-//! it is public: the enrolled devices' ids (`crate::platform::devices`, docs/state-store.md).
-//!
-//! Everything here is pure credential arithmetic; which conns it gates — and which
-//! listener is exempt — is the daemon's wiring (docs/web-bind.md).
+//! `root` item. HKDF with per-purpose context strings derives everything else — device
+//! tokens, the VAPID push-signing keypair (docs/web-push.md). Same root in, same
+//! credentials out, every boot, so rotation — writing a fresh item over the old —
+//! revokes everything derived at once.
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;

@@ -16,9 +16,8 @@
 //! A file is a **versioned** log: line 1 is a header carrying the format and
 //! version plus the session metadata boot recorded ([`LogHeader`]), and the
 //! entries follow from index 0. The header is not an entry — it takes no
-//! `seq` and never reaches `project` — and readers require it, so a log
-//! written before the header is refused rather than read on the assumption
-//! that it parses. [`Log::create`] creates its file exclusively and writes
+//! `seq` and never reaches `project` — and readers require it, so a headerless
+//! log is refused rather than read on the assumption that it parses.
 //! that line before returning, so a file that exists is already a readable
 //! log and a second run over the same path cannot append to a `seq` space
 //! somebody else owns.
@@ -54,9 +53,8 @@ pub use read::{LoadedRecording, Trailing, load, load_recording, read_header};
 
 /// Why a writer lock was refused. `Held` is another writer's lock and its
 /// process is still appending; `Io` is the platform refusing for some other
-/// reason. Kept apart from [`OpenError`] so `create`, whose signature is
-/// `io::Result` and predates a typed open path, maps the same refusal in its
-/// own terms.
+/// reason. Kept apart from [`OpenError`]: `create`'s signature is `io::Result`,
+/// so it maps the same refusal in its own terms.
 enum LockRefused {
     Held,
     Io(io::Error),
@@ -89,8 +87,7 @@ pub struct Log {
     closed: bool,
     /// The `[env]` mask (docs/env.md). Every payload passes through it on the way
     /// in, which is what makes append the one choke point securing every
-    /// downstream surface — the wire, the jsonl, the TUI, `control transcript` and `entries`. None
-    /// (the default, and every test that does not install one) masks nothing.
+    /// downstream surface. None (the default) masks nothing.
     masker: Option<Arc<dyn PayloadMask>>,
 }
 

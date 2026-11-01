@@ -1,11 +1,9 @@
 //! The user state database, `~/.efference/state.db` (docs/state-store.md).
 //!
-//! One file under the home directory holding the host's persistent state: model
-//! picks, each connection's model listing, push subscriptions, the devices enrolled
-//! at the web bind, and the sign-ins pending there. A subscription carries the
-//! material that delivers to that browser, so boot tightens the file owner-only
-//! (docs/state-store.md); the machine root, API keys, and OAuth grants live in the
-//! OS credential store instead (docs/secrets.md).
+//! One file under the home directory holding the host's persistent state. A subscription
+//! carries the material that delivers to that browser, so boot tightens the file
+//! owner-only (docs/state-store.md); the machine root, API keys, and OAuth grants live
+//! in the OS credential store instead (docs/secrets.md).
 //!
 //! Each table's own module owns its schema and opens its own connection per
 //! operation, passing its `CREATE TABLE IF NOT EXISTS` statements to [`open`].

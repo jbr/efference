@@ -30,8 +30,8 @@ use crate::record::log::{LoggedInference, TriageModel};
 /// the knobs and lineage a reader needs to describe or continue the run.
 ///
 /// A field with an obvious "off" value is skipped when `None`/empty, the same
-/// way `LogEntry`'s optional fields are, so a header stays small and adding a
-/// field later does not rewrite the files that predate it.
+/// way `LogEntry`'s optional fields are, so a header stays small and a new field
+/// lands only in the headers that set it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionMetadata {
     pub id: String,

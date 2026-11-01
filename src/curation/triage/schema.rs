@@ -3,8 +3,8 @@
 //! Both schemas are **static** — zero-argument builders, every field unconditional —
 //! because they ride the agent turn's `tools[]` (docs/triage.md): a schema that
 //! varied with the inbox, the background set, or the roster would re-key the request
-//! envelope mid-session and split the cache lineage, which is the exact defect the
-//! shared array exists to close. Field descriptions are self-contained ("if a section
+//! envelope mid-session and split the cache lineage, which the shared array
+//! exists to prevent. Field descriptions are self-contained ("if a section
 //! named X is shown in this request…") since their referent sections aren't always shown; invented
 //! dispositions are dropped harness-side regardless (docs/triage.md).
 //!

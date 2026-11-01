@@ -254,9 +254,9 @@ impl<'a> Lookups<'a> {
     }
 }
 
-/// A `User` entry's parts. User turns author prose and attachments; the thinking block
-/// forms exist on `ContentBlock` for the legacy fixture shape and never occur in a `User`
-/// entry. An attachment projects as its notice, never its bytes (docs/inbox.md).
+/// A `User` entry's parts. User turns author prose and attachments; the thinking-block
+/// forms are for the fixture shape and never occur in a `User` entry. An attachment
+/// projects as its notice, never its bytes (docs/inbox.md).
 ///
 /// A source names who is speaking, when it is not the operator
 /// (docs/control-api.md); it opens the turn's first prose part so the

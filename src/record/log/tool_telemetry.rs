@@ -93,8 +93,7 @@ pub struct BashTelemetry {
     /// a spawn — foreground included, since foreground and background share one
     /// namespace — so the handle↔call join is readable off the telemetry row
     /// without parsing result prose. `None` for a call that never spawned (a
-    /// refused command, a failed background spawn) and for logs written before
-    /// the field existed.
+    /// refused command, a failed background spawn) and on older entries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handle: Option<String>,
 }

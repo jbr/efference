@@ -21,10 +21,9 @@ mod test;
 /// Why an assistant entry is record-only, plus the transport evidence when the
 /// path that produced it captured any.
 ///
-/// Serializes as a **bare string** when there are no diagnostics, which is the
-/// shape every log before this type used, and deserializes from either shape —
-/// so an old log line parses and an ordinary failure writes the same bytes it
-/// always did.
+/// Serializes as a **bare string** when there are no diagnostics, and deserializes
+/// from either shape — so an old log line parses and an ordinary failure keeps
+/// its bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     test,
@@ -111,8 +110,7 @@ impl<'de> Deserialize<'de> for UpstreamFailureRecord {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum Repr {
-            /// Every log written before diagnostics existed, and every failure
-            /// that carries none.
+            /// Logs that predate diagnostics, and every failure that carries none.
             Text(String),
             Structured(Structured),
         }

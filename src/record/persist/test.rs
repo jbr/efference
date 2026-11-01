@@ -222,8 +222,8 @@ fn submission_id_round_trips_and_is_skipped_when_absent() {
 
 /// `source` rides on the entry like `submission_id`, but unlike it is
 /// projected (docs/control-api.md). Written only when a client names itself, so
-/// an operator turn's jsonl is byte-identical to one written before the field
-/// existed; an entry without it reads back as `None`.
+/// an operator turn's jsonl is byte-identical to one that predates the field;
+/// an entry without it reads back as `None`.
 #[test]
 fn source_round_trips_and_is_skipped_when_absent() {
     let path = temp_path("source");

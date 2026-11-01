@@ -6,7 +6,7 @@
 //! with a different request shape and a different kind of answer. The selection
 //! is therefore made once, at mount, from the [`ModelKind`] the provider reports
 //! for the spotter model (`Endpoint::spotter_kind`), and the loop holds the
-//! result behind the [`Spotter`] trait as it always did.
+//! result behind the [`Spotter`] trait.
 //!
 //! The kind is the provider's own statement about the model — a decision model
 //! declares its output modality — rather than a naming convention, so a model

@@ -1,11 +1,10 @@
 //! Web push (docs/web-push.md): the sender half of "step away from the keyboard".
 //!
-//! Two events mean the session needs its operator — a pending approval gate and a
-//! settled turn — and both happen inside a live daemon, so each daemon sends push for
-//! its own events. There is no watcher process and no per-session state: the VAPID
-//! keypair is derived from the machine root (`auth.rs`) and never stored, and the
-//! subscriptions the browser produced are rows in one machine-scoped table every
-//! daemon reads ([`crate::platform::state`], docs/state-store.md).
+//! Each daemon sends push for its own events: there is no watcher process and no
+//! per-session state. The VAPID keypair is derived from the machine root (`auth.rs`)
+//! and never stored, and the subscriptions the browser produced are rows in one
+//! machine-scoped table every daemon reads ([`crate::platform::state`],
+//! docs/state-store.md).
 //!
 //! The three pieces here: [`Subscription`] and [`Store`] (what the browser handed over,
 //! and where it is kept), `encrypt` (RFC 8291 payload encryption), and `vapid`
@@ -146,8 +145,8 @@ impl Store {
             log::warn!("push store {} unreadable", self.path.display());
             return Vec::new();
         };
-        // A row that does not read is a row that is not there, which is how the
-        // file store read an entry it could not parse.
+        // A row that does not read is a row that is not there — one bad row must
+        // not fail the load.
         rows.query_map([], |row| {
             Ok(Subscription {
                 endpoint: row.get(0)?,
@@ -205,7 +204,7 @@ pub fn device_label(endpoint: &str) -> (String, String) {
 pub enum ServiceAnswer {
     /// A 2xx.
     Delivered { status: u16 },
-    /// 404 or 410: the subscription no longer exists and was pruned.
+    /// 404 or 410: the subscription is gone and was pruned.
     Gone { status: u16 },
     /// Any other status (`status` set) or a failure before an answer.
     Failed { status: Option<u16>, reason: String },

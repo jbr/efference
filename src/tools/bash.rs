@@ -194,8 +194,7 @@ impl Bash {
     /// transport-only live sink — the daemon publishes it as `output` frames and
     /// feeds the process monitor's capture) while the canonical bytes accumulate. Stdout
     /// and stderr land in **arrival order** (a single interleaved buffer), so
-    /// progress output written to stderr — cargo, say — streams too; this is also
-    /// more terminal-faithful than the old stdout-block-then-stderr-block rendering.
+    /// progress output written to stderr — cargo, say — streams too.
     pub async fn run(
         &self,
         input: &Value,

@@ -1,12 +1,7 @@
 //! The durable half of a background process's record (docs/process-monitor.md).
 //!
-//! The process monitor's registry is ephemeral — it dies with the daemon — but a
-//! `p#<n>` handle is minted into prose the moment a command is backgrounded, and
-//! that prose outlives the registry in the log. These entries are what a later
-//! reader resolves the handle against: a **mint** record when a process enters
-//! the background namespace, an **exit** record when it ends. Together they carry
-//! the metadata half of the promise (handle, spawning call, command, spawn time,
-//! exit status, duration); the *output* half stays the registry's bounded,
+//! A **mint** record when a process enters the background namespace, an **exit**
+//! record when it ends. The *output* half stays the registry's bounded,
 //! best-effort capture and is not recorded here.
 //!
 //! Both halves carry their own wall stamp rather than leaning on the entry's `at`.

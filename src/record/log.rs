@@ -91,12 +91,8 @@ pub struct Timestamp(pub u64);
 
 impl Timestamp {
     /// The wall clock, now. The single place a wall-clock reading enters the process, so
-    /// the non-determinism has one door rather than several.
-    ///
-    /// Safe for anything that is never projected — log metadata, and the absolute
-    /// instants control-API state representations carry so clients can compute elapsed
-    /// without the daemon re-emitting a ticking field (docs/control-api.md). It must not
-    /// reach the wire projection, where any per-process variation breaks the cache prefix
+    /// the non-determinism has one door rather than several. It must not reach the wire
+    /// projection, where any per-process variation breaks the cache prefix
     /// (docs/log-and-projection.md).
     pub fn now() -> Self {
         Self(
@@ -202,7 +198,7 @@ pub enum Payload {
         raw: RawResult,
         wire: WireState,
     },
-    /// The final wire decision for a previously captured pending result.
+    /// The wire decision for a `Pending` result, recorded after capture.
     /// Raw output stays on the referenced entry (docs/triage.md).
     ResultVerdict { for_result: Seq, wire: WireState },
     /// A fact about how the session ran rather than what it said (the
@@ -210,21 +206,16 @@ pub enum Payload {
     /// session skips it (docs/log-and-projection.md).
     #[strum(transparent)]
     Telemetry(Telemetry),
-    /// The session was reopened from its log by a later host process
-    /// (docs/log-and-projection.md). Projects the restart notice at its position: how
-    /// long the session sat, which background processes it no longer monitors, and
-    /// which calls were dropped because they started and never returned.
+    /// The session was reopened from its log by a later host process: [`Resumed`]
+    /// (docs/log-and-projection.md).
     Resumed(Resumed),
-    /// The session was archived on purpose (`DELETE /sessions/:id`, `PATCH {"state":
-    /// "archived"}`, or the end of its creator): the counterpart of [`Resumed`]. The later
-    /// of the two is the session's lifecycle, which a host restart reads to tell a
-    /// deliberate archive from a session interrupted by the host's loss
-    /// (docs/resumption.md). Projects to nothing, like [`Telemetry`].
+    /// The session was archived on purpose: the counterpart of [`Resumed`], so a host
+    /// restart can tell a deliberate archive from a session interrupted by the host's
+    /// loss (docs/resumption.md). Projects to nothing, like [`Telemetry`].
     ///
     /// `source` is who archived it, spelled as a turn's `source` is (`web`,
     /// `mcp[<name>]`, `session[<id>]`); client-asserted and unverified, and absent when
-    /// the caller named none, as for the operator's own command line or TUI, and for the
-    /// end of a creator (docs/log-and-projection.md).
+    /// the caller named none.
     ///
     /// [`Telemetry`]: Payload::Telemetry
     Archived {
@@ -236,18 +227,15 @@ pub enum Payload {
     /// Projects the text where the range ends and elides the range
     /// (docs/log-and-projection.md).
     Summary(Summary),
-    /// A triage verdict (docs/triage.md) — the durable record of a throwaway
-    /// triage's decision. The fork's *transcript* stays throwaway; its *decision* is
-    /// logged here for audit / introspection / triager-quality work. Projects as
-    /// audit only, except it emits a block per **pinned** notification (its `inbox`)
-    /// at this entry's tail-ward position (docs/inbox.md).
+    /// A triage verdict (docs/triage.md) — the durable record of a throwaway triage's
+    /// decision. Projects as audit only, except a block per **pinned** notification
+    /// (its `inbox`) at this entry's tail-ward position (docs/inbox.md).
     Triage(Triage),
     /// An out-of-band notification (docs/inbox.md), logged at **arrival** — or, for one
     /// bound to a slot, when a triage first shows it. Pure audit on the canonical
     /// wire (it projects to nothing); a *pinned* one is emitted by its resolving
     /// [`Triage`], at that entry's position. Its `seq` is its durable id (the handle
-    /// the `retain` inbox verdict references); whether a triage has shown it is
-    /// [`Triage::shown_through`].
+    /// the `retain` inbox verdict references).
     Ambient(Notification),
     /// A spotter verdict (docs/permissions.md) — the durable record of the
     /// independent permission rung's decision on one gated tool call. Like
@@ -259,12 +247,9 @@ pub enum Payload {
     Spot(Spot),
     /// One lifecycle fact about a background process — its mint or its exit
     /// (docs/process-monitor.md). The process monitor's registry is ephemeral, but a
-    /// `p#<n>` handle appears in prose (the backgrounding result, the exit
-    /// notification) that outlives it, so these entries are what a reader of a
-    /// recorded session — or a restarted daemon — resolves the handle against.
-    /// Metadata only: the command, the spawning call, the spawn time, the exit
-    /// status and duration. A process's *output* is the registry's bounded
-    /// best-effort capture and is deliberately not recorded here.
+    /// `p#<n>` handle appears in prose that outlives it, so these entries are what a
+    /// reader of a recorded session — or a restarted daemon — resolves the handle
+    /// against. Metadata only; a process's *output* is deliberately not recorded here.
     ///
     /// Projects to nothing, like [`Telemetry`] — the exit still reaches the
     /// model as an [`Ambient`] notification, and this is the audit record beside
@@ -274,17 +259,12 @@ pub enum Payload {
     /// [`Ambient`]: Payload::Ambient
     ProcessEvent(ProcessEvent),
     /// A config edit — the durable record of one change to the policy table
-    /// (docs/permissions.md). The config-edit loop turns a deny into
-    /// negotiation: an orchestrator (human or coordinating session) edits the session's
-    /// config, and the change lands here. Effective policy = base config + the fold of these
-    /// (see [`effective_config`]); the log is the source of truth for what changed, exactly as
-    /// it is for everything else (docs/log-and-projection.md). The fold is **replace-at-key**
-    /// (last-write-wins, order-defined) — materializing a table from an ordered log, like a
-    /// database replaying its write-ahead log. Audit-only on the wire — it projects to nothing,
-    /// like [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only
-    /// through the classifier, while a **session-visible** edit (`scope`, `paths`) *also*
-    /// surfaces as an [`Ambient`] notification (an optional tail append — never a re-render of
-    /// the cached preamble; see [`crate::session`]) so the session learns its perimeter moved.
+    /// (docs/permissions.md). Effective policy = base config + the fold of these
+    /// (see [`effective_config`]), and the fold is **replace-at-key**
+    /// (last-write-wins, order-defined). Audit-only on the wire: it projects to nothing,
+    /// like [`Spot`]; a **session-visible** edit (`scope`, `paths`) *also* surfaces as an
+    /// [`Ambient`] notification so the session learns its perimeter moved
+    /// (see [`crate::session`]).
     ///
     /// [`effective_config`]: crate::config::policy::effective_config
     /// [`Ambient`]: Payload::Ambient
@@ -295,13 +275,12 @@ pub enum Payload {
     /// `[context]` file contents that drift on disk between boots, so it is not
     /// reconstructable from `config + current files` — this entry makes the log the
     /// complete record of the wire (docs/log-and-projection.md). Audit/replay only: it
-    /// projects to nothing (the system prompt rides the request's `system` field, never
-    /// the `messages` array); the `wire` dev view reads it back instead of re-resolving
+    /// projects to nothing; the `wire` dev view reads it back instead of re-resolving
     /// files from disk.
     ///
     /// The prompt is held as two strings that concatenate to the wire's `system`:
-    /// `identity`, the line naming the model ("You are gpt-6.1-sol."; empty on a log
-    /// whose prompt predates the line), and `body`, everything after it, frozen at boot.
+    /// `identity`, the line naming the model ("You are gpt-6.1-sol."; empty where the
+    /// prompt has no such line), and `body`, everything after it, frozen at boot.
     /// A resume on another main model replaces `identity` and repeats `body` byte for
     /// byte ([`Payload::preamble_system`] assembles them).
     ///
@@ -330,12 +309,10 @@ pub enum Payload {
         roles: Option<RecordedRoles>,
     },
     /// The session's title — one line saying what the session is for
-    /// (docs/session-title.md). Written by the title peek after a trajectory ends,
-    /// or by an operator over the control channel; the latest entry is the current
-    /// title, which the `session_identity` topic carries. Appended even when the
-    /// triage kept the previous text, so the log records that the question was asked.
-    /// Log metadata: it projects to nothing, like [`Telemetry`], and never
-    /// touches the wire or the cached prefix (docs/log-and-projection.md).
+    /// (docs/session-title.md). The latest entry is the current title; an entry is
+    /// appended even when the triage kept the previous text, so the log records that
+    /// the question was asked. Log metadata: it projects to nothing, like [`Telemetry`],
+    /// and never touches the wire or the cached prefix (docs/log-and-projection.md).
     ///
     /// [`Telemetry`]: Payload::Telemetry
     Title(Title),
@@ -364,21 +341,20 @@ pub enum Payload {
 pub struct Resumed {
     /// Milliseconds between the last entry before the restart and this one.
     pub gap_ms: u64,
-    /// Background handles (`p#<n>`) that were spawned with no recorded exit: their
-    /// output is no longer captured, and whether they still run is unknown.
+    /// Background handles (`p#<n>`) spawned with no recorded exit: their output is
+    /// not captured, and whether they still run is unknown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lost_processes: Vec<String>,
     /// Present only when the log ended uncleanly: the seq of the last entry this session
     /// builds on. Entries after it and before this one stay on disk but are not
-    /// restored, and projection skips them (docs/resumption.md). A log written before the
-    /// field existed reads as `None`.
+    /// restored, and projection skips them (docs/resumption.md). Absent reads as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumes_after: Option<Seq>,
     /// Present only when the session resumed at an unfinished batch rather than past it:
     /// the calls of the last live completion that have not run (or whose results are
     /// still undecided), which the operator's next action brings back. The notice
     /// projects after the batch's results land, not at this entry's position
-    /// (docs/resumption.md). A log written before the field existed reads as empty.
+    /// (docs/resumption.md). Absent reads as empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_calls: Vec<CallId>,
     /// How the tools the resumed session advertises differ from the last `tools[]` the
@@ -426,10 +402,8 @@ pub fn latest_title(entries: &[LogEntry]) -> Option<&str> {
     })
 }
 
-/// Whether `entries` hold no operator turn and no agent turn: no `User` and no `Assistant`
-/// entry. The preamble, telemetry, the notifications an idle triage touched, and
-/// `Archived` are all activity of the harness, so a log with only those records nothing
-/// the operator wrote or the agent did (docs/resumption.md).
+/// Whether `entries` hold no operator turn and no agent turn: no `User` and no
+/// `Assistant` entry (docs/resumption.md).
 pub fn is_empty(entries: &[LogEntry]) -> bool {
     !entries
         .iter()
@@ -437,16 +411,13 @@ pub fn is_empty(entries: &[LogEntry]) -> bool {
 }
 
 /// A content block authored by the model or user. `Thinking` / `RedactedThinking`
-/// carry the extended-thinking payload (docs/transport.md): `signature` is the
-/// opaque per-block token the API mints and requires echoed **verbatim** on replay
-/// (it rejects a modified block); `redacted_thinking` carries opaque `data` instead
-/// of text. Images are not blocks here — a tool result's images live on
-/// [`RawResult`], where the bytes are stored as they go on the wire.
+/// carry the extended-thinking payload (docs/transport.md): `signature` is the opaque
+/// per-block token the API requires echoed **verbatim** on replay. Images are not blocks
+/// here — a tool result's images live on [`RawResult`].
 ///
-/// `Attachment` is a file the operator's composer attached to a `User` turn. It
-/// records the file's name, path, and triage signals, never its bytes: it
-/// projects as the same notice an ambient arrival carries, and the model pulls
-/// the file with `read` / `read_image` if it wants it (docs/inbox.md).
+/// `Attachment` is a file the operator's composer attached to a `User` turn: name, path,
+/// and triage signals, never its bytes (docs/inbox.md). It projects as a notice, and the
+/// model pulls the file with `read` / `read_image` if it wants it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum ContentBlock {
@@ -488,9 +459,9 @@ impl ToolCall {
     }
 
     /// The harness-injected `intent` (docs/tools.md): why this call was made, in the
-    /// model's words, written before it ran. `None` for a call from before the field
-    /// existed, one the model omitted, or a tool that declares its own `intent` — no
-    /// reader may assume it is present.
+    /// model's words, written before it ran. `None` for a call with none: the model
+    /// omitted it, the tool declares its own `intent`, or the log predates the
+    /// field — no reader may assume it is present.
     ///
     /// It stays in `input` rather than becoming a field of its own: the wire carries
     /// it as part of the `tool_use` block, so it is already in the projection and in

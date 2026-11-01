@@ -178,7 +178,7 @@ impl InferenceRegistry {
     /// not load, with the reason each gave. Empty is the ordinary case; a host
     /// refuses to start otherwise (docs/operating.md), because a host that
     /// starts and then fails every session touching that provider hides the
-    /// problem at the moment someone could fix it.
+    /// problem at boot, when someone can fix it.
     pub fn unavailable(&self) -> Vec<(&str, &str)> {
         self.connections
             .iter()

@@ -71,7 +71,7 @@ impl Resolved {
 /// The triage's surfacing roster (docs/triage.md) renders through here too, so
 /// an item the model meets mid-session is spelled exactly as it was in the boot preamble.
 /// A bare name reads as a *capability* rather than a file to open, and gets built into a
-/// tool call (journal/2026-08-07-session-key-review.md).
+/// tool call.
 pub(crate) fn render_item(item: &Item) -> String {
     match item {
         Item::Inline { name, body, .. } | Item::Exec { name, body, .. } => {

@@ -34,13 +34,11 @@ const RESERVATION_MIN: u64 = 1024;
 /// and an asymmetry between the dialects would cost more than one rule.
 ///
 /// 65536, chosen by how many models **accept** it rather than by how many
-/// declare it. Surveyed across the 327 non-variant models OpenRouter reports a
-/// cap for: 61% sit at or above 65536, against 38% for 128000 — which is the
-/// single most common *value* but a popular ceiling rather than a popular floor,
-/// so defaulting there is refused by two thirds of the catalog. The mode is the
-/// wrong statistic; the survival function is the right one. 65536 is also the
-/// median, and the minimum across the models this project runs, so in practice it
-/// is refused by none of them.
+/// declare it. The most common declared value is a popular ceiling rather than
+/// a popular floor, so defaulting there is refused by much of the catalog. The
+/// mode is the wrong statistic; the survival function is the right one. 65536 is
+/// the minimum across the models this project runs, so in practice it is refused
+/// by none of them.
 ///
 /// The floor matters more than the ceiling here, which is why this is not simply
 /// set as high as [`Reservation::clamp_to`] can recover from. A cap set too low is

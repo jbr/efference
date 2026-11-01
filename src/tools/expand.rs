@@ -11,8 +11,8 @@
 //!
 //! - `$NAME` and `${NAME}`, `NAME = [A-Za-z_][A-Za-z0-9_]*` (ASCII only).
 //! - A **listed** name substitutes its frozen boot-time value. The exposed set
-//!   starts at exactly `{TMPDIR}` — the architecture is general, the allowlist
-//!   is earned (widen it only when an agent actually reaches for another var).
+//!   starts at exactly `{TMPDIR}` — the allowlist widens only when an agent
+//!   actually reaches for another var.
 //! - An unlisted or undefined name is a **hard error**, never expand-to-empty
 //!   (`$TYPO/important` → `/important` is the footgun) and never leave-verbatim.
 //! - `$$` is a literal `$` (the escape hatch for a genuine dollar in a path); a
@@ -22,7 +22,7 @@
 //! Hand-rolled rather than `shellexpand`: the crates in this space ship
 //! `${VAR:-default}` (reintroducing "missing → silently something") and
 //! Unicode-alphanumeric names, and none default to missing-is-an-error — that
-//! rule is the point, so we own the ~40 lines that enforce it.
+//! rule is the point, so the expansion stays hand-rolled here.
 //!
 //! The grant check stays **post-expansion**: expansion resolves the *name*,
 //! `policy::path_granted` resolves the *permission* on the expanded literal —

@@ -1,13 +1,8 @@
 //! Pending sign-ins (docs/web-bind.md): the `pending_sign_ins` table of the user state
 //! database (docs/state-store.md), one row per browser waiting to collect a device token.
 //!
-//! A row comes from `POST /pair`, a browser asking to sign in, which the operator lets in
-//! by typing the short code it displays into `efference devices approve` at the host; or
-//! from `GET /auth/link`, a sign-in approved before it was asked for, whose claim secret
-//! rides the link. Either way the browser collects its token with the claim secret at
-//! `POST /pair/claim`, once. The table is user-scoped like the devices table, so the
-//! socket of whichever daemon the operator reaches approves what any daemon's listener
-//! took.
+//! The table is user-scoped like the devices table, so the socket of whichever daemon
+//! the operator reaches approves what any daemon's listener took.
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -171,7 +166,7 @@ pub struct Pending {
 /// What a claim found ([`Store::claim`]).
 #[derive(Debug, PartialEq, Eq)]
 pub enum Claim {
-    /// Live and not yet approved: the page asks again.
+    /// Live and unapproved: the page asks again.
     Waiting,
     /// Approved, and this was its first claim: the row is gone, and the caller enrolls
     /// the browser it describes.

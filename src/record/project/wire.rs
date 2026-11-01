@@ -106,7 +106,7 @@ impl From<&str> for ToolResultContent {
 
 impl ToolResultContent {
     /// The text carried by this content, image blocks excluded — the byte count
-    /// consumers were reading off the `String` form before images existed.
+    /// consumers read off the `String` form.
     pub fn text_len(&self) -> usize {
         match self {
             Self::Text(text) => text.len(),

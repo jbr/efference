@@ -36,8 +36,7 @@ pub(super) fn classify_bash(role: &Config, command: &str, dirs: &Directories) ->
 /// Each key is re-lexed with the *same* lexer as the command, so `"git diff"` compares as
 /// `["git", "diff"]`, not by string — and a key that fails to lex (can't happen
 /// post-validation) is simply skipped. Re-lexing a handful of keys is free next to parsing the
-/// command itself. Ties at equal token depth go to the more restrictive stance
-/// ([`CommandStance`]'s `Ord`).
+/// command itself.
 pub(super) fn command_stance(role: &Config, tokens: &[String]) -> Option<CommandStance> {
     role.commands
         .iter()

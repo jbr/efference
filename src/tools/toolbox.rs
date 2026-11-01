@@ -85,7 +85,7 @@ impl Toolbox {
             // fs-mcp curated down to the tools whose structured, fork-friendly
             // output genuinely beats the shell, rooted at the session's cwd.
             // `move`/`delete` are dropped: they
-            // earn nothing over bash's `mv`/`rm` — even Haiku reaches for those —
+            // earn nothing over bash's `mv`/`rm`,
             // so they aren't worth the tool-doc tokens (docs/tools.md taxonomy).
             // `list` survives because it is gitignore-aware (skips `target/`,
             // `.git/`), which `ls`/`find` are not.

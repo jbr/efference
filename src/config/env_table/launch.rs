@@ -2,52 +2,30 @@
 //!
 //! The **launch environment** is the base a session's `[env]` policy is applied
 //! to — what the operator's shell, `direnv`, or version manager had put in the
-//! environment for one directory. Two sources, and the user-wide `env_hook`
-//! chooses between them:
+//! environment for one directory. The user-wide `env_hook` chooses between two
+//! sources: the host environment as given (nothing spawned), or an argv invoked
+//! directly with the directory set on the subprocess — never a shell `cd`, never
+//! a change to the host's cwd. The hook inherits the host environment, and its
+//! stdout is the complete environment, as NUL-delimited `KEY=value` records.
 //!
-//! - **No hook**: the host environment, as given. Nothing is spawned, and no
-//!   shell startup is reconstructed. Whatever environment the host process was
-//!   started with is the baseline. Whatever that is — a login shell's exports,
-//!   or a service manager's environment — it is not a loaded project
-//!   environment, and reconstructing one is the hook's own doing.
-//! - **A hook**: an argv, invoked **directly** with the chosen directory set on
-//!   the subprocess — never a shell `cd`, never a change to the host process's
-//!   cwd. It inherits the host environment, so it can reach `mise`, `direnv`, or
-//!   the user's own binaries, and reconstructing a richer environment is the
-//!   configured command's responsibility. Its **stdout is the complete
-//!   environment**, as NUL-delimited `KEY=value` records split at the first `=`
-//!   — what `env -0` writes.
-//!
-//! Hook output **replaces** the base rather than merging into it: a variable the
-//! host had and the hook did not report is absent from the session's
-//! environment, and one the hook reported is present even if the host never had
-//! it. The session's existing `[env]` strip/mask policy is applied afterward, to
-//! whatever this returns.
-//!
-//! Every failure here is a failure. A hook that cannot be run, that exits
-//! nonzero, that overruns its bounds, or that writes something other than an
-//! environment produces an error and no base — nothing falls back to the host
-//! environment, because a session silently launched with the wrong environment
-//! is the case this mechanism exists to remove.
+//! Hook output **replaces** the base rather than merging into it, and every
+//! failure here is a failure: an unrunnable hook, a nonzero exit, an overrun,
+//! or unparseable output yields an error and no base — never a silent fallback
+//! to the host environment, because a session silently launched with the wrong
+//! environment is the case this mechanism exists to remove.
 //!
 //! ## Termination
 //!
-//! One deadline covers the whole operation — reading stdout, and collecting the
-//! exit status — because a hook that closes its pipes has not thereby finished,
-//! and waiting on it outside the deadline would leave a launch unbounded. Both
-//! stdout reaching EOF and the child exiting are necessary and neither is
-//! sufficient: a hook can close stdout early and then exit nonzero, which is why
-//! success is only ever an *observed* successful exit.
+//! One deadline covers reading stdout and collecting the exit status: a hook
+//! that closes its pipes has not thereby finished. Both EOF and exit are
+//! necessary and neither is sufficient, so success is only ever an *observed*
+//! successful exit.
 //!
-//! Cleanup is a [`ProcessGroup`] guard rather than a kill at the end of a happy
-//! path: a caller that stops awaiting — a cancelled request, a shutting-down
-//! runtime — drops this future, and the guard's `Drop` still signals the group.
-//! Signalling and reaping are separate: `Drop` sends the kill, while collecting
-//! the direct child is [`reap`]'s job on the paths that are still awaited. The
-//! group is killed on every terminating path except a hook that exited
-//! successfully with its pipes at EOF. A process group is not containment: a
-//! descendant that puts itself in a new group is outside what one `killpg`
-//! reaches.
+//! Cleanup is a [`ProcessGroup`] guard rather than an end-of-path kill, so a
+//! caller that stops awaiting still signals the group on drop. Signalling and
+//! reaping are separate: `Drop` sends the kill, while collecting the direct
+//! child is [`reap`]'s job. A process group is not containment: a descendant in
+//! a new group is outside what one `killpg` reaches.
 
 use std::collections::BTreeMap;
 use std::future::Future;

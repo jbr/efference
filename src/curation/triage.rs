@@ -489,7 +489,7 @@ impl Triager {
         };
 
         // Apply the model's verdicts in call order. Coverage was validated above, so
-        // every pending result finds its verdict; labels the model invented simply find
+        // every pending result finds its verdict; labels the model invented find
         // no home — the same harness-side guard applied to notification ids and
         // roster names below.
         let results = verdicts_in_call_order(pending, &labels, &verdict.results);
@@ -541,7 +541,7 @@ impl Triager {
     /// the `triage` tool via the tail instruction (no `keep` — there is no tool
     /// output). The caller wakes this when an event arrives while idle and starts
     /// a real turn iff it pins something. On any failure it pins/dismisses nothing —
-    /// the agent simply goes back to idle, losing no data.
+    /// the agent goes back to idle, losing no data.
     pub async fn triage(
         &self,
         agent: &Client,

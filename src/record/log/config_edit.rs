@@ -55,8 +55,8 @@ pub enum EditState {
 /// (docs/permissions.md). Each variant addresses one section of the config table;
 /// [`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
 /// Most variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the
-/// narrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace
-/// semantics over a list are an unsettled question; add it when an initiator needs it).
+/// narrowing edit append-only KDL couldn't do. There is no `watch-for` variant: its replace
+/// semantics over a list are undecided.
 ///
 /// **Session-visibility** (which edits notify the session) is decided by variant in
 /// [`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;

@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// The live config file: the format-preserving TOML document currently on disk, plus the
+/// The live config file: the format-preserving TOML document on disk, plus the
 /// [`Config`] it validates to (docs/permissions.md).
 ///
 /// ## The invariant

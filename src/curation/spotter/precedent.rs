@@ -3,7 +3,7 @@
 //! The decision rung clears a move only when enough earlier calls of the same
 //! kind were approved by the operator. This module reads the log for those
 //! calls; deciding whether one is the same action as the move is the model's job
-//! (`jev/relation.rs`).
+//! (the `jev::relation` step).
 
 use crate::record::log::Telemetry;
 use std::collections::{HashMap, HashSet};

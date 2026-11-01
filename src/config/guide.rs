@@ -14,9 +14,9 @@
 //! harness cannot write into its own binary, and granting itself write on its own
 //! documents would be meaningless.
 //!
-//! **Known edge, deliberately not half-implemented:** only `read` resolves on the prefix.
-//! `list`, `search`, and the edit tools answer with [`reject_non_read`] instead — the stub
-//! listing in the preamble is what substitutes for a directory listing.
+//! **Known edge:** only `read` resolves on the prefix. `list`, `search`, and
+//! the edit tools answer with [`reject_non_read`] instead — the stub listing in
+//! the preamble is what substitutes for a directory listing.
 
 use crate::record::log::{RawResult, ToolCall};
 

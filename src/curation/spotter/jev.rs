@@ -3,9 +3,8 @@
 //! Same rung, different machine. [`ForkSpot`](super::ForkSpot) asks a generative
 //! model for a stance and a sentence; this asks a **decision model** (an LLM with
 //! generation replaced by a classifier head) fixed questions and gets a
-//! calibrated probability for each. It answers in tens of milliseconds for
-//! a fraction of a cent, and it cannot be talked to: there is no system prompt to
-//! shape and no prose to read, only questions and numbers.
+//! calibrated probability for each. It cannot be talked to: there is no system
+//! prompt to shape and no prose to read, only questions and numbers.
 //!
 //! ```text
 //!   cold request:      state (config + move, as JSON) ──▶ sketch, P(in_scope), …
@@ -13,8 +12,7 @@
 //!                                      folded in code ──▶ Stance + reason
 //! ```
 //!
-//! The consequences are the interesting part, and they are why this is a separate
-//! implementation rather than a model swap:
+//! The consequences are why this is a separate implementation rather than a model swap:
 //!
 //! - **The judgement is decomposed.** No single question can be "what is your
 //!   stance?", because the stance is a policy over several considerations. The
@@ -25,9 +23,8 @@
 //!   raised it, and the precedents found — what the model actually reported, not
 //!   a sentence it wrote.
 //! - **Nothing caches.** The route has no cache-control and the model's endpoint
-//!   reports none, so every call pays full input. At this price that is not a
-//!   cost question, but it does mean the persona/scope prefix economics that shape
-//!   `ForkSpot` have no analogue here.
+//!   reports none, so every call pays full input, and the persona/scope prefix
+//!   economics that shape `ForkSpot` have no analogue here.
 //!
 //! Fail-closed holds for the cold request: any transport error or missing answer,
 //! and the rung returns [`Origin::Fallback`] +

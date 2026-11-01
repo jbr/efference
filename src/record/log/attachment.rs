@@ -9,9 +9,8 @@ use serde::{Deserialize, Serialize};
 
 /// What an arrived file turned out to be — the triage signals the notification carries.
 ///
-/// The set is deliberately small and prototype-first: enough for the model to decide whether the
-/// file is worth pulling *without* re-deriving its content from the notice. Tunable — the right
-/// fields are an empirical question about real pastes, not a settled schema.
+/// The set is deliberately small: enough for the model to decide whether the
+/// file is worth pulling *without* re-deriving its content from the notice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     test,
@@ -95,10 +94,8 @@ fn human_bytes(bytes: u64) -> String {
 /// ask-first one either.
 ///
 /// One line, subject first — `shot.png — PNG image, 828×120, 28.7 KB — at <path>` — with a text
-/// file's first line under it. A two-line form with the path leading read as boilerplate, and a
-/// model looking back at it later could not say whether it had seen the dimensions at all
-/// (journal/2026-09-27-composer-attachments.md). The same body is an ambient notice's and, under
-/// the harness's `⟢`, a turn's attachment line ([`turn_line`]).
+/// file's first line under it: a path-leading form reads as boilerplate. The same body is an
+/// ambient notice's and, under the harness's `⟢`, a turn's attachment line ([`turn_line`]).
 pub fn describe(arrival: &Arrival) -> String {
     let (detail, first) = match &arrival.kind {
         Kind::Text {

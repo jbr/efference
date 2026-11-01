@@ -19,8 +19,7 @@
 //! Structured tools clear on a name grant ([`tool_granted`]) plus, where the tool names a
 //! path, a `[paths]` grant carrying the needed permission. Mapping a tool to "which input
 //! field holds the path, and is it a read or a write" means reaching into each built-in's
-//! JSON input by known key — a wart with no way around it until an MCP superset can carry
-//! permission metadata alongside the tool schema. The string literals are centralized in
+//! JSON input by known key. The string literals are centralized in
 //! [`path_spec`] so the coupling is in one place.
 
 use std::collections::{BTreeMap, HashMap};
@@ -42,9 +41,8 @@ pub enum Verdict {
     /// Not cleared — fall through to the spotter rung, then the human gate.
     Gate,
     /// Refused by a `[commands]` key carrying [`CommandStance::Deny`]: the move goes to whoever
-    /// gates (the human, or the autonomous redirect) **without** a spotter call. The spotter's
-    /// most restrictive answer already resolves there, so there is no answer it could give that
-    /// would change this outcome — the round-trip is spent for nothing (docs/permissions.md).
+    /// gates (the human, or the autonomous redirect) **without** a spotter call — no answer
+    /// the spotter could give would change the outcome (docs/permissions.md).
     Deny,
 }
 

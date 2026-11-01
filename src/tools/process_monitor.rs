@@ -438,7 +438,7 @@ impl ProcessMonitor {
         }
     }
 
-    /// How many watches a process currently has pending — the count the tool result
+    /// How many watches a process has pending — the count the tool result
     /// reports back so the model knows what it is now waiting on.
     pub fn watch_count(&self, id: u64) -> usize {
         self.find(id).map_or(0, |p| p.watches.len())
@@ -738,7 +738,7 @@ fn state_of(p: &Process) -> ProcessState {
 
 /// The last [`TAIL_LINES`] lines of a capture, lossily decoded and stripped of
 /// terminal formatting ([`strip_formatting`]), with a leading
-/// breadcrumb when content was dropped (off the front at the cap, or just older
+/// breadcrumb when content was dropped (off the front at the cap, or older
 /// than the tail window) — no silent truncation (docs/process-monitor.md).
 fn tail_text(buffer: &[u8], dropped: usize) -> String {
     let decoded = strip_formatting(&String::from_utf8_lossy(buffer));

@@ -4,14 +4,12 @@
 //!
 //! ## Why anything is stored at all
 //!
-//! Two things, and only one of them is the obvious one.
-//!
 //! The **token** saves the operator from a browser round-trip on every launch.
 //! The **registration** saves the *authorization server* from accumulating a
 //! new anonymous client record on every launch: dynamic client registration is
 //! not idempotent, so a client that re-registers each run litters the server
 //! with identical throwaway identities. A Client ID Metadata Document has
-//! nothing to store, which is one of its quieter advantages.
+//! nothing to store.
 //!
 //! The item is per user, not per project: an authorization belongs to the
 //! operator and the server, and a second checkout of the same project reuses

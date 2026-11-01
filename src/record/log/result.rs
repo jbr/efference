@@ -24,8 +24,7 @@ pub struct RawResult {
     /// The realized bytes live here, in the log entry itself, so projection is a
     /// copy of stored data — never a re-read or re-encode of anything on disk.
     /// Encoding happens once, at tool-run time. Defaulted and skipped when empty,
-    /// so text-only results (and every existing log) serialize byte-identically
-    /// to before the field existed.
+    /// so text-only results are unaffected.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ResultImage>,
 }

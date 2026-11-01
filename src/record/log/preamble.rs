@@ -35,9 +35,9 @@ impl LoggedInference {
 }
 
 /// The inference identity recorded by the latest boot [`Payload::Preamble`], or
-/// `None` for a log written before that metadata existed. The latest preamble is
-/// the boot record for a multi-boot log; an older identity is not resurrected when
-/// the latest preamble has none (docs/log-and-projection.md).
+/// `None` when no preamble carries one. The latest preamble is the boot record
+/// for a multi-boot log; an older identity is not resurrected when the latest
+/// preamble has none (docs/log-and-projection.md).
 pub fn recorded_inference(entries: &[LogEntry]) -> Option<&LoggedInference> {
     entries
         .iter()

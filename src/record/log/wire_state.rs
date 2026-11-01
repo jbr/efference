@@ -10,13 +10,13 @@ use super::*;
 /// new site lands as a behavior change rather than a type change that would move
 /// the byte-stability pin. `Triaged` is built by the triage
 /// (docs/triage.md); `Interrupted` by the interrupt (docs/control-channel.md). `Elided`
-/// is no longer written; logs that carry it project as they did.
+/// is not written; logs that carry it project as they did.
 ///
 /// [`project`]: crate::record::project::project
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum WireState {
-    /// Captured durably, but not yet accepted onto the main agent's wire.
+    /// Captured durably, awaiting acceptance onto the main agent's wire.
     /// An appended result verdict resolves this state (docs/triage.md).
     Pending,
     /// Project the full `raw` content.
@@ -35,11 +35,11 @@ pub enum WireState {
     /// it; `raw` stays in the log (docs/control-channel.md). Recorded when the interrupt
     /// lands, so the line is rendered from the log alone.
     Interrupted(Interruption),
-    /// A result an earlier harness withheld as a hard error because its triage had no
-    /// verdict. **No longer written**: a triage without a verdict now holds its
-    /// results until it has one (docs/triage.md). Kept so logs that carry it
-    /// still load and project as they did — a hard error in place of the output
-    /// (`is_error` forced true), `raw` still in the log.
+    /// A result withheld as a hard error because its triage had no verdict. **Not
+    /// written**: a triage without a verdict holds its results until it has one
+    /// (docs/triage.md). Kept so logs that carry it still load and project as they
+    /// did — a hard error in place of the output (`is_error` forced true), `raw`
+    /// still in the log.
     TriageFailed { why: String },
 }
 
@@ -72,7 +72,7 @@ pub struct Triaged {
     pub note: Option<String>,
     /// Present only when the intent gave triage nothing to decide against — about
     /// the intent and never the task (docs/triage.md). Rendered after the
-    /// note. Absent on logs written before the field existed, so it deserializes as
+    /// note. Absent where the log predates the field, so it deserializes as
     /// `None` and serializes only when set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intent_feedback: Option<String>,

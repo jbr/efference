@@ -19,7 +19,7 @@
 //! **replaces at a key** (last-write-wins) rather than appending. That is why the persist
 //! path can use [`toml_edit`]'s format-preserving writes — the harness edits the file *for*
 //! the user at a gate, narrowing a single key while leaving every comment and unrelated
-//! line untouched (the "yes, always" auto-persist append-only KDL couldn't express).
+//! line untouched.
 //!
 //! ```toml
 //! scope = "Work only inside this repo."
@@ -38,34 +38,17 @@
 //!
 //! ## What the config holds
 //!
-//! One config file configures every cascade rung (docs/permissions.md):
-//!
-//! - [`Config::scope`] — the positive scope, **shared with the acting session** for
-//!   self-alignment. It projects into the cached preamble ([`Config::preamble_section`]).
-//! - [`Config::watch_for`] — the spotter's "things to watch for", **spotter-only**.
-//!   Kept off the session's preamble for attention-division (the focused session
-//!   doesn't carry peripheral hazards; the spotter does). Consumed by the spotter
-//!   rung ([`crate::curation::spotter`]).
-//! - [`Config::commands`] — the bash prefix-allowlist the deterministic fast-path matches
-//!   against (docs/permissions.md). A **map** from command-prefix key to [`CommandStance`],
-//!   resolved longest-prefix-wins. Consumed by that rung.
-//! - [`Config::tools`] — which tools the session mounts, and which the fast-path clears by name.
-//! - [`Config::paths`] — filesystem subtree grants, the one genuine value-bearing map.
-//! - [`Config::trust_threshold`] — where the watch-window/gate cutoffs sit. The
-//!   watch-window rung is its only reader; the field lands ahead of it, per below.
-//!
-//! Per the convention in CLAUDE.md, the schema fields land *before* the rungs that
-//! read them — types land ahead of the feature that constructs them.
+//! One config file configures every cascade rung (docs/permissions.md); the
+//! [`Config`] fields below say what each holds. Per the convention in CLAUDE.md,
+//! the schema fields land *before* the rungs that read them — types land ahead of
+//! the feature that constructs them.
 //!
 //! ## Caching discipline
 //!
-//! The scope projects into the system preamble, which sits in the cached prefix
-//! (`tools → system → messages`). [`Config::preamble_section`] must therefore be
-//! **byte-stable for the whole session** (see the invariant in
-//! docs/permissions.md, kin to `project(log)` in docs/log-and-projection.md). It is —
-//! the config is loaded once at startup and frozen, and the rendering is a pure function
-//! of the scope text. Changing configs is a cold cache write, which is fine: configs do
-//! not change mid-session.
+//! The scope projects into the system preamble, which sits in the cached prefix,
+//! so [`Config::preamble_section`] is **byte-stable for the whole session**
+//! (docs/permissions.md, docs/log-and-projection.md): the config loads once at
+//! startup, freezes, and renders purely from the scope text.
 //!
 //! This module is also the root of the config group, which holds configuration and what is
 //! built from it: the permission policy (`policy`), the system preamble and its `[context]`
@@ -85,10 +68,8 @@ use toml_edit::{DocumentMut, InlineTable, Item, Table, Value, value};
 use crate::record::log::ConfigChange;
 
 /// The shipped defaults, used when no `[bash]` config section says otherwise.
-/// 300s clears a real `cargo build --release` while firing on under 1% of this
-/// repo's corpus; the ceiling is high enough for a genuinely slow build and
-/// still finite. The asymmetry is what sets them: a premature detach costs one
-/// `read_process` and loses nothing, an absent one costs the session.
+/// The asymmetry sets them: a premature detach costs one `read_process` and
+/// loses nothing, an absent one costs the session.
 pub const DEFAULT_BACKGROUND_AFTER: Duration = Duration::from_secs(300);
 pub const DEFAULT_BACKGROUND_AFTER_MAX: Duration = Duration::from_secs(1800);
 
@@ -121,8 +102,7 @@ impl Default for BashLimits {
 /// *success taking forever* — a stream that neither finalizes nor dies has no
 /// other bound, and blocks its turn with nothing on `GET /state` to read.
 ///
-/// One hour — roughly ten times the widest model call this repo's own corpus has
-/// recorded, and set that far out deliberately: a ceiling that fires on a merely
+/// One hour, set that far out deliberately: a ceiling that fires on a merely
 /// *slow* stream discards real work, where one that fires late only delays the
 /// diagnosis of a hang. Operators whose workload says otherwise set
 /// `[transport] stream-ceiling` ([`TransportLimits`]).
@@ -130,15 +110,12 @@ pub const DEFAULT_STREAM_CEILING: Duration = Duration::from_secs(3600);
 
 /// Transport-layer limits an operator can set (docs/transport.md). Both knobs
 /// are operator-set because the right value is workload-dependent — a long think
-/// and a hung gateway look identical from outside until one of them ends, and
-/// how long a provider's prompt cache lives is a provider fact the harness does
-/// not read anywhere.
+/// and a hung gateway look identical from outside until one of them ends.
 ///
 /// The two duration knobs are transport-only — nothing about them reaches the
 /// request body, so no value of them can move the cached prefix
 /// (docs/log-and-projection.md). `effort` is the exception: it *is* a request
-/// field. It is read once at boot and frozen for the session, so it moves the
-/// prefix no more than `model` does.
+/// field, read once at boot and frozen for the session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransportLimits {
     /// How long a single response's SSE stream may stay open before the read
@@ -178,11 +155,10 @@ impl Default for TransportLimits {
 // `///` docs are the published schema's per-value hover text (docs/config-schemas.md); the
 // value's own hover text is `RawCommandValue`'s, so this type carries no `///`.
 //
-// The declaration order is the **restrictiveness order** (`Clear < Watch < Gate < Deny`), and
-// the derived `Ord` is what breaks a tie between two keys of equal token depth: the more
-// restrictive one governs. Equal depth is only reachable through two spellings of the same
-// prefix (`"git diff"` and `"git  diff"` lex alike), so the tie-break decides a case that is
-// otherwise a coin flip, in the safe direction.
+// Declaration order is the **restrictiveness order** (`Clear < Watch < Gate < Deny`), and
+// the derived `Ord` breaks ties between keys of equal token depth toward the more
+// restrictive one — reachable only through two spellings of the same prefix
+// (`"git diff"` and `"git  diff"` lex alike).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, JsonSchema,
 )]
@@ -192,9 +168,8 @@ pub enum CommandStance {
     // Auto-approve at the fast path: no human, no spotter round-trip.
     Clear,
     /// Send to review, as `gate` does.
-    // Distinct from `Gate` as a parsed value, identical in effect until the watch-window gives
-    // `watch` its own intervention latency (docs/permissions.md) — the same collapse
-    // `Stance::Watch` has at the spotter rung.
+    // Distinct from `Gate` as a parsed value, identical in effect — no rung distinguishes
+    // them (docs/permissions.md), the same collapse `Stance::Watch` has at the spotter rung.
     Watch,
     /// Send to review: the spotter, then the operator.
     Gate,
@@ -274,14 +249,13 @@ pub struct Config {
     pub paths: BTreeMap<String, Perms>,
 
     /// Reserved ancestor pointers (tsconfig/eslint-style explicit inheritance). Parsed so a
-    /// file can declare them, but the merge engine is **not built**. TOML: `extends = ["base.toml"]`.
+    /// file can declare them; nothing reads them. TOML: `extends = ["base.toml"]`.
     pub extends: Vec<String>,
 
-    /// The `[context]` preamble builder (docs/context.md): the markdown files (and, later,
-    /// `exec` sections) the operator makes available to the session, in **document order** — a `Vec`,
-    /// not a sorted map, because the entries render as preamble sections in the order they're written
-    /// (a dynamic `exec` section can sit between static files). The harness bakes in nothing about
-    /// what any entry "is" — see [`ContextEntry`].
+    /// The `[context]` preamble builder (docs/context.md): the markdown files and `exec`
+    /// sections the operator makes available to the session, in **document order** — a `Vec`,
+    /// not a sorted map, because the entries render as preamble sections in the order written.
+    /// The harness bakes in nothing about what any entry "is" — see [`ContextEntry`].
     pub context: Vec<ContextEntry>,
 
     /// The `[env]` table as the operator wrote it (docs/env.md): per-variable

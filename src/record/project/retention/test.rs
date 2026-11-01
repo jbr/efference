@@ -15,7 +15,7 @@ fn result(seq: u64, lines: usize, wire: WireState) -> LogEntry {
 }
 
 /// The two shapes of one session's log (docs/triage.md): a result whose
-/// verdict rides its own entry — every log written before capture existed, and every
+/// verdict rides its own entry — logs that predate capture, and every
 /// fixture — and a result captured `Pending` with the verdict appended after it. Which
 /// one wrote the session is not something the ratio may depend on.
 #[test]

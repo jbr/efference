@@ -31,9 +31,8 @@
 //!
 //! Protocol interop is `mcplease::client`'s (docs/tools.md "the client
 //! protocol"): `ClientProtocol` builds each request and classifies each
-//! arriving message, and `Negotiation` runs the `server/discover` probe that
-//! `2026-07-28` introduced, falling back to the stateful `initialize`
-//! handshake that deployed servers still speak. Neither does any I/O, so what
+//! arriving message, and `Negotiation` runs the `server/discover` probe,
+//! falling back to the stateful `initialize` handshake. Neither does any I/O, so what
 //! is left here is one loop — send a request, read frames until its response
 //! arrives — and the two transports are pure framing beneath it.
 

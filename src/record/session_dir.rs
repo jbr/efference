@@ -3,8 +3,7 @@
 //! name one, the owner-only modes they and their files are created with, and where a
 //! session's git worktree sits beside them ([`worktree`]).
 //!
-//! The id register, the archived-session scan, discard, the log writer and the attachment
-//! store each read these, and none of them needs the host that serves a session. The module
+//! Its readers need no host that serves a session. The module
 //! imports nothing from the crate, so every one of them can import it (docs/README.md,
 //! *Dependency direction*).
 

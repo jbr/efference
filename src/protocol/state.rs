@@ -289,8 +289,8 @@ pub struct PendingNotification {
 ///
 /// All but the title are fixed at boot. They are carried as a state topic rather than a
 /// one-shot read so a client learns them from the connect snapshot along with
-/// everything else, and so either moving later reaches clients through the
-/// mechanism that already delivers whole-topic replacements.
+/// everything else, and so either moving later reaches clients through
+/// whole-topic replacement.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SessionIdentity {

@@ -69,8 +69,8 @@ export type Approval =
  * (docs/permissions.md). Each variant addresses one section of the config table;
  * [`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
  * Most variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the
- * narrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace
- * semantics over a list are an unsettled question; add it when an initiator needs it).
+ * narrowing edit append-only KDL couldn't do. There is no `watch-for` variant: its replace
+ * semantics over a list are undecided.
  *
  * **Session-visibility** (which edits notify the session) is decided by variant in
  * [`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;
@@ -124,9 +124,8 @@ export type SessionState = "active" | "archived";
 /**
  * What an arrived file turned out to be — the triage signals the notification carries.
  *
- * The set is deliberately small and prototype-first: enough for the model to decide whether the
- * file is worth pulling *without* re-deriving its content from the notice. Tunable — the right
- * fields are an empirical question about real pastes, not a settled schema.
+ * The set is deliberately small: enough for the model to decide whether the
+ * file is worth pulling *without* re-deriving its content from the notice.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "AttachmentKind".
@@ -568,16 +567,13 @@ export type Park =
 export type EditState = "proposed" | "committed" | "cancelled";
 /**
  * A content block authored by the model or user. `Thinking` / `RedactedThinking`
- * carry the extended-thinking payload (docs/transport.md): `signature` is the
- * opaque per-block token the API mints and requires echoed **verbatim** on replay
- * (it rejects a modified block); `redacted_thinking` carries opaque `data` instead
- * of text. Images are not blocks here — a tool result's images live on
- * [`RawResult`], where the bytes are stored as they go on the wire.
+ * carry the extended-thinking payload (docs/transport.md): `signature` is the opaque
+ * per-block token the API requires echoed **verbatim** on replay. Images are not blocks
+ * here — a tool result's images live on [`RawResult`].
  *
- * `Attachment` is a file the operator's composer attached to a `User` turn. It
- * records the file's name, path, and triage signals, never its bytes: it
- * projects as the same notice an ambient arrival carries, and the model pulls
- * the file with `read` / `read_image` if it wants it (docs/inbox.md).
+ * `Attachment` is a file the operator's composer attached to a `User` turn: name, path,
+ * and triage signals, never its bytes (docs/inbox.md). It projects as a notice, and the
+ * model pulls the file with `read` / `read_image` if it wants it.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "ContentBlock".
@@ -876,10 +872,9 @@ export type Exclusion =
  * Why an assistant entry is record-only, plus the transport evidence when the
  * path that produced it captured any.
  *
- * Serializes as a **bare string** when there are no diagnostics, which is the
- * shape every log before this type used, and deserializes from either shape —
- * so an old log line parses and an ordinary failure writes the same bytes it
- * always did.
+ * Serializes as a **bare string** when there are no diagnostics, and deserializes
+ * from either shape — so an old log line parses and an ordinary failure keeps
+ * its bytes.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "UpstreamFailureRecord".
@@ -1126,7 +1121,7 @@ export type Payload =
  * new site lands as a behavior change rather than a type change that would move
  * the byte-stability pin. `Triaged` is built by the triage
  * (docs/triage.md); `Interrupted` by the interrupt (docs/control-channel.md). `Elided`
- * is no longer written; logs that carry it project as they did.
+ * is not written; logs that carry it project as they did.
  *
  * [`project`]: crate::record::project::project
  *
@@ -1885,9 +1880,9 @@ export interface AttentiveClient {
  * carries the thing they are about — a watch-for list, a promotion probe — so
  * `None` means "not asked", never "answered zero".
  *
- * Recorded alongside the stance on `Spot::axes`. Entries written before the
- * sketch fold carry `reversible` and `sanctioned`, which are ignored on read, and
- * lack `sketch` and `precedent`, which default to `None`.
+ * Recorded alongside the stance on `Spot::axes`. Entries that predate the sketch
+ * fold carry `reversible` and `sanctioned`, which are ignored on read, and lack
+ * `sketch` and `precedent`, which default to `None`.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "Axes".
@@ -1989,8 +1984,7 @@ export interface BashTelemetry {
    * a spawn — foreground included, since foreground and background share one
    * namespace — so the handle↔call join is readable off the telemetry row
    * without parsing result prose. `None` for a call that never spawned (a
-   * refused command, a failed background spawn) and for logs written before
-   * the field existed.
+   * refused command, a failed background spawn) and on older entries.
    */
   handle?: string | null;
 }
@@ -2422,7 +2416,7 @@ export interface Cost {
  * dropped, never logged or echoed, which is why the type has no Debug.
  *
  * `env` is optional because an omitted one is a *different request* from an
- * empty one. Supplied, it is the base and nothing runs; omitted, the base is
+ * empty one. Supplied, it is the base as-is, with no hook run; omitted, the base is
  * established for the session's directory from the user-wide `env_hook`, or
  * from the host's own environment when none is configured (docs/env.md). An
  * empty map is an explicit empty environment, so `{}` and omitted are different
@@ -3255,8 +3249,7 @@ export interface RawResult {
    * The realized bytes live here, in the log entry itself, so projection is a
    * copy of stored data — never a re-read or re-encode of anything on disk.
    * Encoding happens once, at tool-run time. Defaulted and skipped when empty,
-   * so text-only results (and every existing log) serialize byte-identically
-   * to before the field existed.
+   * so text-only results are unaffected.
    */
   images?: ResultImage[];
   is_error: boolean;
@@ -3303,7 +3296,7 @@ export interface Triaged {
   /**
    * Present only when the intent gave triage nothing to decide against — about
    * the intent and never the task (docs/triage.md). Rendered after the
-   * note. Absent on logs written before the field existed, so it deserializes as
+   * note. Absent where the log predates the field, so it deserializes as
    * `None` and serializes only when set.
    */
   intent_feedback?: string | null;
@@ -3372,8 +3365,7 @@ export interface RequestStage {
   /**
    * On `Ended`: the provider's own word for why the output ended (`end_turn`,
    * `tool_calls`, `incomplete:max_output_tokens`, …), as the dialect spelled it
-   * (`api::Finish`). Absent on other stages, on a stream that named none, and on
-   * entries written before the field existed.
+   * (`api::Finish`). Absent on other stages and on a stream that named none.
    */
   finish?: string | null;
   origin: RequestOrigin;
@@ -3398,8 +3390,8 @@ export interface Resumed {
    */
   gap_ms: number;
   /**
-   * Background handles (`p#<n>`) that were spawned with no recorded exit: their
-   * output is no longer captured, and whether they still run is unknown.
+   * Background handles (`p#<n>`) spawned with no recorded exit: their output is
+   * not captured, and whether they still run is unknown.
    */
   lost_processes?: string[];
   /**
@@ -3407,14 +3399,13 @@ export interface Resumed {
    * the calls of the last live completion that have not run (or whose results are
    * still undecided), which the operator's next action brings back. The notice
    * projects after the batch's results land, not at this entry's position
-   * (docs/resumption.md). A log written before the field existed reads as empty.
+   * (docs/resumption.md). Absent reads as empty.
    */
   pending_calls?: CallId[];
   /**
    * Present only when the log ended uncleanly: the seq of the last entry this session
    * builds on. Entries after it and before this one stay on disk but are not
-   * restored, and projection skips them (docs/resumption.md). A log written before the
-   * field existed reads as `None`.
+   * restored, and projection skips them (docs/resumption.md). Absent reads as `None`.
    */
   resumes_after?: number | null;
   /**
@@ -3527,9 +3518,9 @@ export interface Triage {
   /**
    * The last arrival this triage's rider showed (docs/inbox.md): every notification
    * whose arrival `seq` is at or below it, and with no verdict yet, was in front of
-   * the model. Absent means this entry's own `seq`, which is what a log written before
-   * the field recorded (a notification was logged when a triage first showed it, so it
-   * sat just ahead of that triage). A triage that showed no rider records `Some(0)` (seq 0 is the boot `Preamble`),
+   * the model. Absent means this entry's own `seq`, which is what an older log
+   * recorded (a notification was logged when a triage first showed it, so it
+   * sat just ahead of that triage).
    * and one that showed it records the highest `seq` the rider held, so a notification
    * that arrived while the request was in flight reads as new at the next triage.
    * [`project`] never reads it.
@@ -3596,8 +3587,8 @@ export interface Spot {
    * verdict (docs/permissions.md). The stance and reason are a fold over these
    * under the thresholds of the day; recording the vector is what lets a live
    * session's verdicts join the calibration corpus and replay under a different
-   * band without re-asking. `None` from the prose rung, from a fail-closed
-   * verdict, and on entries written before this field existed.
+   * band without re-asking. `None` from the prose rung and from a fail-closed
+   * verdict.
    */
   axes?: Axes | null;
   /**
@@ -3613,8 +3604,8 @@ export interface Spot {
    * it is recorded per entry anyway because the corpus that reads these
    * spans sessions and models, and attributing a verdict by re-deriving the
    * boot config is a join that can be wrong. `None` for a fail-closed verdict
-   * (no request happened, so nothing answered) and for entries written before
-   * this field existed — in both cases the absence is the honest reading.
+   * (no request happened, so nothing answered) and on older entries — in both
+   * cases the absence is the honest reading.
    */
   model?: string | null;
   origin: TriageOrigin;
@@ -3624,7 +3615,7 @@ export interface Spot {
    * answer *is* the stance — `ClearAlways` is the safe-vote for this prefix, any other stance is
    * not-safe — so the ledger that decides promotion folds from these `Spot` entries: a
    * `probed_prefix = Some(p)` with `origin = Model` contributes a vote for `p`. `None` when no
-   * probe rode (most calls), so old logs and unprobed calls fold to nothing.
+   * probe rode (most calls), so unprobed calls fold to nothing.
    */
   probed_prefix?: string | null;
   reason: string;
@@ -4386,8 +4377,8 @@ export interface SessionArchived {
  *
  * All but the title are fixed at boot. They are carried as a state topic rather than a
  * one-shot read so a client learns them from the connect snapshot along with
- * everything else, and so either moving later reaches clients through the
- * mechanism that already delivers whole-topic replacements.
+ * everything else, and so either moving later reaches clients through
+ * whole-topic replacement.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "SessionIdentity".

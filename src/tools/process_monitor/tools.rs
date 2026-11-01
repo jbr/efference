@@ -17,14 +17,12 @@ use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 /// The mounted-table entries for the process-monitor/inbox tools — the same
 /// [`ToolDefinition`] shape a provider's mount snapshots, so the spotter's brief
 /// (docs/permissions.md) can read them like any other tool's. The loop dispatches
-/// this family structurally, outside the `Toolbox`, so a brief lookup that
-/// consulted only the mounted providers would judge these as a bare name plus an
-/// opaque JSON input — the descriptions exist, and this is what carries them to
-/// that rung.
+/// this family structurally, outside the `Toolbox`, so without this a brief lookup
+/// would judge these as a bare name plus an opaque JSON input.
 ///
 /// The annotations are the harness's claims about its own tools, so they carry
 /// none of the untrusted-server caveat: everything here is session-local
-/// (closed-world), the reads are reads, and `kill_process` is the one
+/// (closed-world), and `kill_process` is the one
 /// destructive member (SIGKILL, idempotent — a second kill of a dead process
 /// changes nothing further).
 static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {

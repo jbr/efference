@@ -29,8 +29,7 @@ pub const RELEASE_PUBLIC_KEY: &str = "RWQVdWuS5d3d6sqA6eXxVuPYvV7/DdkJDgAyDTLmYd
 /// `.minisig`.
 pub const LATEST_URL: &str = "https://efference.net/releases/latest.json";
 
-/// The command that installs the newest release, over an installed one as well:
-/// how to update until efference can replace its own binary.
+/// The command that installs the newest release, over an installed one as well.
 pub const INSTALL_COMMAND: &str = "curl -fsSL https://efference.net/install.sh | sh";
 
 /// This build's version, the one a release is compared against.

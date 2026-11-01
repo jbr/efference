@@ -15,11 +15,9 @@
 //! and the answering side; it is spelled as the wire spells it rather than
 //! renamed, so a request built here reads the same as the provider's docs.
 //!
-//! Nothing on this route caches: the model's endpoint metadata reports
-//! `supports_implicit_caching: false` and there are no cache-control markers to
-//! send, so the byte-stability rule that governs the Messages prefix
-//! (docs/log-and-projection.md) has nothing to hold here. Input is billed at a
-//! flat rate and output is free.
+//! Nothing on this route caches — there are no cache-control markers to send —
+//! so the Messages prefix byte-stability rule has nothing to hold here
+//! (docs/log-and-projection.md).
 
 use std::collections::BTreeMap;
 use std::time::Duration;

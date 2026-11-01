@@ -5,7 +5,7 @@
 //! operator's first action replays a pending batch). Both derive the answer from the
 //! entries each time rather than from a flag that could drift.
 //!
-//! Each call of the last live completion is in one of four states ([`CallState`]). A call
+//! Each call of the last live completion is in one state ([`CallState`]). A call
 //! that **started and has no result** may have touched the world, so the session rolls
 //! back past the whole completion. Any other unfinished completion is a **pending batch**:
 //! its undecided calls have not run, and the session resumes at it.
@@ -154,7 +154,7 @@ fn classify(
 /// Where the session continues from: after the last entry when the log ends cleanly or
 /// at a pending batch, else from just before the completion holding a started call, and
 /// the same check runs on the log up to there until it ends in one of the first two
-/// (docs/resumption.md). Entries an earlier `Resumed` skipped are not live: they are
+/// (docs/resumption.md). Entries a `Resumed` skipped are not live: they are
 /// neither the completion nor the rollback point. The error is the reason a log has
 /// nothing to continue from.
 pub fn resume_point(entries: &[LogEntry]) -> Result<Resumption, String> {

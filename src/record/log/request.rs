@@ -69,7 +69,7 @@ pub enum RequestOrigin {
 
 impl RequestOrigin {
     /// Whether every request of this origin read the main loop's own cached prefix, and
-    /// so refreshed it. Turns and keepalive pings do. A triage may run on the agent's own
+    /// so refreshed it. Turns, keepalive pings and consolidations do. A triage may run on the agent's own
     /// client (it reads the main prefix) or on a separate triage client with a prefix of
     /// its own; the origin does not say which, so the triage's line carries
     /// [`UsageLine::main_prefix`](crate::session::UsageLine) when it ran on the agent's client. Title and triage
@@ -114,8 +114,7 @@ pub struct RequestStage {
     pub stage: RequestStageKind,
     /// On `Ended`: the provider's own word for why the output ended (`end_turn`,
     /// `tool_calls`, `incomplete:max_output_tokens`, …), as the dialect spelled it
-    /// (`api::Finish`). Absent on other stages, on a stream that named none, and on
-    /// entries written before the field existed.
+    /// (`api::Finish`). Absent on other stages and on a stream that named none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish: Option<String>,
 }

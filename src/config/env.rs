@@ -9,18 +9,15 @@
 //! Orientation — *where the session is* (cwd, platform) — is not a hardcoded
 //! block: it is an ordinary `[context]` exec entry in the config (the scaffold
 //! ships one; see docs/context.md), so what a session boots knowing is entirely
-//! the operator's declaration. Without it a session spends its first turns
-//! working out what kind of repo it is in.
+//! the operator's declaration.
 
 use std::path::Path;
 
-/// The system preamble. Explains the curation model so the agent stops defending
-/// against context bloat the old way (docs/triage.md) — the run that
-/// motivated this watched the model reflexively `grep`/`head` its own tool output.
-/// The prose lives in `assets/prompts/session.md` so it can be edited as markdown
-/// rather than an escaped Rust literal (the same `include_str!` pattern the spotter
-/// persona uses, see [`crate::curation::spotter`]); [`system_prompt`] trims its trailing
-/// newline so the joined prompt stays byte-clean.
+/// The system preamble. Explains the curation model so the agent need not defend
+/// against context bloat itself (docs/triage.md). The prose lives in
+/// `assets/prompts/session.md` so it can be edited as markdown rather than an escaped
+/// Rust literal; [`system_prompt`] trims its trailing newline so the joined prompt
+/// stays byte-clean.
 const PREAMBLE: &str = include_str!("../../assets/prompts/session.md");
 
 /// The separate-model triage's persona (docs/triage.md). `{agent_model}`

@@ -218,7 +218,7 @@ impl Pending {
     }
 }
 
-/// The union of previously requested scopes and those a challenge demands,
+/// The union of already-requested scopes and those a challenge demands,
 /// space-delimited and sorted for a stable request.
 ///
 /// Re-authorizing with only the challenged scopes would drop permissions

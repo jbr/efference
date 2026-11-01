@@ -90,7 +90,7 @@ described above; the result's `keep` and `note` are about the result alone.";
 /// work tool. `tools[]` offers the whole world toolset under `tool_choice: auto`, and every
 /// other section of the view carries a banner, so an ask that read as an unbannered
 /// trailing paragraph drew work calls instead of verdicts at a rate that climbed with
-/// session depth (journal/2026-08-07-session-key-review.md). So it leads with the
+/// session depth. So it leads with the
 /// imperative, states plainly that this turn is not the task, carries the per-field asks as
 /// a scannable block rather than appended prose, and repeats the imperative last.
 ///
@@ -246,7 +246,7 @@ pub(super) fn roster_shown(roster: &[Item]) -> bool {
 ///
 /// The path rides alongside the name because a name alone under-describes what the item
 /// *is*: a session met a listed skill as a bare `[ferritin]` and built a tool call out of
-/// the name rather than reading the file (journal/2026-08-07-session-key-review.md).
+/// the name rather than reading the file.
 pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
     if !roster_shown(roster) {
         return;

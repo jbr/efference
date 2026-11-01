@@ -377,8 +377,8 @@ fn intent_feedback_follows_the_note_under_its_own_lead() {
     );
 }
 
-/// A `Triaged` state written before `intent_feedback` existed deserializes with it
-/// absent, and an absent field is not written — recorded logs and their bytes are
+/// A `Triaged` state that predates `intent_feedback` deserializes with it absent,
+/// and an absent field is not written — recorded logs and their bytes are
 /// unchanged by the field's arrival (docs/log-and-projection.md).
 #[test]
 fn intent_feedback_is_absent_from_older_states_and_omitted_when_none() {

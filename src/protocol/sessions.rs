@@ -21,7 +21,7 @@ use crate::protocol::inventory::InventoryRow;
 /// dropped, never logged or echoed, which is why the type has no Debug.
 ///
 /// `env` is optional because an omitted one is a *different request* from an
-/// empty one. Supplied, it is the base and nothing runs; omitted, the base is
+/// empty one. Supplied, it is the base as-is, with no hook run; omitted, the base is
 /// established for the session's directory from the user-wide `env_hook`, or
 /// from the host's own environment when none is configured (docs/env.md). An
 /// empty map is an explicit empty environment, so `{}` and omitted are different

@@ -3,10 +3,7 @@
 //! Deliberately free of both OAuth and MCP. A `401` from a connected provider
 //! carries the challenge that starts the authorization dance (docs/tools.md),
 //! but nothing in this module knows that — it turns a header value into
-//! scheme/parameter structure and stops. The intended home is a standalone
-//! crate alongside `trillium-basic-auth`, which hand-rolls the emit half of
-//! this same grammar; it lives here until a second consumer shows what the API
-//! should be.
+//! scheme/parameter structure and stops.
 //!
 //! ## Why this is not `split(',')`
 //!

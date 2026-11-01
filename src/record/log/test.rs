@@ -1,8 +1,8 @@
 use super::*;
 
 /// `source` is optional on the entry (docs/control-api.md): an unsourced entry
-/// serializes without it and parses back to `None`, which is what lets every
-/// log written before the field existed load unchanged.
+/// serializes without it and parses back to `None`, which is what lets a log
+/// that predates the field load unchanged.
 #[test]
 fn log_entry_source_is_optional_and_round_trips() {
     let unsourced = LogEntry::new(0, Payload::user("hi")).with_at(Timestamp::now());
@@ -124,8 +124,8 @@ fn latest_title_latest_entry_wins() {
     assert_eq!(latest_title(&entries), Some("Second Title"));
 }
 
-/// A decision-rung verdict carries its whole answer vector, and an entry written
-/// before the field existed still reads (docs/permissions.md).
+/// A decision-rung verdict carries its whole answer vector, and an entry that
+/// predates the field still reads (docs/permissions.md).
 #[test]
 fn a_spot_carries_the_decision_axes_and_old_entries_still_read() {
     let axes = Axes {
@@ -179,7 +179,7 @@ fn an_archived_entry_has_a_stable_json_shape() {
 }
 
 /// An archive that records who made it writes `source` inside the payload, and reads it
-/// back; the entries written before the field existed read with none.
+/// back; older entries read with none.
 #[test]
 fn an_archived_entry_round_trips_its_source() {
     let entry = LogEntry::new(8, Payload::archived(Some("mcp[claude-code]".into())))

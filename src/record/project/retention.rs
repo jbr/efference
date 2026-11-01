@@ -5,13 +5,12 @@
 //! are the numbers the gutter shows rather than a second, drifting definition of
 //! "kept".
 //!
-//! A result's verdict is not always on the result: a result captured before its
-//! triage carries [`WireState::Pending`] until the [`Payload::ResultVerdict`] entry
+//! A result's verdict is not always on the result: a result awaiting its triage
+//! carries [`WireState::Pending`] until the [`Payload::ResultVerdict`] entry
 //! that decides it (docs/triage.md). The fold counts a result from whichever
-//! of the two carries a final wire — its own entry (a result logged before capture
-//! existed, or a fixture) or the verdict naming it — which is the same resolution
-//! [`project`](crate::record::project::project) makes, so the ratio counts each result once
-//! whichever shape wrote it.
+//! of the two carries a final wire — its own entry or the verdict naming it — the
+//! same resolution [`project`](crate::record::project::project) makes, so the ratio
+//! counts each result once whichever shape wrote it.
 //!
 //! **Withheld results are not low retention.** A [`WireState::TriageFailed`] result
 //! retained nothing because nothing was *recorded* (docs/triage.md), not

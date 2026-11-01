@@ -1,8 +1,6 @@
 //! Where the daemon keeps state (docs/control-channel.md, *Where state lives*): a
 //! session's on its `Session`, the host's on its `Host`. A mutable `static` under the
-//! daemon is state outside both, with no lifecycle of its own: the first artifact
-//! build kept every artifact it ever served in one, never freed, and started its
-//! listener on whichever runtime asked first.
+//! daemon is state outside both, with no lifecycle of its own.
 //!
 //! The daemon's code is the groups that hold sessions and serve them, each a file
 //! `<name>.rs` and a directory `<name>/` under `src/`; [`ROOTS`] names them. A task-local

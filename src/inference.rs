@@ -286,9 +286,8 @@ fn role_secret_values(role: &ResolvedRole) -> Vec<(String, String)> {
 /// — a `provider = "custom"` line would carry nothing the `dialect` and `base-url`
 /// beside it do not already say (docs/transport.md).
 ///
-/// Both halves of the describing case are required, because neither has a default
-/// that would be safe to invent, and requiring them here keeps a half-declared
-/// connection from loading at all rather than failing later at a request.
+/// Both halves of the describing case are required — neither has a default worth
+/// inventing, and a half-declared connection fails at load, not at request time.
 fn resolve_declaration(
     name: &str,
     config: &ConnectionConfig,

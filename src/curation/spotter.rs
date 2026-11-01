@@ -4,7 +4,7 @@
 //! `Gate`s, and the spotter looks at the residual before the human does: a one-shot,
 //! **fresh-context** model call returning a graded [`Stance`].
 //!
-//! The independence is what the rung buys. The acting session can't check its own folly
+//! The independence is what the rung buys. The acting session can't check its own work
 //! because it shares its own trajectory, so the spotter's request is **not**
 //! `project(log)` — it is built from scratch:
 //!

@@ -111,7 +111,7 @@ pub struct DeviceDelivery {
 pub enum DeliveryOutcome {
     /// A 2xx.
     Delivered { status: u16 },
-    /// 404 or 410: the subscription no longer exists and was pruned.
+    /// 404 or 410: the subscription is gone and was pruned.
     Gone { status: u16 },
     /// Any other status (`status` set) or a failure before an answer.
     Failed { status: Option<u16>, reason: String },

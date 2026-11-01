@@ -14,7 +14,7 @@ fn authorization_server(json: serde_json::Value) -> AuthorizationServer {
 
 /// RFC 9728 §5.1: the challenge's `resource_metadata` is authoritative, so it
 /// is tried first — but the probes stay as fallbacks, since a server may
-/// advertise a URL that no longer answers.
+/// advertise a dead URL.
 #[test]
 fn an_advertised_resource_metadata_url_is_tried_first() {
     assert_eq!(

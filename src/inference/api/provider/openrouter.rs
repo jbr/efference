@@ -1,9 +1,8 @@
 //! OpenRouter's model catalog, normalized (docs/model-catalog.md).
 //!
-//! `GET /api/v1/models` answers the whole text-model catalog in one body — 464
-//! models and 762 KB at last read. Each entry is reduced to a
-//! [`ListedModel`]: the routable id, the author it groups under, the display
-//! name, and the facts the entry declares.
+//! `GET /api/v1/models` answers the whole text-model catalog in one body. Each
+//! entry is reduced to a [`ListedModel`]: the routable id, the author it groups
+//! under, the display name, and the facts the entry declares.
 //!
 //! An author is the id's prefix (`anthropic` in `anthropic/claude-…`). A leading
 //! `~` marks OpenRouter's rolling aliases (`~anthropic/claude-sonnet-latest`);

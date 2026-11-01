@@ -82,7 +82,7 @@ impl std::fmt::Display for SecretError {
 
 impl std::error::Error for SecretError {}
 
-/// Opens the platform store if this process has not yet ([`native::open`]).
+/// Opens the platform store on first use ([`native::open`]).
 /// Called before every native operation, and cheap once the store is open
 /// (docs/secrets.md).
 type Open = fn() -> Result<(), String>;

@@ -119,8 +119,8 @@ fn projection_with_agent_source_matches_expected_wire_bytes() {
 }
 
 /// A sourced turn and its unsourced twin differ on the wire only by the
-/// prefix line, so a log with no source projects byte-for-byte as it did
-/// before the field existed.
+/// prefix line, so a log with no source projects byte-for-byte as one that
+/// predates the field.
 #[test]
 fn source_does_not_move_unsourced_bytes() {
     let unsourced = serde_json::to_string(&project(&sample_log())).unwrap();

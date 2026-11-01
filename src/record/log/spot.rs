@@ -26,8 +26,8 @@ pub struct Spot {
     /// it is recorded per entry anyway because the corpus that reads these
     /// spans sessions and models, and attributing a verdict by re-deriving the
     /// boot config is a join that can be wrong. `None` for a fail-closed verdict
-    /// (no request happened, so nothing answered) and for entries written before
-    /// this field existed — in both cases the absence is the honest reading.
+    /// (no request happened, so nothing answered) and on older entries — in both
+    /// cases the absence is the honest reading.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// The command prefix this spotter call was also asked to judge for **promotion**, if a
@@ -35,15 +35,15 @@ pub struct Spot {
     /// answer *is* the stance — `ClearAlways` is the safe-vote for this prefix, any other stance is
     /// not-safe — so the ledger that decides promotion folds from these `Spot` entries: a
     /// `probed_prefix = Some(p)` with `origin = Model` contributes a vote for `p`. `None` when no
-    /// probe rode (most calls), so old logs and unprobed calls fold to nothing.
+    /// probe rode (most calls), so unprobed calls fold to nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probed_prefix: Option<String>,
     /// Every probability the decision rung answered, when that rung produced the
     /// verdict (docs/permissions.md). The stance and reason are a fold over these
     /// under the thresholds of the day; recording the vector is what lets a live
     /// session's verdicts join the calibration corpus and replay under a different
-    /// band without re-asking. `None` from the prose rung, from a fail-closed
-    /// verdict, and on entries written before this field existed.
+    /// band without re-asking. `None` from the prose rung and from a fail-closed
+    /// verdict.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axes: Option<Axes>,
 }
@@ -80,9 +80,9 @@ pub enum Stance {
 /// carries the thing they are about — a watch-for list, a promotion probe — so
 /// `None` means "not asked", never "answered zero".
 ///
-/// Recorded alongside the stance on `Spot::axes`. Entries written before the
-/// sketch fold carry `reversible` and `sanctioned`, which are ignored on read, and
-/// lack `sketch` and `precedent`, which default to `None`.
+/// Recorded alongside the stance on `Spot::axes`. Entries that predate the sketch
+/// fold carry `reversible` and `sanctioned`, which are ignored on read, and lack
+/// `sketch` and `precedent`, which default to `None`.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Axes {

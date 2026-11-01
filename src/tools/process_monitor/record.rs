@@ -86,7 +86,7 @@ pub fn from_log(entries: &[LogEntry], id: u64) -> Option<ProcessRecord> {
                     // A record only reaches the fold when the live registry
                     // didn't answer, so this process is not running *here*
                     // whatever the log says. With no exit entry the end was
-                    // simply never observed — the daemon died first — and `exit:
+                    // never observed — the daemon died first — and `exit:
                     // None` beside `running: false` says exactly that.
                     running: false,
                     exit: None,

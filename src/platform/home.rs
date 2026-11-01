@@ -1,6 +1,4 @@
-//! A path with the home directory written as `~`: the picker's location line, the
-//! TUI's session identity, and the project an agent's message names when it comes
-//! from another project (docs/tools.md).
+//! A path with the home directory written as `~` (docs/tools.md).
 
 use std::path::Path;
 

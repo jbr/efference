@@ -248,8 +248,8 @@ fn classify_header(path: &Path, text: &str, error: &serde_json::Error) -> LoadEr
         return LoadError::corrupt(path, 1, "the header line is not a JSON object");
     };
     match fields.get("format") {
-        // No `format` is the unversioned log — a file written before the header
-        // existed — or a file that is not a session log. Neither is read.
+        // No `format` is the unversioned log — a file that predates the header
+        // — or a file that is not a session log. Neither is read.
         None => LoadError::Unversioned {
             path: path.to_path_buf(),
         },

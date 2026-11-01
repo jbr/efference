@@ -2,13 +2,11 @@
 //! reads (docs/transport.md).
 //!
 //! This is the capability source for both OpenAI arms: the catalog names each model
-//! the backend serves and
-//! reports a context window, its reasoning levels, and its input modalities, so
-//! the facts a boot path checks come from the provider rather than from the
-//! build. The route answers a platform API key as well as a ChatGPT grant, and
-//! the platform's own Models API reports none of these fields, so the platform
-//! arm reads it too — as a borrowed source, whose failure degrades to the arm's
-//! baseline rather than refusing the session.
+//! the backend serves and reports its window, reasoning levels, and modalities,
+//! so boot checks read the provider rather than the build. The platform's own
+//! Models API reports none of these fields, so the platform arm reads this route
+//! too — as a borrowed source, whose failure degrades to baseline rather than
+//! refusing the session.
 //!
 //! Two properties of the route shape what is read here:
 //!

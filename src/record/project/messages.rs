@@ -50,8 +50,7 @@ fn encode_user(
     let mut content: Vec<ApiBlock> = Vec::new();
     // Images held out of the user message under `AfterInterposedTurn`, with the
     // `seq` of each result they came from for the interposed turn's text. Empty
-    // under every other placement, so those wires are byte-identical to before
-    // this arm existed.
+    // under every other placement, so those wires are unaffected.
     let mut deferred: Vec<ApiBlock> = Vec::new();
     let mut deferred_seqs: Vec<u64> = Vec::new();
     for part in parts {

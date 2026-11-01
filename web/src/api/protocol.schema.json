@@ -449,7 +449,7 @@
       ]
     },
     "AttachmentKind": {
-      "description": "What an arrived file turned out to be — the triage signals the notification carries.\n\nThe set is deliberately small and prototype-first: enough for the model to decide whether the\nfile is worth pulling *without* re-deriving its content from the notice. Tunable — the right\nfields are an empirical question about real pastes, not a settled schema.",
+      "description": "What an arrived file turned out to be — the triage signals the notification carries.\n\nThe set is deliberately small: enough for the model to decide whether the\nfile is worth pulling *without* re-deriving its content from the notice.",
       "oneOf": [
         {
           "additionalProperties": false,
@@ -619,7 +619,7 @@
       "type": "string"
     },
     "Axes": {
-      "description": "One assessment's answers, as the model reported them: P(true) per axis, and the\nsketch distribution. The two optional axes are asked only when the state\ncarries the thing they are about — a watch-for list, a promotion probe — so\n`None` means \"not asked\", never \"answered zero\".\n\nRecorded alongside the stance on `Spot::axes`. Entries written before the\nsketch fold carry `reversible` and `sanctioned`, which are ignored on read, and\nlack `sketch` and `precedent`, which default to `None`.",
+      "description": "One assessment's answers, as the model reported them: P(true) per axis, and the\nsketch distribution. The two optional axes are asked only when the state\ncarries the thing they are about — a watch-for list, a promotion probe — so\n`None` means \"not asked\", never \"answered zero\".\n\nRecorded alongside the stance on `Spot::axes`. Entries that predate the sketch\nfold carry `reversible` and `sanctioned`, which are ignored on read, and lack\n`sketch` and `precedent`, which default to `None`.",
       "properties": {
         "exposes_secrets": {
           "format": "double",
@@ -723,7 +723,7 @@
           ]
         },
         "handle": {
-          "description": "The `p#<n>` handle of the process this call spawned (docs/process-monitor.md),\nas the process monitor minted it. Present for every bash command that reached\na spawn — foreground included, since foreground and background share one\nnamespace — so the handle↔call join is readable off the telemetry row\nwithout parsing result prose. `None` for a call that never spawned (a\nrefused command, a failed background spawn) and for logs written before\nthe field existed.",
+          "description": "The `p#<n>` handle of the process this call spawned (docs/process-monitor.md),\nas the process monitor minted it. Present for every bash command that reached\na spawn — foreground included, since foreground and background share one\nnamespace — so the handle↔call join is readable off the telemetry row\nwithout parsing result prose. `None` for a call that never spawned (a\nrefused command, a failed background spawn) and on older entries.",
           "type": [
             "string",
             "null"
@@ -1505,7 +1505,7 @@
       ]
     },
     "ConfigChange": {
-      "description": "What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape\n(docs/permissions.md). Each variant addresses one section of the config table;\n[`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).\nMost variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the\nnarrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace\nsemantics over a list are an unsettled question; add it when an initiator needs it).\n\n**Session-visibility** (which edits notify the session) is decided by variant in\n[`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;\n`Command` and `Tool` reach the model only through the classifier.",
+      "description": "What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape\n(docs/permissions.md). Each variant addresses one section of the config table;\n[`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).\nMost variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the\nnarrowing edit append-only KDL couldn't do. There is no `watch-for` variant: its replace\nsemantics over a list are undecided.\n\n**Session-visibility** (which edits notify the session) is decided by variant in\n[`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;\n`Command` and `Tool` reach the model only through the classifier.",
       "oneOf": [
         {
           "additionalProperties": false,
@@ -1740,7 +1740,7 @@
       "type": "object"
     },
     "ContentBlock": {
-      "description": "A content block authored by the model or user. `Thinking` / `RedactedThinking`\ncarry the extended-thinking payload (docs/transport.md): `signature` is the\nopaque per-block token the API mints and requires echoed **verbatim** on replay\n(it rejects a modified block); `redacted_thinking` carries opaque `data` instead\nof text. Images are not blocks here — a tool result's images live on\n[`RawResult`], where the bytes are stored as they go on the wire.\n\n`Attachment` is a file the operator's composer attached to a `User` turn. It\nrecords the file's name, path, and triage signals, never its bytes: it\nprojects as the same notice an ambient arrival carries, and the model pulls\nthe file with `read` / `read_image` if it wants it (docs/inbox.md).",
+      "description": "A content block authored by the model or user. `Thinking` / `RedactedThinking`\ncarry the extended-thinking payload (docs/transport.md): `signature` is the opaque\nper-block token the API requires echoed **verbatim** on replay. Images are not blocks\nhere — a tool result's images live on [`RawResult`].\n\n`Attachment` is a file the operator's composer attached to a `User` turn: name, path,\nand triage signals, never its bytes (docs/inbox.md). It projects as a notice, and the\nmodel pulls the file with `read` / `read_image` if it wants it.",
       "oneOf": [
         {
           "additionalProperties": false,
@@ -2014,7 +2014,7 @@
       "type": "object"
     },
     "CreateSession": {
-      "description": "Body of `POST /sessions` (docs/control-api.md): a `SessionRequest` as a\nclient spells it. One type on both ends — the control client serializes it,\nthe host deserializes it — so a new session knob is one field here. `env` is\nthe session's complete base environment (docs/env.md); it is applied and\ndropped, never logged or echoed, which is why the type has no Debug.\n\n`env` is optional because an omitted one is a *different request* from an\nempty one. Supplied, it is the base and nothing runs; omitted, the base is\nestablished for the session's directory from the user-wide `env_hook`, or\nfrom the host's own environment when none is configured (docs/env.md). An\nempty map is an explicit empty environment, so `{}` and omitted are different\nrequests.",
+      "description": "Body of `POST /sessions` (docs/control-api.md): a `SessionRequest` as a\nclient spells it. One type on both ends — the control client serializes it,\nthe host deserializes it — so a new session knob is one field here. `env` is\nthe session's complete base environment (docs/env.md); it is applied and\ndropped, never logged or echoed, which is why the type has no Debug.\n\n`env` is optional because an omitted one is a *different request* from an\nempty one. Supplied, it is the base as-is, with no hook run; omitted, the base is\nestablished for the session's directory from the user-wide `env_hook`, or\nfrom the host's own environment when none is configured (docs/env.md). An\nempty map is an explicit empty environment, so `{}` and omitted are different\nrequests.",
       "properties": {
         "autonomous": {
           "default": false,
@@ -2254,7 +2254,7 @@
           "type": "object"
         },
         {
-          "description": "404 or 410: the subscription no longer exists and was pruned.",
+          "description": "404 or 410: the subscription is gone and was pruned.",
           "properties": {
             "outcome": {
               "const": "gone",
@@ -4561,7 +4561,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The final wire decision for a previously captured pending result.\nRaw output stays on the referenced entry (docs/triage.md).",
+          "description": "The wire decision for a `Pending` result, recorded after capture.\nRaw output stays on the referenced entry (docs/triage.md).",
           "properties": {
             "ResultVerdict": {
               "properties": {
@@ -4601,7 +4601,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The session was reopened from its log by a later host process\n(docs/log-and-projection.md). Projects the restart notice at its position: how\nlong the session sat, which background processes it no longer monitors, and\nwhich calls were dropped because they started and never returned.",
+          "description": "The session was reopened from its log by a later host process: [`Resumed`]\n(docs/log-and-projection.md).",
           "properties": {
             "Resumed": {
               "$ref": "#/definitions/Resumed"
@@ -4614,7 +4614,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The session was archived on purpose (`DELETE /sessions/:id`, `PATCH {\"state\":\n\"archived\"}`, or the end of its creator): the counterpart of [`Resumed`]. The later\nof the two is the session's lifecycle, which a host restart reads to tell a\ndeliberate archive from a session interrupted by the host's loss\n(docs/resumption.md). Projects to nothing, like [`Telemetry`].\n\n`source` is who archived it, spelled as a turn's `source` is (`web`,\n`mcp[<name>]`, `session[<id>]`); client-asserted and unverified, and absent when\nthe caller named none, as for the operator's own command line or TUI, and for the\nend of a creator (docs/log-and-projection.md).\n\n[`Telemetry`]: Payload::Telemetry",
+          "description": "The session was archived on purpose: the counterpart of [`Resumed`], so a host\nrestart can tell a deliberate archive from a session interrupted by the host's\nloss (docs/resumption.md). Projects to nothing, like [`Telemetry`].\n\n`source` is who archived it, spelled as a turn's `source` is (`web`,\n`mcp[<name>]`, `session[<id>]`); client-asserted and unverified, and absent when\nthe caller named none.\n\n[`Telemetry`]: Payload::Telemetry",
           "properties": {
             "Archived": {
               "properties": {
@@ -4648,7 +4648,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "A triage verdict (docs/triage.md) — the durable record of a throwaway\ntriage's decision. The fork's *transcript* stays throwaway; its *decision* is\nlogged here for audit / introspection / triager-quality work. Projects as\naudit only, except it emits a block per **pinned** notification (its `inbox`)\nat this entry's tail-ward position (docs/inbox.md).",
+          "description": "A triage verdict (docs/triage.md) — the durable record of a throwaway triage's\ndecision. Projects as audit only, except a block per **pinned** notification\n(its `inbox`) at this entry's tail-ward position (docs/inbox.md).",
           "properties": {
             "Triage": {
               "$ref": "#/definitions/Triage"
@@ -4661,7 +4661,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "An out-of-band notification (docs/inbox.md), logged at **arrival** — or, for one\nbound to a slot, when a triage first shows it. Pure audit on the canonical\nwire (it projects to nothing); a *pinned* one is emitted by its resolving\n[`Triage`], at that entry's position. Its `seq` is its durable id (the handle\nthe `retain` inbox verdict references); whether a triage has shown it is\n[`Triage::shown_through`].",
+          "description": "An out-of-band notification (docs/inbox.md), logged at **arrival** — or, for one\nbound to a slot, when a triage first shows it. Pure audit on the canonical\nwire (it projects to nothing); a *pinned* one is emitted by its resolving\n[`Triage`], at that entry's position. Its `seq` is its durable id (the handle\nthe `retain` inbox verdict references).",
           "properties": {
             "Ambient": {
               "$ref": "#/definitions/Notification"
@@ -4687,7 +4687,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "One lifecycle fact about a background process — its mint or its exit\n(docs/process-monitor.md). The process monitor's registry is ephemeral, but a\n`p#<n>` handle appears in prose (the backgrounding result, the exit\nnotification) that outlives it, so these entries are what a reader of a\nrecorded session — or a restarted daemon — resolves the handle against.\nMetadata only: the command, the spawning call, the spawn time, the exit\nstatus and duration. A process's *output* is the registry's bounded\nbest-effort capture and is deliberately not recorded here.\n\nProjects to nothing, like [`Telemetry`] — the exit still reaches the\nmodel as an [`Ambient`] notification, and this is the audit record beside\nit, not a second copy on the wire (docs/log-and-projection.md).\n\n[`Telemetry`]: Payload::Telemetry\n[`Ambient`]: Payload::Ambient",
+          "description": "One lifecycle fact about a background process — its mint or its exit\n(docs/process-monitor.md). The process monitor's registry is ephemeral, but a\n`p#<n>` handle appears in prose that outlives it, so these entries are what a\nreader of a recorded session — or a restarted daemon — resolves the handle\nagainst. Metadata only; a process's *output* is deliberately not recorded here.\n\nProjects to nothing, like [`Telemetry`] — the exit still reaches the\nmodel as an [`Ambient`] notification, and this is the audit record beside\nit, not a second copy on the wire (docs/log-and-projection.md).\n\n[`Telemetry`]: Payload::Telemetry\n[`Ambient`]: Payload::Ambient",
           "properties": {
             "ProcessEvent": {
               "$ref": "#/definitions/ProcessEvent"
@@ -4700,7 +4700,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "A config edit — the durable record of one change to the policy table\n(docs/permissions.md). The config-edit loop turns a deny into\nnegotiation: an orchestrator (human or coordinating session) edits the session's\nconfig, and the change lands here. Effective policy = base config + the fold of these\n(see [`effective_config`]); the log is the source of truth for what changed, exactly as\nit is for everything else (docs/log-and-projection.md). The fold is **replace-at-key**\n(last-write-wins, order-defined) — materializing a table from an ordered log, like a\ndatabase replaying its write-ahead log. Audit-only on the wire — it projects to nothing,\nlike [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only\nthrough the classifier, while a **session-visible** edit (`scope`, `paths`) *also*\nsurfaces as an [`Ambient`] notification (an optional tail append — never a re-render of\nthe cached preamble; see [`crate::session`]) so the session learns its perimeter moved.\n\n[`effective_config`]: crate::config::policy::effective_config\n[`Ambient`]: Payload::Ambient",
+          "description": "A config edit — the durable record of one change to the policy table\n(docs/permissions.md). Effective policy = base config + the fold of these\n(see [`effective_config`]), and the fold is **replace-at-key**\n(last-write-wins, order-defined). Audit-only on the wire: it projects to nothing,\nlike [`Spot`]; a **session-visible** edit (`scope`, `paths`) *also* surfaces as an\n[`Ambient`] notification so the session learns its perimeter moved\n(see [`crate::session`]).\n\n[`effective_config`]: crate::config::policy::effective_config\n[`Ambient`]: Payload::Ambient",
           "properties": {
             "ConfigEdit": {
               "$ref": "#/definitions/ConfigEdit"
@@ -4713,7 +4713,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The boot preamble snapshot (docs/context.md): the system prompt exactly as this\nsession's requests carry it, appended **once at boot** and again by a resume that\nchanges a role or the main model (docs/resumption.md). The preamble folds in\n`[context]` file contents that drift on disk between boots, so it is not\nreconstructable from `config + current files` — this entry makes the log the\ncomplete record of the wire (docs/log-and-projection.md). Audit/replay only: it\nprojects to nothing (the system prompt rides the request's `system` field, never\nthe `messages` array); the `wire` dev view reads it back instead of re-resolving\nfiles from disk.\n\nThe prompt is held as two strings that concatenate to the wire's `system`:\n`identity`, the line naming the model (\"You are gpt-6.1-sol.\"; empty on a log\nwhose prompt predates the line), and `body`, everything after it, frozen at boot.\nA resume on another main model replaces `identity` and repeats `body` byte for\nbyte ([`Payload::preamble_system`] assembles them).\n\n`context` carries the **structured** `[context]` listing (name / `path` / description\nper item) the `body` was rendered from, snapshotted **additively** so the\nlisting survives as a fold over the log — the source `project` re-renders a surfaced\ncontext item from (docs/triage.md), the same way it looks up pinned\nnotification bodies. `identity` and `body` stay the byte-exact wire truth; `context`\nnever touches the wire. `#[serde(default)]`: logs predating the field read back an\nempty listing.",
+          "description": "The boot preamble snapshot (docs/context.md): the system prompt exactly as this\nsession's requests carry it, appended **once at boot** and again by a resume that\nchanges a role or the main model (docs/resumption.md). The preamble folds in\n`[context]` file contents that drift on disk between boots, so it is not\nreconstructable from `config + current files` — this entry makes the log the\ncomplete record of the wire (docs/log-and-projection.md). Audit/replay only: it\nprojects to nothing; the `wire` dev view reads it back instead of re-resolving\nfiles from disk.\n\nThe prompt is held as two strings that concatenate to the wire's `system`:\n`identity`, the line naming the model (\"You are gpt-6.1-sol.\"; empty where the\nprompt has no such line), and `body`, everything after it, frozen at boot.\nA resume on another main model replaces `identity` and repeats `body` byte for\nbyte ([`Payload::preamble_system`] assembles them).\n\n`context` carries the **structured** `[context]` listing (name / `path` / description\nper item) the `body` was rendered from, snapshotted **additively** so the\nlisting survives as a fold over the log — the source `project` re-renders a surfaced\ncontext item from (docs/triage.md), the same way it looks up pinned\nnotification bodies. `identity` and `body` stay the byte-exact wire truth; `context`\nnever touches the wire. `#[serde(default)]`: logs predating the field read back an\nempty listing.",
           "properties": {
             "Preamble": {
               "properties": {
@@ -4771,7 +4771,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The session's title — one line saying what the session is for\n(docs/session-title.md). Written by the title peek after a trajectory ends,\nor by an operator over the control channel; the latest entry is the current\ntitle, which the `session_identity` topic carries. Appended even when the\ntriage kept the previous text, so the log records that the question was asked.\nLog metadata: it projects to nothing, like [`Telemetry`], and never\ntouches the wire or the cached prefix (docs/log-and-projection.md).\n\n[`Telemetry`]: Payload::Telemetry",
+          "description": "The session's title — one line saying what the session is for\n(docs/session-title.md). The latest entry is the current title; an entry is\nappended even when the triage kept the previous text, so the log records that\nthe question was asked. Log metadata: it projects to nothing, like [`Telemetry`],\nand never touches the wire or the cached prefix (docs/log-and-projection.md).\n\n[`Telemetry`]: Payload::Telemetry",
           "properties": {
             "Title": {
               "$ref": "#/definitions/Title"
@@ -5749,7 +5749,7 @@
           "description": "Set **only by the control-channel entry view**, and only on the window and\nframe copies of an oversized result: it says the `content` beside it is a\nprefix, and how much of the whole string that prefix is\n(`routes/entry_view.rs`, docs/control-api.md). The mirror of\n[`ResultImage::data`], which the same views omit — a Rust client parsing a\nview with this shared type reads the elision as a value rather than\ninferring it from a length. The log itself always writes `content` whole\nand never writes this field, so it is `None` in every in-process result and\nabsent from every logged line."
         },
         "images": {
-          "description": "Images the tool returned alongside `content` (docs/log-and-projection.md).\nThe realized bytes live here, in the log entry itself, so projection is a\ncopy of stored data — never a re-read or re-encode of anything on disk.\nEncoding happens once, at tool-run time. Defaulted and skipped when empty,\nso text-only results (and every existing log) serialize byte-identically\nto before the field existed.",
+          "description": "Images the tool returned alongside `content` (docs/log-and-projection.md).\nThe realized bytes live here, in the log entry itself, so projection is a\ncopy of stored data — never a re-read or re-encode of anything on disk.\nEncoding happens once, at tool-run time. Defaulted and skipped when empty,\nso text-only results are unaffected.",
           "items": {
             "$ref": "#/definitions/ResultImage"
           },
@@ -5882,7 +5882,7 @@
       "description": "One stage of one upstream request (docs/log-and-projection.md).",
       "properties": {
         "finish": {
-          "description": "On `Ended`: the provider's own word for why the output ended (`end_turn`,\n`tool_calls`, `incomplete:max_output_tokens`, …), as the dialect spelled it\n(`api::Finish`). Absent on other stages, on a stream that named none, and on\nentries written before the field existed.",
+          "description": "On `Ended`: the provider's own word for why the output ended (`end_turn`,\n`tool_calls`, `incomplete:max_output_tokens`, …), as the dialect spelled it\n(`api::Finish`). Absent on other stages and on a stream that named none.",
           "type": [
             "string",
             "null"
@@ -6323,21 +6323,21 @@
           "type": "integer"
         },
         "lost_processes": {
-          "description": "Background handles (`p#<n>`) that were spawned with no recorded exit: their\noutput is no longer captured, and whether they still run is unknown.",
+          "description": "Background handles (`p#<n>`) spawned with no recorded exit: their output is\nnot captured, and whether they still run is unknown.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "pending_calls": {
-          "description": "Present only when the session resumed at an unfinished batch rather than past it:\nthe calls of the last live completion that have not run (or whose results are\nstill undecided), which the operator's next action brings back. The notice\nprojects after the batch's results land, not at this entry's position\n(docs/resumption.md). A log written before the field existed reads as empty.",
+          "description": "Present only when the session resumed at an unfinished batch rather than past it:\nthe calls of the last live completion that have not run (or whose results are\nstill undecided), which the operator's next action brings back. The notice\nprojects after the batch's results land, not at this entry's position\n(docs/resumption.md). Absent reads as empty.",
           "items": {
             "$ref": "#/definitions/CallId"
           },
           "type": "array"
         },
         "resumes_after": {
-          "description": "Present only when the log ended uncleanly: the seq of the last entry this session\nbuilds on. Entries after it and before this one stay on disk but are not\nrestored, and projection skips them (docs/resumption.md). A log written before the\nfield existed reads as `None`.",
+          "description": "Present only when the log ended uncleanly: the seq of the last entry this session\nbuilds on. Entries after it and before this one stay on disk but are not\nrestored, and projection skips them (docs/resumption.md). Absent reads as `None`.",
           "format": "uint64",
           "minimum": 0,
           "type": [
@@ -6728,7 +6728,7 @@
       "type": "object"
     },
     "SessionIdentity": {
-      "description": "The `session_identity` topic: what a session is, for a client that has to name it on\nscreen — its id and title, the model it was configured with, and the directory it runs\nin (docs/control-api.md).\n\nAll but the title are fixed at boot. They are carried as a state topic rather than a\none-shot read so a client learns them from the connect snapshot along with\neverything else, and so either moving later reaches clients through the\nmechanism that already delivers whole-topic replacements.",
+      "description": "The `session_identity` topic: what a session is, for a client that has to name it on\nscreen — its id and title, the model it was configured with, and the directory it runs\nin (docs/control-api.md).\n\nAll but the title are fixed at boot. They are carried as a state topic rather than a\none-shot read so a client learns them from the connect snapshot along with\neverything else, and so either moving later reaches clients through\nwhole-topic replacement.",
       "properties": {
         "cwd": {
           "description": "The session's working directory, as the daemon knows it: what the tool\nlayer was built with, rendered as a path string.",
@@ -6983,7 +6983,7 @@
               "type": "null"
             }
           ],
-          "description": "Every probability the decision rung answered, when that rung produced the\nverdict (docs/permissions.md). The stance and reason are a fold over these\nunder the thresholds of the day; recording the vector is what lets a live\nsession's verdicts join the calibration corpus and replay under a different\nband without re-asking. `None` from the prose rung, from a fail-closed\nverdict, and on entries written before this field existed."
+          "description": "Every probability the decision rung answered, when that rung produced the\nverdict (docs/permissions.md). The stance and reason are a fold over these\nunder the thresholds of the day; recording the vector is what lets a live\nsession's verdicts join the calibration corpus and replay under a different\nband without re-asking. `None` from the prose rung and from a fail-closed\nverdict."
         },
         "call_id": {
           "allOf": [
@@ -6994,7 +6994,7 @@
           "description": "The `tool_use` id of the call this verdict judged."
         },
         "model": {
-          "description": "Which model returned this verdict, as **the response named itself** — the\nsame string `RequestUsage` carries, not the configured id, so a slug that\nroutes to something else records what actually answered.\n\nA session's spotter is fixed at boot, so this is constant within a log;\nit is recorded per entry anyway because the corpus that reads these\nspans sessions and models, and attributing a verdict by re-deriving the\nboot config is a join that can be wrong. `None` for a fail-closed verdict\n(no request happened, so nothing answered) and for entries written before\nthis field existed — in both cases the absence is the honest reading.",
+          "description": "Which model returned this verdict, as **the response named itself** — the\nsame string `RequestUsage` carries, not the configured id, so a slug that\nroutes to something else records what actually answered.\n\nA session's spotter is fixed at boot, so this is constant within a log;\nit is recorded per entry anyway because the corpus that reads these\nspans sessions and models, and attributing a verdict by re-deriving the\nboot config is a join that can be wrong. `None` for a fail-closed verdict\n(no request happened, so nothing answered) and on older entries — in both\ncases the absence is the honest reading.",
           "type": [
             "string",
             "null"
@@ -7004,7 +7004,7 @@
           "$ref": "#/definitions/TriageOrigin"
         },
         "probed_prefix": {
-          "description": "The command prefix this spotter call was also asked to judge for **promotion**, if a\nprefix-promotion probe rode along (docs/permissions.md). The probe's\nanswer *is* the stance — `ClearAlways` is the safe-vote for this prefix, any other stance is\nnot-safe — so the ledger that decides promotion folds from these `Spot` entries: a\n`probed_prefix = Some(p)` with `origin = Model` contributes a vote for `p`. `None` when no\nprobe rode (most calls), so old logs and unprobed calls fold to nothing.",
+          "description": "The command prefix this spotter call was also asked to judge for **promotion**, if a\nprefix-promotion probe rode along (docs/permissions.md). The probe's\nanswer *is* the stance — `ClearAlways` is the safe-vote for this prefix, any other stance is\nnot-safe — so the ledger that decides promotion folds from these `Spot` entries: a\n`probed_prefix = Some(p)` with `origin = Model` contributes a vote for `p`. `None` when no\nprobe rode (most calls), so unprobed calls fold to nothing.",
           "type": [
             "string",
             "null"
@@ -8604,7 +8604,7 @@
           "type": "array"
         },
         "shown_through": {
-          "description": "The last arrival this triage's rider showed (docs/inbox.md): every notification\nwhose arrival `seq` is at or below it, and with no verdict yet, was in front of\nthe model. Absent means this entry's own `seq`, which is what a log written before\nthe field recorded (a notification was logged when a triage first showed it, so it\nsat just ahead of that triage). A triage that showed no rider records `Some(0)` (seq 0 is the boot `Preamble`),\nand one that showed it records the highest `seq` the rider held, so a notification\nthat arrived while the request was in flight reads as new at the next triage.\n[`project`] never reads it.\n\n[`project`]: crate::record::project::project",
+          "description": "The last arrival this triage's rider showed (docs/inbox.md): every notification\nwhose arrival `seq` is at or below it, and with no verdict yet, was in front of\nthe model. Absent means this entry's own `seq`, which is what an older log\nrecorded (a notification was logged when a triage first showed it, so it\nsat just ahead of that triage).\nand one that showed it records the highest `seq` the rider held, so a notification\nthat arrived while the request was in flight reads as new at the next triage.\n[`project`] never reads it.\n\n[`project`]: crate::record::project::project",
           "format": "uint64",
           "minimum": 0,
           "type": [
@@ -8787,7 +8787,7 @@
       "description": "A triage verdict on one result (docs/triage.md): which lines survive,\nthe note read in their place, and triage's optional request for a better\n`intent`. Carried by [`WireState::Triaged`]; the wire form is re-rendered from\n`raw` plus this each turn, so a field added here is one setter and one render\nclause, never a sweep.",
       "properties": {
         "intent_feedback": {
-          "description": "Present only when the intent gave triage nothing to decide against — about\nthe intent and never the task (docs/triage.md). Rendered after the\nnote. Absent on logs written before the field existed, so it deserializes as\n`None` and serializes only when set.",
+          "description": "Present only when the intent gave triage nothing to decide against — about\nthe intent and never the task (docs/triage.md). Rendered after the\nnote. Absent where the log predates the field, so it deserializes as\n`None` and serializes only when set.",
           "type": [
             "string",
             "null"
@@ -8906,7 +8906,7 @@
           "type": "object"
         }
       ],
-      "description": "Why an assistant entry is record-only, plus the transport evidence when the\npath that produced it captured any.\n\nSerializes as a **bare string** when there are no diagnostics, which is the\nshape every log before this type used, and deserializes from either shape —\nso an old log line parses and an ordinary failure writes the same bytes it\nalways did."
+      "description": "Why an assistant entry is record-only, plus the transport evidence when the\npath that produced it captured any.\n\nSerializes as a **bare string** when there are no diagnostics, and deserializes\nfrom either shape — so an old log line parses and an ordinary failure keeps\nits bytes."
     },
     "UpstreamRetry": {
       "description": "A retry in flight: what a client renders while the loop is waiting out an\naborted stream (docs/transport.md).\n\n`next_attempt_at` is an **absolute** instant rather than a countdown, so the\ndaemon never has to re-emit a ticking field — a client computes the remaining\nwait itself (docs/control-api.md). It is control state, never projected, so the\nwall-clock reading cannot reach the cached prefix.",
@@ -9211,11 +9211,11 @@
       "type": "object"
     },
     "WireState": {
-      "description": "How a [`Payload::ToolResult`] should be projected. Flipping this (never\ntouching `raw`) is the one triage primitive — every projection experiment\nis a change to how [`project`] reads these (docs/README.md, docs/log-and-projection.md).\n\nEach variant is wired into [`project`] before it has a construction site, so a\nnew site lands as a behavior change rather than a type change that would move\nthe byte-stability pin. `Triaged` is built by the triage\n(docs/triage.md); `Interrupted` by the interrupt (docs/control-channel.md). `Elided`\nis no longer written; logs that carry it project as they did.\n\n[`project`]: crate::record::project::project",
+      "description": "How a [`Payload::ToolResult`] should be projected. Flipping this (never\ntouching `raw`) is the one triage primitive — every projection experiment\nis a change to how [`project`] reads these (docs/README.md, docs/log-and-projection.md).\n\nEach variant is wired into [`project`] before it has a construction site, so a\nnew site lands as a behavior change rather than a type change that would move\nthe byte-stability pin. `Triaged` is built by the triage\n(docs/triage.md); `Interrupted` by the interrupt (docs/control-channel.md). `Elided`\nis not written; logs that carry it project as they did.\n\n[`project`]: crate::record::project::project",
       "oneOf": [
         {
           "const": "Pending",
-          "description": "Captured durably, but not yet accepted onto the main agent's wire.\nAn appended result verdict resolves this state (docs/triage.md).",
+          "description": "Captured durably, awaiting acceptance onto the main agent's wire.\nAn appended result verdict resolves this state (docs/triage.md).",
           "type": "string"
         },
         {
@@ -9256,7 +9256,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "A result an earlier harness withheld as a hard error because its triage had no\nverdict. **No longer written**: a triage without a verdict now holds its\nresults until it has one (docs/triage.md). Kept so logs that carry it\nstill load and project as they did — a hard error in place of the output\n(`is_error` forced true), `raw` still in the log.",
+          "description": "A result withheld as a hard error because its triage had no verdict. **Not\nwritten**: a triage without a verdict holds its results until it has one\n(docs/triage.md). Kept so logs that carry it still load and project as they\ndid — a hard error in place of the output (`is_error` forced true), `raw`\nstill in the log.",
           "properties": {
             "TriageFailed": {
               "properties": {
