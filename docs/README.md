@@ -23,8 +23,9 @@ the identifiers behind it, [glossary.md](glossary.md) pairs them; planned work l
 ## What this is
 
 efference is a long-lived host process (`efference --host`) that holds every session and
-runs their agent turn loops, against two wire dialects: Anthropic Messages and OpenAI
-Responses ([transport.md](transport.md)). It is driven entirely through an HTTP control
+runs their agent turn loops, against three turn dialects — Anthropic Messages, OpenAI
+Responses and Chat Completions — with a fourth wire, System One, serving decision models
+to the permission spotter ([transport.md](transport.md)). It is driven entirely through an HTTP control
 channel — over a Unix socket, ordinarily the user-wide `~/.efference/host.sock`, and
 optionally over TCP as the web client's front door ([web-bind.md](web-bind.md)) — which
 the TUI, the CLI verbs, scripts, and other agents share as equal clients. A session takes
