@@ -1,3 +1,5 @@
+//! The `status` session-control verb (docs/tools.md).
+
 use super::args::{AgentOrAll, reader_name};
 use super::executor::{state_of, status_in};
 use super::verb::{ControlVerb, VerbCall};

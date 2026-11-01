@@ -1,9 +1,9 @@
 //! Noticing that a state topic changed (docs/control-api.md).
 //!
-//! The topics sit behind ~10 independent mutexes and atomics with no change
+//! The topics sit behind independent mutexes and atomics with no change
 //! notification of their own. Rather than a notify per mutation site, there is **one**
 //! `state_changed` ping and **one** task that recomputes every topic and diffs it against
-//! what it last published. Three consequences, and they are the reason for the shape:
+//! what it last published. That shape has consequences, and they are the reason for it:
 //!
 //! - It computes **once for all clients**, and only when something moved — not once per
 //!   connected client per poll interval.

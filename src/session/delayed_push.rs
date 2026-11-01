@@ -1,8 +1,8 @@
 //! A moment's push held back while someone is attending (docs/web-push.md).
 //!
-//! When a moment fires (a gate opens, an `ask` is posed, a turn settles) and a
-//! client is attending the host, the push is not sent: it is scheduled for
-//! [`PUSH_DELAY`] later, and sent only if the moment is still standing then.
+//! When a moment fires (the three in `push.rs`) and a client is attending the host,
+//! the push is not sent: it is scheduled for [`PUSH_DELAY`] later, and sent only if
+//! the moment is still standing then.
 //! A moment stops standing when it **resolves** (the gate is decided, the `ask`
 //! answered, a turn submitted, the session archived) or is **seen** (an active
 //! client reports it is viewing this session, `Host::report_attention`). Both

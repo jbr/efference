@@ -1,5 +1,5 @@
 //! The management flow: shown instead of the plain add path once a config
-//! file has connections in it (backlog/setup-edits-connections.md). A list of
+//! file has connections in it (docs/operating.md). A list of
 //! rows, each stating its readiness from local checks only, with edit /
 //! disable / delete on a picked row and "add another connection" folding back
 //! into `src/setup/flow.rs`'s add path.
@@ -314,8 +314,7 @@ fn row_choice<Q: Probe>(working: &Working, probe: &Q, name: &str) -> Choice {
 
 /// The readiness annotation: local checks only, never a network call — an
 /// environment variable's presence, whether the store holds an item, and
-/// whether the Codex cache parses and is not past its own `exp`
-/// (backlog/setup-edits-connections.md).
+/// whether the Codex cache parses and is not past its own `exp`.
 fn describe_auth<Q: Probe>(
     name: &str,
     connection: &ExistingConnection,

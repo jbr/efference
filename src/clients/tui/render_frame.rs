@@ -1,3 +1,5 @@
+//! The frame: header, transcript, strip, composer, drawer, and overlays (docs/tui.md).
+
 use ratatui::{
     Frame,
     layout::{Position, Rect},
@@ -140,8 +142,8 @@ impl<'a> InteractiveState<'a> {
         // transcript is the scrollbar. The process panel (docs/process-monitor.md) is one
         // row per running process, capped, hidden when none run. The approval gate is
         // *not* chrome: it renders inline in the transcript at the pending call
-        // (docs/tui.md). The session drawer (what the docked sidebar used to carry)
-        // is an overlay on the transcript's right, open on demand.
+        // (docs/tui.md). The session drawer is an overlay on the transcript's
+        // right, open on demand.
         let header_height: u16 = 1;
         // The transcript, strip, and composer share one column, centred once the
         // terminal is wider than the measure; the header and status rows, the

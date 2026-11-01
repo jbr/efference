@@ -1,3 +1,5 @@
+//! The `hand_off` session-control verb (docs/tools.md).
+
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
 use anyhow::Result;

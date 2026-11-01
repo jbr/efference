@@ -1,3 +1,5 @@
+//! Span painting and the shared line-wrap policy (docs/tui.md).
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

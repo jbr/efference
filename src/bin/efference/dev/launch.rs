@@ -37,7 +37,7 @@ pub(super) async fn open(print: bool) -> CliResult {
 /// Read a recorded session in the TUI, inert (docs/tui.md): resolve the session to
 /// a `log.jsonl`, load it with the same `persist::load` a live session's entries come
 /// through, and hand the entries to the read-only TUI. No socket, no network, no
-/// writes — and no config, so it works on a session whose config no longer parses or
+/// writes — and no config, so it works on a session whose config doesn't parse or
 /// that ran in another directory.
 pub(super) async fn view(
     session: Option<String>,

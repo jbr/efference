@@ -247,7 +247,7 @@ impl ColdStreak {
             return Some(CacheRead::Warm);
         }
         // A cold read with an explanation resets the streak like a warm one: the
-        // streak counts prefix evidence, and these three carry none.
+        // streak counts prefix evidence, and an explained cold carries none.
         let explanation = match (previous_touch, previous_model) {
             (None, _) => Some(ColdStart::Boot),
             (Some(_), Some(before)) if model.is_some_and(|m| m != before) => {

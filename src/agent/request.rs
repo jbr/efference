@@ -73,8 +73,7 @@ pub(super) async fn complete_with_retries(
             // recovered from it, and the description only becomes
             // something it reasons about mid-task. The topic is
             // addressed to a supervising *client*, which otherwise sees
-            // an idle daemon indistinguishable from a finished run; it
-            // carries the attempt count and the upstream's own words.
+            // an idle daemon indistinguishable from a finished run.
             shared.set_stall(stalled(
                 StallReason::RetriesExhausted,
                 Some(aborted_attempts),
@@ -226,13 +225,11 @@ fn stream_delta(streamed: Streamed) -> StreamDelta {
 
 /// Log a finalized completion and return the calls it made.
 ///
-/// Surfaces the model's prose, then pulls its calls before the payload moves into the log,
-/// dialect-neutral through the accessors (docs/log-and-projection.md). A finalized turn's
-/// calls parse by construction — the assembler marks a turn with unparseable arguments
-/// record-only, and record-only turns never reach here — so an `Err` is a contract breach,
-/// not a path. Records the request's cache and usage telemetry (surfaced on `GET /state`):
-/// cache read vs creation is the hot/cold signal, and `record_request` never touches the
-/// log (docs/log-and-projection.md).
+/// A finalized turn's calls parse by construction — the assembler marks a turn with
+/// unparseable arguments record-only, and record-only turns never reach here — so an
+/// `Err` is a contract breach, not a path. Records the request's cache and usage
+/// telemetry (surfaced on `GET /state`): cache read vs creation is the hot/cold signal,
+/// and `record_request` never touches the log (docs/log-and-projection.md).
 pub(super) fn commit_completion(
     shared: &Session,
     completion: Completion,

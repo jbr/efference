@@ -2,8 +2,7 @@
 
 use super::*;
 
-/// The detached drain task for one backgrounded process (docs/process-monitor.md): feed every
-/// output chunk into the registry's capture buffer until the child exits (EOF —
+/// Feed every output chunk into the registry's capture buffer until the child exits (EOF —
 /// reached naturally, or because a kill closed the pipes), then mark it exited and
 /// fire its exit notification into the inbox, where the next triage adjudicates
 /// it like any notification. The process monitor lock is taken per chunk and never held
@@ -168,9 +167,8 @@ impl Session {
     /// foreground→background handoff, docs/process-monitor.md). `id` is the entry the
     /// loop registered at spawn: the flip keeps the id and the capture — every
     /// pre-detach byte was already fed live by the foreground chunk sink, so the
-    /// surrendered `seed` is deliberately not re-pushed — and from here the same
-    /// drain task and exit notification as a spawned background process take over,
-    /// resuming from exactly the byte boundary the foreground drain stopped at.
+    /// surrendered `seed` is not re-pushed — and from here the same
+    /// drain task and exit notification as a spawned background process take over.
     pub fn adopt_background(
         self: &Arc<Self>,
         detached: crate::tools::bash::DetachedBash,

@@ -7,10 +7,9 @@ use crate::record::names::tools::BASH;
 
 /// The permission cascade for one call (docs/permissions.md). `bound` is the leaf
 /// action an allowing `agents__decide` authorizes, when the call is one: a granted
-/// `agents__decide` clears blind — the config's statement of trust in the
-/// coordinator — and otherwise the leaf, not the handle, is what the fast-path, the
-/// spotter, and the human gate judge. Returns the decision; the caller commits
-/// any `ConfigEdit` it carries.
+/// `agents__decide` clears blind, and otherwise the leaf, not the handle, is what the
+/// fast-path, the spotter, and the human gate judge. Returns the decision; the caller
+/// commits any `ConfigEdit` it carries.
 pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
     frontend: &mut F,
     shared: &Arc<Session>,
@@ -102,9 +101,7 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
                 Stance::Watch | Stance::Gate => {
                     if shared.autonomous() {
                         // A structured call whose missing grants the fast path can name
-                        // gets the diagnosis, not just the verdict (docs/permissions.md):
-                        // the failure it answers is a model reading a gated `edit` as a
-                        // broken tool and rewriting the file through bash instead.
+                        // gets the diagnosis, not just the verdict (docs/permissions.md).
                         Ok(shared.review_redirect(
                             &call.id,
                             match policy::missing_grants(&dirs, &role, judged) {

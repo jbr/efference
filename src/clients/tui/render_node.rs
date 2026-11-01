@@ -1,3 +1,5 @@
+//! Drawing one document node: blockquotes, lists, diffs, and code (docs/tui.md).
+
 use ratatui::{buffer::Buffer, style::Modifier};
 
 use super::state::InteractiveState;

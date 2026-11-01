@@ -1,14 +1,12 @@
 //! A session's supervisor, set after creation (docs/permissions.md).
 //!
-//! The pointer is `Hosted::supervisor`, which starts as `created_by`. Setting it to
-//! another session is one action carrying everything supervision means: the session's
-//! gates under the `supervisor` review position route to the new supervisor, the new
-//! supervisor may decide its gates wherever they are routed and drive it (the authority
-//! rules in docs/tools.md read this pointer), and it is subscribed to the session's
-//! status with wake, as `create` subscribes a creator. Clearing or moving the pointer
-//! drops the previous supervisor's subscription and its `decide`; a held gate is
-//! re-routed by the status watcher (`subscriptions.rs`), which is level-triggered on
-//! who the supervisor is.
+//! The pointer is `Hosted::supervisor`, which starts as `created_by`. Setting it
+//! routes the session's gates under the `supervisor` review position to the new
+//! supervisor, and subscribes it to the session's status with wake, as `create`
+//! subscribes a creator. Clearing or moving the pointer drops the previous
+//! supervisor's subscription and its `decide`; a held gate is re-routed by the
+//! status watcher (`subscriptions.rs`), which is level-triggered on who the
+//! supervisor is.
 //!
 //! The pointer is host control state and is not persisted: a resumed session starts
 //! again from its creator. Each change is recorded in the supervised session's log as

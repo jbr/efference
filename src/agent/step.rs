@@ -1,10 +1,10 @@
 //! Running one call of a completion: the permission cascade (docs/permissions.md)
 //! and the tool run, up to but not including triage.
 //!
-//! A completion may make several calls (docs/README.md), so the loop runs each call
-//! here and triages the whole batch at one triage (docs/triage.md). Splitting execution
-//! from triage is what keeps the fork's request valid: a triage fired between calls would
-//! carry unanswered `tool_use` blocks and be rejected.
+//! The loop runs each call here and triages the whole batch at one triage
+//! (docs/triage.md): splitting execution from triage is what keeps the fork's request
+//! valid — a triage fired between calls would carry unanswered `tool_use` blocks and
+//! be rejected.
 //!
 //! This file holds the outcome types and [`run_call`], the order in which the cascade's
 //! answers are applied; `judge` is the cascade itself, `execute` the tool run behind an
@@ -150,10 +150,8 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // A call naming no tool this turn advertised is answered here, ahead of the
     // permission cascade (docs/permissions.md). There is nothing to decide: the call
     // cannot run whatever the answer, so no policy question arises and no rung should
-    // be asked one. The spotter, asked anyway, returned `clear` for a nonexistent tool
-    // with a rationale it invented for the call it imagined
-    // (journal/2026-08-07-session-key-review.md) — a confabulated verdict that
-    // `spotter-log` then counted as a clean clear. The corrective result text
+    // be asked one — the spotter, asked anyway, returns `clear` with a rationale it
+    // invents for the call it imagined. The corrective result text
     // (`tools::unknown_tool_message`) is the whole answer, and it reaches the wire
     // verbatim: a `Direct` payload never enters the triage, so no summary stands between
     // the correction and the model.

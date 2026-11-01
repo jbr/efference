@@ -1,6 +1,4 @@
-//! The listeners and what they mount: the one handler stack keyed on a listener's transport,
-//! serving a host over its control socket and optional TCP bind, the host's route table, the
-//! TCP bind's gate and sign-in routes, and the artifact and file surfaces only a bind adds
+//! The listeners serving a host over its control socket and optional TCP bind
 //! (docs/README.md, *Dependency direction*).
 
 // Fenced HTML artifacts' signed links and routes (docs/artifacts.md).

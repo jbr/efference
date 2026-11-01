@@ -87,8 +87,6 @@ impl Session {
 
     /// The `cold` topic, or `None` while the cache is believed warm. `context_tokens` is
     /// the last turn's prompt — what reading the context unfolded would cost, in tokens.
-    /// Whether the loop is stopped at its cold check is the `cold_parked` loop phase.
-    /// A compaction in flight is in `current_operations`.
     pub(super) fn cold(&self) -> Option<Cold> {
         let since = self.cold_since()?;
         Some(Cold {
@@ -123,8 +121,7 @@ impl Session {
 }
 
 impl Session {
-    /// A person acted (docs/control-api.md): a turn, a continue, a decision at a gate,
-    /// an answer to an `ask`. While the session is believed cold it is recorded and
+    /// A person acted (docs/control-api.md): recorded while the session is believed cold, and
     /// releases a loop parked at the cold check, or the next check the loop reaches, and
     /// lets a held inbox wake through; `by` is the action, kept in the log beside the
     /// park it releases. Nothing is left behind when the session is warm, so an action

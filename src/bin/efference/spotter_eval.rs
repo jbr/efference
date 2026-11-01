@@ -420,7 +420,7 @@ fn binary_name(stance: &str) -> &'static str {
 /// correct verdict is human — so an agreement rate here would measure imitation,
 /// not correctness. What the dump is for is adjudication: each line resolves to
 /// "the new rung is wrong", "the recorded one was wrong", or "both defensible",
-/// and the second kind is a new label the labeled corpus does not yet have.
+/// and the second kind is a new label outside the labeled corpus.
 ///
 /// Grouped by the model that produced the prior, because the corpus spans more
 /// than one and a divergence is only legible against a named baseline.

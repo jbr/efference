@@ -1,4 +1,4 @@
-//! Compaction (backlog: cold-session.md, docs/summary.md): a cold session's earlier
+//! Compaction (docs/summary.md): a cold session's earlier
 //! history replaced by a summary the session's own model writes, with the most recent
 //! payloads kept verbatim after it.
 //!
@@ -143,10 +143,9 @@ impl Session {
     /// route's whole precondition, which the `verbs` topic publishes
     /// (docs/control-api.md). `Ok(None)` is a compaction already open, accepted again as
     /// the same request. A loop parked at its cold check or held at a triage sends
-    /// nothing while the summary is written, so either accepts a compaction; the held
-    /// triage's retry then triages the compacted projection. `warm` is the operator's
-    /// explicit choice to compact a session whose cache is not believed expired, giving
-    /// up the cached prefix; without it a warm session declines.
+    /// nothing while the summary is written, so either accepts a compaction. `warm` is the
+    /// operator's explicit choice to compact a session whose cache is not believed expired,
+    /// giving up the cached prefix; without it a warm session declines.
     pub(crate) fn compaction_verdict(&self, warm: bool) -> Result<Option<Seq>, NotCompactable> {
         if self.compacting() {
             return Ok(None);
@@ -197,8 +196,7 @@ impl Session {
     }
 
     /// Append one compaction event and wake whoever reads the state it folds into
-    /// (docs/summary.md). A failed write is reported and dropped, like the cold
-    /// check's records.
+    /// (docs/summary.md). A failed write is reported and dropped.
     fn record_compaction(&self, event: Telemetry) {
         let turn = self.latest_turn();
         if let Err(e) = self.append(turn, Payload::Telemetry(event)) {

@@ -4,8 +4,8 @@
 //! A session joins the watched set when the mount creates it or a `wait` names it, and
 //! stays for the mount's life. One task per watched session follows its `status` topic
 //! over `GET /events?include=state:status` (docs/control-api.md) and reopens the stream
-//! when it drops while the host still lists the session; a session the host no longer
-//! lists has ended. The set is the mount's control state: shared by every clone of its
+//! when it drops while the host still lists the session; a session missing from the
+//! listing has ended. The set is the mount's control state: shared by every clone of its
 //! executor, never logged, and gone when the mount is.
 //!
 //! The follower ([`follow`]) and the key that tells one decision point from the next

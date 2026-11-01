@@ -24,9 +24,9 @@ pub(crate) struct Recorded {
     pub(crate) calls: Vec<ToolCall>,
     pub(crate) raws: Vec<RawResult>,
     /// The recorded verdict per result, alongside `raws` — what the session's own
-    /// triage chose to see. The reference a candidate model is compared against
-    /// (backlog/inbox/distiller-experiment.md): not an operator's idea of the right keep,
-    /// but what the agent that was doing the work kept for itself.
+    /// triage chose to see. The reference a candidate model is compared against:
+    /// not an operator's idea of the right keep, but what the agent that was
+    /// doing the work kept for itself.
     pub(crate) recorded: Vec<WireState>,
     /// What the recorded run's first attempt did, from `Triage.retries` — the baseline
     /// each replay is compared against. `None` means it complied first try.

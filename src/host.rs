@@ -3,21 +3,10 @@
 //!
 //! A [`Host`] holds a map of sessions under one root `Swansong`: each one starting
 //! while its environment and MCP mounts are prepared (`entries.rs`,
-//! `preparation.rs`), then a started [`SessionRuntime`]. Its routes are the
-//! listener's own surface — the session list, creation, ending a session — plus
-//! `/sessions/<id>/…`, which resolves the session into conn state and dispatches into
-//! the unchanged control routes (docs/control-api.md). Nothing is forwarded: the
-//! session's handlers run in this process against its `Session`.
-//!
-//! This module is also the root of the host group, which holds what owns the sessions and
-//! the process around them: preparing a session from its creator's inputs (`boot`), the
-//! tasks of a started session (`runtime`) and a session between reservation and adoption
-//! (`starting`), the registers of ids, launch locations and archived sessions (`session_ids`,
-//! `remembered`, `inventory`), removing sessions that never had a turn (`discard`), git
-//! worktrees (`worktree`), subscriptions between sessions (`subscriptions`), a
-//! terminal-owned host (`island`), the owner-only modes of the state directory
-//! (`permissions`) and the minted session ids (`slug`) (docs/README.md, *Dependency
-//! direction*).
+//! `preparation.rs`), then a started [`SessionRuntime`]. Nothing is forwarded: the
+//! session's handlers run in this process against its `Session` — the host's own
+//! routes plus `/sessions/<id>/…`, dispatched into the unchanged control routes
+//! (docs/control-api.md).
 
 use crate::host::runtime::SessionRuntime;
 use crate::inference::SessionOptions;
@@ -132,20 +121,11 @@ pub struct Host {
     /// resume waits for it (`boot_resume.rs`).
     start_pass: tokio::sync::watch::Receiver<bool>,
     /// Set when an owner watch adopts this host, which makes it an island
-    /// (`island_exit.rs`, docs/operating.md): it runs no boot resume, and it
-    /// archives its sessions when its owner goes (docs/resumption.md).
+    /// (`island_exit.rs`, docs/operating.md).
     island: AtomicBool,
-    /// The host's own environment, captured once at start (docs/env.md).
-    ///
-    /// This is the base a session launched without a caller-supplied environment
-    /// inherits, and what an `env_hook` inherits itself. It is taken once, at the
-    /// same moment the registry resolved this host's credentials from it, so the
-    /// baseline a launch starts from is a stated thing rather than whatever the
-    /// process happens to be carrying at request time. `EnvSnapshot` omits Debug
-    /// and Serialize, so it cannot be logged or echoed, and the credential
-    /// variables in it are stripped and masked for every session by the same
-    /// [`crate::config::env_table::EnvPolicy::build_session`] call as any other base
-    /// (docs/env.md).
+    /// The host's own environment, captured once at start (docs/env.md): the base a
+    /// session launched without a caller-supplied environment inherits.
+    /// `EnvSnapshot` omits Debug and Serialize, so it cannot be logged or echoed.
     host_env: crate::config::env_table::EnvSnapshot,
     /// Signalled when the session listing may have moved (`listing.rs`): a
     /// session arriving or leaving, and every wake of a session's status
@@ -185,14 +165,12 @@ pub struct Host {
     language_servers: Arc<crate::tools::lsp::LanguageServers>,
 }
 
-/// What starts the artifact-only loopback listener on a host and answers its origin
-/// (docs/artifacts.md): the process serving the host installs one
-/// ([`Host::set_artifact_listener`]).
+/// Installed by the process serving the host ([`Host::set_artifact_listener`])
+/// (docs/artifacts.md).
 pub type StartArtifactListener = fn(&Arc<Host>) -> io::Result<String>;
 
-/// What builds the in-session server for the session named by the `String` on a host
-/// (docs/tools.md): the process serving the host installs one
-/// ([`Host::set_session_control`]).
+/// Installed by the process serving the host ([`Host::set_session_control`])
+/// (docs/tools.md).
 pub type MountSessionControl = fn(&Arc<Host>, String) -> Box<dyn crate::tools::ControlServer>;
 
 /// What the host keeps per session: the state handlers read, the child
@@ -208,13 +186,11 @@ pub(crate) struct Hosted {
     /// The session that commissioned this one, when a session did (docs/tools.md).
     /// Control state only: never logged, never projected.
     pub(crate) created_by: Option<String>,
-    /// The session that supervises this one (docs/permissions.md): it answers this
-    /// one's gates under the `supervisor` review position and may drive it. Starts as
+    /// The session that supervises this one (docs/permissions.md). Starts as
     /// `created_by`, and moves only by `Host::set_supervisor` (`supervise.rs`).
     /// Control state only: not persisted, so a resume starts again from the creator.
     pub(crate) supervisor: Option<String>,
-    /// Whether this session outlives its creator (docs/tools.md). Children end
-    /// with the session that made them unless created `detached`.
+    /// Whether this session outlives its creator (docs/tools.md).
     pub(crate) detached: bool,
     /// The session that handed its work to this one (docs/tools.md) — the one
     /// session outside its descendants this one may archive.
@@ -282,13 +258,10 @@ impl Host {
         })
     }
 
-    /// The language servers behind the `lsp` built-ins, shared by every session on this
-    /// host (docs/tools.md).
     pub(crate) fn language_servers(&self) -> &Arc<crate::tools::lsp::LanguageServers> {
         &self.language_servers
     }
 
-    /// The MCP refresh locks a session's token store shares (docs/mcp-auth.md).
     pub(crate) fn mcp_refresh_locks(&self) -> crate::tools::mcp::auth::store::RefreshLocks {
         self.mcp_refresh_locks.clone()
     }
@@ -514,11 +487,9 @@ impl Host {
             Entry::Starting(starting) => starting.created_by().map(str::to_string),
         }
     }
-    /// Hand `from`'s work to a new session (docs/tools.md): one in the same
-    /// directory, placed where `from` sits rather than under it — its creator is
-    /// `from`'s creator and it outlives `from` exactly as `from` outlived its
-    /// own — whose first turn is `brief`, attributed to `from`. `from` records the
-    /// successor, which attached clients follow. Returns the successor's id.
+    /// Hand `from`'s work to a new session (docs/tools.md), whose first turn is
+    /// `brief`, attributed to `from`. `from` records the successor, which attached
+    /// clients follow. Returns the successor's id.
     ///
     /// The successor is created with `from`'s own inference options, whatever
     /// `body` carries: a supervisor started on a large model must not hand its

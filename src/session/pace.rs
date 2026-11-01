@@ -112,8 +112,7 @@ impl Session {
     /// An operator's submit resumes (docs/control-channel.md): drop any hold, send the agent
     /// turns it held back, and wake an in-flight juncture sleep so the message is delivered
     /// at the next juncture *immediately*, not after the remaining paced delay. The retained
-    /// `speed` is untouched (it recolors later junctures); only the `held` overlay drops. Used
-    /// by a turn that answers an `ask`; a queued turn does the same in [`Self::queue_turn`].
+    /// `speed` is untouched (it recolors later junctures); only the `held` overlay drops.
     pub(super) fn resume_from_hold(&self) {
         self.pace.lock().unwrap().release(&self.turns_tx);
         self.end_pace_wait();
@@ -206,9 +205,8 @@ impl Session {
     /// Apply an operator pace change (docs/control-channel.md — the `PATCH /loop {pace}` verb):
     /// set the `speed` dial and/or the `held` overlay, each optional. **Releasing** a hold (`held`
     /// true → false) wakes an in-flight juncture sleep so resume is immediate; a pure speed change or a
-    /// *hold* does not wake it — those take effect at the next juncture, per the design (a hold lands at
-    /// the next juncture, letting the in-flight step finish; a speed change outlives the hold and
-    /// recolors resume). Returns the resulting `(speed, held)`.
+    /// *hold* does not wake it — those take effect at the next juncture. Returns
+    /// the resulting `(speed, held)`.
     pub(crate) fn set_pace(&self, speed: Option<Duration>, held: Option<bool>) -> (Duration, bool) {
         let mut wake = false;
         let result = {

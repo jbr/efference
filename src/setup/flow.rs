@@ -21,7 +21,7 @@ pub(super) use variable::ask_variable_name;
 /// Run the questions against `existing` and return what to change. Says what it
 /// finds as it goes; the caller renders and writes the result.
 ///
-/// Two flows behind one entry point (backlog/setup-edits-connections.md): a
+/// Two flows behind one entry point (docs/operating.md): a
 /// config with nothing configured yet gets the plain add path below; one that
 /// already has connections gets the management list (`src/setup/manage.rs`),
 /// which can also reach this same add path through its "add another" entry.

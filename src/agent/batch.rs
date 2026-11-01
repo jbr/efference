@@ -25,7 +25,7 @@ pub(super) struct Batch {
 }
 
 /// Run every call of a completion, capturing each result as it exists (docs/triage.md)
-/// so one triage can triage them together. Once a call aborts or redirects, the rest are paired
+/// so one triage covers them together. Once a call aborts or redirects, the rest are paired
 /// with stand-ins rather than run.
 ///
 /// When `primer` is armed, its send is fired at the first execution start and runs
@@ -150,9 +150,8 @@ async fn run_calls<F: Frontend, S: Spotter>(
             Ok(decision) => decision,
             // A call that could not finish ends the batch, so nothing triages what
             // earlier calls already captured. Resolve those here rather than leaving
-            // them pending: the turn is over either way, and a result with no verdict
-            // projects to nothing, which orphans its `tool_use` on the next request
-            // (docs/README.md).
+            // them pending: a result with no verdict projects to nothing, which orphans
+            // its `tool_use` on the next request (docs/README.md).
             Err(error) => {
                 undecided(shared, turn, &captured)?;
                 return Err(error);

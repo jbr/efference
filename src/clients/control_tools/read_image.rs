@@ -1,3 +1,5 @@
+//! The `image` session-control verb (docs/tools.md).
+
 use super::args::AgentOrHere;
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, ImageResult};

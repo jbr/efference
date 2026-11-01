@@ -5,9 +5,7 @@
 //! condition needs (`view.rs`), and prints that view with one renderer (`render.rs`).
 //! The view is the `status` state topic; the rendering is what a subscriber's inbox
 //! receives on the slot `session:<id>`. The statuses a subscriber hears are the
-//! decision points: a gate, a question, a turn completing into idle, a stall, a park or
-//! a block, and the end. `Running` is observed to detect the transitions but never
-//! posted.
+//! decision points; `Running` is observed to detect the transitions but never posted.
 
 use super::*;
 
@@ -48,7 +46,7 @@ pub(crate) enum SessionStatus {
     /// The last trajectory gave up (docs/transport.md).
     Stalled { message: String },
     /// The loop stopped at its cold check mid-turn and waits for a person to act
-    /// before it reads the expired cache, or for a compaction (backlog: cold-session.md); after a compaction it
+    /// before it reads the expired cache, or for a compaction (docs/summary.md); after a compaction it
     /// waits for the next turn or continue. The `cold_parked` loop phase.
     Parked { reason: cold::ParkReason },
     /// The loop is stopped until someone outside acts, for a reason that is neither a

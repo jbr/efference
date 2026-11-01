@@ -1,3 +1,5 @@
+//! Walking the document into the buffer: groups, the layout cache, and the viewport (docs/tui.md).
+
 use ratatui::{
     buffer::Buffer,
     layout::{Position, Rect},

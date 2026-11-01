@@ -290,9 +290,8 @@ impl<'a> InteractiveState<'a> {
                     text,
                 ));
             }
-            // A result an older harness withheld on a failed triage (`TriageFailed`,
-            // no longer written) carries no output at all — a distinct condition
-            // from a low ratio, so it is stated rather than folded into one.
+            // A result withheld on a failed triage carries no output at all — a distinct
+            // condition from a low ratio, so it is stated rather than folded into one.
             if u.retention.withheld > 0 {
                 rows.push(("withheld", u.retention.withheld.to_string(), muted));
             }

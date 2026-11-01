@@ -2,11 +2,9 @@
 //! `.efference/` directory (docs/log-and-projection.md).
 //!
 //! A session is a directory holding a `log.jsonl`, and the log answers every
-//! question a listing asks. The scan needs no host: it reads each log's header
-//! line, its first entry and its last complete entry — the last by seeking from
-//! the end — and the title by reading backwards in chunks to the last
-//! `Payload::Title`. A log is never parsed whole, so cost per log does not grow
-//! with its length except for the title of a log that has none.
+//! question a listing asks. The scan reads each log's header, first and last
+//! entries, and title — never parsing a log whole, so cost per log does not grow
+//! with its length.
 //!
 //! Recency is the `at` of entries, never file modification time: a migration
 //! that rewrites a file moves its mtime without any session having been active.

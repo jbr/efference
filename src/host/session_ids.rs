@@ -17,7 +17,7 @@
 //! Every operation opens its own connection like the other tables
 //! ([`crate::platform::state`]) and is best-effort: a store that cannot be opened reserves
 //! nothing and refuses nothing, leaving the live-map and on-disk checks to stand
-//! alone, as they did before the table existed.
+//! alone.
 
 use std::path::{Path, PathBuf};
 

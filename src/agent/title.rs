@@ -71,11 +71,9 @@ impl TitleAsk {
 }
 
 /// The title check: test the cadence and, when it asks, run the title peek as a
-/// detached task (docs/session-title.md). The loop calls this at each turn
-/// start, each queued turn delivered mid-task, and trajectory end, and never waits:
-/// the task owns the session handle and the request surface, holds while the
-/// cache is believed cold the way the idle triage holds, and appends the answer
-/// whenever it lands.
+/// detached task (docs/session-title.md). The loop never waits: the task owns the
+/// session handle and the request surface, holds while the cache is believed cold the
+/// way the idle triage holds, and appends the answer whenever it lands.
 ///
 /// One ask is in flight per session. A title check that passes while one runs
 /// marks a rerun instead of spawning: the predicate reads the log, and the in-flight ask

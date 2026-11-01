@@ -492,8 +492,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
 /// the problem at exactly the moment someone could fix it.
 ///
 /// The remedy is named, not performed: this host has nobody to ask. A host
-/// launched by a TUI for one session can offer the repair inline once that
-/// exists (backlog/inbox/host-process.md).
+/// launched by a TUI for one session can offer the repair inline.
 fn refuse_broken_connections(
     inference: &efference::inference::InferenceRegistry,
 ) -> Result<(), efference::inference::api::Error> {

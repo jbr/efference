@@ -1,3 +1,5 @@
+//! Table rendering over the shared column layout (docs/tui.md).
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

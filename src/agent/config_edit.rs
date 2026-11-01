@@ -7,9 +7,9 @@ use super::*;
 /// present to approve, so rather than block the loop forever the gate hands the decision back to
 /// the model — pointing it at its own per-session config file, the single policy interface it has.
 /// The session may *edit* that file to request the permission, but that write itself gates for the
-/// orchestrator-above to review over the control channel (it can never auto-apply), so enactment
-/// still requires an operator: the model only gets to *ask*. The spotter's `reason` carries why the
-/// call was out of scope so the model can judge whether it's worth requesting at all.
+/// orchestrator-above to review, so enactment still requires an operator: the model only gets to
+/// *ask*. The spotter's `reason` carries why the call was out of scope so the model can judge
+/// whether it's worth requesting at all.
 pub(super) fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) -> String {
     let request = config_request_sentence(config_path);
     format!(
@@ -23,13 +23,11 @@ pub(super) fn autonomous_gate_message(config_path: Option<&Path>, reason: &str) 
 /// name the grants it lacked (docs/permissions.md).
 ///
 /// The generic message above says the call was gated; it does not say *why the tool did not
-/// run*. A model reading a `write`/`edit` come back with nothing to show for it concludes
-/// the tool is broken and starts rewriting files through `cat > file <<EOF` instead, which
-/// replaces a reviewable diff with an un-reviewable whole-file rewrite. A model that
-/// believes the tool is broken has no reason to fix its config; one that reads which grant
-/// is missing does. So this variant leads with the diagnosis, names the missing grant in the
-/// vocabulary the config uses, and — for a write — says outright that the bash route lands
-/// on the same grant ([`crate::config::policy`]'s redirection carve-out).
+/// run*. A model that reads a gated `write`/`edit` as a broken tool routes around it instead
+/// of fixing its config; one that reads which grant is missing does. So this variant leads
+/// with the diagnosis, names the missing grant in the vocabulary the config uses, and — for
+/// a write — says outright that the bash route lands on the same grant
+/// ([`crate::config::policy`]'s redirection carve-out).
 pub(super) fn missing_grant_message(
     config_path: Option<&Path>,
     reason: &str,
@@ -141,14 +139,11 @@ pub(super) fn config_write_outcome(shared: &Session, result: RawResult) -> RawRe
 /// doesn't cover this call, it stays gated (a `Redirect` that tells the model why), so nothing
 /// rides along unchecked.
 ///
-/// **The file gets the grant first, and a failed write fails the grant.** The session's
-/// `config.toml` is the perimeter's readable form — what an operator inspects to see what the
-/// session ran under, and what they copy a useful grant up to the origin template from
-/// (docs/permissions.md). A grant that folded into
-/// effective policy but never reached the file would be policy in force that the file doesn't
-/// show, the divergence [`crate::config::ConfigFile`] exists to prevent. So the write happens
-/// before the append, and its failure aborts the commit rather than degrading it to something
-/// weaker that still logs a success.
+/// **The file gets the grant first, and a failed write fails the grant.** A grant that
+/// folded into effective policy but never reached the file would be policy in force that
+/// the file doesn't show, the divergence [`crate::config::ConfigFile`] exists to prevent.
+/// So the write happens before the append, and its failure aborts the commit rather than
+/// degrading it to something weaker that still logs a success.
 ///
 /// A session with no config file (the built-in default role) is the one exception: there is
 /// nothing to diverge from, so the grant lives in the log fold alone.

@@ -1,3 +1,5 @@
+//! The `create` session-control verb (docs/tools.md).
+
 use super::args::{reader_name, turn_source};
 use super::executor::status_in;
 use super::status::operator_relation;

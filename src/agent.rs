@@ -4,14 +4,12 @@
 //! repeat `project → complete → append assistant → {approve, run, append result}`
 //! until the model stops calling tools, then read the next user turn.
 //!
-//! Every input — including the first turn — arrives over the `Frontend`, which is
-//! the daemon's HTTP-fed [`RemoteFrontend`](crate::agent::remote_frontend::RemoteFrontend)
-//! (docs/control-channel.md): the control socket is the singular authoritative input
-//! source. The log lives in the shared daemon state ([`Session`]); the loop appends
-//! through it, which both persists the JSONL line and wakes any SSE tailers.
+//! Every input — including the first turn — arrives over the `Frontend`, the daemon's
+//! HTTP-fed [`RemoteFrontend`](crate::agent::remote_frontend::RemoteFrontend)
+//! (docs/control-channel.md). The log lives in the shared daemon state ([`Session`]);
+//! the loop appends through it.
 //!
-//! This module is also the root of the agent group: the loop's interaction boundary
-//! (`frontend`) and the one backend mounted behind it, over a [`Session`] (`remote_frontend`)
+//! This module is also the root of the agent group
 //! (docs/README.md, *Dependency direction*).
 
 use std::path::Path;
@@ -83,8 +81,8 @@ pub(crate) fn stalled(
 /// The retry handler sits below the loop and cannot append, so the bodies arrive
 /// through the client's queue and land here — including the ones a later attempt
 /// recovered from, which otherwise leave behind only a status and a count.
-/// Each entry is `excluded` for its upstream's failure, so it projects to nothing and the
-/// next request re-sends byte-identical messages (docs/log-and-projection.md).
+/// Excluded for its upstream's failure, each entry projects to nothing, so the next
+/// request re-sends byte-identical messages.
 fn record_absorbed_attempts(
     shared: &Session,
     client: &Client,
@@ -103,8 +101,7 @@ fn record_absorbed_attempts(
     Ok(())
 }
 
-/// Drive the loop until input ends. The log lives in [`Session`]; the loop appends
-/// through it.
+/// Drive the loop until input ends.
 pub async fn run<F: Frontend, S: Spotter>(
     client: &Client,
     frontend: &mut F,

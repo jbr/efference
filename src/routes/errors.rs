@@ -50,7 +50,7 @@ pub(crate) enum ErrorCode {
     NotDelivered,
     /// `POST /loop/compact` at a moment with no compaction in it: the cache is not believed
     /// expired, a gate or question is pending, a request is in flight, or everything
-    /// since the last compaction fits in the verbatim tail (backlog: cold-session.md). 409.
+    /// since the last compaction fits in the verbatim tail (docs/control-api.md). 409.
     NotCompactable,
     /// The addressed thing exists, but not in the state this request describes:
     /// `PATCH /sessions/:id {"state": "active"}` naming a session this host is

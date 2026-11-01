@@ -12,20 +12,14 @@ impl Host {
     /// Resume a dormant session under its own id: what `PATCH {"state":
     /// "active"}` does (docs/control-api.md).
     ///
-    /// The three states of a name are live (attach), free (mint), and
-    /// taken-but-dormant, and this is the last one — a session whose directory is
-    /// still on disk with nothing hosting it. Its log is reopened rather than
-    /// created and its own `config.toml` is the live config, so no option in
-    /// `body` is read except `reauth`, `refuse_authorization`, `env` and the spotter and
-    /// triage `switch`: the main model, effort and temperature come from the header the
-    /// session was created with (docs/log-and-projection.md), and a role a switch
-    /// leaves out keeps the recorded selection.
-    ///
-    /// That is why the patch that reaches here carries no field for the main model, effort
-    /// or temperature — an omitted one that resolved from history would quietly
-    /// move the session onto a different model than its log records. `cwd` does
-    /// come from the caller, and not as a preference: the host serves several
-    /// roots and cannot tell which one a dormant id belongs to.
+    /// Its log is reopened rather than created and its own `config.toml` is the live
+    /// config, so no option in `body` is read except `reauth`,
+    /// `refuse_authorization`, `env` and the spotter and triage `switch`: the main
+    /// model, effort and temperature come from the header the session was created
+    /// with, and a patch carrying them could quietly move the session onto a
+    /// different model than its log records. `cwd` comes from the caller, and not
+    /// as a preference: the host serves several roots and cannot tell which one a
+    /// dormant id belongs to.
     ///
     /// Returns once the session is in the map as starting, like a creation; the
     /// environment and `boot::resume` run in the background (`preparation.rs`).

@@ -5,7 +5,7 @@ use super::*;
 /// What a [`Session`] is built from: the working directory and log it owns, the
 /// role it starts under, and the shared cells its client already holds.
 ///
-/// Named fields rather than a parameter list, because four of these are opaque
+/// Named fields rather than a parameter list, because these include opaque
 /// shared-state handles and a positional mistake among them would compile.
 /// [`Self::new`] fills every field a caller without a provider client has no
 /// value for, so adding a dependency to a session touches the sites that supply

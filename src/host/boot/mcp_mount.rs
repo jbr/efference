@@ -1,8 +1,8 @@
 //! Mounting connected providers at boot, including the authorization dance
 //! (docs/mcp-auth.md, docs/tools.md).
 //!
-//! Separate from `serve.rs` because this is the one place the harness stops and
-//! waits for a human mid-boot, and that deserves to be readable on its own.
+//! Separate from `serve.rs`: this is the one place the harness stops and
+//! waits for a human mid-boot.
 //!
 //! ## The sequence per server
 //!

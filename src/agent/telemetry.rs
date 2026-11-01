@@ -1,10 +1,7 @@
-//! Deriving one call's [`ToolTelemetry`] at the dispatch point (docs/tools.md).
-//!
-//! Everything here reads what the dispatch point already holds — the call's own `input`,
-//! the [`RawResult`] the backend returned, and a clock started immediately
-//! before dispatch. Nothing is plumbed out of the tool crates for it, which is
-//! what keeps the record cheap enough to write on **every** call rather than on
-//! the ones someone thought to instrument.
+//! Deriving one call's [`ToolTelemetry`] at the dispatch point (docs/tools.md):
+//! everything here reads what the dispatch point already holds, so nothing is plumbed
+//! out of the tool crates for it — which is what keeps the record cheap enough to write
+//! on **every** call.
 
 use super::*;
 
@@ -25,9 +22,9 @@ const CONTENT_KEYS: [&str; 4] = ["content", "new_content", "new_text", "new_stri
 /// answer for itself: `is_error` says the call did not succeed, not *whose*
 /// failure it was, and the difference is the whole point of the third outcome
 /// class (a spawn that failed is a defect signal; an anchor that matched nothing
-/// is a datum about the model). It is set at the two sites that construct a
-/// harness-authored failure — never inferred from the text, which would put the
-/// classification back where it started.
+/// is a datum about the model). It is set where a harness-authored failure is
+/// constructed — never inferred from the text, which would put the classification
+/// back where it started.
 /// `handle` is the `p#<n>` the process monitor minted for this call's process, when
 /// it reached a spawn (docs/process-monitor.md) — the join from a telemetry row to
 /// the process namespace, which for a foreground command is the only typed place

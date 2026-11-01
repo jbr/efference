@@ -1,3 +1,5 @@
+//! Mapping document span styles onto ratatui styles, dimming included (docs/tui.md).
+
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::clients::tui::document::SpanStyle;

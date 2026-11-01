@@ -1,18 +1,13 @@
 //! The TCP bind: the web client's front door (docs/web-bind.md).
 //!
 //! An optional TCP listener beside the UDS — the same `/v1` routes, with a hardening +
-//! auth gate layered in front. This module holds the listener and the credential state;
-//! its submodules hold the rest: `gate.rs` (the hardening + auth gate and the anonymous
-//! surface it prices), `headers.rs` (the response headers every listener stamps), and
-//! `routes.rs` (the sign-in routes, the enrollment routes, and the web client handler).
-//! `handler.rs` is the one place the pieces are assembled into a stack, keyed on the
-//! transport, so the UDS never consults the gate and a per-conn "which listener am I
-//! on?" guess (which would fail open) never exists. Every TCP credential is an enrolled
-//! device (`crate::platform::devices`) whose token is derived from the machine root
-//! (`crate::platform::auth`), and a browser becomes one by claiming a pending sign-in
-//! (`crate::platform::sign_ins`); the enrollment surfaces (`/auth/link`, approval, the
-//! `/auth/devices` routes) are mounted only on the socket, because possession of the
-//! host machine is the enrollment authority.
+//! auth gate layered in front. The stack is assembled in one place keyed on the
+//! transport (`handler.rs`), so the UDS never consults the gate and no per-connection
+//! guess about which listener a request arrived on exists. Every TCP credential is an
+//! enrolled device (`crate::platform::devices`) whose token is derived from the machine
+//! root (`crate::platform::auth`), and a browser becomes one by claiming a pending
+//! sign-in (`crate::platform::sign_ins`); the enrollment surfaces are mounted only on
+//! the socket, because possession of the host machine is the enrollment authority.
 
 use super::*;
 use crate::platform::auth::{DeviceTokens, Root};

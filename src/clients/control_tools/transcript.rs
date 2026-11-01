@@ -1,3 +1,5 @@
+//! The `transcript` session-control verb (docs/tools.md).
+
 use super::args::{NamedAgent, optional_handle, turn_source};
 use super::executor::state_of;
 use super::verb::{ControlVerb, VerbCall};

@@ -249,7 +249,7 @@ impl Client {
     }
 
     /// [`approve`](Self::approve), with a moved gate as an answer rather than an error:
-    /// `Ok(false)` when `call_id` is no longer the pending gate (`409 gate_moved`).
+    /// `Ok(false)` when `call_id` isn't the pending gate (`409 gate_moved`).
     pub(crate) async fn decide(
         &self,
         call_id: &str,
@@ -266,7 +266,7 @@ impl Client {
     /// Escalate the pending approval gate to the operator
     /// (`POST /approvals/{call_id}/escalate`, docs/control-api.md): it stays held, marked
     /// with `source` as its escalator and `note` for the operator. `Ok(false)` when
-    /// `call_id` is no longer the pending gate (`409 gate_moved`).
+    /// `call_id` isn't the pending gate (`409 gate_moved`).
     pub(crate) async fn escalate(
         &self,
         call_id: &str,
@@ -632,7 +632,7 @@ impl TranscriptRead<'_> {
     }
 }
 
-/// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes
+/// The JSON body for an approval decision — the [`Approval`] the loop consumes
 /// (docs/control-channel.md). Shared by `approve` and `decide`; `note_submission` names
 /// the turn that carries an allow's note.
 fn approval_body(

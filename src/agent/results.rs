@@ -9,7 +9,7 @@ use crate::record::names::tools::{
 /// Enforce [`MAX_TOOL_RESULT_BYTES`]: replace an over-cap result with a hard error
 /// (rather than a silent truncation) that names the byte counts and shows a short,
 /// char-boundary-safe head, so both the model and the logs see what overflowed and the
-/// model knows to narrow the call. Under the cap, the result passes through untouched.
+/// model knows to narrow the call.
 pub(super) fn cap_tool_result(shared: &Session, call: &ToolCall, result: RawResult) -> RawResult {
     let len = result.content.len();
     if len <= MAX_TOOL_RESULT_BYTES {

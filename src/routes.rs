@@ -1,6 +1,4 @@
-//! The control channel's routes and the readouts they answer from: the typed error envelope,
-//! the frame envelope and the unified control stream, the serialization of a log entry for a
-//! client, the per-session route families (`http`) and the host's own handlers (`host_http`)
+//! The control channel's routes and the readouts they answer from
 //! (docs/README.md, *Dependency direction*).
 
 pub(crate) mod entry_view;

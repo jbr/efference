@@ -2,10 +2,7 @@
 //! control channel's handlers share, and the modules beneath it that each own a part of
 //! it.
 //!
-//! The append-only log is the event store the channel needs (docs/README.md).
-//! `GET /log?since=<seq>` replays durably; ephemeral control state (a pending
-//! approval) lives in [`Session`] and is reported by `GET /state`. The host holds the
-//! sessions and the handlers serve them; this group imports neither
+//! The host holds the sessions and the handlers serve them; this group imports neither
 //! (docs/README.md, *Dependency direction*).
 
 use std::collections::HashMap;
@@ -135,13 +132,10 @@ pub struct Session {
     /// and the agent client's read loop races it against the stream (docs/control-channel.md).
     interrupt: Arc<Notify>,
     /// The **latched** half of `POST /loop/interrupt` (docs/control-channel.md). `Notify::notify_waiters`
-    /// wakes only a *currently registered* waiter and stores no permit, so during a call no backend
-    /// awaits the abort future — every non-bash tool (`src/tools.rs`) — the wakeup has nowhere to
-    /// land and is dropped. This flag is what survives it: the loop reads it at the junctures
-    /// either side of a call and stops there, so the interrupt lands on tools it cannot suspend.
-    /// Latching also closes the window between a bash spawn and the abort future's first poll,
-    /// and the one between the loop's last juncture and its model request's armed abort: that
-    /// request reads it too (`Client::with_interrupt_latch`).
+    /// wakes only a *currently registered* waiter and stores no permit, so an interrupt fired while
+    /// no backend awaits the abort future is dropped; the loop reads this flag at the junctures
+    /// either side of a call — and the next model request reads it too
+    /// (`Client::with_interrupt_latch`) — and stops there instead.
     interrupt_latch: Arc<AtomicBool>,
     /// Fired by `PATCH /processes/:id {background: true}` — the detach half of the interrupt intent
     /// (docs/process-monitor.md, the foreground→background handoff). Like `interrupt`,
@@ -204,13 +198,10 @@ pub struct Session {
     #[cfg(test)]
     pub(crate) before_request: Mutex<Option<Interleaving>>,
     /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
-    /// the **authority** on what is pending, mirroring what was pushed into `turns_tx`. It closes
-    /// the cross-task race in [`Session::is_settled`] (a turn exists even in the instant before the
-    /// loop leaves idle), it is what `GET /state`'s `queued` topic reads, and it is
-    /// what a withdraw removes from (docs/control-channel.md). Because the channel cannot be
-    /// searched, the loop **claims** each received turn against this queue and drops one that is
-    /// no longer here — that is how a withdrawn turn is never appended. A pending turn is
-    /// ephemeral: it is not in the log, so withdrawing one leaves no trace to retract.
+    /// the **authority** on what is pending (docs/control-channel.md). The loop **claims** each
+    /// received turn against this queue and drops one that is no longer here — that is how a
+    /// withdrawn turn is never appended. A pending turn is ephemeral: it is not in the log, so
+    /// withdrawing one leaves no trace to retract.
     queue: Mutex<std::collections::VecDeque<SubmittedTurn>>,
     /// The `ask` awaiting a reply, if any (docs/process-monitor.md). Taken by the next
     /// submitted turn, which it resolves instead of queueing. Lock order: this before
@@ -228,7 +219,7 @@ pub struct Session {
     /// nothing — two presses are one continue — and because it must survive the gap
     /// between the request and the idle `select!` registering its waiter. Cleared by
     /// [`Session::take_continue`] when the loop consumes it; never logged, never
-    /// projected (nothing is appended for it at all). Written only under the `queue`
+    /// projected. Written only under the `queue`
     /// lock, so [`Session::phase_and_queue`] reads it at the instant it reads the phase.
     continue_pending: AtomicBool,
     /// Wakes the idle loop when [`continue_pending`](Self::continue_pending) is set.
@@ -240,8 +231,7 @@ pub struct Session {
     /// something that may wake it (docs/process-monitor.md).
     subscriptions: std::sync::atomic::AtomicUsize,
     /// Pinged when a notification is enqueued (docs/inbox.md — `notify`). The agent loop's
-    /// idle path awaits this to wake an idle agent for a standalone triage (the
-    /// wake-on-notification model that replaced blocking `wait`).
+    /// idle path awaits this to wake an idle agent for a standalone triage.
     notified: Notify,
     /// How many entries the log held when this session was built: a resumed session's
     /// restored history, `0` for a new one. A notification at or past this seq arrived
@@ -253,9 +243,7 @@ pub struct Session {
     /// design — see [`StreamDelta`].
     stream_tx: broadcast::Sender<StreamDelta>,
     /// Pinged when a state topic may have moved (docs/control-api.md). One notify for
-    /// every topic, not one each: the reader recomputes everything and diffs, so a missed
-    /// ping is repaired by the next one from any source rather than leaving a topic stale
-    /// forever. See `topics.rs`.
+    /// every topic, not one each — see `topics.rs`.
     state_changed: Notify,
     /// Fan-out for level-triggered state updates — the whole-topic replacements that a
     /// `GET /events` connection turns into `state` frames. Fed by the one diffing task,
@@ -266,19 +254,17 @@ pub struct Session {
     /// predict TTL eviction (docs/log-and-projection.md). Transport-only: never touches the log.
     metrics: Mutex<Metrics>,
     /// The per-request usage record (docs/log-and-projection.md): one JSONL line per
-    /// upstream request — origin-tagged, carrying the upstream response id — appended
-    /// to the session dir's `usage.jsonl`. Transport-only, **never** the canonical
-    /// log: usage must stay out of the projection. `None` (tests, offline) drops the
-    /// lines; the in-memory `metrics` fold is unaffected.
+    /// upstream request, appended to the session dir's `usage.jsonl`. Usage must stay out
+    /// of the projection, so this is never the canonical log. `None` (tests, offline)
+    /// drops the lines; the in-memory `metrics` fold is unaffected.
     usage_log: Mutex<Option<io::BufWriter<std::fs::File>>>,
     /// The last non-success upstream response, shared with the HTTP client and
     /// surfaced by `GET /state`. Transport-only: never touches the log or projection
     /// (docs/transport.md).
     upstream_failure: UpstreamFailureState,
-    /// The retry in flight, shared with the HTTP client and with both retry loops
-    /// (the turn loop and the triage), and surfaced by `GET /state` as its own
-    /// level-triggered topic. Unlike the failure cell above it carries its own
-    /// change signal — a retry pause is *not* followed by an append, so
+    /// The retry in flight, shared with the HTTP client and surfaced by `GET /state`
+    /// as its own level-triggered topic. Unlike the failure cell above it carries its
+    /// own change signal — a retry pause is *not* followed by an append, so
     /// `watch_topics`'s wake-on-`appended` fallback would leave the topic late for
     /// the whole pause (docs/transport.md). Transport-only: never logged or
     /// projected.
@@ -327,24 +313,22 @@ pub struct Session {
     stall: Mutex<Option<Stall>>,
     /// The config-unparseable park (docs/permissions.md), read by the
     /// `config_repair` topic and awaited by the loop. Set by the config watcher
-    /// on a failed revert, cleared by the same watcher the moment a refresh
-    /// parses — the human fixes the file, fs-watch picks it up, the gate clears.
+    /// on a failed revert, cleared by the same watcher the moment a refresh parses.
     config_repair: Mutex<Option<ConfigRepair>>,
     /// Fires when [`Self::config_repair`] clears, so the parked loop wakes without
     /// polling. Same lost-wakeup discipline as the pace hold: arm before reading.
     config_repaired: Notify,
 
     /// The in-memory queue of slot notifications (docs/inbox.md): out-of-band events a
-    /// later one on the same slot supersedes, awaiting their first triage. Control
-    /// state, *not* a log payload — a slot notification becomes a durable `Ambient`
-    /// entry when a triage first shows it, and one superseded while queued is dropped
-    /// here (the "never-happened" case). A notification without a slot is a log entry
-    /// from its arrival and is not held here.
+    /// later one on the same slot supersedes, awaiting their first triage. A slot
+    /// notification becomes a durable `Ambient` entry when a triage first shows it, and
+    /// one superseded while queued is dropped here. A notification without a slot is a
+    /// log entry from its arrival and is not held here.
     inbox: Mutex<Inbox>,
     /// The pending-proposals queue: async `ConfigEdit`s (the session's `propose_scope`, the
     /// spotter's prefix-promotion) awaiting an orchestrator's commit/cancel
-    /// (docs/permissions.md). Ephemeral control state like `inbox` — a
-    /// `Proposed` entry is durable in the log, but its *pending* status lives here until resolved.
+    /// (docs/permissions.md). A `Proposed` entry is durable in the log, but its *pending*
+    /// status lives here until resolved.
     proposals: Mutex<Vec<PendingProposal>>,
     /// The background-process registry (docs/process-monitor.md): live children whose running tail
     /// is re-sampled fresh each triage. Ephemeral control state like `inbox` /
@@ -393,14 +377,9 @@ pub struct Session {
     /// The operator's **review level** (docs/permissions.md), stored as an
     /// `AtomicU8` ordinal so it is lock-free and **runtime-mutable** (the `PATCH /loop {review_level}` verb,
     /// not just a boot flag). The loop's cascade reads it ([`Session::review_level`]) to decide who
-    /// reviews a gated call: `Autonomous` redirects the model instead of blocking on an absent
-    /// human; `Supervisor` holds the call and routes it to the session's supervisor
-    /// ([`Session::resolved_review_level`] is what decides, since a supervisor that has ended
-    /// reviews as `SpotterHuman`); `SpotterHuman` runs the spotter then the human gate;
-    /// `HumanOnly` skips the spotter entirely and gates straight to the human. Every position
-    /// but `Autonomous` holds the call — they differ in who is asked. Orthogonal to pace. (The **config-write** gate is
-    /// never flipped by this — a session's edit to its own config is always held for the
-    /// orchestrator-above.)
+    /// reviews a gated call; every position but `Autonomous` holds the call — they differ in who
+    /// is asked. Orthogonal to pace. (The **config-write** gate is never flipped by this — a
+    /// session's edit to its own config is always held for the orchestrator-above.)
     review_level: AtomicU8,
     /// The operator's **pace** dial (docs/control-channel.md): a between-turns
     /// wall-clock control that is *transparent to the agent*. Pure operator-view state — never a
@@ -425,16 +404,11 @@ pub struct Session {
     /// empty — every `$NAME` then errors, which is the fail-closed default.
     expander: crate::tools::expand::Expander,
     /// The session's full tool catalog, keyed by wire name — every name the
-    /// turn's `tools[]` can carry, the toolbox's mounted providers *and* the
-    /// harness's own loop-owned family (`consolidate`, the process-monitor/inbox
-    /// tools, the two triage tools). Snapshotted by [`Session::set_tool_catalog`]
-    /// (`agent::tool_catalog`) before the toolbox moves into the loop, and
-    /// read back by `GET /v1/tools/:name` (docs/control-api.md). The mounted
-    /// set is fixed for the session (docs/log-and-projection.md), so this is
-    /// written once and never reconciled. Empty in tests and offline verbs
-    /// that never built a toolbox — the route answers `404` for every name
-    /// there, which is the correct "no daemon behind this session" fallback
-    /// rather than a distinct error state.
+    /// turn's `tools[]` can carry. Snapshotted by [`Session::set_tool_catalog`]
+    /// before the toolbox moves into the loop, and read back by `GET /v1/tools/:name`
+    /// (docs/control-api.md). The mounted set is fixed for the session
+    /// (docs/log-and-projection.md), so this is written once and never reconciled.
+    /// Empty in tests and offline verbs that never built a toolbox.
     tools: Mutex<HashMap<String, crate::tools::ToolEntry>>,
 }
 
@@ -519,13 +493,9 @@ impl Session {
     }
 
     /// Snapshot the full session tool catalog for `GET /v1/tools/:name`
-    /// (docs/control-api.md) — `agent::tool_catalog`, which mirrors
-    /// `agent::tool_definitions`: the toolbox's mounted tools *and* the
-    /// harness's own loop-owned family (`consolidate`, the process-monitor/inbox
-    /// tools, the two triage tools), the same union `tools[]` advertises.
-    /// Called once by the runtime, which builds the catalog before `toolbox` moves
-    /// into the loop — the same "only a served session has this" reason as
-    /// [`Self::set_capabilities`]/[`Self::set_identity`], which it sits beside.
+    /// (docs/control-api.md) — the same union `tools[]` advertises. Called once by
+    /// the runtime before `toolbox` moves into the loop, which is why only a served
+    /// session has one.
     pub fn set_tool_catalog(&self, catalog: HashMap<String, crate::tools::ToolEntry>) {
         *self.tools.lock().unwrap() = catalog;
     }
@@ -597,7 +567,6 @@ mod identity;
 pub(crate) mod keepalive;
 mod metrics;
 mod named_turns;
-// The host's update-check answer, published as a session topic (docs/update-check.md).
 pub(crate) mod newer_version;
 mod notifications;
 mod operations;

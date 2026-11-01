@@ -1,3 +1,5 @@
+//! Where a document action lands: the cursor, the theme picker, or refused (docs/tui.md).
+
 use super::state::DocumentState;
 use crate::clients::tui::document::TuiAction;
 use crate::clients::tui::projection::ViewState;

@@ -1,39 +1,19 @@
 //! The control-stream frame envelope (docs/control-api.md).
 //!
-//! One discriminated shape for every frame a client can receive, so a client writes
-//! one parser rather than one per stream. Three **durability classes** — not three
-//! topics — because durability is the axis a client actually branches on:
+//! One discriminated shape for every frame a client can receive, in three durability
+//! classes ([`Class`]) — the axis a client actually branches on when deciding whether
+//! a gap is recoverable.
 //!
-//! | class | durability | resume |
-//! | --- | --- | --- |
-//! | [`Class::Log`] | durable, monotonic `seq` | replay by `?since`, never drops |
-//! | [`Class::Output`] | ephemeral, lossy | none — live tail |
-//! | [`Class::State`] | level-triggered | snapshot-on-subscribe, then replacement |
+//! Two invariants hold by construction: only `log` frames carry `seq` (over SSE it is
+//! also the `id:` field, so `EventSource` resume tracks the durable subset), and
+//! `render` rides beside `data`, never inside it, so a log frame's `data` stays
+//! byte-identical to its `GET /log` element.
 //!
-//! Two invariants are enforced by construction rather than documented and hoped for:
-//!
-//! - **Only `log` frames carry `seq`.** The constructors are the only way to build a
-//!   [`Frame`], and only [`Frame::log`] sets it. Over SSE `seq` is also the `id:`
-//!   field, so `EventSource`'s Last-Event-ID resume tracks the durable subset and
-//!   ignores the ephemeral ones; a `seq` on an ephemeral frame would corrupt that
-//!   cursor.
-//! - **`render` rides beside `data`, never inside it.** A log frame's `data` is
-//!   byte-identical to the corresponding `GET /log` element (see `sse.rs`), so the
-//!   human-wire render document is an annotation *of the frame*.
-//!   Folding it into `data` would fork the two representations of one entry.
-//!
-//! The frame ≡ window byte-identity holds **below the result-size threshold**, which
-//! is the whole of it in every ordinary session. Above it the two agree with each
-//! other and diverge from `GET /log/:seq`: both carry a tagged prefix of an oversized
-//! result's `content`, while the entry route serves it whole
-//! (`MAX_INLINE_RESULT_BYTES`, transcript.rs). That divergence is the feature — a
-//! multi-megabyte result would otherwise queue every later frame behind it and re-ship
-//! on every replay and window read — and it is deliberately narrow: one field of one
-//! payload, tagged where it happens, dereferenced at the address images already use.
-//!
-//! All three classes nest their payload under `data` — uniformly, including `output`,
-//! whose fields would otherwise sit at the top level and force a client to special-case
-//! one class in the parser it was supposed to write once.
+//! Above the result-size threshold the frame and window views carry a tagged prefix
+//! of an oversized result's `content` while the entry route serves it whole
+//! (`MAX_INLINE_RESULT_BYTES`): narrow by design — one field of one payload — so a
+//! multi-megabyte result never queues later frames behind it. All three classes nest
+//! their payload under `data`, including `output`.
 
 use crate::protocol::channel_value;
 use crate::protocol::state::Topic;
@@ -99,12 +79,9 @@ pub(crate) struct Frame {
 
 impl Frame {
     /// A durable log frame. The only constructor that sets `seq`, and the only one
-    /// whose `data` is byte-identical to a `GET /log` element — both serialize the
-    /// entry's [`EntryView::new`] (image `data` omitted, oversized result text
-    /// truncated and tagged; entry_view.rs). `result_raw` is the bytes of the result
-    /// a [`Payload::ResultVerdict`] names, which that entry does not carry itself
-    /// (docs/triage.md); both call sites resolve it from the log. `session` signs the
-    /// entry's artifact links (docs/artifacts.md).
+    /// whose `data` is byte-identical to a `GET /log` element. `result_raw` is the
+    /// bytes of the result a verdict names, which that entry does not carry itself;
+    /// both call sites resolve it from the log.
     pub(crate) fn log(
         entry: &LogEntry,
         result_raw: Option<&RawResult>,

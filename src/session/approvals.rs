@@ -112,7 +112,7 @@ impl Session {
     /// The spotter's reason for the most recent verdict on `call_id`, read from the log's `Spot`
     /// audit entries (docs/permissions.md). The spotter logs its verdict *before* routing the call
     /// to the human gate, so by the time the gate registers, the reason is already durably in the
-    /// log — no side channel needed. The log is the source of truth, here too.
+    /// log — no side channel needed.
     pub(super) fn latest_spot_reason(&self, call_id: &CallId) -> Option<String> {
         self.latest_spot(call_id).map(|spot| spot.reason)
     }
@@ -194,9 +194,9 @@ impl Session {
     /// whoever decides next. `source` is the escalator, spelled as a turn's `source` is.
     /// `false` when `id` is not the pending gate.
     ///
-    /// The escalation is recorded as a `Telemetry::Escalation` and carried on the gate
-    /// topic and the status view; the status watcher (`subscriptions.rs`) re-posts the
-    /// gate to its new reviewer. Each escalation is a gate moment (docs/web-push.md):
+    /// The escalation is recorded as a `Telemetry::Escalation`; the status watcher
+    /// (`subscriptions.rs`) re-posts the gate to its new reviewer. Each escalation is a
+    /// gate moment (docs/web-push.md):
     /// one that reaches the operator is pushed, marked with who escalated it and the
     /// note; one that reaches a session is recorded as not sent.
     pub(crate) fn escalate(
@@ -297,7 +297,7 @@ impl Session {
     ///
     /// `decider` says who decided, spelled as a turn's `source` is, and the turn carrying
     /// an allow's note. The decision is recorded as a `Telemetry::GateDecision` at the same
-    /// moment, so it precedes what the loop does with it (docs/log-and-projection.md).
+    /// moment, ahead of the loop acting on it.
     pub(crate) fn resolve_approval(
         &self,
         id: &CallId,

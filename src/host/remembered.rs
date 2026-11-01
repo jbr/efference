@@ -3,31 +3,17 @@
 //! (docs/control-api.md, docs/state-store.md).
 //!
 //! One row per identity, written by every successful creation
-//! ([`crate::host::Host::create`]), so a launch is what puts a directory on the
-//! list: there is no registration step and no nickname. A relaunch refreshes the
-//! row's timestamp rather than adding one, which is what makes the index read as
-//! most-recently-used and keeps one project's launches from crowding out another's.
+//! ([`crate::host::Host::create`]): a relaunch refreshes the row's timestamp rather
+//! than adding one, which is what makes the index read as most-recently-used.
 //!
-//! The identity is [`crate::config::history::Scope`], unchanged: a canonicalized working
-//! root and the *template* configuration the boot consumed — never the per-session
-//! snapshot, whose path is unique per session. `config` is stored beside it
-//! because the key alone cannot say whether the configuration was named: an
-//! explicit `efference.toml` and the probed one share a key, while
-//! [`crate::config::load_in`] treats them differently — a named configuration that
-//! is missing is an error, an absent default falls back to
-//! [`crate::config::Config::default`]. That difference is what
-//! [`Project::available`] checks and what the index hands a client back to create
-//! with.
+//! The identity is [`crate::config::history::Scope`], unchanged — never the per-session
+//! snapshot — and `config` is stored beside it because the key alone cannot say
+//! whether the configuration was named, which is what [`Project::available`]
+//! checks ([`crate::config::load_in`]).
 //!
-//! The table is in the user state database ([`crate::platform::state`]) beside the model
-//! picks and the catalog, every operation opening its own connection and every one
-//! best-effort: a store that cannot be opened or written reads as an empty list,
-//! and never fails the creation that was trying to remember itself.
-//!
-//! Availability is a read-time question, not a stored one. A directory on an
-//! unmounted volume comes back when the volume does, so the index filters and
-//! nothing else writes: only [`Projects::forget`] deletes, and it deletes the
-//! remembered entry alone.
+//! Every operation opens its own connection and is best-effort: a store that cannot
+//! be opened or written reads as an empty list. Availability is a read-time question,
+//! not a stored one: only [`Projects::forget`] deletes.
 
 use std::path::{Path, PathBuf};
 
@@ -65,14 +51,9 @@ pub struct Project {
 impl Project {
     /// Whether a creation could still start here now — the question the index
     /// filters on, answered against the filesystem each time rather than stored,
-    /// because the answer is a property of this moment.
-    ///
-    /// The rules are [`crate::config::load_in`]'s: a directory that is not there
-    /// has nothing to run in, a *named* configuration that is not there is an
-    /// error, and an unnamed one is not — creation falls back to its defaults, so
-    /// a row recorded before the directory grew an `efference.toml` stays listed
-    /// and stays launchable. This is the index's check, not creation's: a volume
-    /// can unmount between the two, which is why creation validates again.
+    /// because the answer is a property of this moment (the rules are
+    /// [`crate::config::load_in`]'s). This is the index's check, not creation's: a
+    /// volume can unmount between the two, which is why creation validates again.
     ///
     /// Blocking by nature — a stat on an unresponsive network mount waits — so the
     /// index runs these off the executor.
@@ -108,9 +89,7 @@ pub struct Projects {
 
 impl Projects {
     /// Open the store at `path`, creating the database and this table on first
-    /// use. `CREATE TABLE IF NOT EXISTS` is the migration story
-    /// ([`crate::platform::state`]): a later table lands beside this one, and a later column
-    /// in a follow-up change.
+    /// use (the migration story is [`crate::platform::state`]'s).
     pub fn at(path: PathBuf) -> Self {
         Self { path: Some(path) }
     }

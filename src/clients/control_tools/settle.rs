@@ -1,3 +1,5 @@
+//! The `settle` session-control verb (docs/tools.md).
+
 use super::ClientExecutor;
 use super::results::{StateResult, pretty};
 use super::verb::{ControlVerb, VerbCall};

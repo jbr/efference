@@ -1,3 +1,5 @@
+//! The `title` session-control verb (docs/tools.md).
+
 use super::ClientExecutor;
 use super::args::AgentOrHere;
 use super::verb::{ControlVerb, VerbCall};

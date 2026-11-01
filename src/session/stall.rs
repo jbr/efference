@@ -15,7 +15,7 @@ impl Session {
     }
 
     /// Clear the stall: a trajectory is starting, or a held triage is retrying, so the
-    /// last outcome is no longer the current condition. Called when the work
+    /// last outcome is not the current condition. Called when the work
     /// resumes rather than on a successful completion; the one time the topic is set
     /// while the loop runs is a held triage (docs/triage.md).
     pub(crate) fn clear_stall(&self) {

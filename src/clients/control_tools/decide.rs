@@ -1,3 +1,5 @@
+//! The `decide` session-control verb (docs/tools.md).
+
 use super::args::{NamedAgent, handle, reader_name, turn_source};
 use super::executor::{state_of, status_in};
 use super::host_executor::names_held;

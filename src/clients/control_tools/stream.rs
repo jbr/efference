@@ -9,8 +9,8 @@
 //! agent's `status` topic with its own follower (`watch.rs`): the first frame is the
 //! status at connect, then one frame per new decision point by `wait`'s key, which the
 //! connection records for itself, so `wait` and the stream never consume each other's
-//! statuses. An end is sent as a frame and closes with 1000; a host that can no longer be
-//! listed closes with 1011.
+//! statuses. An end is sent as a frame and closes with 1000; a host absent from the
+//! listing closes with 1011.
 
 use std::collections::HashMap;
 use std::ops::ControlFlow;

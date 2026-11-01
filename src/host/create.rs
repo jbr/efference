@@ -1,12 +1,8 @@
 //! Minting a session (docs/control-api.md): the host's side of `POST /sessions`, whose
 //! route is `host_http/create.rs`.
 //!
-//! The counterpart of [`resume`], and the same shape of work: the
-//! caller supplies what a log cannot hold, the host prepares a session and starts
-//! it, and the id comes back. Creation mints; resume reopens. The two differ most in
-//! what they record — a launch and an explicit model pick in history, or nothing —
-//! and in what they read: every option here is the caller's to choose, where a
-//! resumed session has none.
+//! The counterpart of [`resume`]: the caller supplies what a log cannot hold, the
+//! host prepares a session and starts it, and the id comes back.
 
 use super::preparation::authorization_for;
 use super::*;

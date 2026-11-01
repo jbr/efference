@@ -20,9 +20,8 @@ use crate::record::session_dir::{DIR_MODE, FILE_MODE};
 
 /// The files beside the control socket that hold user state or secrets.
 /// `state.db` is the current store (the name of `crate::platform::state::RELATIVE_PATH`)
-/// and `config.toml` the user configuration; the rest were written by earlier
-/// releases and no longer are, named so a machine still carrying one is
-/// tightened too.
+/// and `config.toml` the user configuration; the rest are legacy paths a machine
+/// may still carry, tightened too.
 const STATE_FILES: [&str; 5] = [
     "state.db",
     "config.toml",

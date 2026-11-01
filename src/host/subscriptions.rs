@@ -2,11 +2,7 @@
 //! (docs/tools.md).
 //!
 //! The subscriber set is host control state on the target — never logged, never
-//! projected. `create` from a session subscribes the creator with `wake`, so the
-//! parent gets a turn at each of the child's decision points except a gate routed to
-//! the operator, and a supervisor set after creation is subscribed on the same terms
-//! (`host/supervise.rs`); any other subscription is ambient, and the subscriber's
-//! triage may dismiss it. The host runs one watcher per session that reads the status
+//! projected. The host runs one watcher per session that reads the status
 //! at every control-state change and posts it to the subscribers when it moves.
 
 use crate::host::Host;
@@ -78,20 +74,14 @@ impl Host {
     ///
     /// A gate is the one status that is more than observation. **Who answers it is the
     /// review-level dial's to say, not the subscription's** (docs/permissions.md): a
-    /// session whose position resolves to `supervisor` sends the call it is holding to
-    /// its supervisor, subscribed or not, with the wake a held call warrants and the
-    /// body a reviewer reads, which names the moves that decide it. That reviewer is
-    /// skipped in the subscriber loop so the two posts do not race on one slot. Every
-    /// other status, and every other position, posts to subscribers alone.
+    /// session whose position resolves to `supervisor` sends the held call to its
+    /// supervisor, subscribed or not, and that reviewer is skipped in the subscriber
+    /// loop so the two posts do not race on one slot.
     ///
-    /// A gate the dial routes to the operator asks the operator, so it reaches a `wake`
-    /// subscriber without the wake. The session's supervisor may still decide it, and
-    /// its body names the `decide` call (`Relation::MayDecide`).
-    ///
-    /// An escalated gate is routed by its last escalation, not the dial
-    /// (docs/permissions.md): its new reviewer is posted as any reviewer is, subscribed
-    /// or not, and the subscriber that escalated it reads it without wake, with an
-    /// `escalated:` line naming whom it went to.
+    /// A gate the dial routes to the operator reaches a `wake` subscriber without the
+    /// wake. An escalated gate is routed by its last escalation, not the dial, and the
+    /// subscriber that escalated it reads it without wake, with an `escalated:` line
+    /// naming whom it went to.
     ///
     /// A question that returned a session's queued message is that session's news as
     /// well (docs/process-monitor.md): a sender that is not subscribed is woken with the

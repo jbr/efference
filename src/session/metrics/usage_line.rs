@@ -14,7 +14,7 @@ use crate::record::log::RequestOrigin;
 pub const USAGE_NAME: &str = "usage.jsonl";
 
 /// One line of `usage.jsonl`: when, which shape, the upstream's own id for the
-/// request, the model that served it, and the four token counts. The model is
+/// request, the model that served it, and the token counts. The model is
 /// per line rather than per file because the session's model can change
 /// mid-log, so only a per-request record attributes every entry.
 ///
@@ -96,7 +96,7 @@ impl UsageLine {
         self.main_prefix || self.origin.touches_main_prefix()
     }
 
-    /// The four token counts as the request's [`Usage`].
+    /// The token counts as the request's [`Usage`].
     pub fn usage(&self) -> Usage {
         Usage {
             input_tokens: self.input,

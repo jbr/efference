@@ -2,11 +2,8 @@
 //! (docs/session-title.md).
 //!
 //! The id is the session directory's name, the `--name` a client resolves, and
-//! the address a peer will message; it never changes. A word pair is what makes
-//! it typeable from memory — the timestamp it replaced had to be copied out of
-//! an `ls`. The lists hold common words only: every word is unambiguous to spell
-//! and safe to say aloud. About 150 of each give the
-//! host-wide id space (docs/session-title.md) some twenty thousand pairs.
+//! the address a peer will message; it never changes. The lists hold common words
+//! only: every word is unambiguous to spell and safe to say aloud.
 
 #[rustfmt::skip]
 const ADJECTIVES: &[&str] = &[

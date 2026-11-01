@@ -1,3 +1,5 @@
+//! The interactive theme: one pre-computed style per UI surface (docs/tui.md).
+
 use ratatui::style::{Color as RatatuiColor, Modifier, Style};
 use syntect::highlighting::{Color, ThemeSettings};
 

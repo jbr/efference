@@ -1,3 +1,5 @@
+//! The `wait` session-control verb (docs/tools.md).
+
 use super::args::reader_name;
 use super::executor::{state_of, status_in};
 use super::status::operator_reader;

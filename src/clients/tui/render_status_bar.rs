@@ -1,3 +1,5 @@
+//! The bottom status line: message and streaming indicator (docs/tui.md).
+
 use ratatui::{buffer::Buffer, layout::Rect};
 
 use super::{render_document::BASELINE_LEFT_MARGIN, state::InteractiveState};

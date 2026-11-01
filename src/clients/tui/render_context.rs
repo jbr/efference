@@ -1,3 +1,5 @@
+//! Shared syntax-highlighting state: the loaded syntect themes and syntaxes (docs/tui.md).
+
 use crate::clients::tui::color_scheme::ColorScheme;
 use fieldwork::Fieldwork;
 use std::path::Path;

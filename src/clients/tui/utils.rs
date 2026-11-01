@@ -1,3 +1,5 @@
+//! Small shared helpers: node lookup, truncation points, and cursor shape (docs/tui.md).
+
 use crate::clients::tui::document::DocumentNode;
 use crossterm::{queue, style::Print};
 use ratatui::prelude::Backend;

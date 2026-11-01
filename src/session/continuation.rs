@@ -2,14 +2,12 @@
 //! (docs/control-api.md, docs/control-channel.md).
 //!
 //! `POST /loop/continue` asks the idle loop to take another turn on the wire it
-//! already has: no `User` entry and no projection change. The signal is a flag plus
-//! a wake, read by the agent loop's idle `select!` beside the user turn and the
-//! notification wake — the same wake shape the pinned-event path uses
-//! (docs/process-monitor.md), which also enters a trajectory with no new user turn.
+//! already has. The signal is a flag plus a wake, read by the agent loop's idle
+//! `select!` beside the user turn and the notification wake — the same wake shape the
+//! pinned-event path uses (docs/process-monitor.md).
 //!
 //! The one thing written is a `Telemetry::Continue` naming who sent it, which
-//! projects to nothing, so the byte-stability pins cannot move: the next request
-//! re-sends the same prefix it would have sent had control never been handed back.
+//! projects to nothing, so the byte-stability pins cannot move.
 
 use super::*;
 use crate::record::log::ContinueOrigin;

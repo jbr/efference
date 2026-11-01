@@ -3,9 +3,8 @@
 //! A triage that produced no verdict is never shown to the agent. The results stay in
 //! the loop, unappended, while the trajectory is stalled on the `stall` topic; the
 //! operator's continue ("retry now") runs the triage again from the top, and the
-//! operator's interrupt ends the turn with the results withheld the way the
-//! interrupt's *after* juncture withholds one. The loop is still running throughout,
-//! so a host that stops here loses the results as it would mid-tool.
+//! operator's interrupt ends the turn with the results withheld. The loop is still
+//! running throughout, so a host that stops here loses the results as it would mid-tool.
 
 use super::*;
 

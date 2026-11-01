@@ -1,5 +1,5 @@
-//! Rename and the per-kind credential edits (backlog/setup-edits-connections.md:
-//! "The menu is per kind, not uniform"): repair through the same prompt the
+//! Rename and the per-kind credential edits (docs/operating.md): repair through
+//! the same prompt the
 //! add path uses, the env→keychain move and its `op://` guard, and the
 //! keychain→env reveal-then-switch.
 

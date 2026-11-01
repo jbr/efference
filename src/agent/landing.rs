@@ -16,8 +16,7 @@ pub(super) async fn land(
     primer: Option<TriagePrimerOutcome>,
 ) -> Result<(), Error> {
     let mut turn = *turn_at;
-    // The triage (docs/triage.md): one triage over every result this
-    // completion produced. Nothing to triage means no round-trip.
+    // The triage (docs/triage.md): one triage over every result this completion produced.
     let pending: Vec<Pending<'_>> = steps
         .iter()
         .filter_map(|s| match s {
@@ -211,8 +210,8 @@ async fn triage_batch(
     Ok(triaging)
 }
 
-/// The triage's usage: each fork request reads the shared canonical prefix
-/// (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
+/// The triage's usage (docs/log-and-projection.md): each fork request reads the shared
+/// canonical prefix (sliding its TTL), so it belongs in that telemetry.
 fn record_triage_usage(shared: &Session, triager: &Triager, outcome: &mut HoldOutcome) {
     for u in &outcome.usage {
         shared.record_triage(!triager.is_own(), u.clone());

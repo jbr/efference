@@ -1,3 +1,5 @@
+//! Code-block rendering with memoized and streaming syntax highlighting (docs/tui.md).
+
 #[cfg(test)]
 mod test;
 

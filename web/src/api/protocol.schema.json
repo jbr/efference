@@ -2886,7 +2886,7 @@
         },
         {
           "const": "not_compactable",
-          "description": "`POST /loop/compact` at a moment with no compaction in it: the cache is not believed\nexpired, a gate or question is pending, a request is in flight, or everything\nsince the last compaction fits in the verbatim tail (backlog: cold-session.md). 409.",
+          "description": "`POST /loop/compact` at a moment with no compaction in it: the cache is not believed\nexpired, a gate or question is pending, a request is in flight, or everything\nsince the last compaction fits in the verbatim tail (docs/control-api.md). 409.",
           "type": "string"
         },
         {

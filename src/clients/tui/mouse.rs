@@ -1,3 +1,5 @@
+//! Mouse events onto document actions: hover, click, drag, and scroll (docs/tui.md).
+
 use std::io::Write;
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};

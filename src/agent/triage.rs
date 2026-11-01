@@ -26,8 +26,7 @@ pub(super) fn triage_stream(
     }
 }
 
-/// How the idle loop was woken (docs/process-monitor.md): a user turn, a blank line (keep idling),
-/// a notification event (run a standalone triage), a zero-token continue, or shutdown.
+/// How the idle loop was woken (docs/process-monitor.md).
 pub(super) enum IdleWake {
     Turn(SubmittedTurn),
     Blank,
@@ -49,13 +48,12 @@ impl IdleWake {
     }
 }
 
-/// The standalone idle triage (docs/process-monitor.md — wake-on-notification). Opens the rider
-/// (every unresolved notification, queued slot ones logged first-show) alongside the
-/// running background tails, runs the tool-result-free triage peek, applies the
-/// dispositions, and logs the verdict as a `Triage` with `for_result: None`. Returns
-/// **true** iff it pinned something — the trajectory rule: a pin grows the wire, so
-/// the caller runs a real turn to act on it; nothing pinned leaves the projection
-/// byte-identical (audit-only), so the agent returns to idle with its cache still hot.
+/// The standalone idle triage (docs/process-monitor.md — wake-on-notification): runs the
+/// tool-result-free triage peek over the rider and the running background tails, and logs
+/// the verdict as a `Triage` with `for_result: None`. Returns **true** iff it pinned
+/// something — the trajectory rule: a pin grows the wire, so the caller runs a real turn
+/// to act on it; nothing pinned leaves the projection byte-identical (audit-only), so the
+/// agent returns to idle with its cache still hot.
 pub(super) async fn run_idle_triage(
     client: &Client,
     tools: &[Value],

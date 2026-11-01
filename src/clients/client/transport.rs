@@ -69,7 +69,7 @@ impl Client {
 
     /// A wait route's answer: the `/state` body and whether the host says the session
     /// settled or its cap expired (`efference-settled`, docs/control-api.md). A response
-    /// without the header counts as settled, as a host that predates it always meant.
+    /// without the header counts as settled.
     pub(super) async fn wait_at(
         &self,
         method: Method,

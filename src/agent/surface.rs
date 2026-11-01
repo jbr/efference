@@ -60,9 +60,8 @@ pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
 /// The spotter's brief for any tool a turn advertises — the lookup mirror of
 /// [`tool_definitions`]: the toolbox providers, then the loop-owned tools
 /// (`consolidate`, the process-monitor/inbox family). One lookup covering the whole
-/// array, so a tool in `tools[]` can't be invisible to the permission rung —
-/// the loop-owned family once was, and the spotter judged `check_inbox` and
-/// `list_processes` as bare names, calling them opaque (docs/permissions.md).
+/// array, so a tool in `tools[]` can't be invisible to the permission rung
+/// (docs/permissions.md).
 /// Bash stays brief-less by design (judged as command text), and the triage tools
 /// never reach a triage (an un-asked call pairs with a nudge result).
 pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolBrief<'a>> {
@@ -79,15 +78,10 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// the session, docs/log-and-projection.md), and snapshotted into `Session`
 /// ([`crate::session::Session::set_tool_catalog`]).
 ///
-/// A catalog built from `toolbox.tool_catalog()` alone once missed this whole
-/// family — `check_inbox`, `list_processes`, `consolidate`, the two triage
-/// tools — the same shape of gap [`brief`]'s doc comment records for the
-/// spotter (`check_inbox`/`list_processes` once judged as bare names because
-/// the lookup consulted only the providers). Composed from the same brief
-/// sources `brief` reads, plus the two triage tools, which `brief` excludes
-/// (they never reach a triage) but this route does not: `retain`/`triage` still
-/// ride every turn's `tools[]`, so a reader destructuring the triage's own
-/// call wants their schema too.
+/// Composed from the same brief sources `brief` reads, plus the two triage tools,
+/// which `brief` excludes (they never reach a triage) but this route does not:
+/// `retain`/`triage` still ride every turn's `tools[]`, so a reader destructuring the
+/// triage's own call wants their schema too.
 ///
 /// None of these five sources inject [`crate::record::names::tools::INTENT`] the way a
 /// `Toolbox`-mounted tool's wire entry does — [`tool_definitions`] pushes

@@ -1,3 +1,5 @@
+//! The transcript scrollbar: track, thumb, and brightness (docs/tui.md).
+
 use ratatui::{buffer::Buffer, layout::Rect, style::Color};
 
 use super::InteractiveState;

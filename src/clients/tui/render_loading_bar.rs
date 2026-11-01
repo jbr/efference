@@ -1,3 +1,5 @@
+//! The loading bar: the animated stripe that replaces the breadcrumb row while waiting (docs/tui.md).
+
 use ratatui::{buffer::Buffer, layout::Rect, style::Color};
 use std::f32::consts::TAU;
 

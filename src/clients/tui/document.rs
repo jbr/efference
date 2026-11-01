@@ -1,3 +1,5 @@
+//! The transcript document: nodes, spans, entry kinds, and the actions spans carry (docs/tui.md).
+
 use std::borrow::Cow;
 
 /// Interactive action that can be attached to a span.

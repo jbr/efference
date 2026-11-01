@@ -1,3 +1,5 @@
+//! Keyboard dispatch: composer bindings, strip mnemonics, and link navigation (docs/tui.md).
+
 use std::io::Write;
 
 use crossterm::{

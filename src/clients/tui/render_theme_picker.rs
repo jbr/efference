@@ -1,3 +1,5 @@
+//! The theme picker overlay (docs/tui.md).
+
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},

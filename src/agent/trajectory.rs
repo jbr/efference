@@ -30,8 +30,8 @@ pub(super) struct AgentLoop<'a, F, S> {
     toolbox: Toolbox,
     /// World-facing tools plus the harness tools (`consolidate`, the process-monitor/inbox
     /// tools (docs/process-monitor.md)) handled structurally in the loop, not by a
-    /// `Provider`. Built once from the shared source; the defs are constant `json!`, so
-    /// `tools[]` stays byte-stable across requests (docs/log-and-projection.md).
+    /// `Provider`. The defs are constant `json!`, so `tools[]` stays byte-stable across
+    /// requests (docs/log-and-projection.md).
     tools: Vec<Value>,
     /// The title ask's owned request surface, built once; each title check hands its
     /// detached task a clone (docs/session-title.md).
@@ -76,10 +76,9 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
     }
 
     /// Wait for work, and take in the user turn that is it. Idle: race the next user turn
-    /// against a notification wake (docs/process-monitor.md — wake-on-notification, which
-    /// replaced a blocking `wait`). A user turn drives a normal trajectory; an event wakes
-    /// a standalone triage that starts a trajectory only if it pins something. The first
-    /// turn arrives here too.
+    /// against a notification wake (docs/process-monitor.md — wake-on-notification). A user
+    /// turn drives a normal trajectory; an event wakes a standalone triage that starts a
+    /// trajectory only if it pins something. The first turn arrives here too.
     pub(super) async fn idle(&mut self) -> Result<Idle, Error> {
         loop {
             log::debug!("idle — awaiting a user turn or an event on the control socket");
@@ -115,9 +114,8 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
                 IdleWake::Continue => {
                     // The zero-token continue (docs/control-api.md): the operator handed
                     // control back with no input, so nothing is appended and nothing on the
-                    // wire moves — the trajectory resumes at the tail it already had, and
-                    // the next request re-sends a byte-identical prefix. Consuming the
-                    // signal here is what keeps one gesture to one extra turn.
+                    // wire moves, and the next request re-sends a byte-identical prefix.
+                    // Consuming the signal here is what keeps one gesture to one extra turn.
                     self.shared.take_continue();
                 }
                 // The batch comes first: a `User` entry after unanswered `tool_use` blocks
@@ -162,10 +160,10 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
         self.client.begin_turn();
         self.triager.begin_turn();
 
-        // A trajectory is starting, so the previous one's give-up is no longer the
-        // current condition (docs/transport.md): the `stall` topic names what the
-        // daemon is *now*, and a supervisor that answered a stall by sending a turn
-        // sees it clear as that turn begins rather than only when it finishes.
+        // A trajectory is starting, so the previous one's give-up is not the current
+        // condition (docs/transport.md): the `stall` topic names what the daemon is
+        // *now*, and a supervisor that answered a stall by sending a turn sees it clear
+        // as that turn begins rather than only when it finishes.
         self.shared.clear_stall();
 
         // A fresh turn starts un-interrupted: an interrupt fired while the loop was idle has
@@ -178,16 +176,11 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
         // round-trips that follow, not the first response (docs/control-channel.md).
         let mut first_step = true;
         loop {
-            // The config-unparseable park (docs/permissions.md). A config edit
-            // resolves to adopted or rejected-with-a-reason; the one outcome that
-            // reaches neither is the file failing to parse *and* the restore
-            // failing too, which leaves policy in memory that the file no longer
-            // shows. Rather than keep running under a perimeter nobody can
-            // inspect, the loop stops here until the file parses again — the human
-            // fixes it, fs-watch adopts it, and this returns. Checked at every
-            // step, not only at the trajectory's start, because an approved config
-            // write can land the condition mid-trajectory. Resolves at once in
-            // every other case, which is nearly always.
+            // The config-unparseable park (docs/permissions.md): the file fails to parse
+            // *and* the restore fails too, leaving policy in memory that the file no longer
+            // shows, so the loop stops here until the file parses again. Checked at every
+            // step, not only at the trajectory's start, because an approved config write
+            // can land the condition mid-trajectory.
             self.shared.await_config_repair().await;
             let ended = match replay.take() {
                 Some(pending) => self.resume_batch(&pending).await?,
@@ -203,8 +196,7 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
     /// A resumed session's first action brings its pending batch back
     /// (docs/resumption.md): the calls that never ran go through the permission
     /// cascade, and everything captured is triaged with them at one triage, with no
-    /// model request first. The next pass round-trips as after any batch. Returns whether
-    /// the trajectory ends.
+    /// model request first. Returns whether the trajectory ends.
     async fn resume_batch(&mut self, pending: &recovery::Completion) -> Result<bool, Error> {
         let Batch {
             steps,
@@ -248,7 +240,7 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
         if !first_step {
             self.shared.pace_at_juncture().await;
         }
-        // The cold check (backlog: cold-session.md): no request reads a cache
+        // The cold check (docs/transport.md): no request reads a cache
         // believed expired until a person has acted. Parks here, a decision
         // point, until a turn, continue, decision or answer arrives; before the
         // drain, so a turn sent meanwhile is delivered at this juncture.
@@ -273,10 +265,9 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
         let calls = commit_completion(&self.shared, completion, self.turn)?;
         if calls.is_empty() {
             self.consolidation.check(&self.shared);
-            // The trajectory is ending: a title check, the moment the title
-            // peek reads the whole of it (docs/session-title.md). Detached: the loop breaks
-            // and re-arms at once, and the triage reads the prefix this turn
-            // just cached while the loop idles.
+            // The trajectory is ending: a title check, the moment the title peek reads the
+            // whole of it (docs/session-title.md). Detached, so the triage reads the prefix
+            // this turn just cached while the loop idles.
             solicit_title_detached(&self.shared, &self.title_ask);
             return Ok(true); // model is done with this turn → wait for the next.
         }
@@ -321,12 +312,9 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
         turns.push(WireTurn::Breakpoint);
         // One tool call per turn (docs/README.md) — the agent picks its next single
         // action; the fork's `retain` is the only forced call.
-        // Supersede the idle line before blocking on the model
-        // (docs/transport.md). It is printed once at the top of the idle loop and
-        // is correct at that moment, but nothing replaced it when a submitted turn then
-        // streamed nothing a client renders as output — so the last thing an operator saw during a long
-        // generation was `idle`, which reads as *finished*. The cost of a stale `idle` isn't
-        // cosmetic: it invites interrupting or abandoning a live session on false signal.
+        // Supersede the idle line before blocking on the model (docs/transport.md): a
+        // stale `idle` during a live generation reads as *finished* and invites
+        // interrupting or abandoning the session on false signal.
         log::debug!("generating — turn {}", self.turn);
         self.shared.set_phase(LoopPhase::Requesting);
         let completion = complete_with_retries(
@@ -339,8 +327,7 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
         )
         .await?;
         // The all-clear, on every exit from the retry loop: the attempt that finalized,
-        // the exhausted budget (its own visible outcome, via the stall topic and
-        // the record-only entries), or a failed request (docs/transport.md).
+        // the exhausted budget, or a failed request (docs/transport.md).
         self.client.upstream_retry().clear(RetrySurface::Turn);
         Ok(completion)
     }

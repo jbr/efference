@@ -8,10 +8,9 @@
 //! turn that carries them; the watcher never reads that subdirectory.
 //!
 //! Nothing here touches the log directly. The notification rides the existing inbox rail
-//! (`Session::notify`), is shown at a triage, and is logged as `Ambient` like any other
-//! (at first show, since its slot is the file's path) — so the bytes stay on disk until
-//! the model pulls them, and the byte-stability pins never see the attachment at all
-//! (docs/log-and-projection.md).
+//! (`Session::notify`), is shown at a triage, and is logged as `Ambient` like any other —
+//! so the bytes stay on disk until the model pulls them, and the byte-stability pins never
+//! see the attachment at all (docs/log-and-projection.md).
 
 use super::*;
 use std::path::Path;

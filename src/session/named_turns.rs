@@ -1,8 +1,5 @@
 //! A turn that says which question it answers (docs/control-api.md): how an agent's
-//! message reaches a session. A pending `ask` takes such a turn as its reply only when
-//! the turn names it; a turn naming no question waits in the queue, and is refused
-//! while a question is pending, so a message written before the question existed is
-//! never read as its answer.
+//! message reaches a session.
 
 use super::transcript::reference::{Referenced, call_id_at, referenced};
 use super::transcript::sender;

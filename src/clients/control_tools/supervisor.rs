@@ -1,3 +1,5 @@
+//! The `supervisor` session-control verb (docs/tools.md).
+
 use super::ClientExecutor;
 use super::verb::{ControlVerb, VerbCall};
 use anyhow::{Result, anyhow};

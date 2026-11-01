@@ -1,3 +1,5 @@
+//! The help overlay: every keybinding the TUI answers (docs/tui.md).
+
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
 use super::state::InteractiveState;

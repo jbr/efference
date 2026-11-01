@@ -1,51 +1,23 @@
 //! The control-channel serialization of a [`LogEntry`] (docs/control-api.md).
+//! Every surface that hands an entry to a client serializes through [`EntryView`],
+//! never the entry directly: image bytes live at their own address and oversized
+//! result text is truncated and tagged except through [`EntryView::full`]. A
+//! committed assistant entry's view carries `artifacts` when the caller names the
+//! session that signs them ([`EntryView::with_artifacts`]) — derived on every read
+//! rather than stored, so the log stays the only record.
 //!
-//! Every surface that hands an entry to a client — `GET /log`, `GET /log/:seq`, and a
-//! `log` frame's `data` — serializes through [`EntryView`], never the entry directly.
-//! The view is the entry verbatim except for two elisions, both resolved by fetching
-//! the entry's own address:
-//!
-//! - **A result image's base64 `data` is omitted, always.** The bytes are a resource
-//!   at `GET /log/:seq/images/:idx`, fetched and HTTP-cached separately, so a
-//!   multi-megabyte image never rides a log window, a replay, or the SSE stream,
-//!   where it would queue every later frame behind it. The image's
-//!   `media_type`/`width`/`height` stay in the view so a client can lay out before
-//!   fetching.
-//! - **A result's `content` past [`MAX_INLINE_RESULT_BYTES`] is truncated, in the
-//!   window and frame views only.** [`EntryView::full`] — what `GET /log/:seq`
-//!   serves — keeps the whole string. The truncated form is tagged with
-//!   `content_elided: {kept_bytes, total_bytes}`, so a client reads "content, cut at
-//!   N of M bytes" rather than inferring it from a length.
-//!
-//! And two additions. A committed assistant entry's view carries `artifacts`, the
-//! signed links of its artifact fences (`artifacts.rs`, docs/artifacts.md),
-//! when the caller names the session that signs them ([`EntryView::with_artifacts`]).
-//! A result's view carries `selection: {total_lines, kept_lines}`
-//! — the line arithmetic of the verdict against the whole `content`, computed here
-//! from the same [`selection`] the wire and the TUI render through, so a client
-//! holding only the truncated prefix still states the count the model's view had.
-//! Derived on every read rather than stored: the log stays the record, and a counting
-//! bug is fixed by a build rather than baked into a session.
-//!
-//! Which entry carries those counts is a property of when triage ran
-//! (docs/triage.md). A result logged with its own verdict — every log written
-//! before capture, and every fixture — carries them on its own entry. A result
-//! captured first carries them on the [`Payload::ResultVerdict`] that decides it, so a
-//! client updating its slot from one frame gets the same numbers; the result's own
-//! view is `Pending` and carries none. That verdict entry holds no `raw` of its own,
-//! so the caller resolves the result it names and hands the bytes over
-//! ([`EntryView::with_result_raw`]): the view does not reach into the log itself.
+//! Which entry carries a triaged result's line counts is a property of when triage
+//! ran (docs/triage.md): a verdict entry holds no `raw` of its own, so the caller
+//! resolves the result it names ([`EntryView::with_result_raw`]).
 //!
 //! The log file and the wire projection are untouched — both keep everything inline
 //! (docs/log-and-projection.md).
 //!
-//! Hand-written `Serialize` impls that mirror the derived ones field-for-field, in
-//! declaration order. A `serde_json::Value` round-trip would be shorter but re-sorts
-//! object keys, breaking the byte-identity between a log frame's `data` and the
-//! `GET /log` element (see frames.rs). The mirror obligation is pinned by test:
-//! an image-free entry under the threshold serializes byte-identically through both
-//! paths, so a field added to [`LogEntry`] or [`RawResult`] without updating this
-//! module fails there.
+//! Hand-written `Serialize` impls mirror the derived ones field-for-field, in
+//! declaration order: a `serde_json::Value` round-trip would re-sort object keys,
+//! breaking the byte-identity between a log frame's `data` and the `GET /log`
+//! element. The mirror obligation is pinned by test, so a field added to [`LogEntry`]
+//! or [`RawResult`] without updating this module fails there.
 
 use crate::record::log::LogEntry;
 use crate::record::log::Payload;

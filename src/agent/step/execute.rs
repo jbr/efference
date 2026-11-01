@@ -52,8 +52,7 @@ pub(super) async fn run_approved<F: Frontend>(
     // revert it. Reverting turns the result into an error carrying the parse
     // failure, so the author learns its edit didn't take *in the tool result it's
     // already reading*, rather than believing an approved write took effect and
-    // thrashing against a wall it thinks it cleared. The fs-watch task calls the
-    // same refresh, so an edit that arrives any other way gets identical treatment.
+    // thrashing against a wall it thinks it cleared.
     let result = if config_write {
         config_write_outcome(shared, result)
     } else {
@@ -274,9 +273,8 @@ async fn run_foreground<F: Frontend>(
 
 /// What a handoff tells the agent. The two detaches read differently to it. An operator
 /// detach is something that happened *to* the call; an auto-detach is the deadline the
-/// call itself ran past, and is the one moment `background_after` is worth knowing
-/// about — three sessions hit the pre-timer hang and none learned anything, because the
-/// failure was silence (docs/process-monitor.md).
+/// call itself ran past, and is the one moment `background_after` is worth knowing about
+/// (docs/process-monitor.md).
 fn detach_message(auto_after: Option<std::time::Duration>, handle: &str) -> String {
     match auto_after {
         Some(after) => format!(

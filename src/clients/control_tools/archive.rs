@@ -1,3 +1,5 @@
+//! The `archive` session-control verb (docs/tools.md).
+
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
 use crate::session::status::answers;

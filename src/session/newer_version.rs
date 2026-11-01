@@ -3,10 +3,8 @@
 //! it on.
 //!
 //! Host state: one [`NewerVersionCell`] lives on `Host` and is handed to each session the
-//! host adopts ([`Session::set_newer_version`]), the way the attention table is. It is
-//! carried as a session topic because a session's `/events` stream is what both clients
-//! already follow; neither follows anything host-wide that a status line could read
-//! (docs/control-api.md). A session outside a host has none and publishes `null`.
+//! host adopts ([`Session::set_newer_version`]). It is carried as a session topic because a
+//! session's `/events` stream is what both clients already follow (docs/control-api.md).
 
 use super::*;
 use crate::platform::update_check::{INSTALL_COMMAND, Release};

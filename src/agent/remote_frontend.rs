@@ -6,9 +6,8 @@ use crate::session::Session;
 use crate::tools::Interrupt;
 use tokio::sync::mpsc;
 
-/// The loop's [`Frontend`], backed entirely by [`Session`]: every input arrives
-/// over HTTP. The loop is pull-shaped — it blocks at `read_user_turn` / `approve`
-/// — and each pull resolves when a client pushes.
+/// The loop is pull-shaped — it blocks at `read_user_turn` / `approve` — and each
+/// pull resolves when a client pushes.
 pub struct RemoteFrontend {
     pub(crate) shared: Arc<Session>,
     /// Single-consumer receiver of the turn inbox.

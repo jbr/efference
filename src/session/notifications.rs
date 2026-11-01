@@ -15,8 +15,7 @@ impl Session {
     /// File an ambient notification (docs/inbox.md — `POST /notifications`). One without
     /// a slot is appended to the log as its `Ambient` entry now, and the answer is that
     /// entry's `seq`. One bound to a `slot` waits in memory and **supersedes** any queued
-    /// one on the same slot — archived-and-replaced, never edited (records are immutable,
-    /// docs/log-and-projection.md); it reaches the log only when a triage first shows it,
+    /// one on the same slot; it reaches the log only when a triage first shows it,
     /// and the answer is `None`.
     ///
     /// A notification the agent must get a turn for (docs/inbox.md) is built

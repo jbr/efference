@@ -49,12 +49,11 @@ impl Session {
 
     /// Resolve a pending proposal by `seq` — the orchestrator-above's commit/cancel decision over
     /// `PATCH /proposals/:seq` (docs/permissions.md). **Commit** appends a
-    /// `Committed` [`ConfigEdit`](crate::record::log::ConfigEdit) carrying the proposal's `change`, which
-    /// `append`'s fold applies to the effective config (and notifies the session for
-    /// `scope`/`paths`); **cancel** appends a `Cancelled` entry (audit-only). Both
-    /// reference the proposal by `seq`, so the fold drops it from the pending queue. Returns
-    /// `false` if no pending proposal has that `seq`. The commit is session-effective only:
-    /// unlike the synchronous gate path
+    /// `Committed` [`ConfigEdit`](crate::record::log::ConfigEdit) carrying the proposal's `change`,
+    /// which the fold applies to the effective config; **cancel** appends a `Cancelled`
+    /// entry (audit-only). Both reference the proposal by `seq`, so the fold drops it
+    /// from the pending queue. Returns `false` if no pending proposal has that `seq`. The
+    /// commit is session-effective only: unlike the synchronous gate path
     /// ([`apply_config_change`](Self::apply_config_change)), it is not written back to the
     /// config file.
     pub(crate) fn resolve_proposal_decision(
@@ -87,8 +86,7 @@ impl Session {
 
     /// Edit a committed [`ConfigChange`](crate::record::log::ConfigChange) into the config file,
     /// preserving its formatting (docs/permissions.md). Every committed grant goes through
-    /// here, so the file stays a complete record of the perimeter the session ran under —
-    /// the file an operator reads, and copies grants up to the origin template from. A
+    /// here, so the file stays a complete record of the perimeter the session ran under. A
     /// session with no config file (the built-in default role) is a no-op: there is no file
     /// to diverge from.
     pub fn apply_config_change(&self, change: &crate::record::log::ConfigChange) -> io::Result<()> {

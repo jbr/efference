@@ -8,8 +8,7 @@ use crate::record::recovery::{CallState, Completion};
 /// Run what `pending` left undone and return the batch in call order. A call that never
 /// started runs as it would have in the first place, filed under the completion's turn,
 /// so a gate reappears and is judged against current policy. A captured result keeps the
-/// entry it was logged at, with the masked bytes the log holds, and only waits for the
-/// verdict. A decided call has nothing left to land.
+/// entry it was logged at and only waits for the verdict.
 pub(super) async fn replay_batch<F: Frontend, S: Spotter>(
     frontend: &mut F,
     shared: &Arc<Session>,

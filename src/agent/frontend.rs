@@ -1,9 +1,8 @@
 //! The `Frontend` — the user-facing interaction boundary (docs/README.md).
 //!
 //! The agent loop knows only this trait; whichever backend is mounted sits behind
-//! it. The control channel makes HTTP the *singular, authoritative* input source
-//! (docs/control-channel.md), so the one mounted backend is
-//! [`crate::agent::remote_frontend::RemoteFrontend`], fed by the daemon's HTTP handlers. There is
+//! it (docs/control-channel.md). The one mounted backend is
+//! [`crate::agent::remote_frontend::RemoteFrontend`], fed by the daemon's HTTP handlers:
 //! no privileged in-process path — the human (via the TUI), an automated driver,
 //! and a subagent are all clients of the same socket.
 //!
@@ -32,11 +31,9 @@ pub trait Frontend {
     fn read_user_turn(&mut self) -> impl Future<Output = Option<SubmittedTurn>> + Send;
 
     /// Non-blocking drain of any user turns submitted **while the loop was
-    /// mid-trajectory** (docs/control-channel.md). The loop calls this at
-    /// each inner-loop juncture (after a tool's results land, before the next model
-    /// call) and appends each as a canonical `Payload::User` — the "next possible
-    /// juncture" delivery that keeps a mid-trajectory message from waiting until the
-    /// whole trajectory ends. Returns the queued turns in submission order (blank
+    /// mid-trajectory** (docs/control-channel.md): the "next possible juncture"
+    /// delivery that keeps a mid-trajectory message from waiting until the whole
+    /// trajectory ends. Returns the queued turns in submission order (blank
     /// turns filtered); empty when nothing is queued. Default: none — a frontend with
     /// no out-of-band turn queue never has anything to drain.
     fn drain_queued_turns(&mut self) -> Vec<SubmittedTurn> {

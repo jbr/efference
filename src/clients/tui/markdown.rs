@@ -1,3 +1,5 @@
+//! Markdown into document nodes, via pulldown-cmark (docs/tui.md).
+
 use crate::clients::tui::document::{
     DocumentNode, HeadingLevel, ListItem, Span, SpanStyle, TableCell, TuiAction,
 };

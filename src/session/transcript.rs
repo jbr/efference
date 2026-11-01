@@ -1,15 +1,8 @@
 //! The transcript: a log window as plain text, at the grain a reader asks for
 //! (docs/control-api.md).
 //!
-//! `GET /transcript` has two grains and a zoom:
-//!
-//! - **conversation** (`conversation.rs`, the default): what was said and done. Prose
-//!   in full, each call on one line with its outcome — who decided its gate, its
-//!   result's size, and what the session saw of it — and none of the mechanism.
-//! - **audit** (`audit.rs`): one block per log entry, the mechanism included.
-//! - **zoom** (`zoom.rs`, `seq=8.2`): one entry in full — a call's exact input, its
-//!   decision trail, and its raw result, capped.
-//!
+//! `GET /transcript` has two grains and a zoom: **conversation** (`conversation.rs`, the
+//! default), **audit** (`audit.rs`), and **zoom** (`zoom.rs`, `seq=8.2`).
 //! A result's body is never part of a window; the zoom and `GET /log/:seq` are where
 //! it is read. The TUI keeps its own tree (docs/tui.md), which shows the bodies.
 
@@ -34,12 +27,9 @@ pub(crate) mod zoom;
 /// How much of a tool result's `content` rides a window read or a `log` frame before
 /// the rest is left to `GET /log/:seq` (docs/control-api.md).
 ///
-/// 16 KiB, derived from the result-size distribution of this repo's own sessions
-/// (2,131 results across 124 logs): the median result is ~1 KB and p90 is ~13 KB, so
-/// the threshold sits just past the body of the distribution — ~8% of results elide,
-/// and that 8% is ~35% of all result bytes. Halving it to 8 KiB nearly doubles the
-/// fetch count for 18 more points of bytes; doubling it to 32 KiB halves the bytes
-/// saved. It is the point where a frame's own cost stops being the dominant one:
+/// 16 KiB, set just past the body of the result-size distribution, so most results
+/// ride whole and the elided minority holds a large share of result bytes.
+/// It is the point where a frame's own cost stops being the dominant one:
 /// below it, a payload is comparable to the HTTP round-trip that would fetch it, so
 /// eliding trades a cheap frame for a dereference and an N+1 read over a normal
 /// session.

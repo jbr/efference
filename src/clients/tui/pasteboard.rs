@@ -67,7 +67,7 @@ impl Watch {
 mod test {
     use super::*;
 
-    /// The type lists real copies offer (2026-09-27): a browser's "copy image", a screenshot,
+    /// The type lists real copies offer: a browser's "copy image", a screenshot,
     /// a text copy that also carries a rendering, and a Finder file copy.
     #[test]
     fn an_image_is_an_image_type_with_no_text_or_file() {

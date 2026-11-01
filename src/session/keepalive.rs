@@ -92,7 +92,7 @@ pub(super) struct StoredRequest {
     pub(super) prefix_tokens: u64,
 }
 
-/// From when the session's cache is believed to have expired (backlog: cold-session.md):
+/// From when the session's cache is believed to have expired (docs/transport.md):
 /// the last request on the main prefix plus the provider's cache lifetime, once `now`
 /// is past it. `None` while it is believed warm, and for a session with no such request
 /// yet, which has nothing cached to lose. A belief, not a measurement: no provider says

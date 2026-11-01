@@ -210,16 +210,13 @@ pub(in crate::clients::tui) fn live_thinking_entry(text: &str) -> Option<Documen
 /// empty or only whitespace.
 ///
 /// Thinking goes through the same [`MarkdownRenderer`] assistant prose does. It
-/// is not *required* to be markdown, any more than prose is — it simply is:
-/// across 653 blocks in 20 sessions, 73.5% carry an explicit markdown construct.
-/// Rendering it as literal text left fences, inline code, emphasis, and lists as
-/// the characters that spell them, which the web client (already doing this)
-/// made obvious by comparison.
+/// is not *required* to be markdown, any more than prose is — rendering it as
+/// literal text left fences, inline code, emphasis, and lists as the characters
+/// that spell them, which the web client (already doing this) made obvious by
+/// comparison.
 ///
-/// This *fixes* the regression the previous implementation was defending
-/// against. Keeping the model's own line structure was a response to reflowing
-/// `- a\n- b` into `- a - b`; markdown rendering resolves that properly by
-/// making it a list, rather than by refusing to reflow anything.
+/// The model's line structure survives because markdown rendering makes a list
+/// a list (`- a\n- b` stays two rows), rather than by refusing to reflow anything.
 ///
 /// The dimming is a wrapper, not a per-span choice, because the register is a
 /// property of where the node sits — see [`DocumentNode::Dimmed`].
@@ -351,8 +348,7 @@ pub(in crate::clients::tui) fn annotation_line(marker: &str, text: &str) -> Docu
 ///
 /// Git's setup `output` is deliberately not shown: the line states the outcome,
 /// and a failed setup's exit status is on the line itself because that failure is
-/// the reason the entry exists. The whole output is in the log (`efference dev`),
-/// and surfacing it is backlog/inbox/worktree-setup-detail.md.
+/// the reason the entry exists. The whole output is in the log (`efference dev`).
 pub(in crate::clients::tui) fn worktree_notice(
     event: &crate::record::log::WorktreeEvent,
 ) -> DocumentNode<'static> {

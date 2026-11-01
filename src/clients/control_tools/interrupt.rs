@@ -1,3 +1,5 @@
+//! The `interrupt` session-control verb (docs/tools.md).
+
 use super::args::{NamedAgent, turn_source};
 use super::executor::{state_of, status_in};
 use super::verb::{ControlVerb, VerbCall};

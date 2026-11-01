@@ -1,3 +1,5 @@
+//! Writing text into cells: control-character folding and tab expansion (docs/tui.md).
+
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
 use super::state::InteractiveState;

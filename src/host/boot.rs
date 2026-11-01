@@ -3,16 +3,10 @@
 //! `prepare` turns a [`SessionRequest`] — what whoever creates a session has
 //! resolved: its root, its base environment, its storage dir, its flags — into a
 //! [`SessionBoot`] the runtime starts from. Everything in between is session
-//! preparation: the origin config, `[env]` references, the provider and its
-//! capability lookup, the session dir and config snapshot, scratch, the `[env]`
-//! policy, the log, the toolbox and its MCP mounts, the frozen preamble, the
-//! provider client, the spotter, and the triage. Listeners and the control
-//! socket are not prepared here; they belong to whoever runs the runtime.
+//! preparation; listeners and the control socket are not prepared here — they
+//! belong to whoever runs the runtime.
 //!
-//! A host's session-creation handler builds the request from a control-channel
-//! body after resolving its role selections against the host's connections.
-//! Boot progress is reported on stderr, the host's surface; a hosted creation
-//! will need that report returned instead (backlog/inbox/host-process.md).
+//! Boot progress is reported on stderr, the host's surface.
 
 use std::path::PathBuf;
 

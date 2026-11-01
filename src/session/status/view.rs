@@ -2,9 +2,7 @@
 //! value ([`StatusView`]) the host serves as the `status` state topic and the renderer
 //! prints (`render.rs`).
 //!
-//! Built from [`SessionStatus`] plus the session state each condition needs — the held
-//! call's handle and the reason it was held, the question's place, the closing message,
-//! what a working loop is doing.
+//! Built from [`SessionStatus`] plus the session state each condition needs.
 
 use super::super::cold::ParkReason;
 use super::*;
