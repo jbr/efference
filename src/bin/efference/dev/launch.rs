@@ -11,11 +11,11 @@ pub(crate) async fn gallery(
     chunk: usize,
     interval: u64,
 ) -> CliResult {
-    let script = stream.then(|| efference::tui::StreamScript {
+    let script = stream.then(|| efference::clients::tui::StreamScript {
         chunk,
         interval: std::time::Duration::from_millis(interval),
     });
-    efference::tui::run_gallery(display, script).await?;
+    efference::clients::tui::run_gallery(display, script).await?;
     Ok(())
 }
 
@@ -56,6 +56,6 @@ pub(super) async fn view(
     if entries.is_empty() {
         return Err(format!("{} holds no entries", path.display()).into());
     }
-    efference::tui::run_view(entries, label, display).await?;
+    efference::clients::tui::run_view(entries, label, display).await?;
     Ok(())
 }

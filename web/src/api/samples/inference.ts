@@ -2,8 +2,8 @@
 // Each is typed, so `pnpm run typecheck` fails when a type stops accepting one.
 //
 // The host's inference routes: the preview, the model catalog, the roles it is read for, and
-// the connection inventory. The bytes are the ones src/daemon/test/host/preview.rs and
-// src/daemon/test/host/bodies.rs pin; a pin that changes in Rust is changed here too.
+// the connection inventory. The bytes are the ones src/host/test/host/preview.rs and
+// src/host/test/host/bodies.rs pin; a pin that changes in Rust is changed here too.
 
 import type {
   CatalogList,

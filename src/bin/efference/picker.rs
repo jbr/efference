@@ -11,16 +11,16 @@
 //! with `PATCH {"state": "active"}` (docs/control-api.md) and then attached the
 //! same way. The archived rows come
 //! from `GET /sessions?state=archived` when a host is running and from the
-//! host-free scan in `src/inventory.rs` when none is.
+//! host-free scan in `src/host/inventory.rs` when none is.
 //!
 //! The pages are ratatui widgets in an inline viewport, the same list and
 //! theme the new-session form draws (`app.rs`, docs/tui.md).
 
 use super::*;
+use efference::clients::tui::inline;
+use efference::clients::tui::resume_list::{ResumeRow, now_ms};
 use efference::protocol::inventory::InventoryRow;
 use efference::protocol::sessions::{ListedSession, PatchSession};
-use efference::tui::inline;
-use efference::tui::resume_list::{ResumeRow, now_ms};
 
 mod app;
 
@@ -192,7 +192,7 @@ async fn hosted_target(pick: Pick, host: &Path) -> Result<Option<ClientTarget>, 
 /// no host is there to ask.
 async fn scan_archived(here: &Path) -> Vec<InventoryRow> {
     let here = here.to_path_buf();
-    tokio::task::spawn_blocking(move || efference::inventory::Inventory::new().refresh(&here))
+    tokio::task::spawn_blocking(move || efference::host::inventory::Inventory::new().refresh(&here))
         .await
         .unwrap_or_default()
 }
@@ -226,7 +226,8 @@ pub(crate) async fn create_through_form(
     display: efference::config::user_config::TuiConfig,
 ) -> CliResult {
     let client = ControlClient::new(&host);
-    let Some(id) = efference::tui::session_form::run_hosted(client, display.theme.clone()).await?
+    let Some(id) =
+        efference::clients::tui::session_form::run_hosted(client, display.theme.clone()).await?
     else {
         return Ok(());
     };

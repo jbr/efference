@@ -4,7 +4,7 @@ You can sit with an agent in the terminal, leave it working while you’re away,
 back to it from a browser. The difference is how you run the **host**, the process on your
 machine that holds your sessions. The terminal and web clients are windows onto those
 sessions; scripts and other agents use the same interface.
-<!-- src: src/daemon/host.rs::serve_host; src/client.rs; src/daemon/handler.rs -->
+<!-- src: src/host.rs::serve_host; src/clients/client.rs; src/listeners/handler.rs -->
 
 ## Choose when sessions keep running
 
@@ -16,7 +16,7 @@ to outlive the terminal interface or be available in the web client.
   sessions and stops, and any work in progress stops with them. Each session's record
   stays in the project, and `efference` there offers to resume it under "resume an
   archived session…".
-  <!-- src: src/bin/efference/island.rs::Island::launch, end; src/daemon/island.rs::OwnerWatch; src/daemon/host/island_exit.rs::archive_and_shut_down; src/bin/efference/picker.rs::resume_on; src/bin/efference/picker/app.rs::RESUME -->
+  <!-- src: src/bin/efference/island.rs::Island::launch, end; src/host/island.rs::OwnerWatch; src/host/island_exit.rs::archive_and_shut_down; src/bin/efference/picker.rs::resume_on; src/bin/efference/picker/app.rs::RESUME -->
 - **Host mode.** `efference --host` starts a host that runs until you stop it. Every project
   on the machine uses it. Quitting the terminal interface detaches from a session, which
   keeps working, and you can attach again later. This is the mode that can serve the web
@@ -26,7 +26,7 @@ to outlive the terminal interface or be available in the web client.
 You don’t have to remember which mode you’re in when you leave. The terminal interface
 labels the action **quit** when leaving ends the session, and **detach** when the session
 will keep running in a host.
-<!-- src: src/tui/control_strip.rs::strip_live_items -->
+<!-- src: src/clients/tui/control_strip.rs::strip_live_items -->
 
 ### Keep a host running across logins
 
@@ -39,7 +39,7 @@ A service doesn’t inherit your shell’s environment. For model keys, use the 
 keychain. For project tools and variables, an
 [`env_hook`](configuration.md#give-sessions-your-project-environment) can prepare the
 environment for sessions the host resumes or creates for the web client.
-<!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/platform/secrets/commands.rs; src/daemon/host/preparation.rs::establish_environment; src/config/env_table/launch.rs::run_hook -->
+<!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/platform/secrets/commands.rs; src/host/preparation.rs::establish_environment; src/config/env_table/launch.rs::run_hook -->
 <!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. The service examples are host-as-a-service (backlog/inbox/host-as-a-service.md). -->
 
 ## Understand what leaves your machine
@@ -75,7 +75,7 @@ A host listens on a Unix socket: `~/.efference/host.sock` in host mode, and
 over that socket. `efference` looks for a host at `.efference/host.sock` in the current
 directory, then at `~/.efference/host.sock`; it never finds another terminal's standalone
 host.
-<!-- src: src/bin/efference/cli.rs::user_host_socket, host_candidates; src/daemon/island.rs::island_dir, ISLAND_SOCKET; src/client.rs::Client -->
+<!-- src: src/bin/efference/cli.rs::user_host_socket, host_candidates; src/host/island.rs::island_dir, ISLAND_SOCKET; src/clients/client.rs::Client -->
 
 Connections over the socket are not authenticated. Any program that can open the socket
 has full control of every session in the host, including starting one, and — when the
@@ -84,12 +84,12 @@ access to your shell. The host makes the socket and `~/.efference` owner-only wh
 starts, so another account on the machine cannot connect. A project's `.efference/`
 directory, which holds its session logs, is owner-only too: efference creates it that way,
 and makes an existing one that way the next time a session starts or resumes in it.
-<!-- src: src/daemon/handler.rs::Transport::Socket; src/daemon/tcp/routes.rs::enrollment_routes; src/daemon/permissions.rs::tighten_state_dir, tighten_socket, ensure_project_base, tighten_project_base -->
+<!-- src: src/listeners/handler.rs::Transport::Socket; src/listeners/tcp/routes.rs::enrollment_routes; src/host/permissions.rs::tighten_state_dir, tighten_socket, ensure_project_base, tighten_project_base -->
 
 A host can also listen on TCP, for browsers. That listener requires a sign-in for
 everything except the web client's own files and the sign-in request itself
 ([Remote access](remote-access.md)).
-<!-- src: src/daemon/tcp/gate.rs::Surface::anonymous, gate -->
+<!-- src: src/listeners/tcp/gate.rs::Surface::anonymous, gate -->
 
 ### Where your work is saved
 
@@ -97,7 +97,7 @@ Each session keeps an append-only log in the project it runs in, at
 `.efference/<session id>/log.jsonl`, beside a copy of the project's configuration as that
 session sees it. Resuming a session reopens its log. [Credentials](credentials.md) covers
 what is kept out of it.
-<!-- src: src/record/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/record/persist.rs::Log; src/boot/resume.rs -->
+<!-- src: src/record/session_dir.rs::LOG_NAME; src/host/boot.rs::CONFIG_NAME; src/record/persist.rs::Log; src/host/boot/resume.rs -->
 
 ### What happens after a restart
 
@@ -105,7 +105,7 @@ Starting `efference --host` reopens sessions that were still open when a host la
 across all projects. They wait idle: interrupted work doesn’t continue until you message
 or continue the session. An idle session can still make small requests to keep the
 provider’s conversation cache warm or read an incoming notification.
-<!-- src: src/daemon/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/record/recovery.rs; src/session/keepalive.rs; src/session/metrics.rs::seed_clocks -->
+<!-- src: src/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/record/recovery.rs; src/session/keepalive.rs; src/session/metrics.rs::seed_clocks -->
 
 Standalone mode starts fresh rather than reopening sessions automatically. On a normal
 quit, it archives its sessions so no host reopens them later. Sessions with nothing said
@@ -114,7 +114,7 @@ changes and is removed if it has none.
 
 A crash or forced kill is different: no archiving happens. Those sessions remain open for
 the next `efference --host` to reopen, or for you to resume from `efference`’s menu.
-<!-- src: src/daemon/host/island_exit.rs::archive_and_shut_down; src/daemon/island.rs::OwnerWatch; src/daemon/host/boot_resume.rs::resume_open_sessions (is_island); src/daemon/host.rs::Host::end; src/worktree.rs::retire; src/discard.rs -->
+<!-- src: src/host/island_exit.rs::archive_and_shut_down; src/host/island.rs::OwnerWatch; src/host/boot_resume.rs::resume_open_sessions (is_island); src/host.rs::Host::end; src/host/worktree.rs::retire; src/host/discard.rs -->
 
 ### Every outbound connection
 
@@ -138,8 +138,8 @@ through a proxy blocks it.
 | The authorization servers an MCP server names | When that server asks you to sign in, and when the sign-in is renewed | The server's own metadata names them |
 | The push address each notifying browser registered | When a session needs a decision from you, or finishes a turn | The message is encrypted to that browser; the push service sees where and when it is sent |
 | `efference.net/releases/latest.json` and `latest.json.minisig` | When a host starts and about once a day after, if `[updates] check = true`; and each time you run `efference update --check` | Sends nothing beyond the request itself. The answer is believed only when it is signed with efference's release key. To turn the daily check off, set `check = false` under `[updates]` in `~/.efference/config.toml`, or answer no in `efference setup`'s "Update check" entry |
-<!-- src: src/platform/update_check.rs::LATEST_URL, UpdateCheck::newest, verify; src/daemon/host/update_check.rs::INTERVAL, RETRY; src/config/user_config/updates.rs::UpdatesConfig; src/setup/updates.rs; src/bin/efference/update.rs -->
-<!-- src: src/inference/api/provider/http.rs::messages_url, models_url, capabilities_url; src/inference/api/provider/fetch.rs::fetch_capabilities, fetch_generation_cost; src/inference/catalog.rs::CATALOG_TTL; src/daemon/host_http/catalog.rs::entry; src/inference/api/provider/codex.rs::catalog, capabilities; src/daemon/runtime.rs (cost tracking for an OpenRouter main client); src/session/metrics.rs::price_request; src/inference/chatgpt.rs::ISSUER, refresh; src/tools/mcp/http.rs; src/tools/mcp/auth.rs::authorize; src/tools/mcp/auth/credentials.rs::Credentials::renew; src/platform/oauth/; src/platform/push.rs::send_one; src/session/push.rs -->
+<!-- src: src/platform/update_check.rs::LATEST_URL, UpdateCheck::newest, verify; src/host/update_check.rs::INTERVAL, RETRY; src/config/user_config/updates.rs::UpdatesConfig; src/setup/updates.rs; src/bin/efference/update.rs -->
+<!-- src: src/inference/api/provider/http.rs::messages_url, models_url, capabilities_url; src/inference/api/provider/fetch.rs::fetch_capabilities, fetch_generation_cost; src/inference/catalog.rs::CATALOG_TTL; src/routes/host_http/catalog.rs::entry; src/inference/api/provider/codex.rs::catalog, capabilities; src/host/runtime.rs (cost tracking for an OpenRouter main client); src/session/metrics.rs::price_request; src/inference/chatgpt.rs::ISSUER, refresh; src/tools/mcp/http.rs; src/tools/mcp/auth.rs::authorize; src/tools/mcp/auth/credentials.rs::Credentials::renew; src/platform/oauth/; src/platform/push.rs::send_one; src/session/push.rs -->
 
 Requests on an OpenRouter connection carry attribution headers naming efference,
 including `HTTP-Referer: https://efference.net`; requests to the ChatGPT backend carry

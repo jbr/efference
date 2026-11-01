@@ -1,7 +1,7 @@
 // A log entry as the control channel serves it (docs/control-api.md): the stored
 // `LogEntry` of types.ts with what the host's entry view changes. The view is the
 // entry verbatim except for three things, each derived on every read and none in
-// the log (src/daemon/entry_view.rs):
+// the log (src/routes/entry_view.rs):
 //
 // - a result image's base64 `data` is left out; its bytes are at
 //   `GET /log/{seq}/images/{idx}`;

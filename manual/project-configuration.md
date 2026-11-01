@@ -19,7 +19,7 @@ Review the changes before starting your next session: this file decides what fut
 sessions can do without asking. If you’re opening someone else’s project, read its
 `efference.toml` before starting a session, too. Some settings run commands at startup,
 without a permission prompt; [the details below](#what-runs-at-startup) explain which ones.
-<!-- src: src/config/load.rs; src/config/context.rs::run_exec; src/tools/mcp/stdio.rs; src/boot/mcp_mount.rs::mount_one; src/config/env_table/resolve.rs::run_command; absence of a project-trust check in src/boot/ -->
+<!-- src: src/config/load.rs; src/config/context.rs::run_exec; src/tools/mcp/stdio.rs; src/host/boot/mcp_mount.rs::mount_one; src/config/env_table/resolve.rs::run_command; absence of a project-trust check in src/host/boot/ -->
 
 ## Choose what sessions start with
 
@@ -46,11 +46,11 @@ Think of `efference.toml` as the starting point for new sessions, not a live con
 all of them. Each session copies it into `.efference/<session>/config.toml` at startup and
 works from that copy. Editing the project file affects sessions you start afterwards;
 running sessions are unchanged, and resumed sessions keep their copies.
-<!-- src: src/boot/scaffold.rs::snapshot_config; src/boot/resume.rs (load_session_config) -->
+<!-- src: src/host/boot/scaffold.rs::snapshot_config; src/host/boot/resume.rs (load_session_config) -->
 
 A permission granted during a session goes into that session’s copy. If you want future
 sessions to have it too, add it to `efference.toml` ([Permissions](permissions.md)).
-<!-- src: src/agent/config_edit.rs::commit_config_edit; src/boot/scaffold.rs::snapshot_config -->
+<!-- src: src/agent/config_edit.rs::commit_config_edit; src/host/boot/scaffold.rs::snapshot_config -->
 
 ## Check your changes
 
@@ -80,7 +80,7 @@ An unknown key or an invalid entry stops the session from starting rather than b
 ignored. So does an unreadable `[context]` file, a failing `[context]` command, or an MCP
 server that cannot connect. You can mark an MCP server `optional = true` if a session
 should be able to start without it.
-<!-- src: src/config/raw.rs::RawConfig (deny_unknown_fields), validate; src/config/context.rs; src/boot/mcp_mount.rs::mount_all (optional) -->
+<!-- src: src/config/raw.rs::RawConfig (deny_unknown_fields), validate; src/config/context.rs; src/host/boot/mcp_mount.rs::mount_all (optional) -->
 
 ### What runs at startup
 
@@ -92,11 +92,11 @@ Starting a session runs these commands from the configuration without asking you
 
 That’s why a project’s configuration deserves the same review as other code you run from
 that project.
-<!-- src: src/config/context.rs::run_exec (bash -c at boot, no review); src/tools/mcp/stdio.rs; src/boot/mcp_mount.rs::mount_one; src/config/env_table/resolve.rs::run_command; absence of a project-trust check in src/boot/ -->
+<!-- src: src/config/context.rs::run_exec (bash -c at boot, no review); src/tools/mcp/stdio.rs; src/host/boot/mcp_mount.rs::mount_one; src/config/env_table/resolve.rs::run_command; absence of a project-trust check in src/host/boot/ -->
 
 ### If there is no project configuration
 
 A session without `efference.toml`, including a setup session, may read and write the
 project directory and use efference’s own tools. It also has reviewed access to the tools
 that reach other sessions. Everything else goes to the permission spotter.
-<!-- src: src/boot/scaffold.rs::CONFIG_SCAFFOLD, snapshot_config -->
+<!-- src: src/host/boot/scaffold.rs::CONFIG_SCAFFOLD, snapshot_config -->

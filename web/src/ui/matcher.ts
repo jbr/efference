@@ -1,6 +1,6 @@
 // The picker's matching rule (docs/tui.md), as pure functions over a flat node
-// list — the TypeScript reading of `src/tui/session_form/matcher.rs`. The two
-// run the same fixture (`src/tui/session_form/match_cases.json`), which is the
+// list — the TypeScript reading of `src/clients/tui/session_form/matcher.rs`. The two
+// run the same fixture (`src/clients/tui/session_form/match_cases.json`), which is the
 // contract: where this port and the Rust disagree, the fixture decides and one
 // of them is wrong.
 //

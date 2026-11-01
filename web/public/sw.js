@@ -10,7 +10,7 @@
 // build's own static assets and the app shell, which say nothing about any
 // session.
 //
-// The shell routes below mirror `SPA_ROUTES` in `src/daemon/tcp/gate.rs`: the
+// The shell routes below mirror `SPA_ROUTES` in `src/listeners/tcp/gate.rs`: the
 // server answers the index at exactly these paths, and so does this worker's
 // offline fallback. A route in one and not the other works online and 404s
 // from the home screen.
@@ -31,7 +31,7 @@ const DEV = new URL(self.location.href).searchParams.has("dev");
 const CACHE_PREFIX = "efference-shell-";
 
 /** Client routes the index answers, relative to the client's base — mirrors
- * `SPA_ROUTES` (src/daemon/tcp/gate.rs). */
+ * `SPA_ROUTES` (src/listeners/tcp/gate.rs). */
 const SHELL_ROUTES = ["/", "/tree"];
 
 /** A session prefix, which is the client's base when a host served the page

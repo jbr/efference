@@ -30,7 +30,7 @@ wants. Then you can:
 
 In the terminal, pressing Return with an empty message approves the call. The agent isn’t
 told about approvals; it sees only what you declined and why.
-<!-- src: src/record/log/approval.rs::Approval; src/tui/control_strip.rs::strip_context_verbs; src/tui/state/gate.rs::submit_composer; web/src/ui/Gate.tsx::GateControls; src/agent/results.rs::rejected, aborted -->
+<!-- src: src/record/log/approval.rs::Approval; src/clients/tui/control_strip.rs::strip_context_verbs; src/clients/tui/state/gate.rs::submit_composer; web/src/ui/Gate.tsx::GateControls; src/agent/results.rs::rejected, aborted -->
 
 These are checks for mistakes, not a sandbox or a defense against a deliberately misled
 agent. Allowed commands run with your full access, the spotter can be wrong, and path
@@ -79,7 +79,7 @@ The setup session efference offers in a new project writes this file with you
 ([Quick start](quick-start.md)). A session started in a directory with no `efference.toml`
 — the setup session, or any other — may read and write that directory and use efference's
 own tools; everything else goes to the spotter.
-<!-- src: src/boot/scaffold.rs::CONFIG_SCAFFOLD, snapshot_config -->
+<!-- src: src/host/boot/scaffold.rs::CONFIG_SCAFFOLD, snapshot_config -->
 
 ## Grant only the access you intend
 
@@ -99,7 +99,7 @@ prefix that covers the work: `"git log"`, not `git`.
 Don't permit `efference`, `curl`, or an interpreter in a project whose agent you don't
 want reaching the host: the host's control socket doesn't tell the agent apart from you, so
 a program that can reach it can approve the agent's own held calls.
-<!-- src: src/daemon/handler.rs::Transport::Socket (no gate); src/control_tools/host_executor.rs (self-decision rule applies to the agent's own tools only) -->
+<!-- src: src/listeners/handler.rs::Transport::Socket (no gate); src/clients/control_tools/host_executor.rs (self-decision rule applies to the agent's own tools only) -->
 <!-- CHECK: not run end to end. Raise with jbr: is this user education, or a socket-side rule (a session's child processes cannot decide its gates)? -->
 
 efference is not a sandbox. Everything the agent runs, runs as you, with your files and your
@@ -175,7 +175,7 @@ recorded in the session's log.
 - **`[commands]`**: shell commands by prefix, each `true` (or `"clear"`), `"deny"` (or
   `false`), or `"gate"`/`"watch"` (send to the spotter even under a broader `true`).
 - The session's scratch directory (`$TMPDIR`) is always readable and writable.
-<!-- src: src/config/policy.rs::tool_granted, classify_structured; src/config/tools.rs::ToolsTable, Config::tool_enabled; src/config/policy/paths.rs::path_spec, context_granted, governing_grant; src/config/policy/commands.rs::command_stance; src/config.rs::CommandStance; src/boot/scaffold.rs::mint_scratch -->
+<!-- src: src/config/policy.rs::tool_granted, classify_structured; src/config/tools.rs::ToolsTable, Config::tool_enabled; src/config/policy/paths.rs::path_spec, context_granted, governing_grant; src/config/policy/commands.rs::command_stance; src/config.rs::CommandStance; src/host/boot/scaffold.rs::mint_scratch -->
 
 ### Shell commands
 
@@ -204,7 +204,7 @@ read its own configuration and attachments; a deeper entry of your own can overr
 `~/.efference/` and paths outside the project have no special protection: they are
 ungranted, so a call reaching them goes to the spotter unless something you permitted
 covers it.
-<!-- src: src/config/policy/paths.rs::lexical_normalize, path_granted; src/boot/scaffold.rs::self_surface_grants; absence of a ~/.efference rule in src/config/policy/ -->
+<!-- src: src/config/policy/paths.rs::lexical_normalize, path_granted; src/host/boot/scaffold.rs::self_surface_grants; absence of a ~/.efference rule in src/config/policy/ -->
 
 ### The spotter
 
@@ -233,7 +233,7 @@ model also compares the call with earlier calls you approved in the session.
 When the spotter sees a command prefix more than once, it may propose permitting it in the
 session. A proposal changes nothing until you accept it, in the terminal interface's sidebar
 or with `efference control proposal`.
-<!-- src: src/config/policy.rs::MIN_SIGHTINGS_TO_PROBE; src/agent/step/judge.rs::judge (probe); src/tui/sidebar.rs (Proposal); src/control_tools (proposal) -->
+<!-- src: src/config/policy.rs::MIN_SIGHTINGS_TO_PROBE; src/agent/step/judge.rs::judge (probe); src/clients/tui/sidebar.rs (Proposal); src/clients/control_tools (proposal) -->
 
 ### Changing permissions during a session
 
@@ -255,14 +255,14 @@ access to a directory (read-only for a read), or the shortest shell command pref
 spotter hasn’t judged unsafe. That prefix is often just the program’s name, allowing any
 arguments. Calls held for several reasons, or with no single permission that would clear
 them, have no suggestion.
-<!-- src: src/config/policy/gate_grant.rs::gate_grant; src/agent/config_edit.rs::commit_config_edit; src/tui/control_strip.rs::strip_context_verbs; web/src/ui/Gate.tsx -->
+<!-- src: src/config/policy/gate_grant.rs::gate_grant; src/agent/config_edit.rs::commit_config_edit; src/clients/tui/control_strip.rs::strip_context_verbs; web/src/ui/Gate.tsx -->
 <!-- TODO: blocked on backlog/gate-grant-clients.md — restate as the clients' control once both offer it. -->
 
 A lasting permission applied through this mechanism is written to the session’s own
 `.efference/<session>/config.toml`, not the project’s `efference.toml`. Resuming keeps the
 session copy; starting a new session copies the project file again. Put permissions you
 want future sessions to have in the project file.
-<!-- src: src/agent/config_edit.rs::commit_config_edit; src/boot/scaffold.rs::snapshot_config -->
+<!-- src: src/agent/config_edit.rs::commit_config_edit; src/host/boot/scaffold.rs::snapshot_config -->
 <!-- TODO: an accepted spotter proposal is logged, not written to config.toml (src/session/config_edits.rs::resolve_proposal_decision) — asked of jbr. -->
 
 ### Choose who reviews held calls
@@ -275,16 +275,16 @@ A session's review level sets who answers a held call:
 | `human_only` | no | you, for every call your settings don't cover |
 | `supervisor` | yes | the session that supervises this one; the default for a session another session created. It can pass a call up to its own supervisor, and so on up to you. With no supervisor running, you. |
 | `autonomous` | yes | no one: the call is declined, and the agent is told what to change in its configuration |
-<!-- src: src/config/policy.rs::ReviewLevel; src/session/config_edits.rs::set_autonomous; src/daemon/host/supervise.rs; src/control_tools/decide.rs (escalate); src/session/approvals.rs::escalate; src/session/review.rs::resolved_review_level; src/agent/config_edit.rs::missing_grant_message, autonomous_gate_message -->
+<!-- src: src/config/policy.rs::ReviewLevel; src/session/config_edits.rs::set_autonomous; src/host/supervise.rs; src/clients/control_tools/decide.rs (escalate); src/session/approvals.rs::escalate; src/session/review.rs::resolved_review_level; src/agent/config_edit.rs::missing_grant_message, autonomous_gate_message -->
 
 `efference control create --autonomous` starts a session that way; `efference control review-level` changes it. An
 autonomous session runs whatever your settings or the spotter allow, with no one watching.
 It still holds edits to its own configuration for a person.
-<!-- src: src/control_tools/create.rs::Create::autonomous; src/control_tools/review_level.rs; src/agent/step.rs::run_call -->
+<!-- src: src/clients/control_tools/create.rs::Create::autonomous; src/clients/control_tools/review_level.rs; src/agent/step.rs::run_call -->
 
 Separately, `efference control pace` pauses a session between turns, or slows it down,
 without changing who decides.
-<!-- src: src/control_tools/pace.rs::Pace -->
+<!-- src: src/clients/control_tools/pace.rs::Pace -->
 
 ### Keep edits separate with a worktree
 
@@ -293,4 +293,4 @@ A session started in its own worktree works in a separate git checkout and branc
 is not a permission boundary. It carries the project's settings, so it can still reach your
 checkout by path, and it shares the repository, its hooks, and everything else on the
 machine.
-<!-- src: src/worktree.rs; src/config/policy/directories.rs::Directories::target, judged -->
+<!-- src: src/host/worktree.rs; src/config/policy/directories.rs::Directories::target, judged -->

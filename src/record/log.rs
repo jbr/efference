@@ -284,7 +284,7 @@ pub enum Payload {
     /// like [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only
     /// through the classifier, while a **session-visible** edit (`scope`, `paths`) *also*
     /// surfaces as an [`Ambient`] notification (an optional tail append — never a re-render of
-    /// the cached preamble; see [`crate::daemon`]) so the session learns its perimeter moved.
+    /// the cached preamble; see [`crate::session`]) so the session learns its perimeter moved.
     ///
     /// [`effective_config`]: crate::config::policy::effective_config
     /// [`Ambient`]: Payload::Ambient

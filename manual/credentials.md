@@ -86,13 +86,13 @@ interface needs `op run` to leave its output alone:
 ```sh
 op run --no-masking --env-file ~/.efference/keys.env -- efference
 ```
-<!-- src: src/tui/ui_loop.rs (draws to stdout); src/bin/efference/island.rs::Island::launch (the standalone host inherits the launcher's environment); verified by jbr 2026-10-19 -->
+<!-- src: src/clients/tui/ui_loop.rs (draws to stdout); src/bin/efference/island.rs::Island::launch (the standalone host inherits the launcher's environment); verified by jbr 2026-10-19 -->
 
 efference does not resolve `op://` references in connection settings itself; `op run` (or
 something like it) must have done that before the host starts. A project's
 `efference.toml` can also give the agent's commands secrets as `op://` references, and
 efference resolves those with `op read` when a session starts.
-<!-- src: src/inference/credential.rs::load_credential; src/config/env_table/resolve.rs::SCHEMES, run_command; src/boot/env.rs::resolve_env_table -->
+<!-- src: src/inference/credential.rs::load_credential; src/config/env_table/resolve.rs::SCHEMES, run_command; src/host/boot/env.rs::resolve_env_table -->
 
 ## Secret commands
 
@@ -187,7 +187,7 @@ host with a bind refuses to start and says to run it.
 The agent's commands do not inherit the host's model keys: every variable a connection
 reads its key from is removed from the environment of the commands a session runs. A
 project can opt one back in, for a project that calls the provider itself.
-<!-- src: src/boot/env.rs::build_env_policy; src/config/env_table.rs::Table::merge_with_host; src/config/env_table/child.rs::ChildEnv::apply -->
+<!-- src: src/host/boot/env.rs::build_env_policy; src/config/env_table.rs::Table::merge_with_host; src/config/env_table/child.rs::ChildEnv::apply -->
 
 ### Masking secrets in the record
 
@@ -211,7 +211,7 @@ A value is also caught in its common encodings: URL-encoded, JSON-escaped, base6
 model is sent and what triage reads come from the log, so they carry the masked text too.
 While a turn runs, the clients you have open show its output live, before masking; the
 record they reload is masked.
-<!-- src: src/config/env_table/mask.rs::needles_for; src/agent/batch.rs (triage reads the entry back from the log); src/daemon/frames.rs (Class::Output stream deltas, pre-append) -->
+<!-- src: src/config/env_table/mask.rs::needles_for; src/agent/batch.rs (triage reads the entry back from the log); src/routes/frames.rs (Class::Output stream deltas, pre-append) -->
 
 Masking is a guard against accidents, not against an agent trying to get a secret out. A
 secret efference does not know about reaches the log as the agent saw it: a key in a file
@@ -260,14 +260,14 @@ writes rather than deletes, so it needs no `delete` command.
 Without a `delete` command, the few operations that remove a secret fail, naming the
 secret for you to remove by hand: `--reauth` for an MCP server, and a connection renamed
 in `efference setup` or moved out of the store.
-<!-- src: src/platform/secrets/commands.rs::SecretCommands::delete; src/boot/mcp_mount.rs::mount_all (reauth clear); src/setup/manage/credential.rs -->
+<!-- src: src/platform/secrets/commands.rs::SecretCommands::delete; src/host/boot/mcp_mount.rs::mount_all (reauth clear); src/setup/manage/credential.rs -->
 
 efference runs `get` each time it reads a secret: when the host starts, for each connection
 whose key or sign-in is stored; when a session starts with an MCP server that is reached
 over HTTP; before it refreshes a sign-in; and when a provider refuses a stored key. A tool
 that asks you to approve each read asks at each of these. efference sets no time limit on
 a command.
-<!-- src: src/inference/credential.rs::load_credential (keychain reload, oauth reload re-reads); src/boot/mcp_mount.rs::mount_one; src/tools/mcp/auth/credentials.rs::stored_credentials; src/platform/secrets/commands.rs (no cache, no timeout) -->
+<!-- src: src/inference/credential.rs::load_credential (keychain reload, oauth reload re-reads); src/host/boot/mcp_mount.rs::mount_one; src/tools/mcp/auth/credentials.rs::stored_credentials; src/platform/secrets/commands.rs (no cache, no timeout) -->
 
 ### What is stored where
 
@@ -278,7 +278,7 @@ a command.
 | `~/.efference/state.db` | Model choices per directory, model lists, the projects and sessions efference has run, each notifying browser's push subscription, the devices signed in to the web address, the browsers waiting to sign in | No model keys; the push subscriptions are per-browser secrets |
 | `<project>/.efference/<session>/` | The session's log, its configuration, its usage record, and attached files | Your project's content and the agent's work |
 | `<project>/efference.toml` | The project's settings. A value written here literally is stored in plain text, and copied into each session's directory. | Only if you put one there; use an `op://` reference instead |
-<!-- src: src/platform/secrets.rs::inference_name, oauth_name, mcp_name; src/platform/auth.rs::ROOT_ITEM (module doc); src/setup/render.rs::write (0600 on create); src/platform/state.rs; src/config/history.rs; src/inference/catalog/store.rs; src/remembered.rs; src/session_ids.rs; src/platform/push.rs::SCHEMA; src/platform/devices.rs::SCHEMA; src/platform/sign_ins.rs::SCHEMA; src/record/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/session/metrics/usage_line.rs; src/session/attachments.rs; src/boot/scaffold.rs -->
+<!-- src: src/platform/secrets.rs::inference_name, oauth_name, mcp_name; src/platform/auth.rs::ROOT_ITEM (module doc); src/setup/render.rs::write (0600 on create); src/platform/state.rs; src/config/history.rs; src/inference/catalog/store.rs; src/host/remembered.rs; src/host/session_ids.rs; src/platform/push.rs::SCHEMA; src/platform/devices.rs::SCHEMA; src/platform/sign_ins.rs::SCHEMA; src/record/session_dir.rs::LOG_NAME; src/host/boot.rs::CONFIG_NAME; src/session/metrics/usage_line.rs; src/session/attachments.rs; src/host/boot/scaffold.rs -->
 
 A project's `.efference/` directory is readable only by you (mode `0700`), and the files
 efference writes in a session's directory — the log, the configuration copy, the usage
@@ -286,7 +286,7 @@ record, attached files — are `0600`. The directory is what keeps other account
 everything below it, including session worktrees, whose checked-out files keep their
 ordinary modes. An existing `.efference/` is tightened the next time a session starts
 or resumes in it, and a stricter mode is left alone.
-<!-- src: src/daemon/permissions.rs::ensure_project_base, tighten_project_base; src/boot/mint.rs::mint_session_dir; src/record/persist.rs::Log::create -->
+<!-- src: src/host/permissions.rs::ensure_project_base, tighten_project_base; src/host/boot/mint.rs::mint_session_dir; src/record/persist.rs::Log::create -->
 
 A ChatGPT connection that reuses Codex's sign-in reads Codex's own file,
 `~/.codex/auth.json`; efference never writes it.

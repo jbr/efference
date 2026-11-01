@@ -34,7 +34,7 @@ export function deriveBase(pathname: string): string {
 
 /**
  * The client route the page is on, with any base removed — one of the paths the
- * server's SPA index answers (`SPA_ROUTES`, src/daemon/tcp/gate.rs). `/sessions/x/tree`
+ * server's SPA index answers (`SPA_ROUTES`, src/listeners/tcp/gate.rs). `/sessions/x/tree`
  * and `/tree` are the same route in two bindings.
  */
 export function deriveRoute(pathname: string): string {

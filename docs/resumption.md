@@ -30,8 +30,8 @@ Resumption reads only the log ([log-and-projection.md](log-and-projection.md)):
 
 ## The loader
 
-`boot::resume` (`src/boot/resume.rs`) rebuilds a session from its directory, sharing
-the boot steps a creation uses (`src/boot/{scaffold,env,model,parts}.rs`) and replacing
+`boot::resume` (`src/host/boot/resume.rs`) rebuilds a session from its directory, sharing
+the boot steps a creation uses (`src/host/boot/{scaffold,env,model,parts}.rs`) and replacing
 the ones that mint:
 
 - **Inference** comes from the header metadata (spotter and triage from the latest
@@ -168,9 +168,9 @@ and so does a session whose loop ends on its own.
 
 The later of the two is the session's lifecycle. A log whose last lifecycle entry is not
 `Archived` (including one with neither) was open when its host stopped, and the dormant
-listing marks its row `interrupted` (`src/inventory.rs`).
+listing marks its row `interrupted` (`src/host/inventory.rs`).
 
-**An island's exit** (`src/daemon/host/island_exit.rs`). An island is a host whose life
+**An island's exit** (`src/host/island_exit.rs`). An island is a host whose life
 is bound to the client that launched it by an owner watch ([operating.md](operating.md)).
 When the owner goes, the island archives every session it hosts, starting or hosted,
 then shuts down. Each session takes `Host::end`, the path `DELETE` takes: one mid-turn is
@@ -192,7 +192,7 @@ A log is *empty* when it holds no `User` and no `Assistant` entry: the preamble,
 telemetry, the `Ambient` and `Triage` entries of an idle triage, `Worktree` and
 `Archived` are the harness's own record, so a session with only those has lost nothing
 the operator wrote or the agent did (`is_empty` in `src/record/log.rs`). Such a session is
-discarded (`src/discard.rs`), not archived:
+discarded (`src/host/discard.rs`), not archived:
 
 - **At archive.** Each archive path (`DELETE`, `PATCH {"state": "archived"}`, a child
   ending with its creator, an island's exit) removes the session directory and releases
@@ -215,8 +215,8 @@ discarded (`src/discard.rs`), not archived:
 ## The session as a resource
 
 `PATCH /sessions/:id` with `{"state": "active"}` revives a session
-([control-api.md](control-api.md); `src/daemon/host_http/patch.rs` for the route,
-`src/daemon/host/resume.rs` for the reopening). `state` is the
+([control-api.md](control-api.md); `src/routes/host_http/patch.rs` for the route,
+`src/host/resume.rs` for the reopening). `state` is the
 lifecycle, `active` or `archived`, separate from the `status` a listing reports for what
 a live session is doing. `DELETE /sessions/:id` is the same transition as
 `{"state": "archived"}`. The body carries `cwd`, since the path alone can't locate a
@@ -297,7 +297,7 @@ ends its log in `Archived` unless that is already its last lifecycle entry, so i
 archived rather than interrupted.
 
 **The resume at boot.** After the host-start pass that registers ids, a background task
-(`Host::resume_open_sessions`, `src/daemon/host/boot_resume.rs`) reads the remembered
+(`Host::resume_open_sessions`, `src/host/boot_resume.rs`) reads the remembered
 roots and resumes every session whose row is `interrupted` and has no `problem`, through
 the same `Host::resume` the PATCH reaches: each is reserved as `starting` and prepared
 in the background while the host serves, with `refuse_authorization` set so a server that
@@ -330,7 +330,7 @@ claims the id.
 
 `GET /sessions?state=archived` lists the dormant sessions under a root, or under every
 remembered root, from a scan of each log's header, first and last entries and last title
-(`src/inventory.rs`; [log-and-projection.md](log-and-projection.md), "Inventory of dormant
+(`src/host/inventory.rs`; [log-and-projection.md](log-and-projection.md), "Inventory of dormant
 sessions"). A directory that can't be resumed is listed with a `problem`; a session
 whose last resume on this host failed is listed with its `resume_failure`.
 `GET /sessions/:id` answers one session's row, the hosted listing's for a hosted session
@@ -342,7 +342,7 @@ and this listing's for a dormant one, so a dormant session is addressable by id.
   this directory's resumable sessions, filtered by title or id as you type. A pick
   revives the session and attaches; with no host running, it resumes into a terminal
   island ([operating.md](operating.md)).
-- **The TUI's session switcher**: `r` opens the same page (`src/tui/resume_list.rs`) as a
+- **The TUI's session switcher**: `r` opens the same page (`src/clients/tui/resume_list.rs`) as a
   modal, and a pick switches to the revived session while it starts ([tui.md](tui.md)).
 - **Web client**: dormant sessions surface on the overview across four continuum bands:
   active cards, recently archived cards (< 1h, capped), compact listed rows (< 1w),

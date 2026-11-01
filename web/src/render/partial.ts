@@ -1,5 +1,5 @@
 // What has arrived of a tool call's JSON input, mid-stream — the TypeScript
-// mirror of `src/tui/projection/partial.rs` (docs/web-client.md).
+// mirror of `src/clients/tui/projection/partial.rs` (docs/web-client.md).
 //
 // A tool call's arguments arrive as fragments of a JSON document, so at any
 // moment the accumulated buffer is a *prefix* of one —

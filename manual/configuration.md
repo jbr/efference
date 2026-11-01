@@ -68,12 +68,12 @@ those tools available when you start a session from the browser or resume it lat
 A session created in the terminal with `efference` or `efference control create` already
 has that terminal’s environment: its `PATH` and the variables your project tools loaded.
 Sessions without a terminal to copy from get their environment from the host instead:
-<!-- src: src/tui/host_dispatch.rs::create_session (EnvSnapshot::capture); src/control_tools/create.rs::Create::execute (Executor::Client captures the caller's environment); src/daemon/host/create.rs (an omitted env is established); src/daemon/host/preparation.rs::establish_environment -->
+<!-- src: src/clients/tui/host_dispatch.rs::create_session (EnvSnapshot::capture); src/clients/control_tools/create.rs::Create::execute (Executor::Client captures the caller's environment); src/host/create.rs (an omitted env is established); src/host/preparation.rs::establish_environment -->
 
 - one created in the web client;
 - one resumed, from `efference`'s menu or from the web client;
 - one a host reopens when `efference --host` starts.
-<!-- src: src/daemon/host/create.rs (supplied_env None); src/daemon/host/resume.rs::PatchSession::activate (env: None), prepare_resume; src/daemon/host/boot_resume.rs; web/src/api/sessionForm.ts (sends no env) -->
+<!-- src: src/host/create.rs (supplied_env None); src/host/resume.rs::PatchSession::activate (env: None), prepare_resume; src/host/boot_resume.rs; web/src/api/sessionForm.ts (sends no env) -->
 
 That can explain a session finding `cargo` or `node` at first, but not after a resume.
 Without an `env_hook`, the host passes on the environment it started with — perhaps set up
@@ -84,7 +84,7 @@ Use **`env_hook`** to prepare the right environment for these sessions. It names
 that runs in the project directory and prints the environment to use. Pick the example
 below that matches your tools. The setting applies to every project, so the command must
 also work in projects without that tool’s configuration, as these examples do.
-<!-- src: src/config/user_config.rs::InferenceConfig (env_hook); src/config/env_table/launch.rs::run_hook (current_dir); src/daemon/host/preparation.rs::establish_environment -->
+<!-- src: src/config/user_config.rs::InferenceConfig (env_hook); src/config/env_table/launch.rs::run_hook (current_dir); src/host/preparation.rs::establish_environment -->
 
 Before choosing a hook, there are four requirements to know:
 
@@ -98,7 +98,7 @@ Before choosing a hook, there are four requirements to know:
 - **A failing hook stops the session from starting.** The reason names the hook and how it
   failed, such as ``env: env_hook `direnv` exited 1``; the hook's own error messages are
   discarded. Run the hook yourself in the project to see them.
-<!-- src: src/config/env_table/launch.rs::run_hook (Command::new(program).args(args); stderr null; host_env applied, so PATH is the host's), LaunchError (Display: Spawn, Exited, Unterminated); src/daemon/host/preparation.rs::establish_environment ("env: …"), preparation_failed -->
+<!-- src: src/config/env_table/launch.rs::run_hook (Command::new(program).args(args); stderr null; host_env applied, so PATH is the host's), LaunchError (Display: Spawn, Exited, Unterminated); src/host/preparation.rs::establish_environment ("env: …"), preparation_failed -->
 
 ### With direnv, Nix, devenv, devbox, or Flox
 
@@ -213,7 +213,7 @@ Setup asks about this with yes preselected and saves your answer. You can change
 setup’s “Update check” entry or by editing `check`. With no saved answer, no automatic
 check happens. To check just once, run `efference update --check`, regardless of this
 setting. [How efference runs](how-it-runs.md) lists what the request sends.
-<!-- src: src/bin/efference/serve.rs::host (UpdatesConfig::load gates check_for_updates); src/daemon/host/update_check.rs::check_for_updates; src/setup/updates.rs::ask, ask_unless_answered; src/setup/manage.rs::run (Update check entry); src/bin/efference/update.rs; src/tui/render_status_bar.rs; web/src/ui/ComposerToolbar.tsx::NewerVersionLine -->
+<!-- src: src/bin/efference/serve.rs::host (UpdatesConfig::load gates check_for_updates); src/host/update_check.rs::check_for_updates; src/setup/updates.rs::ask, ask_unless_answered; src/setup/manage.rs::run (Update check entry); src/bin/efference/update.rs; src/clients/tui/render_status_bar.rs; web/src/ui/ComposerToolbar.tsx::NewerVersionLine -->
 
 ## Make the terminal your own: `[tui]`
 
@@ -232,7 +232,7 @@ images = "kitty"
   terminal. Inside tmux, which hides the terminal from that question, `"kitty"` or
   `"iterm2"` names the terminal's image protocol. `"off"` shows each image as a one-line
   reference.
-<!-- src: src/config/user_config/tui.rs::TuiConfig (theme, expand_home); src/tui/keyboard.rs (ThemePicker: Enter closes the picker, writes nothing); src/config/user_config/tui.rs::ImageMode -->
+<!-- src: src/config/user_config/tui.rs::TuiConfig (theme, expand_home); src/clients/tui/keyboard.rs (ThemePicker: Enter closes the picker, writes nothing); src/config/user_config/tui.rs::ImageMode -->
 
 ## Editor support
 
@@ -276,14 +276,14 @@ from the web client or from a script that sends none, a resume, and a host's reo
 open sessions at start. A session created by another session carries its creator's
 environment, and so does one created from a terminal. For a session that works in its own
 git worktree, the hook runs in the project directory, not the worktree.
-<!-- src: src/daemon/host/create.rs (supplied_env); src/daemon/host/resume.rs::prepare_resume; src/daemon/host/boot_resume.rs; src/control_tools/create.rs (Executor::Host: caller.child_env()); src/control_tools/hand_off.rs; src/daemon/host/create.rs (establish_environment at directories.project()) -->
+<!-- src: src/host/create.rs (supplied_env); src/host/resume.rs::prepare_resume; src/host/boot_resume.rs; src/clients/control_tools/create.rs (Executor::Host: caller.child_env()); src/clients/control_tools/hand_off.rs; src/host/create.rs (establish_environment at directories.project()) -->
 
 It runs directly, not through a shell, with the host's environment, no input, and its error
 output discarded. Its output replaces the host's environment rather than adding to it: a
 variable the host had and the hook did not print is absent from the session. The project's
 `[env]` settings apply afterwards, and the variables connections read their keys from are
 still removed from the agent's commands ([Credentials](credentials.md)).
-<!-- src: src/config/env_table/launch.rs::run_hook (stdin null, stderr null, host_env applied); src/boot/env.rs::build_env_policy; src/config/env_table/child.rs::ChildEnv::apply -->
+<!-- src: src/config/env_table/launch.rs::run_hook (stdin null, stderr null, host_env applied); src/host/boot/env.rs::build_env_policy; src/config/env_table/child.rs::ChildEnv::apply -->
 
 The hook has 30 seconds, and its output may be at most 1 MiB. Past either limit, or if it
 exits with a nonzero status or prints something that is not an environment, the session

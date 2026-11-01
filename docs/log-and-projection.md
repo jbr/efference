@@ -698,7 +698,7 @@ operations, and only the second has to reason about who else may be writing.
 
 ### Inventory of dormant sessions
 
-`src/inventory.rs` lists a working root's sessions from disk without a host: one
+`src/host/inventory.rs` lists a working root's sessions from disk without a host: one
 row per directory under `<root>/.efference/` (`GET /sessions?state=archived`,
 [control-api.md](control-api.md)). Per log it reads the header line, the first
 entry, and the last complete entry by seeking from the end, then reads backwards

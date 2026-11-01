@@ -12,7 +12,7 @@ pub struct RawResult {
     /// Set **only by the control-channel entry view**, and only on the window and
     /// frame copies of an oversized result: it says the `content` beside it is a
     /// prefix, and how much of the whole string that prefix is
-    /// (`daemon/entry_view.rs`, docs/control-api.md). The mirror of
+    /// (`routes/entry_view.rs`, docs/control-api.md). The mirror of
     /// [`ResultImage::data`], which the same views omit — a Rust client parsing a
     /// view with this shared type reads the elision as a value rather than
     /// inferring it from a length. The log itself always writes `content` whole
@@ -84,7 +84,7 @@ pub struct ResultImage {
     /// Standard base64 of the encoded image, stored exactly as it will appear
     /// in the wire block's `source.data`. `#[serde(default)]` because the
     /// control-channel views omit this field (the bytes are fetched from
-    /// `GET /log/:seq/images/:idx` instead — `daemon/entry_view.rs`,
+    /// `GET /log/:seq/images/:idx` instead — `routes/entry_view.rs`,
     /// docs/control-api.md), and a client parsing a view with this shared type
     /// reads it back empty. The log itself always writes it.
     #[serde(default)]

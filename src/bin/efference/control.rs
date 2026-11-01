@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use efference::control_tools::{Control, Executor, Fallback, MCP_INSTRUCTIONS, cli, mcp};
+use efference::clients::control_tools::{Control, Executor, Fallback, MCP_INSTRUCTIONS, cli, mcp};
 
 use super::CliResult;
 

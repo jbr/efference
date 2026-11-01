@@ -3,7 +3,7 @@
 //! enrollment routes answer the operator, who approves a sign-in or enrolls a device.
 //!
 //! The pending sign-ins, the approval and the enrollment that mints a token are the host's
-//! (`sign_ins`, `devices`, `daemon::tcp`).
+//! (`sign_ins`, `devices`, `listeners::tcp`).
 
 use serde::{Deserialize, Serialize};
 

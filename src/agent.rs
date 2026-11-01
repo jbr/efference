@@ -5,16 +5,21 @@
 //! until the model stops calling tools, then read the next user turn.
 //!
 //! Every input — including the first turn — arrives over the `Frontend`, which is
-//! the daemon's HTTP-fed [`RemoteFrontend`](crate::daemon::RemoteFrontend)
+//! the daemon's HTTP-fed [`RemoteFrontend`](crate::agent::remote_frontend::RemoteFrontend)
 //! (docs/control-channel.md): the control socket is the singular authoritative input
 //! source. The log lives in the shared daemon state ([`Session`]); the loop appends
 //! through it, which both persists the JSONL line and wakes any SSE tailers.
+//!
+//! This module is also the root of the agent group: the loop's interaction boundary
+//! (`frontend`) and the one backend mounted behind it, over a [`Session`] (`remote_frontend`)
+//! (docs/README.md, *Dependency direction*).
 
 use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::Value;
 
+use crate::agent::frontend::Frontend;
 use crate::config::Refreshed;
 use crate::config::policy::{self, ReviewLevel, Verdict};
 use crate::curation::consolidate;
@@ -23,7 +28,6 @@ use crate::curation::spotter::Spotter;
 use crate::curation::triage::{
     BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager,
 };
-use crate::frontend::Frontend;
 use crate::inference::api::{Client, Error, RetrySurface, Streamed, ToolChoice};
 use crate::protocol::state::{BlockedReason, LoopPhase, Stall, StallReason};
 use crate::protocol::stream::StreamDelta;
@@ -118,6 +122,9 @@ pub async fn run<F: Frontend, S: Spotter>(
         }
     }
 }
+
+pub mod frontend;
+pub mod remote_frontend;
 
 #[cfg(test)]
 mod test;

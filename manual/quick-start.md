@@ -15,7 +15,7 @@ curl -fsSL https://efference.net/install.sh | sh
 efference runs on macOS and Linux. You’ll need `bash` for the agent’s commands. Git is
 needed only if you want a session to work in its own **worktree**, a separate checkout of
 your project.
-<!-- src: src/tools/bash.rs; src/worktree.rs; src/bin/efference/island.rs (std::os::unix); src/platform/secrets.rs (macOS and Linux stores only) -->
+<!-- src: src/tools/bash.rs; src/host/worktree.rs; src/bin/efference/island.rs (std::os::unix); src/platform/secrets.rs (macOS and Linux stores only) -->
 
 To update later, run the install command again. To check for a newer version without
 installing it, run `efference update --check`.
@@ -63,7 +63,7 @@ If your project has no `efference.toml`, efference offers to help create one, in
 terminal or in your browser. You can also leave this for later. The file tells future
 sessions what the project is for, what they should know, and what they may do without
 asking you.
-<!-- src: src/setup/handoff.rs::offer_project_setup; src/boot/scaffold.rs::CONFIG_SCAFFOLD; assets/guide/new-project.md -->
+<!-- src: src/setup/handoff.rs::offer_project_setup; src/host/boot/scaffold.rs::CONFIG_SCAFFOLD; assets/guide/new-project.md -->
 
 Project setup is itself an agent **session**: a conversation with a model, billed as
 normal use. You choose the model on a form first. The agent then asks before reading your
@@ -71,7 +71,7 @@ files and talks through the project’s permissions and context with you. It wri
 `efference.toml` and, if you don’t already have an agent guide, `AGENTS.md`. It also asks
 whose project this is, so it can keep efference’s own files out of version control to
 match.
-<!-- src: src/bin/efference/picker.rs::create_through_form; src/boot/scaffold.rs::CONFIG_SCAFFOLD; assets/guide/new-project.md -->
+<!-- src: src/bin/efference/picker.rs::create_through_form; src/host/boot/scaffold.rs::CONFIG_SCAFFOLD; assets/guide/new-project.md -->
 
 ## Start a conversation
 
@@ -88,7 +88,7 @@ wait for your decision. [Permissions](permissions.md) explains how to choose tha
 As it works, you’ll see tool results labelled with the lines the agent was shown.
 [Triage](triage.md) explains how those excerpts are selected and how you can compare them
 with the full output.
-<!-- src: src/tui/projection.rs::result_entry, selection_note; web/src/render/parse.ts::wireLabel; src/tui/block_menu.rs::menu_items; web/src/ui/Inspector.tsx -->
+<!-- src: src/clients/tui/projection.rs::result_entry, selection_note; web/src/render/parse.ts::wireLabel; src/clients/tui/block_menu.rs::menu_items; web/src/ui/Inspector.tsx -->
 
 ## Keep working after you close the terminal
 
@@ -96,7 +96,7 @@ For your first session, you don’t need a background service. With no host alre
 `efference` runs in **standalone mode**: closing the terminal or quitting efference ends
 the session. Its record stays in the project. Run `efference` there again and choose
 “resume an archived session…” to pick it back up.
-<!-- src: src/daemon/island.rs::OwnerWatch; src/daemon/host/island_exit.rs::archive_and_shut_down; src/bin/efference/picker.rs::resume_on; src/bin/efference/picker/app.rs::RESUME -->
+<!-- src: src/host/island.rs::OwnerWatch; src/host/island_exit.rs::archive_and_shut_down; src/bin/efference/picker.rs::resume_on; src/bin/efference/picker/app.rs::RESUME -->
 
 When you want the agent to keep working while you’re away, start a **host**, the
 long-lived process that holds your sessions, in a terminal you leave open:
@@ -110,4 +110,4 @@ now **detaches** from the session instead of stopping it, so you can come back l
 [How efference runs](how-it-runs.md) explains the two modes and running a host as a
 service. For a browser on your computer or phone, continue to
 [Remote access](remote-access.md).
-<!-- src: src/bin/efference/cli.rs::host_candidates; src/tui/control_strip.rs::strip_live_items -->
+<!-- src: src/bin/efference/cli.rs::host_candidates; src/clients/tui/control_strip.rs::strip_live_items -->

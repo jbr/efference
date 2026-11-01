@@ -10,9 +10,9 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
     match command {
         DevCommand::SessionForm { embedded } => {
             if embedded {
-                efference::tui::run_session_form_prototype().await?;
+                efference::clients::tui::run_session_form_prototype().await?;
             } else {
-                efference::tui::session_form::run()?;
+                efference::clients::tui::session_form::run()?;
             }
             Ok(())
         }

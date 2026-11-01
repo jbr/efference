@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use efference::daemon::island::{ISLAND_LOG, ISLAND_SOCKET};
+use efference::host::island::{ISLAND_LOG, ISLAND_SOCKET};
 
 /// A scratch HOME holding a user config whose one connection's credential
 /// loads, and an island directory to launch into.

@@ -15,7 +15,7 @@ export function setupNote(exitCode: number | null): string {
 
 /** Git's progress meters (`Updating files: 96% …\r`) redraw one line in place;
  * kept verbatim they are most of what a checkout prints. The host cleans this
- * at capture (`without_overwrites`, src/worktree.rs); old entries still hold
+ * at capture (`without_overwrites`, src/host/worktree.rs); old entries still hold
  * the raw redraws, so the renderer applies the same last-segment-per-line rule
  * again — a no-op on already-clean output. */
 export function cleanWorktreeOutput(output: string): string {

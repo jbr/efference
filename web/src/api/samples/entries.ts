@@ -2,7 +2,7 @@
 // Each is typed, so `pnpm run typecheck` fails when a type stops accepting one.
 //
 // Log entries are the three things the entry view adds to a stored entry (src/api/entry.ts),
-// in the shapes src/daemon/entry_view/test.rs builds and this project's own sessions write.
+// in the shapes src/routes/entry_view/test.rs builds and this project's own sessions write.
 
 import type { LogEntry } from "../entry.ts";
 

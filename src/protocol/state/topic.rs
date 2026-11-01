@@ -7,7 +7,7 @@ use serde::Serialize;
 mod test;
 
 /// A level-triggered state topic (docs/control-api.md). The set is lifted from the
-/// units `src/tui/run.rs` already fingerprints out of the `GET /state` blob and emits
+/// units `src/clients/tui/run.rs` already fingerprints out of the `GET /state` blob and emits
 /// separately — that poller is the topic decomposition, arrived at by use — with
 /// `role`/`proposals` split (the TUI merges them only for its own convenience) and the
 /// loop dials named for the fields of the loop resource.

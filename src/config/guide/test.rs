@@ -66,12 +66,12 @@ fn every_toml_block_in_a_guide_is_a_valid_config() {
 fn every_tool_a_guide_names_is_mounted() {
     let mut toolbox = crate::tools::Toolbox::bash_and_mcps(std::env::current_dir().unwrap(), None)
         .expect("toolbox mounts");
-    let host = crate::daemon::Host::new(
+    let host = crate::host::Host::new(
         crate::inference::InferenceRegistry::empty(),
         crate::config::env_table::EnvSnapshot::new(Default::default())
             .expect("an empty environment is valid"),
     );
-    toolbox.mount_sessions(crate::control_tools::Control::in_session(
+    toolbox.mount_sessions(crate::clients::control_tools::Control::in_session(
         &host,
         "reader".into(),
     ));
@@ -423,14 +423,14 @@ fn the_artifacts_guide_lists_the_built_in_libraries() {
         .collect();
     listed.sort_unstable();
     listed.dedup();
-    let built_in: Vec<&str> = crate::daemon::artifacts::libraries::LIBRARIES
+    let built_in: Vec<&str> = crate::listeners::artifacts::libraries::LIBRARIES
         .iter()
         .map(|library| library.name)
         .collect();
     assert_eq!(listed, built_in, "efference.load names in the guide");
     // A version may wrap across the guide's lines.
     let flat = guide.split_whitespace().collect::<Vec<_>>().join(" ");
-    for library in crate::daemon::artifacts::libraries::LIBRARIES {
+    for library in crate::listeners::artifacts::libraries::LIBRARIES {
         assert!(
             flat.contains(library.version),
             "the guide names {} {}",
@@ -445,7 +445,7 @@ fn the_artifacts_guide_lists_the_built_in_libraries() {
 /// has (docs/artifacts.md).
 #[test]
 fn the_preamble_names_the_built_in_mermaid_version() {
-    let mermaid = crate::daemon::artifacts::libraries::LIBRARIES
+    let mermaid = crate::listeners::artifacts::libraries::LIBRARIES
         .iter()
         .find(|library| library.name == "mermaid")
         .expect("Mermaid is built in");

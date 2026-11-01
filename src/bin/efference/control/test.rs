@@ -2,7 +2,7 @@
 
 use crate::cli::{Cli, Command};
 use clap::Parser;
-use efference::control_tools::{Output, cli::Tools};
+use efference::clients::control_tools::{Output, cli::Tools};
 use efference::protocol::agents::Decision;
 
 fn parse(argv: &[&str]) -> Result<Tools, clap::Error> {

@@ -2,8 +2,8 @@
 // Each is typed, so `pnpm run typecheck` fails when a type stops accepting one.
 //
 // The host's session collection and its remembered locations. The bytes are the ones
-// src/daemon/test/host/bodies.rs, src/daemon/test/host/projects.rs,
-// src/daemon/test/host/worktree.rs and src/protocol/sessions/test.rs pin; a pin that changes
+// src/host/test/host/bodies.rs, src/host/test/host/projects.rs,
+// src/host/test/host/worktree.rs and src/protocol/sessions/test.rs pin; a pin that changes
 // in Rust is changed here too.
 
 import type {

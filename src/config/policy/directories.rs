@@ -7,7 +7,7 @@ use super::paths::{absolutize, lexical_normalize};
 /// Where a session's relative paths resolve. `[paths]` grant keys are written in the
 /// project's `efference.toml`, so they resolve against the **project**; the model's
 /// paths resolve against its **working** directory, where its tools run. The two are
-/// the same directory unless the session works in a git worktree (`crate::worktree`).
+/// the same directory unless the session works in a git worktree (`crate::host::worktree`).
 ///
 /// A target inside any worktree is judged as its project counterpart
 /// ([`crate::record::session_dir::worktree::counterpart`]), for every session: each worktree

@@ -1,0 +1,273 @@
+//! What a frame costs as the transcript grows (docs/tui.md).
+//!
+//! The transcript is a growing document repainted ~33 times a second, so the thing
+//! worth pinning is not a duration — it is that the per-frame work stays bounded by
+//! the *viewport*, not by the log. `laid_out` counts the top-level nodes a walk
+//! actually laid out; everything else was reused. These assert that number stays
+//! flat as the log gets 8× longer, which is what a timing test would be trying to
+//! say anyway, without being a timing test.
+
+use super::*;
+use crate::record::log::Triaged;
+
+/// A session of `turns` tool exchanges, stream-followed to the bottom the way a
+/// live session sits.
+fn session(turns: usize) -> Screenplay<'static> {
+    let mut play = Screenplay::new(120, 40);
+    for i in 0..turns {
+        play.user(&format!("step {i}"));
+        play.tool_exchange(
+            &format!("call-{i}"),
+            crate::record::names::tools::BASH,
+            &format!("cargo test --test t{i}"),
+            // Several lines, so a re-render of one result is visible in the frame.
+            &(1..=12)
+                .map(|n| format!("test t{i}::case_{n} ... ok"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    play.pin_to_bottom();
+    play
+}
+
+/// One streamed token against a long transcript costs the same as against a short
+/// one. Before the layout cache this walk was the whole document every frame, which
+/// is what made a long session visibly lag behind the stream.
+#[test]
+fn a_streamed_token_costs_the_viewport_not_the_log() {
+    let mut short = session(25);
+    let mut long = session(200);
+
+    let delta = |play: &mut Screenplay<'_>| {
+        play.event(TuiEvent::AssistantDelta("another token ".into()));
+        let _ = play.draw();
+        play.state.document.laid_out
+    };
+
+    // Warm both, then measure a steady-state streaming frame.
+    delta(&mut short);
+    delta(&mut long);
+    let short_cost = delta(&mut short);
+    let long_cost = delta(&mut long);
+
+    assert!(
+        long_cost <= short_cost + 2,
+        "an 8× longer log laid out {long_cost} nodes against the short log's \
+         {short_cost} — the per-frame cost is tracking the log, not the viewport"
+    );
+    assert!(
+        long_cost < 40,
+        "{long_cost} nodes laid out for one streamed token into a 40-row viewport"
+    );
+}
+
+/// Scrolling is bounded the same way: moving the viewport lays out what enters it,
+/// not everything above it. (Every node above the viewport must still be *walked* to
+/// know where the viewport starts — that walk is now integer arithmetic.)
+#[test]
+fn scrolling_costs_the_viewport_not_the_log() {
+    let mut play = session(200);
+    let _ = play.draw();
+
+    let max = play.state.max_scroll();
+    play.state.set_scroll_offset(max / 2);
+    let _ = play.draw();
+    let jumped = play.state.document.laid_out;
+
+    play.state.set_scroll_offset(max / 2 + 3);
+    let _ = play.draw();
+    let nudged = play.state.document.laid_out;
+
+    assert!(
+        jumped < 40 && nudged < 40,
+        "a scroll laid out {jumped} then {nudged} nodes for a 40-row viewport"
+    );
+}
+
+/// **A block is syntax-highlighted once, not once a frame.** A *visible* top-level
+/// node is re-laid-out on every paint, and a multi-screen code block is one node —
+/// so without the memo, syntect re-parses the whole block ~33 times a second while
+/// the operator scrolls past it. Worse, parse state has to be carried from the
+/// block's first line each time, so the cost peaks exactly where the operator has
+/// scrolled furthest into it — a long highlighted block scrolls more slowly than
+/// anything else.
+#[test]
+fn a_block_is_highlighted_once_not_once_a_frame() {
+    let mut play = Screenplay::new(100, 30);
+    play.user("read it");
+    play.assistant(
+        "here",
+        vec![ToolCall::new(
+            "read",
+            "call-hl",
+            serde_json::json!({ "paths": ["src/tui/state.rs"] }),
+        )],
+    );
+    let body: String = (1..=2000)
+        .map(|n| format!("    let value_{n} = compute(&state, {n});\n"))
+        .collect();
+    play.tool_result(
+        "call-hl",
+        &format!(
+            "==MK BEGIN /src/tui/state.rs, LENGTH: 9 MK==\n{body}==MK END /src/tui/state.rs MK=="
+        ),
+        false,
+        WireState::Raw,
+    );
+
+    // The first paint pays for the block, once.
+    let _ = play.draw();
+    let first = play.state.document.highlighted;
+    assert!(first > 0, "the first paint has to actually highlight it");
+
+    // Every later frame — including one that scrolls — pays nothing.
+    let _ = play.draw();
+    assert_eq!(
+        play.state.document.highlighted, 0,
+        "a repaint re-parsed the block"
+    );
+
+    for offset in [1900, 1500, 900, 300, 0] {
+        play.state.set_scroll_offset(offset);
+        let _ = play.draw();
+        assert_eq!(
+            play.state.document.highlighted, 0,
+            "scrolling to row {offset} re-parsed the block"
+        );
+    }
+}
+
+/// The memo is keyed on what the colours are a function of, so a theme change
+/// misses it rather than painting the old theme's colours forever.
+#[test]
+fn a_theme_change_misses_the_highlight_memo() {
+    let mut play = Screenplay::new(100, 30);
+    play.user("read it");
+    play.assistant(
+        "here",
+        vec![ToolCall::new(
+            "read",
+            "call-hl",
+            serde_json::json!({ "paths": ["a.rs"] }),
+        )],
+    );
+    play.tool_result(
+        "call-hl",
+        "==MK BEGIN /a.rs, LENGTH: 9 MK==\nfn main() {}\n==MK END /a.rs MK==",
+        false,
+        WireState::Raw,
+    );
+    let _ = play.draw();
+    let _ = play.draw();
+    assert_eq!(play.state.document.highlighted, 0, "warm");
+
+    let themes = crate::clients::tui::render_context::RenderContext::available_themes();
+    let other = themes
+        .iter()
+        .find(|t| Some(t.as_str()) != play.state.current_theme_name.as_deref())
+        .expect("a second theme to switch to");
+    play.state.apply_theme(other).expect("theme applies");
+    play.state.document.invalidate_all();
+    let _ = play.draw();
+    assert!(
+        play.state.document.highlighted > 0,
+        "the new theme's colours must be recomputed, not served from the memo"
+    );
+}
+
+/// The reverse guarantee: a node whose content changed *is* re-laid-out. A cache
+/// that never invalidated would pass the tests above and paint stale rows forever.
+/// The raw flip is the change to drive it with — it is the one per-entry toggle
+/// that alters what an already-committed entry renders.
+#[test]
+fn a_re_rendered_result_drops_its_cached_layout() {
+    let mut play = Screenplay::new(120, 40);
+    play.user("run it");
+    play.assistant(
+        "on it",
+        vec![ToolCall::new(
+            crate::record::names::tools::BASH,
+            "call-1",
+            serde_json::json!({ "command": "cargo tree" }),
+        )],
+    );
+    play.tool_result(
+        "call-1",
+        "RAW-ONE\nRAW-TWO\nRAW-THREE",
+        false,
+        WireState::from(Triaged::new(Keep::None).with_note("three deps")),
+    );
+    play.pin_to_bottom();
+    let before = play.render();
+    assert!(
+        play.state.document.layouts.iter().all(Option::is_some),
+        "a drawn document has a layout for every node"
+    );
+
+    play.show_raw("call-1");
+    assert!(
+        play.state.document.layouts.iter().any(Option::is_none),
+        "re-projecting an entry must drop that node's cached height"
+    );
+    assert_ne!(
+        before,
+        play.render(),
+        "and the next frame must show the re-rendered entry"
+    );
+}
+
+/// **A streaming write colours the lines that arrived, not the lines it holds.**
+///
+/// A tool call's arriving contents render as a code block whose text changes every
+/// frame, so `memo_key` — which hashes the text — misses every frame. Without the
+/// incremental path behind that miss the block re-parses from line 1 on each one:
+/// measured at 401 lines per frame for a 400-line block, growing with the file, and
+/// worst at the end of the write where the operator is still watching.
+#[test]
+fn a_streaming_write_colours_only_the_lines_that_arrived() {
+    let mut play = Screenplay::new(120, 40);
+    play.user("write it");
+    play.calling(0, "toolu_write", "write");
+    play.call_input(0, r#"{"path":"a.rs","contents":""#);
+    play.pin_to_bottom();
+    let _ = play.draw();
+
+    for lines in [50, 100, 200, 400] {
+        while play.state.live.call_input_lines() < lines {
+            play.call_input(0, r#"    let value = compute(state);\n"#);
+        }
+        let _ = play.draw();
+        // A steady-state *streaming* frame: one more fragment, then a paint. (Two
+        // paints with no fragment between them hit the memo outright — the text did
+        // not change. What a stream does is change it every frame.)
+        play.call_input(0, r#"    let value = compute(state);\n"#);
+        let _ = play.draw();
+        let highlighted = play.state.document.highlighted;
+        assert!(
+            highlighted <= 3,
+            "a block holding {lines} lines coloured {highlighted} of them for one \
+             arriving line — the growing-block prefix was not reused"
+        );
+    }
+}
+
+/// **A frame gives the document's nodes back.** A walk takes the nodes out of the
+/// state while it lays them out, so that `render_node` can borrow one and mutate the
+/// rest of the state (`walk_document`). A frame is two walks, measure and paint, and
+/// what reads the nodes between frames (focus, the block menu) has to find the same
+/// list after it.
+#[test]
+fn a_frame_leaves_the_document_nodes_in_place() {
+    let mut play = session(5);
+    let _ = play.draw();
+    let count = play.state.document.document.nodes.len();
+    assert!(count > 0, "a drawn transcript has top-level nodes");
+
+    let _ = play.draw();
+    assert_eq!(
+        play.state.document.document.nodes.len(),
+        count,
+        "a repaint changed the document's nodes"
+    );
+}

@@ -1,0 +1,71 @@
+//! The loop's [`Frontend`], backed entirely by [`Session`] — every input arrives
+//! over HTTP (docs/control-channel.md).
+
+use super::*;
+use crate::session::Session;
+use crate::tools::Interrupt;
+use tokio::sync::mpsc;
+
+/// The loop's [`Frontend`], backed entirely by [`Session`]: every input arrives
+/// over HTTP. The loop is pull-shaped — it blocks at `read_user_turn` / `approve`
+/// — and each pull resolves when a client pushes.
+pub struct RemoteFrontend {
+    pub(crate) shared: Arc<Session>,
+    /// Single-consumer receiver of the turn inbox.
+    pub(crate) turns: mpsc::UnboundedReceiver<SubmittedTurn>,
+}
+
+impl Frontend for RemoteFrontend {
+    async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
+        // Mark the loop parked so `/settle` reports idle while we wait (and wake any waiter).
+        self.shared.going_idle();
+        loop {
+            // Blocks until a `POST /turns` arrives. `None` (all senders dropped) only
+            // happens once the daemon is tearing down, which ends the loop cleanly.
+            let turn = self.turns.recv().await?;
+            // The channel cannot be searched, so a withdrawn turn still surfaces here; the
+            // pending queue is the authority (docs/control-channel.md). An unclaimed turn was
+            // recalled while in flight — drop it and keep waiting, still parked. A blank
+            // turn keeps the loop idle, so claiming one leaves the phase where it is.
+            if self
+                .shared
+                .claim_turn(&turn.submission_id, !turn.is_blank())
+            {
+                return Some(turn);
+            }
+        }
+    }
+
+    fn drain_queued_turns(&mut self) -> Vec<SubmittedTurn> {
+        // Non-blocking pull of everything queued right now (docs/control-channel.md).
+        // Each drained turn is claimed off the pending queue — the loop is already mid-trajectory,
+        // so the phase is left alone (unlike the idle path). A turn withdrawn while in flight fails the claim and is
+        // dropped. Blank turns are dropped (still claimed): a mid-trajectory empty submit mirrors
+        // the idle path's blank-keep-idling, never landing an empty `User` entry on the wire.
+        let mut turns = Vec::new();
+        while let Ok(turn) = self.turns.try_recv() {
+            if self.shared.claim_turn(&turn.submission_id, false) && !turn.is_blank() {
+                turns.push(turn);
+            }
+        }
+        turns
+    }
+
+    async fn approve(&mut self, call: &ToolCall, gate: GateOptions<'_>) -> Approval {
+        let rx = self.shared.register_pending(call, gate);
+        // A dropped sender (shouldn't happen on the live daemon) defaults to abort
+        // — never run a call we couldn't get a decision for.
+        let approval = rx.await.unwrap_or(Approval::Abort);
+        // The decision ended the wait already (`resolve_approval`); a dropped sender did not.
+        self.shared
+            .end_wait(|phase| phase == LoopPhase::Gated, LoopPhase::Executing);
+        approval
+    }
+
+    async fn interrupted(&mut self) -> Interrupt {
+        // The operator's two intents over the running tool: `POST /loop/interrupt` kills,
+        // `PATCH /processes/:id {background: true}` detaches it into the process monitor
+        // (docs/process-monitor.md).
+        self.shared.tool_interrupted().await
+    }
+}

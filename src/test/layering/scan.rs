@@ -8,7 +8,7 @@ pub(super) struct Reference {
     /// The file, relative to `src/`.
     pub(super) file: String,
     pub(super) line: usize,
-    /// The path below the crate root: `daemon::Host`, `record::log::Payload`.
+    /// The path below the crate root: `host::Host`, `record::log::Payload`.
     pub(super) path: String,
 }
 
@@ -28,7 +28,7 @@ impl Reference {
 }
 
 /// The module path of a file below `src/`: `agent/step.rs` is `["agent", "step"]`,
-/// and `tui/mod.rs` is `["tui"]`.
+/// and `clients/tui/mod.rs` is `["clients", "tui"]`.
 fn module_path(file: &str) -> Vec<&str> {
     let mut parts: Vec<&str> = file.trim_end_matches(".rs").split('/').collect();
     if parts.last() == Some(&"mod") {
@@ -320,73 +320,67 @@ fn paths(file: &str, text: &str) -> Vec<String> {
 fn the_scan_reads_each_spelling() {
     let none = Vec::<String>::new();
     // Qualified paths and `use`.
+    assert_eq!(paths("agent.rs", "use crate::host::Host;"), ["host::Host"]);
     assert_eq!(
-        paths("agent.rs", "use crate::daemon::Host;"),
-        ["daemon::Host"]
+        paths("agent.rs", "fn f() { crate::host::refresh_and_emit(s); }"),
+        ["host::refresh_and_emit"]
     );
     assert_eq!(
-        paths("agent.rs", "fn f() { crate::daemon::refresh_and_emit(s); }"),
-        ["daemon::refresh_and_emit"]
+        paths("agent.rs", "let x = crate::host::Host::new::<u8>();"),
+        ["host::Host::new"]
     );
     assert_eq!(
-        paths("agent.rs", "let x = crate::daemon::Host::new::<u8>();"),
-        ["daemon::Host::new"]
-    );
-    assert_eq!(
-        paths("agent.rs", "use crate::daemon::Host as H;"),
-        ["daemon::Host"]
+        paths("agent.rs", "use crate::host::Host as H;"),
+        ["host::Host"]
     );
     // Groups under a module, nested groups, `self`, globs, and across lines.
     assert_eq!(
         paths(
             "agent.rs",
-            "use crate::daemon::{\n    BlockedReason,\n    Session as S,\n    stall::{Reason, self},\n};"
+            "use crate::host::{\n    BlockedReason,\n    Session as S,\n    stall::{Reason, self},\n};"
         ),
         [
-            "daemon::BlockedReason",
-            "daemon::Session",
-            "daemon::stall::Reason",
-            "daemon::stall",
+            "host::BlockedReason",
+            "host::Session",
+            "host::stall::Reason",
+            "host::stall",
         ]
     );
     assert_eq!(
-        paths("agent.rs", "use crate::daemon::{self, Host};"),
-        ["daemon", "daemon::Host"]
+        paths("agent.rs", "use crate::host::{self, Host};"),
+        ["host", "host::Host"]
     );
-    assert_eq!(paths("agent.rs", "use crate::daemon::*;"), ["daemon"]);
+    assert_eq!(paths("agent.rs", "use crate::host::*;"), ["host"]);
     // A group at the root.
     assert_eq!(
         paths(
             "agent.rs",
-            "use crate::{daemon::{Host, Session}, log::Payload, tui};"
+            "use crate::{host::{Host, Session}, log::Payload, tui};"
         ),
-        ["daemon::Host", "daemon::Session", "log::Payload", "tui"]
+        ["host::Host", "host::Session", "log::Payload", "tui"]
     );
     // `super` from a file at the root's depth, and from a deeper one: a chain that stops
     // below the root names a path below the module it reaches.
+    assert_eq!(paths("agent.rs", "use super::host::Host;"), ["host::Host"]);
     assert_eq!(
-        paths("agent.rs", "use super::daemon::Host;"),
-        ["daemon::Host"]
+        paths("tui/mod.rs", "use super::{host::Host, log};"),
+        ["host::Host", "log"]
     );
     assert_eq!(
-        paths("tui/mod.rs", "use super::{daemon::Host, log};"),
-        ["daemon::Host", "log"]
+        paths("agent/step.rs", "use super::super::host::Host;"),
+        ["host::Host"]
     );
     assert_eq!(
-        paths("agent/step.rs", "use super::super::daemon::Host;"),
-        ["daemon::Host"]
-    );
-    assert_eq!(
-        paths("agent/step.rs", "use super::daemon::Host;"),
-        ["agent::daemon::Host"]
+        paths("agent/step.rs", "use super::host::Host;"),
+        ["agent::host::Host"]
     );
     assert_eq!(
         paths("record/log.rs", "use super::persist::Log;"),
         ["record::persist::Log"]
     );
     assert_eq!(
-        paths("record/log.rs", "use super::super::daemon::Host;"),
-        ["daemon::Host"]
+        paths("record/log.rs", "use super::super::host::Host;"),
+        ["host::Host"]
     );
     assert_eq!(
         paths("record/log/summary.rs", "use super::super::persist::Log;"),
@@ -399,7 +393,7 @@ fn the_scan_reads_each_spelling() {
     );
     // An inline module's `super` is the file's module, which names nothing outside it.
     assert_eq!(
-        paths("agent.rs", "mod inner { use super::daemon::Host; }"),
+        paths("agent.rs", "mod inner { use super::host::Host; }"),
         none
     );
     assert_eq!(
@@ -409,9 +403,9 @@ fn the_scan_reads_each_spelling() {
     assert_eq!(
         paths(
             "agent.rs",
-            "mod inner { fn f() { super::super::daemon::Host } }"
+            "mod inner { fn f() { super::super::host::Host } }"
         ),
-        ["daemon::Host"]
+        ["host::Host"]
     );
     assert_eq!(
         paths(
@@ -424,7 +418,7 @@ fn the_scan_reads_each_spelling() {
     assert_eq!(
         paths(
             "agent.rs",
-            "let j = \"{\"; mod inner { use super::daemon::Host; }"
+            "let j = \"{\"; mod inner { use super::host::Host; }"
         ),
         none
     );
@@ -438,43 +432,43 @@ fn the_scan_reads_each_spelling() {
     );
     // Prose that mentions a path in a string is not a path.
     assert_eq!(
-        paths("agent.rs", "let m = \"see crate::daemon::Host\";"),
+        paths("agent.rs", "let m = \"see crate::host::Host\";"),
         none
     );
     // Comments are not code, whichever kind.
     assert_eq!(
         paths(
             "agent.rs",
-            "// crate::daemon::Host\n/// [`crate::daemon::Host`]\n//! crate::daemon\n/* crate::daemon /* nested crate::tui */ crate::boot */"
+            "// crate::host::Host\n/// [`crate::host::Host`]\n//! crate::host\n/* crate::host /* nested crate::clients */ crate::routes */"
         ),
         none
     );
     // A `//` or a quote inside a literal does not hide the code after it.
     assert_eq!(
-        paths("agent.rs", "let u = \"https://x\"; crate::daemon::f();"),
-        ["daemon::f"]
+        paths("agent.rs", "let u = \"https://x\"; crate::host::f();"),
+        ["host::f"]
     );
     assert_eq!(
-        paths("agent.rs", "let q = '\"'; crate::daemon::f();"),
-        ["daemon::f"]
+        paths("agent.rs", "let q = '\"'; crate::host::f();"),
+        ["host::f"]
     );
     assert_eq!(
-        paths("agent.rs", "let q = r#\"a \" // b\"#; crate::daemon::f();"),
-        ["daemon::f"]
+        paths("agent.rs", "let q = r#\"a \" // b\"#; crate::host::f();"),
+        ["host::f"]
     );
     assert_eq!(
-        paths("agent.rs", "let q = '\\''; crate::daemon::f();"),
-        ["daemon::f"]
+        paths("agent.rs", "let q = '\\''; crate::host::f();"),
+        ["host::f"]
     );
     assert_eq!(
-        paths("agent.rs", "fn f<'a>(x: &'a u8) { crate::daemon::f(); }"),
-        ["daemon::f"]
+        paths("agent.rs", "fn f<'a>(x: &'a u8) { crate::host::f(); }"),
+        ["host::f"]
     );
     // Line numbers count through comments.
     assert_eq!(
         references(
             "agent.rs",
-            "// one\n/* two\nthree */\nuse crate::daemon::Host;"
+            "// one\n/* two\nthree */\nuse crate::host::Host;"
         )[0]
         .line,
         4
@@ -494,7 +488,7 @@ fn a_file_is_keyed_by_its_module_path() {
         .importer()
     };
     assert_eq!(importer("agent.rs"), "agent");
-    assert_eq!(importer("tui/mod.rs"), "tui");
+    assert_eq!(importer("clients/tui/mod.rs"), "clients::tui");
     assert_eq!(importer("agent/step.rs"), "agent::step");
     assert_eq!(importer("record/log.rs"), "record::log");
     assert_eq!(importer("record/log/summary.rs"), "record::log::summary");

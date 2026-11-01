@@ -2,7 +2,7 @@
 //! lists, and the identity `DELETE /projects` forgets one by.
 //!
 //! The index of entries, their availability against the filesystem, and the store they
-//! come from are the host's (`daemon::host`, `remembered`); an entry is built from a stored
+//! come from are the host's (`host`, `host::remembered`); an entry is built from a stored
 //! row there.
 
 use serde::{Deserialize, Serialize};

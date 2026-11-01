@@ -1,7 +1,7 @@
 //! The row the archived-session scan produces for one session directory (docs/control-api.md):
 //! what `GET /sessions?state=archived` lists, flattened into
 //! [`ArchivedSession`](super::sessions::ArchivedSession). The scan that fills it is
-//! [`crate::inventory`].
+//! [`crate::host::inventory`].
 
 use std::path::{Path, PathBuf};
 

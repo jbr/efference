@@ -253,7 +253,7 @@ impl Probe for LiveProbe {
 ///
 /// The URL is said either way, so the open is attempted unconditionally and
 /// a failure is reported rather than fatal — the same reasoning as the MCP
-/// authorization path (`src/boot/mcp_mount.rs`). Said through the flow's
+/// authorization path (`src/host/boot/mcp_mount.rs`). Said through the flow's
 /// prompter, so it reads in place in the transcript setup keeps.
 fn present_authorization(url: &str, say: &mut dyn FnMut(&str)) {
     say(&format!(

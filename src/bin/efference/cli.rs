@@ -374,7 +374,7 @@ pub(crate) enum Command {
         #[arg(long, value_name = "PATH", global = true)]
         host_socket: Option<PathBuf>,
         #[command(subcommand)]
-        tools: efference::control_tools::cli::Tools,
+        tools: efference::clients::control_tools::cli::Tools,
     },
     /// Serve the agent verbs as an MCP server on stdin/stdout.
     ///

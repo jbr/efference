@@ -72,7 +72,7 @@ loop never waits on a push service.
   escalator is the id or client name inside its `source`. An escalation to another session
   is that session's to answer, so it pushes nothing.
 - **Rerouted gate** — `Session::gate_rerouted` (`src/session/push.rs`), called by the status
-  watcher (`src/daemon/subscriptions.rs`) when a held gate's routing changes and its
+  watcher (`src/host/subscriptions.rs`) when a held gate's routing changes and its
   reviewer is no longer the one its last moment went to: the dial turned, the supervisor
   pointer cleared or moved, the supervisor ended, or the session an escalation reached
   ended. A gate moment again; one that comes to rest with the operator is pushed. Body: the
@@ -258,7 +258,7 @@ window expiring, since idleness fires no event. Failures are logged and not show
 and it checks for a due report as soon as one is stored. The stream is not tied to attention: a
 hidden tab keeps its `/events` connection.
 
-**The TUI** (`src/tui/attention.rs`) reports as a client of its own, with a
+**The TUI** (`src/clients/tui/attention.rs`) reports as a client of its own, with a
 per-process id as `client` and the session it is attached to as `session` (`null` on a
 lone session bind). It is `active` while its terminal is focused (focus reporting,
 `CSI ?1004h`) and a key or mouse event, `Moved` included, arrived within 5 minutes

@@ -4,7 +4,7 @@ A session can work in its own git worktree: a second checkout of the project, on
 branch, so its edits do not land in the checkout another session or the operator is
 using. `POST /sessions {"worktree": true}` asks for one (`efference` CLI `--worktree`,
 the `create` control tool's `worktree`). Worktree placement lives in
-`src/record/session_dir/worktree.rs` and the git operations in `src/worktree.rs`; the directory
+`src/record/session_dir/worktree.rs` and the git operations in `src/host/worktree.rs`; the directory
 pair lives in `src/config/policy/directories.rs`.
 
 ## Project and working directory
@@ -132,6 +132,6 @@ remove, keep, or failure ([tui.md](tui.md), [web-client.md](web-client.md)). The
 
 Placement, the permission rule, the identity line, the header, and the log entry are not
 git-specific. Creating, removing, and the clean-and-merged check are, and they are the
-whole of what `src/worktree.rs` runs. A non-git version control system (jj's
+whole of what `src/host/worktree.rs` runs. A non-git version control system (jj's
 `jj workspace add`, Mercurial's `hg share`) would replace those three behind the same
 functions.

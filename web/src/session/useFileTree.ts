@@ -187,7 +187,7 @@ export function useProjectPaths(active: boolean): ProjectPaths {
   return state;
 }
 
-/** Mirrors `list::MAX_DEPTH` (src/daemon/files/list.rs), which clamps anything
+/** Mirrors `list::MAX_DEPTH` (src/listeners/files/list.rs), which clamps anything
  * larger anyway — asking for the server's own cap keeps the two from drifting
  * into a client that silently gets less than it asked for. */
 const MAX_DEPTH = 8;

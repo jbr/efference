@@ -1,6 +1,6 @@
 // The body of `PUT /approvals/:call_id` (docs/control-api.md, docs/permissions.md):
 // the decision a person or a supervising session returns for the held call. The
-// host reads the body by hand, by its `decision` word (src/daemon/http/turns.rs),
+// host reads the body by hand, by its `decision` word (src/routes/http/turns.rs),
 // so the type is declared here rather than generated.
 
 import type { ConfigChange } from "./types.ts";

@@ -145,7 +145,7 @@ export const triageText = (value: EffectiveTriage | null): string | null =>
     ? null
     : `${value.connection}/${value.model}`;
 
-/** The effort levels the terminal form offers (`src/tui/session_form.rs`), in
+/** The effort levels the terminal form offers (`src/clients/tui/session_form.rs`), in
  * its order. The first is the absence of an override, not a level: the wire
  * takes no `effort` and the provider decides. */
 export const EFFORTS: { label: string; value: string | null }[] = [

@@ -375,12 +375,12 @@ async fn an_archive_without_a_succession_goes_to_the_spotter() {
 /// A toolbox with the session-control verbs mounted for `caller`, over a host that holds
 /// no sessions.
 fn with_agent_verbs(caller: &str) -> Toolbox {
-    let host = crate::daemon::Host::new(
+    let host = crate::host::Host::new(
         crate::inference::InferenceRegistry::empty(),
         crate::config::env_table::EnvSnapshot::new(Default::default()).unwrap(),
     );
     let mut toolbox = Toolbox::bash_only();
-    toolbox.mount_sessions(crate::control_tools::Control::in_session(
+    toolbox.mount_sessions(crate::clients::control_tools::Control::in_session(
         &host,
         caller.into(),
     ));

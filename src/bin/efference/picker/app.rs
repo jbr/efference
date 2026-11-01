@@ -15,9 +15,9 @@
 
 use super::*;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use efference::tui::inline::{Inline, Styles, terminal_rows};
-use efference::tui::inline_list::{self, ListFrame, ListRow, move_key};
-use efference::tui::resume_list::{COLUMNS, ResumeKey, ResumePage};
+use efference::clients::tui::inline::{Inline, Styles, terminal_rows};
+use efference::clients::tui::inline_list::{self, ListFrame, ListRow, move_key};
+use efference::clients::tui::resume_list::{COLUMNS, ResumeKey, ResumePage};
 use ratatui::{buffer::Buffer, layout::Rect};
 use std::io;
 

@@ -1,5 +1,5 @@
 use super::*;
-use efference::boot::CONFIG_SCAFFOLD;
+use efference::host::boot::CONFIG_SCAFFOLD;
 use efference::platform::secrets::Secrets;
 #[cfg(feature = "dev")]
 use efference::record::persist::Log;

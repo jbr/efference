@@ -1,5 +1,5 @@
-// Mirrors the behaviors `src/tui/projection/tools.rs` pins (its coverage
-// lives in the TUI snapshot harness, `src/tui/harness/test/transcript/
+// Mirrors the behaviors `src/clients/tui/projection/tools.rs` pins (its coverage
+// lives in the TUI snapshot harness, `src/clients/tui/harness/test/transcript/
 // results.rs`) — the cordon's divergence check, like triage.test.ts.
 
 import { expect, test } from "vitest";
@@ -230,7 +230,7 @@ test("callArgs puts a write's path ahead of its contents, however serialized", (
 });
 
 // The elision marker mirrors the header `result_entry` composes in
-// `src/tui/projection.rs`: same words, same rounding.
+// `src/clients/tui/projection.rs`: same words, same rounding.
 test("an elided result is labelled from its tag, not from its content", () => {
   const elided = {
     content: "x".repeat(16 * 1024),

@@ -25,7 +25,7 @@ You can inspect both versions: the session log keeps the full output, subject to
 [result-size limit](#limits-and-exceptions), and the clients can show it beside the selected
 lines. The agent can’t retrieve dropped lines from the log. If it needs more, it runs the
 command again, often with a narrower question.
-<!-- src: src/agent/batch.rs::run_calls (raw logged before triage); src/tui/block_menu.rs::menu_items (raw / triaged); web/src/ui/Inspector.tsx (raw tab); src/agent/surface.rs::tool_definitions (no retrieval tool) -->
+<!-- src: src/agent/batch.rs::run_calls (raw logged before triage); src/clients/tui/block_menu.rs::menu_items (raw / triaged); web/src/ui/Inspector.tsx (raw tab); src/agent/surface.rs::tool_definitions (no retrieval tool) -->
 
 ## Choose a triage model
 
@@ -44,7 +44,7 @@ That can be a cheaper model, but it has its own cache rather than sharing the ag
 It receives every tool result and a text record of the session: recent steps in full, and
 one line per older step. Choose its connection with the same care as the main model’s;
 your project’s content goes there too.
-<!-- src: src/tui/session_form/draft.rs::TriageDraft; web/src/ui/NewSessionSettings.tsx; src/curation/triage.rs::Triager::own; src/curation/triage/text_view.rs::history; src/curation/digest.rs -->
+<!-- src: src/clients/tui/session_form/draft.rs::TriageDraft; web/src/ui/NewSessionSettings.tsx; src/curation/triage.rs::Triager::own; src/curation/triage/text_view.rs::history; src/curation/digest.rs -->
 
 The triage model also writes each session's title.
 <!-- src: src/curation/triage/title.rs; src/agent/title.rs -->
@@ -55,7 +55,7 @@ Look for a label such as “triaged, kept 3 of 412 lines” on a result. The not
 explains what the rest contained; open the full result to compare. If something important
 was left out, tell the agent so it can follow up. There’s no control for changing a triage
 decision after the fact.
-<!-- src: src/tui/projection.rs::result_entry, selection_note; web/src/render/parse.ts::wireLabel; src/record/log.rs::result_verdicts (first verdict wins) -->
+<!-- src: src/clients/tui/projection.rs::result_entry, selection_note; web/src/render/parse.ts::wireLabel; src/record/log.rs::result_verdicts (first verdict wins) -->
 
 If triage can't reach its model, or can't produce a usable answer after several tries, the
 session stops and says the results are held. The agent is never handed the output untriaged,
@@ -121,7 +121,7 @@ Besides one triage per batch, a session makes a few small requests of its own:
 - **Notifications while idle.** When the session is idle and a notification arrives, a
   small triage on the agent's own model decides whether to wake it.
 - **Titles**, written by the triage model as a session goes.
-<!-- src: src/session/keepalive.rs::keepalive_interval, skip_reason, CAP, KeepaliveSpec::triage; src/config/raw.rs (keepalive-interval); src/tui/operations.rs::request_text; web/src/ui/operations.ts::requestText; src/agent/triage.rs::run_idle_triage; src/curation/triage.rs::Triager::idle_envelope; src/agent/title.rs -->
+<!-- src: src/session/keepalive.rs::keepalive_interval, skip_reason, CAP, KeepaliveSpec::triage; src/config/raw.rs (keepalive-interval); src/clients/tui/operations.rs::request_text; web/src/ui/operations.ts::requestText; src/agent/triage.rs::run_idle_triage; src/curation/triage.rs::Triager::idle_envelope; src/agent/title.rs -->
 
 When a session's cache is believed to have expired, its next request — a turn or a
 triage — waits for you to continue it or compact it, rather than paying to re-read the

@@ -8,7 +8,7 @@ An artifact is addressed by its entry's seq, its text block's ordinal among the 
 
 ## Links and serving
 
-Nothing about an artifact is stored apart from the log entry that holds it. The entry view of a committed assistant entry (`daemon/entry_view.rs`, [control-api.md](control-api.md)) carries one link per fence, derived on every read:
+Nothing about an artifact is stored apart from the log entry that holds it. The entry view of a committed assistant entry (`routes/entry_view.rs`, [control-api.md](control-api.md)) carries one link per fence, derived on every read:
 
 - `kind` — `html` or `mermaid`, by the fence's info string.
 - `url` — `/artifacts/<session>/<seq>/<text_block>/<fence>/<tag>`, root-relative, so a web client loads it from the origin it already uses, local or remote.
@@ -34,7 +34,7 @@ The runtime puts `prose` on the root element, so the prose rules apply to the wh
 
 ### Built-in libraries
 
-d3, vega-embed (with Vega and Vega-Lite), Chart.js and Mermaid are embedded in the binary from `assets/artifact-libs/`, one version each, chosen from major versions models know well (`src/daemon/artifacts/libraries.rs`; the vendor README records where each build came from). The runtime defines `efference.load(name)`, which adds a script for `/artifacts/_efference/lib/<name>` and resolves to the library's global. The host serves a library's builds in dependency order as one script ending in a call that hands the runtime its global, without the builds' `sourceMappingURL` comments (the maps are not vendored, and developer tools fetching one would be refused by `connect-src`), revalidated by a hash of the script (`ETag`, `no-cache`); a name with no library gets a script that rejects the load with the names there are, and the runtime also writes that line at the top of the page, where the operator sees it. Upgrading a library changes how every artifact renders, including those in old conversations.
+d3, vega-embed (with Vega and Vega-Lite), Chart.js and Mermaid are embedded in the binary from `assets/artifact-libs/`, one version each, chosen from major versions models know well (`src/listeners/artifacts/libraries.rs`; the vendor README records where each build came from). The runtime defines `efference.load(name)`, which adds a script for `/artifacts/_efference/lib/<name>` and resolves to the library's global. The host serves a library's builds in dependency order as one script ending in a call that hands the runtime its global, without the builds' `sourceMappingURL` comments (the maps are not vendored, and developer tools fetching one would be refused by `connect-src`), revalidated by a hash of the script (`ETag`, `no-cache`); a name with no library gets a script that rejects the load with the names there are, and the runtime also writes that line at the top of the page, where the operator sees it. Upgrading a library changes how every artifact renders, including those in old conversations.
 
 ### Mermaid diagrams
 

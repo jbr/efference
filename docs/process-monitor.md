@@ -439,7 +439,7 @@ permission to ask would gate a question behind a question.
   posted to it, an MCP mount in `status`, `wait` and the status stream (matched by the
   `mcp[<client>]` source, so two mounts with one client name both read it), and a
   session that drives the asker without a subscription is woken with the same status
-  (`Host::post_status`, `daemon/subscriptions.rs`).
+  (`Host::post_status`, `host/subscriptions.rs`).
 - **Notifications do not interrupt it.** The reply bypasses the triage (`triage::bypassed`
   names its shape `operator reply`); the inbox is still triaged. In a batch with other
   results the triage runs as usual with a stand-in for the reply. When every result in the

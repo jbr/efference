@@ -81,7 +81,7 @@ path and reports only a warning that the file is missing. efference writes it:
 - `efference setup`, on a fresh `~/.efference/config.toml` (`src/setup/render.rs`). An existing
   file gains none.
 - `CONFIG_SCAFFOLD`, the config a session gets when the project has none
-  (`src/boot/scaffold.rs`).
+  (`src/host/boot/scaffold.rs`).
 - The `guide/new-project` template, which a setup session follows when writing a project's
   `efference.toml`. The guide has the session ask the operator first, since the editor
   fetches the schema from efference.net and so tells it when the file is edited; declining

@@ -2,8 +2,8 @@
 //! directory, flat or walked below it.
 //!
 //! The walk, the caps and the ignore set that decide what a listing holds are the host's
-//! (`daemon/files/list.rs`). A listing is serialized straight from these types, so the
-//! fields reach the bytes in the order declared here (`daemon/files/test/listing.rs`).
+//! (`listeners/files/list.rs`). A listing is serialized straight from these types, so the
+//! fields reach the bytes in the order declared here (`listeners/files/test/listing.rs`).
 
 use serde::{Deserialize, Serialize};
 

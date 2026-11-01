@@ -400,7 +400,7 @@ sugar / `Perms::default()`) is a real **deny** once it is the governing prefix. 
 lets the standard three-layer stack work: allow `.`, deny `.efference/`, re-allow
 `.efference/<id>/config.toml` and `.efference/<id>/attachments/` read-only. The harness
 **injects that self-surface stack in
-boot** (`src/boot.rs`), layered over the operator's grants: the session dir holds this
+boot** (`src/host/boot.rs`), layered over the operator's grants: the session dir holds this
 session's control socket, its append-only log, and every *other* session's dir, all under the
 operator's `.` grant — so without the deny nothing would stop a session from writing its own
 log (corrupting the session record) or POSTing to its own control socket (approving its own gates,
@@ -471,7 +471,7 @@ itself over its own documents would be the self-authorization the config design 
 is also excluded from `[paths]` resolution outright, because joined onto the cwd it would
 look like an ordinary relative path and a broad grant would then appear to cover it.
 
-## An allowing `agents__decide` is classified as the action it authorizes (`src/agent/step.rs`, `src/protocol/agents.rs`, `src/control_tools.rs`)
+## An allowing `agents__decide` is classified as the action it authorizes (`src/agent/step.rs`, `src/protocol/agents.rs`, `src/clients/control_tools.rs`)
 
 A session's `agents__decide` carries only a target, the held call's transcript handle
 (`seq`), and the decision, so classifying an allow as written would ask every rung to
@@ -1009,7 +1009,7 @@ without eliminating:
   to the operator is the same dial set to `spotter_human` — there is no separate disown verb.
 
   **The supervisor is a pointer the host holds per session** (`Hosted::supervisor`,
-  `daemon/host/supervise.rs`). Its default is `created_by`, so a session another session created
+  `host/supervise.rs`). Its default is `created_by`, so a session another session created
   answers to its creator and a session the operator created has none. It can be set to another
   session or cleared after creation — `PATCH /sessions/:id {"supervisor"}`, `efference control
   supervisor` ([control-api.md](control-api.md)) —
@@ -1057,7 +1057,7 @@ without eliminating:
   All three are state topics and republish when the pointer moves or the supervisor ends.
 
   **Routing is the dial's, observation is the subscription's.** A session's status reaches its
-  subscribers as an inbox notification either way ([inbox.md](inbox.md), `daemon/subscriptions.rs`);
+  subscribers as an inbox notification either way ([inbox.md](inbox.md), `host/subscriptions.rs`);
   what `Supervisor` adds is that a *gate* also reaches the live supervisor with a must-wake and
   the reviewer's rendering of the status — the held call, why it was held, and the calls that
   decide it ([tools.md](tools.md)) — subscribed or not. The status view names the same

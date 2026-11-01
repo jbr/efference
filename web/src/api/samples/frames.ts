@@ -2,7 +2,7 @@
 // Each is typed, so `pnpm run typecheck` fails when a type stops accepting one.
 //
 // The `output` frames, one per kind. The bytes are the ones
-// src/daemon/test/frame_bytes.rs pins; a pin that changes in Rust is changed here too.
+// src/host/test/frame_bytes.rs pins; a pin that changes in Rust is changed here too.
 
 import type { OutputFrame } from "../frames.ts";
 

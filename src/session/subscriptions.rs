@@ -1,5 +1,5 @@
 //! How many other sessions this one is subscribed to (docs/tools.md): the host's
-//! subscriber sets live in `daemon/subscriptions.rs`, and this is the count they
+//! subscriber sets live in `host/subscriptions.rs`, and this is the count they
 //! mirror here so the `wait` tool can tell that a subscribed session has something
 //! that may wake it (docs/process-monitor.md).
 

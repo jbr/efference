@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::ConfigChange;
 
 /// The decision returned by
-/// [`Frontend::approve`](crate::frontend::Frontend::approve) (docs/README.md). A typed
+/// [`Frontend::approve`](crate::agent::frontend::Frontend::approve) (docs/README.md). A typed
 /// line is a *redirect* — the call is rejected and the human's text is fed to the model
 /// as the next user turn, steering it without ending the turn. Every un-run
 /// `tool_use` still gets a paired `is_error` `tool_result` so the wire never

@@ -1,6 +1,6 @@
 // ! CORDON — a literal port of the TUI's per-tool parsing and dispatch
-// (`src/tui/projection/tools.rs`, plus the triaged-header composition in
-// `src/tui/projection.rs`; docs/web-client.md "The cordon"). Same deletion
+// (`src/clients/tui/projection/tools.rs`, plus the triaged-header composition in
+// `src/clients/tui/projection.rs`; docs/web-client.md "The cordon"). Same deletion
 // covenant as triage.ts: structured tool output deletes this directory
 // whole. Ports stay literal — same names, same classifications — so
 // divergence is findable by diffing against tools.rs.
@@ -169,7 +169,7 @@ export interface ResultRender {
   isError: boolean;
 }
 
-/** Mirrors `byte_size` (`src/tui/projection.rs`): bytes below a kibibyte,
+/** Mirrors `byte_size` (`src/clients/tui/projection.rs`): bytes below a kibibyte,
  * whole KiB above it. A gloss, not an accounting figure. */
 export const byteSize = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : `${Math.floor(bytes / 1024)} KiB`;
@@ -232,7 +232,7 @@ function triagedBody(
 }
 
 /** The one dispatch a result block renders through, mirroring the TUI's
- * per-wire-state match (`src/tui/projection.rs`). */
+ * per-wire-state match (`src/clients/tui/projection.rs`). */
 export function resultRender(
   tool: string | null,
   raw: RawResult,

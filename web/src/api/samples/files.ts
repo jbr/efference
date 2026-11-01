@@ -2,7 +2,7 @@
 // Each is typed, so `pnpm run typecheck` fails when a type stops accepting one.
 //
 // A directory listing from the `/files` surface. The bytes are the ones
-// src/daemon/files/test/listing.rs pins; a pin that changes in Rust is changed here too.
+// src/listeners/files/test/listing.rs pins; a pin that changes in Rust is changed here too.
 
 import type { DirListing } from "../types.ts";
 

@@ -682,13 +682,13 @@ async fn the_sessions_provider_mounts_the_agent_verbs_namespaced() {
     std::fs::create_dir_all(&dir).unwrap();
 
     // `Host::new` already returns an `Arc<Host>`.
-    let host = crate::daemon::Host::new(
+    let host = crate::host::Host::new(
         crate::inference::InferenceRegistry::empty(),
         crate::config::env_table::EnvSnapshot::new(Default::default())
             .expect("an empty environment is valid"),
     );
     let mut toolbox = Toolbox::bash_and_mcps(dir.clone(), None).unwrap();
-    toolbox.mount_sessions(crate::control_tools::Control::in_session(
+    toolbox.mount_sessions(crate::clients::control_tools::Control::in_session(
         &host,
         "caller".into(),
     ));

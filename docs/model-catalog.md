@@ -4,7 +4,7 @@ The host keeps each connection's model listing, reduced to one row shape, in the
 state database and serves it to clients. A client shows the rows as suggestions: a model
 absent from the catalog is still accepted as a typed id, and a listing in no case
 authorizes or refuses a model. Modules: `src/inference/catalog.rs` (+ `src/inference/catalog/`) for storage,
-age, and refresh; `src/daemon/host_http/catalog.rs` for the routes; the per-provider
+age, and refresh; `src/routes/host_http/catalog.rs` for the routes; the per-provider
 normalization in `src/inference/api/provider/` (`row.rs`, `openrouter.rs`, `anthropic.rs`,
 `codex.rs`, `listing.rs`, `typesafe.rs`), selected in `models.rs`.
 

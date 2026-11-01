@@ -3,7 +3,7 @@
 A React single-page app served by the daemon's TCP bind ([web-bind.md](web-bind.md)):
 the second human client after the TUI, and the mobile client. Sources live in
 `web/` and are built and embedded into the serving binary at compile time
-(`trillium-frontend` in `src/daemon/tcp/routes.rs`); there is no separate static host. It is
+(`trillium-frontend` in `src/listeners/tcp/routes.rs`); there is no separate static host. It is
 a client of the same `/v1` surface as everything else ([control-api.md](control-api.md))
 — it holds one stream connection and derives everything from its frames, exactly as
 the reference TUI does.
@@ -601,8 +601,8 @@ Two residents:
   breadcrumb, triage-failure and elision texts), tests mirroring
   `src/record/project/test/triaged.rs` case for case.
 - `parse.ts` — a literal port of the TUI's per-tool parsing and dispatch
-  (`src/tui/projection/tools.rs` + the per-wire-state match in
-  `src/tui/projection.rs`): the `===DIFF===` classification for the edit
+  (`src/clients/tui/projection/tools.rs` + the per-wire-state match in
+  `src/clients/tui/projection.rs`): the `===DIFF===` classification for the edit
   tools, `read`'s sentinel stripping and extension→language map, the call
   signature below with the `intent` leading the entry, and the triaged
   composition — the parse runs over the whole raw, the verdict's kept line
@@ -931,7 +931,7 @@ shows the prompt in place of the name too, and a multi-line command's first line
 the representation there, so a body would show the change twice; the inspector's args
 tab (`callArgs`, a separate computation) is where the whole input is asked for.
 
-**The TUI renders the same form** (`src/tui/projection/signature.rs`, a port of
+**The TUI renders the same form** (`src/clients/tui/projection/signature.rs`, a port of
 `signature.ts` and `signatureLayout.ts` with their test cases; docs/tui.md). Chips and
 their width allowance are not ported yet, and a streaming call's `…` sits inside the
 parentheses there rather than after them.
@@ -2079,7 +2079,7 @@ but the file returns to the tree opened at that directory. On the tree the head
 is the name alone. A relative link in
 rendered markdown resolves against the open file's directory and opens in the
 viewer (`ui/fileLinks.ts`), a directory link in the tree; every other link opens
-in a new tab, since following it in place would unload the session view. Both routes are named in `SPA_ROUTES` (`src/daemon/tcp/gate.rs`), which is
+in a new tab, since following it in place would unload the session view. Both routes are named in `SPA_ROUTES` (`src/listeners/tcp/gate.rs`), which is
 also what the service worker's offline fallback mirrors.
 
 The listing's ignore set is gitignore-derived and lives on the server
@@ -2109,7 +2109,7 @@ image when the app is added to the home screen, so a changed image shows only af
 the app is re-added. The launch scheme follows `prefers-color-scheme`, because a
 static image cannot read the stored theme choice. The wordmark is laid out through
 raqm, with the font's kerning and ligatures. The gate serves `/splash` anonymously
-(`ASSET_PREFIXES` in `src/daemon/tcp/gate.rs`), like the rest of the shell; the worker
+(`ASSET_PREFIXES` in `src/listeners/tcp/gate.rs`), like the rest of the shell; the worker
 does not precache them, since iOS reads them only when the app is added.
 
 The service worker does three things: make the app installable, let the shell
@@ -2124,7 +2124,7 @@ about what the agent did, and saying what the agent did is what this page is
 for. What is cached is the build's own hashed assets (cache-first, because the
 hash is the version) and the shell routes. The few public files the build does
 not hash (the manifest and every icon) are precached by name, and
-`src/daemon/tcp/gate.rs` names the same files as anonymous; changing their bytes means
+`src/listeners/tcp/gate.rs` names the same files as anonymous; changing their bytes means
 bumping `CACHE` in `sw.js`, or installed copies keep the old ones. Registration
 (`src/pwa.ts`) is `/sw.js` in production and `/sw.js?dev=1` under Vite. In dev
 mode the worker installs no cache, answers no `fetch`, and deletes every
@@ -2234,7 +2234,7 @@ or the Markdown code-fence language capture. Links come from `react-markdown`'s
 `href`.
 
 **A `Content-Security-Policy` on every response any listener produces**
-(`SecurityHeaders` in `src/daemon/tcp/headers.rs`), alongside `cross-origin-opener-policy:
+(`SecurityHeaders` in `src/listeners/tcp/headers.rs`), alongside `cross-origin-opener-policy:
 same-origin`, `x-content-type-options:
 nosniff` and `referrer-policy: no-referrer`. The web shell and control routes also
 carry `x-frame-options: DENY` (redundant with `frame-ancestors` for anything current,
@@ -2246,7 +2246,7 @@ stack so its `before_send` runs last, and the headers land on the SPA index, a
 hashed asset, a `/v1` rejection and a 404 alike — a handler that answered without
 them would be the hole. The layer is on the Unix socket's stack too, so `nosniff`
 does not depend on which listener a response came from. The stack is built once by `handler()`
-(`src/daemon/handler.rs`) and used by both the listener and the tests, because a
+(`src/listeners/handler.rs`) and used by both the listener and the tests, because a
 hand-copied test stack is what lets the two drift.
 
 The embedded build loads one external module script and one external stylesheet,
@@ -2322,7 +2322,7 @@ claims every second until the host answers with this browser's device token, whi
 keeps (`api/bearer.ts`); the app takes it from there (*A refused bearer is decided in
 `apiFetch`*, under *Layering*). A code that expires says so and offers a new one. The
 SPA index answers the client's
-named routes and nothing else (`SPA_ROUTES`, `src/daemon/tcp/gate.rs`) — a broader index
+named routes and nothing else (`SPA_ROUTES`, `src/listeners/tcp/gate.rs`) — a broader index
 fallback would answer scanner probes `200`. On a host those routes are also answered
 under a session prefix, which is the one place the anonymous shell sits among guarded
 paths ([web-bind.md](web-bind.md)). The exact shell routes remain available when
@@ -2339,7 +2339,7 @@ reach the router rather than stop at a `401`.
 - `cargo run --features dev-proxy -- --host --bind …` — the daemon spawns Vite and
   proxies to it; HMR works through the gate, because that build widens the
   anonymous surface to Vite's module URLs (`VITE_PREFIX` and `DEV_PROXY_DIRS`,
-  `src/daemon/tcp/gate.rs`) — the shell has to load before anything can authenticate.
+  `src/listeners/tcp/gate.rs`) — the shell has to load before anything can authenticate.
 - Without the feature, the build embeds: the `frontend!` macro runs `vite build` at
   compile time, so building the crate needs `pnpm` on PATH and `web/node_modules`
   installed (`pnpm install` once).
@@ -2417,7 +2417,7 @@ ratios — wide, square, and tall — so the lightbox's fit and gestures can be 
 on without driving a session to an image result. The fixtures are files under
 `public/gallery/`, referenced by path rather than imported: an import of an SVG
 that small is inlined as a `data:` URI, and the client's CSP (`img-src 'self'
-blob:`; `src/daemon/tcp/headers.rs`) does not admit `data:` images. The gallery mounts
+blob:`; `src/listeners/tcp/headers.rs`) does not admit `data:` images. The gallery mounts
 `LightboxHost` so the specimens actually open the viewer.
 
 Controls also appear pinned in hover and focus states: `pseudoStates.ts` copies

@@ -46,7 +46,7 @@ the same version. `latest.json` names stable releases only.
   changes an answer already given (`src/setup/updates.rs`). An island is a host here and
   checks the same way.
 
-The host's check (`src/daemon/host/update_check.rs`) runs under the host's `Swansong`:
+The host's check (`src/host/update_check.rs`) runs under the host's `Swansong`:
 at start, then again a day after each answered check, or an hour after a failed one. The
 wait is measured on the wall clock, read every five minutes, because a monotonic sleep
 stops counting while a machine sleeps. A failure is logged once per run of failures

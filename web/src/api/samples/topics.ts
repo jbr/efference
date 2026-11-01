@@ -2,7 +2,7 @@
 // Each is typed, so `pnpm run typecheck` fails when a type stops accepting one.
 //
 // The state topics, as `GET /state` and the `state` frames carry them. The bytes are
-// the ones src/daemon/test/topic_bytes.rs pins; a pin that changes in Rust is changed here
+// the ones src/host/test/topic_bytes.rs pins; a pin that changes in Rust is changed here
 // too.
 
 import type {

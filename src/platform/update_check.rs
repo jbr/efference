@@ -11,7 +11,7 @@
 //!
 //! Who asks, and when, is the caller's: `efference update --check` asks once because it
 //! was run, and a host asks on a schedule only when the user configuration says to
-//! (`src/daemon/host/update_check.rs`).
+//! (`src/host/update_check.rs`).
 
 use std::time::Duration;
 

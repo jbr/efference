@@ -164,7 +164,7 @@ pub struct Cold {
 /// worth surfacing (docs/log-and-projection.md). Four, from a fold over this repo's
 /// own corpus (77 `usage.jsonl` files, 44 with turns, 1371 `turn` requests):
 /// 155 of those turns read nothing from the cache, and the host's classifier
-/// (`daemon::ColdStreak`) explains 54 of them (38 session boot, 9 idle past the TTL, 7 a model
+/// (`session::ColdStreak`) explains 54 of them (38 session boot, 9 idle past the TTL, 7 a model
 /// change). The remaining 101 fall into 28 runs — 24 of length 1, two of length 3,
 /// and two of length 28 and 43, each of which was a whole session that never once
 /// read the cache. So runs of 1–3 are what normal operation produces (a retry that

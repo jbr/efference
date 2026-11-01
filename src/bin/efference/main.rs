@@ -13,17 +13,16 @@
 //! host's configured connections; omitted, past picks apply, else creation
 //! refuses and the new-session form names one.
 //!
-//! [`RemoteFrontend`]: efference::daemon::RemoteFrontend
+//! [`RemoteFrontend`]: efference::agent::remote_frontend::RemoteFrontend
 
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use efference::client::Client as ControlClient;
+use efference::clients::client::Client as ControlClient;
 #[cfg(feature = "dev")]
 use efference::curation::spotter::MountedSpotter;
 #[cfg(feature = "dev")]
 use efference::curation::spotter::Spotter;
-use efference::daemon;
 #[cfg(feature = "dev")]
 use efference::inference::api::Client;
 #[cfg(feature = "dev")]

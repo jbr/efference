@@ -162,7 +162,7 @@ function MoreLines({ hidden }: { hidden: number }) {
 /**
  * A call whose input is still arriving, rendered from the part that has —
  * the settled arguments as arguments, the one value in flight as content
- * (`render/partial.ts`, mirroring `src/tui/projection/nodes.rs`).
+ * (`render/partial.ts`, mirroring `src/clients/tui/projection/nodes.rs`).
  *
  * The settled half goes through the same [`callView`] a committed call uses,
  * so the call fills in as bytes land rather than changing shape at commit.

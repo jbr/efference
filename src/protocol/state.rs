@@ -8,7 +8,7 @@
 //! The channel carries every topic through `serde_json::Value`, which this crate builds
 //! without `preserve_order`, so the keys of each object come out sorted, at every depth,
 //! whatever order a type here declares its fields in. The bytes are pinned
-//! (`daemon/test/topic_bytes.rs`).
+//! (`host/test/topic_bytes.rs`).
 
 use serde::{Deserialize, Serialize};
 

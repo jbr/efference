@@ -4,7 +4,7 @@
 //! re-sampled fresh at each triage, never frozen into the log (forcing a live
 //! tail through the immutable notification model would pile up stale snapshots,
 //! docs/process-monitor.md). So this registry is **ephemeral daemon state** — a sibling of the
-//! inbox queue and the cache `Metrics` in [`Session`](crate::daemon): dropped on
+//! inbox queue and the cache `Metrics` in [`Session`](crate::session::Session): dropped on
 //! restart, where killpg-on-teardown reaps the children it owns.
 //!
 //! This module holds the state: the registry, its one bounded per-process
@@ -297,7 +297,7 @@ pub struct OutputRead {
 }
 
 /// The ephemeral background-process registry (docs/process-monitor.md). Held behind a `Mutex` in
-/// [`Session`](crate::daemon); never logged and never projected, which is what keeps it
+/// [`Session`](crate::session::Session); never logged and never projected, which is what keeps it
 /// clear of the cache prefix. (Its stamps *do* reach the control wire — see
 /// [`ProcessState`] — which is harmless: the control API and the projection are
 /// different wires, and only the projection has to stay byte-stable.)

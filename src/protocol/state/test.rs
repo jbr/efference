@@ -1,6 +1,6 @@
 //! The topics a client deserializes (docs/control-api.md): each type the host serializes
 //! reads back to the same bytes, with its optional fields present and absent. The host's
-//! own bytes are pinned in `daemon/test/topic_bytes.rs`; this is the other direction.
+//! own bytes are pinned in `host/test/topic_bytes.rs`; this is the other direction.
 
 use std::collections::BTreeMap;
 

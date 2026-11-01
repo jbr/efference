@@ -285,7 +285,7 @@ file.
 
 **Listing is opt-in when a config exists, and the mount exists regardless.** An operator's
 config renders the group only if it names the entry. The scaffold written for a session
-with no project config *does* name it (`src/boot.rs`) — a visible, deletable
+with no project config *does* name it (`src/host/boot.rs`) — a visible, deletable
 line in the session's own file, the same way orientation is — because a config-less session
 whose only recovery path is "read how to write a config" needs that path listed. Deleting
 the line stops the listing; the documents stay readable at their paths either way.
@@ -302,7 +302,7 @@ every `efference://` link resolves to a document that exists.
 
 `first-turn = "…"` makes the session's first turn the agent's. The API needs a user message
 before the model can speak, so the harness supplies one: when the runtime starts
-(`src/daemon/runtime.rs`) with a `first-turn` configured and no `User` entry in the log, it
+(`src/host/runtime.rs`) with a `first-turn` configured and no `User` entry in the log, it
 submits the text as a turn whose `source` is `efference` (`names::sources::KICKOFF_SOURCE`). The
 check is on the log, not on how the session began, so a resumed session that has had its
 opening does not get a second one.

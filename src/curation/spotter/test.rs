@@ -400,7 +400,7 @@ fn render_context_resolves_grants_against_the_given_cwd_not_the_process() {
 /// Regression for a false premise the persona once left the model free to invent
 /// (backlog/spotter-persona-premises.md, `shy-ridge` log seq 93/99): a project's root
 /// config is not inside its denied session directory just because the names look
-/// related. The enforcement was always correct (`src/boot.rs`'s `CONFIG_NAME` snapshot,
+/// related. The enforcement was always correct (`src/host/boot.rs`'s `CONFIG_NAME` snapshot,
 /// docs/permissions.md's origin-vs-snapshot section) — only the persona's account of it
 /// was missing. Pinned on substance, not exact wording, so the fix can be reworded freely.
 #[test]

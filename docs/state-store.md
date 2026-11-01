@@ -19,8 +19,8 @@ schema.
 | `model_picks` | an explicit model pick | `src/config/history.rs` | the recent menu and the omitted-branch default ([transport.md](transport.md)) |
 | `triage_picks` | an explicit separate triage pick, with the main model it ran with | `src/config/history.rs` | nothing yet; recorded for a later pairing default |
 | `model_catalog` | a connection | `src/inference/catalog.rs` | the model menus ([model-catalog.md](model-catalog.md)) |
-| `remembered_projects` | a directory a session was started in | `src/remembered.rs` | the launch index, `GET /projects` ([control-api.md](control-api.md)) |
-| `session_ids` | a session id and the root holding it | `src/session_ids.rs` | id minting, explicit names and resume ([session-title.md](session-title.md)) |
+| `remembered_projects` | a directory a session was started in | `src/host/remembered.rs` | the launch index, `GET /projects` ([control-api.md](control-api.md)) |
+| `session_ids` | a session id and the root holding it | `src/host/session_ids.rs` | id minting, explicit names and resume ([session-title.md](session-title.md)) |
 | `push_subscriptions` | a browser subscription | `src/platform/push.rs` | the sender, per push ([web-push.md](web-push.md)) |
 | `devices` | an enrolled device — one TCP credential | `src/platform/devices.rs` | the gate, per request; `efference devices` ([web-bind.md](web-bind.md)) |
 | `pending_sign_ins` | a browser waiting to collect a device token: a `/pair` request, or a sign-in link | `src/platform/sign_ins.rs` | the claim and approval routes; `efference devices` ([web-bind.md](web-bind.md)) |
@@ -75,7 +75,7 @@ that the sign-in was recorded, approved, or unknown.
 
 **Modes.** The host boot tightens what it finds beside the control socket to owner-only
 — the directory, `state.db`, `config.toml`, and the names earlier releases wrote
-(`src/daemon/permissions.rs`; the socket itself in [control-channel.md](control-channel.md)).
+(`src/host/permissions.rs`; the socket itself in [control-channel.md](control-channel.md)).
 The creating process's umask need not be as private as this content warrants — model
 picks, subscriptions, the device labels — so the tightening is part of boot rather than
 of each file's creation. It is one-way (a file already stricter stays so), skips absent
@@ -84,8 +84,8 @@ files, and warns without failing boot when a mode cannot be changed. The two mod
 writers of a session's log and attachments read as well.
 
 A project's `.efference/` is owner-only by the same rule, applied by the sessions that
-use it rather than at boot (`src/daemon/permissions.rs`, called from `src/boot/mint.rs` and
-`src/boot/resume.rs`). Minting a session creates `.efference/` `0700` when absent and
+use it rather than at boot (`src/host/permissions.rs`, called from `src/host/boot/mint.rs` and
+`src/host/boot/resume.rs`). Minting a session creates `.efference/` `0700` when absent and
 tightens it when it exists; resuming a session tightens it before the log is reopened. The
 session directory is created `0700`, and the files efference writes in it — the log
 (and a torn tail's saved fragment), the `config.toml` snapshot, `usage.jsonl`, attachments

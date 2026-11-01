@@ -15,7 +15,7 @@ export interface StreamHandle {
 /**
  * How long an attempt may go without a read before it is treated as dead, in
  * ms. The host sends a `:` comment on every event stream after 15 s of quiet
- * (`EVENTS_HEARTBEAT` in src/daemon/http.rs, and the same interval on the
+ * (`EVENTS_HEARTBEAT` in src/routes/http.rs, and the same interval on the
  * listing and `/files` streams), so 35 s is two missed heartbeats and a margin
  * for a slow link. Any read, an event or a comment, counts.
  */

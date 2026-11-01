@@ -372,7 +372,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
 
 Creation and an `active` patch put the session's id in the host's map as a
 **starting** entry before anything is prepared, and answer then; preparation runs
-in the background (`src/daemon/starting.rs`, `src/daemon/host/preparation.rs`).
+in the background (`src/host/starting.rs`, `src/host/preparation.rs`).
 Starting is a lifecycle state beside active and dormant, not a loop phase: no loop
 exists yet. While starting, the session is listed with `status: "starting"` and
 `GET /sessions/:id` answers its row, and its routes are:
@@ -443,7 +443,7 @@ it has no Debug, because it carries the environment.
 The names and shapes that cross the channel live in `src/protocol/`: one
 submodule per surface — `agents`, `sessions`, `turns`, `state` (with `state/`),
 `status`, `stream`, `transcript`, `attention`. Behaviour that needs a session
-or the host stays in `src/session/` and `src/daemon/` as impl blocks on these types. Every state topic has a
+or the host stays in `src/session/` and `src/host/` as impl blocks on these types. Every state topic has a
 type, and `StateTopics` builds `GET /state`: one field per topic under its own
 name, plus `last_seq`, which is the log's cursor rather than control state and
 sits outside the fold.
@@ -451,7 +451,7 @@ sits outside the fold.
 Every topic, the composite snapshot, and the loop resource are serialized
 through `protocol::channel_value`, a `serde_json::Value` round trip that
 sorts object keys at every depth, so a struct's field order never reaches the
-bytes. Each topic's bytes are pinned by `src/daemon/test/topic_bytes.rs`: a
+bytes. Each topic's bytes are pinned by `src/host/test/topic_bytes.rs`: a
 change to a carried type fails there first.
 
 The bodies the routes answer with are types as well, and the host builds none of
@@ -461,12 +461,12 @@ locations (`projects`), a directory listing (`files`), and the sign-in and
 enrollment answers (`sign_in`). A shape written in another module's vocabulary
 stays there and is a schema root in place: the preview (`ResolvedOptions`), the
 model catalog (`ConnectionCatalog`, `CatalogModel`), `ProcessRecord`, `ToolEntry`,
-`ErrorBody`. A body built from values goes out through `daemon::views::answer`
+`ErrorBody`. A body built from values goes out through `routes::views::answer`
 (the credential answers, through `channel_value` directly), so its keys sort; a
 body serialized straight from its type (the session listing, the preview, a
 directory listing, one catalog entry) keeps the type's field order. Each body's
-bytes are pinned beside the route that serves it (`src/daemon/test/route_bytes.rs`,
-`src/daemon/test/host/bodies.rs`, and the tests of the projects, the preview, the
+bytes are pinned beside the route that serves it (`src/host/test/route_bytes.rs`,
+`src/host/test/host/bodies.rs`, and the tests of the projects, the preview, the
 worktree answers, the directory listing and the sign-in routes). A listing's
 `status` is one of the words `ListedStatus` names; a Rust client reads any other
 word into the variant `Other`, keeping the word, so a listing from a host newer
@@ -475,7 +475,7 @@ than the client still decodes, and the schema and the generated types leave
 
 A JSON Schema of the contract is committed at
 `web/src/api/protocol.schema.json` (draft-07, under schemars' `Serialize`
-contract) and pinned by `src/daemon/test/schema.rs`: a change to a carried type
+contract) and pinned by `src/host/test/schema.rs`: a change to a carried type
 moves the schema and fails there. Regenerate with
 `EFFERENCE_WRITE_SCHEMAS=1 cargo test schema`. `web/src/api/types.ts` is
 generated from that schema by `json-schema-to-typescript` (`pnpm run types`);
@@ -1593,7 +1593,7 @@ client's inspector. The window read gets the same validator; its answer to a
 query grows with the session, which the tag reflects.
 
 Every read that serves an entry — the window, this route, and a `log` frame's
-`data` — serializes the same **entry view** (`daemon/entry_view.rs`): the entry
+`data` — serializes the same **entry view** (`routes/entry_view.rs`): the entry
 verbatim, except for two elisions, both resolved by fetching an address, and two
 additions derived on every read.
 

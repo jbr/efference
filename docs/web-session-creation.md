@@ -146,7 +146,7 @@ With an empty query:
 
 Typing searches the current namespace, including author descendants when the
 scope is a connection. Matching is `ui/matcher.ts`, pinned to the terminal
-matcher's `src/tui/session_form/match_cases.json`. A typed-ID row remains
+matcher's `src/clients/tui/session_form/match_cases.json`. A typed-ID row remains
 available alongside catalog matches; under an author it completes the ID with
 that author's prefix. Render keys include row kind as well as slug, because a
 typed-ID action and a catalog row can share a slug while doing different things.

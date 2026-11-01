@@ -59,7 +59,7 @@ pub enum EditState {
 /// semantics over a list are an unsettled question; add it when an initiator needs it).
 ///
 /// **Session-visibility** (which edits notify the session) is decided by variant in
-/// [`crate::daemon`]: `Scope` and `Path` are the perimeter the session should learn moved;
+/// [`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;
 /// `Command` and `Tool` reach the model only through the classifier.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]

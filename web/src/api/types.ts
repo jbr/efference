@@ -40,7 +40,7 @@ export type Activity =
     };
 /**
  * The decision returned by
- * [`Frontend::approve`](crate::frontend::Frontend::approve) (docs/README.md). A typed
+ * [`Frontend::approve`](crate::agent::frontend::Frontend::approve) (docs/README.md). A typed
  * line is a *redirect* — the call is rejected and the human's text is fed to the model
  * as the next user turn, steering it without ending the turn. Every un-run
  * `tool_use` still gets a paired `is_error` `tool_result` so the wire never
@@ -73,7 +73,7 @@ export type Approval =
  * semantics over a list are an unsettled question; add it when an initiator needs it).
  *
  * **Session-visibility** (which edits notify the session) is decided by variant in
- * [`crate::daemon`]: `Scope` and `Path` are the perimeter the session should learn moved;
+ * [`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;
  * `Command` and `Tool` reach the model only through the classifier.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
@@ -2674,7 +2674,7 @@ export interface DormantSession {
   /**
    * The main, spotter and triage selections the session last ran on, in the
    * shapes an `active` patch takes, read as a resume reads them
-   * ([`crate::boot::recorded_selections`]). Absent when the log cannot be read or
+   * ([`crate::host::boot::recorded_selections`]). Absent when the log cannot be read or
    * records none.
    */
   selections?: ResumeSwitch | null;
@@ -3242,7 +3242,7 @@ export interface RawResult {
    * Set **only by the control-channel entry view**, and only on the window and
    * frame copies of an oversized result: it says the `content` beside it is a
    * prefix, and how much of the whole string that prefix is
-   * (`daemon/entry_view.rs`, docs/control-api.md). The mirror of
+   * (`routes/entry_view.rs`, docs/control-api.md). The mirror of
    * [`ResultImage::data`], which the same views omit — a Rust client parsing a
    * view with this shared type reads the elision as a value rather than
    * inferring it from a length. The log itself always writes `content` whole
@@ -3276,7 +3276,7 @@ export interface ResultImage {
    * Standard base64 of the encoded image, stored exactly as it will appear
    * in the wire block's `source.data`. `#[serde(default)]` because the
    * control-channel views omit this field (the bytes are fetched from
-   * `GET /log/:seq/images/:idx` instead — `daemon/entry_view.rs`,
+   * `GET /log/:seq/images/:idx` instead — `routes/entry_view.rs`,
    * docs/control-api.md), and a client parsing a view with this shared type
    * reads it back empty. The log itself always writes it.
    */

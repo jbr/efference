@@ -149,7 +149,7 @@
       ]
     },
     "Approval": {
-      "description": "The decision returned by\n[`Frontend::approve`](crate::frontend::Frontend::approve) (docs/README.md). A typed\nline is a *redirect* — the call is rejected and the human's text is fed to the model\nas the next user turn, steering it without ending the turn. Every un-run\n`tool_use` still gets a paired `is_error` `tool_result` so the wire never\norphans a call (the API rejects that); the loop owns that pairing.\n\nSerialized into the log as a gate decision's record (`Telemetry::GateDecision`,\ndocs/log-and-projection.md), so a rename here changes what new entries say.",
+      "description": "The decision returned by\n[`Frontend::approve`](crate::agent::frontend::Frontend::approve) (docs/README.md). A typed\nline is a *redirect* — the call is rejected and the human's text is fed to the model\nas the next user turn, steering it without ending the turn. Every un-run\n`tool_use` still gets a paired `is_error` `tool_result` so the wire never\norphans a call (the API rejects that); the loop owns that pairing.\n\nSerialized into the log as a gate decision's record (`Telemetry::GateDecision`,\ndocs/log-and-projection.md), so a rename here changes what new entries say.",
       "oneOf": [
         {
           "const": "Approve",
@@ -1505,7 +1505,7 @@
       ]
     },
     "ConfigChange": {
-      "description": "What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape\n(docs/permissions.md). Each variant addresses one section of the config table;\n[`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).\nMost variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the\nnarrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace\nsemantics over a list are an unsettled question; add it when an initiator needs it).\n\n**Session-visibility** (which edits notify the session) is decided by variant in\n[`crate::daemon`]: `Scope` and `Path` are the perimeter the session should learn moved;\n`Command` and `Tool` reach the model only through the classifier.",
+      "description": "What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape\n(docs/permissions.md). Each variant addresses one section of the config table;\n[`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).\nMost variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the\nnarrowing edit append-only KDL couldn't do. The `watch-for` slot is unbuilt (its replace\nsemantics over a list are an unsettled question; add it when an initiator needs it).\n\n**Session-visibility** (which edits notify the session) is decided by variant in\n[`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;\n`Command` and `Tool` reach the model only through the classifier.",
       "oneOf": [
         {
           "additionalProperties": false,
@@ -2544,7 +2544,7 @@
               "type": "null"
             }
           ],
-          "description": "The main, spotter and triage selections the session last ran on, in the\nshapes an `active` patch takes, read as a resume reads them\n([`crate::boot::recorded_selections`]). Absent when the log cannot be read or\nrecords none."
+          "description": "The main, spotter and triage selections the session last ran on, in the\nshapes an `active` patch takes, read as a resume reads them\n([`crate::host::boot::recorded_selections`]). Absent when the log cannot be read or\nrecords none."
         },
         "state": {
           "$ref": "#/definitions/SessionState"
@@ -2921,7 +2921,7 @@
         },
         {
           "const": "too_large",
-          "description": "`/files` was asked for a file past the view limit\n([`files::MAX_BYTES`]). Distinct from\n[`UnsupportedContent`](Self::UnsupportedContent) because the file *is* text\nand a client says something different about it. 413.",
+          "description": "`/files` was asked for a file past the view limit\n([`files::MAX_BYTES`](crate::listeners::files::MAX_BYTES)). Distinct from\n[`UnsupportedContent`](Self::UnsupportedContent) because the file *is* text\nand a client says something different about it. 413.",
           "type": "string"
         }
       ]
@@ -4700,7 +4700,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "A config edit — the durable record of one change to the policy table\n(docs/permissions.md). The config-edit loop turns a deny into\nnegotiation: an orchestrator (human or coordinating session) edits the session's\nconfig, and the change lands here. Effective policy = base config + the fold of these\n(see [`effective_config`]); the log is the source of truth for what changed, exactly as\nit is for everything else (docs/log-and-projection.md). The fold is **replace-at-key**\n(last-write-wins, order-defined) — materializing a table from an ordered log, like a\ndatabase replaying its write-ahead log. Audit-only on the wire — it projects to nothing,\nlike [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only\nthrough the classifier, while a **session-visible** edit (`scope`, `paths`) *also*\nsurfaces as an [`Ambient`] notification (an optional tail append — never a re-render of\nthe cached preamble; see [`crate::daemon`]) so the session learns its perimeter moved.\n\n[`effective_config`]: crate::config::policy::effective_config\n[`Ambient`]: Payload::Ambient",
+          "description": "A config edit — the durable record of one change to the policy table\n(docs/permissions.md). The config-edit loop turns a deny into\nnegotiation: an orchestrator (human or coordinating session) edits the session's\nconfig, and the change lands here. Effective policy = base config + the fold of these\n(see [`effective_config`]); the log is the source of truth for what changed, exactly as\nit is for everything else (docs/log-and-projection.md). The fold is **replace-at-key**\n(last-write-wins, order-defined) — materializing a table from an ordered log, like a\ndatabase replaying its write-ahead log. Audit-only on the wire — it projects to nothing,\nlike [`Spot`]; its effect reaches the model *by key*: a `commands`/`tools` edit only\nthrough the classifier, while a **session-visible** edit (`scope`, `paths`) *also*\nsurfaces as an [`Ambient`] notification (an optional tail append — never a re-render of\nthe cached preamble; see [`crate::session`]) so the session learns its perimeter moved.\n\n[`effective_config`]: crate::config::policy::effective_config\n[`Ambient`]: Payload::Ambient",
           "properties": {
             "ConfigEdit": {
               "$ref": "#/definitions/ConfigEdit"
@@ -5746,7 +5746,7 @@
               "type": "null"
             }
           ],
-          "description": "Set **only by the control-channel entry view**, and only on the window and\nframe copies of an oversized result: it says the `content` beside it is a\nprefix, and how much of the whole string that prefix is\n(`daemon/entry_view.rs`, docs/control-api.md). The mirror of\n[`ResultImage::data`], which the same views omit — a Rust client parsing a\nview with this shared type reads the elision as a value rather than\ninferring it from a length. The log itself always writes `content` whole\nand never writes this field, so it is `None` in every in-process result and\nabsent from every logged line."
+          "description": "Set **only by the control-channel entry view**, and only on the window and\nframe copies of an oversized result: it says the `content` beside it is a\nprefix, and how much of the whole string that prefix is\n(`routes/entry_view.rs`, docs/control-api.md). The mirror of\n[`ResultImage::data`], which the same views omit — a Rust client parsing a\nview with this shared type reads the elision as a value rather than\ninferring it from a length. The log itself always writes `content` whole\nand never writes this field, so it is `None` in every in-process result and\nabsent from every logged line."
         },
         "images": {
           "description": "Images the tool returned alongside `content` (docs/log-and-projection.md).\nThe realized bytes live here, in the log entry itself, so projection is a\ncopy of stored data — never a re-read or re-encode of anything on disk.\nEncoding happens once, at tool-run time. Defaulted and skipped when empty,\nso text-only results (and every existing log) serialize byte-identically\nto before the field existed.",
@@ -6246,7 +6246,7 @@
       "properties": {
         "data": {
           "default": "",
-          "description": "Standard base64 of the encoded image, stored exactly as it will appear\nin the wire block's `source.data`. `#[serde(default)]` because the\ncontrol-channel views omit this field (the bytes are fetched from\n`GET /log/:seq/images/:idx` instead — `daemon/entry_view.rs`,\ndocs/control-api.md), and a client parsing a view with this shared type\nreads it back empty. The log itself always writes it.",
+          "description": "Standard base64 of the encoded image, stored exactly as it will appear\nin the wire block's `source.data`. `#[serde(default)]` because the\ncontrol-channel views omit this field (the bytes are fetched from\n`GET /log/:seq/images/:idx` instead — `routes/entry_view.rs`,\ndocs/control-api.md), and a client parsing a view with this shared type\nreads it back empty. The log itself always writes it.",
           "type": "string"
         },
         "height": {

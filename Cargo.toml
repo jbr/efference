@@ -65,7 +65,7 @@ trillium-client = { version = "0.9.20", features = ["sse"] }
 trillium-client-retry = "0.1"
 trillium-rustls = "0.11.3"
 # 0.6.4 adds `UnixClientConfig` — the client-side Unix-socket connector the
-# control-channel client (src/client.rs) dials the daemon through (DESIGN §10).
+# control-channel client (src/clients/client.rs) dials the daemon through (DESIGN §10).
 trillium-tokio = "0.6.4"
 # StreamExt for consuming the SSE EventStream; already in-tree via trillium.
 futures-lite = "2.6.1"
@@ -92,7 +92,7 @@ trillium-websockets = "0.9.3"
 trillium-frontend = "0.4.3"
 
 # TUI (DESIGN §10 — the interactive client). Vendored-and-adapted from ferritin's
-# interactive renderer into src/tui/: a ratatui document renderer with syntect
+# interactive renderer into src/clients/tui/: a ratatui document renderer with syntect
 # theming, markdown parsing, a custom scrollbar, line wrapping, and collapsible
 # nodes. crossterm/crossbeam drive the dedicated UI thread; the SSE event tail is
 # bridged in from tokio (src/main.rs).
@@ -116,7 +116,7 @@ fieldwork = "0.5.5"
 thiserror = "2"
 unicode-width = "0.2.3"
 unicode-segmentation = "1.13"
-# System clipboard for the interactive TUI. The adapter in `src/tui/clipboard.rs`
+# System clipboard for the interactive TUI. The adapter in `src/clients/tui/clipboard.rs`
 # keeps OS access and its in-process fallback outside the deterministic composer.
 # `image-data` is on because a pasted screenshot is an attachment (docs/inbox.md):
 # the clipboard's raw RGBA is re-encoded as a PNG into the store. It costs the
@@ -257,7 +257,7 @@ tokio = { version = "1.54.1", features = ["test-util"] }
 tempfile = "3"
 
 # Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").
-# File snapshots land in src/tui/snapshots/*.snap — committed, diffable, and
+# File snapshots land in src/clients/tui/snapshots/*.snap — committed, diffable, and
 # readable without running anything. `cargo insta review` / `accept` to update.
 insta = "1.49.0"
 

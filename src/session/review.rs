@@ -3,7 +3,7 @@
 //! [`ReviewLevel::Supervisor`] names the session's **supervisor** as the reviewer of a
 //! call the spotter held. The supervisor is a pointer the host holds per session
 //! (`Hosted::supervisor`): it starts as the session's creator and can be set or cleared
-//! afterwards (`Host::set_supervisor`, `src/daemon/host/supervise.rs`). A hosted session
+//! afterwards (`Host::set_supervisor`, `src/host/supervise.rs`). A hosted session
 //! carries a weak handle back to its host, as [`SupervisorPointers`], so it can read the
 //! pointer and ask whether the session it names is still running.
 //!
@@ -19,7 +19,7 @@ use crate::config::policy::ReviewLevel;
 
 /// What a session's review reads of the host that adopted it (docs/permissions.md): the
 /// supervisor pointer the host holds for each session, and whether a session is hosted.
-/// `Host` implements it (`src/daemon/host/supervise.rs`).
+/// `Host` implements it (`src/host/supervise.rs`).
 pub(crate) trait SupervisorPointers: Send + Sync {
     /// The supervisor pointer for `id`, whether or not the session it names is still
     /// hosted. `None` when `id` is not hosted or has no supervisor.

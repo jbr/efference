@@ -34,7 +34,7 @@ commands, the session's `EnvPolicy`, and every child spawn. Config edits reuse t
 base for masking rather than sampling the host environment. Child inheritance is
 replaced before policy and harness-owned values are applied ([env.md](env.md)).
 
-`Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership lives in `src/daemon/serve.rs`; the session's own tasks are owned by a `SessionRuntime` (below), not by the type itself. Its contents:
+`Session` represents one session's state and control surface. The agent loop task and HTTP handlers both hold it as `Arc<Session>`. The daemon registers it as trillium's server-global shared state; handlers retrieve it per-connection. Listener ownership lives in `src/listeners/serve.rs`; the session's own tasks are owned by a `SessionRuntime` (below), not by the type itself. Its contents:
 
 **`Arc<Mutex<Log>>`** — the persisted, append-only log (see [log-and-projection.md](log-and-projection.md)). The loop appends under this lock via `Session::append`, which also pings the append notifier so SSE tailers wake. The lock is never held across an `await`; code that needs to call the model on a snapshot calls `Session::snapshot()` to clone the entries first.
 
@@ -56,7 +56,7 @@ replaced before policy and harness-owned values are applied ([env.md](env.md)).
 
 ## Session runtime: one session's tasks and their shutdown
 
-`SessionBoot` (`src/daemon/runtime.rs`) is the pure-data set of inputs a session
+`SessionBoot` (`src/host/runtime.rs`) is the pure-data set of inputs a session
 starts from: the provider client, the mounted toolbox, the triage, the spotter,
 the log, the session paths, the loaded role, the review level, the model's
 capabilities and name, the environment policy, and whether to keep scratch. Whoever
@@ -90,15 +90,15 @@ runtime under it the same way; shutting down one runtime does not touch its
 siblings or the parent. `finished()` waits for the loop to return — on its own or
 by cancellation — and yields its outcome. `serve_host` creates the parent
 `Swansong`, hands it to the listeners (so SIGINT/SIGTERM reach the loop) and starts
-one runtime under it; the two-runtimes test in `src/daemon/test/runtime.rs` pins
+one runtime under it; the two-runtimes test in `src/host/test/runtime.rs` pins
 the isolation.
 
 Session preparation — from a `SessionRequest` (the creation body whole, with the
 root, base environment, session dir and model selections the host resolved from
 it) to a `SessionBoot` — is `boot::prepare`
-(`src/boot.rs`): the origin config and its `[env]` references, the provider and
+(`src/host/boot.rs`): the origin config and its `[env]` references, the provider and
 capability lookup, minting the session dir and snapshotting the config, scratch,
-the `[env]` policy, the log, the toolbox and MCP mounts (`src/boot/mcp_mount.rs`,
+the `[env]` policy, the log, the toolbox and MCP mounts (`src/host/boot/mcp_mount.rs`,
 the one step that may wait for a human), the frozen preamble, the client, the
 spotter, and the triage. The CLI builds the request from flags; a host's
 creation handler builds it from a request body. Boot progress prints to stderr
@@ -122,8 +122,8 @@ session's lifetime from `start` to teardown and nothing outside it.
 
 ## The host: several sessions in one process
 
-`Host` (`src/daemon/host.rs`) is a map of session ids to started runtimes under
-one root `Swansong`; `serve_host` (`src/daemon/serve.rs`) binds the control socket (`~/.efference/host.sock`,
+`Host` (`src/host.rs`) is a map of session ids to started runtimes under
+one root `Swansong`; `serve_host` (`src/listeners/serve.rs`) binds the control socket (`~/.efference/host.sock`,
 or the path `efference --host --socket` names) and the optional TCP listener with that
 `Swansong`,
 so a signal stops the listeners and every session. `Host::adopt` registers a
@@ -132,7 +132,7 @@ entry once the runtime has finished, whether by `DELETE /sessions/:id`, its own
 end of input, or host shutdown. That watcher is the host's supervision of session
 completion.
 
-An archive (`Host::end`, `src/daemon/host/end.rs`) and the watcher run at once: the
+An archive (`Host::end`, `src/host/end.rs`) and the watcher run at once: the
 end initiates the shutdown, and the watcher wakes when the loop returns, posts the end
 to subscribers, and ends the session's non-detached children while the end retires the
 worktree and records the archive. The watcher's removal is ordered after the end's
@@ -160,7 +160,7 @@ task the session runs is spawned under its `SessionRuntime`'s `Swansong`, so end
 the session ends the task. State every session shares is a field of `Host`, and a
 host-wide task or listener runs under the host's `Swansong`. Each piece of state has
 one owner whose drop or shutdown is its teardown, so none needs a cleanup path of its
-own. A `static` with interior mutability under `src/daemon/` or `src/session/` would be
+own. A `static` with interior mutability under `src/session/`, `src/host/`, `src/routes/`, `src/listeners/` or `src/agent/` would be
 state outside both owners, and `the_daemon_keeps_no_state_in_statics`
 (`src/test/statics.rs`, which names the directories it reads) fails on one; a value
 computed once and never changed can be a `const`, or live outside the daemon. Artifacts follow the pattern: their links are derived from the
@@ -203,7 +203,7 @@ one direct print is the interactive MCP authorization prompt. An island host's
 output is its `host.log`, which the
 launcher prints only when startup fails ([operating.md](operating.md));
 its lifetime is bound to the launcher by a pipe on its stdin rather than by any
-connection to this socket (`src/daemon/island.rs`).
+connection to this socket (`src/host/island.rs`).
 
 ## The route set
 
@@ -213,7 +213,7 @@ Every route is served under the `/v1` prefix; the paths here omit it
 Every terminal response **halts** its conn — trillium's router does not halt on
 a route match, and a web transport mounts the frontend handler after the routes,
 which treats an un-halted conn as unclaimed ([web-bind.md](web-bind.md)). The
-error helpers (`fail`/`respond` in `daemon/errors.rs`) halt centrally; success
+error helpers (`fail`/`respond` in `routes/errors.rs`) halt centrally; success
 paths halt per-route. The `/v1/events` validating half is the deliberate
 exception: on success it must fall through to the SSE half of its own route.
 
@@ -251,7 +251,7 @@ The daemon binds with trillium's `bind_uds(path)`. Each session lives in its own
 **The socket and the state beside it are owner-only.** The bind mints `host.sock` under
 the process umask, so boot tightens it to `0700` after binding, and the directory it sits
 in and the state files beside it — `state.db`, `config.toml`, and the names earlier
-releases wrote — to `0700`/`0600` (`src/daemon/permissions.rs`,
+releases wrote — to `0700`/`0600` (`src/host/permissions.rs`,
 [state-store.md](state-store.md)). Connecting to a socket needs write permission, so
 owner-only is exactly the local accounts that may reach the channel; a mode stricter
 than the target is kept, and an absent file is skipped.
@@ -326,7 +326,7 @@ These are one continuum. Pace moves *continuously* along the between-turns part 
 Three commitments hold across all of them:
 
 - **User messages are canonical, never triageable.** A user turn lands as `Payload::User`, undismissable — *not* through the inbox/triage path. Triageability is the inbox's defining feature (pin/dismiss/leave); routing a user turn through it would let the model *dismiss the operator*. Wrong by construction.
-- **Pace/hold is operator-view state, never logged — so it is structurally invisible to the agent.** It lives in daemon/frontend state and never becomes a log entry, so it cannot reach `project(log)`; and even the timing that *is* logged (each entry's `at`) is never projected. Two independent guarantees, hence no "Paused/Resumed" trace: there is nowhere in the projection for one to appear.
+- **Pace/hold is operator-view state, never logged — so it is structurally invisible to the agent.** It lives in agent/remote_frontend state and never becomes a log entry, so it cannot reach `project(log)`; and even the timing that *is* logged (each entry's `at`) is never projected. Two independent guarantees, hence no "Paused/Resumed" trace: there is nowhere in the projection for one to appear.
 - **Resume = drop the `held` overlay; return to the retained speed.** Hold is an overlay on the dial, not a position of it. Two triggers both resume — silent release, and the operator's own submit (the operator saying something always resumes); there is no "submit but stay paused." An agent's message does not resume a session its operator paused: it waits behind the hold, and goes to the loop on the release. Dials are freely settable *during* a hold and outlive it, so a mode or speed change made while paused recolors what resume does.
 
 A redirect does not break the loop. The model receives the rejection and the steering text and responds — the loop continues from `project` with the new state. The approval gate sits in exactly the right spot for the eventual concurrent TUI, which will have it in this same position.

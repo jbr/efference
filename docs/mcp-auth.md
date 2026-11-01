@@ -129,7 +129,7 @@ what makes the sequence testable.
 
 ## When the dance runs
 
-At boot, inside the mount loop (`src/boot/mcp_mount.rs`), which is the only
+At boot, inside the mount loop (`src/host/boot/mcp_mount.rs`), which is the only
 place the harness stops and waits for a human mid-startup. Per server:
 
 1. Mount with whatever credentials are stored, refreshing a stale grant first — one

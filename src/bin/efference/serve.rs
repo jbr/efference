@@ -6,7 +6,7 @@ use super::*;
 /// [`over`](Self::over) and resolved by [`resolve_bind`] into the daemon's
 /// [`TcpBind`] — or rejected before anything else boots.
 ///
-/// [`TcpBind`]: efference::daemon::TcpBind
+/// [`TcpBind`]: efference::listeners::tcp::TcpBind
 pub(crate) struct BindFlags {
     pub(crate) bind: Option<String>,
     pub(crate) public_url: Option<String>,
@@ -35,11 +35,11 @@ impl BindFlags {
 /// explicit public name, and a bind without the machine root, read from `secrets`,
 /// is refused rather than silently unauthenticated.
 ///
-/// [`TcpBind`]: efference::daemon::TcpBind
+/// [`TcpBind`]: efference::listeners::tcp::TcpBind
 pub(crate) fn resolve_bind(
     flags: BindFlags,
     secrets: &efference::platform::secrets::Secrets,
-) -> Result<Option<daemon::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Option<efference::listeners::tcp::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
     // An empty bind is the explicit "UDS-only" spelling: `--bind ""` overrides a
     // configured `[host] bind` (e.g. for a second concurrent host).
     let Some(addr) = flags.bind.filter(|a| !a.trim().is_empty()) else {
@@ -56,7 +56,7 @@ pub(crate) fn resolve_bind(
         .collect();
     let loopback = !resolved.is_empty() && resolved.iter().all(|a| a.ip().is_loopback());
     let tls = match (flags.tls_cert, flags.tls_key) {
-        (Some(cert), Some(key)) => Some(daemon::TlsPem {
+        (Some(cert), Some(key)) => Some(efference::listeners::tcp::TlsPem {
             cert: std::fs::read(&cert)
                 .map_err(|e| format!("could not read tls-cert {}: {e}", cert.display()))?,
             key: std::fs::read(&key)
@@ -97,7 +97,7 @@ pub(crate) fn resolve_bind(
     // is not the `[secrets]` commands.
     let root = efference::platform::auth::Root::load(secrets)?;
     efference::platform::auth::Root::install(Some(root.clone()));
-    Ok(Some(daemon::TcpBind {
+    Ok(Some(efference::listeners::tcp::TcpBind {
         addr,
         tls,
         public_url,
@@ -382,7 +382,7 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
 ///
 /// `flags.island` binds the host's life to the process that launched it: stdin is the
 /// ownership connection, watched from before anything else initializes
-/// ([`efference::daemon::island`]). When it closes, the island archives its
+/// ([`efference::host::island`]). When it closes, the island archives its
 /// sessions and exits. `bind` is the global `--bind`, which the bind flags lay over the
 /// `[host]` table.
 pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
@@ -406,9 +406,9 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     };
     let owner = island.then(|| {
         let socket = socket.clone();
-        daemon::island::OwnerWatch::spawn(std::io::stdin(), move || {
+        efference::host::island::OwnerWatch::spawn(std::io::stdin(), move || {
             // No sessions exist yet, so there is nothing to wind down.
-            daemon::island::remove_island_files(&socket);
+            efference::host::island::remove_island_files(&socket);
             std::process::exit(0);
         })
     });
@@ -444,13 +444,13 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     }
     // The snapshot the registry read is also the baseline a session created without an
     // environment of its own inherits (docs/env.md).
-    let host = daemon::Host::new(inference, host_env);
+    let host = efference::host::Host::new(inference, host_env);
     // The artifact-only loopback listener, which the first adopt starts (docs/artifacts.md):
     // installed before anything below can adopt a session.
-    host.set_artifact_listener(daemon::artifacts::spawn_listener);
+    host.set_artifact_listener(efference::listeners::artifacts::spawn_listener);
     // The `agents__*` verbs a hosted session's toolbox mounts, which the host does not name
     // (docs/tools.md): installed before anything below can boot a session.
-    host.set_session_control(efference::control_tools::in_session_server);
+    host.set_session_control(efference::clients::control_tools::in_session_server);
     // Only with the user's answer: a configuration without one never checks
     // (docs/update-check.md). An island is a host like any other here.
     if efference::config::user_config::UpdatesConfig::load(Path::new(&home))?.check {
@@ -473,7 +473,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     // file, so it never does.
     let titling = std::io::IsTerminal::is_terminal(&std::io::stdout())
         .then(|| tokio::spawn(std::sync::Arc::clone(&host).title_terminal(std::io::stdout())));
-    let served = daemon::serve_host(host, socket.clone(), bind).await;
+    let served = efference::listeners::serve::serve_host(host, socket.clone(), bind).await;
     // The shutdown that ended the serve ends the titling, which puts back the
     // terminal title it found.
     if let Some(titling) = titling {
@@ -481,7 +481,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     }
     served?;
     if island {
-        daemon::island::remove_island_files(&socket);
+        efference::host::island::remove_island_files(&socket);
     }
     Ok(())
 }

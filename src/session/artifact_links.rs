@@ -1,6 +1,6 @@
 //! The signed links to a session's fenced artifacts (docs/artifacts.md): the key a session
 //! signs them under, the link a client's entry view carries for each fence, and the HMAC the
-//! serving routes check a requested one against (`src/daemon/artifacts.rs`).
+//! serving routes check a requested one against (`src/listeners/artifacts.rs`).
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;

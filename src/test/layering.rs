@@ -1,18 +1,17 @@
 //! Which way imports run between the crate's modules (docs/README.md, *Dependency
 //! direction*).
 //!
-//! The rows of [`TABLE`] hold. `record::names` imports no other module. `record::log`
+//! The rows of [`table`] hold. `record::names` imports no other module. `record::log`
 //! imports none but `record::names`, which is placed below it. Each group imports only the
-//! groups before it in this order: `platform`, `record`, `config`, `inference`, `protocol`,
-//! `tools`, `curation`, `session`. And a module outside [`OUTER`] imports nothing from
-//! [`OUTER`], apart from the imports named in [`OPEN_EDGES`]: a new one fails here instead
-//! of joining them, and a named one that goes away fails until its line is deleted.
+//! groups before it in [`ORDER`], and its own: `platform`, `record`, `config`, `inference`,
+//! `protocol`, `tools`, `curation`, `session`, `agent`, `host`, `routes`, `listeners`,
+//! `clients`, `setup`. The binary crate is above them all, and the library cannot name it.
 //!
 //! A row names a group (`platform`), a module (`agent`) or a module inside a group
 //! (`record::log`), and matches by module-path prefix. A group named for one of its modules
-//! (`config`) has that module's path. The scan keys a file by its module path from the
-//! crate root (`record/log/summary.rs` is `record::log::summary`) and an import by the path
-//! it spells.
+//! (`config`, `agent`, `host`) has that module's path. The scan keys a file by its module
+//! path from the crate root (`record/log/summary.rs` is `record::log::summary`) and an
+//! import by the path it spells.
 //!
 //! The scan is over text, as `test/statics.rs` is: it skips test files and
 //! comments, and reads every spelling of a path that names a module of the crate
@@ -30,18 +29,23 @@ mod scan;
 
 use scan::{Reference, references};
 
-/// The modules the rest of the crate may not import from: the ones that host
-/// sessions (`daemon`, `boot`), serve the session-control tools (`control_tools`), or
-/// are clients of the control channel (`client`, `tui`, `setup`, and the `bin` crate,
-/// which the library cannot name).
-const OUTER: &[&str] = &[
-    "daemon",
-    "tui",
-    "client",
-    "bin",
-    "control_tools",
+/// The groups, bottom to top: each imports only the groups before it and its own. A path
+/// outside all of them is imported by no group.
+const ORDER: &[&str] = &[
+    "platform",
+    "record",
+    "config",
+    "inference",
+    "protocol",
+    "tools",
+    "curation",
+    "session",
+    "agent",
+    "host",
+    "routes",
+    "listeners",
+    "clients",
     "setup",
-    "boot",
 ];
 
 /// A set of modules, for the table: each is a module path, and contains the modules and
@@ -70,121 +74,50 @@ impl Modules {
 }
 
 /// One row of the table: a module in `importers` may not import from a module in
-/// `imports`, except the `open` edges, each a file under `src/` and the path it
-/// names. A row's `imports` leaves out the importers' own group or module, which they
+/// `imports`. A row's `imports` leaves out the importers' own group or module, which they
 /// may always import.
 struct Row {
     importers: Modules,
     imports: Modules,
-    why: &'static str,
-    open: &'static [(&'static str, &'static str)],
+    why: String,
 }
 
-/// The first row that matches wins, so a row for a module comes before the row for its
-/// group.
-const TABLE: &[Row] = &[
-    Row {
-        importers: Modules::These(&["record::names"]),
-        imports: Modules::Except(&["record::names"]),
-        why: "`record::names` imports no other module",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["record::log"]),
-        imports: Modules::Except(&["record::log", "record::names"]),
-        why: "`record::log` imports no module but `record::names`, which is placed below it",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["platform"]),
-        imports: Modules::Except(&["platform"]),
-        why: "platform imports no other group",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["record"]),
-        imports: Modules::Except(&["platform", "record"]),
-        why: "record imports only platform",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["config"]),
-        imports: Modules::Except(&["platform", "record", "config"]),
-        why: "config imports only platform and record",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["inference"]),
-        imports: Modules::Except(&["platform", "record", "config", "inference"]),
-        why: "inference imports only platform, record and config",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["protocol"]),
-        imports: Modules::Except(&["platform", "record", "config", "inference", "protocol"]),
-        why: "protocol imports only platform, record, config and inference",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["tools"]),
-        imports: Modules::Except(&[
-            "platform",
-            "record",
-            "config",
-            "inference",
-            "protocol",
-            "tools",
-        ]),
-        why: "tools imports only platform, record, config, inference and protocol",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["curation"]),
-        imports: Modules::Except(&[
-            "platform",
-            "record",
-            "config",
-            "inference",
-            "protocol",
-            "tools",
-            "curation",
-        ]),
-        why: "curation imports only platform, record, config, inference, protocol and tools",
-        open: &[],
-    },
-    Row {
-        importers: Modules::These(&["session"]),
-        imports: Modules::Except(&[
-            "platform",
-            "record",
-            "config",
-            "inference",
-            "protocol",
-            "tools",
-            "curation",
-            "session",
-        ]),
-        why: "session imports only platform, record, config, inference, protocol, tools and curation",
-        open: &[],
-    },
-    Row {
-        importers: Modules::Except(OUTER),
-        imports: Modules::These(OUTER),
-        why: "a module outside the outer set imports from it",
-        open: OPEN_EDGES,
-    },
-];
-
-/// The imports of an outer module that a module outside the set still makes: none now.
-/// The turn loop's two (`agent` reading the `Session`, and refreshing its config) ran
-/// through `daemon` until the session's state moved to `session`. A new one that must be
-/// made against a row is named here by the file that makes it and the path it imports, and
-/// is deleted when its import goes: a named one that no longer runs fails the test.
-const OPEN_EDGES: &[(&str, &str)] = &[];
+/// The first row that matches wins, so the rows for a module come before the row for its
+/// group: the two modules of `record` that are stricter than it, then one row per group in
+/// [`ORDER`].
+fn table() -> Vec<Row> {
+    let mut rows = vec![
+        Row {
+            importers: Modules::These(&["record::names"]),
+            imports: Modules::Except(&["record::names"]),
+            why: "`record::names` imports no other module".to_string(),
+        },
+        Row {
+            importers: Modules::These(&["record::log"]),
+            imports: Modules::Except(&["record::log", "record::names"]),
+            why: "`record::log` imports no module but `record::names`, which is placed below it"
+                .to_string(),
+        },
+    ];
+    for (index, group) in ORDER.iter().enumerate() {
+        let below = &ORDER[..index];
+        let why = match below {
+            [] => format!("{group} imports no other group"),
+            [only] => format!("{group} imports only {only}"),
+            [rest @ .., last] => format!("{group} imports only {} and {last}", rest.join(", ")),
+        };
+        rows.push(Row {
+            importers: Modules::These(&ORDER[index..=index]),
+            imports: Modules::Except(&ORDER[..=index]),
+            why,
+        });
+    }
+    rows
+}
 
 /// The row that forbids `importer` importing from `imported`, if one does.
-fn row_for(importer: &str, imported: &str) -> Option<&'static Row> {
-    TABLE
+fn row_for<'a>(table: &'a [Row], importer: &str, imported: &str) -> Option<&'a Row> {
+    table
         .iter()
         .find(|row| row.importers.has(importer) && row.imports.has(imported))
 }
@@ -195,40 +128,53 @@ fn imports_point_one_way() {
     let mut references = Vec::new();
     visit(&src, &src, &mut references);
 
-    let mut violations = Vec::new();
-    let mut named = Vec::new();
-    for reference in &references {
-        let Some(row) = row_for(&reference.importer(), reference.imported()) else {
-            continue;
-        };
-        match row
-            .open
-            .iter()
-            .find(|(file, path)| *file == reference.file && *path == reference.path)
-        {
-            Some(edge) => named.push(edge),
-            None => violations.push(format!(
+    let table = table();
+    let violations: Vec<String> = references
+        .iter()
+        .filter_map(|reference| {
+            let row = row_for(&table, &reference.importer(), reference.imported())?;
+            Some(format!(
                 "src/{}:{}: imports `{}` — {}",
                 reference.file, reference.line, reference.path, row.why
-            )),
-        }
-    }
+            ))
+        })
+        .collect();
     assert!(
         violations.is_empty(),
         "imports against the layering (docs/README.md, *Dependency direction*):\n{}",
         violations.join("\n")
     );
+}
 
-    let stale: Vec<String> = OPEN_EDGES
-        .iter()
-        .filter(|edge| !named.contains(edge))
-        .map(|(file, path)| format!("src/{file}: `{path}`"))
+/// Every top-level module of the library is one of the groups, so the rows cover the whole
+/// crate: a new one has to be placed in [`ORDER`] before anything can import it.
+#[test]
+fn the_crate_root_holds_only_groups() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut unplaced: Vec<String> = std::fs::read_dir(&src)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .map(|name| {
+            name.strip_suffix(".rs")
+                .map_or(name.clone(), str::to_string)
+        })
+        .filter(|name| {
+            !ORDER.contains(&name.as_str()) && !["lib", "test", "bin"].contains(&name.as_str())
+        })
         .collect();
+    unplaced.sort();
+    unplaced.dedup();
     assert!(
-        stale.is_empty(),
-        "named in OPEN_EDGES and no longer imported — delete the line:\n{}",
-        stale.join("\n")
+        unplaced.is_empty(),
+        "src/ holds modules in no group of ORDER: {}",
+        unplaced.join(", ")
     );
+    for group in ORDER {
+        assert!(
+            src.join(format!("{group}.rs")).is_file(),
+            "src/{group}.rs is the group's file"
+        );
+    }
 }
 
 /// Every reference in the library's non-test source. `bin` is left out: inside it
@@ -268,10 +214,14 @@ fn a_name_matches_whole_path_segments() {
     assert!(Modules::Except(&["record"]).has("recording::log"));
 }
 
-/// The table, row by row.
+/// Whether the table forbids `importer` importing from `imported`.
+fn forbidden(importer: &str, imported: &str) -> bool {
+    row_for(&table(), importer, imported).is_some()
+}
+
+/// The rows for `record::names`, `record::log`, `platform`, `record` and `config`.
 #[test]
-fn the_table_forbids_what_it_names() {
-    let forbidden = |importer: &str, imported: &str| row_for(importer, imported).is_some();
+fn the_rows_for_the_lowest_groups_hold() {
     // `record::names` imports nothing, and `record::log` imports nothing but `record::names`.
     assert!(forbidden("record::names", "record::log"));
     assert!(forbidden("record::names::sources", "record::log::Payload"));
@@ -292,7 +242,7 @@ fn the_table_forbids_what_it_names() {
     // A group imports nothing from a group above it, and may import within itself.
     assert!(forbidden("platform::secrets", "record::log"));
     assert!(forbidden("platform::push", "config::policy"));
-    assert!(forbidden("platform::secrets", "daemon::Host"));
+    assert!(forbidden("platform::secrets", "host::Host"));
     assert!(!forbidden("platform::secrets", "platform::spawn"));
     assert!(!forbidden("platform::push::vapid", "platform::auth::Root"));
     assert!(forbidden("record::persist", "config::policy"));
@@ -312,6 +262,11 @@ fn the_table_forbids_what_it_names() {
     assert!(!forbidden("config", "config::env_table::Table"));
     assert!(forbidden("platform::secrets", "config::user_config"));
     assert!(forbidden("record::persist", "config::env_table::Masker"));
+}
+
+/// The rows for `inference`, `protocol`, `tools` and `curation`.
+#[test]
+fn the_rows_for_the_middle_groups_hold() {
     // `inference` imports platform, record and config, and its own modules; `protocol` those
     // and `inference`.
     assert!(forbidden("inference::api", "protocol::stream"));
@@ -327,14 +282,15 @@ fn the_table_forbids_what_it_names() {
     ));
     assert!(!forbidden("inference", "inference::catalog::Catalog"));
     assert!(forbidden("protocol::state", "tools::Toolbox"));
-    assert!(forbidden("protocol", "triage"));
+    assert!(forbidden("protocol", "curation::triage"));
     assert!(!forbidden("protocol::sessions", "inference::api::Error"));
     assert!(!forbidden("protocol::state", "record::log::Payload"));
     assert!(!forbidden("protocol", "protocol::turns"));
     // `tools` imports those and `protocol`, and its own modules.
     assert!(forbidden("tools::bash", "curation::triage"));
-    assert!(forbidden("tools::mcp", "agent::Frontend"));
-    assert!(forbidden("tools", "daemon::Host"));
+    assert!(forbidden("tools::mcp", "agent::frontend::Frontend"));
+    assert!(forbidden("tools", "host::Host"));
+    assert!(forbidden("tools", "clients::control_tools"));
     assert!(!forbidden("tools::bash", "protocol::state"));
     assert!(!forbidden("tools::mcp", "inference::api::Error"));
     assert!(!forbidden("tools::process_monitor", "config::policy"));
@@ -342,18 +298,23 @@ fn the_table_forbids_what_it_names() {
     assert!(!forbidden("tools::toolbox", "tools::bash::Bash"));
     assert!(forbidden("protocol::state", "tools::process_monitor"));
     // `curation` imports those and `tools`, and its own modules.
-    assert!(forbidden("curation::triage", "agent::Frontend"));
-    assert!(forbidden("curation::compact", "daemon::Session"));
+    assert!(forbidden("curation::triage", "agent::frontend::Frontend"));
+    assert!(forbidden("curation::compact", "session::Session"));
     assert!(forbidden("curation", "session::Session"));
     assert!(!forbidden("curation::triage", "tools::process_monitor"));
     assert!(!forbidden("curation::spotter", "config::policy::Verdict"));
     assert!(!forbidden("curation::compact", "curation::digest::digest"));
     assert!(!forbidden("curation::triage", "inference::api::Error"));
     assert!(forbidden("tools::mcp", "curation::triage::is_triage_tool"));
+}
+
+/// The rows for `session`, `agent` and `host`.
+#[test]
+fn the_rows_for_the_session_and_the_loop_hold() {
     // `session` imports those and `curation`, and its own modules.
-    assert!(forbidden("session::pace", "agent::Frontend"));
-    assert!(forbidden("session::topics", "daemon::Host"));
-    assert!(forbidden("session", "frontend::Frontend"));
+    assert!(forbidden("session::pace", "agent::frontend::Frontend"));
+    assert!(forbidden("session::topics", "host::Host"));
+    assert!(forbidden("session", "agent"));
     assert!(!forbidden("session::pace", "tools::Interrupt"));
     assert!(!forbidden("session::push", "platform::push::send"));
     assert!(!forbidden("session::compact", "curation::digest::digest"));
@@ -363,18 +324,59 @@ fn the_table_forbids_what_it_names() {
     ));
     assert!(forbidden("curation::triage", "session::Session"));
     assert!(forbidden("tools::bash", "session::phase"));
-    // Modules outside both groups may import them, the outer modules included.
+    // `agent` imports those and `session`, and its own modules: the loop operates on the
+    // session, and the host that starts the loop sits above it.
+    assert!(forbidden("agent", "host::Host"));
+    assert!(forbidden("agent::step", "routes::views::answer"));
+    assert!(forbidden("agent::remote_frontend", "listeners::handler"));
     assert!(!forbidden("agent", "session::Session"));
     assert!(!forbidden("agent", "record::log"));
     assert!(!forbidden("agent", "record::names"));
     assert!(!forbidden("agent", "platform::state"));
-    assert!(!forbidden("daemon", "record::names"));
-    assert!(!forbidden("daemon", "platform::state"));
-    // The inner modules do not import the outer ones; the outer ones may import anything.
-    assert!(forbidden("agent", "daemon"));
-    assert!(forbidden("record::session_dir", "boot"));
-    assert!(forbidden("protocol", "control_tools"));
-    assert!(!forbidden("daemon", "agent"));
-    assert!(!forbidden("tui", "daemon"));
-    assert!(!forbidden("boot", "control_tools"));
+    assert!(!forbidden("agent::remote_frontend", "session::Session"));
+    assert!(!forbidden("agent", "agent::frontend::Frontend"));
+    assert!(!forbidden("agent", "curation::spotter"));
+    // `host` imports those and `agent`, and its own modules, `boot` included.
+    assert!(forbidden("host::runtime", "routes::http::DecisionBody"));
+    assert!(forbidden("host::create", "routes::errors::fail"));
+    assert!(forbidden("host::boot", "listeners::tcp"));
+    assert!(forbidden("host::boot", "clients::control_tools"));
+    assert!(!forbidden("host::runtime", "agent::remote_frontend"));
+    assert!(!forbidden("host::runtime", "session::SessionParts"));
+    assert!(!forbidden("host::boot::resume", "host::worktree"));
+    assert!(!forbidden("host", "host::island"));
+}
+
+/// The rows for `routes`, `listeners`, `clients` and `setup`.
+#[test]
+fn the_rows_for_the_serving_groups_hold() {
+    // `routes` imports those and `host`, and its own modules.
+    assert!(forbidden("routes::host_http", "listeners::handler"));
+    assert!(forbidden("routes::stream", "clients::client"));
+    assert!(!forbidden("routes::host_http", "host::Host"));
+    assert!(!forbidden("routes::stream", "host::starting::Starting"));
+    assert!(!forbidden("routes::views", "routes::entry_view::EntryView"));
+    // `listeners` imports those and `routes`, and its own modules.
+    assert!(forbidden("listeners::handler", "clients::client"));
+    assert!(forbidden("listeners::serve", "setup"));
+    assert!(!forbidden(
+        "listeners::handler",
+        "routes::http::control_routes"
+    ));
+    assert!(!forbidden("listeners::serve", "host::Host"));
+    assert!(!forbidden("listeners::tcp::gate", "listeners::artifacts"));
+    // `clients` imports those and `listeners`, and its own modules; `setup` is above them.
+    assert!(forbidden("clients::tui", "setup"));
+    assert!(forbidden("clients::client", "setup::flow"));
+    assert!(!forbidden("clients::control_tools", "host::Host"));
+    assert!(!forbidden("clients::client", "protocol::sessions"));
+    assert!(!forbidden("clients::tui", "clients::client::Client"));
+    assert!(!forbidden("clients::tui", "listeners::tcp"));
+    // `setup` imports everything below it.
+    assert!(!forbidden("setup", "clients::tui"));
+    assert!(!forbidden("setup", "platform::state"));
+    assert!(!forbidden("setup::flow", "setup::flow::variable"));
+    // No group imports a module outside the groups, and none is named in the rows.
+    assert!(forbidden("agent", "unplaced"));
+    assert!(forbidden("setup", "bin"));
 }

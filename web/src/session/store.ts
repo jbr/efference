@@ -52,7 +52,7 @@ export interface Streaming extends SideStreaming {
    * per process — reported rather than silently skipped (docs/process-monitor.md). */
   processLost: Record<number, number>;
   /** True from an `Assistant` commit until the next log entry: `log` has strict
-   * priority over `output` in `Tail::next_frame` (src/daemon/stream.rs), so the
+   * priority over `output` in `Tail::next_frame` (src/routes/stream.rs), so the
    * committing entry can overtake deltas still queued that describe it. Those
    * arrive after `blocks` was cleared and would open fresh blocks holding the
    * tail of what just committed — a nameless call block from a trailing `}`, or

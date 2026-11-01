@@ -1,7 +1,7 @@
 //! Where a session's git worktree lives, and the project path a worktree path stands
 //! for (docs/worktrees.md). The two decisions about worktree placement and access are
 //! made here and nowhere else, so either can change in one place. The git operations
-//! on the worktree are [`crate::worktree`].
+//! on the worktree are [`crate::host::worktree`].
 //!
 //! Lexical: nothing here reads the filesystem, and, like its parent, the module imports
 //! nothing from the crate.

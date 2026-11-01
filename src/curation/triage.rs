@@ -217,7 +217,7 @@ pub struct InboxTriage {
 ///
 /// The triage is a concrete type, not a trait object. It was built behind a
 /// single-method `Triager` trait threaded as a generic bound through
-/// `agent::run`, `daemon::serve`, and `run_idle_triage`; the second implementation
+/// `agent::run`, `listeners::serve`, and `run_idle_triage`; the second implementation
 /// that bound existed for never arrived, and the one that briefly did (a model-free
 /// `HeadTail` stub) had no call sites, tests included. Swapping the *model* behind
 /// the triage is [`Self::own`] — a second `Client` and a triage-only `tools[]`, not

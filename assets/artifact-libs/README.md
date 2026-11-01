@@ -1,7 +1,7 @@
 # Libraries built in for artifacts
 
 The browser builds an artifact loads with `efference.load(name)` (docs/artifacts.md), one
-version each, embedded in the binary by `src/daemon/artifacts/libraries.rs` (`LIBRARIES`). The
+version each, embedded in the binary by `src/listeners/artifacts/libraries.rs` (`LIBRARIES`). The
 versions are deliberately not the newest: each is a major version models know well, so
 an agent writes against an API it has seen. The artifacts guide
 (`assets/guide/artifacts.md`) names them; a test checks it lists exactly these.

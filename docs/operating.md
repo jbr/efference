@@ -54,8 +54,8 @@ whether a newer version is out and prints the install command when one is;
   follower as `wait` and the status streams, so a script or a shell-capable agent reads
   the sequence a `Monitor` would.
 - **`efference mcp`** — the agent verbs, with `wait` in place of `settle`, served as an
-  MCP server over stdin/stdout, and a status stream per agent on loopback (below). The verbs are written once as mcplease tools (`src/control_tools.rs` and
-  `src/control_tools/`, one file per tool) and listed by three tool sets — the command
+  MCP server over stdin/stdout, and a status stream per agent on loopback (below). The verbs are written once as mcplease tools (`src/clients/control_tools.rs` and
+  `src/clients/control_tools/`, one file per tool) and listed by three tool sets — the command
   line's, the stdio server's, and a hosted session's own toolbox (below) — so the paths
   cannot drift apart ([tools.md](tools.md)).
 - **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
@@ -106,7 +106,7 @@ the call did.
 
 `wait(agent?, timeout_s?)` waits on the mount's **watched set**: the agents it created,
 and any a `wait` named with `agent`, each watched for the life of the mount process
-(`src/control_tools/watch.rs`). The mount follows each watched session's `status` topic
+(`src/clients/control_tools/watch.rs`). The mount follows each watched session's `status` topic
 with one task holding `GET /events?include=state:status` on it, and reopens the stream
 when it drops while the host still lists the session ([control-api.md](control-api.md)).
 For each session it keeps the last status it showed. A status is new when it is a
@@ -129,7 +129,7 @@ a background task and wakes on its result, so a long `timeout_s` (600) is safe t
 other clients keep it under their own tool-call timeout.
 
 The mount also serves each agent's **status stream**: a WebSocket for a client that
-turns each frame into a notification (`src/control_tools/stream.rs`). Claude Code's
+turns each frame into a notification (`src/clients/control_tools/stream.rs`). Claude Code's
 `Monitor` tool is one such client: it opens a `ws://` URL and surfaces each text frame as
 a notification in the driver's conversation, a multi-line frame as one notification with
 each line's leading whitespace trimmed, and the close as a line of its own. `create`'s
@@ -283,7 +283,7 @@ session has none), the id dimmed, then the status (`idle`, `running`) of a live 
 the age (`16m ago`, `2d ago`) of an archived one, dimmed. A directory whose log cannot be
 resumed — unreadable, or one that predates the boot preamble — is not offered. The archived
 rows come from `GET /sessions?state=archived` on the first live host, or from the
-host-free scan (`src/inventory.rs`) when none is running
+host-free scan (`src/host/inventory.rs`) when none is running
 ([log-and-projection.md](log-and-projection.md)); if the host's listing fails, a warning
 prints and the prompt continues without them. Picking a live row is the attach above;
 picking an archived one prints a `resuming <id>…` line, revives it with
@@ -302,7 +302,7 @@ nothing archived there is nothing to pick: the TUI starts an island and opens th
 against it, so a session is configured the same way with or without a running host. The prompt's
 lines are erased once answered. Esc leaves without attaching.
 
-**Islands** (`src/bin/efference/island.rs`, `src/daemon/island.rs`). A TUI that finds no host
+**Islands** (`src/bin/efference/island.rs`, `src/host/island.rs`). A TUI that finds no host
 runs its own: `efference --host` as a child process, marked an island by a hidden
 `--island` the launcher passes, a session created in this directory through the
 new-session form (or an archived one resumed, from the picker), and the TUI attached to it. Nothing outlives the TUI.

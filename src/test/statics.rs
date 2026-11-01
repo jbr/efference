@@ -4,14 +4,17 @@
 //! build kept every artifact it ever served in one, never freed, and started its
 //! listener on whichever runtime asked first.
 //!
-//! The daemon's code is `daemon` and the groups moved out of it, each a file `<name>.rs`
-//! and a directory `<name>/` under `src/`; [`ROOTS`] names them, and a group that leaves
-//! `daemon` is added there.
+//! The daemon's code is the groups that hold sessions and serve them, each a file
+//! `<name>.rs` and a directory `<name>/` under `src/`; [`ROOTS`] names them. A task-local
+//! (`tokio::task_local!`) is not read as a static: its value lives as long as the scope
+//! that sets it.
 
 use std::path::Path;
 
-/// The modules whose code is the daemon's: `daemon` and the groups moved out of it.
-const ROOTS: &[&str] = &["daemon", "session"];
+/// The groups whose code is the daemon's: a session's state and what drives it (`session`,
+/// `agent`, which holds the loop's frontend over a session), the host and its boot (`host`),
+/// the routes it answers (`routes`) and the listeners that mount them (`listeners`).
+const ROOTS: &[&str] = &["session", "agent", "host", "routes", "listeners"];
 
 /// The types that make a `static` mutable state rather than a constant.
 const INTERIOR: &[&str] = &[
@@ -51,16 +54,57 @@ fn visit(dir: &Path, found: &mut Vec<String>) {
 
 fn scan(path: &Path, found: &mut Vec<String>) {
     let text = std::fs::read_to_string(path).unwrap();
+    for (line, code) in mutable_statics(&text) {
+        found.push(format!("{}:{}: {}", path.display(), line, code));
+    }
+}
+
+/// The lines of `text` that declare a mutable static: its number from 1, and the line.
+fn mutable_statics(text: &str) -> Vec<(usize, &str)> {
+    let mut found = Vec::new();
+    let mut task_local = false;
     for (index, line) in text.lines().enumerate() {
         let code = line.trim_start();
-        let code = ["pub(crate) ", "pub(super) ", "pub "]
+        if code.starts_with("tokio::task_local!") || code.starts_with("task_local!") {
+            task_local = true;
+        }
+        if task_local {
+            // The macro's body runs to the closing brace at its own indent.
+            if code.starts_with('}') {
+                task_local = false;
+            }
+            continue;
+        }
+        let declared = ["pub(crate) ", "pub(super) ", "pub "]
             .iter()
             .find_map(|visibility| code.strip_prefix(visibility))
             .unwrap_or(code);
         let mutable_static =
-            code.starts_with("static ") && INTERIOR.iter().any(|kind| code.contains(kind));
-        if mutable_static || code.starts_with("thread_local!") {
-            found.push(format!("{}:{}: {}", path.display(), index + 1, line.trim()));
+            declared.starts_with("static ") && INTERIOR.iter().any(|kind| declared.contains(kind));
+        if mutable_static || declared.starts_with("thread_local!") {
+            found.push((index + 1, line.trim()));
         }
     }
+    found
+}
+
+#[test]
+fn a_task_local_is_scoped_state_and_a_static_is_not() {
+    let text = "\
+static CACHE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+pub(crate) static ONCE: OnceLock<u8> = OnceLock::new();
+thread_local! { static N: Cell<u8> = Cell::new(0); }
+static LIMIT: usize = 4;
+#[cfg(test)]
+tokio::task_local! {
+    /// Scratch directories one test made.
+    pub(super) static MINTED: std::cell::RefCell<Vec<u8>>;
+}
+static AFTER: AtomicBool = AtomicBool::new(false);
+";
+    let lines: Vec<usize> = mutable_statics(text)
+        .iter()
+        .map(|(line, _)| *line)
+        .collect();
+    assert_eq!(lines, [1, 2, 3, 10]);
 }

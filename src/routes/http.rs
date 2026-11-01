@@ -1,0 +1,466 @@
+//! The control API surface: request bodies, the route table, and its query helpers (docs/control-channel.md). The routes themselves are the `http/` submodules.
+
+use super::*;
+use crate::host::starting;
+use crate::protocol::state::SETTLED_HEADER;
+use crate::protocol::state::Topic;
+use crate::protocol::turns::mint_submission_id;
+use crate::record::log::Approval;
+use crate::record::log::CallId;
+use crate::record::log::EditState;
+use crate::record::log::Notification;
+use crate::routes::errors::ErrorBody;
+use crate::routes::errors::ErrorCode;
+use crate::routes::errors::fail;
+use crate::routes::errors::respond;
+use crate::routes::stream::Include;
+use crate::routes::stream::control_stream;
+use crate::session::SETTLE_TIMEOUT;
+use crate::session::Session;
+use crate::session::submitted::SubmittedTurn;
+use crate::session::transcript;
+use serde::Deserialize;
+use serde_json::Value;
+use std::sync::Arc;
+use std::time::Duration;
+use trillium::Conn;
+use trillium_router::Router;
+use trillium_router::RouterConnExt;
+use trillium_sse::sse;
+
+#[derive(Deserialize)]
+pub(crate) struct TurnBody {
+    pub(crate) text: String,
+    /// The client's identifier for this submission (docs/control-api.md),
+    /// adopted when present and daemon-minted otherwise — the conn-id
+    /// adopt-or-mint rule at submission granularity. Echoed in the 202 body
+    /// and recorded on the resulting `User` entry as `submission_id`.
+    #[serde(default)]
+    pub(crate) submission_id: Option<String>,
+    /// The client's self-chosen label for who is submitting (docs/control-api.md):
+    /// `web`, `mcp[<name>]`, or `session[<id>]`. Client-asserted, like a
+    /// notification's source. Absent = the operator, whose turns carry no prefix.
+    /// Recorded on the resulting `User` entry as `source` and projected onto its
+    /// wire block when present.
+    #[serde(default)]
+    pub(crate) source: Option<String>,
+    /// Names of files this client uploaded (`POST /attachments`) to send with the
+    /// turn (docs/inbox.md). Each must still be in the store; the turn is refused
+    /// otherwise, so a message never lands claiming a file that is not there.
+    #[serde(default)]
+    pub(crate) attachments: Vec<String>,
+    /// The question this turn answers: the `ask`'s transcript handle (`3.1`) or its
+    /// call id (docs/control-api.md). A turn naming one answers only that question,
+    /// and is refused when it is not the one pending.
+    #[serde(default)]
+    pub(crate) answers: Option<String>,
+}
+
+/// The optional `POST /loop/compact` body: `warm` is the operator's choice to compact a
+/// session whose cache is not believed expired (docs/control-api.md).
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CompactBody {
+    #[serde(default)]
+    pub(crate) warm: bool,
+}
+
+/// Cap on a client-minted submission id: long enough for any uuid-ish scheme,
+/// short enough that the log can't be bloated through the field.
+const SUBMISSION_ID_MAX: usize = 128;
+
+/// Body of `PATCH /processes/:id` (docs/process-monitor.md, docs/control-api.md): the
+/// settable properties of a process resource. `background: true` on the foreground
+/// entry is the foreground→background handoff; `note` is the operator note the
+/// handoff delivers as the next user message — a turn-injection concern riding
+/// beside the property change, never a process attribute.
+#[derive(Deserialize)]
+pub(crate) struct ProcessPatchBody {
+    #[serde(default)]
+    pub(crate) background: Option<bool>,
+    #[serde(default)]
+    pub(crate) muted: Option<bool>,
+    #[serde(default)]
+    pub(crate) note: Option<String>,
+}
+
+/// Body of `PATCH /proposals/:seq`: the orchestrator moves a pending proposal to its
+/// terminal state (`committed` | `cancelled`), with an optional rationale note
+/// (docs/permissions.md).
+#[derive(Deserialize)]
+pub(crate) struct ProposalPatchBody {
+    pub(crate) state: String,
+    #[serde(default)]
+    pub(crate) note: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DecisionBody {
+    pub(crate) decision: String,
+    #[serde(default)]
+    pub(crate) message: Option<String>,
+    /// The config-edit payload (`decision: "config_edit"` only) — the change and a rationale note
+    /// (docs/permissions.md). A committed change is always written to the session's
+    /// config file, so there is no lifetime to choose; a `lifetime` field from an older client is
+    /// ignored rather than rejected.
+    #[serde(default)]
+    pub(crate) change: Option<crate::record::log::ConfigChange>,
+    #[serde(default)]
+    pub(crate) note: Option<String>,
+    /// Who is deciding, spelled as a turn's `source` is (`web`, `mcp[<name>]`,
+    /// `session[<id>]`). Client-asserted and unverified, like an interrupt's origin;
+    /// absent means the operator (docs/control-api.md).
+    #[serde(default)]
+    pub(crate) source: Option<String>,
+    /// The submission id of the turn carrying the decider's note, for an `approve` sent
+    /// with one; the host records it on the decision (docs/control-api.md).
+    #[serde(default)]
+    pub(crate) note_submission: Option<String>,
+}
+
+/// Body of `POST /approvals/:call_id/escalate` (docs/control-api.md): who escalates,
+/// spelled as a turn's `source` is, and the note for whoever decides next.
+#[derive(Deserialize)]
+pub(crate) struct EscalationBody {
+    #[serde(default)]
+    pub(crate) source: Option<String>,
+    #[serde(default)]
+    pub(crate) note: Option<String>,
+}
+
+/// Body of `PATCH /loop` (docs/control-channel.md): the operator dials, each
+/// optional so one call can move either or both. `pace` is itself partial —
+/// `{"pace":{"speed_ms":10000}}` slows, `{"pace":{"held":true}}` pauses,
+/// `{"pace":{"held":false}}` resumes; `review_level` is one of `autonomous` /
+/// `supervisor` / `spotter_human` / `human_only` (docs/permissions.md).
+#[derive(Deserialize)]
+pub(crate) struct LoopPatchBody {
+    #[serde(default)]
+    pub(crate) pace: Option<PaceBody>,
+    #[serde(default)]
+    pub(crate) review_level: Option<String>,
+}
+
+/// The `pace` half of [`LoopPatchBody`].
+#[derive(Deserialize)]
+pub(crate) struct PaceBody {
+    #[serde(default)]
+    pub(crate) speed_ms: Option<u64>,
+    #[serde(default)]
+    pub(crate) held: Option<bool>,
+}
+
+/// Body of `DELETE /v1/push/subscriptions` (docs/web-push.md): the endpoint to
+/// forget, which is the subscription's identity.
+#[derive(Deserialize)]
+pub(crate) struct PushUnsubscribeBody {
+    pub(crate) endpoint: String,
+}
+
+/// What every push route answers when no machine root is injected: the VAPID
+/// keypair derives from it (`auth.rs`), so without one there is no sender
+/// identity to hand out or sign with. Unreachable from a browser, which can only
+/// reach the daemon over the TCP bind, and that bind requires the root.
+const NO_ROOT: &str = "no root is installed, so push has no signing key";
+
+#[derive(Deserialize)]
+pub(crate) struct NotifyBody {
+    pub(crate) source: String,
+    pub(crate) body: String,
+    /// Logical channel — a later notify on the same slot supersedes this one (docs/inbox.md).
+    #[serde(default)]
+    pub(crate) slot: Option<String>,
+}
+
+/// The session a conn addresses: the one a host's `/sessions/:id` stage put into
+/// conn state, else the server-global one a session bind registered
+/// (docs/control-channel.md). `None` only on a wiring bug, answered as a 500.
+pub(crate) fn shared_of(conn: &Conn) -> Option<Arc<Session>> {
+    conn.state::<Arc<Session>>()
+        .or_else(|| conn.shared_state::<Arc<Session>>())
+        .map(Arc::clone)
+}
+
+/// The starting session a conn addresses, when the host's `/sessions/:id` stage
+/// resolved one that is still being prepared (`starting.rs`).
+pub(crate) fn starting_of(conn: &Conn) -> Option<Arc<starting::Starting>> {
+    conn.state::<Arc<starting::Starting>>().map(Arc::clone)
+}
+
+/// The answer when no session is in conn state — the one condition every route
+/// shares, and the reason it has a helper rather than a body constant. A session that
+/// is still starting has none yet, so every route that does not serve a starting
+/// session answers `409 starting` through here (docs/control-api.md); otherwise it is
+/// a wiring bug.
+fn missing_state(conn: Conn) -> Conn {
+    match starting_of(&conn) {
+        Some(starting) => {
+            let refusal = starting.refusal();
+            fail(conn, ErrorCode::Starting, refusal)
+        }
+        None => fail(conn, ErrorCode::Internal, "missing shared state"),
+    }
+}
+
+/// How long `/events` may sit silent before it sends an SSE comment (docs/control-api.md).
+///
+/// An idle stream through a TLS intermediary gets reaped, and a client cannot otherwise
+/// distinguish idle from dead; a comment (`: `) is the one keepalive an `EventSource`
+/// consumer ignores — every shape `Eventable` can encode fires `onmessage` — and the one
+/// that stays out of the frame envelope, since a heartbeat *frame* would need a fourth
+/// `class` naming no durability. It is also what makes `?since` past the head safe to
+/// serve as a wait rather than an error. (`session/keepalive.rs` is the *upstream* cache
+/// ping; unrelated.)
+pub(crate) const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
+
+mod attachments;
+mod events;
+mod log_reads;
+mod loop_control;
+mod notifications;
+mod processes;
+mod proposals;
+mod state;
+mod title;
+mod turns;
+mod web_push;
+
+/// The control API (docs/control-channel.md): every `(method, path)` the daemon answers,
+/// as one `Router`. Each route is a named `async fn` in a sibling module under `http/`;
+/// they read `Session` from the server-global state, JSON in, JSON out. The router
+/// supplies method-aware dispatch and the path captures (`:call_id`, `:id`, `:seq`).
+/// Mounted only by [`handler`](crate::listeners::handler::handler).
+///
+/// `heartbeat` is the `/events` idle-comment interval — [`EVENTS_HEARTBEAT`] via
+/// [`control_routes`] everywhere real; a parameter so a test can shrink it and watch a
+/// quiet stream stay audibly alive.
+pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
+    Router::new()
+        .post("/v1/turns", turns::submit_turn)
+        .delete("/v1/turns/:submission_id", turns::withdraw_turns)
+        .put("/v1/approvals/:call_id", turns::resolve_approval)
+        .post("/v1/approvals/:call_id/escalate", turns::escalate_approval)
+        .post("/v1/loop/interrupt", loop_control::interrupt)
+        .post("/v1/loop/continue", loop_control::continue_loop)
+        .post("/v1/loop/compact", loop_control::compaction)
+        .get("/v1/loop", loop_control::read_loop)
+        .patch("/v1/loop", loop_control::patch_loop)
+        .get("/v1/processes", processes::list_processes)
+        .get("/v1/processes/:id", processes::read_process)
+        .get("/v1/processes/:id/output", processes::read_process_output)
+        .patch("/v1/processes/:id", processes::patch_process)
+        .delete("/v1/processes/:id", processes::kill_process)
+        .post("/v1/attachments", attachments::upload)
+        .get("/v1/attachments/:name", attachments::read)
+        .delete("/v1/attachments/:name", attachments::remove)
+        .post("/v1/notifications", notifications::notify)
+        .get("/v1/proposals", proposals::list_proposals)
+        .patch("/v1/proposals/:seq", proposals::patch_proposal)
+        .put("/v1/title", title::put_title)
+        .get("/v1/state", state::read_state)
+        .get("/v1/log", log_reads::read_log_window)
+        .get("/v1/transcript", log_reads::read_transcript)
+        .get("/v1/log/:seq", log_reads::read_log_entry)
+        .get("/v1/log/:seq/images/:idx", log_reads::read_result_image)
+        .get("/v1/tool_calls/:call_id", log_reads::read_tool_call)
+        .get("/v1/tools/:name", log_reads::read_tool_definition)
+        .get("/v1/push", web_push::read_push_key)
+        .post("/v1/push/subscriptions", web_push::subscribe)
+        .delete("/v1/push/subscriptions", web_push::unsubscribe)
+        .get("/v1/events", events::events(heartbeat))
+}
+
+/// [`control_routes_with_heartbeat`] at the real [`EVENTS_HEARTBEAT`] interval.
+pub(crate) fn control_routes() -> Router {
+    control_routes_with_heartbeat(EVENTS_HEARTBEAT)
+}
+
+/// Which window of the log a `GET /log` read wants (docs/control-api.md).
+///
+/// `since`/`before` bound the range; `tail` takes the last N *of that range*. Splitting
+/// position from count is why `?tail=N` is its own parameter rather than a negative
+/// `since`: a position and a count are different kinds, and a parser cannot tell a
+/// deliberate `since=-300` from a client's off-by-one `-1`.
+///
+/// Three reads follow from the three fields: `?since=S` resumes forward, `?tail=N` opens
+/// cold at the tail, and `?before=X&tail=N` is one page backward — the escape hatch for a
+/// client scrolling past the window it opened with.
+#[derive(Default, PartialEq, Eq, Debug)]
+pub(crate) struct LogSelect {
+    /// Inclusive lower bound: entries with `seq >= since`.
+    pub(crate) since: Option<u64>,
+    /// Exclusive upper bound: entries with `seq < before`.
+    pub(crate) before: Option<u64>,
+    /// Keep only the last `tail` entries of the bounded range. Exactly N, cut anywhere:
+    /// a cut can orphan a reference (a `tool_result` whose call sits in the entry before
+    /// the cut), and those resolve by fetching `/log/:seq` or `/tool_calls/:call_id`
+    /// rather than by widening the window.
+    pub(crate) tail: Option<u64>,
+}
+
+impl LogSelect {
+    /// Parse the `GET /log` query, or say what was wrong with it.
+    ///
+    /// `since` and `tail` together are an **error**, not a resolved precedence: one asks
+    /// to resume from a position and the other to open at the end, so a request carrying
+    /// both has no single reading, and picking one silently would answer a question the
+    /// client didn't ask.
+    pub(crate) fn parse(query: &str) -> Result<Self, String> {
+        let select = Self {
+            since: parse_u64_param(query, "since")?,
+            before: parse_u64_param(query, "before")?,
+            tail: parse_u64_param(query, "tail")?,
+        };
+        if select.since.is_some() && select.tail.is_some() {
+            return Err("since and tail are mutually exclusive".into());
+        }
+        Ok(select)
+    }
+}
+
+/// What a `GET /transcript` read wants (docs/control-api.md): a window at a grain, or
+/// one entry zoomed, for a named reader. At the conversation grain the select's `tail`
+/// counts rendered lines, not entries.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct TranscriptQuery {
+    pub(crate) select: LogSelect,
+    pub(crate) grain: transcript::Grain,
+    /// The reader, as a `source` or a session id (`transcript.rs`).
+    pub(crate) me: Option<String>,
+    /// The entry to zoom into, in place of a window.
+    pub(crate) seq: Option<crate::protocol::transcript::Handle>,
+}
+
+impl TranscriptQuery {
+    /// Parse the `GET /transcript` query, or say what was wrong with it. A zoom names
+    /// one entry, so a window bound or the audit grain beside `seq` has no reading and
+    /// is refused rather than ignored.
+    pub(crate) fn parse(query: &str) -> Result<Self, String> {
+        use crate::protocol::transcript::Handle;
+        use crate::session::transcript::Grain;
+        let select = LogSelect::parse(query)?;
+        let grain = match query_value(query, "grain").as_deref() {
+            None | Some("conversation") => Grain::Conversation,
+            Some("audit") => Grain::Audit,
+            Some(other) => {
+                return Err(format!(
+                    "grain must be conversation or audit, got {other:?}"
+                ));
+            }
+        };
+        let seq = query_value(query, "seq")
+            .map(|seq| Handle::parse(&seq))
+            .transpose()?;
+        if seq.is_some() && (select != LogSelect::default() || grain == Grain::Audit) {
+            return Err(
+                "seq zooms into one entry, so it takes no since, before, tail or grain=audit"
+                    .into(),
+            );
+        }
+        Ok(Self {
+            select,
+            grain,
+            me: query_value(query, "me").filter(|me| !me.is_empty()),
+            seq,
+        })
+    }
+}
+
+/// One `name=<u64>` query parameter, absent (`Ok(None)`) or malformed (`Err`).
+///
+/// Unlike [`parse_since`], a value that doesn't parse is rejected rather than ignored: on
+/// a windowed read, a dropped bound silently returns the *whole log*, which is the
+/// failure the window exists to prevent.
+fn parse_u64_param(query: &str, name: &str) -> Result<Option<u64>, String> {
+    query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='))
+        .map(|v| {
+            v.parse()
+                .map_err(|_| format!("{name} must be a non-negative integer, got {v:?}"))
+        })
+        .transpose()
+}
+
+/// One query parameter, percent-decoded, or `None` if absent. For values a
+/// client encodes (paths, connection names); [`parse_param`] is the raw slice.
+pub(crate) fn query_value(query: &str, name: &str) -> Option<String> {
+    trillium_client::url::form_urlencoded::parse(query.as_bytes())
+        .find_map(|(key, value)| (key == name).then(|| value.into_owned()))
+}
+
+/// One `name=<value>` query parameter as a raw string slice, or `None` if absent.
+pub(crate) fn parse_param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
+    query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='))
+}
+
+/// Pull `since=<n>` out of a raw query string (`GET /events?since=12`).
+pub(crate) fn parse_since(query: &str) -> Option<u64> {
+    query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("since="))
+        .and_then(|v| v.parse().ok())
+}
+
+/// Whether a request asked to block until settled (`?wait`, `?wait=1`, `?wait=true`) — the
+/// long-poll opt-in on the write routes (`/turns`, `/approvals`) (docs/permissions.md).
+pub(crate) fn wants_wait(query: &str) -> bool {
+    query
+        .split('&')
+        .any(|kv| matches!(kv, "wait" | "wait=1" | "wait=true"))
+}
+
+/// Block until the daemon settles (capped by [`SETTLE_TIMEOUT`]), then answer with the `/state`
+/// snapshot — the shared tail of `GET /state?wait=settled` and the write routes' `?wait`. The
+/// body is exactly `/state`'s, so a settled response is just a fresh state read; its
+/// `loop_phase` names where the loop stopped. The [`SETTLED_HEADER`] header says whether
+/// it stopped or the cap expired (docs/control-api.md).
+pub(crate) async fn settle_and_state(shared: &Arc<Session>, conn: Conn) -> Conn {
+    settle_and_state_within(shared, conn, SETTLE_TIMEOUT).await
+}
+
+/// [`settle_and_state`] under a cap the caller names, so a test can expire it.
+async fn settle_and_state_within(shared: &Arc<Session>, conn: Conn, cap: Duration) -> Conn {
+    let settled = tokio::time::timeout(cap, shared.await_settled())
+        .await
+        .is_ok();
+    conn.with_status(200)
+        .with_response_header(SETTLED_HEADER, settled.to_string())
+        .with_body(shared.state_json())
+        .halt()
+}
+
+/// [`settle_and_state`] for a session still starting: wait for it to start and then to
+/// settle, under the one cap. A failure is where it stops, and the starting state that
+/// carries it is the answer, marked settled (docs/control-api.md).
+pub(crate) async fn settle_starting(starting: &starting::Starting, conn: Conn) -> Conn {
+    settle_starting_within(starting, conn, SETTLE_TIMEOUT).await
+}
+
+/// [`settle_starting`] under a cap the caller names.
+async fn settle_starting_within(starting: &starting::Starting, conn: Conn, cap: Duration) -> Conn {
+    let waited = tokio::time::timeout(cap, async {
+        match starting.finished().await {
+            Ok(session) => {
+                session.await_settled().await;
+                Some(session)
+            }
+            Err(_) => None,
+        }
+    })
+    .await;
+    let (settled, body) = match waited {
+        Ok(Some(session)) => (true, session.state_json()),
+        Ok(None) => (true, starting.state_json()),
+        Err(_) => (false, starting.state_json()),
+    };
+    conn.with_status(200)
+        .with_response_header(SETTLED_HEADER, settled.to_string())
+        .with_body(body)
+        .halt()
+}
+
+#[cfg(test)]
+mod test;

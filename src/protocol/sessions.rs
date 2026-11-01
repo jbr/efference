@@ -3,7 +3,7 @@
 //!
 //! Each body is one type on both ends of the channel — the control client serializes
 //! it and the host deserializes it — so a new option is one field here. Reading the
-//! rows' files and acting on the bodies is the host's (`daemon::host`).
+//! rows' files and acting on the bodies is the host's (`host`).
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -396,7 +396,7 @@ pub struct DormantSession {
     pub archived: ArchivedSession,
     /// The main, spotter and triage selections the session last ran on, in the
     /// shapes an `active` patch takes, read as a resume reads them
-    /// ([`crate::boot::recorded_selections`]). Absent when the log cannot be read or
+    /// ([`crate::host::boot::recorded_selections`]). Absent when the log cannot be read or
     /// records none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selections: Option<ResumeSwitch>,

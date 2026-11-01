@@ -326,7 +326,7 @@ async fn replayed_triager<'a>(
             eprintln!(
                 "triage: {} · context {} · thinking {} · tool choice {} · reference: {agent_model}'s own verdicts",
                 t.model,
-                efference::boot::describe_window(caps.context_length),
+                efference::host::boot::describe_window(caps.context_length),
                 match (&t.effort, t.thinking) {
                     (Some(effort), _) => format!("on, effort {effort}"),
                     (None, true) => "on".into(),

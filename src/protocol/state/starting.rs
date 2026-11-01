@@ -1,5 +1,5 @@
 //! A session between its reservation and its adoption, as the `starting` topic
-//! publishes it (docs/control-api.md). The host's entry for it is `daemon::starting`.
+//! publishes it (docs/control-api.md). The host's entry for it is `host::starting`.
 
 use std::path::PathBuf;
 

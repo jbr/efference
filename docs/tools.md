@@ -224,7 +224,7 @@ fully reversible) that exposes its modules, `Tools` enum, and state struct, whos
 `new(root)` constructor takes the session's cwd.
 
 This section is about efference *consuming* MCP servers. It also serves one: the
-session-control verbs are declared once as mcplease tools (`src/control_tools.rs`) and
+session-control verbs are declared once as mcplease tools (`src/clients/control_tools.rs`) and
 listed by three tool sets, each its own `tools!` enum: `control_tools::in_session`,
 mounted inside a hosted session's own toolbox; `control_tools::mcp`, served by the stdio
 server `efference mcp`; and `control_tools::cli`, the `efference control <verb>`
@@ -232,7 +232,7 @@ subcommands ([operating.md](operating.md)). A verb is a tool struct in a file of
 — its arguments, its title and behaviour hints, and a `ControlVerb` impl with a method
 per executor (`client` over the control channel, `host` in-process; below) — and a row
 of the verb table, which names the struct, the name it is advertised under, and the sets
-that list it. From the table, `verbs!` (`src/control_tools/verb.rs`) writes each
+that list it. From the table, `verbs!` (`src/clients/control_tools/verb.rs`) writes each
 struct's mcplease `Tool` impl, which hands the call to the method for the executor its
 mount holds, and the three enums, each in table order. A verb the in-session set does
 not list writes no `host` method: the trait's default answers that it is an operator
@@ -242,7 +242,7 @@ line's repeats `--agent` and prints JSON on request. A set is an allow-list: the
 mount serves its whole enum, and mcplease has no way to hide a tool from it.
 
 The `agent` argument is declared once for each form it takes
-(`src/control_tools/args.rs`): required (`message`, `decide`, `interrupt`,
+(`src/clients/control_tools/args.rs`): required (`message`, `decide`, `interrupt`,
 `transcript`), optional with the one session live in the command's directory as the
 default (the operator's route verbs), and optional with every agent in view as the
 default (`status` in a session and over MCP). Each form is a newtype that serde reads as
@@ -256,7 +256,7 @@ field's reading while sharing its declaration. `archive`, whose command line tak
 id positionally, and `settle`, `wait`, `supervisor` and the command line's `status`,
 whose descriptions or shapes differ, declare their own.
 
-The bytes each set advertises are pinned whole (`src/control_tools/test/tool_bytes.rs`):
+The bytes each set advertises are pinned whole (`src/clients/control_tools/test/tool_bytes.rs`):
 the in-session set as a session's `tools[]` carries it and as its tool table holds it,
 and `efference mcp`'s `tools/list`; the command line's `--help` for each verb is pinned
 in `src/bin/efference/control/help.txt`. The tool definitions sit in the cached prefix
@@ -288,7 +288,7 @@ answers the permission path takes from the host before it classifies one of thei
 a hand-off's completion and a decision's bound action ([permissions.md](permissions.md)).
 `control_tools::Control` implements it with the in-session set as its verbs. The host
 does not name `control_tools` either: the process that serves it installs a
-`MountSessionControl` (`Host::set_session_control`, `src/daemon/host/session_control.rs`;
+`MountSessionControl` (`Host::set_session_control`, `src/host/session_control.rs`;
 the binary installs `control_tools::in_session_server`), and boot asks the host for the
 server it mounts. A host with none installed boots sessions without the `agents__*` tools.
 The toolbox holds the server over the verbs as a `ControlServer` trait object, the one
@@ -392,7 +392,7 @@ project — each status's first line — the sessions the caller drives marked `
 (docs/control-api.md): `seq` reads one entry in full (the zoom); with neither `since` nor `tail` it
 is what is new since this reader's last read. The host holds that read cursor per reader
 and target as control state on the target's hosted entry, never logged
-(`src/daemon/host/agents.rs`); a reader with no cursor — a first read, or any read
+(`src/host/agents.rs`); a reader with no cursor — a first read, or any read
 after a host restart — gets the last 40 conversation lines, and the header says so.
 `tail` counts conversation lines as the transcript prints them, not log entries
 (docs/control-api.md). `since`/`tail`
@@ -437,14 +437,14 @@ operator. A gate a status shows is the reader's to decide when it is routed to t
 operator. Over MCP, `create` also adds the new session to the mount's watched set, and
 `wait` returns each status of a watched session the mount has not shown, by the same
 decision points a subscription posts ([operating.md](operating.md),
-`src/control_tools/watch.rs`). The MCP set's `status(agent?, follow?)` takes `follow`:
+`src/clients/control_tools/watch.rs`). The MCP set's `status(agent?, follow?)` takes `follow`:
 with `follow: true` the answer is the agent's status and a last line,
 `follow: ws://127.0.0.1:<port>/<token> — …`, the URL of the agent's status stream on the
 mount, the same URL on every request for that agent. `follow` names one agent: on a mount
 with no default session, a call without `agent` is refused. `create`'s answer over MCP
 carries the same line for the new agent. The in-session and command-line `status` take
 no `follow`, and nothing the in-session set advertises or answers names the stream
-([operating.md](operating.md), `src/control_tools/stream.rs`).
+([operating.md](operating.md), `src/clients/control_tools/stream.rs`).
 
 ##### Subscriptions: a session's status in another's inbox
 
@@ -504,7 +504,7 @@ its arguments filled in. The verbs' own answers are rendered beside it
 
 A notification opens without the session's id, which is its `source` and which the
 pinned block (`⟢ <source>: <body>`) shows first; the status's first line names the id in
-a read (`post_status`, `src/daemon/subscriptions.rs`). A notification leaves out the footer a read of the status carries (the model, context
+a read (`post_status`, `src/host/subscriptions.rs`). A notification leaves out the footer a read of the status carries (the model, context
 fill, cost, background processes, and queued turns by sender), and a config repair's
 parse error, which the notification names the `status` read for.
 
@@ -525,7 +525,7 @@ subscriber (docs/inbox.md — must-wake):
 
 The subscriber set is host control state on the target — never logged, never
 projected — and the host runs one watcher per session that reads its status on
-every control-state change and posts it when it moves (`src/daemon/subscriptions.rs`,
+every control-state change and posts it when it moves (`src/host/subscriptions.rs`,
 `src/session/status.rs`). A subscribed session counts as something that may wake
 the subscriber, so its `wait` tool is not refused while one exists
 (docs/process-monitor.md).
@@ -545,7 +545,7 @@ session in the session list either way.
 `hand_off { brief }` gives the caller's work to a new session in the caller's own working
 directory (its worktree, if it has one; a successor never gets a new one),
 which resolves the project's config afresh — its grants, its preamble, its MCP servers — and
-takes the caller's place (`Host::hand_off`, `src/daemon/host.rs`). It is `create` with the
+takes the caller's place (`Host::hand_off`, `src/host.rs`). It is `create` with the
 placement changed rather than a `create` flag, because nearly everything that makes a child a
 child is inverted:
 

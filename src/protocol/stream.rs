@@ -4,7 +4,7 @@
 //! entry; none is ever logged.
 //!
 //! A delta serializes as `{"kind": …, "data": {…}}`, and the host's frame envelope
-//! (`daemon/frames.rs`) wraps the two under its `output` class.
+//! (`routes/frames.rs`) wraps the two under its `output` class.
 
 use serde::Serialize;
 

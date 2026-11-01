@@ -4,9 +4,9 @@
 serve the same `/v1` routes ([control-api.md](control-api.md)); the TCP listener wraps
 them in a hardening + auth gate, while the UDS stays auth-exempt (filesystem permissions
 are its trust model) and remains the CLI verbs' channel. Implemented in
-`src/daemon/handler.rs` (the one stack every listener mounts), `src/daemon/serve.rs` (the
-host's listeners), `src/daemon/host_routes.rs` (the host's route table), `src/daemon/tcp.rs`
-(the listener and the credential state) with its submodules in `src/daemon/tcp/` —
+`src/listeners/handler.rs` (the one stack every listener mounts), `src/listeners/serve.rs` (the
+host's listeners), `src/listeners/host_routes.rs` (the host's route table), `src/listeners/tcp.rs`
+(the listener and the credential state) with its submodules in `src/listeners/tcp/` —
 `gate.rs` (the gate and the anonymous surface it prices), `headers.rs` (the response
 headers), and `routes.rs` (the sign-in and enrollment routes, the web client
 handler) — `src/platform/auth.rs` (the credential arithmetic), `src/platform/devices.rs` (the
@@ -52,7 +52,7 @@ is held for the operator like any write outside its perimeter.
 
 The daemon runs two trillium servers sharing one `Swansong` (one shutdown domain) and
 one `Arc<Session>`. Both mount the same stack, `handler(transport, app)` in
-`src/daemon/handler.rs` — the only place a handler is assembled, for the daemon, the
+`src/listeners/handler.rs` — the only place a handler is assembled, for the daemon, the
 TCP bind, the host, and every test. Its tuple is fixed; each layer that is not always
 present is an `Option`, which trillium runs as a pass-through when `None`, and the
 `Transport` picks which are `Some`:
@@ -81,7 +81,7 @@ The UDS exemption is therefore structural — which listener a conn arrived on �
 than inferred per-conn (a `peer_ip().is_none()` style guess would fail open if a
 transport stopped setting it).
 
-**Response headers.** The outermost layer, `SecurityHeaders` (`src/daemon/tcp/headers.rs`),
+**Response headers.** The outermost layer, `SecurityHeaders` (`src/listeners/tcp/headers.rs`),
 stamps every response each listener produces — route bodies, router errors, and the
 web client alike — so a handler that answered without them would be the hole. It
 carries the page-hardening headers ([web-client.md](web-client.md)) plus three
@@ -341,7 +341,7 @@ The `401`/`403` codes are `ErrorCode` variants in the standard error envelope
 
 ## `/files` — the operator's read surface over the working directory
 
-`src/daemon/files.rs`, mounted on a web transport only, after the routes and before
+`src/listeners/files.rs`, mounted on a web transport only, after the routes and before
 the web client's frontend handler. What it reads for a session — the canonical root,
 the watcher, and the ignore set below — is a `Files` value (`src/session/files_view.rs`),
 which the host keeps on each session's entry from its adopt and a session bind builds

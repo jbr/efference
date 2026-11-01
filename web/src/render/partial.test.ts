@@ -1,5 +1,5 @@
 // The positional honesty rule, case-for-case with the TUI's
-// `src/tui/projection/partial/test.rs`: a settled value is final, an arriving
+// `src/clients/tui/projection/partial/test.rs`: a settled value is final, an arriving
 // value renders only as content, and no prefix ever claims what the whole
 // document contradicts.
 

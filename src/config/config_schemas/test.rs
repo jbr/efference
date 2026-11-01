@@ -32,7 +32,7 @@ fn committed_schemas_match_the_generator() {
 /// so this is what keeps it in step with [`directive`].
 #[test]
 fn the_session_scaffold_opens_with_the_schema_line() {
-    assert!(crate::boot::CONFIG_SCAFFOLD.starts_with(&format!("{}\n", directive(PROJECT))));
+    assert!(crate::host::boot::CONFIG_SCAFFOLD.starts_with(&format!("{}\n", directive(PROJECT))));
 }
 
 #[test]

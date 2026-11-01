@@ -24,10 +24,10 @@ pub(crate) async fn attach_created(
     display: TuiConfig,
     owns_host: bool,
 ) -> CliResult {
-    efference::tui::run(
+    efference::clients::tui::run(
         ControlClient::at(host_socket.to_path_buf(), &format!("/sessions/{id}")),
         display,
-        efference::tui::Attached {
+        efference::clients::tui::Attached {
             owns_host,
             ..Default::default()
         },
@@ -37,13 +37,13 @@ pub(crate) async fn attach_created(
 }
 
 /// Launch the interactive TUI against the daemon control socket. All rendering
-/// lives in `efference::tui`; here we just hand it a control client and the
+/// lives in `efference::clients::tui`; here we just hand it a control client and the
 /// display settings.
 pub(crate) async fn tui(target: ClientTarget, display: TuiConfig) -> CliResult {
-    efference::tui::run(
+    efference::clients::tui::run(
         target.client(),
         display,
-        efference::tui::Attached::default(),
+        efference::clients::tui::Attached::default(),
     )
     .await?;
     Ok(())

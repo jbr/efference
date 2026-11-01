@@ -6,7 +6,7 @@
 //! stderr to a log file, so nothing it prints lands over the full-screen UI and a
 //! host that outlives its launcher never writes into a closed pipe; and stdin a
 //! pipe this process holds, which is the ownership connection
-//! ([`efference::daemon::island`]).
+//! ([`efference::host::island`]).
 //!
 //! An island leaves the terminal as it found it. The host's output stays in
 //! the log: echoed before the TUI took the screen, it was left behind on the
@@ -19,7 +19,7 @@ use super::*;
 mod browser;
 
 pub(crate) use browser::{BIND, run as run_browser};
-use efference::daemon::island::{ISLAND_LOG, ISLAND_SOCKET, island_dir};
+use efference::host::island::{ISLAND_LOG, ISLAND_SOCKET, island_dir};
 use std::io::IsTerminal;
 use std::os::unix::process::CommandExt;
 use std::process::Stdio;
@@ -177,7 +177,7 @@ pub(crate) async fn start(
         Creation::Form { theme } => {
             end_status(true);
             let client = ControlClient::new(island.socket());
-            efference::tui::session_form::run_hosted(client, theme)
+            efference::clients::tui::session_form::run_hosted(client, theme)
                 .await
                 .map_err(|error| -> CliError { error.to_string().into() })
         }

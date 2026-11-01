@@ -11,7 +11,7 @@ apart is what lets the id be short and stable while the title stays true.
 ## The id: a random word pair
 
 When `POST /sessions` carries no `name`, the host mints `adjective-noun` from two
-lists of about 150 words each (`daemon/slug.rs`): common words, unambiguous to spell, safe to say
+lists of about 150 words each (`host/slug.rs`): common words, unambiguous to spell, safe to say
 aloud, so an id can be typed from memory or read over a shoulder. The pair must be
 free in the host's live map, on disk under the session base — a dead
 session's directory still holds its name — and in the host-wide register
@@ -23,7 +23,7 @@ same single-path-segment rule and to the register: it is refused when any root h
 
 ### One id, one host
 
-The `session_ids` table of the user state database (`src/session_ids.rs`,
+The `session_ids` table of the user state database (`src/host/session_ids.rs`,
 [state-store.md](state-store.md)) holds each id and the root whose `.efference`
 holds its session, so an id names one session on the host and not one per project. A
 creation reserves its id by inserting the row before it awaits the environment hook

@@ -161,7 +161,7 @@ fn device_listing(devices: &[Device], now: i64) -> String {
                 `efference devices add <label>` enrolls a script.\n"
             .to_string();
     }
-    let ago = |at: i64| efference::tui::resume_list::age(millis(now), millis(at));
+    let ago = |at: i64| efference::clients::tui::resume_list::age(millis(now), millis(at));
     let mut rows = vec![[
         "id".to_string(),
         "kind".to_string(),
@@ -238,7 +238,7 @@ fn now_secs() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// Unix seconds as the milliseconds [`efference::tui::resume_list::age`] takes.
+/// Unix seconds as the milliseconds [`efference::clients::tui::resume_list::age`] takes.
 fn millis(secs: i64) -> u64 {
     u64::try_from(secs).unwrap_or(0).saturating_mul(1000)
 }

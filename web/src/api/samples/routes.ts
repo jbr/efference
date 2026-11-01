@@ -2,7 +2,7 @@
 // Each is typed, so `pnpm run typecheck` fails when a type stops accepting one.
 //
 // The bodies a session's routes answer with. The bytes are the ones
-// src/daemon/test/route_bytes.rs pins, with the push key from src/daemon/test/push.rs and the
+// src/host/test/route_bytes.rs pins, with the push key from src/host/test/push.rs and the
 // status words from src/protocol/answers/test.rs; a pin that changes in Rust is changed here
 // too.
 

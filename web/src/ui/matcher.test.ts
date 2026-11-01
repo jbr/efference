@@ -1,7 +1,7 @@
 // The matching rule against the fixture both implementations run
-// (`src/tui/session_form/match_cases.json`), read from that path rather than
+// (`src/clients/tui/session_form/match_cases.json`), read from that path rather than
 // copied: the fixture is the contract, and a copy would let the two drift
-// without either noticing. `src/tui/session_form/matcher/test.rs` runs the same
+// without either noticing. `src/clients/tui/session_form/matcher/test.rs` runs the same
 // cases the same way.
 
 import { expect, test } from "vitest";
@@ -10,7 +10,7 @@ import { type Node, id, rank, stripAuthor } from "./matcher.ts";
 // file is the contract both implementations run, and a copy would let them
 // drift without either noticing. Vite resolves it the way it resolves any JSON
 // import — read from disk on every run.
-import raw from "../../../src/tui/session_form/match_cases.json";
+import raw from "../../../src/clients/tui/session_form/match_cases.json";
 
 interface Case {
   why: string;

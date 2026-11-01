@@ -3,9 +3,9 @@
 //! tool call and the entry that holds it, a process's retained output, and the model
 //! catalog's list.
 //!
-//! The host serializes these through `daemon::views::answer`, a `serde_json::Value` round
+//! The host serializes these through `routes::views::answer`, a `serde_json::Value` round
 //! trip that sorts the keys of every object it holds, so a type's field order is not what
-//! reaches the bytes (`daemon/test/route_bytes.rs`).
+//! reaches the bytes (`host/test/route_bytes.rs`).
 
 use serde::{Deserialize, Serialize};
 

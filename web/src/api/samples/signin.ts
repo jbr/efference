@@ -2,7 +2,7 @@
 // Each is typed, so `pnpm run typecheck` fails when a type stops accepting one.
 //
 // The sign-in and enrollment answers. The bytes are the ones
-// src/daemon/tcp/routes/test.rs and src/protocol/sign_in/test.rs pin; a pin that changes in
+// src/listeners/tcp/routes/test.rs and src/protocol/sign_in/test.rs pin; a pin that changes in
 // Rust is changed here too.
 
 import type {
