@@ -4,8 +4,8 @@ use super::assembler::ResponseMeta;
 use super::client::record_upstream_failure;
 use super::thinking::ThinkingSupport;
 use super::*;
-use crate::log::{CallId, FRAME_CAPTURE_CAP, is_captured_header};
-use crate::project::ApiBlock;
+use crate::record::log::{CallId, FRAME_CAPTURE_CAP, is_captured_header};
+use crate::record::project::ApiBlock;
 
 /// Mirror of `Client::complete`'s read loop (docs/transport.md): an event the
 /// assembler refuses stops the feed and is recorded as the stream's failure, which

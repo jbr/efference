@@ -3,11 +3,11 @@ use super::wire::{FunctionOutput, InputContent, InputItem, InputRole};
 use super::*;
 use crate::api::provider::PromptCachePolicy;
 use crate::api::{Completion, Streamed};
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, CallId, Payload, ResponsesMessageContent, ResponsesOutputItem, ResponsesPhase,
     ResponsesReasoningSummary, ResultImage,
 };
-use crate::project::{UserPart, WireTurn};
+use crate::record::project::{UserPart, WireTurn};
 
 fn user(text: &str) -> WireTurn {
     WireTurn::text(text)

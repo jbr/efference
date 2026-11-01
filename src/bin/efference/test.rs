@@ -1,8 +1,8 @@
 use super::*;
 use efference::boot::CONFIG_SCAFFOLD;
+use efference::platform::secrets::Secrets;
 #[cfg(feature = "dev")]
-use efference::persist::Log;
-use efference::secrets::Secrets;
+use efference::record::persist::Log;
 
 /// Target resolution (docs/control-channel.md): a `--name` no host lists here is an
 /// error, not a blank UI. (Live discovery is exercised live.)
@@ -188,15 +188,19 @@ fn view_resolves_a_path_a_dir_or_a_name() {
 /// reads back exactly what `wire` would see.
 pub(crate) fn write_fixture_log(path: &Path) {
     let mut log = Log::create(path, None).unwrap();
-    log.append(0, efference::log::Payload::user("hello"))
+    log.append(0, efference::record::log::Payload::user("hello"))
         .unwrap();
     log.append(
         1,
-        efference::log::Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
-            vec![],
-            vec![efference::log::ContentBlock::Text("hi there".into())],
-            vec![],
-        )),
+        efference::record::log::Payload::assistant(
+            efference::record::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![efference::record::log::ContentBlock::Text(
+                    "hi there".into(),
+                )],
+                vec![],
+            ),
+        ),
     )
     .unwrap();
 }
@@ -249,7 +253,7 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
         let request = usage(10, 20, cache_read).with_model("claude-haiku-4-5");
         UsageLine::new(origin, at_ms, false, &request)
     };
-    use efference::log::RequestOrigin::{Keepalive, Spot, Turn};
+    use efference::record::log::RequestOrigin::{Keepalive, Spot, Turn};
     let t = 1_800_000_000_000u128;
     let lines = vec![
         line(Turn, t, 0),               // boot — explained
@@ -294,7 +298,7 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
 fn cache_report_counts_the_provider_attribution_by_reason() {
     use efference::api::{CacheMiss, CacheMissReason};
     use efference::daemon::UsageLine;
-    use efference::log::RequestOrigin::Turn;
+    use efference::record::log::RequestOrigin::Turn;
 
     let line = |at_ms, cache_read, miss: Option<(CacheMissReason, u64)>| {
         let request = usage(10, 20, cache_read);
@@ -347,7 +351,7 @@ fn cache_report_counts_the_provider_attribution_by_reason() {
 #[test]
 fn cache_report_does_not_join_streaks_across_sessions() {
     use efference::daemon::UsageLine;
-    use efference::log::RequestOrigin::Turn;
+    use efference::record::log::RequestOrigin::Turn;
     let cold = |at_ms| UsageLine::new(Turn, at_ms, false, &usage(1, 1, 0));
     let t = 1_800_000_000_000u128;
     let report = cache_report::fold_sessions(&[

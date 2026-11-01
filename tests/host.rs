@@ -73,7 +73,7 @@ auth = { kind = "env", key = "EFFERENCE_HOST_TEST_KEY" }
 
     /// `efference <args>` as a verb in this HOME, which must succeed; its stderr.
     fn verb(&self, args: &[&str]) -> String {
-        let Output { status, stderr, .. } = efference::spawn::std_output(
+        let Output { status, stderr, .. } = efference::platform::spawn::std_output(
             Command::new(env!("CARGO_BIN_EXE_efference"))
                 .args(args)
                 .current_dir(&self.root)
@@ -102,7 +102,7 @@ auth = { kind = "env", key = "EFFERENCE_HOST_TEST_KEY" }
 
     fn refused(&self, flags: &[&str]) -> String {
         let Output { status, stderr, .. } =
-            efference::spawn::std_output(&mut self.command(flags)).unwrap();
+            efference::platform::spawn::std_output(&mut self.command(flags)).unwrap();
         assert!(!status.success(), "{flags:?} started a host");
         String::from_utf8_lossy(&stderr).into_owned()
     }
@@ -125,7 +125,7 @@ fn host_serves_the_socket_it_is_given() {
     let scratch = Scratch::new("serve");
     let mut command = scratch.command(&[]);
     command.stdout(Stdio::null()).stderr(Stdio::null());
-    let mut child = efference::spawn::std(&mut command).unwrap();
+    let mut child = efference::platform::spawn::std(&mut command).unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);
     while !live(&scratch.socket()) {
         assert!(Instant::now() < deadline, "the host never bound its socket");
@@ -178,7 +178,7 @@ fn a_bind_through_secret_commands_starts_once_rotate_writes_the_root() {
 
     let mut command = scratch.command(&["--bind", "127.0.0.1:0"]);
     command.stdout(Stdio::null()).stderr(Stdio::null());
-    let mut child = efference::spawn::std(&mut command).unwrap();
+    let mut child = efference::platform::spawn::std(&mut command).unwrap();
     let deadline = Instant::now() + Duration::from_secs(20);
     while !live(&scratch.socket()) {
         assert!(Instant::now() < deadline, "the host never bound its socket");
@@ -212,7 +212,8 @@ fn a_failed_start_prints_its_error_readably() {
     let scratch = Scratch::new("readable");
     let mut command = scratch.command(&[]);
     command.env_remove("EFFERENCE_HOST_TEST_KEY");
-    let Output { status, stderr, .. } = efference::spawn::std_output(&mut command).unwrap();
+    let Output { status, stderr, .. } =
+        efference::platform::spawn::std_output(&mut command).unwrap();
     assert_eq!(status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&stderr);
     // Log lines may precede it; the error is what the output ends with.

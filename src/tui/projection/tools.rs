@@ -10,7 +10,7 @@ use super::*;
 /// server's own `__`-bearing tool name keeps it. A bare built-in name has no server
 /// half. Display only — the dotted form is not a name anything is looked up by.
 pub(in crate::tui) fn split_tool_name(wire_name: &str) -> (Option<&str>, &str) {
-    match wire_name.split_once(crate::names::tools::NAMESPACE_SEPARATOR) {
+    match wire_name.split_once(crate::record::names::tools::NAMESPACE_SEPARATOR) {
         Some((server, tool)) => (Some(server), tool),
         None => (None, wire_name),
     }
@@ -23,7 +23,7 @@ pub(in crate::tui) fn blob_lang(
     object: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<String> {
     // A bash command is shell whatever file it touches.
-    if name == crate::names::tools::BASH {
+    if name == crate::record::names::tools::BASH {
         return Some("bash".to_string());
     }
     let str_arg = |key: &str| object.get(key).and_then(|v| v.as_str());

@@ -104,7 +104,7 @@ impl Host {
             },
             _ => None,
         };
-        let now = crate::log::Timestamp::now().0;
+        let now = crate::record::log::Timestamp::now().0;
         // The notification's source is the session's id, and the pinned block reads
         // `⟢ <source>: <body>`, so the status opens without the id it would repeat.
         let body = |relation, reader: &str| {
@@ -119,7 +119,7 @@ impl Host {
             Condition::Asking { returned, .. } => returned
                 .iter()
                 .filter_map(|message| {
-                    crate::names::sources::source_session(message.source.as_deref()?)
+                    crate::record::names::sources::source_session(message.source.as_deref()?)
                 })
                 .filter(|sender| {
                     !subscribers

@@ -1,6 +1,6 @@
 use super::super::super::fixtures::*;
 use super::*;
-use crate::log::{Keep, Title, TitleAuthor, Triaged};
+use crate::record::log::{Keep, Title, TitleAuthor, Triaged};
 
 fn child() -> Reading<'static> {
     Reading {

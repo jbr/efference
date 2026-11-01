@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::*;
-use crate::log::{RequestOrigin, RequestStage, RequestStageKind};
+use crate::record::log::{RequestOrigin, RequestStage, RequestStageKind};
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 #[derive(Default)]
@@ -343,7 +343,7 @@ async fn a_truncated_primer_ends_and_an_empty_one_fails() {
         let mut client = Client::new(endpoint, "gpt-6-luna", "sys")
             .with_prompt_cache(PromptCachePolicy::Implicit);
         client.set_stage_sink(Arc::clone(&recorder) as StageSink);
-        let turns = vec![crate::project::WireTurn::text("hello")];
+        let turns = vec![crate::record::project::WireTurn::text("hello")];
         let primed = client
             .prime(&turns, &[], ToolChoice::auto())
             .await

@@ -9,8 +9,8 @@ use serde_json::{Map, Value};
 use super::MAX_TOKENS;
 use super::request_options::RequestOptions;
 use super::thinking::ToolChoice;
-use crate::log::{AssistantOutput, CompletionsMessage, MessagesOutputBlock, ResultImage};
-use crate::project::{UserPart, WireTurn};
+use crate::record::log::{AssistantOutput, CompletionsMessage, MessagesOutputBlock, ResultImage};
+use crate::record::project::{UserPart, WireTurn};
 use crate::user_config::OutputCapField;
 
 pub(crate) mod assembler;

@@ -3,8 +3,8 @@
 //! standing title answers it.
 
 use super::*;
-use crate::log::{Provider, Title, TitleAuthor};
 use crate::protocol::state::SessionIdentity;
+use crate::record::log::{Provider, Title, TitleAuthor};
 use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile};
 
 fn session() -> Arc<Session> {

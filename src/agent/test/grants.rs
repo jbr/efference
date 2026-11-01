@@ -10,7 +10,7 @@ use crate::config::testing::ConfigFixture;
 /// file by hand.
 #[test]
 pub(super) fn a_committed_grant_is_written_to_the_config_file() {
-    use crate::log::ConfigChange;
+    use crate::record::log::ConfigChange;
     let path =
         std::env::temp_dir().join(format!("efference-writeback-{}.toml", std::process::id()));
     std::fs::write(&path, "# my perimeter\nscope = \"stay in src/\"\n").unwrap();
@@ -55,7 +55,7 @@ pub(super) fn a_committed_grant_is_written_to_the_config_file() {
 /// call (the amended rule clears it on re-classify).
 #[test]
 pub(super) fn legislate_grants_then_approves_a_covered_call() {
-    use crate::log::ConfigChange;
+    use crate::record::log::ConfigChange;
     let (shared, _rx) = Session::in_memory();
     let call = bash_call("npm install");
     assert_eq!(
@@ -93,7 +93,7 @@ pub(super) fn legislate_grants_then_approves_a_covered_call() {
 /// but the call does **not** ride along — it's re-checked and stays gated (a redirect).
 #[test]
 pub(super) fn legislate_does_not_let_an_uncovered_call_ride_along() {
-    use crate::log::ConfigChange;
+    use crate::record::log::ConfigChange;
     let (shared, _rx) = Session::in_memory();
     let call = bash_call("npm install");
 

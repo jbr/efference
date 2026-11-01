@@ -2,7 +2,7 @@
 //! cascade and the tool run in call order, and the outcomes are held for the gate.
 
 use super::*;
-use crate::log::Telemetry;
+use crate::record::log::Telemetry;
 
 /// A redirect's message, to land as the next user turn under its decider's `source`
 /// (docs/permissions.md).
@@ -53,7 +53,7 @@ pub(super) async fn run_batch<'a, F: Frontend, S: Spotter>(
         let input = primer.as_ref()?;
         // Stamped before the send: a fold that lands during the flight moves the prefix
         // the primer read, and the triage keepalive must not replay it (docs/transport.md).
-        let sent = crate::log::Timestamp::now();
+        let sent = crate::record::log::Timestamp::now();
         let outcome = input.triager.prime(input.turns).await?;
         // A primer that planted (it has usage) is what the triage keepalive re-sends.
         if let Some(usage) = &outcome.usage {
@@ -103,7 +103,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
     let mut steps: Vec<Step> = Vec::new();
     // Every result captured so far, so a call that fails leaves none of them waiting
     // for a verdict that will never come (`undecided` below).
-    let mut captured: Vec<crate::log::Seq> = Vec::new();
+    let mut captured: Vec<crate::record::log::Seq> = Vec::new();
     for (index, call) in calls.iter().enumerate() {
         // Once we've decided to stop running calls (abort or redirect),
         // every remaining `tool_use` still needs a paired result or the
@@ -228,7 +228,7 @@ fn capture(
     call: &ToolCall,
     result: RawResult,
     reply: Option<Box<Reply>>,
-) -> Result<(crate::log::Seq, RawResult), Error> {
+) -> Result<(crate::record::log::Seq, RawResult), Error> {
     let payload = Payload::tool_result(call.id.clone(), result, WireState::Pending);
     // An `ask`'s result is a submitted turn's words, so its entry names the
     // submission and the submitter like a `User` entry does
@@ -262,7 +262,11 @@ fn capture(
 /// keeps the bytes either way, which is the whole of what capture changed about them.
 /// `Elided` says the output is not on the wire, and nothing about triage or the tool
 /// failed.
-fn undecided(shared: &Session, turn: Turn, captured: &[crate::log::Seq]) -> std::io::Result<()> {
+fn undecided(
+    shared: &Session,
+    turn: Turn,
+    captured: &[crate::record::log::Seq],
+) -> std::io::Result<()> {
     for seq in captured {
         shared.append(turn, Payload::result_verdict(*seq, WireState::Elided))?;
     }

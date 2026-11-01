@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 
 use super::*;
-use crate::secrets::Secrets;
+use crate::platform::secrets::Secrets;
 
 /// One scripted answer. The script is consumed in order; a prompt with no
 /// answer left panics naming the question, which is the test's failure.
@@ -160,7 +160,7 @@ impl Probe for Table {
         self.logged_in.borrow_mut().push(connection.to_string());
         if let Some(secrets) = &self.secrets {
             secrets
-                .set(&crate::secrets::oauth_name(connection), "{}")
+                .set(&crate::platform::secrets::oauth_name(connection), "{}")
                 .map_err(|error| error.to_string())?;
         }
         Ok(login)

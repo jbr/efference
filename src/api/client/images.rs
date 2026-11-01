@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::atomic::Ordering;
 
 use super::*;
-use crate::project::UserPart;
+use crate::record::project::UserPart;
 use tokio::sync::futures::Notified;
 
 /// What stands in for the image blocks of one result once the client withholds

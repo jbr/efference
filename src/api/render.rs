@@ -63,7 +63,7 @@ fn offline_request<'a>(
 /// dev `wire --format yaml` view): a lossy, read-only rendering that unfolds
 /// escaped/multi-line strings — tool-schema descriptions, the system prompt,
 /// tool-result bodies — into indented blocks instead of `\n`-littered one-liners
-/// (see [`crate::pretty`]). Top-level keys are emitted in a hand-picked, readable
+/// (see [`crate::platform::pretty`]). Top-level keys are emitted in a hand-picked, readable
 /// order (scalars and `system` before the long `tools`/`messages` blocks) rather
 /// than the map's sorted order; nested objects follow the sorted default.
 pub fn render_request_yaml(
@@ -89,14 +89,14 @@ pub fn render_request_yaml(
     let mut lines = Vec::new();
     for key in order {
         if let Some(v) = obj.get(key) {
-            lines.extend(crate::pretty::keyed(key, v));
+            lines.extend(crate::platform::pretty::keyed(key, v));
         }
     }
-    crate::pretty::join(&lines)
+    crate::platform::pretty::join(&lines)
 }
 
 /// Render just the projected `messages` array — the `wire --messages` view: what
-/// [`crate::project::project`] produced (with the trailing cache breakpoint
+/// [`crate::record::project::project`] produced (with the trailing cache breakpoint
 /// placed), skipping the `system`/`tools[]` envelope entirely. Unlike
 /// [`render_request_pretty`], this needs no model id, system prompt, or tool
 /// list, so it works even when a session's config won't parse (nothing here
@@ -109,7 +109,7 @@ pub fn render_responses_request_pretty(
     system: &str,
     tools: &[Value],
     tool_choice: ToolChoice,
-    turns: &[crate::project::WireTurn],
+    turns: &[crate::record::project::WireTurn],
     cache: PromptCachePolicy,
 ) -> Result<String, Error> {
     let request = responses::ResponsesRequest {
@@ -137,12 +137,12 @@ pub fn render_messages_pretty(messages: &[ApiMessage]) -> Result<String, Error> 
     Ok(serde_json::to_string_pretty(messages)?)
 }
 
-/// Pseudo-YAML counterpart to [`render_messages_pretty`] (see [`crate::pretty`]
+/// Pseudo-YAML counterpart to [`render_messages_pretty`] (see [`crate::platform::pretty`]
 /// for the rendering trade-offs): the projected `messages` array, unfolded for
 /// readability, with no `system`/`tools[]` envelope.
 pub fn render_messages_yaml(messages: &[ApiMessage]) -> Result<String, Error> {
     let value = serde_json::to_value(messages)?;
-    Ok(crate::pretty::to_pseudo_yaml(&value))
+    Ok(crate::platform::pretty::to_pseudo_yaml(&value))
 }
 
 /// The request envelope as a [`Value`] — the shared source for both dev renderers

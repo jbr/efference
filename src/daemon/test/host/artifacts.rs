@@ -3,7 +3,7 @@
 //! resolving when their session leaves the host.
 
 use super::*;
-use crate::log::{AssistantOutput, ContentBlock};
+use crate::record::log::{AssistantOutput, ContentBlock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn assistant(text: Vec<&str>) -> Payload {

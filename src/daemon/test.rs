@@ -1,7 +1,7 @@
 use super::http::DecisionBody;
 use super::*;
 use crate::client::Client as ControlClient;
-use crate::log::ContentBlock;
+use crate::record::log::ContentBlock;
 use futures_lite::StreamExt;
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -30,7 +30,7 @@ fn baseline_env() -> crate::env_table::EnvSnapshot {
 /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.
 fn bash_call(command: &str) -> ToolCall {
     ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         "toolu_x",
         serde_json::json!({ "command": command }),
     )
@@ -47,20 +47,26 @@ fn file_role(path: &std::path::Path) -> LoadedConfig {
 }
 
 fn allow_grant(program: &str) -> Payload {
-    committed_edit(crate::log::ConfigChange::Command {
+    committed_edit(crate::record::log::ConfigChange::Command {
         command: program.into(),
     })
 }
 
 /// A committed config edit (the synchronous/direct commit path) as a `Payload` — no prior
 /// proposal to resolve.
-fn committed_edit(change: crate::log::ConfigChange) -> Payload {
-    Payload::ConfigEdit(crate::log::ConfigEdit::new(EditState::Committed, change))
+fn committed_edit(change: crate::record::log::ConfigChange) -> Payload {
+    Payload::ConfigEdit(crate::record::log::ConfigEdit::new(
+        EditState::Committed,
+        change,
+    ))
 }
 
 /// A `Proposed` edit as a `Payload`, for driving the lifecycle in tests.
-fn proposed_edit(change: crate::log::ConfigChange) -> Payload {
-    Payload::ConfigEdit(crate::log::ConfigEdit::new(EditState::Proposed, change))
+fn proposed_edit(change: crate::record::log::ConfigChange) -> Payload {
+    Payload::ConfigEdit(crate::record::log::ConfigEdit::new(
+        EditState::Proposed,
+        change,
+    ))
 }
 
 /// A [`ControlClient`] speaking to the real [`router`] over an in-memory transport.

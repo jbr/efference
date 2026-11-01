@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::api::Error;
-use crate::session_dir::LOG_NAME;
+use crate::record::session_dir::LOG_NAME;
 
 #[cfg(test)]
 tokio::task_local! {
@@ -101,7 +101,7 @@ pub fn mint_session_dir(session_dir: &Path) -> Result<(), Error> {
     }
     use std::os::unix::fs::DirBuilderExt;
     match std::fs::DirBuilder::new()
-        .mode(crate::session_dir::DIR_MODE)
+        .mode(crate::record::session_dir::DIR_MODE)
         .create(session_dir)
     {
         Ok(()) => Ok(()),

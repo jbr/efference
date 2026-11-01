@@ -8,7 +8,7 @@
 //! say anyway, without being a timing test.
 
 use super::*;
-use crate::log::Triaged;
+use crate::record::log::Triaged;
 
 /// A session of `turns` tool exchanges, stream-followed to the bottom the way a
 /// live session sits.
@@ -18,7 +18,7 @@ fn session(turns: usize) -> Screenplay<'static> {
         play.user(&format!("step {i}"));
         play.tool_exchange(
             &format!("call-{i}"),
-            crate::names::tools::BASH,
+            crate::record::names::tools::BASH,
             &format!("cargo test --test t{i}"),
             // Several lines, so a re-render of one result is visible in the frame.
             &(1..=12)
@@ -187,7 +187,7 @@ fn a_re_rendered_result_drops_its_cached_layout() {
     play.assistant(
         "on it",
         vec![ToolCall::new(
-            crate::names::tools::BASH,
+            crate::record::names::tools::BASH,
             "call-1",
             serde_json::json!({ "command": "cargo tree" }),
         )],

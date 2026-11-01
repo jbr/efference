@@ -7,9 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::devices::{Device, DeviceId};
+use crate::platform::devices::{Device, DeviceId};
+use crate::platform::sign_ins::Pending;
 use crate::protocol::answers::StatusBody;
-use crate::sign_ins::Pending;
 
 /// What `POST /pair` answers the page that asked: the claim secret this page alone polls
 /// with, the short code it shows for the operator to approve at the host, and the seconds

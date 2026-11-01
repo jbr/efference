@@ -68,13 +68,13 @@ fn descent_probes_nothing_when_every_prefix_is_covered() {
 /// model verdicts only) so a resumed daemon picks up exactly where it left off.
 #[test]
 fn probe_ledger_folds_seen_and_votes_from_the_log() {
-    use crate::log::{CallId, Spot, Stance};
+    use crate::record::log::{CallId, Spot, Stance};
 
     // Two `cargo test` invocations, the second carrying a `clear_always` probe vote for `cargo`.
     fn assistant(id: &str, command: &str) -> LogEntry {
         LogEntry::new(
             0,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![ToolCall::new(
@@ -146,7 +146,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
 /// A fail-closed (`Fallback`) spotter verdict casts no vote — it didn't actually judge.
 #[test]
 fn probe_ledger_ignores_fallback_verdicts() {
-    use crate::log::{CallId, Origin, Spot, Stance};
+    use crate::record::log::{CallId, Origin, Spot, Stance};
     let log = [LogEntry::new(
         0,
         Payload::Spot(

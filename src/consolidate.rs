@@ -7,8 +7,8 @@
 //! `Summary`, not a [`RawResult`] to triage, so the loop handles it structurally
 //! (`agent.rs`) rather than through the world-facing [`Toolbox`].
 //!
-//! [`Summary`]: crate::log::Summary
-//! [`RawResult`]: crate::log::RawResult
+//! [`Summary`]: crate::record::log::Summary
+//! [`RawResult`]: crate::record::log::RawResult
 //! [`Toolbox`]: crate::tools::Toolbox
 
 use std::collections::HashMap;
@@ -17,8 +17,8 @@ use std::sync::LazyLock;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::log::{CallId, LogEntry, Payload, Seq};
-use crate::names::tools::CONSOLIDATE;
+use crate::record::log::{CallId, LogEntry, Payload, Seq};
+use crate::record::names::tools::CONSOLIDATE;
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 

@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::control_tools::{McpStatus, Wait};
-use crate::log::CallId;
+use crate::record::log::CallId;
 use futures_lite::StreamExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use trillium_client::WebSocketConn;

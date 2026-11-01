@@ -1,7 +1,7 @@
 use super::scaffold::self_surface_grants;
 use super::*;
 use crate::config::testing::ConfigFixture;
-use crate::session_dir::{LOG_NAME, SESSION_BASE};
+use crate::record::session_dir::{LOG_NAME, SESSION_BASE};
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 use crate::worktree::testing::{commit, git};
 use std::path::Path;
@@ -120,7 +120,7 @@ pub(crate) fn codex_registry(root: &Path, id: &str) -> crate::inference::Inferen
         .to_string(),
     )
     .unwrap();
-    crate::api::seed_codex_catalog(crate::log::Provider::OpenAICodex, &account);
+    crate::api::seed_codex_catalog(crate::record::log::Provider::OpenAICodex, &account);
     let config = crate::user_config::InferenceConfig::from_toml(
         r#"
 [connections.oai]
@@ -142,7 +142,7 @@ auth = { kind = "codex-cache" }
         config,
         Path::new("/host"),
         &host_env,
-        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        &std::sync::Arc::new(crate::platform::secrets::Secrets::in_memory()),
     )
     .unwrap()
 }
@@ -190,7 +190,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
         config,
         Path::new("/host"),
         &host_env,
-        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        &std::sync::Arc::new(crate::platform::secrets::Secrets::in_memory()),
     )
     .unwrap()
     .resolve(Some("edge/m"), None, None)
@@ -345,7 +345,7 @@ async fn a_late_failure_removes_the_worktree_it_made() {
     req.create.worktree = true;
 
     failure(prepare(req).await, "unreadable [context] must fail");
-    assert!(!crate::session_dir::worktree::path(root.path(), "late-fox").exists());
+    assert!(!crate::record::session_dir::worktree::path(root.path(), "late-fox").exists());
     assert!(!root.session_dir("late-fox").exists());
     let branches = git(root.path(), &["branch", "--list", "efference/late-fox"]);
     assert!(branches.is_empty(), "the branch is deleted");
@@ -403,14 +403,14 @@ async fn concurrent_creations_of_one_name_yield_one_session() {
         "the loser is refused at the mint: {loser}"
     );
     assert!(dir.join(LOG_NAME).is_file(), "the winner's log survives");
-    let recording = crate::persist::load_recording(dir.join(LOG_NAME)).unwrap();
+    let recording = crate::record::persist::load_recording(dir.join(LOG_NAME)).unwrap();
     let metadata = recording.header.metadata().expect("boot records metadata");
     assert_eq!(metadata.id, "contested");
     assert_eq!(metadata.cwd, root.path());
     assert_eq!(metadata.main.model, winner.model);
     assert_eq!(
         metadata.main,
-        *crate::log::recorded_inference(&recording.entries).unwrap()
+        *crate::record::log::recorded_inference(&recording.entries).unwrap()
     );
     assert_eq!(
         recording.entries[0].seq, 0,
@@ -446,7 +446,7 @@ fn the_attachment_store_is_readable_through_the_self_surface_deny() {
         crate::policy::classify(
             &crate::policy::Directories::at(&cwd),
             &role,
-            &crate::log::ToolCall::new(tool, "c", input),
+            &crate::record::log::ToolCall::new(tool, "c", input),
         )
     };
     let attached = session_dir.join("attachments/composer/shot.png");

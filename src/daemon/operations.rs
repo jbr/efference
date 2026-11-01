@@ -24,7 +24,7 @@
 //! recomputed on each one. A `Resumed` entry closes everything open before it: those
 //! requests and calls belonged to the previous host process, which is gone.
 
-use crate::log::Telemetry;
+use crate::record::log::Telemetry;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
@@ -32,15 +32,15 @@ use serde_json::Value;
 
 use super::Session;
 use crate::api::{StageRecorder, StageSink};
-use crate::log::{
-    CallId, LogEntry, MadeBy, Payload, RequestOrigin, RequestStage, RequestStageKind, Seq, Summary,
-    Timestamp,
-};
-use crate::persist::Log;
 use crate::protocol::state::{
     CurrentOperations, OpenCompaction, OpenRequest, OpenStage, RunningTool,
 };
 use crate::protocol::status::Activity;
+use crate::record::log::{
+    CallId, LogEntry, MadeBy, Payload, RequestOrigin, RequestStage, RequestStageKind, Seq, Summary,
+    Timestamp,
+};
+use crate::record::persist::Log;
 
 /// What the assistant entry said about one issued call.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -115,7 +115,7 @@ impl Operations {
                     .into_iter()
                     .map(|call| {
                         let intent = call.intent().map(str::to_string);
-                        let command = (call.name == crate::names::tools::BASH)
+                        let command = (call.name == crate::record::names::tools::BASH)
                             .then(|| call.input.get("command").and_then(Value::as_str))
                             .flatten()
                             .map(str::to_string);
@@ -265,7 +265,7 @@ impl Operations {
     /// already reports the retry with its budget.
     pub(crate) fn activity(&self, retrying: bool) -> Vec<Activity> {
         let tools = self.tools.iter().map(|tool| Activity::Tool {
-            tool: crate::names::tools::display_name(&tool.tool),
+            tool: crate::record::names::tools::display_name(&tool.tool),
             command: tool.command.clone(),
             since: tool.since,
         });

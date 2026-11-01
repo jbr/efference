@@ -6,7 +6,7 @@
 //! (the whole body rides in the cached preamble, the CLAUDE.md role) or **listed** (only a one-line
 //! stub rides, the body fetched on demand via the `read` tool). Mode is the *file's* call, carried
 //! in its frontmatter; the config never decides it (docs/context.md). The shapes it produces,
-//! [`Resolved`], [`Section`] and [`Item`], are defined in [`crate::log::context`], because a
+//! [`Resolved`], [`Section`] and [`Item`], are defined in [`crate::record::log::context`], because a
 //! boot preamble records them; the rendering and the resolution are here.
 //!
 //! Frontmatter is recognized **only at the very start of the file** (first line `---`), so a `---`
@@ -20,7 +20,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::{ContextEntry, ContextSource};
-use crate::log::context::{Item, Resolved, Section};
+use crate::record::log::context::{Item, Resolved, Section};
 
 /// The instructional lead-in before the tagged block — teaches the model that a tag holding a file's
 /// full text is present as-is, while a tag holding a short summary ending in "Read PATH" is a pointer
@@ -384,7 +384,7 @@ const EXEC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 ///
 /// The child leads its own process group and is reaped on a thread (`wait_with_output` drains the
 /// pipes, so a chatty command can't deadlock on a full pipe buffer); on timeout the whole group is
-/// killed ([`crate::spawn::kill_group`]), so a hung command's children die with it.
+/// killed ([`crate::platform::spawn::kill_group`]), so a hung command's children die with it.
 fn run_exec(
     command: &str,
     base: &Path,
@@ -407,8 +407,8 @@ fn run_exec(
     // The `[env]` table's spawn policy applies here as at every other spawn
     // (docs/env.md).
     child_env.apply(&mut cmd);
-    let child =
-        crate::spawn::std(&mut cmd).map_err(|e| err(format!("failed to spawn bash: {e}")))?;
+    let child = crate::platform::spawn::std(&mut cmd)
+        .map_err(|e| err(format!("failed to spawn bash: {e}")))?;
     let pgid = child.id();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -417,7 +417,7 @@ fn run_exec(
     let output = match rx.recv_timeout(timeout) {
         Ok(result) => result.map_err(|e| err(format!("waiting on the command: {e}")))?,
         Err(_) => {
-            crate::spawn::kill_group(pgid);
+            crate::platform::spawn::kill_group(pgid);
             return Err(err(format!("timed out after {}s", timeout.as_secs_f32())));
         }
     };

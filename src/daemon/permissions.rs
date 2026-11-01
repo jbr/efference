@@ -16,10 +16,10 @@
 
 use std::path::Path;
 
-use crate::session_dir::{DIR_MODE, FILE_MODE};
+use crate::record::session_dir::{DIR_MODE, FILE_MODE};
 
 /// The files beside the control socket that hold user state or secrets.
-/// `state.db` is the current store (the name of `crate::state::RELATIVE_PATH`)
+/// `state.db` is the current store (the name of `crate::platform::state::RELATIVE_PATH`)
 /// and `config.toml` the user configuration; the rest were written by earlier
 /// releases and no longer are, named so a machine still carrying one is
 /// tightened too.

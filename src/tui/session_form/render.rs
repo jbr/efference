@@ -323,7 +323,10 @@ impl Form {
         let (effort, effort_source) = self.effective(|e| &e.effort, Clone::clone);
         let (temperature, temperature_source) = self.effective(|e| &e.temperature, u8::to_string);
         (
-            format!("new session in {}", crate::home::tilde(&self.context.cwd)),
+            format!(
+                "new session in {}",
+                crate::platform::home::tilde(&self.context.cwd)
+            ),
             vec![
                 Row::plain(match self.creating {
                     true => "creating…",

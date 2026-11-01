@@ -6,8 +6,8 @@
 //! second, which keeps rendering a pure function of state. The wording matches the
 //! web client's turn state (docs/web-client.md).
 
-use crate::log::RequestOrigin;
 use crate::protocol::state::{CurrentOperations, OpenRequest, OpenStage};
+use crate::record::log::RequestOrigin;
 
 /// "45s", "2m 10s", "1h 05m".
 fn elapsed(ms: u64) -> String {

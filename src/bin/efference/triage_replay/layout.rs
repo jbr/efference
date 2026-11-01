@@ -2,8 +2,8 @@
 //! report, and the per-triage line a live replay prints before its draws.
 
 use super::Recorded;
-use efference::log::LogEntry;
-use efference::project::Reader;
+use efference::record::log::LogEntry;
+use efference::record::project::Reader;
 use efference::triage::{
     Pending, TRIAGED_TAIL_HIGH_WATER, TRIAGED_TAIL_LOW_WATER, text_view_layout,
 };

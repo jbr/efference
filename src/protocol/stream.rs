@@ -12,7 +12,7 @@ use serde::Serialize;
 /// `output` class (docs/control-api.md). **Ephemeral and transport-only**:
 /// never appended to the log, never projected, and droppable for a slow consumer.
 /// The authoritative text always lands as a committed
-/// [`LogEntry`](crate::log::LogEntry) on `/events`, so the stream is a live convenience
+/// [`LogEntry`](crate::record::log::LogEntry) on `/events`, so the stream is a live convenience
 /// with the durable log as its backstop — which is exactly why it can ride a lossy
 /// `broadcast` where `/events` must tail the log.
 /// Every model-stream variant carries the content-block `index` it belongs to, and

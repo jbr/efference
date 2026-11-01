@@ -3,7 +3,9 @@
 //! untouched entries alone.
 
 use super::*;
-use crate::log::{ContentBlock, LogEntry, Payload, RawResult, ToolCall, Triaged, WireState};
+use crate::record::log::{
+    ContentBlock, LogEntry, Payload, RawResult, ToolCall, Triaged, WireState,
+};
 use crate::tui::document::Document;
 use crate::tui::projection::project;
 use crate::tui::state::DocumentState;
@@ -19,11 +21,11 @@ fn user(seq: u64, text: &str) -> LogEntry {
 fn assistant_call(seq: u64, text: &str, call_id: &str, command: &str) -> LogEntry {
     entry(
         seq,
-        Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+        Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
             vec![],
             vec![ContentBlock::Text(text.into())],
             vec![ToolCall::new(
-                crate::names::tools::BASH,
+                crate::record::names::tools::BASH,
                 call_id,
                 serde_json::json!({ "command": command }),
             )],
@@ -99,7 +101,7 @@ fn an_artifact_url_reprojects_only_its_committed_assistant_entry() {
         user(6, "before"),
         entry(
             7,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![ContentBlock::Text(
                     "Chart:\n\n```html-artifact\n<svg>chart</svg>\n```".into(),
@@ -241,7 +243,9 @@ fn a_raw_toggle_rebuilds_only_its_own_exchange() {
             Payload::tool_result(
                 "call-1",
                 RawResult::text("a\nb\nc"),
-                WireState::from(Triaged::new(crate::log::Keep::None).with_note("three files")),
+                WireState::from(
+                    Triaged::new(crate::record::log::Keep::None).with_note("three files"),
+                ),
             ),
         ),
         user(2, "ok"),
@@ -325,7 +329,7 @@ fn a_shrinking_log_rebuilds_from_scratch() {
 fn the_ask_topic_moving_rebuilds_the_marks() {
     let asks = entry(
         0,
-        Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+        Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
             vec![],
             vec![],
             vec![

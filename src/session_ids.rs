@@ -15,13 +15,13 @@
 //! row and is reported as a [`Collision`] rather than failing anything.
 //!
 //! Every operation opens its own connection like the other tables
-//! ([`crate::state`]) and is best-effort: a store that cannot be opened reserves
+//! ([`crate::platform::state`]) and is best-effort: a store that cannot be opened reserves
 //! nothing and refuses nothing, leaving the live-map and on-disk checks to stand
 //! alone, as they did before the table existed.
 
 use std::path::{Path, PathBuf};
 
-/// This table's half of the user state database ([`crate::state`]).
+/// This table's half of the user state database ([`crate::platform::state`]).
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS session_ids (
         id TEXT PRIMARY KEY,
         root TEXT NOT NULL
@@ -59,7 +59,7 @@ impl SessionIds {
     }
 
     fn connect(&self) -> Option<rusqlite::Connection> {
-        crate::state::open(self.path.as_ref()?, SCHEMA).ok()
+        crate::platform::state::open(self.path.as_ref()?, SCHEMA).ok()
     }
 
     /// Reserve `id` for `root`: inserted when free, refused with the holder
@@ -115,15 +115,20 @@ impl SessionIds {
         };
         let mut collisions = Vec::new();
         for root in roots {
-            let base = root.join(crate::session_dir::SESSION_BASE);
+            let base = root.join(crate::record::session_dir::SESSION_BASE);
             let Ok(entries) = std::fs::read_dir(&base) else {
                 continue;
             };
             let mut ids: Vec<String> = entries
                 .flatten()
-                .filter(|entry| entry.path().join(crate::session_dir::LOG_NAME).is_file())
+                .filter(|entry| {
+                    entry
+                        .path()
+                        .join(crate::record::session_dir::LOG_NAME)
+                        .is_file()
+                })
                 .filter_map(|entry| entry.file_name().into_string().ok())
-                .filter(|id| crate::session_dir::plain_id(id))
+                .filter(|id| crate::record::session_dir::plain_id(id))
                 .collect();
             ids.sort();
             for id in ids {

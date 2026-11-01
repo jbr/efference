@@ -1,26 +1,29 @@
-//! Reading the paths a source file writes to the modules of the crate root
-//! (docs/README.md, *Dependency direction*): text in, one [`Reference`] per path out.
+//! Reading the paths a source file writes to modules of the crate (docs/README.md,
+//! *Dependency direction*): text in, one [`Reference`] per path out, each below the crate
+//! root.
 
-/// A path in a file that names a module of the crate root.
+/// A path in a file that names a module of the crate.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Reference {
     /// The file, relative to `src/`.
     pub(super) file: String,
     pub(super) line: usize,
-    /// The path below the crate root: `daemon::Host`.
+    /// The path below the crate root: `daemon::Host`, `record::log::Payload`.
     pub(super) path: String,
 }
 
 impl Reference {
-    /// The top-level module the file is in.
-    pub(super) fn importer(&self) -> &str {
-        let first = self.file.split('/').next().unwrap_or_default();
-        first.strip_suffix(".rs").unwrap_or(first)
+    /// The module the file is, as a path from the crate root: `record/log/summary.rs` is
+    /// `record::log::summary`, so a group (`record`) and a module in one (`record::log`)
+    /// both contain it by prefix.
+    pub(super) fn importer(&self) -> String {
+        module_path(&self.file).join("::")
     }
 
-    /// The top-level module the path names.
+    /// The path the reference names. A group, a module in one or an item below it all
+    /// contain it by prefix.
     pub(super) fn imported(&self) -> &str {
-        self.path.split("::").next().unwrap_or_default()
+        &self.path
     }
 }
 
@@ -36,10 +39,12 @@ fn module_path(file: &str) -> Vec<&str> {
 
 type Token = (String, usize);
 
-/// The paths below the crate root that `text` names, each with the line it starts on.
+/// The paths below the crate root that `text` names, each with the line it starts on. A
+/// `super::` chain that leaves the file's module is resolved from the file's module path, so
+/// it names the same path a `crate::` spelling would.
 pub(super) fn references(file: &str, text: &str) -> Vec<Reference> {
     let tokens = tokens(&clean(text));
-    let depth = module_path(file).len();
+    let module = module_path(file);
     let is = |index: usize, text: &str| tokens.get(index).is_some_and(|(token, _)| token == text);
     let after_path_separator = |index: usize| index > 0 && is(index - 1, "::");
     let mut named: Vec<(Vec<String>, usize)> = Vec::new();
@@ -64,10 +69,13 @@ pub(super) fn references(file: &str, text: &str) -> Vec<Reference> {
                 while is(index + 2 * hops, "super") && is(index + 2 * hops + 1, "::") {
                     hops += 1;
                 }
-                // Each inline module deepens the path `super` climbs from.
+                // Each inline module deepens the path `super` climbs from; a chain that
+                // stays inside the file's module names nothing outside it.
                 let inline = braces.iter().filter(|opens_mod| **opens_mod).count();
-                if hops > 0 && hops == depth + inline {
-                    tree(&tokens, index + 2 * hops, Vec::new(), &mut paths);
+                if hops > inline && hops - inline <= module.len() {
+                    let kept = module.len() - (hops - inline);
+                    let prefix = module[..kept].iter().map(ToString::to_string).collect();
+                    tree(&tokens, index + 2 * hops, prefix, &mut paths);
                 }
             }
             _ => {}
@@ -354,7 +362,8 @@ fn the_scan_reads_each_spelling() {
         ),
         ["daemon::Host", "daemon::Session", "log::Payload", "tui"]
     );
-    // `super` from a file at the root's depth, and from a deeper one.
+    // `super` from a file at the root's depth, and from a deeper one: a chain that stops
+    // below the root names a path below the module it reaches.
     assert_eq!(
         paths("agent.rs", "use super::daemon::Host;"),
         ["daemon::Host"]
@@ -367,15 +376,34 @@ fn the_scan_reads_each_spelling() {
         paths("agent/step.rs", "use super::super::daemon::Host;"),
         ["daemon::Host"]
     );
-    assert_eq!(paths("agent/step.rs", "use super::daemon::Host;"), none);
+    assert_eq!(
+        paths("agent/step.rs", "use super::daemon::Host;"),
+        ["agent::daemon::Host"]
+    );
+    assert_eq!(
+        paths("record/log.rs", "use super::persist::Log;"),
+        ["record::persist::Log"]
+    );
+    assert_eq!(
+        paths("record/log.rs", "use super::super::daemon::Host;"),
+        ["daemon::Host"]
+    );
+    assert_eq!(
+        paths("record/log/summary.rs", "use super::super::persist::Log;"),
+        ["record::persist::Log"]
+    );
     assert_eq!(paths("agent.rs", "use super::*;"), none);
     assert_eq!(
         paths("agent.rs", "pub(super) fn f() {} pub(crate) fn g() {}"),
         none
     );
-    // An inline module's `super` is the file's module, not the root.
+    // An inline module's `super` is the file's module, which names nothing outside it.
     assert_eq!(
         paths("agent.rs", "mod inner { use super::daemon::Host; }"),
+        none
+    );
+    assert_eq!(
+        paths("record/log.rs", "mod inner { use super::persist::Log; }"),
         none
     );
     assert_eq!(
@@ -384,6 +412,13 @@ fn the_scan_reads_each_spelling() {
             "mod inner { fn f() { super::super::daemon::Host } }"
         ),
         ["daemon::Host"]
+    );
+    assert_eq!(
+        paths(
+            "record/log.rs",
+            "mod inner { use super::super::persist::Log; }"
+        ),
+        ["record::persist::Log"]
     );
     // A brace inside a literal does not open or close anything.
     assert_eq!(
@@ -444,4 +479,23 @@ fn the_scan_reads_each_spelling() {
         .line,
         4
     );
+}
+
+/// A file's key is its module path from the crate root, so a row names a group or a module
+/// in one by prefix.
+#[test]
+fn a_file_is_keyed_by_its_module_path() {
+    let importer = |file: &str| {
+        Reference {
+            file: file.to_string(),
+            line: 1,
+            path: String::new(),
+        }
+        .importer()
+    };
+    assert_eq!(importer("agent.rs"), "agent");
+    assert_eq!(importer("tui/mod.rs"), "tui");
+    assert_eq!(importer("agent/step.rs"), "agent::step");
+    assert_eq!(importer("record/log.rs"), "record::log");
+    assert_eq!(importer("record/log/summary.rs"), "record::log::summary");
 }

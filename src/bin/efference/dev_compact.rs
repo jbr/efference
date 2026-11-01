@@ -9,15 +9,15 @@
 use super::*;
 
 use efference::api::{Client, UNKNOWN_OUTPUT_CAP};
-use efference::log::Payload;
+use efference::record::log::Payload;
 
 pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -> CliResult {
     let (path, label) = resolve_session_log(target)?;
-    let mut entries = efference::persist::load(&path)?;
+    let mut entries = efference::record::persist::load(&path)?;
     if let Some(upto) = upto {
         entries.retain(|e| e.seq <= upto);
     }
-    let identity = efference::log::recorded_inference(&entries)
+    let identity = efference::record::log::recorded_inference(&entries)
         .ok_or("log has no recorded boot identity; no session model to compact with")?;
     let model = identity.model.clone();
     let selection = format!("{}/{}", identity.connection, identity.model);

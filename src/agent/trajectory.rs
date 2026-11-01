@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use super::*;
 use crate::api::Completion;
-use crate::recovery;
+use crate::record::recovery;
 
 /// What waiting for work came to.
 pub(super) enum Idle {

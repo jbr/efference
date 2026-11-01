@@ -4,8 +4,8 @@
 //! has said yes.
 
 use super::*;
-use crate::log::Telemetry;
-use crate::names::tools::BASH;
+use crate::record::log::Telemetry;
+use crate::record::names::tools::BASH;
 
 /// Run `call` and capture what it produced as a [`Decision`]. `config_write` marks the
 /// call that writes the session's own config file, whose effect is decided after it

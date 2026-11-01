@@ -9,7 +9,7 @@
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
-use crate::log::{RawResult, ResultImage};
+use crate::record::log::{RawResult, ResultImage};
 use crate::vision::{
     self, Crop, DEFAULT_LONG_EDGE, HIGH_RES_MAX_EDGE, HIGH_RES_MAX_TOKENS, resized_size,
 };

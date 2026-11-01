@@ -1,9 +1,9 @@
 # The secret store
 
-`src/secrets.rs`. One primitive — `get(name)`, `set(name, value)`, `delete(name)`
+`src/platform/secrets.rs`. One primitive — `get(name)`, `set(name, value)`, `delete(name)`
 of a string — over the user's OS credential store, every item filed under the
 service `efference` with the name as its account, or over commands the user
-configuration names (`src/secrets/commands.rs`). It is the machine-written
+configuration names (`src/platform/secrets/commands.rs`). It is the machine-written
 counterpart to the `[env]` table's human-managed references ([env.md](env.md)):
 setup writes an API key here, the MCP authorization flow writes its grants here,
 and a host reads both at launch.

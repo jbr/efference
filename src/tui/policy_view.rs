@@ -8,8 +8,8 @@
 //! key resolves a row, so nothing here goes stale.
 
 use super::topics::Topics;
-use crate::log::ConfigChange;
 use crate::policy::ReviewLevel;
+use crate::record::log::ConfigChange;
 
 /// One line in a section: a committed grant, or a *proposed* one (rendered tentatively). A
 /// proposed entry carries the proposal's `seq`, so the drawer can commit or cancel it.
@@ -121,10 +121,11 @@ impl PolicyView {
                 }
                 ConfigChange::Tool { name } => {
                     // A logged grant names a namespace as `<namespace>__*` and a tool by wire name.
-                    let key = match name.strip_suffix(&crate::names::tools::namespace_glob("")) {
-                        Some(namespace) => namespace.to_string(),
-                        None => crate::config::table_key(name),
-                    };
+                    let key =
+                        match name.strip_suffix(&crate::record::names::tools::namespace_glob("")) {
+                            Some(namespace) => namespace.to_string(),
+                            None => crate::config::table_key(name),
+                        };
                     // A proposal is shown in its committed section, in sorted position — so
                     // it must be labelled the same way a committed grant is, or it would
                     // sort and read as a different entry than the one it becomes.

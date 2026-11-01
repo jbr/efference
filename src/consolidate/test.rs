@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{AssistantOutput, LogEntry, Payload, Timestamp};
+use crate::record::log::{AssistantOutput, LogEntry, Payload, Timestamp};
 
 fn at(seq: Seq, payload: Payload) -> LogEntry {
     LogEntry::new(seq, payload).with_at(Timestamp(seq))
@@ -47,7 +47,7 @@ fn consolidate_has_a_brief_and_a_clean_wire_entry() {
 }
 
 fn responses_call(seq: Seq, call_id: &str) -> LogEntry {
-    use crate::log::{CallId, ResponsesOutputItem};
+    use crate::record::log::{CallId, ResponsesOutputItem};
     at(
         seq,
         Payload::assistant(AssistantOutput::Responses(vec![
@@ -63,7 +63,7 @@ fn responses_call(seq: Seq, call_id: &str) -> LogEntry {
 }
 
 fn result(seq: Seq, call_id: &str) -> LogEntry {
-    use crate::log::{RawResult, WireState};
+    use crate::record::log::{RawResult, WireState};
     at(
         seq,
         Payload::tool_result(call_id, RawResult::text("out"), WireState::Raw),

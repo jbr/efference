@@ -3,7 +3,7 @@
 //! An attachment is an **availability** affordance, not a push. A pasted blob, a dragged-in
 //! image, a file moved into the store directory: the bytes land on disk and a small notice says
 //! what arrived and where — on the turn that carried it (a composer upload, as a
-//! [`crate::log::ContentBlock::Attachment`]) or as a [`crate::log::Notification`] (a file
+//! [`crate::record::log::ContentBlock::Attachment`]) or as a [`crate::record::log::Notification`] (a file
 //! written into the store directly). Only the notice enters the log, so a 50 KB paste never
 //! pins 50 KB into every subsequent turn's cached prefix (docs/log-and-projection.md). The model
 //! decides whether and how to pull it in, using the tools it already has: `read`/`search` for
@@ -17,15 +17,15 @@
 //! committed wire bytes nor cold the cache.
 //!
 //! This module is the pure half — naming, storing, and classifying what arrived; the
-//! [`Arrival`] it produces and the two renderings of one are [`crate::log::attachment`]. The
+//! [`Arrival`] it produces and the two renderings of one are [`crate::record::log::attachment`]. The
 //! watcher that notices an arrival and enqueues the notification is
 //! `src/daemon/attachments.rs`.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::log::Notification;
-use crate::log::attachment::{Arrival, Kind, Shape, describe};
+use crate::record::log::Notification;
+use crate::record::log::attachment::{Arrival, Kind, Shape, describe};
 
 mod store;
 pub use store::Store;
@@ -74,7 +74,7 @@ pub fn store(dir: &Path, suggested: &str, bytes: &[u8]) -> io::Result<PathBuf> {
         match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .mode(crate::session_dir::FILE_MODE)
+            .mode(crate::record::session_dir::FILE_MODE)
             .open(&path)
         {
             Ok(mut file) => {

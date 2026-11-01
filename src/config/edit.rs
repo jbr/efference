@@ -13,7 +13,7 @@ use super::*;
 /// key deleted from the file is **not** propagated live (the effective config keeps it); tightening
 /// by file edit takes effect on the next boot, which reloads the file as the base. This is the
 /// honest frontier of the additive fold, not a bug to paper over. `watch-for` is likewise skipped —
-/// it has no [`ConfigChange`] variant yet (see [`crate::log::ConfigChange`]). Emission order is
+/// it has no [`ConfigChange`] variant yet (see [`crate::record::log::ConfigChange`]). Emission order is
 /// deterministic: the `BTreeSet`/`BTreeMap` slots iterate sorted.
 pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {
     let mut out = Vec::new();
@@ -81,9 +81,9 @@ pub(super) fn apply_to_document(doc: &mut DocumentMut, change: &ConfigChange) {
         // document boundary, and undone by the `[tools]` validation on the next load, so the
         // reloaded file grants the same name and the idempotent echo diffs to nothing.
         ConfigChange::Tool { name } => {
-            let key = match crate::names::tools::is_namespace_glob(name) {
+            let key = match crate::record::names::tools::is_namespace_glob(name) {
                 true => name
-                    .strip_suffix(&crate::names::tools::namespace_glob(""))
+                    .strip_suffix(&crate::record::names::tools::namespace_glob(""))
                     .unwrap_or(name)
                     .to_string(),
                 false => table_key(name),

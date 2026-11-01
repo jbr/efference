@@ -84,7 +84,7 @@ pub(crate) async fn oauth_source<P: Prompter, Q: Probe>(
                     &format!(
                         "Logged in as account {}{plan}. Kept as `{}`.",
                         login.account_id,
-                        crate::secrets::oauth_name(connection)
+                        crate::platform::secrets::oauth_name(connection)
                     ),
                 );
                 return Ok(AuthSource::Oauth);

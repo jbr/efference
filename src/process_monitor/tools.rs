@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use serde_json::{Value, json};
 
-use crate::names::tools::{
+use crate::record::names::tools::{
     ASK, CHECK_INBOX, KILL_PROCESS, LIST_PROCESSES, READ_PROCESS, WAIT, WATCH_PROCESS,
 };
 use crate::tools::{ToolBrief, anthropic_def};

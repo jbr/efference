@@ -316,7 +316,7 @@ export function resultRender(
   };
 }
 
-/** Mirrors `names::tools::display_name`/`namespace_of` (src/names/tools.rs): the namespace
+/** Mirrors `names::tools::display_name`/`namespace_of` (src/record/names/tools.rs): the namespace
  * boundary is the *first* `__`, so a server's own `__`-bearing tool name keeps
  * it. A bare built-in name has no server half — it is not given an `efference.`
  * prefix on either client. Display only: the dotted form is not a name anything

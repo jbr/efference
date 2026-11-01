@@ -65,9 +65,9 @@ impl Session {
         self.appended.notify_waiters();
     }
 
-    /// Whether the log holds no operator or agent turn (`crate::log::is_empty`).
+    /// Whether the log holds no operator or agent turn (`crate::record::log::is_empty`).
     pub(crate) fn log_is_empty(&self) -> bool {
-        crate::log::is_empty(self.log.lock().unwrap().entries())
+        crate::record::log::is_empty(self.log.lock().unwrap().entries())
     }
 
     pub(crate) fn log_closed(&self) -> bool {
@@ -201,7 +201,7 @@ impl Session {
                     Payload::Assistant { output, .. } => output.tool_calls().is_ok_and(|calls| {
                         calls
                             .iter()
-                            .any(|c| c.name == crate::names::tools::CONSOLIDATE)
+                            .any(|c| c.name == crate::record::names::tools::CONSOLIDATE)
                     }),
                     _ => false,
                 })
@@ -211,7 +211,7 @@ impl Session {
             let turn = entries.last().map_or(0, |e| e.turn);
             log.append(
                 turn,
-                Payload::Summary(crate::log::Summary::consolidation(
+                Payload::Summary(crate::record::log::Summary::consolidation(
                     span.from, span.upto, note,
                 )),
             )?;

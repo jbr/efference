@@ -36,7 +36,7 @@ pub struct SessionBoot<S: Spotter> {
     pub triage_prices: Option<crate::api::TokenPrices>,
     /// When the session's main prefix was abandoned: set by a resume on another main
     /// model, so the session starts cold (docs/resumption.md).
-    pub cache_lost_at: Option<crate::log::Timestamp>,
+    pub cache_lost_at: Option<crate::record::log::Timestamp>,
 }
 
 /// A started session: its state, and the handle that ends it.
@@ -247,10 +247,9 @@ fn submit_kickoff(session: &Session, first_turn: Option<String>) {
             .iter()
             .any(|entry| matches!(entry.payload, Payload::User(_)));
         if fresh {
-            session.submit_turn(
-                SubmittedTurn::new(text, mint_submission_id())
-                    .sourced(Some(crate::names::sources::KICKOFF_SOURCE.to_string())),
-            );
+            session.submit_turn(SubmittedTurn::new(text, mint_submission_id()).sourced(Some(
+                crate::record::names::sources::KICKOFF_SOURCE.to_string(),
+            )));
         }
     }
 }
@@ -263,14 +262,14 @@ fn describe_session(
     client: &Client,
     model: String,
     inference: Option<crate::inference::InferenceIdentity>,
-    cache_lost_at: Option<crate::log::Timestamp>,
+    cache_lost_at: Option<crate::record::log::Timestamp>,
 ) {
     // What this session is, for a client that has to name it on screen
     // (docs/control-api.md): the resolved model and the working directory, both
     // fixed by the time the caller gets here.
     session.set_identity(SessionIdentity {
         id: paths.id().to_string(),
-        title: crate::log::latest_title(&session.snapshot()).map(str::to_string),
+        title: crate::record::log::latest_title(&session.snapshot()).map(str::to_string),
         model,
         cwd: paths.working().to_string_lossy().into_owned(),
         inference,
@@ -279,7 +278,7 @@ fn describe_session(
     // Session cost telemetry (docs/transport.md): armed only where the provider
     // has a per-request accounting surface (OpenRouter's generation endpoint).
     // Direct Anthropic has none, so the readout stays absent rather than modeled.
-    if client.endpoint().provider == crate::log::Provider::OpenRouter {
+    if client.endpoint().provider == crate::record::log::Provider::OpenRouter {
         session.enable_cost_tracking(client.endpoint().clone());
     }
     // The per-request usage record (docs/log-and-projection.md) lives beside the

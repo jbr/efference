@@ -1,10 +1,10 @@
 use super::*;
 use crate::api::Completion;
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, ContentBlock, Keep, LoggedInference, Payload, RawResult, Summary, Timestamp,
     ToolCall, Triaged, WireState,
 };
-use crate::project::UserPart;
+use crate::record::project::UserPart;
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -124,7 +124,7 @@ fn a_second_compaction_reads_the_first_account_and_summarizes_only_after_it() {
                 with_header("The first account."),
                 LoggedInference {
                     connection: "anthropic".into(),
-                    provider: crate::log::Provider::Anthropic,
+                    provider: crate::record::log::Provider::Anthropic,
                     model: "claude-opus-5-5".into(),
                 },
             )),

@@ -331,16 +331,28 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
     let recorded = |id: &str, detached: bool, created_by: &str| {
         let dir = roots.0.join(".efference").join(id);
         std::fs::create_dir_all(&dir).unwrap();
-        let mut metadata = crate::persist::SessionMetadata::new(
+        let mut metadata = crate::record::persist::SessionMetadata::new(
             id,
             &roots.0,
-            crate::log::LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
-            crate::log::LoggedInference::new("c", crate::log::Provider::Anthropic, "m"),
-            crate::log::TriageModel::shared(),
+            crate::record::log::LoggedInference::new(
+                "c",
+                crate::record::log::Provider::Anthropic,
+                "m",
+            ),
+            crate::record::log::LoggedInference::new(
+                "c",
+                crate::record::log::Provider::Anthropic,
+                "m",
+            ),
+            crate::record::log::TriageModel::shared(),
         );
         metadata.created_by = Some(created_by.into());
         metadata.detached = detached;
-        Log::create(dir.join(crate::session_dir::LOG_NAME), Some(metadata)).unwrap();
+        Log::create(
+            dir.join(crate::record::session_dir::LOG_NAME),
+            Some(metadata),
+        )
+        .unwrap();
         dir
     };
 
@@ -399,7 +411,7 @@ pub(super) async fn adopt_logged(
 }
 
 pub(super) fn last_payload(path: &Path) -> Payload {
-    let recording = crate::persist::load_recording(path).expect("the log loads");
+    let recording = crate::record::persist::load_recording(path).expect("the log loads");
     recording.entries.last().expect("an entry").payload.clone()
 }
 
@@ -424,11 +436,11 @@ async fn an_archive_and_a_cascaded_child_end_log_archived() {
     );
 
     for path in [&creator, &child] {
-        let recording = crate::persist::load_recording(path).unwrap();
+        let recording = crate::record::persist::load_recording(path).unwrap();
         let last = recording.entries.last().unwrap();
         assert!(matches!(last.payload, Payload::Archived { .. }));
     }
-    let recording = crate::persist::load_recording(&creator).unwrap();
+    let recording = crate::record::persist::load_recording(&creator).unwrap();
     let last = recording.entries.last().unwrap();
     assert_eq!(
         last.turn, 3,

@@ -119,7 +119,7 @@ pub(super) fn history(log: &[LogEntry], end: usize, reader: Reader) -> History {
     let entries = &log[..end];
 
     // Head summaries for this reader, in log order, and the last seq they cover.
-    let heads: Vec<&crate::log::Summary> = entries
+    let heads: Vec<&crate::record::log::Summary> = entries
         .iter()
         .filter_map(|e| match &e.payload {
             Payload::Summary(s) if s.from == 0 && reader.applies(s.audience) => Some(s),

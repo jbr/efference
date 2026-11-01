@@ -11,7 +11,7 @@
 use super::*;
 
 use efference::api::Endpoint;
-use efference::log::Provider;
+use efference::record::log::Provider;
 use serde_json::Value;
 
 /// How much of a body this build does not recognize to print before eliding the

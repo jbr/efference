@@ -65,7 +65,7 @@ pub(crate) fn referenced(log: &[LogEntry], call_id: &str) -> Referenced {
     let Some((question, _, _)) = &call.ask else {
         return Referenced::Call {
             handle: call.handle.clone(),
-            tool: crate::names::tools::display_name(&call.call.name),
+            tool: crate::record::names::tools::display_name(&call.call.name),
         };
     };
     let answer = index

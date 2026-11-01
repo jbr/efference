@@ -8,8 +8,8 @@ use crate::api::{Client, Endpoint, PromptCachePolicy, RequestUsage, SentRequest}
 use crate::daemon::SessionRuntime;
 use crate::daemon::keepalive::{CacheLineage, KeepaliveSpec, keepalive_interval};
 use crate::frontend::SubmittedTurn;
-use crate::log::{Provider, Summary, Timestamp};
-use crate::project::WireTurn;
+use crate::record::log::{Provider, Summary, Timestamp};
+use crate::record::project::WireTurn;
 use crate::testing::upstream::{Canned, Request, ScriptedUpstream, end_turn, tool_call};
 use crate::triage::Triager;
 use tempfile::TempDir;

@@ -3,8 +3,8 @@
 //! reports for a client to prefill a switch from (docs/control-api.md).
 
 use crate::inference::{ResumeSwitch, TriageChoice};
-use crate::log::{LoggedInference, RecordedRoles, TriageModel};
-use crate::persist::LoadedRecording;
+use crate::record::log::{LoggedInference, RecordedRoles, TriageModel};
+use crate::record::persist::LoadedRecording;
 
 /// The main, spotter and triage selections the session last ran on, in the shapes an
 /// `active` patch takes. A role the log records nothing for is left out: a log with no
@@ -42,7 +42,7 @@ pub fn recorded_selections(recording: &LoadedRecording) -> ResumeSwitch {
 /// records any (a resume switched them), else the header's. `None` for a log with
 /// neither.
 pub(super) fn recorded_roles(recording: &LoadedRecording) -> Option<RecordedRoles> {
-    if let Some(roles) = crate::log::recorded_roles(&recording.entries) {
+    if let Some(roles) = crate::record::log::recorded_roles(&recording.entries) {
         return Some(roles.clone());
     }
     let metadata = recording.header.metadata()?;
@@ -55,7 +55,7 @@ pub(super) fn recorded_roles(recording: &LoadedRecording) -> Option<RecordedRole
 /// The main inference the session last ran on: the latest preamble's identity, else the
 /// header's.
 pub(super) fn recorded_main(recording: &LoadedRecording) -> Option<LoggedInference> {
-    crate::log::recorded_inference(&recording.entries)
+    crate::record::log::recorded_inference(&recording.entries)
         .cloned()
         .or_else(|| recording.header.metadata().map(|m| m.main.clone()))
 }

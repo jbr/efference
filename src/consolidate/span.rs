@@ -1,7 +1,7 @@
 //! Working-span selection and accounting (docs/consolidate.md).
-use crate::log::{Audience, CallId, LogEntry, Payload, Seq};
-use crate::names::tools::{CONSOLIDATE, is_triage_tool};
-use crate::project::{Reader, UserPart, WireTurn, project_semantic, skipped_seqs};
+use crate::record::log::{Audience, CallId, LogEntry, Payload, Seq};
+use crate::record::names::tools::{CONSOLIDATE, is_triage_tool};
+use crate::record::project::{Reader, UserPart, WireTurn, project_semantic, skipped_seqs};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -2,7 +2,7 @@
 //! what the next action reads uncached, and the action goes through unchanged.
 
 use super::*;
-use crate::log::Approval;
+use crate::record::log::Approval;
 use crate::tui::harness::{asking, cold};
 
 fn gated(play: &mut Screenplay) {

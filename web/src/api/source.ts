@@ -1,14 +1,14 @@
 // What a turn's `source` label says (docs/control-api.md): who sent it, as the
 // transcript names them. The label is a string on the wire; these read the forms
-// the host writes (src/names/sources.rs).
+// the host writes (src/record/names/sources.rs).
 
-/** The source the harness's `first-turn` kickoff carries (src/names/sources.rs). The
+/** The source the harness's `first-turn` kickoff carries (src/record/names/sources.rs). The
  * turn belongs to the session's opening, like the preamble, so the transcript
  * does not draw it (docs/context.md). */
 export const KICKOFF_SOURCE = "efference";
 
 /** The predecessor a hand-off brief's `source` names — `handoff[<id>]`, the
- * reserved form `hand_off` writes (src/names/sources.rs, docs/tools.md) — or `null`
+ * reserved form `hand_off` writes (src/record/names/sources.rs, docs/tools.md) — or `null`
  * for any other source. The brief is the predecessor speaking, not the operator. */
 export function handoffPredecessor(
   source: string | null | undefined,
@@ -18,7 +18,7 @@ export function handoffPredecessor(
 }
 
 /** A `session[…]` source's id, and the project it names when the sending
- * session worked in another project than the recipient (src/names/sources.rs,
+ * session worked in another project than the recipient (src/record/names/sources.rs,
  * `session_source`). An id holds no space, so the first ` in ` ends it. */
 export function sessionSource(
   source: string,

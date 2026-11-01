@@ -22,11 +22,11 @@ fn entry(resume: bool) -> Arc<Starting> {
     entry
 }
 
-fn arrival() -> crate::log::attachment::Arrival {
-    crate::log::attachment::Arrival {
+fn arrival() -> crate::record::log::attachment::Arrival {
+    crate::record::log::attachment::Arrival {
         name: "notes.txt".into(),
         path: "/work/.efference/a/attachments/notes.txt".into(),
-        kind: crate::log::attachment::Kind::Binary { bytes: 3 },
+        kind: crate::record::log::attachment::Kind::Binary { bytes: 3 },
     }
 }
 

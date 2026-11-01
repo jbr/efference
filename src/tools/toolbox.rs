@@ -219,13 +219,13 @@ impl Toolbox {
     /// `<server>__<tool>` form — because the MCP spec lets a server's own tool name
     /// carry characters and lengths the request alphabet does not, and the namespace
     /// prefix counts against the ceiling. Empty means every name is legal.
-    pub fn illegal_names(&self, dialect: crate::log::WireDialect) -> Vec<String> {
+    pub fn illegal_names(&self, dialect: crate::record::log::WireDialect) -> Vec<String> {
         self.names()
             .iter()
             .filter_map(|name| {
                 dialect
                     .tool_name_problem(name)
-                    .map(|why| format!("{} {why}", crate::names::tools::display_name(name)))
+                    .map(|why| format!("{} {why}", crate::record::names::tools::display_name(name)))
             })
             .collect()
     }

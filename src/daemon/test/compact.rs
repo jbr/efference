@@ -3,7 +3,7 @@
 use super::*;
 use crate::daemon::compact::{COMPACTION_TAIL_TOKENS, NotCompactable, compaction_cut};
 use crate::daemon::keepalive::CacheLineage;
-use crate::log::{AssistantOutput, LogEntry, RawResult, Summary, Timestamp, WireState};
+use crate::record::log::{AssistantOutput, LogEntry, RawResult, Summary, Timestamp, WireState};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
     LogEntry::new(seq, payload)
@@ -23,7 +23,7 @@ fn call(seq: u64, id: &str) -> LogEntry {
             vec![],
             vec![],
             vec![ToolCall::new(
-                crate::names::tools::BASH,
+                crate::record::names::tools::BASH,
                 id,
                 serde_json::json!({"command": "ls"}),
             )],
@@ -187,7 +187,7 @@ fn a_failed_compaction_clears_when_a_turn_starts() {
     shared
         .append(
             1,
-            Payload::Telemetry(crate::log::Telemetry::CompactionFailed {
+            Payload::Telemetry(crate::record::log::Telemetry::CompactionFailed {
                 error: "boom".into(),
             }),
         )
@@ -203,11 +203,11 @@ fn a_failed_compaction_clears_when_a_turn_starts() {
     shared
         .append(
             1,
-            Payload::Telemetry(crate::log::Telemetry::RequestStage(
-                crate::log::RequestStage::new(
+            Payload::Telemetry(crate::record::log::Telemetry::RequestStage(
+                crate::record::log::RequestStage::new(
                     0,
                     RequestOrigin::Turn,
-                    crate::log::RequestStageKind::Sent,
+                    crate::record::log::RequestStageKind::Sent,
                 ),
             )),
         )
@@ -228,9 +228,10 @@ async fn an_accepted_compaction_is_logged_with_its_cut() {
         .snapshot()
         .iter()
         .filter_map(|e| match &e.payload {
-            Payload::Telemetry(crate::log::Telemetry::CompactionRequested { warm, cut }) => {
-                Some((*warm, *cut))
-            }
+            Payload::Telemetry(crate::record::log::Telemetry::CompactionRequested {
+                warm,
+                cut,
+            }) => Some((*warm, *cut)),
             _ => None,
         })
         .collect();
@@ -273,7 +274,7 @@ async fn a_compaction_streams_its_writers_deltas() {
     });
     // The compaction loop runs on the session's own client; the test starts it directly,
     // without a runtime around it.
-    let endpoint = upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages");
+    let endpoint = upstream.endpoint(crate::record::log::Provider::Anthropic, "/v1/messages");
     let client = Arc::new(Client::new(endpoint, "m", "sys"));
     let (session, _rx) = Session::in_memory();
     tokio::spawn(crate::daemon::compact::compact_loop(
@@ -333,9 +334,9 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
                 "",
                 "sys",
                 Default::default(),
-                Some(crate::log::LoggedInference::new(
+                Some(crate::record::log::LoggedInference::new(
                     "c",
-                    crate::log::Provider::Anthropic,
+                    crate::record::log::Provider::Anthropic,
                     "m",
                 )),
             ),
@@ -362,7 +363,7 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
     assert_eq!(summaries.len(), 1, "the compaction ends in its Summary");
     assert!(matches!(
         summaries[0].made_by,
-        crate::log::MadeBy::Compaction(_)
+        crate::record::log::MadeBy::Compaction(_)
     ));
     assert!(
         summaries[0].text.ends_with("ok"),
@@ -371,7 +372,7 @@ async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {
     assert!(
         !entries.iter().any(|e| matches!(
             e.payload,
-            Payload::Telemetry(crate::log::Telemetry::CompactionFailed { .. })
+            Payload::Telemetry(crate::record::log::Telemetry::CompactionFailed { .. })
         )),
         "the compaction did not fail"
     );

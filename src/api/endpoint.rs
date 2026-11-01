@@ -297,7 +297,7 @@ impl Endpoint {
         if let Some(http) = &self.http {
             return http.clone();
         }
-        crate::http::client()
+        crate::platform::http::client()
     }
 
     /// Whether requests carry a credential.

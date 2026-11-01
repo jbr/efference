@@ -3,8 +3,8 @@
 //! delayed push (docs/web-push.md).
 
 use super::*;
-use crate::log::MomentKind;
-use crate::log::Telemetry;
+use crate::record::log::MomentKind;
+use crate::record::log::Telemetry;
 
 fn body(client: &str, session: Option<&str>, active: bool) -> String {
     serde_json::json!({ "client": client, "session": session, "active": active }).to_string()
@@ -87,9 +87,9 @@ async fn only_an_active_report_viewing_the_session_cancels_its_delayed_push() {
     let seen = session.log.lock().unwrap().entries().iter().any(|e| {
         matches!(
             &e.payload,
-            Payload::Telemetry(Telemetry::Push(crate::log::PushRecord {
-                event: crate::log::PushEvent::Cancelled {
-                    cause: crate::log::PushCancel::Seen { client },
+            Payload::Telemetry(Telemetry::Push(crate::record::log::PushRecord {
+                event: crate::record::log::PushEvent::Cancelled {
+                    cause: crate::record::log::PushCancel::Seen { client },
                 },
                 ..
             })) if client == "c1"

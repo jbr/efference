@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::ToolCall;
+use crate::record::log::ToolCall;
 
 /// Feed a recorded SSE capture through the assembler, collecting the live view.
 fn assemble(capture: &str) -> (Completion, Vec<Streamed>) {

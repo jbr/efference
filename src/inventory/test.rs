@@ -1,6 +1,6 @@
 use super::*;
-use crate::log::{Title, TitleAuthor};
-use crate::persist::Log;
+use crate::record::log::{Title, TitleAuthor};
+use crate::record::persist::Log;
 use std::io::Write;
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ impl Root {
     }
 
     fn log(&self, id: &str) -> PathBuf {
-        self.dir(id).join(crate::session_dir::LOG_NAME)
+        self.dir(id).join(crate::record::session_dir::LOG_NAME)
     }
 
     /// A resumable session: the boot preamble, then one user entry, written
@@ -274,7 +274,7 @@ fn a_refresh_rescans_only_the_log_that_grew() {
 
 fn resumed(log: &mut Log) {
     tick();
-    log.append(0, Payload::Resumed(crate::log::Resumed::new(1)))
+    log.append(0, Payload::Resumed(crate::record::log::Resumed::new(1)))
         .unwrap();
 }
 

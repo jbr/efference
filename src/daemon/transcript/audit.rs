@@ -166,8 +166,8 @@ pub(super) fn lines(
             let mut parts = Vec::new();
             for (seq, disposition) in &triage.inbox {
                 let verb = match disposition {
-                    crate::log::Disposition::Pin => "pinned",
-                    crate::log::Disposition::Dismiss => "dismissed",
+                    crate::record::log::Disposition::Pin => "pinned",
+                    crate::record::log::Disposition::Dismiss => "dismissed",
                 };
                 parts.push(format!("{verb} notification #{seq}"));
             }
@@ -201,7 +201,7 @@ pub(super) fn lines(
         Payload::Archived { .. } => vec![line("archived", "archived on purpose".to_string())],
         Payload::Resumed(resumed) => vec![line(
             "resumed",
-            crate::project::render_resumed(resumed, entry.seq),
+            crate::record::project::render_resumed(resumed, entry.seq),
         )],
         Payload::ProcessEvent(event) => {
             let body = match &event.kind {
@@ -285,7 +285,7 @@ fn result(raw: &RawResult, wire: &WireState) -> String {
             let _ = write!(
                 body,
                 ", {}",
-                crate::project::render_interruption(interruption)
+                crate::record::project::render_interruption(interruption)
             );
         }
         WireState::TriageFailed { why } => {

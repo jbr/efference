@@ -74,7 +74,7 @@ end to end: embedded MCP dispatch is async with `Send` futures over cloned state
 the `Frontend`/`Spotter` futures carry a `Send` bound.
 Every session therefore shares one I/O driver with the host and with every other
 session, which is what makes the process-wide HTTP client's connection pool
-(`src/http.rs`) safe to share: a pooled connection's driver task is always on a
+(`src/platform/http.rs`) safe to share: a pooled connection's driver task is always on a
 runtime that keeps being polled. (A loop on a runtime of its own stopped being polled
 whenever it blocked synchronously — an in-session `agents__create` waiting on the
 host — and a pooled h2 connection that loop had opened then hung any host-side

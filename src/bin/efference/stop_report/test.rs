@@ -2,7 +2,7 @@
 //! and the run length that tells a stalled session from a few scattered pauses.
 
 use super::*;
-use efference::log::{AssistantOutput, ContentBlock, Payload};
+use efference::record::log::{AssistantOutput, ContentBlock, Payload};
 
 fn entry(seq: u64, source: Option<&str>, payload: Payload) -> LogEntry {
     LogEntry::new(seq, payload)
@@ -101,13 +101,13 @@ fn sessions_are_counted_by_whether_they_stalled_at_all() {
 /// endings has no ask counts, and a log with asks keeps its ending counts.
 #[test]
 fn asks_are_counted_beside_endings_and_leave_them_alone() {
-    use efference::log::{RawResult, ToolCall, WireState};
+    use efference::record::log::{RawResult, ToolCall, WireState};
     let ask = |id: &str| {
         Payload::assistant(AssistantOutput::from_legacy_messages(
             Vec::new(),
             Vec::new(),
             vec![ToolCall::new(
-                efference::names::tools::ASK,
+                efference::record::names::tools::ASK,
                 id,
                 serde_json::json!({ "question": "OK?" }),
             )],

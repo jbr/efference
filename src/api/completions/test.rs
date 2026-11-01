@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{CallId, ToolCall};
+use crate::record::log::{CallId, ToolCall};
 
 fn result(call_id: &str, text: &str, images: Vec<ResultImage>) -> UserPart {
     UserPart::ToolResult {

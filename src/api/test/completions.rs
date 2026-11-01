@@ -26,7 +26,7 @@ async fn a_described_completions_connection_round_trips() {
     })];
     let completion = client
         .complete(
-            &[crate::project::WireTurn::text("list")],
+            &[crate::record::project::WireTurn::text("list")],
             &tools,
             ToolChoice::auto(),
             |_| {},
@@ -77,7 +77,7 @@ async fn a_connection_without_a_credential_sends_no_auth_header() {
     let client = Client::new(endpoint, "local", "PRE");
     client
         .complete(
-            &[crate::project::WireTurn::text("hi")],
+            &[crate::record::project::WireTurn::text("hi")],
             &[],
             ToolChoice::auto(),
             |_| {},

@@ -1,6 +1,6 @@
 //! The git operations on a session's own worktree (docs/worktrees.md): create it, retire
 //! it at archive, re-create it on resume. Where it lives is
-//! [`crate::session_dir::worktree`].
+//! [`crate::record::session_dir::worktree`].
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -23,19 +23,19 @@ pub struct Added {
 
 impl Added {
     /// The log entry for this checkout; `restored` for a re-creation on resume.
-    pub fn into_event(self, restored: bool) -> crate::log::WorktreeEvent {
-        let checkout = crate::log::Checkout {
+    pub fn into_event(self, restored: bool) -> crate::record::log::WorktreeEvent {
+        let checkout = crate::record::log::Checkout {
             base: self.base,
             exit_code: self.exit_code,
             output: self.output,
         };
-        crate::log::WorktreeEvent {
+        crate::record::log::WorktreeEvent {
             path: self.path,
             branch: self.branch,
             kind: if restored {
-                crate::log::WorktreeEventKind::Restored(checkout)
+                crate::record::log::WorktreeEventKind::Restored(checkout)
             } else {
-                crate::log::WorktreeEventKind::Added(checkout)
+                crate::record::log::WorktreeEventKind::Added(checkout)
             },
         }
     }
@@ -43,16 +43,16 @@ impl Added {
 
 impl Retired {
     /// The log entry for this outcome; `None` when there was nothing to record.
-    pub fn into_event(self, project: &Path, id: &str) -> Option<crate::log::WorktreeEvent> {
-        use crate::log::WorktreeEventKind as Kind;
+    pub fn into_event(self, project: &Path, id: &str) -> Option<crate::record::log::WorktreeEvent> {
+        use crate::record::log::WorktreeEventKind as Kind;
         let kind = match self {
             Retired::Removed { branch_deleted } => Kind::Removed { branch_deleted },
             Retired::Kept { reason } => Kind::Kept { reason },
             Retired::Failed(error) => Kind::RemoveFailed { error },
             Retired::Absent => return None,
         };
-        Some(crate::log::WorktreeEvent {
-            path: crate::session_dir::worktree::path(project, id),
+        Some(crate::record::log::WorktreeEvent {
+            path: crate::record::session_dir::worktree::path(project, id),
             branch: branch(id),
             kind,
         })
@@ -90,7 +90,7 @@ fn git(dir: &Path, env: &crate::env_table::ChildEnv, args: &[&str]) -> Result<Ou
     cmd.args(args).current_dir(dir);
     env.apply(&mut cmd);
     unset_repository_env(&mut cmd);
-    crate::spawn::std_output(&mut cmd).map_err(|e| format!("could not run git: {e}"))
+    crate::platform::spawn::std_output(&mut cmd).map_err(|e| format!("could not run git: {e}"))
 }
 
 /// Git's repository-local variables, as `git rev-parse --local-env-vars` lists them.
@@ -187,7 +187,7 @@ pub fn add(
         ));
     }
     let base = String::from_utf8_lossy(&head.stdout).trim().to_string();
-    let path = crate::session_dir::worktree::path(project, id);
+    let path = crate::record::session_dir::worktree::path(project, id);
     let branch = branch(id);
     let added = git(
         from,
@@ -260,7 +260,7 @@ const SUMMARY_LINES: usize = 5;
 /// `--force` on the removal is for git's refusal to remove a tree holding initialized
 /// submodules even when clean; the porcelain check is the safety.
 pub fn retire(project: &Path, id: &str, env: &crate::env_table::ChildEnv) -> Retired {
-    let path = crate::session_dir::worktree::path(project, id);
+    let path = crate::record::session_dir::worktree::path(project, id);
     let branch = branch(id);
     if !path.is_dir() {
         return Retired::Absent;
@@ -359,7 +359,7 @@ pub fn restore(
     id: &str,
     env: &crate::env_table::ChildEnv,
 ) -> Result<Added, String> {
-    let path = crate::session_dir::worktree::path(project, id);
+    let path = crate::record::session_dir::worktree::path(project, id);
     let branch = branch(id);
     // A directory removed by hand leaves its registration behind, which `add` refuses.
     git_ok(project, env, &["worktree", "prune"])?;

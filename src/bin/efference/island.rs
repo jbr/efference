@@ -68,7 +68,7 @@ impl Island {
                 Ok(())
             });
         }
-        let mut child = efference::spawn::std(&mut command)?;
+        let mut child = efference::platform::spawn::std(&mut command)?;
         let owner = child.stdin.take();
         Ok(Self {
             child,

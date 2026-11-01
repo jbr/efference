@@ -32,7 +32,7 @@ pub const ISLAND_LOG: &str = "host.log";
 
 /// The directory for an island launched by process `pid`, under `home`.
 pub fn island_dir(home: &Path, pid: u32) -> PathBuf {
-    home.join(crate::session_dir::SESSION_BASE)
+    home.join(crate::record::session_dir::SESSION_BASE)
         .join(STANDALONE_DIR)
         .join(pid.to_string())
 }

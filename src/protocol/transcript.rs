@@ -7,7 +7,7 @@
 //! client — and never logged. [`ReadPlan`] is the arithmetic both share: which window a
 //! read covers, the cursor after it, and the header that says what the window is.
 
-use crate::log::Seq;
+use crate::record::log::Seq;
 
 /// Which `GET /transcript` read to make (docs/control-api.md).
 #[derive(Clone, Copy, Debug, Default)]

@@ -292,7 +292,7 @@ list view and the prefixed base are held for the in-process host
 at its root under either binding — one credential covers every session behind a
 host.
 
-The id set the derivation accepts mirrors the gate's (`plain_id`, `src/session_dir.rs`):
+The id set the derivation accepts mirrors the gate's (`plain_id`, `src/record/session_dir.rs`):
 a path whose second segment is not a plain segment is not a prefix, and addresses
 the root instead.
 
@@ -596,10 +596,10 @@ A deliberate, temporary duplicate of daemon and TUI rendering logic, kept in
 one directory so it can be deleted whole when structured tool output lands.
 Two residents:
 
-- `triage.ts` — a literal port of `src/project/render.rs` (the verdict
+- `triage.ts` — a literal port of `src/record/project/render.rs` (the verdict
   renderer: keep-ranges resolution, `@@` hunks, the `⟢` note, the truncation
   breadcrumb, triage-failure and elision texts), tests mirroring
-  `src/project/test/triaged.rs` case for case.
+  `src/record/project/test/triaged.rs` case for case.
 - `parse.ts` — a literal port of the TUI's per-tool parsing and dispatch
   (`src/tui/projection/tools.rs` + the per-wire-state match in
   `src/tui/projection.rs`): the `===DIFF===` classification for the edit
@@ -649,7 +649,7 @@ An assistant entry reaches the tree through `session/assistant.ts`, which groups
 its ordered, dialect-tagged `output` (Messages blocks or Responses items,
 [log-and-projection.md](log-and-projection.md)) into the thinking / prose / calls
 view the leaves and the call nodes render — the client-side counterpart of the
-`AssistantOutput` accessors in `src/log.rs`. A Responses `FunctionCall` carries
+`AssistantOutput` accessors in `src/record/log.rs`. A Responses `FunctionCall` carries
 its arguments as the provider's JSON string; the view parses it into the call's
 `input`, and an unparseable string is kept under an `arguments` key so the
 call still has a node for its result to attach to. Replay credentials

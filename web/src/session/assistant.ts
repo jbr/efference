@@ -1,5 +1,5 @@
 // The grouped view of an assistant entry: thinking, prose, and calls, each in
-// provider order. It mirrors the accessors on `AssistantOutput` in src/log.rs
+// provider order. It mirrors the accessors on `AssistantOutput` in src/record/log.rs
 // (`reasoning_text`, `text`, `tool_calls`) so the transcript renders one shape
 // whichever wire dialect answered. Provider replay credentials — a Messages
 // thinking signature, a Responses `encrypted_content` — are not part of the
@@ -68,7 +68,7 @@ export function viewOf(output: AssistantOutput): AssistantView {
 }
 
 /** The keys the Completions dialect defines; every other key is opaque vendor
- * reasoning (src/log/completions.rs, `DEFINED`). */
+ * reasoning (src/record/log/completions.rs, `DEFINED`). */
 const DEFINED = new Set(["role", "content", "tool_calls", "refusal"]);
 
 /** Keys whose string values are read out of an opaque structure (`READABLE`). */

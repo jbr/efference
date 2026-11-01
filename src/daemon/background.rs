@@ -52,9 +52,9 @@ pub(crate) async fn drain_background(
         // session, so it lands in the log where a reader with no daemon can still
         // answer what `p#<id>` did. Appended before the notification, so a reader
         // that sees the exit prose can always resolve the handle beside it.
-        shared.append_process_event(crate::log::ProcessEvent {
+        shared.append_process_event(crate::record::log::ProcessEvent {
             id,
-            kind: crate::log::ProcessEventKind::Exited(finished.exit),
+            kind: crate::record::log::ProcessEventKind::Exited(finished.exit),
         });
         let slot = crate::process_monitor::handle(id);
         shared.notify(Notification::new(
@@ -93,7 +93,7 @@ impl Session {
         if let Some(scratch) = &self.scratch {
             cmd.env("TMPDIR", scratch);
         }
-        let mut child = crate::spawn::tokio(&mut cmd)?;
+        let mut child = crate::platform::spawn::tokio(&mut cmd)?;
         let pgid = child.id();
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
@@ -300,13 +300,13 @@ impl Session {
         }
     }
 
-    /// Append one [`ProcessEvent`](crate::log::ProcessEvent) (docs/process-monitor.md).
+    /// Append one [`ProcessEvent`](crate::record::log::ProcessEvent) (docs/process-monitor.md).
     /// It projects to nothing, so its turn is audit grouping only and the
     /// in-flight turn is the honest placement — the same reasoning a `ConfigEdit`
     /// appended out of band uses. A failed write is reported and dropped: the
     /// record is worth having, and losing it must not fail the spawn or the exit
     /// path that was writing it.
-    pub(crate) fn append_process_event(&self, event: crate::log::ProcessEvent) {
+    pub(crate) fn append_process_event(&self, event: crate::record::log::ProcessEvent) {
         let turn = self.latest_turn();
         if let Err(e) = self.append(turn, Payload::ProcessEvent(event)) {
             log::warn!("process record: append failed: {e}");
@@ -343,7 +343,7 @@ impl Session {
         let pgid = self.process_monitor.lock().unwrap().pgid_of(id);
         match pgid {
             Some(pgid) => {
-                crate::spawn::kill_group(pgid);
+                crate::platform::spawn::kill_group(pgid);
                 true
             }
             None => false,
@@ -365,7 +365,7 @@ impl Session {
     /// Teardown wants [`reap_all_bg`](Self::reap_all_bg).
     pub fn kill_all_bg(&self) {
         for pgid in self.process_monitor.lock().unwrap().running_pgids() {
-            crate::spawn::kill_group(pgid);
+            crate::platform::spawn::kill_group(pgid);
         }
     }
 

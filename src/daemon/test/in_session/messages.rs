@@ -2,7 +2,7 @@
 //! (docs/tools.md).
 
 use super::*;
-use crate::log::{RawResult, WireState};
+use crate::record::log::{RawResult, WireState};
 
 /// A driver's message is the child's next user message, under the parent's
 /// `session[<id>]` provenance, which opens the turn as `parent (agent):` on the wire.
@@ -24,7 +24,7 @@ async fn a_drivers_message_lands_as_a_turn_from_it() {
                 .any(|entry| entry.source.as_deref() == Some("session[parent]"))
         })
         .await;
-    let wire = serde_json::to_string(&crate::project::project(&child.snapshot())).unwrap();
+    let wire = serde_json::to_string(&crate::record::project::project(&child.snapshot())).unwrap();
     assert!(wire.contains("parent (agent): do the thing"), "{wire}");
 
     fixture.host.swansong().shut_down().await;
@@ -107,7 +107,7 @@ async fn an_empty_message_continues_or_says_why_not() {
     grandchild
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![ContentBlock::Text("done".into())],
                 vec![],
@@ -159,7 +159,7 @@ async fn questions_are_answered_by_naming_them() {
     let fixture = Fixture::new().await;
     let child = fixture.session("child");
     let ask = ToolCall::new(
-        crate::names::tools::ASK,
+        crate::record::names::tools::ASK,
         "toolu_q",
         serde_json::json!({ "question": "Delete the old migrations?" }),
     );

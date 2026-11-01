@@ -19,8 +19,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::{CallIndex, Gate, LiveTail, ViewState, entry_nodes, tail_nodes};
-use crate::log::LogEntry;
 use crate::protocol::agents::BoundAction;
+use crate::record::log::LogEntry;
 use crate::tui::artifacts::Coordinate;
 use crate::tui::state::DocumentState;
 
@@ -165,7 +165,7 @@ impl Transcript {
             if let Some(host) = self.index.summary_host(idx) {
                 self.dirty.insert(host);
             }
-            if let crate::log::Payload::Assistant { output, .. } = &log[idx].payload {
+            if let crate::record::log::Payload::Assistant { output, .. } = &log[idx].payload {
                 for call in output.tool_calls().unwrap_or_default() {
                     self.owner.insert(call.id.0.clone(), idx);
                 }

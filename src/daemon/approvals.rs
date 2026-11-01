@@ -74,7 +74,7 @@ pub(crate) struct PendingGate {
 /// force: `review[<level>]` (docs/permissions.md). It writes the redirects no person
 /// or agent wrote (the autonomous redirect, a `[commands]` deny, a config edit's
 /// outcome), so a reader is not told the operator wrote them.
-/// [`is_review_source`](crate::names::sources::is_review_source) recognizes the label.
+/// [`is_review_source`](crate::record::names::sources::is_review_source) recognizes the label.
 fn review_source(level: crate::policy::ReviewLevel) -> String {
     format!("review[{}]", level.as_str())
 }
@@ -90,7 +90,7 @@ impl Session {
 
     /// The most recent `Spot` entry on `call_id`: the verdict whose reason the gate
     /// shows, and whose recorded answers the status phrases (`status/view.rs`).
-    pub(super) fn latest_spot(&self, call_id: &CallId) -> Option<crate::log::Spot> {
+    pub(super) fn latest_spot(&self, call_id: &CallId) -> Option<crate::record::log::Spot> {
         self.log
             .lock()
             .unwrap()
@@ -156,7 +156,7 @@ impl Session {
         self.set_phase(LoopPhase::Gated);
         // …and a moment worth a push when the operator is its reviewer (docs/web-push.md).
         // Spawned, so the loop reaches its `rx.await` without waiting on a push service.
-        self.moment(crate::log::MomentKind::Gate, reviewer, push_body);
+        self.moment(crate::record::log::MomentKind::Gate, reviewer, push_body);
         rx
     }
 
@@ -195,15 +195,15 @@ impl Session {
             pending.moment_to = to.clone();
             pending.push_body()
         };
-        let record = crate::log::Escalation::new(id.clone(), source, to.clone(), note);
+        let record = crate::record::log::Escalation::new(id.clone(), source, to.clone(), note);
         // The record must not stop what it describes.
         if let Err(e) = self.append(
             self.latest_turn(),
-            Payload::Telemetry(crate::log::Telemetry::Escalation(record)),
+            Payload::Telemetry(crate::record::log::Telemetry::Escalation(record)),
         ) {
             log::warn!("escalation record: append failed: {e}");
         }
-        self.moment(crate::log::MomentKind::Gate, to, push_body);
+        self.moment(crate::record::log::MomentKind::Gate, to, push_body);
         // The gate topic and the status watchers read the new routing now.
         self.touch_state();
         true
@@ -234,7 +234,7 @@ impl Session {
             .iter()
             .rev()
             .find_map(|entry| match &entry.payload {
-                Payload::Telemetry(crate::log::Telemetry::GateDecision(decision))
+                Payload::Telemetry(crate::record::log::Telemetry::GateDecision(decision))
                     if decision.call_id == *id =>
                 {
                     Some(decision.source.clone())
@@ -250,8 +250,9 @@ impl Session {
     pub(crate) fn review_redirect(&self, id: &CallId, message: String) -> Approval {
         let decision = Approval::Redirect(message);
         let source = review_source(self.resolved_review_level());
-        let record = crate::log::GateDecision::new(id.clone(), decision.clone(), Some(source));
-        let entry = Payload::Telemetry(crate::log::Telemetry::GateDecision(record));
+        let record =
+            crate::record::log::GateDecision::new(id.clone(), decision.clone(), Some(source));
+        let entry = Payload::Telemetry(crate::record::log::Telemetry::GateDecision(record));
         // The record must not stop what it describes.
         if let Err(e) = self.append(self.latest_turn(), entry) {
             log::warn!("gate decision record: append failed: {e}");
@@ -279,9 +280,9 @@ impl Session {
         // A loop that already moved on dropped its receiver: nothing was decided.
         if !tx.is_closed() {
             let mut record =
-                crate::log::GateDecision::new(id.clone(), decision.clone(), decider.source);
+                crate::record::log::GateDecision::new(id.clone(), decision.clone(), decider.source);
             record.note_submission = decider.note_submission;
-            let entry = Payload::Telemetry(crate::log::Telemetry::GateDecision(record));
+            let entry = Payload::Telemetry(crate::record::log::Telemetry::GateDecision(record));
             // The record must not stop what it describes.
             if let Err(e) = self.append(self.latest_turn(), entry) {
                 log::warn!("gate decision record: append failed: {e}");

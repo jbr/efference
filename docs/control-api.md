@@ -1629,7 +1629,7 @@ route, a `ToolResult` whose `wire` is `Triaged` gains one field beside it:
 ```
 
 The counts are over the *whole* `content`, computed by the daemon through the
-same `selection` the wire and the TUI render from (`src/project/render.rs`), so
+same `selection` the wire and the TUI render from (`src/record/project/render.rs`), so
 a client holding only the 16 KiB prefix states the same "kept 364 of 937 lines"
 the model's view had — counted locally over the prefix, a verdict whose kept
 ranges lie past it reads as "kept 0". Absent on a raw or elided result, so those

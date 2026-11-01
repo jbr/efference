@@ -26,7 +26,7 @@
 //! contain no `__`, and the config validates server names against the API's
 //! tool-name alphabet). That alphabet (`[a-zA-Z0-9_-]`) has no separator that
 //! reads as one — the MCP spec permits `.`, the provider does not — so
-//! [`display_name`](crate::names::tools::display_name) renders the boundary as a dot for
+//! [`display_name`](crate::record::names::tools::display_name) renders the boundary as a dot for
 //! the TUI.
 //!
 //! Protocol interop is `mcplease::client`'s (docs/tools.md "the client
@@ -52,8 +52,8 @@ use tokio::sync::Mutex;
 
 use crate::bash::Outcome;
 use crate::config::McpTransport;
-use crate::log::{Notification, RawResult, ToolCall};
-use crate::names::tools::NAMESPACE_SEPARATOR;
+use crate::record::log::{Notification, RawResult, ToolCall};
+use crate::record::names::tools::NAMESPACE_SEPARATOR;
 use crate::tools::Interrupt;
 use crate::tools::anthropic_def;
 
@@ -647,7 +647,7 @@ fn describe_input_required(interim: &InputRequiredResult) -> String {
     }
 }
 
-fn render_block(block: &ContentBlock, images: &mut Vec<crate::log::ResultImage>) -> String {
+fn render_block(block: &ContentBlock, images: &mut Vec<crate::record::log::ResultImage>) -> String {
     match block {
         ContentBlock::Text { text, .. } => text.clone(),
         ContentBlock::Image {
@@ -682,7 +682,7 @@ fn render_block(block: &ContentBlock, images: &mut Vec<crate::log::ResultImage>)
 }
 
 /// Decode a base64 image block, size it through [`crate::vision::prepare`] at
-/// the transcript default, push the realized [`ResultImage`](crate::log::ResultImage),
+/// the transcript default, push the realized [`ResultImage`](crate::record::log::ResultImage),
 /// and return the header line the model reads alongside it. A server sends whatever
 /// resolution it likes; the same cap `read_image` defaults to is what keeps an
 /// unsolicited screenshot from costing native-tier tokens. There is no
@@ -690,7 +690,7 @@ fn render_block(block: &ContentBlock, images: &mut Vec<crate::log::ResultImage>)
 /// the header reports the downscale without a hint to re-read.
 fn realize_image(
     data: &str,
-    images: &mut Vec<crate::log::ResultImage>,
+    images: &mut Vec<crate::record::log::ResultImage>,
 ) -> Result<String, anyhow::Error> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim())?;
@@ -712,7 +712,7 @@ fn realize_image(
             prepared.source_width, prepared.source_height
         ));
     }
-    images.push(crate::log::ResultImage {
+    images.push(crate::record::log::ResultImage {
         media_type: prepared.media_type.to_string(),
         data: base64::engine::general_purpose::STANDARD.encode(&prepared.data),
         width: prepared.width,

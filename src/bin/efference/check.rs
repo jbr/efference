@@ -73,7 +73,7 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
 async fn mount_servers(role: &efference::config::Config, cwd: &Path, path: &Path) -> CliResult {
     let store: std::sync::Arc<dyn efference::mcp::auth::store::TokenStore> =
         std::sync::Arc::new(efference::mcp::auth::store::KeychainStore::new(
-            std::sync::Arc::new(efference::secrets::Secrets::configured(
+            std::sync::Arc::new(efference::platform::secrets::Secrets::configured(
                 efference::user_config::InferenceConfig::user_secret_commands()?,
             )),
         ));
@@ -143,7 +143,7 @@ fn print_server(role: &efference::config::Config, name: &str, mounted: &[serde_j
         println!(
             "    {} {} ({} B)",
             grant_mark(role, tool),
-            efference::names::tools::display_name(tool),
+            efference::record::names::tools::display_name(tool),
             weight
         );
     }

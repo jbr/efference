@@ -3,7 +3,7 @@
 //! keepalive sends the turn's thinking and effort.
 
 use super::*;
-use crate::log::RequestOrigin;
+use crate::record::log::RequestOrigin;
 
 /// Anthropic's `GET /v1/models/{id}` declares the `thinking` types and the
 /// effort levels a model takes (docs/transport.md). Live API bodies:

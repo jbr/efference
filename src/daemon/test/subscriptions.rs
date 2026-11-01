@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::daemon::Host;
-use crate::log::Approval;
 use crate::protocol::turns::Landing;
+use crate::record::log::Approval;
 use std::path::Path;
 
 struct Fixture {
@@ -100,7 +100,9 @@ async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
 /// Whether the parent's log holds a `Triage` that pinned `seq`.
 fn pinned(session: &Session, seq: Seq) -> bool {
     session.snapshot().iter().any(|e| match &e.payload {
-        Payload::Triage(t) => t.inbox.contains(&(seq, crate::log::Disposition::Pin)),
+        Payload::Triage(t) => t
+            .inbox
+            .contains(&(seq, crate::record::log::Disposition::Pin)),
         _ => false,
     })
 }
@@ -188,7 +190,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     let child = fixture.session("child");
 
     let curl = ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         "toolu_curl",
         serde_json::json!({
             "command": "curl -sI https://example.com",
@@ -198,7 +200,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     let issued = child
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![curl.clone()],
@@ -209,14 +211,14 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
         .append(
             1,
             Payload::Spot(
-                crate::log::Spot::new(
+                crate::record::log::Spot::new(
                     curl.id.clone(),
-                    crate::log::Stance::Gate,
+                    crate::record::log::Stance::Gate,
                     "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
                 )
-                .with_axes(Some(crate::log::Axes {
+                .with_axes(Some(crate::record::log::Axes {
                     in_scope: 0.21,
-                    precedent: Some(crate::log::Precedent {
+                    precedent: Some(crate::record::log::Precedent {
                         candidates: 0,
                         same: 0,
                         wider: 0,
@@ -257,7 +259,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     let said = child
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![ContentBlock::Text(report.clone())],
                 vec![],

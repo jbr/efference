@@ -3,7 +3,7 @@ use super::super::test::{
 };
 use super::super::*;
 use crate::client::CatalogStatus;
-use crate::log::Provider;
+use crate::record::log::Provider;
 use crate::tui::{TuiEvent, harness::Screenplay};
 
 /// The ids of the rows on screen, in order.

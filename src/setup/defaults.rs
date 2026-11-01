@@ -175,7 +175,7 @@ fn readable_key<Q: Probe>(
     match &connection.auth {
         ExistingAuth::Env { key } => probe.env_var(key),
         ExistingAuth::Keychain { name: item } => probe
-            .secret_value(&crate::secrets::inference_name(
+            .secret_value(&crate::platform::secrets::inference_name(
                 item.as_deref().unwrap_or(name),
             ))
             .ok()

@@ -331,7 +331,7 @@ session while it starts ([control-channel.md](control-channel.md)). A setup offe
 its own questions first (`setup::terminal::Terminal::erase`, which counts the rows its
 prompts leave), keeping only the line naming a file the wizard wrote.
 
-**The host's terminal title** (`src/terminal_title.rs`). A host whose stdout is a terminal —
+**The host's terminal title** (`src/platform/terminal_title.rs`). A host whose stdout is a terminal —
 `efference --host` in the foreground — sets that terminal's title to its session count,
 `efference · 3 sessions`, rewritten when a session arrives or leaves (`Host::title_terminal`,
 woken by the same signal as the listing stream). The title it found is saved on the

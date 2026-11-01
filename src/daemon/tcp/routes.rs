@@ -7,13 +7,13 @@
 use super::gate::Surface;
 use super::*;
 use crate::daemon::views::answer;
-use crate::devices::DeviceId;
+use crate::platform::devices::DeviceId;
+use crate::platform::sign_ins::{Claim, ClaimSecret, ShortCode, TTL_SECS};
 use crate::protocol::answers::{StatusBody, StatusWord};
 use crate::protocol::channel_value;
 use crate::protocol::sign_in::{
     DeviceList, PendingSignInList, RemovedDevice, SignInClaim, SignInLink, SignInRequest,
 };
-use crate::sign_ins::{Claim, ClaimSecret, ShortCode, TTL_SECS};
 use trillium::KnownHeaderName;
 
 /// A route that needs the bind's credential state: `auth` is cloned into each conn's
@@ -337,7 +337,7 @@ fn host_spa_route(conn: &Conn) -> bool {
 /// prefix, and the session bind does not.
 pub(crate) fn frontend(surface: Surface) -> impl trillium::Handler {
     trillium_frontend::frontend!("./web")
-        .with_client(crate::http::client())
+        .with_client(crate::platform::http::client())
         .with_index_file("index.html")
         // `trillium_frontend` takes a bare fn pointer, so the surface is chosen
         // between two fn items rather than captured in a closure.

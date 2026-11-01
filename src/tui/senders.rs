@@ -15,8 +15,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::{HostCmd, PaceCmd, SidebarCmd};
 use crate::frontend::SubmittedTurn;
-use crate::log::Approval;
 use crate::protocol::attention::AttentionReport;
+use crate::record::log::Approval;
 use crate::tools::Interrupt;
 
 /// A composer send: the turn, and the question it answers when one was showing

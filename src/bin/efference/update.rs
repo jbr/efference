@@ -5,7 +5,7 @@
 //! permission, so it asks whatever `[updates]` says, and it needs no host running.
 
 use super::*;
-use efference::update_check::{INSTALL_COMMAND, Release, UpdateCheck};
+use efference::platform::update_check::{INSTALL_COMMAND, Release, UpdateCheck};
 
 /// The verb. Without `--check` it refuses, naming the two things that exist: the
 /// check, and the install command that updates.

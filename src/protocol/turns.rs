@@ -3,8 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::log::attachment::Arrival;
 use crate::protocol::answers::StatusWord;
+use crate::record::log::attachment::Arrival;
 
 /// Mint a submission id for a `POST /v1/turns` whose body didn't carry one, so
 /// every submitted turn is identified in the log regardless of client

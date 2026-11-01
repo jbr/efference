@@ -10,7 +10,7 @@
 use super::*;
 use crate::inventory::sort_rows;
 use crate::protocol::inventory::InventoryRow;
-use crate::session_dir::SESSION_BASE;
+use crate::record::session_dir::SESSION_BASE;
 use std::collections::HashSet;
 
 impl DormantSession {
@@ -18,10 +18,11 @@ impl DormantSession {
     /// whole, since a resume's switch can record selections anywhere in it.
     pub(crate) fn read(archived: ArchivedSession) -> Self {
         let dir = archived.row.cwd.join(SESSION_BASE).join(&archived.row.id);
-        let selections = crate::persist::load_recording(dir.join(crate::session_dir::LOG_NAME))
-            .ok()
-            .map(|recording| crate::boot::recorded_selections(&recording))
-            .filter(|selections| !selections.is_empty());
+        let selections =
+            crate::record::persist::load_recording(dir.join(crate::record::session_dir::LOG_NAME))
+                .ok()
+                .map(|recording| crate::boot::recorded_selections(&recording))
+                .filter(|selections| !selections.is_empty());
         let context_tokens = UsageLine::read(&dir.join(USAGE_NAME))
             .ok()
             .and_then(|lines| last_turn_usage(&lines))

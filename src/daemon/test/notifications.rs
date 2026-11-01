@@ -97,7 +97,7 @@ async fn inbox_wake_fires_on_unshown_not_on_shown() {
         .append(
             0,
             Payload::Triage(
-                crate::log::Triage::new(None, String::new()).with_shown_through(Some(seq)),
+                crate::record::log::Triage::new(None, String::new()).with_shown_through(Some(seq)),
             ),
         )
         .unwrap();

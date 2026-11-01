@@ -3,7 +3,7 @@
 
 use super::super::test::{armed, enrolled, link_claim, tcp_server};
 use super::*;
-use crate::devices::{Device, Joined, Kind};
+use crate::platform::devices::{Device, Joined, Kind};
 use trillium_testing::TestServer;
 
 /// The body of an answer, as JSON.

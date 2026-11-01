@@ -11,7 +11,7 @@ use super::*;
 /// dimmed lines (not markdown) so the in-flight echo doesn't reflow as it commits.
 pub(in crate::tui) fn pending_turn(
     text: &str,
-    attachments: &[crate::log::attachment::Arrival],
+    attachments: &[crate::record::log::attachment::Arrival],
 ) -> DocumentNode<'static> {
     let mut lines: Vec<Span<'static>> = text
         .lines()
@@ -39,12 +39,12 @@ pub(in crate::tui) fn pending_turn(
 /// The files a user turn carried, one dimmed line each (docs/tui.md): name and what the daemon
 /// made of it. `None` when the turn carried none.
 pub(in crate::tui) fn attachment_lines(
-    attachments: &[crate::log::attachment::Arrival],
+    attachments: &[crate::record::log::attachment::Arrival],
 ) -> Option<DocumentNode<'static>> {
     (!attachments.is_empty()).then(|| DocumentNode::styled_lines(attachment_spans(attachments)))
 }
 
-fn attachment_spans(attachments: &[crate::log::attachment::Arrival]) -> Vec<Span<'static>> {
+fn attachment_spans(attachments: &[crate::record::log::attachment::Arrival]) -> Vec<Span<'static>> {
     attachments
         .iter()
         .map(|a| {
@@ -71,7 +71,7 @@ pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> 
         // would claim this is a finished thing to read rather than bytes still arriving.
         let mut lines = vec![dim_span(&format!(
             "› {}…",
-            crate::names::tools::display_name(&call.name)
+            crate::record::names::tools::display_name(&call.name)
         ))];
         lines.extend(
             call.input
@@ -107,7 +107,7 @@ fn calling_tool_entry(name: &str, input: &str) -> Option<DocumentNode<'static>> 
     let arriving = parsed.arriving_text();
     let intent = view.intent.clone().or_else(|| {
         arriving
-            .filter(|(key, _)| *key == crate::names::tools::INTENT)
+            .filter(|(key, _)| *key == crate::record::names::tools::INTENT)
             .map(|(_, text)| text.to_string())
     });
     let mut blocks = call_blocks(view, true);
@@ -116,7 +116,9 @@ fn calling_tool_entry(name: &str, input: &str) -> Option<DocumentNode<'static>> 
     // case worth rendering as a block — a file's contents, a heredoc, a message
     // body — and it is rendered in the language of whatever settled path names it,
     // which is why the path arriving first is what makes this worth doing.
-    if let Some((key, text)) = arriving.filter(|(key, _)| *key != crate::names::tools::INTENT) {
+    if let Some((key, text)) =
+        arriving.filter(|(key, _)| *key != crate::record::names::tools::INTENT)
+    {
         if text.contains('\n') {
             blocks.push(code_block(streaming_lang(&parsed), text));
         } else {
@@ -270,7 +272,7 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
 /// it is holding. The chain joins with `→` when the approval passed through more
 /// than one session.
 pub(in crate::tui) fn bound_action(bound: &BoundAction) -> DocumentNode<'static> {
-    let display = crate::names::tools::display_name(&bound.name);
+    let display = crate::record::names::tools::display_name(&bound.name);
     let detail = match bound.name.as_str() {
         "bash" => bound
             .input
@@ -349,8 +351,10 @@ pub(in crate::tui) fn annotation_line(marker: &str, text: &str) -> DocumentNode<
 /// and a failed setup's exit status is on the line itself because that failure is
 /// the reason the entry exists. The whole output is in the log (`efference dev`),
 /// and surfacing it is backlog/inbox/worktree-setup-detail.md.
-pub(in crate::tui) fn worktree_notice(event: &crate::log::WorktreeEvent) -> DocumentNode<'static> {
-    use crate::log::WorktreeEventKind;
+pub(in crate::tui) fn worktree_notice(
+    event: &crate::record::log::WorktreeEvent,
+) -> DocumentNode<'static> {
+    use crate::record::log::WorktreeEventKind;
     let mut spans = vec![dim_span("⟢ worktree ")];
     match &event.kind {
         WorktreeEventKind::Added(checkout) => {
@@ -403,10 +407,10 @@ fn setup_note(exit_code: Option<i32>) -> String {
 /// (the `gate` state topic carries the reason but not the stance); the committed entry
 /// supplies it in every other case.
 pub(in crate::tui) fn spotter_line(
-    stance: Option<crate::log::Stance>,
+    stance: Option<crate::record::log::Stance>,
     reason: &str,
 ) -> DocumentNode<'static> {
-    use crate::log::Stance;
+    use crate::record::log::Stance;
     let label = match stance {
         // `ClearAlways` refines `Clear` with a prefix-promotion vote (docs/permissions.md).
         // That vote is policy machinery, not a fact about this call, so both read `cleared`.

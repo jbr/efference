@@ -13,7 +13,7 @@
 use super::*;
 use crate::boot::mcp_mount::AuthorizationHandling;
 use crate::daemon::starting::Starting;
-use crate::session_dir::SESSION_BASE;
+use crate::record::session_dir::SESSION_BASE;
 use std::time::Instant;
 
 /// How long a failed starting session keeps answering `/state` and `/events` after it
@@ -201,7 +201,7 @@ pub(super) fn authorization_for(starting: &Arc<Starting>, refuse: bool) -> Autho
 /// End a dormant session's log in `Archived`, unless its last lifecycle entry already
 /// is one (docs/resumption.md).
 fn append_archived(session_dir: &std::path::Path) -> io::Result<()> {
-    let mut opened = Log::open(session_dir.join(crate::session_dir::LOG_NAME))
+    let mut opened = Log::open(session_dir.join(crate::record::session_dir::LOG_NAME))
         .map_err(|e| io::Error::other(e.to_string()))?;
     let log = &mut opened.log;
     let last_lifecycle = log.entries().iter().rev().find(|entry| {

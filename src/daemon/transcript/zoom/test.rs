@@ -1,6 +1,6 @@
 use super::super::fixtures::*;
 use super::*;
-use crate::log::{Approval, Axes, Keep, Precedent, Triaged};
+use crate::record::log::{Approval, Axes, Keep, Precedent, Triaged};
 
 fn child<'a>(me: Option<&'a str>) -> Reading<'a> {
     Reading {
@@ -95,7 +95,7 @@ fn a_long_result_is_capped_and_its_images_are_addressed() {
     let body = "é".repeat(10_000);
     log.add(Payload::tool_result(
         "toolu_1",
-        RawResult::text(body.clone()).with_images(vec![crate::log::ResultImage {
+        RawResult::text(body.clone()).with_images(vec![crate::record::log::ResultImage {
             media_type: "image/png".into(),
             data: "AAAA".into(),
             width: 800,

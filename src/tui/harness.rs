@@ -31,13 +31,13 @@ use super::render_context::{OutputMode, RenderContext};
 use super::state::InteractiveState;
 use super::theme::InteractiveTheme;
 use super::topics::TopicUpdate;
-use crate::log::{
-    Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, Timestamp, ToolCall,
-    WireState,
-};
 use crate::protocol::agents::BoundAction;
 use crate::protocol::state::ProcessState;
 use crate::protocol::state::{AskView, Cold, Gate, LoopPhase, SessionIdentity};
+use crate::record::log::{
+    Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Stance, Timestamp, ToolCall,
+    WireState,
+};
 use serde_json::{Value, json};
 
 /// A scripted TUI session: build state, drive input/events, snapshot the screen.

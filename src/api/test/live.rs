@@ -3,7 +3,7 @@
 //! the refusal of a foreign-dialect turn list.
 
 use super::*;
-use crate::log::RequestOrigin;
+use crate::record::log::RequestOrigin;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// A Messages stream's first event, and nothing after it.
@@ -206,7 +206,7 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
     }
 
     // The `User-Agent` is the one header every request carries, on every path.
-    let user_agent = Some(crate::http::user_agent());
+    let user_agent = Some(crate::platform::http::user_agent());
 
     for sse in [true, false] {
         let openrouter = request(Provider::OpenRouter, sse).await;
@@ -270,13 +270,13 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
 /// fail with a connection error instead of this message.
 #[tokio::test]
 async fn a_foreign_dialect_turn_list_never_becomes_a_request() {
-    use crate::project::WireTurn;
+    use crate::record::project::WireTurn;
     let endpoint = Endpoint::at(Provider::Anthropic, "http://127.0.0.1:1/v1/messages");
     let client = Client::new(endpoint, "m", "sys");
     let turns = vec![
         WireTurn::text("hello"),
         WireTurn::Assistant(AssistantOutput::Responses(vec![
-            crate::log::ResponsesOutputItem::FunctionCall {
+            crate::record::log::ResponsesOutputItem::FunctionCall {
                 id: None,
                 call_id: CallId("call_1".into()),
                 name: "bash".into(),

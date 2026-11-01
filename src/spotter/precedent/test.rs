@@ -1,6 +1,6 @@
 use super::*;
-use crate::log::Telemetry;
-use crate::log::{AssistantOutput, Spot, ToolOutcome, ToolTelemetry};
+use crate::record::log::Telemetry;
+use crate::record::log::{AssistantOutput, Spot, ToolOutcome, ToolTelemetry};
 use serde_json::json;
 
 fn entry(payload: Payload) -> LogEntry {

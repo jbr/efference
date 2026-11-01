@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::control_tools::Wait;
-use crate::log::{Approval, CallId};
+use crate::record::log::{Approval, CallId};
 use std::future::Future;
 
 /// Watch `id` as a creation over MCP does: from the status its answer showed.

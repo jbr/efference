@@ -8,13 +8,13 @@ caching constraint that shapes both.
 
 ## Core types
 
-The types are `src/log.rs` and the files under `src/log/`, and the module imports no other
-top-level module but `names` (docs/README.md, *Dependency direction*). That includes the
+The types are `src/record/log.rs` and the files under `src/record/log/`, and the module imports no other
+module but `record::names` (docs/README.md, *Dependency direction*). That includes the
 shapes other subsystems fill in or read: the provider and wire dialect a boot records
 (`provider.rs`), a gate's `Approval` (`approval.rs`), the resolved `[context]` (`context.rs`),
 an attachment's `Arrival` (`attachment.rs`), the spotter's `Axes` (`spot.rs`), and the
 `TriageModel` a preamble records (`preamble.rs`). The names a recorded entry carries are
-`src/names.rs`: the tool names and the `intent` key a call is read by (`names/tools.rs`), and
+`src/record/names.rs`: the tool names and the `intent` key a call is read by (`names/tools.rs`), and
 the labels a turn's `source` is written in (`names/sources.rs`). Behavior that needs another
 subsystem stays with it, as `impl` blocks on these types.
 
@@ -309,7 +309,7 @@ once by a throwaway script under `scripts/`, which emits the old group order
 
 `Assistant.excluded` is the assistant-side analogue of a `WireState` verdict:
 `Some(exclusion)` marks a **record-only** entry, and `project` skips the entry
-entirely. `Exclusion` (`src/log/exclusion.rs`) says why. `Upstream(record)`: the
+entirely. `Exclusion` (`src/record/log/exclusion.rs`) says why. `Upstream(record)`: the
 stream that produced it died before finalizing, or finalized empty with no usage,
 or, with no content at all, the request itself failed. `Empty`: the model finalized
 with neither prose nor a call, and the loop asked again
@@ -482,7 +482,7 @@ fn encode_responses(&[WireTurn], preamble: &str, PromptCachePolicy) -> Vec<Input
 fn project(log) -> Vec<ApiMessage>   // = encode_messages(project_semantic(log), defaults)
 ```
 
-Projection is two stages. `project_semantic` (`src/project/semantic.rs`) is the
+Projection is two stages. `project_semantic` (`src/record/project/semantic.rs`) is the
 dialect-neutral fold: it decides **selection** — which entries reach the wire, the
 range replacement driven by a pre-pass over applicable `Summary` ranges, result verdicts
 (`Triaged` re-rendered from `keep` + `raw`, `Elided`, `TriageFailed`), pinned
@@ -507,7 +507,7 @@ hold when a user turn is appended right after a turn's results (a queued turn de
 [operator participation](control-channel.md#operator-participation--the-intervention-points) —
 the mid-trajectory injection and the redirect steer both rely on this shape).
 
-Each **encoder** (`src/project/messages.rs`, `src/api/responses.rs`) copies the turns
+Each **encoder** (`src/record/project/messages.rs`, `src/api/responses.rs`) copies the turns
 onto its wire and owns what differs there: the Messages encoder groups a user turn's
 parts into one message, applies the three image placements and their interposed
 turn, omits `is_error: false`, and attaches a `Breakpoint` per `BreakpointPlacement`;
@@ -528,9 +528,9 @@ and sends — callers never build wire messages.
 
 ## Persistence — the log on disk
 
-The log is persisted as **versioned JSONL** (`src/persist.rs`): line 1 is a
+The log is persisted as **versioned JSONL** (`src/record/persist.rs`): line 1 is a
 header, and every line after it is one entry. The mechanism — why JSONL at
-all, and why an entry's line is never rewritten — is in `src/persist.rs`;
+all, and why an entry's line is never rewritten — is in `src/record/persist.rs`;
 this section is the file format and what a reader does with a file that is not
 one.
 
@@ -769,7 +769,7 @@ invalidates every cached block after it. Render order is `tools → system →
 messages`.
 
 If `project` is not byte-stable — identical log, identical output, every
-time — the cache silently breaks. Two guards in `src/project.rs` enforce this
+time — the cache silently breaks. Two guards in `src/record/project.rs` enforce this
 and must not be weakened:
 
 - `projection_is_byte_stable` — re-projecting an identical log yields
@@ -820,7 +820,7 @@ the expected-bytes pin deliberately.
 
 ## Breakpoint placement — provider-conditional
 
-`place_trailing_cache_breakpoint` (`src/project/wire.rs`) marks exactly one block
+`place_trailing_cache_breakpoint` (`src/record/project/wire.rs`) marks exactly one block
 per request, walking back from the wire tail. **Which** block it may mark is
 `BreakpointPlacement`, derived from the session's provider (`Provider::breakpoint_placement`)
 and fixed for the live session. A recorded log carries the provider identity,

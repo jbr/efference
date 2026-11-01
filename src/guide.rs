@@ -3,7 +3,7 @@
 //!
 //! The documents are `[context]` entries that are **born resolved**: each is a
 //! `(name, description, body)` triple in [`DOCUMENTS`], entering the preamble as a
-//! [`crate::log::context::Item::Listed`] stub without a frontmatter round-trip. Only the
+//! [`crate::record::log::context::Item::Listed`] stub without a frontmatter round-trip. Only the
 //! *source* and the path *resolution* differ from an operator's group; the render is the
 //! same code.
 //!
@@ -18,7 +18,7 @@
 //! `list`, `search`, and the edit tools answer with [`reject_non_read`] instead — the stub
 //! listing in the preamble is what substitutes for a directory listing.
 
-use crate::log::{RawResult, ToolCall};
+use crate::record::log::{RawResult, ToolCall};
 
 /// The reserved path prefix. Scheme-shaped rather than path-shaped so `read` can grow
 /// other schemes later without re-deciding what a leading `/` means; the dispatch layer
@@ -193,13 +193,13 @@ pub fn lookup(target: &str) -> Option<&'static Document> {
 /// The `[context]` section this mount renders as, under `heading`. Built directly as
 /// resolved items — the render half of the `[context]` pipeline, not the read-from-disk
 /// half (docs/context.md).
-pub fn section(heading: &str) -> crate::log::context::Section {
-    crate::log::context::Section {
+pub fn section(heading: &str) -> crate::record::log::context::Section {
+    crate::record::log::context::Section {
         heading: Some(heading.to_string()),
         description: Some(GROUP_DESCRIPTION.to_string()),
         items: DOCUMENTS
             .iter()
-            .map(|d| crate::log::context::Item::Listed {
+            .map(|d| crate::record::log::context::Item::Listed {
                 name: d.slug.to_string(),
                 description: d.description.to_string(),
                 path: path(d.slug),
@@ -215,12 +215,12 @@ pub fn builtin_section(
     value: &str,
     heading: &str,
     description: Option<String>,
-) -> crate::log::context::Section {
+) -> crate::record::log::context::Section {
     match inline_document(value) {
-        Some(document) => crate::log::context::Section {
+        Some(document) => crate::record::log::context::Section {
             heading: None,
             description,
-            items: vec![crate::log::context::Item::Inline {
+            items: vec![crate::record::log::context::Item::Inline {
                 name: heading.to_string(),
                 path: path(document.slug),
                 body: document.body.trim_end().to_string(),

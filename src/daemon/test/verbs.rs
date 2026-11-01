@@ -14,7 +14,7 @@ fn session() -> Arc<Session> {
 }
 
 fn assistant(text: &str) -> Payload {
-    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+    Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
         vec![],
         vec![ContentBlock::Text(text.into())],
         vec![],

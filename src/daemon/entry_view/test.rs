@@ -1,7 +1,7 @@
 //! Tests for `entry_view.rs`.
 
 use super::*;
-use crate::log::{ContentBlock, ContentElision, Timestamp, Triaged, WireState};
+use crate::record::log::{ContentBlock, ContentElision, Timestamp, Triaged, WireState};
 
 fn entry(seq: u64, submission_id: Option<&str>, payload: Payload) -> LogEntry {
     LogEntry::new(seq, payload)
@@ -34,7 +34,7 @@ fn view_of_an_image_free_entry_is_the_derived_bytes() {
         entry(
             1,
             Some("sub-1"),
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![ContentBlock::Text("ok".into())],
                 vec![ToolCall::new(
@@ -209,7 +209,7 @@ fn a_triaged_view_carries_the_line_counts_the_prefix_cannot_yield() {
         Payload::tool_result(
             "toolu_triaged",
             RawResult::text(content.clone()),
-            WireState::from(Triaged::new(crate::log::Keep::Ranges(vec![
+            WireState::from(Triaged::new(crate::record::log::Keep::Ranges(vec![
                 (300, 309),
                 (350, 400),
             ]))),

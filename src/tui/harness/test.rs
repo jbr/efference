@@ -1,7 +1,7 @@
 use super::Screenplay;
-use crate::log::{Keep, Stance, ToolCall, WireState};
 use crate::protocol::state::PaceView;
 use crate::protocol::turns::QueuedTurn;
+use crate::record::log::{Keep, Stance, ToolCall, WireState};
 use crate::tui::TuiEvent;
 use crate::tui::topics::TopicUpdate;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -56,10 +56,10 @@ fn rgb(color: Color) -> (u8, u8, u8) {
 /// line added to make it a readable log) through the same `persist::load`
 /// a live attach uses. Every state a replay of it produces is reachable *by
 /// construction* — it came off a real daemon, not a test author's hand.
-fn replay_fixture() -> Vec<crate::log::LogEntry> {
+fn replay_fixture() -> Vec<crate::record::log::LogEntry> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/tui/fixtures/replay_session.jsonl");
-    crate::persist::load(&path).expect("the replay fixture loads")
+    crate::record::persist::load(&path).expect("the replay fixture loads")
 }
 
 mod ask;

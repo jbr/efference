@@ -12,7 +12,7 @@ use super::*;
 
 use efference::api::{CacheMiss, CacheMissReason};
 use efference::daemon::{CacheRead, ColdStart, ColdStreak, USAGE_NAME, UsageLine};
-use efference::log::RequestOrigin;
+use efference::record::log::RequestOrigin;
 
 /// Per-origin counts for the table: how many requests of this shape, how many of
 /// them read a cached prefix, and what they cost.

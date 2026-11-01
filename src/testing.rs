@@ -2,7 +2,7 @@
 //! stand in for a provider with, and an endpoint for requests that go nowhere.
 
 use crate::api::Endpoint;
-use crate::log::Provider;
+use crate::record::log::Provider;
 use std::io;
 use tempfile::TempDir;
 use trillium_client::{Connector, Url};
@@ -26,8 +26,9 @@ pub(crate) fn temp_dir(label: &str) -> TempDir {
 /// does not read the outcome of: nothing is opened for a paused clock to race the
 /// kernel's answer to.
 pub(crate) fn refusing_endpoint(provider: Provider, path: &str) -> Endpoint {
-    Endpoint::at(provider, format!("http://127.0.0.1:9{path}"))
-        .with_http(crate::http::client_over(Refusing(ClientConfig::default())))
+    Endpoint::at(provider, format!("http://127.0.0.1:9{path}")).with_http(
+        crate::platform::http::client_over(Refusing(ClientConfig::default())),
+    )
 }
 
 /// The tokio connector, with the connection itself refused.

@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{Disposition, Notification, Timestamp, Triage};
+use crate::record::log::{Disposition, Notification, Timestamp, Triage};
 
 fn entry(seq: Seq, payload: Payload) -> LogEntry {
     LogEntry::new(seq, payload).with_at(Timestamp(seq))
@@ -36,7 +36,7 @@ fn active_shown_ignores_non_ambient_and_unresolved_stay() {
     let log = vec![
         entry(
             0,
-            Payload::Summary(crate::log::Summary::consolidation(0, 0, "x")),
+            Payload::Summary(crate::record::log::Summary::consolidation(0, 0, "x")),
         ),
         ambient(1, "still pending"),
     ];
@@ -50,8 +50,8 @@ fn active_shown_ignores_non_ambient_and_unresolved_stay() {
 fn assistant(seq: Seq) -> LogEntry {
     entry(
         seq,
-        Payload::assistant(crate::log::AssistantOutput::empty(
-            crate::log::WireDialect::Messages,
+        Payload::assistant(crate::record::log::AssistantOutput::empty(
+            crate::record::log::WireDialect::Messages,
         )),
     )
 }

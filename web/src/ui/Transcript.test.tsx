@@ -295,7 +295,7 @@ test("fences are numbered per text block, counting artifact fences only", async 
   ]);
 });
 
-// The server's extractor is tested on the same cases (src/artifact/test.rs), so
+// The server's extractor is tested on the same cases (src/record/artifact/test.rs), so
 // the two CommonMark parsers agree on which fences a link names.
 test.each(fenceCases.map((c) => [c.case, c] as const))(
   "fence numbering matches the server's: %s",

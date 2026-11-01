@@ -18,7 +18,7 @@ use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::{SessionRuntime, StallReason};
 use crate::frontend::SubmittedTurn;
-use crate::log::{Origin, Provider, WireState};
+use crate::record::log::{Origin, Provider, WireState};
 use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, tool_call};
 use tempfile::TempDir;
 use trillium_tokio::Swansong;
@@ -109,7 +109,7 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
             .project_messages()
             .iter()
             .flat_map(|m| m.content.iter())
-            .any(|block| matches!(block, crate::project::ApiBlock::ToolResult { .. })),
+            .any(|block| matches!(block, crate::record::project::ApiBlock::ToolResult { .. })),
         "nothing about the held call reaches the main wire"
     );
 
@@ -203,7 +203,7 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
     session
         .append(
             1,
-            Payload::Summary(crate::log::Summary::consolidation(
+            Payload::Summary(crate::record::log::Summary::consolidation(
                 0,
                 upto,
                 "the compacted account",
@@ -339,7 +339,7 @@ async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
             .project_messages()
             .iter()
             .flat_map(|m| m.content.iter())
-            .any(|block| matches!(block, crate::project::ApiBlock::ToolResult { .. })),
+            .any(|block| matches!(block, crate::record::project::ApiBlock::ToolResult { .. })),
         "nothing about the held call reaches the main wire"
     );
     host.shut_down().await;

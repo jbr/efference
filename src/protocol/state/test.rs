@@ -15,11 +15,11 @@ use crate::api::{
 };
 use crate::config::{Perms, ToolSettings};
 use crate::inference::{InferenceIdentity, TriageIdentity};
-use crate::log::{ConfigChange, Provider, Timestamp};
 use crate::policy::GateGrant;
-use crate::project::Retention;
 use crate::protocol::agents::BoundAction;
 use crate::protocol::status::Escalated;
+use crate::record::log::{ConfigChange, Provider, Timestamp};
+use crate::record::project::Retention;
 use crate::user_config::ModelSelection;
 
 const AT: u64 = 1_754_300_000_000;

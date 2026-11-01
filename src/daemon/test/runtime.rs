@@ -3,8 +3,8 @@
 use super::*;
 use crate::api::ModelCapabilities;
 use crate::daemon::{SessionBoot, SessionRuntime};
-use crate::log::{Provider, Stance};
-use crate::spawn::group_alive;
+use crate::platform::spawn::group_alive;
+use crate::record::log::{Provider, Stance};
 use crate::spotter::StaticSpotter;
 use crate::triage::Triager;
 use std::path::Path;
@@ -177,7 +177,8 @@ async fn a_first_turn_is_submitted_into_an_empty_log() {
         .wait_until("the kickoff is recorded", || {
             session.snapshot().iter().any(|entry| {
                 matches!(entry.payload, Payload::User(_))
-                    && entry.source.as_deref() == Some(crate::names::sources::KICKOFF_SOURCE)
+                    && entry.source.as_deref()
+                        == Some(crate::record::names::sources::KICKOFF_SOURCE)
             })
         })
         .await;

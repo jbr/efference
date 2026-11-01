@@ -15,11 +15,11 @@ curl -fsSL https://efference.net/install.sh | sh
 efference runs on macOS and Linux. You’ll need `bash` for the agent’s commands. Git is
 needed only if you want a session to work in its own **worktree**, a separate checkout of
 your project.
-<!-- src: src/bash.rs; src/worktree.rs; src/bin/efference/island.rs (std::os::unix); src/secrets.rs (macOS and Linux stores only) -->
+<!-- src: src/bash.rs; src/worktree.rs; src/bin/efference/island.rs (std::os::unix); src/platform/secrets.rs (macOS and Linux stores only) -->
 
 To update later, run the install command again. To check for a newer version without
 installing it, run `efference update --check`.
-<!-- src: src/bin/efference/update.rs; src/update_check.rs::INSTALL_COMMAND -->
+<!-- src: src/bin/efference/update.rs; src/platform/update_check.rs::INSTALL_COMMAND -->
 
 ## Open your project
 

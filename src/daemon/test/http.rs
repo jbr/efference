@@ -106,12 +106,12 @@ async fn turn_source_reaches_the_queued_turn() {
 async fn an_interrupt_over_http_records_its_origin() {
     let (shared, _turns_rx) = Session::in_memory();
     let app = test_server(&shared).await;
-    let recorded = |shared: &Session| -> Vec<crate::log::InterruptOrigin> {
+    let recorded = |shared: &Session| -> Vec<crate::record::log::InterruptOrigin> {
         shared
             .snapshot()
             .iter()
             .filter_map(|e| match &e.payload {
-                Payload::Telemetry(crate::log::Telemetry::Interrupt(origin)) => {
+                Payload::Telemetry(crate::record::log::Telemetry::Interrupt(origin)) => {
                     Some(origin.clone())
                 }
                 _ => None,
@@ -132,11 +132,11 @@ async fn an_interrupt_over_http_records_its_origin() {
     assert_eq!(
         recorded(&shared),
         [
-            crate::log::InterruptOrigin {
+            crate::record::log::InterruptOrigin {
                 source: Some("web".into()),
                 control: Some("stop-button".into()),
             },
-            crate::log::InterruptOrigin::default(),
+            crate::record::log::InterruptOrigin::default(),
         ]
     );
     let entry = shared
@@ -145,7 +145,7 @@ async fn an_interrupt_over_http_records_its_origin() {
         .find(|e| {
             matches!(
                 &e.payload,
-                Payload::Telemetry(crate::log::Telemetry::Interrupt(_))
+                Payload::Telemetry(crate::record::log::Telemetry::Interrupt(_))
             )
         })
         .unwrap();
@@ -165,7 +165,7 @@ async fn the_kickoff_source_is_reserved() {
         .turn_with(
             "hidden",
             crate::client::TurnOptions {
-                source: Some(crate::names::sources::KICKOFF_SOURCE),
+                source: Some(crate::record::names::sources::KICKOFF_SOURCE),
             },
         )
         .await
@@ -243,7 +243,7 @@ fn config_edit_decision_body_decodes() {
     assert_eq!(d.decision, "config_edit");
     assert_eq!(
         d.change,
-        Some(crate::log::ConfigChange::Command {
+        Some(crate::record::log::ConfigChange::Command {
             command: "cargo nextest".into()
         })
     );
@@ -397,10 +397,12 @@ async fn a_turn_carries_the_attachments_it_names() {
 
     let err = client
         .submit(
-            &SubmittedTurn::new("", "s2").with_attachments(vec![crate::log::attachment::Arrival {
-                name: "../escape".into(),
-                ..arrival.clone()
-            }]),
+            &SubmittedTurn::new("", "s2").with_attachments(vec![
+                crate::record::log::attachment::Arrival {
+                    name: "../escape".into(),
+                    ..arrival.clone()
+                },
+            ]),
             None,
         )
         .await

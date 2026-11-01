@@ -1,6 +1,6 @@
 use super::*;
-use crate::log::Telemetry;
-use crate::log::{
+use crate::record::log::Telemetry;
+use crate::record::log::{
     AssistantOutput, ConfigEdit, ContentBlock, Disposition, Keep, Notification, Timestamp,
     ToolTelemetry, Triage, Triaged,
 };
@@ -98,7 +98,7 @@ fn errors_raw_and_images_are_named_not_shown() {
             2,
             Payload::tool_result(
                 "toolu_2",
-                RawResult::text("ok").with_images(vec![crate::log::ResultImage {
+                RawResult::text("ok").with_images(vec![crate::record::log::ResultImage {
                     media_type: "image/png".into(),
                     data: "AAAA".into(),
                     width: 1,
@@ -135,7 +135,7 @@ fn silent_entries_render_to_nothing_and_verdicts_on_the_inbox_do_not() {
                 call_id: "toolu_1".into(),
                 tool: "read".into(),
                 duration_ms: 1,
-                outcome: crate::log::ToolOutcome::Applied,
+                outcome: crate::record::log::ToolOutcome::Applied,
                 result_bytes: 1,
                 images: 0,
                 bash: None,
@@ -220,9 +220,9 @@ fn a_command_gets_room_where_a_body_does_not() {
 #[test]
 fn a_title_shows_when_it_moves_and_not_when_it_is_kept() {
     let title = |text: &str| {
-        Payload::Title(crate::log::Title::new(
+        Payload::Title(crate::record::log::Title::new(
             text,
-            crate::log::TitleAuthor::Triage,
+            crate::record::log::TitleAuthor::Triage,
         ))
     };
     let log = [
@@ -338,7 +338,7 @@ fn an_ask_reads_as_a_question_and_its_reply() {
 /// captured result's verdict, a restart notice, and a deliberate archive.
 #[test]
 fn each_mechanism_entry_has_its_line() {
-    use crate::log::{
+    use crate::record::log::{
         ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn, Resumed, Spot,
         Summary, WireDialect,
     };
@@ -348,7 +348,7 @@ fn each_mechanism_entry_has_its_line() {
             1,
             Payload::record_only(
                 AssistantOutput::empty(WireDialect::Messages),
-                crate::log::Exclusion::Empty,
+                crate::record::log::Exclusion::Empty,
             ),
         ),
         entry(

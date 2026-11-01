@@ -9,8 +9,8 @@
 //! (docs/control-api.md). A session outside a host has none and publishes `null`.
 
 use super::*;
+use crate::platform::update_check::{INSTALL_COMMAND, Release};
 use crate::protocol::state::NewerVersion;
-use crate::update_check::{INSTALL_COMMAND, Release};
 
 /// What the host's update check last found newer than the host, or nothing.
 #[derive(Default, Debug)]

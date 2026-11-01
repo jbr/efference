@@ -4,8 +4,8 @@ use super::*;
 use crate::dev::StanceArg;
 
 /// The uppercase display label and colour for a stance in the survey listing.
-pub(crate) fn stance_label(stance: efference::log::Stance) -> (&'static str, &'static str) {
-    use efference::log::Stance;
+pub(crate) fn stance_label(stance: efference::record::log::Stance) -> (&'static str, &'static str) {
+    use efference::record::log::Stance;
     match stance {
         Stance::Clear => ("CLEAR", GREEN),
         Stance::ClearAlways => ("CLEAR_ALWAYS", GREEN_BOLD),
@@ -56,8 +56,8 @@ pub(crate) struct SpotRow {
     pub(crate) session: String,
     pub(crate) seq: u64,
     pub(crate) turn: u32,
-    pub(crate) stance: efference::log::Stance,
-    pub(crate) origin: efference::log::Origin,
+    pub(crate) stance: efference::record::log::Stance,
+    pub(crate) origin: efference::record::log::Origin,
     pub(crate) reason: String,
     pub(crate) probed_prefix: Option<String>,
     pub(crate) call: String,
@@ -68,11 +68,11 @@ pub(crate) struct SpotRow {
 /// `--no-fallback` filters. The pure, testable core of [`spotter_log`].
 pub(crate) fn spots_in(
     session: &str,
-    entries: &[efference::log::LogEntry],
+    entries: &[efference::record::log::LogEntry],
     stances: &[StanceArg],
     no_fallback: bool,
 ) -> Vec<SpotRow> {
-    use efference::log::{CallId, Origin, Payload, ToolCall};
+    use efference::record::log::{CallId, Origin, Payload, ToolCall};
     use std::collections::HashMap;
 
     // Index every tool call by id so each Spot can name what it judged.
@@ -170,7 +170,7 @@ pub(crate) fn spotter_log(
     list_only: bool,
     no_fallback: bool,
 ) -> CliResult {
-    use efference::log::{Origin, Stance};
+    use efference::record::log::{Origin, Stance};
     use std::io::IsTerminal;
 
     let logs = resolve_spotter_logs(path)?;
@@ -183,7 +183,7 @@ pub(crate) fn spotter_log(
     let mut rows: Vec<SpotRow> = Vec::new();
     let mut sessions_with_spots = 0usize;
     for (session, log_path) in &logs {
-        let entries = match efference::persist::load(log_path) {
+        let entries = match efference::record::persist::load(log_path) {
             Ok(e) => e,
             Err(e) => {
                 eprintln!("skipping {}: {e}", log_path.display());

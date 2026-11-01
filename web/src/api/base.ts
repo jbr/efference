@@ -12,7 +12,7 @@
 
 /** A session id as the host resolves one: a single plain segment — ASCII
  * alphanumerics, `-`, `_`, `.`, and neither `.` nor `..`. Mirrors `plain_id`
- * (src/session_dir.rs); an id outside it names no session there, so a path
+ * (src/record/session_dir.rs); an id outside it names no session there, so a path
  * carrying one is not a session prefix here either. */
 const plainId = (id: string): boolean =>
   id.length > 0 && id !== "." && id !== ".." && /^[A-Za-z0-9._-]+$/.test(id);

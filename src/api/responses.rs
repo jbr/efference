@@ -7,8 +7,8 @@ use serde_json::Value;
 
 use super::provider::PromptCachePolicy;
 use super::thinking::ToolChoice;
-use crate::log::{AssistantOutput, ResultImage};
-use crate::project::{UserPart, WireTurn};
+use crate::record::log::{AssistantOutput, ResultImage};
+use crate::record::project::{UserPart, WireTurn};
 
 pub(crate) mod assembler;
 #[cfg(test)]

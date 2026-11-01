@@ -22,7 +22,7 @@ fn add_makes_a_worktree_on_a_new_branch_at_head_and_remove_undoes_it() {
     let added = add(&project, "quiet-fox", &project, &env).unwrap();
     assert_eq!(
         added.path,
-        crate::session_dir::worktree::path(&project, "quiet-fox")
+        crate::record::session_dir::worktree::path(&project, "quiet-fox")
     );
     assert!(added.path.join("f.txt").is_file());
     assert_eq!(added.branch, "efference/quiet-fox");
@@ -192,7 +192,7 @@ fn add_outside_a_git_work_tree_is_refused() {
     let env = crate::env_table::ChildEnv::default();
     let error = add(&dir, "quiet-fox", &dir, &env).unwrap_err();
     assert!(error.contains("git work tree"), "{error}");
-    assert!(!crate::session_dir::worktree::path(&dir, "quiet-fox").exists());
+    assert!(!crate::record::session_dir::worktree::path(&dir, "quiet-fox").exists());
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

@@ -41,7 +41,7 @@ use trillium_client::sse::{EventStream, SseErrorKind};
 use trillium_client::{Client as HttpClient, Conn, HeaderValue};
 
 use crate::mcp::auth::{AuthorizationRequired, Credentials};
-use crate::www_authenticate::Challenges;
+use crate::platform::www_authenticate::Challenges;
 
 pub struct HttpTransport {
     client: HttpClient,
@@ -62,7 +62,7 @@ pub struct HttpTransport {
 impl HttpTransport {
     pub fn new(url: &str) -> Self {
         Self {
-            client: crate::http::client(),
+            client: crate::platform::http::client(),
             url: url.to_string(),
             credentials: None,
             session_id: None,

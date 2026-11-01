@@ -20,7 +20,7 @@ use std::time::Duration;
 use crossbeam_channel::Sender;
 
 use super::{assistant, result};
-use crate::log::{ToolCall, WireState};
+use crate::record::log::{ToolCall, WireState};
 use crate::tui::TuiEvent;
 
 /// A real source file, included at build time: the streaming render is about
@@ -231,7 +231,7 @@ I am not expecting."
                 format!("Wrote {} bytes to {WRITTEN_PATH}", WRITTEN_FILE.len()),
             ),
             Scene::Bash => (
-                crate::names::tools::BASH,
+                crate::record::names::tools::BASH,
                 "Running the test suite.",
                 object(&[
                     ("intent", json_str("run the test suite")),

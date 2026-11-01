@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::daemon::cold::ParkReason;
-use crate::log::Summary;
-use crate::log::Telemetry;
+use crate::record::log::Summary;
+use crate::record::log::Telemetry;
 
 /// A session whose cache is already believed cold: a zero lifetime and one turn on
 /// the record, a moment ago.
@@ -27,7 +27,7 @@ fn no_usage() -> RequestUsage {
 #[test]
 fn a_shared_triage_refreshes_the_cold_belief_and_an_own_triage_does_not() {
     let (usage_path, _usage_path_dir) = temp_file("cold-triage-test-usage.jsonl");
-    let stale = crate::log::Timestamp::now().0 - 35 * 60_000;
+    let stale = crate::record::log::Timestamp::now().0 - 35 * 60_000;
     std::fs::write(
         &usage_path,
         format!("{{\"at_ms\":{stale},\"origin\":\"turn\"}}\n"),
@@ -71,8 +71,8 @@ async fn a_turn_on_a_cold_session_goes_through() {
     assert!(shared.person_acted.load(Ordering::SeqCst));
     assert_eq!(
         cold_records(&shared),
-        vec![crate::log::ColdEvent::Released {
-            by: crate::log::ReleasedBy::Turn
+        vec![crate::record::log::ColdEvent::Released {
+            by: crate::record::log::ReleasedBy::Turn
         }]
     );
 }
@@ -109,7 +109,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
     assert_eq!(state["cold"]["since"], serde_json::json!(since));
     assert_eq!(state["status"]["condition"]["kind"], "parked");
 
-    shared.release_cold(crate::log::ReleasedBy::Turn);
+    shared.release_cold(crate::record::log::ReleasedBy::Turn);
     assert_eq!(
         shared.loop_phase(),
         LoopPhase::Requesting,
@@ -175,7 +175,7 @@ async fn a_fold_leaves_the_park_folded() {
 async fn a_person_acting_on_a_warm_session_is_not_kept() {
     let (shared, _rx) = Session::in_memory();
     shared.set_cache_ttl(Duration::ZERO);
-    shared.release_cold(crate::log::ReleasedBy::Turn);
+    shared.release_cold(crate::record::log::ReleasedBy::Turn);
     assert!(!shared.person_acted.load(Ordering::SeqCst));
     assert!(cold_records(&shared).is_empty());
 }
@@ -204,7 +204,7 @@ async fn nothing_to_fold_is_not_cold() {
 }
 
 /// The `Cold` records in the log, in order.
-fn cold_records(shared: &Session) -> Vec<crate::log::ColdEvent> {
+fn cold_records(shared: &Session) -> Vec<crate::record::log::ColdEvent> {
     shared
         .log
         .lock()
@@ -242,8 +242,8 @@ async fn an_approval_releases_the_next_check_and_no_park_follows() {
     assert_eq!(
         cold_records(&shared),
         vec![
-            crate::log::ColdEvent::Released {
-                by: crate::log::ReleasedBy::Approval
+            crate::record::log::ColdEvent::Released {
+                by: crate::record::log::ReleasedBy::Approval
             },
             // Nothing parked, so nothing unparked.
         ]
@@ -254,7 +254,7 @@ async fn an_approval_releases_the_next_check_and_no_park_follows() {
 /// park, release, resume.
 #[tokio::test]
 async fn every_person_action_releases_a_park_and_is_recorded() {
-    use crate::log::ReleasedBy;
+    use crate::record::log::ReleasedBy;
     for by in [
         ReleasedBy::Turn,
         ReleasedBy::Approval,
@@ -282,17 +282,17 @@ async fn every_person_action_releases_a_park_and_is_recorded() {
         let records = cold_records(&shared);
         assert!(matches!(
             records[0],
-            crate::log::ColdEvent::Parked {
-                reason: crate::log::ColdReason::Expired,
+            crate::record::log::ColdEvent::Parked {
+                reason: crate::record::log::ColdReason::Expired,
                 ..
             }
         ));
         assert_eq!(
             records[1..],
             [
-                crate::log::ColdEvent::Released { by },
-                crate::log::ColdEvent::Unparked {
-                    cause: crate::log::UnparkCause::Person
+                crate::record::log::ColdEvent::Released { by },
+                crate::record::log::ColdEvent::Unparked {
+                    cause: crate::record::log::UnparkCause::Person
                 },
             ]
         );
@@ -367,8 +367,8 @@ async fn an_answer_to_an_ask_is_recorded_as_an_answer() {
     assert!(shared.person_acted.load(Ordering::SeqCst));
     assert_eq!(
         cold_records(&shared),
-        vec![crate::log::ColdEvent::Released {
-            by: crate::log::ReleasedBy::Ask
+        vec![crate::record::log::ColdEvent::Released {
+            by: crate::record::log::ReleasedBy::Ask
         }]
     );
 }
@@ -394,7 +394,7 @@ async fn an_inbox_wake_while_cold_waits_for_a_person() {
 #[test]
 fn a_main_switch_starts_the_session_cold() {
     let (usage_path, _usage_path_dir) = temp_file("cold-switch-test-usage.jsonl");
-    let minute_ago = crate::log::Timestamp::now().0 - 60_000;
+    let minute_ago = crate::record::log::Timestamp::now().0 - 60_000;
     std::fs::write(
         &usage_path,
         format!("{{\"at_ms\":{minute_ago},\"origin\":\"turn\"}}\n"),
@@ -410,7 +410,7 @@ fn a_main_switch_starts_the_session_cold() {
     let (switched, _rx) = Session::in_memory();
     switched.set_cache_ttl(Duration::from_secs(300));
     append_compactable_history(&switched);
-    let lost = crate::log::Timestamp::now();
+    let lost = crate::record::log::Timestamp::now();
     switched.mark_cache_lost(lost);
     switched.attach_usage_log(&usage_path);
     assert_eq!(switched.cold_since(), Some(lost));

@@ -12,7 +12,7 @@ use super::wire::item_from_wire;
 use crate::api::assembler::ResponseMeta;
 use crate::api::failure::{FailureClass, classify};
 use crate::api::{Completion, Error, Finish, FinishReason, Streamed, Usage};
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, Exclusion, FRAME_CAPTURE_CAP, Payload, ResponsesOutputItem, StreamDiagnostics,
     UpstreamFailureRecord,
 };

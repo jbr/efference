@@ -5,10 +5,10 @@
 use super::*;
 use crate::control_tools::{Control, Decide, Executor, Status};
 use crate::daemon::Host;
-use crate::log::{Approval, Telemetry};
 use crate::policy::ReviewLevel;
 use crate::protocol::agents::Decision;
 use crate::protocol::status::{Condition, Escalated, Reviewer};
+use crate::record::log::{Approval, Telemetry};
 use crate::tools::SessionControl as _;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
@@ -85,7 +85,7 @@ fn latest_from(session: &Session, source: &str) -> Option<String> {
 
 fn curl(id: &str) -> ToolCall {
     ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         id,
         serde_json::json!({
             "command": "curl -sI https://example.com",
@@ -100,7 +100,7 @@ fn hold(holder: &Session, call: &ToolCall) -> (String, oneshot::Receiver<Approva
     let seq = holder
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![call.clone()],
@@ -128,7 +128,7 @@ fn held(session: &Session, id: &str) -> crate::protocol::status::HeldCall {
 }
 
 /// `session`'s escalation records, in order.
-fn escalations(session: &Session) -> Vec<crate::log::Escalation> {
+fn escalations(session: &Session) -> Vec<crate::record::log::Escalation> {
     session
         .snapshot()
         .into_iter()
@@ -139,7 +139,7 @@ fn escalations(session: &Session) -> Vec<crate::log::Escalation> {
         .collect()
 }
 
-fn gate_decisions(session: &Session) -> Vec<crate::log::GateDecision> {
+fn gate_decisions(session: &Session) -> Vec<crate::record::log::GateDecision> {
     session
         .snapshot()
         .into_iter()
@@ -199,7 +199,7 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
     );
     assert_eq!(
         escalations(&c),
-        [crate::log::Escalation::new(
+        [crate::record::log::Escalation::new(
             "toolu_c",
             Some("session[p]".into()),
             Some("g".into()),
@@ -257,7 +257,7 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
     assert!(matches!(gate.await, Ok(Approval::Approve)));
     assert_eq!(
         gate_decisions(&c),
-        [crate::log::GateDecision::new(
+        [crate::record::log::GateDecision::new(
             "toolu_c",
             Approval::Approve,
             Some("session[g]".into())
@@ -328,7 +328,7 @@ async fn the_grandparent_decides_only_the_escalated_gate() {
 async fn a_one_level_chain_reaches_the_operator_with_a_push() {
     let fixture = Fixture::new().await;
     let (q, k) = (fixture.session("q"), fixture.session("k"));
-    let sent = Arc::new(Mutex::new(Vec::<crate::push::Message>::new()));
+    let sent = Arc::new(Mutex::new(Vec::<crate::platform::push::Message>::new()));
     {
         let sent = Arc::clone(&sent);
         k.set_push_transport(Arc::new(move |message| {

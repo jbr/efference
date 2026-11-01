@@ -1,10 +1,10 @@
 use super::*;
 use crate::api::{PromptCachePolicy, encode_responses};
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, ContentBlock, Keep, LoggedInference, RawResult, Summary, Timestamp, ToolCall,
     Triaged, WireState,
 };
-use crate::project::{BreakpointPlacement, ImagePlacement, encode_messages};
+use crate::record::project::{BreakpointPlacement, ImagePlacement, encode_messages};
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -272,12 +272,12 @@ fn a_cut_history_marks_the_digest_end_and_the_history_end() {
 fn a_triage_summary_leads_and_replaces_its_range() {
     let (mut log, triaged) = session(4, 64);
     let anchor = log.pop().unwrap();
-    let model = LoggedInference::new("c", crate::log::Provider::Anthropic, "m");
+    let model = LoggedInference::new("c", crate::record::log::Provider::Anthropic, "m");
     log.push(entry(
         50,
         Payload::Summary(
             Summary::compaction(5, "The first two steps ran.", model)
-                .for_audience(crate::log::Audience::Triage),
+                .for_audience(crate::record::log::Audience::Triage),
         ),
     ));
     log.push(anchor);

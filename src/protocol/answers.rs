@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalog::ConnectionCatalog;
 use crate::inference::ConnectionInventory;
-use crate::log::{EditState, Seq, ToolCall};
+use crate::record::log::{EditState, Seq, ToolCall};
 
 /// The word a route answers `status` with when it has acted on a request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

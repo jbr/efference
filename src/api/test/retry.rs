@@ -98,7 +98,7 @@ fn retry_topic_tracks_attempts_and_clears_on_finalize() {
             format!("attempt {attempt} of {STREAM_ABORT_ATTEMPTS} failed upstream, retrying")
         );
         assert!(live.detail.contains("connection reset"));
-        assert!(live.next_attempt_at > crate::log::Timestamp::now().0 - 1000);
+        assert!(live.next_attempt_at > crate::record::log::Timestamp::now().0 - 1000);
     }
 
     retry.clear(RetrySurface::Turn);

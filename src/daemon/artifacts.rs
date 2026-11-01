@@ -26,9 +26,9 @@ use trillium::{Conn, KnownHeaderName};
 use trillium_router::{Router, RouterConnExt};
 
 use super::{Host, Session};
-use crate::artifact::{Fence, Kind, fences};
-use crate::log::{LogEntry, Payload, ToolCall};
 use crate::policy::Verdict;
+use crate::record::artifact::{Fence, Kind, fences};
+use crate::record::log::{LogEntry, Payload, ToolCall};
 
 /// The length of a session's signing key.
 pub(crate) const KEY_BYTES: usize = 32;

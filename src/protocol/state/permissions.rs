@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::{CommandStance, Perms, ToolSettings};
-use crate::log::{ConfigChange, Seq};
 use crate::policy::GateGrant;
 use crate::protocol::agents::BoundAction;
 use crate::protocol::status::Escalated;
+use crate::record::log::{ConfigChange, Seq};
 
 /// The `gate` topic: the call held for a decision, as `GET /state` surfaces it — the
 /// ephemeral control state the log does not record, since it stores only the result.
@@ -47,7 +47,7 @@ pub struct Gate {
 }
 
 /// One async config edit awaiting an orchestrator decision
-/// (docs/permissions.md). Filed by a `Proposed` [`ConfigEdit`](crate::log::ConfigEdit) append (the
+/// (docs/permissions.md). Filed by a `Proposed` [`ConfigEdit`](crate::record::log::ConfigEdit) append (the
 /// session's `propose_scope`, the spotter's prefix-promotion); the orchestrator-above commits or
 /// cancels it, which drops it from the queue. Unlike a
 /// [`PendingNotification`](super::PendingNotification), the proposal

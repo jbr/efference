@@ -1,7 +1,7 @@
 use super::title::{parse_title, title_instruction};
 use super::*;
-use crate::log::Triage;
-use crate::project::{
+use crate::record::log::Triage;
+use crate::record::project::{
     ApiBlock, ApiMessage, BreakpointPlacement, ImagePlacement, Role, encode_messages, project_with,
 };
 
@@ -31,7 +31,7 @@ fn calls_completion(calls: Vec<ToolCall>) -> Completion {
 }
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
-    use crate::log::Timestamp;
+    use crate::record::log::Timestamp;
     LogEntry::new(seq, payload).with_at(Timestamp(1000 + seq))
 }
 

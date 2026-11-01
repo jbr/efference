@@ -3,7 +3,7 @@
 //! backend, and the Codex request headers.
 
 use super::*;
-use crate::log::RequestOrigin;
+use crate::record::log::RequestOrigin;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// The Codex route an upstream answers on.
@@ -293,7 +293,7 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
         "sys",
     )
     .with_prompt_cache(PromptCachePolicy::Implicit);
-    let turns = vec![crate::project::WireTurn::text("hello")];
+    let turns = vec![crate::record::project::WireTurn::text("hello")];
     let tools = vec![serde_json::json!({"type": "function", "name": "x"})];
     client
         .complete(&turns, &tools, ToolChoice::auto(), |_| {})
@@ -382,7 +382,7 @@ async fn primer_plants_despite_truncated_output() {
     let endpoint = upstream.endpoint(Provider::OpenAICodex, CODEX);
     let client =
         Client::new(endpoint, "gpt-6-luna", "sys").with_prompt_cache(PromptCachePolicy::Implicit);
-    let turns = vec![crate::project::WireTurn::text("hello")];
+    let turns = vec![crate::record::project::WireTurn::text("hello")];
     let primer = client
         .prime(&turns, &[], ToolChoice::auto())
         .await

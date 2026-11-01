@@ -5,9 +5,9 @@ use super::*;
 use crate::control_tools::{Control, Decide, Executor, Interrupt, Message};
 use crate::daemon::Host;
 use crate::daemon::host::SupervisorRefused;
-use crate::log::{Approval, InterruptOrigin, Telemetry};
 use crate::policy::ReviewLevel;
 use crate::protocol::agents::Decision;
+use crate::record::log::{Approval, InterruptOrigin, Telemetry};
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 use std::path::Path;
@@ -103,7 +103,7 @@ fn issue(session: &Session) -> String {
     session
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![leaf()],
@@ -195,7 +195,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
         .collect();
     assert_eq!(
         decisions,
-        [crate::log::GateDecision::new(
+        [crate::record::log::GateDecision::new(
             "toolu_leaf",
             Approval::Approve,
             Some("session[b]".into())

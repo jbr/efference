@@ -119,7 +119,7 @@ impl Session {
                 self.person_acted(PersonAction::NamedTurn { answers: true });
                 // An agent's answer is delivered, and the loop then waits at its next
                 // juncture if the operator holds it (docs/control-channel.md).
-                if !crate::names::sources::agent_source(turn.source.as_deref()) {
+                if !crate::record::names::sources::agent_source(turn.source.as_deref()) {
                     self.resume_from_hold();
                 }
                 self.deliver_reply(state, turn);

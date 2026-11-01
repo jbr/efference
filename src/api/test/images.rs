@@ -3,8 +3,8 @@
 
 use super::forced_choice::{STREAM, scripted};
 use super::*;
-use crate::log::ResultImage;
-use crate::project::{UserPart, WireTurn};
+use crate::record::log::ResultImage;
+use crate::record::project::{UserPart, WireTurn};
 
 /// Some 400 whose wording names nothing; the retry is the diagnosis, not the text.
 const REFUSAL: &str =

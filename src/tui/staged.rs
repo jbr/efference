@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use crate::log::attachment::Arrival;
+use crate::record::log::attachment::Arrival;
 
 /// What the UI asks the tokio side to do with an attachment.
 #[derive(Debug, Clone, PartialEq, Eq)]

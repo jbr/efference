@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{Keep, RawResult, ToolCall, Triaged};
+use crate::record::log::{Keep, RawResult, ToolCall, Triaged};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
     LogEntry::new(seq, payload).with_turn(1)
@@ -468,7 +468,7 @@ fn an_elided_result_names_the_elision_in_its_header() {
         panic!("the sample's third entry is the result");
     };
     raw.content = "x".repeat(16 * 1024);
-    raw.content_elided = Some(crate::log::ContentElision {
+    raw.content_elided = Some(crate::record::log::ContentElision {
         kept_bytes: 16 * 1024,
         total_bytes: 256 * 1024,
     });
@@ -503,7 +503,7 @@ fn an_elided_result_names_the_elision_in_its_header() {
 #[test]
 fn the_kickoff_turn_is_not_drawn() {
     let mut kickoff = entry(0, Payload::user("greet them"));
-    kickoff.source = Some(crate::names::sources::KICKOFF_SOURCE.to_string());
+    kickoff.source = Some(crate::record::names::sources::KICKOFF_SOURCE.to_string());
     let mut sourced = entry(2, Payload::user("from web"));
     sourced.source = Some("web".to_string());
     let log = vec![
@@ -533,7 +533,7 @@ fn the_kickoff_turn_is_not_drawn() {
 #[test]
 fn a_handoff_brief_is_drawn_as_the_predecessors_note() {
     let mut brief = entry(0, Payload::user("carry on"));
-    brief.source = Some(crate::names::sources::handoff_source("old-leaf"));
+    brief.source = Some(crate::record::names::sources::handoff_source("old-leaf"));
     let doc = project(
         &[brief],
         &LiveTail::default(),
@@ -571,7 +571,7 @@ fn a_sourced_turn_keeps_its_source_verbatim() {
 /// line itself; git's setup output is not drawn.
 #[test]
 fn a_worktree_entry_renders_as_a_notice_line() {
-    use crate::log::{Checkout, WorktreeEvent, WorktreeEventKind};
+    use crate::record::log::{Checkout, WorktreeEvent, WorktreeEventKind};
     let notice = |kind| {
         let log = [entry(
             1,
@@ -638,7 +638,10 @@ fn a_worktree_entry_renders_as_a_notice_line() {
 /// wire notice and already opens with `⟢`, so the annotation supplies none.
 #[test]
 fn a_resumed_notice_carries_one_glyph() {
-    let log = [entry(1, Payload::Resumed(crate::log::Resumed::new(45_000)))];
+    let log = [entry(
+        1,
+        Payload::Resumed(crate::record::log::Resumed::new(45_000)),
+    )];
     let doc = project(
         &log,
         &LiveTail::default(),

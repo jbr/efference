@@ -169,7 +169,7 @@ pub(super) fn append_inbox_and_background(
     if !inbox.is_empty() {
         view.push_str(&format!("\n\n═══ inbox · {} pending ═══", inbox.len()));
         for n in inbox {
-            let source = crate::names::sources::wire_label(&n.source);
+            let source = crate::record::names::sources::wire_label(&n.source);
             view.push_str(&format!("\n[{}] {source} · {}", n.seq, n.body));
         }
     }
@@ -202,7 +202,7 @@ pub(super) fn append_inbox_and_background(
 /// The whole item is carried, not just the name, so [`append_roster`] can re-render it as
 /// the preamble spelled it — summary and path included.
 pub(super) fn surfaceable_roster(prefix: &[LogEntry]) -> Vec<Item> {
-    let mut sections: &[crate::log::context::Section] = &[];
+    let mut sections: &[crate::record::log::context::Section] = &[];
     let mut surfaced: HashSet<&str> = HashSet::new();
     for entry in prefix {
         match &entry.payload {
@@ -406,7 +406,7 @@ pub(super) fn triage_messages(
 /// One result as the triage request shows it: labelled and line-numbered, or a stand-in
 /// for a bypassed result.
 pub(super) struct TriageResult {
-    pub(super) call_id: crate::log::CallId,
+    pub(super) call_id: crate::record::log::CallId,
     pub(super) content: String,
     pub(super) is_error: bool,
 }

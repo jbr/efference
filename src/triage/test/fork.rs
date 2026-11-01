@@ -279,7 +279,7 @@ fn a_bypassed_result_reaches_the_wire_verbatim() {
 fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
     let calls = vec![
         ToolCall::new(
-            crate::names::tools::ASK,
+            crate::record::names::tools::ASK,
             "ask_1",
             json!({"question": "ok?"}),
         ),
@@ -344,7 +344,7 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
 #[test]
 fn a_gate_of_only_ask_replies_needs_no_triage_and_delivers_them_raw() {
     let call = ToolCall::new(
-        crate::names::tools::ASK,
+        crate::record::names::tools::ASK,
         "ask_1",
         json!({"question": "ok?"}),
     );

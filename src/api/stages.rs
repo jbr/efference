@@ -13,7 +13,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::log::{RequestOrigin, RequestStage, RequestStageKind};
+use crate::record::log::{RequestOrigin, RequestStage, RequestStageKind};
 
 /// Where a client reports request stages. The session implements it by minting ids
 /// and appending a [`RequestStage`] entry; a client with none installed records

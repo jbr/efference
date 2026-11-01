@@ -343,7 +343,7 @@ async fn keychain_source<P: Prompter, Q: Probe>(
         break pasted;
     };
     let checked = check_key(prompter, probe, connection, target, pasted.clone()).await?;
-    let name = crate::secrets::inference_name(connection);
+    let name = crate::platform::secrets::inference_name(connection);
     match probe.store_secret(&name, &pasted) {
         Ok(()) => prompter.say(Tone::Good, &format!("Kept as `{name}`.")),
         Err(error) => {

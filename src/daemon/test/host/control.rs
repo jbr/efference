@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::control_tools::{Archive, ClientExecutor, Control, Create, Executor, Status};
-use crate::log::{Approval, ToolCall};
+use crate::record::log::{Approval, ToolCall};
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
@@ -96,7 +96,7 @@ fn mount_over(host: ControlClient) -> (Control, ClientExecutor) {
 /// A bash call running `command`.
 fn bash(call_id: &str, command: &str) -> ToolCall {
     ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         call_id,
         serde_json::json!({ "command": command }),
     )
@@ -109,7 +109,7 @@ fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, oneshot::Receiver<Appro
     let seq = session
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![call.clone()],

@@ -14,7 +14,7 @@
 
 use super::resume::ResumeRefused;
 use super::*;
-use crate::session_dir::{SESSION_BASE, plain_id};
+use crate::record::session_dir::{SESSION_BASE, plain_id};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::{Semaphore, watch};
 
@@ -173,12 +173,12 @@ fn header_creator(root: &std::path::Path, id: &str) -> Option<String> {
     let log = root
         .join(SESSION_BASE)
         .join(id)
-        .join(crate::session_dir::LOG_NAME);
+        .join(crate::record::session_dir::LOG_NAME);
     let mut line = Vec::new();
     io::BufReader::new(std::fs::File::open(&log).ok()?)
         .read_until(b'\n', &mut line)
         .ok()?;
-    let header = crate::persist::read_header(&log, line.trim_ascii_end()).ok()?;
+    let header = crate::record::persist::read_header(&log, line.trim_ascii_end()).ok()?;
     header.metadata()?.created_by.clone()
 }
 

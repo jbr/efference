@@ -9,7 +9,7 @@
 use mcplease::types::{ProgressToken, RequestId};
 use serde_json::Value;
 
-use crate::log::Notification;
+use crate::record::log::Notification;
 
 /// What a server said while a call was in flight.
 pub(super) enum ServerEvent {

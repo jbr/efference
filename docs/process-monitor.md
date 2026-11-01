@@ -127,7 +127,7 @@ a second shutdown signal ends the process outright.
 
 Every child the crate starts — foreground and background bash, `[context]` exec,
 `[env]` reference commands, stdio MCP servers, the macOS keychain's `security` —
-goes through `crate::spawn`, which
+goes through `crate::platform::spawn`, which
 holds one process-wide lock across `Command::spawn`. `spawn` creates the child's
 stdio pipes and then starts the process, and on platforms without an atomic
 `pipe2(O_CLOEXEC)` (macOS) the pipe is briefly inheritable between its creation and
@@ -138,7 +138,7 @@ until the grandchild exits. A hosted process spawns for several sessions at once
 so the window is not theoretical. The lock covers a few system calls and nothing
 awaits inside it. A spawn outside the lock reopens the window for every other spawn,
 so `clippy.toml` disallows `Command::spawn`, `output`, and `status` (std and tokio)
-everywhere but `crate::spawn`; `crate::spawn::std_output` stands in for `output`.
+everywhere but `crate::platform::spawn`; `crate::platform::spawn::std_output` stands in for `output`.
 
 ## Three-places decomposition
 
@@ -177,7 +177,7 @@ prose. That prose outlives the registry, so a reader of a recorded session meets
 ([tools.md](tools.md)) exists to end.
 
 So the mapping is also recorded structurally, as `Payload::ProcessEvent`
-(`src/log/process.rs`): a **mint** entry when a process enters the background
+(`src/record/log/process.rs`): a **mint** entry when a process enters the background
 namespace, and an **exit** entry when it ends. Like `ToolTelemetry` it projects to
 nothing — the wire already carries the backgrounding result and the exit
 notification; this is the audit record beside them, not a second copy — so

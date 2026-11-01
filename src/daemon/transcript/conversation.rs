@@ -8,7 +8,7 @@
 
 use super::index::Index;
 use super::*;
-use crate::log::{ContentBlock, Exclusion, GateDecision, Seq, Telemetry};
+use crate::record::log::{ContentBlock, Exclusion, GateDecision, Seq, Telemetry};
 use std::ops::RangeInclusive;
 
 mod tail;
@@ -186,7 +186,7 @@ impl<'a, 'r> Out<'a, 'r> {
     fn user(&mut self, entry: &LogEntry, blocks: &[ContentBlock]) {
         // The kickoff belongs to the session's opening, as the preamble does
         // (docs/context.md).
-        if entry.source.as_deref() == Some(crate::names::sources::KICKOFF_SOURCE) {
+        if entry.source.as_deref() == Some(crate::record::names::sources::KICKOFF_SOURCE) {
             return;
         }
         // An allow's note is on its call's line, or on the decision's.
@@ -246,7 +246,7 @@ impl<'a, 'r> Out<'a, 'r> {
     /// escalation before the decision: `→ escalated by p to you: "<note>" →`.
     fn call_line(&self, call: &ToolCall) -> String {
         let id = call.id.0.as_str();
-        let mut head = crate::names::tools::display_name(&call.name);
+        let mut head = crate::record::names::tools::display_name(&call.name);
         if let Some(summary) = call_summary(call) {
             let _ = write!(head, " {}", code_span(&summary));
         }

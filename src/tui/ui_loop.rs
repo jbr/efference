@@ -2,7 +2,7 @@
 
 use super::*;
 
-use crate::terminal_title::{self, TerminalTitle};
+use crate::platform::terminal_title::{self, TerminalTitle};
 use crate::tui::frame_cost::FrameCost;
 use crate::user_config::{ImageMode, TuiConfig};
 use ratatui::prelude::Backend;

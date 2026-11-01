@@ -18,9 +18,9 @@
 //!   tool, carrying the intent: kill the process group, or detach it into the
 //!   background process monitor (docs/process-monitor.md).
 
-use crate::log::{Approval, ContentBlock, ToolCall};
 use crate::protocol::agents::BoundAction;
 use crate::protocol::turns::QueuedTurn;
+use crate::record::log::{Approval, ContentBlock, ToolCall};
 use crate::tools::Interrupt;
 
 /// A user turn as it arrived over the control channel: the text plus the
@@ -40,7 +40,7 @@ pub struct SubmittedTurn {
     /// Files the submitting composer attached, already in the session's store
     /// (docs/inbox.md). Each lands on the `User` entry as a
     /// [`ContentBlock::Attachment`] after the text.
-    pub attachments: Vec<crate::log::attachment::Arrival>,
+    pub attachments: Vec<crate::record::log::attachment::Arrival>,
 }
 
 impl SubmittedTurn {
@@ -61,7 +61,10 @@ impl SubmittedTurn {
         self
     }
 
-    pub fn with_attachments(mut self, attachments: Vec<crate::log::attachment::Arrival>) -> Self {
+    pub fn with_attachments(
+        mut self,
+        attachments: Vec<crate::record::log::attachment::Arrival>,
+    ) -> Self {
         self.attachments = attachments;
         self
     }
@@ -98,7 +101,7 @@ impl SubmittedTurn {
             .chain(
                 self.attachments
                     .iter()
-                    .map(crate::log::attachment::turn_line),
+                    .map(crate::record::log::attachment::turn_line),
             )
             .collect::<Vec<_>>()
             .join("\n")

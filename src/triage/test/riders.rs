@@ -1,8 +1,8 @@
 //! The order and labelling of a triage request's trailing user turn (docs/triage.md): the
 //! result blocks, then the ask that names them, then the riders under their own header.
 use super::*;
-use crate::log::context::Item;
 use crate::process_monitor::BgView;
+use crate::record::log::context::Item;
 
 fn listed(name: &str) -> Item {
     Item::Listed {
@@ -152,7 +152,7 @@ fn both_shapes_name_the_result_blocks_by_header() {
 /// result without images gets neither (docs/triage.md).
 #[test]
 fn image_results_are_marked_and_the_ask_says_they_pass_through() {
-    use crate::log::ResultImage;
+    use crate::record::log::ResultImage;
     let call = ToolCall::new("read_image", "img_1", json!({}));
     let image = || ResultImage {
         media_type: "image/webp".into(),

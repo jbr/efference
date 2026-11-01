@@ -2,7 +2,7 @@
 //! (docs/control-api.md).
 
 use super::*;
-use crate::log::{Resumed, WireDialect};
+use crate::record::log::{Resumed, WireDialect};
 
 /// A reply the upstream cut off says why, an empty one says it was asked again, and a
 /// restart and a deliberate archive are each named where they happened.

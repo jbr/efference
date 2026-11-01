@@ -6,7 +6,7 @@
 use super::resumed_batch::start;
 use super::upstream_hold::start_with;
 use super::*;
-use crate::log::{AssistantOutput, ContentBlock, Disposition, Notification, Seq, Triage};
+use crate::record::log::{AssistantOutput, ContentBlock, Disposition, Notification, Seq, Triage};
 use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile, end_turn, tool_call};
 
 /// An idle conversation (a turn answered), as a session that stopped between turns leaves it.

@@ -34,9 +34,9 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
-use crate::oauth::register::Registration;
-use crate::oauth::token::Tokens;
-use crate::secrets::Secrets;
+use crate::platform::oauth::register::Registration;
+use crate::platform::oauth::token::Tokens;
+use crate::platform::secrets::Secrets;
 
 /// Everything needed to use — and later refresh — one server's authorization,
 /// without redoing discovery.
@@ -114,7 +114,7 @@ impl KeychainStore {
 
 impl TokenStore for KeychainStore {
     fn load(&self, server: &str) -> anyhow::Result<Option<StoredAuth>> {
-        let name = crate::secrets::mcp_name(server);
+        let name = crate::platform::secrets::mcp_name(server);
         let Some(json) = self.secrets.get(&name)? else {
             return Ok(None);
         };
@@ -127,11 +127,15 @@ impl TokenStore for KeychainStore {
 
     fn save(&self, server: &str, auth: &StoredAuth) -> anyhow::Result<()> {
         let json = serde_json::to_string(auth)?;
-        Ok(self.secrets.set(&crate::secrets::mcp_name(server), &json)?)
+        Ok(self
+            .secrets
+            .set(&crate::platform::secrets::mcp_name(server), &json)?)
     }
 
     fn clear(&self, server: &str) -> anyhow::Result<()> {
-        Ok(self.secrets.delete(&crate::secrets::mcp_name(server))?)
+        Ok(self
+            .secrets
+            .delete(&crate::platform::secrets::mcp_name(server))?)
     }
 
     fn refresh_lock(&self, server: &str) -> Arc<tokio::sync::Mutex<()>> {

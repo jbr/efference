@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::inference::{ResumeSwitch, TriageChoice};
-use crate::log::{RecordedRoles, TriageModel};
+use crate::record::log::{RecordedRoles, TriageModel};
 
 fn switch_to_terra_and_luna() -> ResumeSwitch {
     ResumeSwitch {
@@ -65,8 +65,8 @@ async fn a_resume_switches_spotter_and_triage_and_the_next_keeps_them() {
         "{triage:?}"
     );
     assert_eq!(
-        crate::log::recorded_inference(&entries),
-        crate::log::recorded_inference(&entries[..both[1].seq as usize]),
+        crate::record::log::recorded_inference(&entries),
+        crate::record::log::recorded_inference(&entries[..both[1].seq as usize]),
         "the main identity is unchanged"
     );
 
@@ -77,8 +77,8 @@ async fn a_resume_switches_spotter_and_triage_and_the_next_keeps_them() {
         .cloned()
         .collect();
     assert_eq!(
-        serde_json::to_string(&crate::project::project(&entries)).unwrap(),
-        serde_json::to_string(&crate::project::project(&without)).unwrap(),
+        serde_json::to_string(&crate::record::project::project(&entries)).unwrap(),
+        serde_json::to_string(&crate::record::project::project(&without)).unwrap(),
     );
     drop_boot(boot);
 
@@ -164,7 +164,7 @@ auth = { kind = "env", key = "EFFERENCE_SWITCH_TEST_KEY" }
         config,
         std::path::Path::new("/host"),
         &host_env,
-        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        &std::sync::Arc::new(crate::platform::secrets::Secrets::in_memory()),
     )
     .unwrap()
 }
@@ -219,7 +219,9 @@ async fn a_resume_switches_the_main_model_within_a_dialect() {
     assert_eq!(inference.as_ref().unwrap().model, "gpt-5.6-terra");
     assert!(roles.is_some(), "the latest preamble carries every role");
     assert_eq!(
-        crate::log::recorded_inference(&entries).unwrap().model,
+        crate::record::log::recorded_inference(&entries)
+            .unwrap()
+            .model,
         "gpt-5.6-terra"
     );
     drop_boot(boot);

@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::attachment::Kind;
+use crate::record::log::attachment::Kind;
 
 fn arrival(name: &str) -> Arrival {
     Arrival {

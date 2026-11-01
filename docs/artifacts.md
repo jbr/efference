@@ -4,7 +4,7 @@ An artifact is an agent-authored fence displayed in a sandboxed browser document
 
 ## Coordinates
 
-An artifact is addressed by its entry's seq, its text block's ordinal among the entry's text blocks, and its ordinal among that block's artifact fences, of both kinds in document order (`src/artifact.rs`); the fence's kind is read from the fence, not the address. Fences are found by CommonMark's rules alone — inside any container, and running to the end of their container when nothing closes them — so the web client's renderer (remark), numbering the same block, arrives at the same ordinals. `web/src/ui/artifact-fences.json` holds the cases both parsers are tested against.
+An artifact is addressed by its entry's seq, its text block's ordinal among the entry's text blocks, and its ordinal among that block's artifact fences, of both kinds in document order (`src/record/artifact.rs`); the fence's kind is read from the fence, not the address. Fences are found by CommonMark's rules alone — inside any container, and running to the end of their container when nothing closes them — so the web client's renderer (remark), numbering the same block, arrives at the same ordinals. `web/src/ui/artifact-fences.json` holds the cases both parsers are tested against.
 
 ## Links and serving
 

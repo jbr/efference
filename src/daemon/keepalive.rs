@@ -86,7 +86,7 @@ pub(super) struct StoredRequest {
     pub(super) request: SentRequest,
     /// When it was sent, taken before the send: a compaction stamped after it moved the
     /// prefix the request read, so the stored request stops describing the live entry.
-    pub(super) sent: crate::log::Timestamp,
+    pub(super) sent: crate::record::log::Timestamp,
     /// The prompt tokens a ping of it reads: the request's own until a ping measures them,
     /// then the last ping's.
     pub(super) prefix_tokens: u64,
@@ -98,12 +98,12 @@ pub(super) struct StoredRequest {
 /// yet, which has nothing cached to lose. A belief, not a measurement: no provider says
 /// whether an entry is still held, so this errs toward cold.
 pub fn believed_cold_since(
-    last_touch: Option<crate::log::Timestamp>,
-    now: crate::log::Timestamp,
+    last_touch: Option<crate::record::log::Timestamp>,
+    now: crate::record::log::Timestamp,
     cache_ttl: Duration,
-) -> Option<crate::log::Timestamp> {
+) -> Option<crate::record::log::Timestamp> {
     let ttl_ms = u64::try_from(cache_ttl.as_millis()).unwrap_or(u64::MAX);
-    let expires = crate::log::Timestamp(last_touch?.0.saturating_add(ttl_ms));
+    let expires = crate::record::log::Timestamp(last_touch?.0.saturating_add(ttl_ms));
     (now.0 > expires.0).then_some(expires)
 }
 
@@ -151,7 +151,7 @@ impl PingCost {
 }
 
 /// The cache keepalive (docs/transport.md): fire a ping (capped at
-/// [`crate::log::Provider::keepalive_output_cap`]) when the lineage's cached prefix nears
+/// [`crate::record::log::Provider::keepalive_output_cap`]) when the lineage's cached prefix nears
 /// eviction during idle, so the next real turn resumes hot. Pure transport — it reads the
 /// prefix and records the usage; the log is never touched.
 ///
@@ -205,7 +205,7 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
             shared.set_keepalive_skipped(
                 lineage,
                 Some(KeepaliveSkip {
-                    at: crate::log::Timestamp::now(),
+                    at: crate::record::log::Timestamp::now(),
                     why,
                 }),
             );
@@ -238,7 +238,7 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
                 shared.set_keepalive_skipped(
                     lineage,
                     Some(KeepaliveSkip {
-                        at: crate::log::Timestamp::now(),
+                        at: crate::record::log::Timestamp::now(),
                         why: KeepaliveSkipReason::Rejected {
                             detail: e.to_string(),
                         },
@@ -254,7 +254,7 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
                 shared.set_keepalive_skipped(
                     lineage,
                     Some(KeepaliveSkip {
-                        at: crate::log::Timestamp::now(),
+                        at: crate::record::log::Timestamp::now(),
                         why: KeepaliveSkipReason::Exhausted {
                             detail: e.to_string(),
                             resets_at: e.resets_at(),

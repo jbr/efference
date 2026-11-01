@@ -413,7 +413,7 @@ impl Host {
             // session's own subscriptions and its non-detached children go
             // with it (docs/tools.md).
             // An archived session has nothing left to announce.
-            session.cancel_delayed_push(crate::log::PushCancel::Archived);
+            session.cancel_delayed_push(crate::record::log::PushCancel::Archived);
             host.post_status(&id, &session, &status);
             host.drop_subscriptions_of(&id);
             for child in host.cascade_of(&id) {
@@ -519,7 +519,7 @@ impl Host {
         if let Some(session) = self.session(successor) {
             session.submit_turn(
                 SubmittedTurn::new(brief, mint_submission_id())
-                    .sourced(Some(crate::names::sources::handoff_source(from))),
+                    .sourced(Some(crate::record::names::sources::handoff_source(from))),
             );
         }
         if let Some(predecessor) = self.session(from) {

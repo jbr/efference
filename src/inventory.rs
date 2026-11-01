@@ -16,7 +16,7 @@
 //! does not read, a first line that is not a boot preamble (`boot::resume`
 //! refuses such a log), a first or last line that does not parse. The one line that is
 //! not a problem is a torn final line without a newline (an interrupted append,
-//! [`crate::persist::Trailing`]): it is skipped back over.
+//! [`crate::record::persist::Trailing`]): it is skipped back over.
 //!
 //! [`Inventory`] keeps the scanned rows in memory, keyed by log path with the
 //! length the scan saw. Logs are append-only, so a changed length is a changed
@@ -29,9 +29,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::log::{LogEntry, Payload};
-use crate::persist::read_header;
 use crate::protocol::inventory::InventoryRow;
+use crate::record::log::{LogEntry, Payload};
+use crate::record::persist::read_header;
 
 /// How much of the file one backwards read takes.
 const CHUNK: u64 = 64 * 1024;
@@ -70,11 +70,11 @@ impl Inventory {
     /// from it, and any other is scanned again. Cached rows whose directory is
     /// gone are dropped. A root with no `.efference` has no rows.
     pub fn refresh(&self, root: &Path) -> Vec<InventoryRow> {
-        let base = root.join(crate::session_dir::SESSION_BASE);
+        let base = root.join(crate::record::session_dir::SESSION_BASE);
         let mut rows = Vec::new();
         let mut seen = HashSet::new();
         for id in session_dirs(&base) {
-            let log = base.join(&id).join(crate::session_dir::LOG_NAME);
+            let log = base.join(&id).join(crate::record::session_dir::LOG_NAME);
             let len = match std::fs::metadata(&log) {
                 Ok(meta) if meta.is_file() => meta.len(),
                 Ok(_) => {
@@ -252,7 +252,7 @@ fn scan_log(log: &Path, id: &str, root: &Path) -> io::Result<(InventoryRow, u64)
     Ok((row, len))
 }
 
-fn header_problem(log: &Path, error: &crate::persist::LoadError) -> String {
+fn header_problem(log: &Path, error: &crate::record::persist::LoadError) -> String {
     let text = error.to_string();
     let prefix = format!("{}:", log.display());
     let text = text.strip_prefix(&prefix).unwrap_or(&text).trim();

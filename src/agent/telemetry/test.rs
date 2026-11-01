@@ -1,7 +1,7 @@
 use super::*;
-use crate::log::Telemetry;
+use crate::record::log::Telemetry;
 
-use crate::log::CallId;
+use crate::record::log::CallId;
 use serde_json::json;
 
 fn call(name: &str, input: Value) -> ToolCall {

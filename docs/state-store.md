@@ -9,7 +9,7 @@ OS credential store ([secrets.md](secrets.md)). The configuration is still a tex
 (`config.toml`, [config-format.md](../assets/guide/config-format.md)); whether it should move here is an
 open question ([backlog/inbox/user-state-store.md](../backlog/inbox/user-state-store.md)).
 
-Module: `src/state.rs` owns the path and the open; each table's own module owns its
+Module: `src/platform/state.rs` owns the path and the open; each table's own module owns its
 schema.
 
 ## The tables
@@ -21,9 +21,9 @@ schema.
 | `model_catalog` | a connection | `src/catalog.rs` | the model menus ([model-catalog.md](model-catalog.md)) |
 | `remembered_projects` | a directory a session was started in | `src/remembered.rs` | the launch index, `GET /projects` ([control-api.md](control-api.md)) |
 | `session_ids` | a session id and the root holding it | `src/session_ids.rs` | id minting, explicit names and resume ([session-title.md](session-title.md)) |
-| `push_subscriptions` | a browser subscription | `src/push.rs` | the sender, per push ([web-push.md](web-push.md)) |
-| `devices` | an enrolled device — one TCP credential | `src/devices.rs` | the gate, per request; `efference devices` ([web-bind.md](web-bind.md)) |
-| `pending_sign_ins` | a browser waiting to collect a device token: a `/pair` request, or a sign-in link | `src/sign_ins.rs` | the claim and approval routes; `efference devices` ([web-bind.md](web-bind.md)) |
+| `push_subscriptions` | a browser subscription | `src/platform/push.rs` | the sender, per push ([web-push.md](web-push.md)) |
+| `devices` | an enrolled device — one TCP credential | `src/platform/devices.rs` | the gate, per request; `efference devices` ([web-bind.md](web-bind.md)) |
+| `pending_sign_ins` | a browser waiting to collect a device token: a `/pair` request, or a sign-in link | `src/platform/sign_ins.rs` | the claim and approval routes; `efference devices` ([web-bind.md](web-bind.md)) |
 
 The subscriptions, the devices, and the pending sign-ins are user-scoped for a security
 reason rather than a convenience one. The VAPID key is derived from the machine root, so
@@ -80,7 +80,7 @@ The creating process's umask need not be as private as this content warrants —
 picks, subscriptions, the device labels — so the tightening is part of boot rather than
 of each file's creation. It is one-way (a file already stricter stays so), skips absent
 files, and warns without failing boot when a mode cannot be changed. The two modes,
-`0700` for directories and `0600` for files, are constants in `src/session_dir.rs`, which the
+`0700` for directories and `0600` for files, are constants in `src/record/session_dir.rs`, which the
 writers of a session's log and attachments read as well.
 
 A project's `.efference/` is owner-only by the same rule, applied by the sessions that

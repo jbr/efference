@@ -35,7 +35,7 @@ import type { LogEntry, Seq } from "../api/entry.ts";
 import { assistantView } from "./assistant.ts";
 
 /** The prose half of a record-only mark, whichever shape the log wrote
- * (src/log.rs): the bare string older logs carry, or the object's `why`. */
+ * (src/record/log.rs): the bare string older logs carry, or the object's `why`. */
 /** The upstream's failure an exclusion carries, or `undefined` for none (an
  * empty completion, or a finalized turn). */
 export const upstreamOf = (
@@ -185,7 +185,7 @@ export function buildTree(
   const askCalls = new Map<CallId, AskQuestion>();
   // Results captured `Pending`, by their seq: the slots a `ResultVerdict` may
   // still decide. The first non-Pending verdict removes its entry, so a later
-  // one is ignored (mirrors `result_verdicts`, src/log/curation.rs).
+  // one is ignored (mirrors `result_verdicts`, src/record/log/curation.rs).
   const pending = new Map<Seq, CallNode>();
   const seqs: Seq[] = [];
   let title: string | null = null;

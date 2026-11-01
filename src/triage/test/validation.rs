@@ -56,7 +56,9 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
 fn a_prose_only_response_retries_with_just_the_renewed_ask() {
     let completion = Completion::new(AssistantOutput::from_legacy_messages(
         vec![],
-        vec![crate::log::ContentBlock::Text("hmm, let me think".into())],
+        vec![crate::record::log::ContentBlock::Text(
+            "hmm, let me think".into(),
+        )],
         vec![],
     ));
     let mut messages = Vec::new();
@@ -225,7 +227,7 @@ fn an_interrupted_gate_withholds_every_result_without_blaming_triage() {
             panic!("withheld, not kept: {:?}", d.wire);
         };
         assert_eq!(
-            crate::project::render_interruption(interruption),
+            crate::record::project::render_interruption(interruption),
             "[interrupted by parent (agent) before its result was read]"
         );
         assert_eq!(d.origin, Origin::Fallback);

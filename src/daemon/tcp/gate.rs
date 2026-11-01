@@ -267,7 +267,7 @@ const DEV_PROXY_DIRS: [&str; 2] = ["/src", "/node_modules"];
 pub(super) fn session_scoped(path: &str) -> Option<&str> {
     let after = path.strip_prefix("/sessions/")?;
     let (id, rest) = after.split_at(after.find('/').unwrap_or(after.len()));
-    crate::session_dir::plain_id(id).then_some(if rest.is_empty() { "/" } else { rest })
+    crate::record::session_dir::plain_id(id).then_some(if rest.is_empty() { "/" } else { rest })
 }
 
 #[cfg(test)]

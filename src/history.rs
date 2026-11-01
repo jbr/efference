@@ -13,7 +13,7 @@
 //! session), so a single parameter is deliberately all there is.
 //!
 //! Storage is the `model_picks` table of the user state database
-//! ([`crate::state`], docs/state-store.md) — no jsonl interim. Every operation
+//! ([`crate::platform::state`], docs/state-store.md) — no jsonl interim. Every operation
 //! opens its own connection: writes happen once per session creation and reads
 //! once per preview, so a pooled or shared connection would buy nothing and
 //! `Connection` is `Send` but not `Sync`. Every operation is best-effort: a
@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// This table's half of the user state database
-/// ([`crate::state`], docs/state-store.md).
+/// ([`crate::platform::state`], docs/state-store.md).
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS model_picks (
         at INTEGER NOT NULL,
         cwd TEXT NOT NULL,
@@ -187,7 +187,7 @@ impl History {
 
     /// The user state database under `home` (`~/.efference/state.db`).
     pub fn user(home: &Path) -> Self {
-        Self::at(crate::state::path_in(home))
+        Self::at(crate::platform::state::path_in(home))
     }
 
     /// No store: every read is empty, every write is a no-op.
@@ -202,7 +202,7 @@ impl History {
     }
 
     fn connect(&self) -> Option<rusqlite::Connection> {
-        crate::state::open(self.path.as_ref()?, SCHEMA).ok()
+        crate::platform::state::open(self.path.as_ref()?, SCHEMA).ok()
     }
 
     /// Record one explicit pick. Best-effort: a store that cannot be written

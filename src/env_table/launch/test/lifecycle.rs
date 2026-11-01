@@ -83,7 +83,7 @@ async fn a_hook_that_closes_both_pipes_and_keeps_running_is_bounded_by_the_deadl
 #[tokio::test]
 async fn a_descendant_holding_stdout_does_not_outlive_the_deadline() {
     // The parent exits at once; a background descendant keeps the write end open,
-    // so a reader waiting for EOF would wait for the stranger (src/spawn.rs
+    // so a reader waiting for EOF would wait for the stranger (src/platform/spawn.rs
     // documents this stalling another session).
     let cwd = Scratch::new("life-holds-stdout");
     let hook = cwd.script("holder.sh", "(sleep 30) & printf 'A=1\\000'");

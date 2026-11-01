@@ -28,10 +28,10 @@ use super::{CONFIG_NAME, env, model, parts, scaffold};
 use crate::api::Error;
 use crate::daemon::SessionBoot;
 use crate::inference::{InferenceRegistry, ResumeSwitch, SessionOptions};
-use crate::log::{LogEntry, LoggedInference, Payload, Resumed, Timestamp};
-use crate::persist::{LoadedRecording, Log, SessionMetadata};
-use crate::recovery::{Resumption, resume_point};
-use crate::session_dir::{LOG_NAME, SESSION_BASE};
+use crate::record::log::{LogEntry, LoggedInference, Payload, Resumed, Timestamp};
+use crate::record::persist::{LoadedRecording, Log, SessionMetadata};
+use crate::record::recovery::{Resumption, resume_point};
+use crate::record::session_dir::{LOG_NAME, SESSION_BASE};
 use crate::spotter::MountedSpotter;
 
 /// What a resume needs from whoever resumes. The session's working directory, role
@@ -103,7 +103,8 @@ async fn resume_minting(
     }
 
     // Read-only until the reopen below: a refusal here has written nothing.
-    let recording = crate::persist::load_recording(&log_path).map_err(std::io::Error::from)?;
+    let recording =
+        crate::record::persist::load_recording(&log_path).map_err(std::io::Error::from)?;
     resume_point(&recording.entries)
         .map_err(|why| format!("cannot resume {}: {why}", session_dir.display()))?;
     let (recorded_identity, body, context_block) =
@@ -123,7 +124,7 @@ async fn resume_minting(
     // directory inside another session's worktree is not this session's to re-create.
     let restores_worktree = !directories.working().is_dir()
         && directories.working()
-            == crate::session_dir::worktree::path(directories.project(), &session_id);
+            == crate::record::session_dir::worktree::path(directories.project(), &session_id);
     for (what, dir) in [
         ("project directory", directories.project()),
         ("working directory", directories.working()),
@@ -277,9 +278,9 @@ async fn resume_minting(
     // and the new array is recorded so the next resume compares with it. A log that
     // never recorded one has nothing to compare with.
     let advertised = crate::agent::tool_definitions(&tools.toolbox);
-    let recorded = crate::log::recorded_tools(log.entries());
+    let recorded = crate::record::log::recorded_tools(log.entries());
     if let Some(recorded) = recorded {
-        resumed.tools_changed = crate::log::ToolsChange::between(recorded, &advertised);
+        resumed.tools_changed = crate::record::log::ToolsChange::between(recorded, &advertised);
     }
     let record_tools = recorded.is_none_or(|recorded| recorded != advertised.as_slice());
     log.append(turn, Payload::Resumed(resumed))?;
@@ -300,7 +301,7 @@ async fn resume_minting(
     if record_tools {
         log.append(
             turn,
-            Payload::Telemetry(crate::log::Telemetry::Tools { tools: advertised }),
+            Payload::Telemetry(crate::record::log::Telemetry::Tools { tools: advertised }),
         )?;
     }
     // After `Resumed`, so the gap and turn it records still read the log as it was left.
@@ -422,7 +423,7 @@ fn check_main_switch(
     }
     let recorded = entries.iter().find_map(|entry| match &entry.payload {
         Payload::Assistant { output, .. } => {
-            Some(crate::project::WireTurn::Assistant(output.clone()))
+            Some(crate::record::project::WireTurn::Assistant(output.clone()))
         }
         _ => None,
     });
@@ -433,24 +434,27 @@ fn check_main_switch(
         .provider
         .inference_dialect()
         .ok_or_else(|| format!("{} serves no turns", target.connection))?;
-    crate::project::check_dialect(&[turn], dialect).map_err(|conflict| conflict.to_string())
+    crate::record::project::check_dialect(&[turn], dialect).map_err(|conflict| conflict.to_string())
 }
 
 /// The `Resumed` entry for a log ending at `entries`, and the turn it files under: the
 /// log's last, skipped entries included, so turn numbers never repeat. Lost processes are
 /// the background handles spawned with no recorded exit, over the whole log: a spawn in a
 /// skipped range may have started a process.
-fn resumed_entry(entries: &[LogEntry], resumption: Resumption) -> (crate::log::Turn, Resumed) {
+fn resumed_entry(
+    entries: &[LogEntry],
+    resumption: Resumption,
+) -> (crate::record::log::Turn, Resumed) {
     let last = entries.last();
     let gap_ms = last.map_or(0, |e| Timestamp::now().0.saturating_sub(e.at.0));
     let mut running = BTreeSet::new();
     for entry in entries {
         if let Payload::ProcessEvent(event) = &entry.payload {
             match event.kind {
-                crate::log::ProcessEventKind::Spawned(_) => {
+                crate::record::log::ProcessEventKind::Spawned(_) => {
                     running.insert(event.id);
                 }
-                crate::log::ProcessEventKind::Exited(_) => {
+                crate::record::log::ProcessEventKind::Exited(_) => {
                     running.remove(&event.id);
                 }
             }

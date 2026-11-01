@@ -27,9 +27,9 @@ pub use mount::MountedSpotter;
 
 use crate::api::{Client, Endpoint, RequestUsage};
 use crate::config::Config;
-use crate::log::{Axes, Origin, Stance, ToolCall};
-use crate::names::tools::{BASH, INTENT, display_name};
-use crate::project::{UserPart, WireTurn};
+use crate::record::log::{Axes, Origin, Stance, ToolCall};
+use crate::record::names::tools::{BASH, INTENT, display_name};
+use crate::record::project::{UserPart, WireTurn};
 use crate::tools::ToolBrief;
 use mcplease::types::Tool as ToolDefinition;
 
@@ -171,7 +171,7 @@ impl ForkSpot {
         ForkSpot {
             client: Client::new(endpoint, model, persona)
                 .without_turn_routing()
-                .with_origin(crate::log::RequestOrigin::Spot),
+                .with_origin(crate::record::log::RequestOrigin::Spot),
             scratch: None,
             directories: None,
         }
@@ -762,7 +762,7 @@ struct SpotInput {
 /// Pull the spotter verdict out of the completion. `None` when the turn didn't call
 /// `spot` (or called something else) — the caller then fails closed.
 fn parse_spot(completion: &crate::api::Completion) -> Option<Read> {
-    let crate::log::Payload::Assistant { output, .. } = &completion.assistant else {
+    let crate::record::log::Payload::Assistant { output, .. } = &completion.assistant else {
         return None;
     };
     let calls = output.tool_calls().ok()?;

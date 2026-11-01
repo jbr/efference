@@ -5,7 +5,7 @@ use crate::client::ContinueOutcome;
 
 /// An assistant turn with prose and no calls — a finished turn's wire tail.
 fn assistant_text(text: &str) -> Payload {
-    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+    Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
         vec![],
         vec![ContentBlock::Text(text.into())],
         vec![],
@@ -14,11 +14,11 @@ fn assistant_text(text: &str) -> Payload {
 
 /// An assistant turn carrying one unanswered tool call.
 fn assistant_calling(call_id: &str) -> Payload {
-    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+    Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
         vec![],
         vec![],
         vec![ToolCall::new(
-            crate::names::tools::BASH,
+            crate::record::names::tools::BASH,
             call_id,
             serde_json::json!({ "command": "ls" }),
         )],
@@ -27,7 +27,11 @@ fn assistant_calling(call_id: &str) -> Payload {
 
 /// The paired result — a `tool_result` tail, which projects as a **user** message.
 fn tool_result(call_id: &str) -> Payload {
-    Payload::tool_result(call_id, RawResult::text("ok"), crate::log::WireState::Raw)
+    Payload::tool_result(
+        call_id,
+        RawResult::text("ok"),
+        crate::record::log::WireState::Raw,
+    )
 }
 
 /// A record-only assistant entry: an upstream attempt that died before finalizing.
@@ -35,8 +39,8 @@ fn tool_result(call_id: &str) -> Payload {
 /// the tail looks like to the continue precondition.
 fn aborted_attempt() -> Payload {
     Payload::record_only(
-        crate::log::AssistantOutput::Messages(vec![]),
-        crate::log::Exclusion::Upstream("stream aborted".into()),
+        crate::record::log::AssistantOutput::Messages(vec![]),
+        crate::record::log::Exclusion::Upstream("stream aborted".into()),
     )
 }
 
@@ -93,7 +97,7 @@ fn continuable_tail_is_a_question_about_the_wire() {
 /// session).
 #[test]
 fn a_finished_turn_declines_in_every_dialect() {
-    use crate::log::{
+    use crate::record::log::{
         AssistantOutput, CompletionsMessage, ResponsesMessageContent, ResponsesOutputItem,
     };
     let responses_text = AssistantOutput::Responses(vec![ResponsesOutputItem::Message {
@@ -222,7 +226,7 @@ fn a_continue_appends_only_its_record() {
     assert_eq!(after.len(), before.len() + 1, "one entry was added");
     assert!(matches!(
         after.last().unwrap().payload,
-        Payload::Telemetry(crate::log::Telemetry::Continue(_))
+        Payload::Telemetry(crate::record::log::Telemetry::Continue(_))
     ));
     assert_eq!(
         serde_json::to_string(&shared.project_messages()).unwrap(),
@@ -282,7 +286,7 @@ fn an_accepted_continue_records_who_sent_it() {
             .snapshot()
             .iter()
             .filter_map(|e| match &e.payload {
-                Payload::Telemetry(crate::log::Telemetry::Continue(origin)) => {
+                Payload::Telemetry(crate::record::log::Telemetry::Continue(origin)) => {
                     Some(origin.source.clone())
                 }
                 _ => None,
@@ -298,7 +302,8 @@ fn an_accepted_continue_records_who_sent_it() {
 
     shared.append(1, user("hello")).unwrap();
     let wire = serde_json::to_string(&shared.project_messages()).unwrap();
-    let origin = crate::log::ContinueOrigin::default().with_source(Some("mcp[claude-code]".into()));
+    let origin =
+        crate::record::log::ContinueOrigin::default().with_source(Some("mcp[claude-code]".into()));
     assert!(shared.request_continue(origin).is_ok());
     assert_eq!(
         continues(&shared),

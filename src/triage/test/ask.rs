@@ -1,7 +1,7 @@
 //! Tests for the ask's own text and shape.
 use super::*;
 
-use crate::names::tools::is_triage_tool;
+use crate::record::names::tools::is_triage_tool;
 
 /// The triage tools' schemas are static (docs/triage.md): they ride every turn's
 /// `tools[]`, so any variation would re-key the request envelope and split the cache
@@ -33,7 +33,7 @@ fn triage_tool_schemas_are_static_and_permission_phrased() {
 }
 
 fn preamble_with(items: Vec<Item>) -> LogEntry {
-    use crate::log::context::{Resolved, Section};
+    use crate::record::log::context::{Resolved, Section};
     entry(
         0,
         Payload::preamble(

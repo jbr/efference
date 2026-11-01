@@ -35,7 +35,7 @@ test("a page served under a session prefix has that prefix as its base", () => {
   ]) {
     expect(deriveBase(path)).toBe("/sessions/work");
   }
-  // The id shape the host resolves by (plain_id, src/session_dir.rs).
+  // The id shape the host resolves by (plain_id, src/record/session_dir.rs).
   expect(deriveBase("/sessions/1754300000000/")).toBe(
     "/sessions/1754300000000",
   );

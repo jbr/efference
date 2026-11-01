@@ -251,7 +251,7 @@ impl Client {
     /// The sign-ins waiting for approval at the TCP bind, oldest first
     /// (`GET /auth/pending`, docs/web-bind.md): what each browser calls itself and
     /// when it asked, never its code.
-    pub async fn pending_sign_ins(&self) -> Result<Vec<crate::sign_ins::Pending>> {
+    pub async fn pending_sign_ins(&self) -> Result<Vec<crate::platform::sign_ins::Pending>> {
         let listing: PendingSignInList = self.get_root("/auth/pending").await?;
         Ok(listing.pending)
     }
@@ -263,7 +263,7 @@ impl Client {
     pub async fn approve_sign_in(
         &self,
         code: &str,
-    ) -> Result<std::result::Result<crate::sign_ins::Pending, String>> {
+    ) -> Result<std::result::Result<crate::platform::sign_ins::Pending, String>> {
         let path = "/auth/approve";
         let body = serde_json::json!({ "code": code }).to_string();
         let mut conn = self.exchange(Method::Post, path, Some(body)).await?;
@@ -286,14 +286,14 @@ impl Client {
 
     /// The devices enrolled at the TCP bind, oldest first (`GET /auth/devices`,
     /// docs/web-bind.md).
-    pub async fn devices(&self) -> Result<Vec<crate::devices::Device>> {
+    pub async fn devices(&self) -> Result<Vec<crate::platform::devices::Device>> {
         let listing: DeviceList = self.get_root("/auth/devices").await?;
         Ok(listing.devices)
     }
 
     /// Enroll a script device labelled `label` (`POST /auth/devices`,
     /// docs/web-bind.md): the device and its token, which no later answer repeats.
-    pub async fn add_device(&self, label: &str) -> Result<crate::devices::Enrolled> {
+    pub async fn add_device(&self, label: &str) -> Result<crate::platform::devices::Enrolled> {
         let path = "/auth/devices";
         let body = serde_json::json!({ "label": label }).to_string();
         let response = self.send_at(Method::Post, path, Some(body)).await?;
@@ -302,7 +302,7 @@ impl Client {
 
     /// Revoke one enrolled device (`DELETE /auth/devices/:id`, docs/web-bind.md):
     /// its token is refused from the next request on.
-    pub async fn revoke_device(&self, id: &crate::devices::DeviceId) -> Result<()> {
+    pub async fn revoke_device(&self, id: &crate::platform::devices::DeviceId) -> Result<()> {
         self.send_at(Method::Delete, &format!("/auth/devices/{id}"), None)
             .await?;
         Ok(())

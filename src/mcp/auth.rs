@@ -1,6 +1,6 @@
 //! The MCP half of the authorization dance (docs/mcp-auth.md).
 //!
-//! Thin by design. Everything standards-track lives in [`crate::oauth`]; what
+//! Thin by design. Everything standards-track lives in [`crate::platform::oauth`]; what
 //! is here is what MCP decides: efference's own client identity, the sequence
 //! that turns a `401` into a token, and the rule that the resource indicator
 //! names the MCP server.
@@ -37,12 +37,12 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use trillium_client::Url;
 
-use crate::oauth::authorize::Pending;
-use crate::oauth::loopback;
-use crate::oauth::metadata::{AuthorizationServer, Discovery, ProtectedResource};
-use crate::oauth::register::{self, ClientMetadata, Registration};
-use crate::oauth::token::{self, CodeExchange, Tokens};
-use crate::www_authenticate::Challenge;
+use crate::platform::oauth::authorize::Pending;
+use crate::platform::oauth::loopback;
+use crate::platform::oauth::metadata::{AuthorizationServer, Discovery, ProtectedResource};
+use crate::platform::oauth::register::{self, ClientMetadata, Registration};
+use crate::platform::oauth::token::{self, CodeExchange, Tokens};
+use crate::platform::www_authenticate::Challenge;
 
 /// A `401` from a connected provider: the signal that starts the dance.
 ///

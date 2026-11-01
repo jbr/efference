@@ -23,8 +23,8 @@ use efference::api::Client;
 use efference::client::Client as ControlClient;
 use efference::daemon;
 #[cfg(feature = "dev")]
-use efference::session_dir::LOG_NAME;
-use efference::session_dir::SESSION_BASE;
+use efference::record::session_dir::LOG_NAME;
+use efference::record::session_dir::SESSION_BASE;
 #[cfg(feature = "dev")]
 use efference::spotter::MountedSpotter;
 #[cfg(feature = "dev")]
@@ -99,13 +99,13 @@ fn rotate() -> CliResult {
         )
         .into());
     }
-    let secrets = efference::secrets::Secrets::configured(
+    let secrets = efference::platform::secrets::Secrets::configured(
         efference::user_config::InferenceConfig::user_secret_commands()?,
     );
-    efference::auth::Root::rotate(&secrets)?;
+    efference::platform::auth::Root::rotate(&secrets)?;
     // The root goes first: no token verifies under the new one, so a table that
     // cannot be cleared leaves rows that sign nothing in, never a token that does.
-    let removed = efference::devices::Store::user_scoped()
+    let removed = efference::platform::devices::Store::user_scoped()
         .clear()
         .map_err(|e| {
             format!(
@@ -117,7 +117,7 @@ fn rotate() -> CliResult {
         })?;
     // A sign-in approved under the old root would otherwise enroll under the next
     // one, if claimed within its lifetime.
-    efference::sign_ins::Store::user_scoped()
+    efference::platform::sign_ins::Store::user_scoped()
         .clear()
         .map_err(|e| {
             format!(
@@ -125,7 +125,7 @@ fn rotate() -> CliResult {
                  sign-ins could not be ({e}); one approved in the last {} s can still \
                  enroll a browser under the next root",
                 if removed == 1 { " is" } else { "s are" },
-                efference::sign_ins::TTL_SECS
+                efference::platform::sign_ins::TTL_SECS
             )
         })?;
     eprintln!(
@@ -133,7 +133,7 @@ fn rotate() -> CliResult {
          and {removed} enrolled device{} deleted. This {}.",
         secrets.describe(),
         if removed == 1 { " is" } else { "s are" },
-        efference::auth::ROTATION_CONSEQUENCES
+        efference::platform::auth::ROTATION_CONSEQUENCES
     );
     Ok(())
 }

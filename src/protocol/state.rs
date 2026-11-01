@@ -14,10 +14,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::{UpstreamFailure, UpstreamRetry};
 use crate::inference::InferenceIdentity;
-use crate::log::Seq;
 use crate::policy::ReviewLevel;
 use crate::protocol::status::StatusView;
 use crate::protocol::turns::{Landing, QueuedTurn};
+use crate::record::log::Seq;
 
 mod operations;
 mod permissions;
@@ -166,7 +166,7 @@ pub struct ProcessState {
     pub pid: Option<u32>,
     /// Absolute Unix millis. The client subtracts from its own clock; the daemon never
     /// re-emits merely because time passed.
-    pub spawned_at: crate::log::Timestamp,
+    pub spawned_at: crate::record::log::Timestamp,
     /// `false` while the process is the loop's in-flight foreground tool; flipped in
     /// place by the handoff (docs/process-monitor.md).
     pub background: bool,

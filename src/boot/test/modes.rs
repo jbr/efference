@@ -4,7 +4,7 @@
 use super::{Root, base_env, codex_registry, drop_boot, request};
 use crate::boot::ResumeRequest;
 use crate::boot::{CONFIG_NAME, mint_session_dir, prepare, resume};
-use crate::session_dir::{LOG_NAME, SESSION_BASE};
+use crate::record::session_dir::{LOG_NAME, SESSION_BASE};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -46,7 +46,7 @@ fn files_added_to_a_session_directory_are_owner_only() {
     assert_eq!(mode(&attached), 0o600, "an attachment");
 
     let usage = dir.join(crate::daemon::USAGE_NAME);
-    let log = crate::persist::Log::create(dir.join(LOG_NAME), None).unwrap();
+    let log = crate::record::persist::Log::create(dir.join(LOG_NAME), None).unwrap();
     let (session, _turns) = crate::daemon::Session::new(root.path().to_path_buf(), log);
     session.attach_usage_log(&usage);
     assert_eq!(mode(&usage), 0o600, "the usage record");

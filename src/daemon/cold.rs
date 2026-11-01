@@ -8,9 +8,9 @@
 //! wakes the differ anyway.
 
 use super::*;
-use crate::log::Telemetry;
-use crate::log::{ColdEvent, ColdReason, ReleasedBy, Timestamp, UnparkCause};
 use crate::protocol::state::Cold;
+use crate::record::log::Telemetry;
+use crate::record::log::{ColdEvent, ColdReason, ReleasedBy, Timestamp, UnparkCause};
 
 /// Why the loop is stopped at its cold check mid-turn (the `cold_parked` loop phase,
 /// docs/control-api.md): what a status subscriber is told.

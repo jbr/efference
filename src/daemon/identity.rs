@@ -22,7 +22,7 @@ impl Session {
     /// and move the identity's `title`, so the topic republishes. `Ok(None)` when
     /// no identity was set (a session read with no daemon behind it), in which
     /// case nothing is appended either.
-    pub fn set_title(&self, title: crate::log::Title) -> io::Result<Option<Seq>> {
+    pub fn set_title(&self, title: crate::record::log::Title) -> io::Result<Option<Seq>> {
         let mut guard = self.identity.lock().unwrap();
         let Some(identity) = guard.as_mut() else {
             return Ok(None);

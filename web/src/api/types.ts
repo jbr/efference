@@ -1038,7 +1038,7 @@ export type Payload =
          * so finalized entries are byte-identical) = a finalized turn, projected as
          * always.
          *
-         * [`project`]: crate::project::project
+         * [`project`]: crate::record::project::project
          */
         excluded?: Exclusion | null;
         output: AssistantOutput;
@@ -1128,7 +1128,7 @@ export type Payload =
  * (docs/triage.md); `Interrupted` by the interrupt (docs/control-channel.md). `Elided`
  * is no longer written; logs that carry it project as they did.
  *
- * [`project`]: crate::project::project
+ * [`project`]: crate::record::project::project
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "WireState".
@@ -1564,7 +1564,7 @@ export type StallReason =
  * `output` class (docs/control-api.md). **Ephemeral and transport-only**:
  * never appended to the log, never projected, and droppable for a slow consumer.
  * The authoritative text always lands as a committed
- * [`LogEntry`](crate::log::LogEntry) on `/events`, so the stream is a live convenience
+ * [`LogEntry`](crate::record::log::LogEntry) on `/events`, so the stream is a live convenience
  * with the durable log as its backstop — which is exactly why it can ride a lossy
  * `broadcast` where `/events` must tail the log.
  * Every model-stream variant carries the content-block `index` it belongs to, and
@@ -3534,7 +3534,7 @@ export interface Triage {
    * that arrived while the request was in flight reads as new at the next triage.
    * [`project`] never reads it.
    *
-   * [`project`]: crate::project::project
+   * [`project`]: crate::record::project::project
    */
   shown_through?: number | null;
   /**
@@ -3556,7 +3556,7 @@ export interface Triage {
    * [`project`] never reads it, so recording it cannot move the wire.
    * `#[serde(default)]`: old logs read empty.
    *
-   * [`project`]: crate::project::project
+   * [`project`]: crate::record::project::project
    */
   thinking: string[];
 }
@@ -3910,7 +3910,7 @@ export interface PendingNotification {
 }
 /**
  * One async config edit awaiting an orchestrator decision
- * (docs/permissions.md). Filed by a `Proposed` [`ConfigEdit`](crate::log::ConfigEdit) append (the
+ * (docs/permissions.md). Filed by a `Proposed` [`ConfigEdit`](crate::record::log::ConfigEdit) append (the
  * session's `propose_scope`, the spotter's prefix-promotion); the orchestrator-above commits or
  * cancels it, which drops it from the queue. Unlike a
  * [`PendingNotification`](super::PendingNotification), the proposal

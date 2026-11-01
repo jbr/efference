@@ -5,10 +5,10 @@
 use super::*;
 use crate::control_tools::{Control, Decide, Executor, Message, Status};
 use crate::daemon::Host;
-use crate::log::{Approval, Telemetry};
 use crate::policy::ReviewLevel;
 use crate::protocol::agents::Decision;
 use crate::protocol::status::{Condition, Reviewer};
+use crate::record::log::{Approval, Telemetry};
 use crate::tools::SessionControl as _;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
@@ -63,7 +63,7 @@ impl Fixture {
 
 fn leaf() -> ToolCall {
     ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         "toolu_leaf",
         serde_json::json!({
             "command": "curl -sI https://example.com",
@@ -78,7 +78,7 @@ fn hold(c: &Session) -> (String, oneshot::Receiver<Approval>) {
     let seq = c
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![leaf()],
@@ -106,7 +106,7 @@ async fn status_of_c(fixture: &Fixture, caller: &str) -> String {
 }
 
 /// `c`'s gate decisions, in order.
-fn decisions(c: &Session) -> Vec<crate::log::GateDecision> {
+fn decisions(c: &Session) -> Vec<crate::record::log::GateDecision> {
     c.snapshot()
         .into_iter()
         .filter_map(|e| match e.payload {
@@ -170,7 +170,7 @@ async fn the_supervisor_may_decide_a_gate_routed_to_the_operator_and_is_not_woke
     assert!(matches!(gate.await, Ok(Approval::Approve)));
     assert_eq!(
         decisions(&c),
-        [crate::log::GateDecision::new(
+        [crate::record::log::GateDecision::new(
             "toolu_leaf",
             Approval::Approve,
             Some("session[p]".into())

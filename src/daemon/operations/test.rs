@@ -1,9 +1,9 @@
 //! Tests for `operations.rs`: the fold behind `current_operations`.
 
 use super::*;
-use crate::log::Telemetry;
-use crate::log::{AssistantOutput, RawResult, Resumed, ToolCall, WireState};
-use crate::persist::Log;
+use crate::record::log::Telemetry;
+use crate::record::log::{AssistantOutput, RawResult, Resumed, ToolCall, WireState};
+use crate::record::persist::Log;
 use serde_json::json;
 
 impl Operations {
@@ -283,7 +283,8 @@ fn compaction_failed(error: &str) -> Payload {
 }
 
 fn compaction_summary(upto: u64) -> Payload {
-    let model = crate::log::LoggedInference::new("c", crate::log::Provider::Anthropic, "m");
+    let model =
+        crate::record::log::LoggedInference::new("c", crate::record::log::Provider::Anthropic, "m");
     Payload::Summary(Summary::compaction(upto, "account", model))
 }
 

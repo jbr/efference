@@ -131,7 +131,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
                 path: shared
                     .config_path()
                     .map_or_default(|p| p.display().to_string()),
-                at: crate::log::Timestamp::now().0,
+                at: crate::record::log::Timestamp::now().0,
                 message: "config unparseable — the loop is parked until a human repairs the file"
                     .to_string(),
                 parse_error: error.clone(),
@@ -182,7 +182,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
         // The file edit *is* the commit, and it lives in the file by definition → `Persist` (the
         // audit answer to "survives a reboot?" is yes). It does not go through `commit_config_edit`,
         // so it is *not* written back — that would loop against the very write that triggered us.
-        let edit = crate::log::ConfigEdit::new(EditState::Committed, change)
+        let edit = crate::record::log::ConfigEdit::new(EditState::Committed, change)
             .with_note("config file edited".into());
         if let Err(e) = shared.append(turn, Payload::ConfigEdit(edit)) {
             shared.warn(format_args!("config-watch: append failed: {e}"));

@@ -14,9 +14,9 @@ pub(super) async fn interrupt(mut conn: Conn) -> Conn {
     // as the operator, with no control named (docs/control-api.md).
     let body = conn.request_body_string().await.unwrap_or_default();
     let origin = if body.trim().is_empty() {
-        crate::log::InterruptOrigin::default()
+        crate::record::log::InterruptOrigin::default()
     } else {
-        match serde_json::from_str::<crate::log::InterruptOrigin>(&body) {
+        match serde_json::from_str::<crate::record::log::InterruptOrigin>(&body) {
             Ok(origin) => origin,
             Err(e) => {
                 return fail(
@@ -45,9 +45,9 @@ pub(super) async fn continue_loop(mut conn: Conn) -> Conn {
     // operator (docs/control-api.md).
     let body = conn.request_body_string().await.unwrap_or_default();
     let origin = if body.trim().is_empty() {
-        crate::log::ContinueOrigin::default()
+        crate::record::log::ContinueOrigin::default()
     } else {
-        match serde_json::from_str::<crate::log::ContinueOrigin>(&body) {
+        match serde_json::from_str::<crate::record::log::ContinueOrigin>(&body) {
             Ok(origin) => origin,
             Err(e) => {
                 return fail(

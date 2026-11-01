@@ -64,7 +64,7 @@ auth = { kind = "env", key = "TEST_KEY" }
         config,
         Path::new("/host"),
         &env,
-        &Arc::new(crate::secrets::Secrets::in_memory()),
+        &Arc::new(crate::platform::secrets::Secrets::in_memory()),
     )
     .unwrap()
 }
@@ -92,7 +92,7 @@ fn registry_with_hook(argv: &[String]) -> crate::inference::InferenceRegistry {
         config,
         Path::new("/host"),
         &env,
-        &Arc::new(crate::secrets::Secrets::in_memory()),
+        &Arc::new(crate::platform::secrets::Secrets::in_memory()),
     )
     .unwrap()
 }
@@ -141,8 +141,8 @@ async fn network_host_server(
     String,
     tempfile::TempDir,
 ) {
-    use crate::auth::Root;
-    use crate::devices::{Joined, Kind};
+    use crate::platform::auth::Root;
+    use crate::platform::devices::{Joined, Kind};
     let scratch = crate::testing::temp_dir("net-host");
     let (auth, _listener) = tcp::arm_with_state(
         TcpBind {
@@ -326,11 +326,11 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     // The Codex connection's capabilities come from the provider's catalog, so
     // the test seeds the cache that lookup reads: these sessions boot without a
     // provider. Seeded under the account `auth.json` above names.
-    crate::api::seed_codex_catalog(crate::log::Provider::OpenAICodex, "acct-1");
+    crate::api::seed_codex_catalog(crate::record::log::Provider::OpenAICodex, "acct-1");
     let registry = crate::inference::InferenceRegistry::load(
         &roots.0,
         &host_env,
-        &Arc::new(crate::secrets::Secrets::in_memory()),
+        &Arc::new(crate::platform::secrets::Secrets::in_memory()),
     )
     .expect("host registry");
     let host = Host::new(registry, baseline_env());
@@ -372,7 +372,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     // The platform arm reads the same catalog under its own cache key, seeded
     // here so the creation makes no request; the key it holds stays out of the
     // response.
-    crate::api::seed_codex_catalog(crate::log::Provider::OpenAI, "");
+    crate::api::seed_codex_catalog(crate::record::log::Provider::OpenAI, "");
     let platform = server
         .post("/sessions")
         .with_json_body(&serde_json::json!({
@@ -437,7 +437,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
                 .join(cwd)
                 .join(".efference")
                 .join(id)
-                .join(crate::session_dir::LOG_NAME),
+                .join(crate::record::session_dir::LOG_NAME),
         )
         .unwrap()
     };
@@ -510,7 +510,7 @@ disabled = true
             config,
             Path::new("/host"),
             &env,
-            &Arc::new(crate::secrets::Secrets::in_memory()),
+            &Arc::new(crate::platform::secrets::Secrets::in_memory()),
         )
         .unwrap(),
         baseline_env(),
@@ -581,7 +581,7 @@ disabled = true
             config,
             Path::new("/host"),
             &env,
-            &Arc::new(crate::secrets::Secrets::in_memory()),
+            &Arc::new(crate::platform::secrets::Secrets::in_memory()),
         )
         .unwrap()
         .with_history(history),
@@ -679,7 +679,7 @@ disabled = true
             config,
             Path::new("/host"),
             &env,
-            &Arc::new(crate::secrets::Secrets::in_memory()),
+            &Arc::new(crate::platform::secrets::Secrets::in_memory()),
         )
         .unwrap(),
         baseline_env(),

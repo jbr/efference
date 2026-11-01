@@ -12,8 +12,8 @@
 //! says so and stops counting at once.
 
 use super::*;
-use crate::log::AttentiveClient;
 use crate::protocol::attention::AttentionReport;
+use crate::record::log::AttentiveClient;
 
 /// How long after its last report a client still counts. The web client
 /// heartbeats about every 20 seconds while active, so two missed beats lapse it:

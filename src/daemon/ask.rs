@@ -48,7 +48,7 @@ impl Drop for AskWait<'_> {
         // However the ask ended, its push has nothing left to announce
         // (docs/web-push.md).
         self.session
-            .cancel_delayed_push(crate::log::PushCancel::AskEnded);
+            .cancel_delayed_push(crate::record::log::PushCancel::AskEnded);
         // A reply that landed as the ask ended (an interrupt won the race) is not lost:
         // it opens the next turn, as a submission with nothing pending would.
         if let Ok(turn) = self.rx.try_recv() {
@@ -91,7 +91,7 @@ impl Session {
         // when it has one, else the operator, who is pushed (docs/web-push.md); the
         // message is the question.
         self.moment(
-            crate::log::MomentKind::Ask,
+            crate::record::log::MomentKind::Ask,
             self.supervisor(),
             push::ask_body(&question_for_push),
         );

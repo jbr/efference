@@ -151,7 +151,7 @@ impl InteractiveState<'_> {
                 crate::tui::operations::operation_text(
                     operations,
                     model,
-                    crate::log::Timestamp::now().0,
+                    crate::record::log::Timestamp::now().0,
                 )
             }
             _ => None,

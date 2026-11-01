@@ -8,16 +8,16 @@
 //! `handler.rs` is the one place the pieces are assembled into a stack, keyed on the
 //! transport, so the UDS never consults the gate and a per-conn "which listener am I
 //! on?" guess (which would fail open) never exists. Every TCP credential is an enrolled
-//! device (`crate::devices`) whose token is derived from the machine root
-//! (`crate::auth`), and a browser becomes one by claiming a pending sign-in
-//! (`crate::sign_ins`); the enrollment surfaces (`/auth/link`, approval, the
+//! device (`crate::platform::devices`) whose token is derived from the machine root
+//! (`crate::platform::auth`), and a browser becomes one by claiming a pending sign-in
+//! (`crate::platform::sign_ins`); the enrollment surfaces (`/auth/link`, approval, the
 //! `/auth/devices` routes) are mounted only on the socket, because possession of the
 //! host machine is the enrollment authority.
 
 use super::*;
-use crate::auth::{DeviceTokens, Root};
-use crate::devices::{self, Enrolled, Joined, Kind};
-use crate::sign_ins;
+use crate::platform::auth::{DeviceTokens, Root};
+use crate::platform::devices::{self, Enrolled, Joined, Kind};
+use crate::platform::sign_ins;
 use std::time::SystemTime;
 use trillium::KnownHeaderName;
 
@@ -89,7 +89,7 @@ pub(crate) struct Listener {
 
 /// Split a bind into its credential state and its listener parameters.
 pub(crate) fn arm(bind: TcpBind) -> (Arc<TcpAuth>, Listener) {
-    arm_with_state(bind, crate::state::user_scoped())
+    arm_with_state(bind, crate::platform::state::user_scoped())
 }
 
 /// [`arm`] with the user state database injected — the interface a test uses to keep
@@ -210,7 +210,7 @@ impl TcpAuth {
     /// secret in the URL *fragment*, which never reaches server or proxy logs. The
     /// secret collects one token within the sign-in's lifetime, so the copy left in
     /// scrollback and browser history collects nothing after (docs/web-bind.md).
-    pub(crate) fn mint_link(&self) -> Result<String, crate::state::Error> {
+    pub(crate) fn mint_link(&self) -> Result<String, crate::platform::state::Error> {
         let claim = self.sign_ins.approved_link(SystemTime::now())?;
         Ok(format!("{}/#claim={}", self.public_base(), claim.encoded()))
     }
@@ -223,7 +223,7 @@ impl TcpAuth {
         kind: Kind,
         label: &str,
         joined: Joined,
-    ) -> Result<Enrolled, crate::state::Error> {
+    ) -> Result<Enrolled, crate::platform::state::Error> {
         let device = self
             .devices
             .insert(kind, label, joined, SystemTime::now())?;

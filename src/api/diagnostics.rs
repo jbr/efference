@@ -166,7 +166,7 @@ pub(crate) fn stream_abort_retry(
         surface,
         attempt,
         budget,
-        next_attempt_at: crate::log::Timestamp::now()
+        next_attempt_at: crate::record::log::Timestamp::now()
             .0
             .saturating_add(pause.as_millis() as u64),
         message: format!("attempt {attempt} of {budget} failed upstream, retrying"),
@@ -283,7 +283,7 @@ impl UpstreamRetryCell {
     /// published retry's `next_attempt_at`, so the phase and the retry topic agree.
     pub async fn delay(&self, pause: Duration) -> bool {
         let until = self.get().map_or_else(
-            || crate::log::Timestamp::now().0 + pause.as_millis() as u64,
+            || crate::record::log::Timestamp::now().0 + pause.as_millis() as u64,
             |retry| retry.next_attempt_at,
         );
         *self.delaying.lock().unwrap() = Some(until);

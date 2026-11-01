@@ -6,7 +6,7 @@
 use std::time::SystemTime;
 
 use super::*;
-use crate::update_check::{Release, UpdateCheck};
+use crate::platform::update_check::{Release, UpdateCheck};
 
 /// How long after a check that got an answer the next one runs.
 const INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -69,7 +69,7 @@ impl Host {
             log::info!(
                 "efference {} is available; this host is {}",
                 release.version,
-                crate::update_check::INSTALLED
+                crate::platform::update_check::INSTALLED
             );
         }
         if !self.newer_version.set(newer) {

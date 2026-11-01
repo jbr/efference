@@ -9,10 +9,10 @@ use serde_json::Value;
 
 use super::args;
 use crate::daemon::{Host, Session};
-use crate::log::ToolCall;
 use crate::protocol::agents::{ARCHIVE_WIRE_NAME, BoundAction, DECIDE_WIRE_NAME, allows};
 use crate::protocol::sessions::CreateSession;
 use crate::protocol::transcript::Handle;
+use crate::record::log::ToolCall;
 
 /// The in-process executor (docs/tools.md): the calling session's toolbox reaches
 /// the host directly — the same `Session` methods the HTTP handlers call, never a
@@ -95,7 +95,7 @@ impl HostExecutor {
                     == Some(
                         starting
                             .project()
-                            .join(crate::session_dir::SESSION_BASE)
+                            .join(crate::record::session_dir::SESSION_BASE)
                             .as_path(),
                     )
             }),
@@ -116,7 +116,10 @@ impl HostExecutor {
     /// `session[<id>]`, naming the caller's project as well when it is not `target`'s
     /// (docs/tools.md).
     pub(super) fn source_for(&self, target: &Session) -> String {
-        crate::names::sources::session_source(&self.caller, self.place_for(target).as_deref())
+        crate::record::names::sources::session_source(
+            &self.caller,
+            self.place_for(target).as_deref(),
+        )
     }
 
     /// The `source` of a note the caller leaves in `target`'s inbox: its bare id within
@@ -124,7 +127,9 @@ impl HostExecutor {
     /// [`source_for`](Self::source_for) label from another project (docs/inbox.md).
     pub(super) fn note_source_for(&self, target: &Session) -> String {
         match self.place_for(target) {
-            Some(place) => crate::names::sources::session_source(&self.caller, Some(&place)),
+            Some(place) => {
+                crate::record::names::sources::session_source(&self.caller, Some(&place))
+            }
             None => self.caller.clone(),
         }
     }
@@ -134,7 +139,7 @@ impl HostExecutor {
     fn place_for(&self, target: &Session) -> Option<String> {
         let caller = self.caller_session().ok()?;
         (caller.storage_base() != target.storage_base())
-            .then(|| crate::home::tilde(caller.directories().project()))
+            .then(|| crate::platform::home::tilde(caller.directories().project()))
     }
 
     /// The target for a read, or for a message from a session that does not drive

@@ -266,8 +266,8 @@ pub fn run_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child =
-        crate::spawn::std(&mut cmd).map_err(|e| format!("could not run `{command}`: {e}"))?;
+    let mut child = crate::platform::spawn::std(&mut cmd)
+        .map_err(|e| format!("could not run `{command}`: {e}"))?;
     let mut stdout = child.stdout.take().expect("stdout is piped");
     let mut stderr = child.stderr.take().expect("stderr is piped");
     let drain = |pipe: &mut dyn Read| {

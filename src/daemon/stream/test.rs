@@ -353,9 +353,9 @@ async fn the_durable_class_is_drained_first() {
 }
 
 fn assistant(text: &str) -> Payload {
-    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+    Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
         vec![],
-        vec![crate::log::ContentBlock::Text(text.into())],
+        vec![crate::record::log::ContentBlock::Text(text.into())],
         vec![],
     ))
 }

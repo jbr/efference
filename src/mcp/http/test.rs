@@ -15,11 +15,11 @@ use trillium::Conn as ServerConn;
 
 use crate::bash::Outcome;
 use crate::config::McpTransport;
-use crate::log::{RawResult, ToolCall};
 use crate::mcp::auth::store::{KeychainStore, TokenStore};
 use crate::mcp::auth::{Credentials, stored_credentials};
 use crate::mcp::{ConnectedProvider, Session, Transport};
-use crate::secrets::Secrets;
+use crate::platform::secrets::Secrets;
+use crate::record::log::{RawResult, ToolCall};
 
 use super::HttpTransport;
 
@@ -198,7 +198,7 @@ impl Fixture {
         let secrets = Arc::new(Secrets::in_memory());
         secrets
             .set(
-                &crate::secrets::mcp_name(SERVER),
+                &crate::platform::secrets::mcp_name(SERVER),
                 &json!({
                     "issuer": base,
                     "resource": format!("{base}/mcp"),

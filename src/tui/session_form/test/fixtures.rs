@@ -4,7 +4,7 @@ use super::*;
 use crate::api::{ListedModel, Price};
 use crate::client::{CatalogModel, CatalogStatus, ConnectionCatalog};
 use crate::inference::{ConnectionInventory, InferenceRegistry, ResolvedOptions, SessionOptions};
-use crate::log::Provider;
+use crate::record::log::Provider;
 use crate::user_config::InferenceConfig;
 use ratatui::{buffer::Buffer, layout::Rect};
 
@@ -40,7 +40,7 @@ fn registry() -> InferenceRegistry {
         config,
         std::path::Path::new("/host"),
         &env,
-        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        &std::sync::Arc::new(crate::platform::secrets::Secrets::in_memory()),
     )
     .unwrap()
 }

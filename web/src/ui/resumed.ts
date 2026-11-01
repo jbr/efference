@@ -1,5 +1,5 @@
 // The restart notice a `Resumed` entry carries (docs/resumption.md), in the words
-// the model reads for it (`render_resumed`, src/project/render.rs): the same facts
+// the model reads for it (`render_resumed`, src/record/project/render.rs): the same facts
 // stated to the operator, minus the leading glyph the wire notice has.
 
 import type { Resumed } from "../api/types.ts";

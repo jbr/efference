@@ -7,8 +7,8 @@ use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
-use crate::log::Telemetry;
-use crate::log::{AssistantOutput, ContentBlock, Keep, RawResult, Triaged, WireState};
+use crate::record::log::Telemetry;
+use crate::record::log::{AssistantOutput, ContentBlock, Keep, RawResult, Triaged, WireState};
 use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn, events, tool_call};
 use std::collections::BTreeMap;
 use tempfile::TempDir;
@@ -70,7 +70,7 @@ async fn start(
     let (cwd, dir) = workdir("capture");
     let mut boot = boot(&cwd);
     boot.client = Client::new(
-        upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages"),
+        upstream.endpoint(crate::record::log::Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
     );
@@ -230,12 +230,12 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
                 vec![],
                 vec![
                     ToolCall::new(
-                        crate::names::tools::BASH,
+                        crate::record::names::tools::BASH,
                         "toolu_1",
                         serde_json::json!({ "command": "printf 'first\\nsecond\\nthird\\n'" }),
                     ),
                     ToolCall::new(
-                        crate::names::tools::BASH,
+                        crate::record::names::tools::BASH,
                         "toolu_2",
                         serde_json::json!({ "command": "printf 'alpha\\nbeta\\n'" }),
                     ),

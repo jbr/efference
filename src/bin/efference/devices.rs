@@ -4,8 +4,8 @@
 //! host is the enrollment authority; none of it is served on TCP.
 
 use super::*;
-use efference::devices::Device;
-use efference::sign_ins::Pending;
+use efference::platform::devices::Device;
+use efference::platform::sign_ins::Pending;
 use std::io::{BufRead, Write};
 
 #[cfg(test)]

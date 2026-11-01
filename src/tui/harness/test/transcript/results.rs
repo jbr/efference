@@ -1,7 +1,7 @@
 //! Tool-result rendering: whole results, triaged verdicts, and errors.
 
 use super::*;
-use crate::log::Triaged;
+use crate::record::log::Triaged;
 
 /// The baseline for how a tool call and its result render: the call's command as a
 /// shell block, the result whole under its own status header.
@@ -655,7 +655,7 @@ fn a_triage_failed_result_reads_as_a_failed_call() {
 /// operator sees the compliance signal even though the gate ultimately succeeded.
 #[test]
 fn a_recovered_retry_surfaces_as_an_annotation() {
-    use crate::log::{Payload, Triage};
+    use crate::record::log::{Payload, Triage};
     let mut play = Screenplay::new(80, 16);
     play.user("Run it.");
     play.assistant(

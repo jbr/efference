@@ -73,7 +73,7 @@ impl BgProc {
     /// bounded: it is cut from the front on a char boundary, since only the last line is
     /// shown.
     pub(crate) fn push_output(&mut self, chunk: &str) {
-        self.last_chunk_at = Some(crate::log::Timestamp::now().0);
+        self.last_chunk_at = Some(crate::record::log::Timestamp::now().0);
         self.refresh_elapsed();
         self.tail.push_str(chunk);
         if self.tail.len() > TAIL_CAP {

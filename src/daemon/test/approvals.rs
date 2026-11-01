@@ -13,9 +13,9 @@ fn the_gate_carries_the_spotter_reason() {
     shared
         .append(
             0,
-            Payload::Spot(crate::log::Spot::new(
+            Payload::Spot(crate::record::log::Spot::new(
                 call.id.clone(),
-                crate::log::Stance::Gate,
+                crate::record::log::Stance::Gate,
                 "deletes outside the git tree — not reversible",
             )),
         )
@@ -95,12 +95,14 @@ async fn the_gate_carries_its_grant_and_takes_it_back_verbatim() {
 }
 
 /// The `GateDecision` records in `session`'s log, in order.
-fn decisions(session: &Session) -> Vec<crate::log::GateDecision> {
+fn decisions(session: &Session) -> Vec<crate::record::log::GateDecision> {
     session
         .snapshot()
         .into_iter()
         .filter_map(|e| match e.payload {
-            Payload::Telemetry(crate::log::Telemetry::GateDecision(decision)) => Some(decision),
+            Payload::Telemetry(crate::record::log::Telemetry::GateDecision(decision)) => {
+                Some(decision)
+            }
             _ => None,
         })
         .collect()
@@ -135,8 +137,12 @@ async fn a_decision_over_http_is_recorded_with_its_decider() {
     assert_eq!(
         decisions(&shared),
         [
-            crate::log::GateDecision::new("toolu_x", Approval::Approve, Some("web".into())),
-            crate::log::GateDecision::new("toolu_x", Approval::Redirect("use trash".into()), None),
+            crate::record::log::GateDecision::new("toolu_x", Approval::Approve, Some("web".into())),
+            crate::record::log::GateDecision::new(
+                "toolu_x",
+                Approval::Redirect("use trash".into()),
+                None
+            ),
         ]
     );
     let entry = shared
@@ -145,7 +151,7 @@ async fn a_decision_over_http_is_recorded_with_its_decider() {
         .find(|e| {
             matches!(
                 e.payload,
-                Payload::Telemetry(crate::log::Telemetry::GateDecision(_))
+                Payload::Telemetry(crate::record::log::Telemetry::GateDecision(_))
             )
         })
         .unwrap();
@@ -164,7 +170,7 @@ async fn the_transcript_names_who_decided() {
     shared
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![call.clone()],
@@ -221,7 +227,7 @@ async fn an_escalation_over_http_keeps_the_gate_and_is_recorded() {
         .filter(|e| {
             matches!(
                 e.payload,
-                Payload::Telemetry(crate::log::Telemetry::Escalation(_))
+                Payload::Telemetry(crate::record::log::Telemetry::Escalation(_))
             )
         })
         .map(|e| serde_json::to_string(&e.payload).unwrap())

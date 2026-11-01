@@ -16,8 +16,8 @@ would strand reusable code inside a harness.
 
 | Layer | Module | Knows about |
 | --- | --- | --- |
-| `WWW-Authenticate` challenge parsing (RFC 9110 §11.6.1) | `src/www_authenticate.rs` | HTTP only — no OAuth, no MCP |
-| OAuth 2.1 public client | `src/oauth.rs` (+ `src/oauth/`) | OAuth RFCs only — no MCP |
+| `WWW-Authenticate` challenge parsing (RFC 9110 §11.6.1) | `src/platform/www_authenticate.rs` | HTTP only — no OAuth, no MCP |
+| OAuth 2.1 public client | `src/platform/oauth.rs` (+ `src/platform/oauth/`) | OAuth RFCs only — no MCP |
 | MCP glue | `src/mcp/auth.rs` | when the dance runs, and what the resource indicator points at |
 
 The bottom two are written to be lifted out: the challenge parser wants a standalone
@@ -33,15 +33,15 @@ every copy on every machine. So `token_endpoint_auth_method` is `none`, there is
 client authentication at the token endpoint, and **PKCE carries the entire
 per-authorization security burden.**
 
-That is why `src/oauth/pkce.rs` offers `S256` and nothing else, and why
-`src/oauth/metadata.rs` *refuses* an authorization server that does not advertise
+That is why `src/platform/oauth/pkce.rs` offers `S256` and nothing else, and why
+`src/platform/oauth/metadata.rs` *refuses* an authorization server that does not advertise
 `code_challenge_methods_supported` rather than proceeding without PKCE. There is no
 second line of defense behind it to fall back on.
 
 ## Discovery has ladders, and they are ordered
 
 Both metadata documents have more than one place they might live, and the order is
-normative rather than a matter of taste (`src/oauth/metadata.rs`):
+normative rather than a matter of taste (`src/platform/oauth/metadata.rs`):
 
 - **Protected resource** (RFC 9728): the `resource_metadata` parameter from the
   `WWW-Authenticate` challenge wins if present; otherwise the well-known URI is

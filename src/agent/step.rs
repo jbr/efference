@@ -11,8 +11,8 @@
 //! approval, and `consolidate_call` the one call answered from the log alone.
 
 use super::*;
-use crate::log::ToolTelemetry;
-use crate::names::tools::{ASK, CONSOLIDATE, is_triage_tool};
+use crate::record::log::ToolTelemetry;
+use crate::record::names::tools::{ASK, CONSOLIDATE, is_triage_tool};
 
 mod consolidate_call;
 mod execute;
@@ -68,7 +68,7 @@ pub(super) enum Step {
         call: ToolCall,
         /// The seq the result was captured at, which the verdict it is still waiting
         /// for names (docs/triage.md).
-        result_seq: crate::log::Seq,
+        result_seq: crate::record::log::Seq,
         /// What the log holds for that result — masked on the way in (docs/env.md),
         /// so triage reads the durable bytes rather than the tool's own output.
         result: RawResult,
@@ -262,7 +262,8 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             Ok(Decision::Redirect {
                 payload: rejected(call, decider.as_deref()),
                 message,
-                source: decider.filter(|source| !crate::names::sources::is_review_source(source)),
+                source: decider
+                    .filter(|source| !crate::record::names::sources::is_review_source(source)),
             })
         }
         // Resolved into Approve/Redirect by `commit_config_edit` above before this match.

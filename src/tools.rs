@@ -29,8 +29,8 @@ use semantic_edit_mcp::SemanticEditTools;
 use serde_json::{Value, json};
 
 use crate::bash::{Bash, Outcome};
-use crate::log::{Notification, RawResult, ToolCall};
-use crate::names::tools::{BASH, INTENT};
+use crate::record::log::{Notification, RawResult, ToolCall};
+use crate::record::names::tools::{BASH, INTENT};
 use read_image::ReadImage;
 
 /// The `intent` property's schema `description`. Deliberately a pointer, not the

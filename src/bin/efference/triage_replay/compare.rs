@@ -2,8 +2,8 @@
 //! table (docs/triage.md).
 
 use super::Recorded;
-use efference::log::{Keep, WireState};
-use efference::project::selection;
+use efference::record::log::{Keep, WireState};
+use efference::record::project::selection;
 use efference::triage::ReplayVerdict;
 use std::collections::BTreeSet;
 
@@ -19,8 +19,8 @@ pub(super) fn one_line(s: &str, max: usize) -> String {
 
 /// The size of the peek's trailing user message — the part of the request that is fresh
 /// on every triage, as against the prefix it re-reads warm.
-pub(super) fn tail_chars(turns: &[efference::project::WireTurn]) -> usize {
-    use efference::project::{UserPart, WireTurn};
+pub(super) fn tail_chars(turns: &[efference::record::project::WireTurn]) -> usize {
+    use efference::record::project::{UserPart, WireTurn};
     let Some(WireTurn::User(parts)) = turns.last() else {
         return 0;
     };

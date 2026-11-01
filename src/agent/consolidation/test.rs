@@ -1,8 +1,10 @@
 use super::*;
-use crate::log::{AssistantOutput, Provider, ToolCall};
+use crate::record::log::{AssistantOutput, Provider, ToolCall};
 
 fn response(text: &str) -> AssistantOutput {
-    AssistantOutput::Messages(vec![crate::log::MessagesOutputBlock::Text(text.into())])
+    AssistantOutput::Messages(vec![crate::record::log::MessagesOutputBlock::Text(
+        text.into(),
+    )])
 }
 
 #[test]
@@ -29,17 +31,15 @@ fn rejects_skip_short_tools_failures_and_caps() {
     assert!(account(&response(&text), None, Some("interrupted")).is_err());
     let mut called = response(&text);
     if let AssistantOutput::Messages(blocks) = &mut called {
-        blocks.push(crate::log::MessagesOutputBlock::ToolUse(ToolCall::new(
-            "read",
-            "call",
-            serde_json::json!({}),
-        )));
+        blocks.push(crate::record::log::MessagesOutputBlock::ToolUse(
+            ToolCall::new("read", "call", serde_json::json!({})),
+        ));
     }
     assert_eq!(account(&called, None, None).unwrap_err(), "tool call");
 }
 
-use crate::log::{RawResult, Summary, WireState};
-use crate::names::tools::CONSOLIDATE;
+use crate::record::log::{RawResult, Summary, WireState};
+use crate::record::names::tools::CONSOLIDATE;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 use std::sync::Arc;
 
@@ -52,7 +52,7 @@ fn session() -> Arc<Session> {
         .append(
             0,
             Payload::assistant(AssistantOutput::Messages(vec![
-                crate::log::MessagesOutputBlock::ToolUse(ToolCall::new(
+                crate::record::log::MessagesOutputBlock::ToolUse(ToolCall::new(
                     "read",
                     "r",
                     serde_json::json!({"path":"source.rs"}),
@@ -227,7 +227,7 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
         .append(
             1,
             Payload::assistant(AssistantOutput::Messages(vec![
-                crate::log::MessagesOutputBlock::ToolUse(ToolCall::new(
+                crate::record::log::MessagesOutputBlock::ToolUse(ToolCall::new(
                     "read",
                     "later",
                     serde_json::json!({"path":"other.rs"}),
@@ -272,7 +272,7 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
         .append(
             1,
             Payload::assistant(AssistantOutput::Messages(vec![
-                crate::log::MessagesOutputBlock::ToolUse(ToolCall::new(
+                crate::record::log::MessagesOutputBlock::ToolUse(ToolCall::new(
                     CONSOLIDATE,
                     "manual",
                     serde_json::json!({"summary":"s"}),

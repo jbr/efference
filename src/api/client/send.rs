@@ -145,7 +145,7 @@ impl Client {
         // model's replies missing (docs/transport.md). Live sessions are pinned to
         // one provider, so this answers only a recorded session continued or
         // rendered under another.
-        crate::project::check_dialect(turns, self.dialect())?;
+        crate::record::project::check_dialect(turns, self.dialect())?;
         let encoded = self.encode(turns);
         // The prompt's variable parts, sized before `max_tokens` is chosen: the
         // reservation is a function of how much of the window the prompt takes

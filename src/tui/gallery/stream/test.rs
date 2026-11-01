@@ -1,7 +1,7 @@
 use super::*;
 
 /// Every scene's scripted input has to be valid JSON, because `play_scene` parses
-/// it to build the committed [`ToolCall`](crate::log::ToolCall) — a scene that
+/// it to build the committed [`ToolCall`](crate::record::log::ToolCall) — a scene that
 /// serialized badly would only surface as a panic mid-demo.
 #[test]
 fn every_scene_emits_parseable_json() {

@@ -22,16 +22,16 @@ use crate::consolidate;
 use crate::daemon::Session;
 use crate::frontend::{Frontend, GateOptions, SubmittedTurn};
 use crate::inbox::ShownNotification;
-use crate::log::{
+use crate::policy::{self, ReviewLevel, Verdict};
+use crate::process_monitor;
+use crate::protocol::state::{BlockedReason, LoopPhase, Stall, StallReason};
+use crate::protocol::stream::StreamDelta;
+use crate::record::log::{
     Approval, AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState,
     Exclusion, Notification, Origin, Payload, RawResult, RequestOrigin, Spot, Stance, Summary,
     ToolCall, Triage, Turn, WireState,
 };
-use crate::policy::{self, ReviewLevel, Verdict};
-use crate::process_monitor;
-use crate::project::WireTurn;
-use crate::protocol::state::{BlockedReason, LoopPhase, Stall, StallReason};
-use crate::protocol::stream::StreamDelta;
+use crate::record::project::WireTurn;
 use crate::spotter::Spotter;
 use crate::tools::Toolbox;
 use crate::triage::{BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager};
@@ -64,7 +64,7 @@ pub(crate) fn stalled(
     Stall {
         reason,
         attempts,
-        at: crate::log::Timestamp::now().0,
+        at: crate::record::log::Timestamp::now().0,
         message,
         detail,
     }

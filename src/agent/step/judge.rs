@@ -2,7 +2,7 @@
 //! spotter, and the human gate.
 
 use super::*;
-use crate::names::tools::BASH;
+use crate::record::names::tools::BASH;
 use crate::spotter::{Read, Spotting};
 
 /// The permission cascade for one call (docs/permissions.md). `bound` is the leaf

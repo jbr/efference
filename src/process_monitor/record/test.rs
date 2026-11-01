@@ -3,7 +3,9 @@
 
 use super::*;
 
-use crate::log::{CallId, ExitOutcome, ProcessEventKind, ProcessSpawn, RawResult, Seq, WireState};
+use crate::record::log::{
+    CallId, ExitOutcome, ProcessEventKind, ProcessSpawn, RawResult, Seq, WireState,
+};
 
 /// One log entry carrying `payload`, at `seq`.
 fn entry(seq: Seq, payload: Payload) -> LogEntry {

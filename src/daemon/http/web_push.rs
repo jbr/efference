@@ -8,10 +8,10 @@ use crate::protocol::answers::{PushKey, StatusBody, StatusWord};
 /// Under `/v1` with everything else, so the service worker's never-cache
 /// rule and the TCP gate cover it without either learning a new prefix.
 pub(super) async fn read_push_key(conn: Conn) -> Conn {
-    let Some(root) = crate::auth::Root::installed() else {
+    let Some(root) = crate::platform::auth::Root::installed() else {
         return fail(conn, ErrorCode::Internal, NO_ROOT);
     };
-    let key = crate::push::public_key(&root.vapid_key());
+    let key = crate::platform::push::public_key(&root.vapid_key());
     views::answer(conn, 200, PushKey { key })
 }
 
@@ -21,8 +21,9 @@ pub(super) async fn read_push_key(conn: Conn) -> Conn {
 /// POST from a page reload idempotent.
 pub(super) async fn subscribe(mut conn: Conn) -> Conn {
     let body = conn.request_body_string().await.unwrap_or_default();
-    let subscription = match serde_json::from_str::<crate::push::SubscriptionJson>(&body) {
-        Ok(json) => crate::push::Subscription::from(json),
+    let subscription = match serde_json::from_str::<crate::platform::push::SubscriptionJson>(&body)
+    {
+        Ok(json) => crate::platform::push::Subscription::from(json),
         Err(e) => {
             return fail(
                 conn,
@@ -31,7 +32,7 @@ pub(super) async fn subscribe(mut conn: Conn) -> Conn {
             );
         }
     };
-    match crate::push::Store::machine_scoped().upsert(&subscription) {
+    match crate::platform::push::Store::machine_scoped().upsert(&subscription) {
         Ok(()) => views::answer(conn, 201, StatusBody::new(StatusWord::Subscribed)),
         Err(e) => fail(
             conn,
@@ -53,7 +54,7 @@ pub(super) async fn unsubscribe(mut conn: Conn) -> Conn {
             return fail(conn, ErrorCode::BadRequest, format!("bad unsubscribe: {e}"));
         }
     };
-    match crate::push::Store::machine_scoped().remove(&endpoint) {
+    match crate::platform::push::Store::machine_scoped().remove(&endpoint) {
         Ok(()) => views::answer(conn, 200, StatusBody::new(StatusWord::Unsubscribed)),
         Err(e) => fail(
             conn,

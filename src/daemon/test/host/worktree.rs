@@ -4,7 +4,7 @@
 //! `crate::worktree::add` and the session's directories pointed at it.
 
 use super::*;
-use crate::log::{Payload, WorktreeEventKind};
+use crate::record::log::{Payload, WorktreeEventKind};
 use serde_json::Value;
 
 /// Host a session named `id` whose working directory is a worktree it made.

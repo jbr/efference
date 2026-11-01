@@ -9,8 +9,8 @@ host's listeners), `src/daemon/host_routes.rs` (the host's route table), `src/da
 (the listener and the credential state) with its submodules in `src/daemon/tcp/` —
 `gate.rs` (the gate and the anonymous surface it prices), `headers.rs` (the response
 headers), and `routes.rs` (the sign-in and enrollment routes, the web client
-handler) — `src/auth.rs` (the credential arithmetic), `src/devices.rs` (the
-enrolled devices), and `src/sign_ins.rs` (the pending sign-ins); the flag resolution
+handler) — `src/platform/auth.rs` (the credential arithmetic), `src/platform/devices.rs` (the
+enrolled devices), and `src/platform/sign_ins.rs` (the pending sign-ins); the flag resolution
 is `src/bin/efference/serve.rs`, and the operator's verb over the devices and the
 sign-ins is `src/bin/efference/devices.rs`.
 
@@ -117,7 +117,7 @@ needs it and read at every bind after, held only in memory. Nobody supplies it a
 nothing prints it. Through `[secrets]` commands a bind never mints: their absent
 status may be one the tool also gives for other failures, so a missing `root` fails
 the bind with "no web root is stored", naming `efference auth rotate`, which writes
-the first one. `src/auth.rs` derives everything else by HKDF-SHA256 with per-purpose
+the first one. `src/platform/auth.rs` derives everything else by HKDF-SHA256 with per-purpose
 context strings:
 
 | derived | context | purpose |
@@ -141,7 +141,7 @@ bounded by its 128-bit level.
 
 **Enrolled devices: one row per credential.** Every TCP credential is an *enrolled
 device*: a row in the `devices` table of the user state database
-([state-store.md](state-store.md), `src/devices.rs`) holding a 128-bit id from the OS
+([state-store.md](state-store.md), `src/platform/devices.rs`) holding a 128-bit id from the OS
 random source, drawn fresh for every enrollment; a kind, `browser` or `script`; a label;
 how it joined — `code`, a short code approved at the host, `link`, a sign-in link
 minted there (both below), or `add`, `efference devices add` at the host; when it was
@@ -224,7 +224,7 @@ A browser with no token signs in one of two ways, and both end at the same claim
 
 **By a code the operator approves.** The sign-in view ([web-client.md](web-client.md),
 `web/src/ui/Login.tsx`) sends `POST /pair` with a label naming the browser. The host
-records a *pending sign-in* (`src/sign_ins.rs`) and answers that page alone with a
+records a *pending sign-in* (`src/platform/sign_ins.rs`) and answers that page alone with a
 *claim secret* — 128 bits from the OS random source — a *short code*, and the seconds
 both live. The page shows the code and the command that approves it, and polls
 `POST /pair/claim` with the claim secret every second; the secret rides the body, never
@@ -478,7 +478,7 @@ the rest of the surface, and the subscription's lifetime *is* the connection: ta
 socket closes, watch drops. No registry, no control-channel frame class — the
 control channel stays broadcast-topic shaped.
 
-Behind the route sits the core watcher, `src/fswatch.rs`: one notify debouncer,
+Behind the route sits the core watcher, `src/platform/fswatch.rs`: one notify debouncer,
 consumers on a tokio broadcast channel, watches registered per directory and
 refcounted by guards. Events are **pokes, never content** — `event: change`,
 data the file's root-relative path — and the client answers a poke with the same

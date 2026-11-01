@@ -134,7 +134,7 @@ impl<'a> InteractiveState<'a> {
     pub(in crate::tui) fn upload_landed(
         &mut self,
         key: u64,
-        result: Result<crate::log::attachment::Arrival, String>,
+        result: Result<crate::record::log::attachment::Arrival, String>,
     ) {
         if let Err(e) = &result {
             self.set_debug_message(format!("upload failed: {e}"));

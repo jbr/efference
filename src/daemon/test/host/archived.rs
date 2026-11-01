@@ -5,9 +5,9 @@
 //! recorded selections and context size.
 
 use super::*;
-use crate::log::{Payload, Title, TitleAuthor};
-use crate::persist::Log;
 use crate::protocol::sessions::{DormantSession, SessionState};
+use crate::record::log::{Payload, Title, TitleAuthor};
+use crate::record::persist::Log;
 
 /// A resumable titled log for session `id` under `root`.
 pub(super) fn write_session(root: &Path, id: &str, title: &str) {
@@ -263,9 +263,10 @@ async fn a_dormant_session_is_found_under_a_remembered_root() {
 /// main `c/main` and spotter `c/spot` with separate triage on `c/tri`, followed by a
 /// preamble that switched the spotter to `c/spot-2` at a resume.
 fn write_recorded_session(root: &Path, id: &str) -> PathBuf {
-    use crate::log::{LoggedInference, RecordedRoles, TriageModel};
-    use crate::persist::SessionMetadata;
-    let inference = |model: &str| LoggedInference::new("c", crate::log::Provider::Anthropic, model);
+    use crate::record::log::{LoggedInference, RecordedRoles, TriageModel};
+    use crate::record::persist::SessionMetadata;
+    let inference =
+        |model: &str| LoggedInference::new("c", crate::record::log::Provider::Anthropic, model);
     let dir = root.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
     let metadata = SessionMetadata::new(
@@ -310,7 +311,7 @@ fn write_usage(dir: &Path, requests: &[(RequestOrigin, u64)]) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_dormant_row_carries_its_recorded_selections_and_context_size() {
-    use crate::log::RequestOrigin;
+    use crate::record::log::RequestOrigin;
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
     let server = host_server(&host).await;
@@ -371,7 +372,7 @@ async fn a_dormant_row_carries_its_recorded_selections_and_context_size() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_dormant_row_without_a_turn_or_recorded_roles_leaves_them_out() {
-    use crate::log::RequestOrigin;
+    use crate::record::log::RequestOrigin;
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
     let server = host_server(&host).await;
@@ -458,7 +459,7 @@ async fn an_archive_records_who_asked_and_the_tui_can_read_it_back() {
 
     let last = |id: &str| {
         let path = root.join(".efference").join(id).join("log.jsonl");
-        crate::persist::load_recording(path)
+        crate::record::persist::load_recording(path)
             .unwrap()
             .entries
             .last()

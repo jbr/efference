@@ -273,7 +273,7 @@ async fn detach_surrenders_a_live_child_with_its_output_so_far() {
     );
     detached.child.wait().await.expect("child exits cleanly");
     // Best-effort cleanup if anything lingers in the group.
-    crate::spawn::kill_group(pgid);
+    crate::platform::spawn::kill_group(pgid);
 }
 
 /// **A cache-prefix pin.** `tools[]` sits in the request envelope ahead of

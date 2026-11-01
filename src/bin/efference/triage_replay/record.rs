@@ -1,7 +1,7 @@
 //! Rebuilding recorded triages from a session log (docs/triage.md).
 
 use efference::inbox::{ShownNotification, rider_after};
-use efference::log::{Payload, ProcessEventKind, RawResult, ToolCall, WireState};
+use efference::record::log::{Payload, ProcessEventKind, RawResult, ToolCall, WireState};
 use std::collections::BTreeSet;
 
 /// One recorded triage, rebuilt from the log: the prefix the triage saw, and the results it
@@ -55,7 +55,7 @@ impl Recorded {
 /// triage prompt is re-rendered from, and `tools[]` — the recorded array, else rebuilt from
 /// the current code and cwd, exactly as `wire` does and with the same caveat.
 pub(crate) fn recorded_envelope(
-    entries: &[efference::log::LogEntry],
+    entries: &[efference::record::log::LogEntry],
 ) -> Result<(String, Option<String>, Vec<serde_json::Value>), crate::CliError> {
     let (system, context_block) = entries
         .iter()
@@ -79,11 +79,11 @@ pub(crate) fn recorded_envelope(
 /// the live loop opens a triage over: the triage's prefix ends with an assistant message
 /// carrying one `tool_use` per call, and the API rejects a request that leaves any of
 /// them unanswered (docs/triage.md).
-pub(crate) fn recorded_triages(entries: &[efference::log::LogEntry]) -> Vec<Recorded> {
+pub(crate) fn recorded_triages(entries: &[efference::record::log::LogEntry]) -> Vec<Recorded> {
     // Every result, by call id, and every triage's recorded first-attempt breadcrumb. A
     // result logged `Pending` takes the verdict a later `ResultVerdict` gave it, as the
     // projection resolves it (docs/log-and-projection.md).
-    let verdicts = efference::log::result_verdicts(entries);
+    let verdicts = efference::record::log::result_verdicts(entries);
     let mut triages = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         let Payload::Assistant { output, .. } = &entry.payload else {

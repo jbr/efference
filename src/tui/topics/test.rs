@@ -6,7 +6,7 @@ use super::*;
 use crate::api::{CacheMiss, CacheMissReason, RequestUsage, Usage};
 use crate::daemon::Session;
 use crate::frontend::SubmittedTurn;
-use crate::log::{
+use crate::record::log::{
     ConfigChange, ConfigEdit, EditState, Payload, RequestOrigin, Telemetry, ToolCall,
 };
 
@@ -172,7 +172,7 @@ fn the_store_holds_what_a_busy_session_publishes_unchanged() {
     session
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![ToolCall::new(

@@ -5,7 +5,7 @@
 //! taught here what it releases and what it cancels.
 
 use super::*;
-use crate::log::{PushCancel, ReleasedBy};
+use crate::record::log::{PushCancel, ReleasedBy};
 
 /// What a person did to a session's turn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

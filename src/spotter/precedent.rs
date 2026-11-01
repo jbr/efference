@@ -5,10 +5,10 @@
 //! calls; deciding whether one is the same action as the move is the model's job
 //! (`jev/relation.rs`).
 
-use crate::log::Telemetry;
+use crate::record::log::Telemetry;
 use std::collections::{HashMap, HashSet};
 
-use crate::log::{CallId, LogEntry, Payload, Stance, ToolCall};
+use crate::record::log::{CallId, LogEntry, Payload, Stance, ToolCall};
 
 /// The calls in `log` that ran with the operator's consent, in log order.
 ///

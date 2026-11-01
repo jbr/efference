@@ -11,7 +11,7 @@
 
 pub mod stream;
 
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, Keep, LogEntry, MessagesOutputBlock, Payload, RawResult, Summary, ToolCall,
     Triaged, WireState,
 };
@@ -95,7 +95,7 @@ fn image_result(seq: u64, call_id: &str, content: &str) -> LogEntry {
 /// the bottom, with a white ring. The gradients show color depth, the ring
 /// shows aspect handling — a circle is where a wrong font-size guess becomes an
 /// ellipse.
-fn test_card() -> crate::log::ResultImage {
+fn test_card() -> crate::record::log::ResultImage {
     use base64::Engine;
     let (w, h) = (600u32, 400u32);
     let hue = |t: f32, dim: f32| {
@@ -124,7 +124,7 @@ fn test_card() -> crate::log::ResultImage {
     ::image::DynamicImage::ImageRgba8(img)
         .write_to(&mut bytes, ::image::ImageFormat::Png)
         .expect("png-encoding an in-memory buffer");
-    crate::log::ResultImage {
+    crate::record::log::ResultImage {
         media_type: "image/png".into(),
         data: base64::engine::general_purpose::STANDARD.encode(bytes.into_inner()),
         width: w,

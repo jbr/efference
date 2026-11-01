@@ -1,18 +1,18 @@
 // ⚠ CORDON — a deliberate, temporary duplicate of the daemon's projection
-// renderer (`src/project/render.rs`; docs/web-client.md "The cordon").
+// renderer (`src/record/project/render.rs`; docs/web-client.md "The cordon").
 // The triaged view must show what the model saw, and until tool results
 // are structured (audience-tagged content blocks, or per-tool result
 // schemas), the only client-side source is a mirror of the Rust renderer.
 // Everything under `web/src/render/` is planned deletion: when structured
 // output lands, drop the directory whole. Ports are literal — same names,
 // same order, same strings — so divergence is findable by diffing against
-// render.rs; the tests mirror `src/project/test/triaged.rs` case for case.
+// render.rs; the tests mirror `src/record/project/test/triaged.rs` case for case.
 
 import { sessionSource } from "../api/source.ts";
 import type { Interruption, Keep, WireState } from "../api/types.ts";
 import type { RawResult } from "../api/entry.ts";
 
-/** Mirrors `TRIAGE_LINE_CAP` (src/project.rs). */
+/** Mirrors `TRIAGE_LINE_CAP` (src/record/project.rs). */
 export const TRIAGE_LINE_CAP = 2000;
 
 type Range = [number, number];
@@ -151,7 +151,7 @@ export interface WireViewText {
 }
 
 /** The line an interrupted call projects in place of its output — a mirror of
- * `render_interruption` (src/project/render.rs), so the operator reads what the
+ * `render_interruption` (src/record/project/render.rs), so the operator reads what the
  * model read. */
 export function renderInterruption(interruption: Interruption): string {
   const by = interruption.by;

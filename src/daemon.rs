@@ -38,21 +38,21 @@ use crate::api::{
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::frontend::{Frontend, GateOptions, SubmittedTurn};
-use crate::log::{
-    Approval, CallId, EditState, LogEntry, Notification, Payload, RawResult, RequestOrigin, Seq,
-    ToolCall, Turn,
-};
-use crate::persist::Log;
 use crate::process_monitor::{BgView, ProcessMonitor};
-use crate::project::{
-    ApiMessage, ImagePlacement, Retention, WireTurn, project_semantic, project_with,
-};
 use crate::protocol::state::{
     BlockedReason, ConfigRepair, LoopPhase, PendingProposal, SessionIdentity, Stall, StallReason,
     Topic,
 };
 use crate::protocol::stream::StreamDelta;
 use crate::protocol::turns::mint_submission_id;
+use crate::record::log::{
+    Approval, CallId, EditState, LogEntry, Notification, Payload, RawResult, RequestOrigin, Seq,
+    ToolCall, Turn,
+};
+use crate::record::persist::Log;
+use crate::record::project::{
+    ApiMessage, ImagePlacement, Retention, WireTurn, project_semantic, project_with,
+};
 use crate::spotter::Spotter;
 use crate::tools::{Interrupt, Toolbox};
 
@@ -105,7 +105,7 @@ pub struct Session {
     cache_ttl: std::sync::OnceLock<Duration>,
     /// When a resume on another main model abandoned the prefix the usage record's
     /// requests had cached; set once at boot (`daemon/cold.rs`).
-    cache_lost: std::sync::OnceLock<crate::log::Timestamp>,
+    cache_lost: std::sync::OnceLock<crate::record::log::Timestamp>,
     /// A person acted while the session was believed cold (a turn, continue, decision or
     /// answer), consumed by the loop's next cold check (`daemon/cold.rs`).
     person_acted: AtomicBool,

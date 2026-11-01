@@ -4,7 +4,7 @@
 //! record and the usage line, not the body.
 
 use super::*;
-use crate::log::RequestOrigin;
+use crate::record::log::RequestOrigin;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// A completed Responses stream with no output, 900 of its 1000 input tokens read from
@@ -23,7 +23,7 @@ async fn the_triage_ping_body_is_the_primers_body() {
     let endpoint = upstream.endpoint(Provider::OpenAICodex, "/backend-api/codex/responses");
     let client =
         Client::new(endpoint, "gpt-6.1-sol", "sys").with_prompt_cache(PromptCachePolicy::Implicit);
-    let turns = vec![crate::project::WireTurn::text("hello")];
+    let turns = vec![crate::record::project::WireTurn::text("hello")];
     let tools = vec![serde_json::json!({"type": "function", "name": "retain"})];
     let choice = ToolChoice::force("retain");
 

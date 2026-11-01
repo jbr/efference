@@ -85,7 +85,7 @@ impl Starting {
             project: parts.directories.project().to_path_buf(),
             working: parts.directories.working().to_path_buf(),
             resume: parts.resume,
-            since: crate::log::Timestamp::now().0,
+            since: crate::record::log::Timestamp::now().0,
             created_by: parts.created_by,
             detached: parts.detached,
             cancelled: AtomicBool::new(false),
@@ -220,7 +220,7 @@ impl Starting {
         }
         let failure = Failure {
             reason,
-            at: crate::log::Timestamp::now().0,
+            at: crate::record::log::Timestamp::now().0,
             withdrawn: std::mem::take(&mut inner.queue),
         };
         inner.authorizing = None;

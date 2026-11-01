@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::log::{CallId, RequestOrigin, Seq};
+use crate::record::log::{CallId, RequestOrigin, Seq};
 
 /// The `current_operations` topic: the upstream requests open now, the tool calls
 /// executing, and a compaction waiting or writing. The topic is `null` rather than empty

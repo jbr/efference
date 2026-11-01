@@ -6,7 +6,7 @@ use super::preparation::authorization_for;
 use super::*;
 use crate::daemon::starting::{Starting, StartingParts};
 use crate::protocol::state::Stage;
-use crate::session_dir::{SESSION_BASE, plain_id};
+use crate::record::session_dir::{SESSION_BASE, plain_id};
 
 impl Host {
     /// Resume a dormant session under its own id: what `PATCH {"state":
@@ -209,9 +209,10 @@ impl Host {
             detached: false,
             working: None,
         };
-        let Some(recording) =
-            crate::persist::load_recording(session_dir.join(crate::session_dir::LOG_NAME)).ok()
-        else {
+        let Some(recording) = crate::record::persist::load_recording(
+            session_dir.join(crate::record::session_dir::LOG_NAME),
+        )
+        .ok() else {
             return unread;
         };
         let Some(metadata) = recording.header.metadata() else {

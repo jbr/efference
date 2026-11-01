@@ -7,7 +7,7 @@ use super::*;
 /// `keep`, the optional `note`, and the model's exact pre-parse `keep` string (for
 /// that result's [`Triage`] audit entry).
 ///
-/// [`Triage`]: crate::log::Triage
+/// [`Triage`]: crate::record::log::Triage
 pub(super) struct ResultVerdict {
     pub(super) label: String,
     pub(super) keep: Keep,

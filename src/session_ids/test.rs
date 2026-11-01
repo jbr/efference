@@ -25,7 +25,7 @@ impl Dir {
         for id in ids {
             let dir = root.join(".efference").join(id);
             std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join(crate::session_dir::LOG_NAME), "{}\n").unwrap();
+            std::fs::write(dir.join(crate::record::session_dir::LOG_NAME), "{}\n").unwrap();
         }
         root
     }

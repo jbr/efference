@@ -8,7 +8,7 @@ use super::Stored;
 use std::path::Path;
 
 fn connect(path: &Path) -> Option<rusqlite::Connection> {
-    crate::state::open(
+    crate::platform::state::open(
         path,
         "CREATE TABLE IF NOT EXISTS model_catalog (
             connection TEXT PRIMARY KEY,

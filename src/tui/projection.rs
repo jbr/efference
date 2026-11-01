@@ -1,8 +1,8 @@
 //! Project the append-only log (plus the in-flight streaming tail) into a
 //! renderable [`Document`] (docs/README.md — the transcript is another `project(log)`,
-//! a sibling of the wire projection in `crate::project`).
+//! a sibling of the wire projection in `crate::record::project`).
 //!
-//! This mirrors one rule from the wire projection ([`crate::project`]): a tool
+//! This mirrors one rule from the wire projection ([`crate::record::project`]): a tool
 //! result shows its *selection* when present, else its raw content. Unlike the
 //! wire projection it does not coalesce or elide — every entry renders, whole, so
 //! the human sees the whole record (docs/positions.md).
@@ -10,11 +10,11 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::frontend::SubmittedTurn;
-use crate::log::{
+use crate::protocol::agents::BoundAction;
+use crate::record::log::{
     AssistantOutput, ContentBlock, Exclusion, LogEntry, MessagesOutputBlock, Payload, RawResult,
     Summary, ToolCall, Triaged, WireState,
 };
-use crate::protocol::agents::BoundAction;
 use crate::tui::artifacts::Coordinate;
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, Span, SpanStyle,
@@ -185,7 +185,7 @@ impl CallIndex {
         log.get(*self.result_at.get(call_id)?)
     }
 
-    fn spot<'l>(&self, log: &'l [LogEntry], call_id: &str) -> Option<&'l crate::log::Spot> {
+    fn spot<'l>(&self, log: &'l [LogEntry], call_id: &str) -> Option<&'l crate::record::log::Spot> {
         match &log.get(*self.spot_at.get(call_id)?)?.payload {
             Payload::Spot(spot) => Some(spot),
             _ => None,
@@ -218,7 +218,8 @@ pub(crate) fn entry_nodes(
             // is not drawn as a turn: the agent's reply is the first thing shown
             // (docs/context.md).
             Payload::User(_)
-                if entry.source.as_deref() == Some(crate::names::sources::KICKOFF_SOURCE) => {}
+                if entry.source.as_deref()
+                    == Some(crate::record::names::sources::KICKOFF_SOURCE) => {}
             // A hand-off brief (docs/tools.md) is the predecessor speaking, not the
             // operator: drawn as the harness's note of the hand-off with the brief under
             // it, so the operator sees what this session was told.
@@ -226,7 +227,7 @@ pub(crate) fn entry_nodes(
                 if let Some(predecessor) = entry
                     .source
                     .as_deref()
-                    .and_then(crate::names::sources::handoff_predecessor) =>
+                    .and_then(crate::record::names::sources::handoff_predecessor) =>
             {
                 let mut body = vec![DocumentNode::Paragraph {
                     spans: vec![Span {
@@ -299,7 +300,7 @@ pub(crate) fn entry_nodes(
                 // re-adds its own for the same reason (web/src/ui/resumed.ts).
                 nodes.push(annotation_line(
                     "",
-                    &crate::project::render_resumed(resumed, entry.seq),
+                    &crate::record::project::render_resumed(resumed, entry.seq),
                 ));
             }
             // A session's worktree life (docs/worktrees.md): one muted notice line
@@ -375,7 +376,7 @@ pub(crate) fn tail_nodes(
     for call in live.calls() {
         // An `ask` is drawn as prose once committed (docs/tui.md); its arguments
         // arriving as a call would show the plumbing.
-        if call.name == crate::names::tools::ASK {
+        if call.name == crate::record::names::tools::ASK {
             continue;
         }
         nodes.push(live_call_entry(call));
@@ -447,10 +448,10 @@ fn call_item(
     call: &ToolCall,
     result: Option<(u64, &RawResult, &WireState)>,
     is_pending: bool,
-    spot: Option<&crate::log::Spot>,
+    spot: Option<&crate::record::log::Spot>,
     nodes: Vec<DocumentNode<'static>>,
 ) -> DocumentNode<'static> {
-    use crate::log::Stance;
+    use crate::record::log::Stance;
     let failed = result.is_some_and(|(_, raw, wire)| {
         raw.is_error || matches!(wire, WireState::TriageFailed { .. })
     });
@@ -525,7 +526,7 @@ fn result_entry(
     let mut parts: Vec<String> = Vec::new();
     let mut body = match wire {
         WireState::Triaged(verdict) if !show_raw => {
-            let selection = crate::project::selection(&raw.content, &verdict.keep);
+            let selection = crate::record::project::selection(&raw.content, &verdict.keep);
             let kept = selection.numbered_lines();
             let total = selection.shown.len() + selection.dropped;
             if kept.len() != total {
@@ -564,18 +565,18 @@ fn result_entry(
                     // The line the agent reads; the operator can flip to raw.
                     WireState::Interrupted(interruption) => {
                         parts.push("interrupted".to_string());
-                        crate::project::render_interruption(interruption)
+                        crate::record::project::render_interruption(interruption)
                     }
                     // The same message the agent sees on the wire; the operator can
                     // flip to raw — the withheld output is still in the log.
                     WireState::TriageFailed { why } => {
                         parts.push(format!("triage failed: {why}"));
-                        crate::project::render_triage_failure(why)
+                        crate::record::project::render_triage_failure(why)
                     }
                     // Unreachable: a triaged result is handled above unless it is
                     // being shown raw, which this branch already excluded.
                     WireState::Triaged(verdict) => {
-                        crate::project::render_triaged(&raw.content, verdict)
+                        crate::record::project::render_triaged(&raw.content, verdict)
                     }
                 };
                 (content, wire)
@@ -679,9 +680,12 @@ fn selection_note(
         .map(str::trim)
         .filter(|f| !f.is_empty())
     {
-        nodes.push(annotation_line(crate::project::INTENT_FEEDBACK_LEAD, fb));
+        nodes.push(annotation_line(
+            crate::record::project::INTENT_FEEDBACK_LEAD,
+            fb,
+        ));
     }
-    let selection = crate::project::selection(&raw.content, keep);
+    let selection = crate::record::project::selection(&raw.content, keep);
     if selection.dropped > 0 {
         nodes.push(annotation_line(
             "… ",

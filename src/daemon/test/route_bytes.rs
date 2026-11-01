@@ -177,7 +177,7 @@ async fn a_resolved_proposal_keeps_its_bytes() {
         let seq = shared
             .append(
                 0,
-                proposed_edit(crate::log::ConfigChange::Command {
+                proposed_edit(crate::record::log::ConfigChange::Command {
                     command: command.into(),
                 }),
             )
@@ -199,11 +199,11 @@ async fn a_located_tool_call_keeps_its_bytes() {
     shared
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![ToolCall::new(
-                    crate::names::tools::BASH,
+                    crate::record::names::tools::BASH,
                     "toolu_9",
                     serde_json::json!({ "command": "cargo test" }),
                 )],

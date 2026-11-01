@@ -24,7 +24,7 @@ async fn push_key_is_the_derived_vapid_public_key() {
     let (shared, _turns_rx) = Session::in_memory();
     let server = test_server(&shared).await;
 
-    crate::auth::Root::install(Some(crate::auth::Root::new("a test root")));
+    crate::platform::auth::Root::install(Some(crate::platform::auth::Root::new("a test root")));
     let conn = server.get("/v1/push").await;
     conn.assert_status(200);
     // The whole body: one key, the encoded point, and nothing around it.
@@ -32,14 +32,18 @@ async fn push_key_is_the_derived_vapid_public_key() {
         conn.body(),
         format!(
             r#"{{"key":"{}"}}"#,
-            crate::push::public_key(&crate::auth::Root::new("a test root").vapid_key())
+            crate::platform::push::public_key(
+                &crate::platform::auth::Root::new("a test root").vapid_key()
+            )
         )
     );
     conn.assert_json_body_with(|body: &Value| {
         let key = body["key"].as_str().expect("a key string");
         assert_eq!(
             key,
-            crate::push::public_key(&crate::auth::Root::new("a test root").vapid_key())
+            crate::platform::push::public_key(
+                &crate::platform::auth::Root::new("a test root").vapid_key()
+            )
         );
         let point = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(key)
@@ -48,7 +52,7 @@ async fn push_key_is_the_derived_vapid_public_key() {
         assert_eq!(point[0], 0x04, "the uncompressed point tag");
     });
 
-    crate::auth::Root::install(None);
+    crate::platform::auth::Root::install(None);
     let conn = server.get("/v1/push").await;
     conn.assert_status(500);
     conn.assert_json_body_with(|body: &Value| assert_eq!(body["code"], "internal"));
@@ -93,15 +97,15 @@ async fn an_unsubscribe_without_an_endpoint_is_refused() {
 /// this turn with another one's words.
 mod settle_body {
     use crate::daemon::push::settle_body;
-    use crate::log::UpstreamFailureRecord;
-    use crate::log::{ContentBlock, LogEntry, Payload, Timestamp, ToolCall};
+    use crate::record::log::UpstreamFailureRecord;
+    use crate::record::log::{ContentBlock, LogEntry, Payload, Timestamp, ToolCall};
 
     fn entry(seq: u64, payload: Payload) -> LogEntry {
         LogEntry::new(seq, payload).with_at(Timestamp(1000 + seq))
     }
 
     fn assistant(text: &[&str]) -> Payload {
-        Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+        Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
             vec![],
             text.iter()
                 .map(|t| ContentBlock::Text((*t).to_string()))
@@ -128,12 +132,12 @@ mod settle_body {
             entry(
                 1,
                 Payload::record_only(
-                    crate::log::AssistantOutput::from_legacy_messages(
+                    crate::record::log::AssistantOutput::from_legacy_messages(
                         vec![],
                         vec![ContentBlock::Text("a partial".into())],
                         vec![],
                     ),
-                    crate::log::Exclusion::Upstream(UpstreamFailureRecord {
+                    crate::record::log::Exclusion::Upstream(UpstreamFailureRecord {
                         why: "stream died".into(),
                         stream: None,
                     }),
@@ -148,7 +152,7 @@ mod settle_body {
         assert_eq!(settle_body(&[]), "");
         let calls_only = entry(
             0,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![ToolCall::new("bash", "toolu_1", serde_json::json!({}))],

@@ -8,7 +8,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::api::{CacheMiss, Usage};
-use crate::log::RequestOrigin;
+use crate::record::log::RequestOrigin;
 
 /// The usage record's file name in a session directory.
 pub const USAGE_NAME: &str = "usage.jsonl";

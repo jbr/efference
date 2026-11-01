@@ -17,7 +17,7 @@ pub(crate) use canned::{Canned, Turnstile};
 pub(crate) use messages::{end_turn, events, tool_call};
 
 use crate::api::Endpoint;
-use crate::log::Provider;
+use crate::record::log::Provider;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 use tokio::sync::futures::Notified;
@@ -122,7 +122,7 @@ impl ScriptedUpstream {
         // here, the test's own.
         let connector = ServerConnector::new(Serve(Arc::clone(&shared)));
         Self {
-            http: crate::http::client_over(connector),
+            http: crate::platform::http::client_over(connector),
             shared,
             swansong: Swansong::new(),
         }

@@ -80,7 +80,7 @@ impl ClientHandler for UpstreamStatusHandler {
         };
         if let Some(cell) = &self.plan {
             let headers = conn.response_headers();
-            let observed_at = crate::log::Timestamp::now().0;
+            let observed_at = crate::record::log::Timestamp::now().0;
             let names: Vec<String> = headers
                 .iter()
                 .map(|(name, _)| name.as_ref().to_string())

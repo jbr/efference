@@ -9,8 +9,8 @@
 
 use super::operations::CompactionState;
 use super::*;
-use crate::log::{Audience, LogEntry, Seq, Summary, Telemetry, Timestamp};
 use crate::protocol::state::CompactionFailure;
+use crate::record::log::{Audience, LogEntry, Seq, Summary, Telemetry, Timestamp};
 
 /// Roughly how many tokens of the most recent history a compaction keeps verbatim. Estimated
 /// from each entry's recorded size, which overstates a result its verdict trimmed, so
@@ -267,7 +267,7 @@ async fn compact_once(
     if !crate::consolidate::split_calls(&now, cut).is_empty() {
         return Err("superseded: the log moved across the cut".into());
     }
-    let model = crate::log::recorded_inference(&now)
+    let model = crate::record::log::recorded_inference(&now)
         .cloned()
         .ok_or("the log records no boot identity to name the model")?;
     let summary = Summary::compaction(cut, compaction.text, model);

@@ -17,7 +17,7 @@
 use super::*;
 use crate::dev::SpotterEvalArgs;
 use efference::config::Perms;
-use efference::log::{Origin, Stance};
+use efference::record::log::{Origin, Stance};
 use efference::spotter::{MountedSpotter, Spotter};
 use serde::Serialize;
 use serde_json::Value;
@@ -128,7 +128,7 @@ struct Attempt {
     /// rung. Written out so the figures behind each verdict can be read back
     /// without re-requesting any of them.
     #[serde(skip_serializing_if = "Option::is_none")]
-    axes: Option<efference::log::Axes>,
+    axes: Option<efference::record::log::Axes>,
 }
 
 #[cfg(test)]
@@ -208,7 +208,7 @@ pub(crate) fn dump_states(
             if limit.is_some_and(|l| n >= l) {
                 break;
             }
-            let call = efference::log::ToolCall::new(
+            let call = efference::record::log::ToolCall::new(
                 case.call.name.clone(),
                 "toolu_spotter_eval",
                 case.call.input.clone(),
@@ -374,7 +374,12 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
         semaphore: tokio::sync::Semaphore::new(concurrency.max(1)),
     });
     let mut attempts = eval.run(&local).await;
-    if !no_cost && matches!(eval.endpoint.provider, efference::log::Provider::OpenRouter) {
+    if !no_cost
+        && matches!(
+            eval.endpoint.provider,
+            efference::record::log::Provider::OpenRouter
+        )
+    {
         eval.price(&local, &mut attempts, concurrency).await;
     }
 

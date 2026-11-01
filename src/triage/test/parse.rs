@@ -248,7 +248,7 @@ fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_triage() {
 fn text_completion(text: &str) -> Completion {
     Completion::new(AssistantOutput::from_legacy_messages(
         vec![],
-        vec![crate::log::ContentBlock::Text(text.into())],
+        vec![crate::record::log::ContentBlock::Text(text.into())],
         vec![],
     ))
 }

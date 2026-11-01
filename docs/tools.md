@@ -20,7 +20,7 @@ The `Tool` trait (realized as the `Provider` enum in `src/tools.rs`) carries
 the metadata progressive reveal needs: name, input schema, and when-relevant
 hints. Whether a tool definition appears in the preamble (hot, always present)
 or surfaces later in the session (cold, behind a discovery hint) is a property
-of how `src/project.rs` chooses which definitions to emit — not a separate
+of how `src/record/project.rs` chooses which definitions to emit — not a separate
 subsystem. Mid-session reveals land at cache breakpoints so they do not
 invalidate the established prefix (see [log-and-projection.md](log-and-projection.md) on the
 cache-prefix invariant). The real cost to watch is discoverability failure: a
@@ -69,7 +69,7 @@ rather than assuming the harness meaning.
 sorted key position — an identical mounted set yields byte-identical definitions, which
 the `tools[]` array sitting in the cached prefix requires. That sorted order is a
 serde_json *cargo feature* (`preserve_order` swaps in an `IndexMap`), unified across the
-whole runtime graph, so it is pinned by a test in `src/project.rs` rather than assumed;
+whole runtime graph, so it is pinned by a test in `src/record/project.rs` rather than assumed;
 see [log-and-projection.md](log-and-projection.md).
 
 A consequence: the schema cannot put `intent` first, because key order is not the

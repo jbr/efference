@@ -12,10 +12,10 @@
 use super::*;
 use crate::api::{CacheMiss, CacheMissReason, PlanLimit, PlanSnapshot, PlanWindow};
 use crate::config::{CommandStance, ConfigSource, testing::ConfigFixture};
-use crate::log::attachment::{Arrival, Kind, Shape};
-use crate::log::{AssistantOutput, ConfigChange, Spot, Stance, Telemetry, Timestamp};
 use crate::policy::ReviewLevel;
 use crate::protocol::agents::BoundAction;
+use crate::record::log::attachment::{Arrival, Kind, Shape};
+use crate::record::log::{AssistantOutput, ConfigChange, Spot, Stance, Telemetry, Timestamp};
 
 /// An instant every pinned timestamp is built from: absolute Unix millis, as the channel
 /// carries them.
@@ -164,7 +164,7 @@ fn the_usage_topic_keeps_its_bytes() {
     );
     shared.record_request(RequestOrigin::Spot, usage(1, 2, 0, 3));
     shared.enable_cost_tracking(crate::api::Endpoint::at(
-        crate::log::Provider::OpenRouter,
+        crate::record::log::Provider::OpenRouter,
         "http://127.0.0.1:9/api/v1/messages",
     ));
     {
@@ -212,7 +212,7 @@ fn the_usage_topic_keeps_its_bytes() {
         }),
     );
     shared.enable_cost_tracking(crate::api::Endpoint::at(
-        crate::log::Provider::OpenRouter,
+        crate::record::log::Provider::OpenRouter,
         "http://127.0.0.1:9/api/v1/messages",
     ));
     {
@@ -368,16 +368,16 @@ fn the_operations_topics_keep_their_bytes() {
     assert_eq!(bytes(&fresh, Topic::CompactionFailure), "null");
 
     let stage = |request, origin, stage| {
-        Payload::Telemetry(Telemetry::RequestStage(crate::log::RequestStage::new(
-            request, origin, stage,
-        )))
+        Payload::Telemetry(Telemetry::RequestStage(
+            crate::record::log::RequestStage::new(request, origin, stage),
+        ))
     };
     let calls = Payload::assistant(AssistantOutput::from_legacy_messages(
         vec![],
         vec![],
         vec![
             ToolCall::new(
-                crate::names::tools::BASH,
+                crate::record::names::tools::BASH,
                 "toolu_1",
                 serde_json::json!({"command": "cargo test", "intent": "run the suite"}),
             ),
@@ -385,18 +385,30 @@ fn the_operations_topics_keep_their_bytes() {
         ],
     ));
     let busy = logged(vec![
-        stage(0, RequestOrigin::Turn, crate::log::RequestStageKind::Sent),
-        stage(1, RequestOrigin::Triage, crate::log::RequestStageKind::Sent),
+        stage(
+            0,
+            RequestOrigin::Turn,
+            crate::record::log::RequestStageKind::Sent,
+        ),
         stage(
             1,
             RequestOrigin::Triage,
-            crate::log::RequestStageKind::FirstByte,
+            crate::record::log::RequestStageKind::Sent,
         ),
-        stage(2, RequestOrigin::Spot, crate::log::RequestStageKind::Sent),
+        stage(
+            1,
+            RequestOrigin::Triage,
+            crate::record::log::RequestStageKind::FirstByte,
+        ),
         stage(
             2,
             RequestOrigin::Spot,
-            crate::log::RequestStageKind::AttemptFailed {
+            crate::record::log::RequestStageKind::Sent,
+        ),
+        stage(
+            2,
+            RequestOrigin::Spot,
+            crate::record::log::RequestStageKind::AttemptFailed {
                 attempt: 2,
                 status: 429,
             },
@@ -419,7 +431,7 @@ fn the_operations_topics_keep_their_bytes() {
         stage(
             4,
             RequestOrigin::Compaction,
-            crate::log::RequestStageKind::Sent,
+            crate::record::log::RequestStageKind::Sent,
         ),
     ]);
     assert_eq!(
@@ -449,7 +461,7 @@ fn the_newer_version_topic_keeps_its_bytes() {
     assert_eq!(bytes(&shared, Topic::NewerVersion), "null");
     let cell = Arc::default();
     shared.set_newer_version(Arc::clone(&cell));
-    cell.set(Some(crate::update_check::Release {
+    cell.set(Some(crate::platform::update_check::Release {
         version: "0.2.0".into(),
         tag: "v0.2.0".into(),
         url: "https://efference.net/releases/v0.2.0".into(),
@@ -484,7 +496,7 @@ fn the_gate_topic_keeps_its_bytes() {
         )
         .unwrap();
     let bound = BoundAction {
-        name: crate::names::tools::BASH.into(),
+        name: crate::record::names::tools::BASH.into(),
         input: serde_json::json!({"command": "curl -sI https://example.com", "intent": "fetch headers"}),
         intent: Some("fetch headers".into()),
         cwd: "/work/child".into(),
@@ -684,7 +696,7 @@ fn the_identity_topic_keeps_its_bytes() {
     );
     let selection = |model: &str| crate::user_config::ModelSelection {
         connection: "work".into(),
-        provider: crate::log::Provider::OpenRouter,
+        provider: crate::record::log::Provider::OpenRouter,
         model: model.into(),
     };
     shared.set_identity(SessionIdentity {

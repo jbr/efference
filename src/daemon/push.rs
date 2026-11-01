@@ -11,8 +11,8 @@
 //! ([`Session::gate_rerouted`]).
 
 use super::*;
-use crate::log::Telemetry;
-use crate::log::{
+use crate::record::log::Telemetry;
+use crate::record::log::{
     AssistantOutput, DeliveryOutcome, DeviceDelivery, LogEntry, MomentKind, Payload, PushCancel,
     PushEvent, PushRecord,
 };
@@ -28,7 +28,9 @@ const BODY_MAX_CHARS: usize = 200;
 /// How a push reaches the push services: the real one reads the stored
 /// subscriptions; tests install a stub that answers for a pretend device list.
 pub(crate) type PushTransport = Arc<
-    dyn Fn(crate::push::Message) -> Pin<Box<dyn Future<Output = Vec<DeviceDelivery>> + Send>>
+    dyn Fn(
+            crate::platform::push::Message,
+        ) -> Pin<Box<dyn Future<Output = Vec<DeviceDelivery>> + Send>>
         + Send
         + Sync,
 >;
@@ -91,7 +93,7 @@ impl Session {
     /// Each step is appended to the log as a [`Telemetry::Push`].
     pub(super) fn push(&self, kind: MomentKind, body: String) {
         let moment = self.pushes.next.fetch_add(1, Ordering::Relaxed);
-        let mut message = crate::push::Message::new(self.push_title(kind.title()), body);
+        let mut message = crate::platform::push::Message::new(self.push_title(kind.title()), body);
         // The notification opens this session, not the bind's root: the path
         // the web client addresses this session by (docs/web-push.md).
         message.path = self.web_path().to_string();
@@ -183,7 +185,7 @@ impl Session {
         &self,
         moment: u64,
         kind: MomentKind,
-        message: crate::push::Message,
+        message: crate::platform::push::Message,
     ) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             return;
@@ -192,12 +194,12 @@ impl Session {
             match self.pushes.transport.get() {
                 Some(transport) => transport(message),
                 None => {
-                    let Some(root) = crate::auth::Root::installed() else {
+                    let Some(root) = crate::platform::auth::Root::installed() else {
                         return;
                     };
                     Box::pin(async move {
-                        let store = crate::push::Store::machine_scoped();
-                        crate::push::send(&store, &root.vapid_key(), message)
+                        let store = crate::platform::push::Store::machine_scoped();
+                        crate::platform::push::send(&store, &root.vapid_key(), message)
                             .await
                             .into_iter()
                             .map(recorded)
@@ -222,8 +224,8 @@ impl Session {
 }
 
 /// One device's answer to a push as the log records it (docs/web-push.md).
-fn recorded(device: crate::push::DeviceAnswer) -> DeviceDelivery {
-    use crate::push::ServiceAnswer;
+fn recorded(device: crate::platform::push::DeviceAnswer) -> DeviceDelivery {
+    use crate::platform::push::ServiceAnswer;
     let outcome = match device.answer {
         ServiceAnswer::Delivered { status } => DeliveryOutcome::Delivered { status },
         ServiceAnswer::Gone { status } => DeliveryOutcome::Gone { status },
@@ -263,7 +265,7 @@ pub(super) fn gate_body(
     bound: Option<&crate::protocol::agents::BoundAction>,
 ) -> String {
     if let Some(bound) = bound {
-        let display = crate::names::tools::display_name(&bound.name);
+        let display = crate::record::names::tools::display_name(&bound.name);
         let text = bound.intent.as_deref().or(intent).or(reason);
         return match text {
             Some(text) => format!("approve {}'s {display} — {text}", bound.session),
@@ -286,7 +288,7 @@ pub(super) fn gate_body(
 pub(super) fn escalated_body(source: Option<&str>, note: Option<&str>, gate: &str) -> String {
     let by = source.map_or_else(
         || "the operator".to_string(),
-        |source| crate::names::sources::source_name(source).to_string(),
+        |source| crate::record::names::sources::source_name(source).to_string(),
     );
     let note = note
         .map(str::trim)

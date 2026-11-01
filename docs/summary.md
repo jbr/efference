@@ -1,7 +1,7 @@
 # Summaries and compaction
 
 A **summary** is text that replaces a range of the transcript, and the log entry that
-carries it (`Payload::Summary`, `src/log/summary.rs`). Two operations write one:
+carries it (`Payload::Summary`, `src/record/log/summary.rs`). Two operations write one:
 
 - **Consolidation** — the agent replaces a region of its own transcript with a summary,
   having seen that region in full ([consolidate.md](consolidate.md)). The `consolidate`
@@ -14,7 +14,7 @@ carries it (`Payload::Summary`, `src/log/summary.rs`). Two operations write one:
 The rest of this file is the record, how it projects, and compaction.
 `src/compact.rs` writes the summary from the prompt and header in `assets/prompts/`;
 `src/digest.rs` supplies what the model reads; `src/daemon/compact.rs` chooses the cut and
-appends the entry (`POST /loop/compact`, docs/control-api.md); `src/project.rs` projects it.
+appends the entry (`POST /loop/compact`, docs/control-api.md); `src/record/project.rs` projects it.
 
 ## The record
 

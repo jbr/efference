@@ -9,8 +9,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 use crate::api::Endpoint;
 use crate::env_table::EnvSnapshot;
-use crate::log::Provider;
-use crate::secrets::Secrets;
+use crate::platform::secrets::Secrets;
+use crate::record::log::Provider;
 
 /// What a live key check learned, beyond "accepted".
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -67,7 +67,7 @@ impl Target {
     }
 
     /// An endpoint described by dialect and base URL.
-    pub fn described(dialect: crate::log::WireDialect, base: impl Into<String>) -> Self {
+    pub fn described(dialect: crate::record::log::WireDialect, base: impl Into<String>) -> Self {
         Self {
             provider: Provider::Custom(dialect),
             base: Some(base.into()),

@@ -1,6 +1,6 @@
 use super::super::fixtures::*;
 use super::*;
-use crate::log::{Approval, Keep, Notification, Stance, Summary, Triaged};
+use crate::record::log::{Approval, Keep, Notification, Stance, Summary, Triaged};
 
 mod escalation;
 mod lifecycle;
@@ -304,11 +304,11 @@ fn notes_and_summaries_are_one_line_and_mechanism_is_hidden() {
     let mut log = Fixture::new();
     log.user(
         "Introduce yourself.",
-        Some(crate::names::sources::KICKOFF_SOURCE),
+        Some(crate::record::names::sources::KICKOFF_SOURCE),
     );
-    log.add(Payload::Title(crate::log::Title::new(
+    log.add(Payload::Title(crate::record::log::Title::new(
         "Fixing the build",
-        crate::log::TitleAuthor::Triage,
+        crate::record::log::TitleAuthor::Triage,
     )));
     log.add(Payload::Ambient(Notification::new(
         "session[parent]",
@@ -320,7 +320,7 @@ fn notes_and_summaries_are_one_line_and_mechanism_is_hidden() {
         2,
         "the opening, summarized",
     )));
-    log.add(Payload::ConfigEdit(crate::log::ConfigEdit::new(
+    log.add(Payload::ConfigEdit(crate::record::log::ConfigEdit::new(
         EditState::Proposed,
         ConfigChange::Command {
             command: "grep -n".into(),
@@ -427,7 +427,7 @@ fn a_continue_reads_as_its_sender() {
     log.user("go on when ready", None);
     log.add(turn("Done.", vec![]));
     log.add(Payload::Telemetry(Telemetry::Continue(
-        crate::log::ContinueOrigin::default().with_source(Some("mcp[claude-code]".into())),
+        crate::record::log::ContinueOrigin::default().with_source(Some("mcp[claude-code]".into())),
     )));
     assert!(whole(&log, &child(None)).contains("2  claude-code continued it\n"));
 }

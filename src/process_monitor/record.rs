@@ -20,7 +20,9 @@ use serde::Serialize;
 #[cfg(test)]
 mod test;
 
-use crate::log::{LogEntry, Payload, ProcessEvent, ProcessEventKind, ProcessExit, Timestamp};
+use crate::record::log::{
+    LogEntry, Payload, ProcessEvent, ProcessEventKind, ProcessExit, Timestamp,
+};
 
 /// One process, running or exited — the durable answer to "what was `p#<n>`"
 /// (docs/process-monitor.md).

@@ -3,7 +3,7 @@
 use super::*;
 use crate::daemon::status::SessionStatus;
 use crate::daemon::{BlockedReason, LoopPhase};
-use crate::log::Approval;
+use crate::record::log::Approval;
 
 fn session() -> Arc<Session> {
     Session::in_memory().0

@@ -151,10 +151,11 @@ async fn run_hook(
     // exactly what the host has and nothing of this process's own.
     host_env.apply_tokio(&mut command);
 
-    let mut child = crate::spawn::tokio(&mut command).map_err(|error| LaunchError::Spawn {
-        program: program.clone(),
-        detail: error.to_string(),
-    })?;
+    let mut child =
+        crate::platform::spawn::tokio(&mut command).map_err(|error| LaunchError::Spawn {
+            program: program.clone(),
+            detail: error.to_string(),
+        })?;
     // `killpg` needs the pgid, and the child leads the group, so its pid is it.
     let pgid = child.id().ok_or_else(|| LaunchError::Spawn {
         program: program.clone(),
@@ -313,7 +314,7 @@ impl ProcessGroup {
 
     fn kill(&mut self) {
         if let Some(pgid) = self.pgid.take() {
-            crate::spawn::kill_group(pgid);
+            crate::platform::spawn::kill_group(pgid);
         }
     }
 }

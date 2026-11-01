@@ -251,14 +251,14 @@ async fn record_end(
 }
 
 /// Retire the worktree `session` made for itself (docs/worktrees.md), if it did:
-/// its working directory is the one [`crate::session_dir::worktree::path`] names for its id. A
+/// its working directory is the one [`crate::record::session_dir::worktree::path`] names for its id. A
 /// session that inherited a worktree works inside one it did not make and leaves it.
 /// Git runs on a blocking thread; the outcome is appended to the session's log, which
 /// outlives the runtime's shutdown because the `Session` owns it.
 async fn retire_worktree(session: &Arc<Session>, id: &str) -> Option<crate::worktree::Retired> {
     let directories = session.directories();
     let project = directories.project().to_path_buf();
-    if directories.working() != crate::session_dir::worktree::path(&project, id) {
+    if directories.working() != crate::record::session_dir::worktree::path(&project, id) {
         return None;
     }
     let env = session.child_env();

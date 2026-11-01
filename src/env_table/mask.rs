@@ -1,13 +1,13 @@
 //! The mask half of the `[env]` table (docs/env.md): needles, the marker, and
 //! the single scan every string passes through on its way into the log.
 //!
-//! The choke point is **log append** ([`crate::persist::Log::append_submission`]),
+//! The choke point is **log append** ([`crate::record::persist::Log::append_submission`]),
 //! not the tool-result path — so tool results, the boot `Preamble`, `Ambient`
 //! notifications, user paste, and harness error text are all covered by one
 //! mechanism, and every downstream surface (the wire, the jsonl, the TUI, the
 //! `control transcript` and `entries` reads) reads an already-filtered record.
 
-use crate::log::Telemetry;
+use crate::record::log::Telemetry;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::RwLock;
@@ -16,7 +16,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use serde_json::Value;
 
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, ConfigChange, ContentBlock, Exclusion, MessagesOutputBlock, Payload,
     ResponsesMessageContent, ResponsesOutputItem, UpstreamFailureRecord,
 };
@@ -352,11 +352,11 @@ impl Masker {
             }
             Payload::ToolResult { raw, .. } => self.mask_in_place(&mut raw.content),
             Payload::ResultVerdict { wire, .. } => match wire {
-                crate::log::WireState::Triaged(verdict) => {
+                crate::record::log::WireState::Triaged(verdict) => {
                     self.mask_opt(&mut verdict.note);
                     self.mask_opt(&mut verdict.intent_feedback);
                 }
-                crate::log::WireState::TriageFailed { why } => self.mask_in_place(why),
+                crate::record::log::WireState::TriageFailed { why } => self.mask_in_place(why),
                 _ => {}
             },
             Payload::Summary(summary) => self.mask_in_place(&mut summary.text),
@@ -392,7 +392,7 @@ impl Masker {
             // status, and — on a failure — the provider's own error text, which
             // can quote what the request carried.
             Payload::Telemetry(Telemetry::RequestStage(stage)) => {
-                if let crate::log::RequestStageKind::Failed { reason } = &mut stage.stage {
+                if let crate::record::log::RequestStageKind::Failed { reason } = &mut stage.stage {
                     self.mask_in_place(reason);
                 }
             }
@@ -431,9 +431,10 @@ impl Masker {
             Payload::Telemetry(Telemetry::GateDecision(decision)) => {
                 self.mask_opt(&mut decision.source);
                 match &mut decision.decision {
-                    crate::log::Approval::Approve | crate::log::Approval::Abort => {}
-                    crate::log::Approval::Redirect(message) => self.mask_in_place(message),
-                    crate::log::Approval::ConfigEdit { change, note } => {
+                    crate::record::log::Approval::Approve | crate::record::log::Approval::Abort => {
+                    }
+                    crate::record::log::Approval::Redirect(message) => self.mask_in_place(message),
+                    crate::record::log::Approval::ConfigEdit { change, note } => {
                         self.mask_in_place(note);
                         self.mask_change(change);
                     }
@@ -455,13 +456,17 @@ impl Masker {
             // printed, and its error and status text: free text that may quote the
             // environment.
             Payload::Worktree(event) => match &mut event.kind {
-                crate::log::WorktreeEventKind::Added(checkout)
-                | crate::log::WorktreeEventKind::Restored(checkout) => {
+                crate::record::log::WorktreeEventKind::Added(checkout)
+                | crate::record::log::WorktreeEventKind::Restored(checkout) => {
                     self.mask_in_place(&mut checkout.output);
                 }
-                crate::log::WorktreeEventKind::Kept { reason } => self.mask_in_place(reason),
-                crate::log::WorktreeEventKind::RemoveFailed { error } => self.mask_in_place(error),
-                crate::log::WorktreeEventKind::Removed { .. } => {}
+                crate::record::log::WorktreeEventKind::Kept { reason } => {
+                    self.mask_in_place(reason);
+                }
+                crate::record::log::WorktreeEventKind::RemoveFailed { error } => {
+                    self.mask_in_place(error);
+                }
+                crate::record::log::WorktreeEventKind::Removed { .. } => {}
             },
             // The provider's error text, which may quote the request back.
             Payload::ImagesRefused { refusal } => self.mask_in_place(refusal),
@@ -472,7 +477,7 @@ impl Masker {
             // interpolated secret would ride (docs/env.md). The rest is an
             // ordinal, an exit status, and stamps.
             Payload::ProcessEvent(event) => {
-                if let crate::log::ProcessEventKind::Spawned(spawn) = &mut event.kind {
+                if let crate::record::log::ProcessEventKind::Spawned(spawn) = &mut event.kind {
                     self.mask_in_place(&mut spawn.command);
                 }
             }
@@ -498,8 +503,8 @@ impl Masker {
 
     /// Filter a resolved `[context]` listing. Called directly at boot, before
     /// the preamble is rendered — see [`crate::env_table::EnvPolicy::mask_context`].
-    pub fn mask_context(&self, resolved: &mut crate::log::context::Resolved) {
-        use crate::log::context::Item;
+    pub fn mask_context(&self, resolved: &mut crate::record::log::context::Resolved) {
+        use crate::record::log::context::Item;
         for section in &mut resolved.sections {
             self.mask_opt(&mut section.heading);
             self.mask_opt(&mut section.description);
@@ -536,7 +541,7 @@ impl Masker {
 
 /// The log's mask (docs/env.md): every payload appended to a session's log passes
 /// through [`Masker::mask_payload`].
-impl crate::persist::PayloadMask for Masker {
+impl crate::record::persist::PayloadMask for Masker {
     fn mask_payload(&self, payload: &mut Payload) {
         Masker::mask_payload(self, payload);
     }

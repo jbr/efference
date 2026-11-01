@@ -51,9 +51,9 @@ pub(crate) fn truncated(prompt_tokens: u64, text_bytes: u64) -> Option<String> {
 pub(crate) fn text_bytes(
     system: &str,
     tools: &[serde_json::Value],
-    turns: &[crate::project::WireTurn],
+    turns: &[crate::record::project::WireTurn],
 ) -> u64 {
-    use crate::project::{UserPart, WireTurn};
+    use crate::record::project::{UserPart, WireTurn};
     let tools: usize = tools.iter().map(|tool| tool.to_string().len()).sum();
     let turns: usize = turns
         .iter()

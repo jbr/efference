@@ -3,7 +3,7 @@
 
 use super::*;
 
-use crate::names::tools::{
+use crate::record::names::tools::{
     ASK, CHECK_INBOX, CONSOLIDATE, KILL_PROCESS, LIST_PROCESSES, READ_PROCESS, WAIT, WATCH_PROCESS,
     is_triage_tool,
 };
@@ -33,10 +33,10 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
 /// else `rebuild`'s, which is the current code's with none of the session's connected
 /// servers. The flag says which.
 pub fn recorded_or_rebuilt_tools<E>(
-    entries: &[crate::log::LogEntry],
+    entries: &[crate::record::log::LogEntry],
     rebuild: impl FnOnce() -> Result<Toolbox, E>,
 ) -> Result<(Vec<Value>, bool), E> {
-    match crate::log::recorded_tools(entries) {
+    match crate::record::log::recorded_tools(entries) {
         Some(tools) => Ok((tools.to_vec(), true)),
         None => Ok((tool_definitions(&rebuild()?), false)),
     }
@@ -89,7 +89,7 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// ride every turn's `tools[]`, so a reader destructuring the triage's own
 /// call wants their schema too.
 ///
-/// None of these five sources inject [`crate::names::tools::INTENT`] the way a
+/// None of these five sources inject [`crate::record::names::tools::INTENT`] the way a
 /// `Toolbox`-mounted tool's wire entry does — [`tool_definitions`] pushes
 /// `consolidate::definition()`, `process_monitor::tool_definitions()`, and the triage
 /// tools onto `toolbox.definitions()` *after* `with_intent` has already run

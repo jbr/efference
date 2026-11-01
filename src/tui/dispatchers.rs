@@ -276,7 +276,7 @@ fn compaction_dispatcher(
 /// Approval sender: resolve a gate via `PUT /approvals/:call_id`.
 fn approval_sender(
     client: &Client,
-    mut approve_rx: UnboundedReceiver<(String, crate::log::Approval)>,
+    mut approve_rx: UnboundedReceiver<(String, crate::record::log::Approval)>,
 ) -> JoinHandle<()> {
     let approve_client = client.clone();
     tokio::spawn(async move {
@@ -312,7 +312,7 @@ fn interrupt_sender(
             match intent {
                 crate::tools::Interrupt::Kill => {
                     let _ = interrupt_client
-                        .interrupt(&crate::log::InterruptOrigin {
+                        .interrupt(&crate::record::log::InterruptOrigin {
                             source: None,
                             control: Some("esc".into()),
                         })

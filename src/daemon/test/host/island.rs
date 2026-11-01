@@ -7,8 +7,8 @@
 use super::*;
 use crate::daemon::island::OwnerWatch;
 use crate::frontend::SubmittedTurn;
-use crate::log::{Payload, Provider, WorktreeEventKind};
 use crate::protocol::state::LoopPhase;
+use crate::record::log::{Payload, Provider, WorktreeEventKind};
 use crate::session_ids::SessionIds;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 
@@ -36,7 +36,7 @@ async fn adopt_logged(
 ) -> PathBuf {
     let dir = roots.0.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(crate::session_dir::LOG_NAME);
+    let path = dir.join(crate::record::session_dir::LOG_NAME);
     let mut boot = runtime::boot(&roots.0.join("one"));
     boot.paths = SessionPaths::new(
         crate::policy::Directories::new(roots.0.clone(), working.to_path_buf()),
@@ -78,7 +78,7 @@ async fn shuts_down(host: &Host) {
 }
 
 fn entries(path: &Path) -> Vec<Payload> {
-    crate::persist::load_recording(path)
+    crate::record::persist::load_recording(path)
         .unwrap()
         .entries
         .into_iter()

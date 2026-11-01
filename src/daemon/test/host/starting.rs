@@ -313,8 +313,8 @@ async fn a_failed_resume_is_listed_dormant_with_its_reason() {
     let archived = hooked_server.delete("/sessions/dormant").await;
     archived.assert_status(200);
     assert_eq!(json(archived.body())["state"], "archived");
-    let entries =
-        crate::persist::load(root.join(".efference/dormant/log.jsonl")).expect("the log reads");
+    let entries = crate::record::persist::load(root.join(".efference/dormant/log.jsonl"))
+        .expect("the log reads");
     assert!(
         matches!(
             entries.last().map(|e| &e.payload),

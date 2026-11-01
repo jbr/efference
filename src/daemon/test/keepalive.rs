@@ -7,9 +7,9 @@ use crate::daemon::keepalive::{
     CacheLineage, KeepaliveSpec, PingCost, discard_is_affordable, lop_trailing_model_turns,
     prefix_tokens, skip_reason,
 };
-use crate::log::{AssistantOutput, MessagesOutputBlock};
-use crate::project::{Role, WireTurn};
 use crate::protocol::state::KeepaliveSkipReason;
+use crate::record::log::{AssistantOutput, MessagesOutputBlock};
+use crate::record::project::{Role, WireTurn};
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 fn message(role: Role, text: &str) -> WireTurn {
@@ -150,7 +150,7 @@ fn permanent_classification() {
 #[test]
 fn believed_cold_from_last_touch_plus_lifetime() {
     use crate::daemon::keepalive::believed_cold_since;
-    use crate::log::Timestamp;
+    use crate::record::log::Timestamp;
     let ttl = Duration::from_secs(300);
     let touch = Timestamp(1_000_000);
     assert_eq!(believed_cold_since(None, Timestamp(9_999_999), ttl), None);
@@ -275,7 +275,7 @@ pub(super) fn pinged_session(
     prefix: u64,
 ) -> (Arc<Session>, Arc<Client>) {
     use crate::api::Client;
-    use crate::log::Provider;
+    use crate::record::log::Provider;
     let (shared, _rx) = Session::in_memory();
     shared.append(1, Payload::user("hi")).unwrap();
     record_turn(&shared, prefix);

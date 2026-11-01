@@ -3,8 +3,8 @@
 
 use super::*;
 use crate::control_tools::Decide;
-use crate::log::{Approval, Telemetry};
 use crate::protocol::agents::Decision;
+use crate::record::log::{Approval, Telemetry};
 
 fn decide(seq: &str, decision: Decision, message: Option<&str>) -> Decide {
     Decide {
@@ -16,7 +16,7 @@ fn decide(seq: &str, decision: Decision, message: Option<&str>) -> Decide {
 }
 
 /// The child's gate decisions, in order.
-fn decisions(session: &Session) -> Vec<crate::log::GateDecision> {
+fn decisions(session: &Session) -> Vec<crate::record::log::GateDecision> {
     session
         .snapshot()
         .into_iter()
@@ -51,7 +51,7 @@ async fn allow_runs_the_call_and_records_the_decider() {
     assert_eq!(gate.await, Ok(Approval::Approve));
     assert_eq!(
         decisions(&child),
-        [crate::log::GateDecision::new(
+        [crate::record::log::GateDecision::new(
             "toolu_curl",
             Approval::Approve,
             Some("session[parent]".into())

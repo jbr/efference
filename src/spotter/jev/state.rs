@@ -16,8 +16,8 @@
 use serde_json::{Value, json};
 
 use crate::config::Config;
-use crate::log::ToolCall;
-use crate::names::tools::{BASH, INTENT, display_name};
+use crate::record::log::ToolCall;
+use crate::record::names::tools::{BASH, INTENT, display_name};
 use crate::tools::ToolBrief;
 
 /// The state for one assessment.

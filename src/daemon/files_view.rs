@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::fswatch::FsWatch;
+use crate::platform::fswatch::FsWatch;
 use ignores::Ignores;
 
 pub(crate) mod ignores;
@@ -17,7 +17,7 @@ pub(crate) mod ignores;
 #[derive(Debug, Clone)]
 pub struct Files {
     pub(super) root: Option<Arc<PathBuf>>,
-    /// The core watcher behind the change streams (`crate::fswatch`). `None` if
+    /// The core watcher behind the change streams (`crate::platform::fswatch`). `None` if
     /// the watcher could not start, in which case streams are refused while
     /// reads keep working.
     pub(super) watch: Option<Arc<FsWatch>>,

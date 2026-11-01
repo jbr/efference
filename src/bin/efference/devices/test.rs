@@ -2,7 +2,7 @@
 //! `revoke` resolves, and how `approve` asks for a code.
 
 use super::*;
-use efference::devices::{DeviceId, Joined, Kind};
+use efference::platform::devices::{DeviceId, Joined, Kind};
 
 fn device(id: &str, kind: Kind, label: &str, joined: Joined, last_seen: Option<i64>) -> Device {
     Device {

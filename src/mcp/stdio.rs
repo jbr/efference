@@ -55,7 +55,7 @@ impl StdioTransport {
         // the table's blanket strip should not silently undo that (docs/env.md).
         child_env.apply_tokio(&mut cmd);
         cmd.envs(env);
-        let mut child = crate::spawn::tokio(&mut cmd)
+        let mut child = crate::platform::spawn::tokio(&mut cmd)
             .with_context(|| format!("could not spawn `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin was piped");
         let stdout = child.stdout.take().expect("stdout was piped");

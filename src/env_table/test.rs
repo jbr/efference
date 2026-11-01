@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{ContentBlock, Payload, RawResult, WireState};
+use crate::record::log::{ContentBlock, Payload, RawResult, WireState};
 
 fn entry(mask: Option<bool>, strip: Option<bool>) -> EnvEntry {
     EnvEntry {
@@ -469,29 +469,29 @@ fn every_text_bearing_payload_path_is_masked() {
     assert!(!raw.content.contains("leaked-secret-value"));
 
     let mut assistant = Payload::record_only(
-        crate::log::AssistantOutput::from_legacy_messages(
+        crate::record::log::AssistantOutput::from_legacy_messages(
             vec![ContentBlock::Thinking {
                 text: leak(),
                 signature: "sig".into(),
             }],
             vec![ContentBlock::Text(leak())],
-            vec![crate::log::ToolCall::new(
+            vec![crate::record::log::ToolCall::new(
                 "bash",
                 "toolu_2",
                 serde_json::json!({ "command": leak() }),
             )],
         ),
-        crate::log::Exclusion::Upstream(leak().into()),
+        crate::record::log::Exclusion::Upstream(leak().into()),
     );
     masker.mask_payload(&mut assistant);
     let Payload::Assistant { output, excluded } = &assistant else {
         unreachable!()
     };
     let blocks = output.messages().unwrap();
-    let crate::log::MessagesOutputBlock::Text(text) = &blocks[1] else {
+    let crate::record::log::MessagesOutputBlock::Text(text) = &blocks[1] else {
         unreachable!()
     };
-    let crate::log::MessagesOutputBlock::ToolUse(call) = &blocks[2] else {
+    let crate::record::log::MessagesOutputBlock::ToolUse(call) = &blocks[2] else {
         unreachable!()
     };
     assert!(!text.contains("leaked-secret-value"));
@@ -510,20 +510,24 @@ fn every_text_bearing_payload_path_is_masked() {
     );
     // The documented exception: a thinking block carries a provider signature over
     // its exact text, and a modified block is rejected on replay.
-    let crate::log::MessagesOutputBlock::Thinking { text, .. } = &blocks[0] else {
+    let crate::record::log::MessagesOutputBlock::Thinking { text, .. } = &blocks[0] else {
         unreachable!()
     };
     assert!(text.contains("leaked-secret-value"));
 
-    let mut ambient = Payload::Ambient(crate::log::Notification::new("tool", leak(), None));
+    let mut ambient = Payload::Ambient(crate::record::log::Notification::new("tool", leak(), None));
     masker.mask_payload(&mut ambient);
     let Payload::Ambient(note) = &ambient else {
         unreachable!()
     };
     assert!(!note.body.contains("leaked-secret-value"));
 
-    let mut preamble =
-        Payload::preamble("", leak(), crate::log::context::Resolved::default(), None);
+    let mut preamble = Payload::preamble(
+        "",
+        leak(),
+        crate::record::log::context::Resolved::default(),
+        None,
+    );
     masker.mask_payload(&mut preamble);
     let Payload::Preamble { body: system, .. } = &preamble else {
         unreachable!()
@@ -543,10 +547,10 @@ fn captured_stream_diagnostics_are_masked() {
     let leak = || "before leaked-secret-value after".to_string();
 
     let mut payload = Payload::record_only(
-        crate::log::AssistantOutput::Messages(Vec::new()),
-        crate::log::Exclusion::Upstream(crate::log::UpstreamFailureRecord {
+        crate::record::log::AssistantOutput::Messages(Vec::new()),
+        crate::record::log::Exclusion::Upstream(crate::record::log::UpstreamFailureRecord {
             why: "stream finalized with no content and no usage".into(),
-            stream: Some(crate::log::StreamDiagnostics {
+            stream: Some(crate::record::log::StreamDiagnostics {
                 status: 200,
                 headers: BTreeMap::from([("x-generation-id".to_string(), leak())]),
                 message_start: Some(leak()),
@@ -557,7 +561,7 @@ fn captured_stream_diagnostics_are_masked() {
     );
     masker.mask_payload(&mut payload);
     let Payload::Assistant {
-        excluded: Some(crate::log::Exclusion::Upstream(failure)),
+        excluded: Some(crate::record::log::Exclusion::Upstream(failure)),
         ..
     } = &payload
     else {
@@ -579,7 +583,7 @@ fn captured_stream_diagnostics_are_masked() {
 fn the_log_append_choke_point_filters_every_entry() {
     let policy =
         EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "choke-point-secret")])).policy;
-    let mut log = crate::persist::Log::in_memory();
+    let mut log = crate::record::persist::Log::in_memory();
     log.set_masker(policy.masker());
     log.append(1, Payload::user("here: choke-point-secret"))
         .unwrap();
@@ -615,8 +619,8 @@ fn glob_matching_is_star_only() {
 #[test]
 fn a_responses_function_call_is_masked_on_append_and_replayed_as_logged() {
     use crate::api::{PromptCachePolicy, encode_responses};
-    use crate::log::{AssistantOutput, CallId, ResponsesOutputItem, WireState};
-    use crate::persist::Log;
+    use crate::record::log::{AssistantOutput, CallId, ResponsesOutputItem, WireState};
+    use crate::record::persist::Log;
 
     let policy =
         EnvPolicy::build_from(&BTreeMap::new(), &env(&[("A_KEY", "leaked-secret-value")])).policy;
@@ -702,7 +706,7 @@ fn a_responses_function_call_is_masked_on_append_and_replayed_as_logged() {
 
     // Replay carries the logged strings exactly.
     let input = encode_responses(
-        &crate::project::project_semantic(entries),
+        &crate::record::project::project_semantic(entries),
         "",
         PromptCachePolicy::None,
     );

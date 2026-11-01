@@ -2,7 +2,7 @@
 //! bare name, then a rule naming the extent, the summary as markdown, a closing rule.
 
 use super::*;
-use crate::log::{Payload, Summary};
+use crate::record::log::{Payload, Summary};
 
 #[test]
 fn a_consolidation_reads_as_its_extent_and_summary() {

@@ -1,7 +1,7 @@
 //! Tests for the loop-owned `ask` (docs/process-monitor.md): blocking, resolution by a
 //! submitted turn, recall of the turns queued before it, and the interrupt.
 use super::*;
-use crate::log::Telemetry;
+use crate::record::log::Telemetry;
 
 use crate::frontend::SubmittedTurn;
 
@@ -12,7 +12,7 @@ fn session() -> Arc<Session> {
 
 fn ask_call(id: &str, question: &str) -> ToolCall {
     ToolCall::new(
-        crate::names::tools::ASK,
+        crate::record::names::tools::ASK,
         id,
         serde_json::json!({ "question": question }),
     )
@@ -165,7 +165,11 @@ async fn a_reply_racing_an_interrupt_is_not_lost() {
 #[tokio::test]
 async fn a_missing_question_is_a_refusal_not_a_pending_ask() {
     let shared = session();
-    let call = ToolCall::new(crate::names::tools::ASK, "ask_1", serde_json::json!({}));
+    let call = ToolCall::new(
+        crate::record::names::tools::ASK,
+        "ask_1",
+        serde_json::json!({}),
+    );
     let (result, reply) = ask_result(&shared, &call, ONE).await;
     assert!(result.is_error && result.content.contains("question"));
     assert!(reply.is_none());
@@ -294,7 +298,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
 /// and a result no submission produced (an interrupt) is not framed as a reply.
 #[test]
 fn the_reply_projects_as_a_result_with_the_submitters_label() {
-    use crate::project::ApiBlock;
+    use crate::record::project::ApiBlock;
     let shared = session();
     let call = ask_call("ask_1", "Which?");
     shared
@@ -381,7 +385,7 @@ fn ask_is_advertised_with_a_required_question() {
     let defs = tool_definitions(&toolbox);
     let ask = defs
         .iter()
-        .find(|d| d["name"] == crate::names::tools::ASK)
+        .find(|d| d["name"] == crate::record::names::tools::ASK)
         .expect("advertised");
     assert_eq!(
         ask["input_schema"]["required"],
@@ -394,6 +398,6 @@ fn ask_is_advertised_with_a_required_question() {
             .contains("one at a time"),
         "the parallel behaviour is stated to the model"
     );
-    assert!(callable_names(&toolbox).contains(&crate::names::tools::ASK.to_string()));
-    assert!(tool_catalog(&toolbox).contains_key(crate::names::tools::ASK));
+    assert!(callable_names(&toolbox).contains(&crate::record::names::tools::ASK.to_string()));
+    assert!(tool_catalog(&toolbox).contains_key(crate::record::names::tools::ASK));
 }

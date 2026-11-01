@@ -112,7 +112,7 @@ const ARTIFACT_INFO = new Map<unknown, ArtifactKind>([
 ]);
 
 /** Number the text block's artifact fences, of both kinds, in document order:
- * the count the server makes over the same text (src/artifact.rs), each by
+ * the count the server makes over the same text (src/record/artifact.rs), each by
  * CommonMark's rules; `artifact-fences.json` holds the cases both sides are
  * tested against. remark puts an info string's first word in the class and
  * the rest in `meta`, so `html-artifact preview` is not one. */

@@ -31,12 +31,12 @@
 //!
 //! Fail-closed holds for the cold request: any transport error or missing answer,
 //! and the rung returns [`Origin::Fallback`] +
-//! [`Stance::Gate`](crate::log::Stance::Gate). A failed relation request degrades
+//! [`Stance::Gate`](crate::record::log::Stance::Gate). A failed relation request degrades
 //! to no precedents instead, so it holds only what needed one.
 
 use crate::api::Endpoint;
 use crate::config::Config;
-use crate::log::{Axes, Origin, Precedent, RequestOrigin, ToolCall};
+use crate::record::log::{Axes, Origin, Precedent, RequestOrigin, ToolCall};
 use crate::tools::ToolBrief;
 
 use super::{Read, Spotter, Spotting};

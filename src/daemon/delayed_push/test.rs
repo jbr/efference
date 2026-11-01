@@ -5,10 +5,10 @@
 
 use super::*;
 use crate::daemon::attention::Attention;
-use crate::log::Telemetry;
-use crate::log::{Approval, MomentKind};
-use crate::log::{CallId, ToolCall};
 use crate::protocol::attention::AttentionReport;
+use crate::record::log::Telemetry;
+use crate::record::log::{Approval, MomentKind};
+use crate::record::log::{CallId, ToolCall};
 
 fn session() -> Arc<Session> {
     Session::in_memory().0
@@ -154,7 +154,7 @@ async fn submitting_a_turn_cancels_a_settle() {
 
 // The push record (docs/web-push.md): every step of a moment lands in the log.
 
-use crate::log::{
+use crate::record::log::{
     AttentiveClient, DeliveryOutcome, DeviceDelivery, Payload, PushCancel, PushEvent, PushRecord,
 };
 

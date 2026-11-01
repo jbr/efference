@@ -4,7 +4,7 @@
 //! keychain→env reveal-then-switch.
 
 use super::Working;
-use crate::log::Provider;
+use crate::record::log::Provider;
 use crate::setup::*;
 
 /// What can be done about one connection's credential, per its kind.
@@ -116,12 +116,12 @@ fn rename_connection<P: Prompter, Q: Probe>(
     // file pinned explicitly stays where the file says it is.
     let moving = match &connection.auth {
         ExistingAuth::Keychain { name: None } => Some((
-            crate::secrets::inference_name(name),
-            crate::secrets::inference_name(&new_name),
+            crate::platform::secrets::inference_name(name),
+            crate::platform::secrets::inference_name(&new_name),
         )),
         ExistingAuth::Oauth { name: None } => Some((
-            crate::secrets::oauth_name(name),
-            crate::secrets::oauth_name(&new_name),
+            crate::platform::secrets::oauth_name(name),
+            crate::platform::secrets::oauth_name(&new_name),
         )),
         _ => None,
     };
@@ -279,7 +279,7 @@ fn move_env_to_keychain<P: Prompter, Q: Probe>(
         );
         return;
     }
-    let item = crate::secrets::inference_name(name);
+    let item = crate::platform::secrets::inference_name(name);
     match probe.store_secret(&item, &value) {
         Ok(()) => {
             draft.record(Change::SetAuth {

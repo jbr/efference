@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHal
 
 use super::stdio::JsonRpcPipe;
 use super::*;
-use crate::log::ToolCall;
+use crate::record::log::ToolCall;
 
 /// The client half of an in-memory duplex — the framing and mount logic
 /// without a subprocess (`Transport::Loopback`).

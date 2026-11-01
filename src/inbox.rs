@@ -10,12 +10,12 @@
 //! rider holds. Slot notifications (a progress line a later one supersedes) wait in the
 //! daemon's queue and are logged when a triage first shows them (docs/control-channel.md).
 //!
-//! [`Triage`]: crate::log::Triage
-//! [`Triage::shown_through`]: crate::log::Triage::shown_through
+//! [`Triage`]: crate::record::log::Triage
+//! [`Triage::shown_through`]: crate::record::log::Triage::shown_through
 
 use std::collections::{BTreeMap, HashSet};
 
-use crate::log::{LogEntry, Payload, Seq, Telemetry};
+use crate::record::log::{LogEntry, Payload, Seq, Telemetry};
 
 /// How many triages display a notification that none of their verdicts mention before the
 /// harness dismisses it (docs/inbox.md). A notification left unmentioned is shown again
@@ -85,7 +85,7 @@ fn unresolved(log: &[LogEntry]) -> impl Iterator<Item = (ShownNotification, bool
 }
 
 /// Fold the log to the **active** shown notifications: every `Ambient` entry a triage's
-/// rider has shown and no [`Triage`](crate::log::Triage) verdict has yet pinned or
+/// rider has shown and no [`Triage`](crate::record::log::Triage) verdict has yet pinned or
 /// dismissed. Pinned/dismissed seqs are resolved (gone); unmentioned ("left") seqs stay
 /// active, so a later triage re-shows them. In log order.
 pub fn active_shown(log: &[LogEntry]) -> Vec<ShownNotification> {
@@ -165,7 +165,7 @@ fn resolved(log: &[LogEntry]) -> HashSet<Seq> {
 /// one that arrived while its request was in flight counts from the next triage, and a
 /// triage that showed no rider counts for none.
 ///
-/// [`Triage::shown_through`]: crate::log::Triage::shown_through
+/// [`Triage::shown_through`]: crate::record::log::Triage::shown_through
 pub fn unmentioned_past_cap(log: &[LogEntry]) -> Vec<(Seq, usize)> {
     let resolved = resolved(log);
     let mut shows: BTreeMap<Seq, usize> = BTreeMap::new();

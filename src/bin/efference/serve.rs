@@ -38,7 +38,7 @@ impl BindFlags {
 /// [`TcpBind`]: efference::daemon::TcpBind
 pub(crate) fn resolve_bind(
     flags: BindFlags,
-    secrets: &efference::secrets::Secrets,
+    secrets: &efference::platform::secrets::Secrets,
 ) -> Result<Option<daemon::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
     // An empty bind is the explicit "UDS-only" spelling: `--bind ""` overrides a
     // configured `[host] bind` (e.g. for a second concurrent host).
@@ -95,8 +95,8 @@ pub(crate) fn resolve_bind(
     // The bind's credentials all derive from the stored root (docs/web-bind.md):
     // read it, or mint it if this is the first bind on this machine and the store
     // is not the `[secrets]` commands.
-    let root = efference::auth::Root::load(secrets)?;
-    efference::auth::Root::install(Some(root.clone()));
+    let root = efference::platform::auth::Root::load(secrets)?;
+    efference::platform::auth::Root::install(Some(root.clone()));
     Ok(Some(daemon::TcpBind {
         addr,
         tls,
@@ -153,7 +153,7 @@ fn available_tools(toolbox: &Toolbox) -> Vec<String> {
         .definitions()
         .iter()
         .filter_map(|d| d.get("name").and_then(|n| n.as_str()))
-        .map(efference::names::tools::display_name)
+        .map(efference::record::names::tools::display_name)
         .collect()
 }
 
@@ -236,8 +236,8 @@ fn print_verdict(
     }
     if let Some(prefix) = probe {
         // The probe's answer is the stance: `clear_always` (from a real model verdict) is the safe-vote.
-        let safe = spotting.origin == efference::log::Origin::Model
-            && spotting.read.stance == efference::log::Stance::ClearAlways;
+        let safe = spotting.origin == efference::record::log::Origin::Model
+            && spotting.read.stance == efference::record::log::Stance::ClearAlways;
         let verdict = if !safe {
             "not a safe-vote (stance wasn't clear_always) — no promotion".to_string()
         } else if let Some(key) = efference::policy::promotable_command(role, prefix) {
@@ -270,7 +270,7 @@ fn print_verdict(
 /// session's gate would render, annotations and all, rather than a hand-written stand-in
 /// that could drift from what the server actually advertises.
 ///
-/// [`ToolCall`]: efference::log::ToolCall
+/// [`ToolCall`]: efference::record::log::ToolCall
 #[cfg(feature = "dev")]
 pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
     let dev::SpotterArgs {
@@ -303,13 +303,13 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
     let call = match &tool {
         // Either spelling is accepted, resolved by the same rule the config uses, so the
         // tester and a `[tools]` key agree on what a dotted name means.
-        Some(name) => efference::log::ToolCall::new(
+        Some(name) => efference::record::log::ToolCall::new(
             efference::config::wire_tool_name(name.clone()),
             "toolu_spotter_check",
             serde_json::from_str(&input).map_err(|e| format!("--input is not valid JSON: {e}"))?,
         ),
-        None => efference::log::ToolCall::new(
-            efference::names::tools::BASH,
+        None => efference::record::log::ToolCall::new(
+            efference::record::names::tools::BASH,
             "toolu_spotter_check",
             serde_json::json!({ "command": command }),
         ),
@@ -327,7 +327,7 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
         // call — the exact thing this mode exists to avoid.
         return Err(format!(
             "no mounted tool named `{}`. Mounted: {}",
-            efference::names::tools::display_name(&call.name),
+            efference::record::names::tools::display_name(&call.name),
             match toolbox.as_ref().map(available_tools) {
                 Some(names) if !names.is_empty() => names.join(", "),
                 _ => "(none)".into(),
@@ -410,7 +410,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     // to re-read its credential from when one expires (docs/transport.md). Every
     // host reads `[secrets]`, an island included: it names where this user's
     // secrets are, not the machine's bind.
-    let secrets = std::sync::Arc::new(efference::secrets::Secrets::configured(
+    let secrets = std::sync::Arc::new(efference::platform::secrets::Secrets::configured(
         efference::user_config::InferenceConfig::secret_commands(Path::new(&home))?,
     ));
     let bind = resolve_bind(bind_flags, &secrets)?;
@@ -448,7 +448,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     // Only with the user's answer: a configuration without one never checks
     // (docs/update-check.md). An island is a host like any other here.
     if efference::user_config::UpdatesConfig::load(Path::new(&home))?.check {
-        host.check_for_updates(efference::update_check::UpdateCheck::published());
+        host.check_for_updates(efference::platform::update_check::UpdateCheck::published());
     }
     // Adopted first: an island archives its sessions when its owner goes, and so
     // reopens none at start (docs/resumption.md).

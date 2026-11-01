@@ -3,7 +3,7 @@
 //! from a script.
 
 use super::*;
-use crate::project::WireTurn;
+use crate::record::project::WireTurn;
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 
 /// The refusal as DeepInfra sends it through OpenRouter: an `error` event on a stream

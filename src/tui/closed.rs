@@ -115,7 +115,10 @@ async fn ask_once(client: &Client) -> Closure {
         },
         Ok(SessionRead::Dormant(dormant)) => {
             let row = dormant.archived.row;
-            let log = row.cwd.join(crate::session_dir::SESSION_BASE).join(&id);
+            let log = row
+                .cwd
+                .join(crate::record::session_dir::SESSION_BASE)
+                .join(&id);
             if row.interrupted {
                 Closure::Stopped { id, log }
             } else {

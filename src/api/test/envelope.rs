@@ -7,14 +7,14 @@ use super::*;
 fn sample_messages() -> Vec<ApiMessage> {
     vec![
         ApiMessage {
-            role: crate::project::Role::User,
+            role: crate::record::project::Role::User,
             content: vec![ApiBlock::Text {
                 text: "hello".into(),
                 cache_control: None,
             }],
         },
         ApiMessage {
-            role: crate::project::Role::Assistant,
+            role: crate::record::project::Role::Assistant,
             content: vec![ApiBlock::Text {
                 text: "hi there".into(),
                 cache_control: None,
@@ -125,7 +125,7 @@ fn request_includes_temperature_when_set() {
 
 /// **The whole request envelope, pinned to its exact bytes.**
 ///
-/// The `messages` pins in `src/project/test.rs` cover the projection's own
+/// The `messages` pins in `src/record/project/test.rs` cover the projection's own
 /// output; the provider matches the **whole body**, and the gap between those
 /// two facts has already cost a silent cache break — a tools-array mutation
 /// moved the prefix without failing either projection pin
@@ -140,7 +140,7 @@ fn request_includes_temperature_when_set() {
 /// Adding a field is caught too: a new key lands somewhere in these bytes.
 #[test]
 fn request_envelope_matches_expected_wire_bytes() {
-    use crate::project::{ApiBlock, ApiMessage, CacheControl, Role};
+    use crate::record::project::{ApiBlock, ApiMessage, CacheControl, Role};
 
     let tools = [serde_json::json!({
         "name": "bash",
@@ -193,7 +193,7 @@ fn request_envelope_matches_expected_wire_bytes() {
 /// deliberately.
 #[test]
 fn with_effort_envelope_matches_expected_wire_bytes() {
-    use crate::project::{ApiBlock, ApiMessage, CacheControl, Role};
+    use crate::record::project::{ApiBlock, ApiMessage, CacheControl, Role};
 
     let tools = [serde_json::json!({
         "name": "bash",
@@ -289,7 +289,7 @@ fn openrouter_envelope_carries_the_prompt_cache_key() {
 #[test]
 fn the_cache_diagnostics_object_sits_after_messages() {
     let messages = [ApiMessage {
-        role: crate::project::Role::User,
+        role: crate::record::project::Role::User,
         content: vec![ApiBlock::Text {
             text: "hello".into(),
             cache_control: None,
@@ -454,7 +454,7 @@ fn a_pinned_upstream_renders_as_the_provider_object() {
 
     let tools: [Value; 0] = [];
     let messages = [ApiMessage {
-        role: crate::project::Role::User,
+        role: crate::record::project::Role::User,
         content: vec![ApiBlock::Text {
             text: "hi".into(),
             cache_control: None,

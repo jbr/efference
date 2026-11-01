@@ -1,6 +1,6 @@
 use super::super::fixtures::{Fixture, ask, bash, turn};
 use super::*;
-use crate::log::RawResult;
+use crate::record::log::RawResult;
 
 /// A handle names one call: a lone call by its bare seq or `.1`, one of several by
 /// `seq.n`; a seq with several calls names none of them by itself.

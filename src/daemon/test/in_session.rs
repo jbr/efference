@@ -75,7 +75,7 @@ fn issue(session: &Session, calls: Vec<ToolCall>) -> Seq {
     session
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 calls,
@@ -87,7 +87,7 @@ fn issue(session: &Session, calls: Vec<ToolCall>) -> Seq {
 /// A bash call the child holds for a decision.
 fn curl() -> ToolCall {
     ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         "toolu_curl",
         serde_json::json!({
             "command": "curl -sI https://example.com",
@@ -163,7 +163,7 @@ async fn a_session_in_another_project_is_reached_by_its_id() {
         said,
         "left in stranger's inbox; it may set it aside (you don't drive it)"
     );
-    let place = crate::home::tilde(&fixture.root.join("a"));
+    let place = crate::platform::home::tilde(&fixture.root.join("a"));
     let source = format!("session[parent in {place}]");
     let stranger = fixture.session("stranger");
     stranger
@@ -195,7 +195,8 @@ async fn a_session_in_another_project_is_reached_by_its_id() {
                 .any(|entry| entry.source.as_deref() == Some(source.as_str()))
         })
         .await;
-    let wire = serde_json::to_string(&crate::project::project(&stranger.snapshot())).unwrap();
+    let wire =
+        serde_json::to_string(&crate::record::project::project(&stranger.snapshot())).unwrap();
     assert!(
         wire.contains(&format!("parent (agent in {place}): pick it up")),
         "{wire}"

@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::daemon::status::SessionStatus;
-use crate::log::Approval;
+use crate::record::log::Approval;
 
 fn session() -> Arc<Session> {
     Session::in_memory().0

@@ -11,10 +11,10 @@ pub(super) type WireResult = Result<String, Box<dyn std::error::Error + Send + S
 pub(super) const LEGACY_WIRE_MODEL: &str = "claude-haiku-4-5";
 
 pub(super) fn wire_placements(
-    identity: Option<&efference::log::LoggedInference>,
+    identity: Option<&efference::record::log::LoggedInference>,
 ) -> (
-    efference::project::ImagePlacement,
-    efference::project::BreakpointPlacement,
+    efference::record::project::ImagePlacement,
+    efference::record::project::BreakpointPlacement,
 ) {
     identity.map_or_default(|selection| {
         (
@@ -24,7 +24,7 @@ pub(super) fn wire_placements(
     })
 }
 
-pub(super) fn wire_model(identity: Option<&efference::log::LoggedInference>) -> String {
+pub(super) fn wire_model(identity: Option<&efference::record::log::LoggedInference>) -> String {
     identity.map_or_else(
         || LEGACY_WIRE_MODEL.to_string(),
         |selection| selection.model.clone(),
@@ -47,15 +47,15 @@ pub(crate) async fn wire(
     view_dialect: Option<ViewDialect>,
     config: Option<PathBuf>,
 ) -> WireResult {
-    let entries = efference::persist::load(&path)?;
+    let entries = efference::record::persist::load(&path)?;
     // The same turns a live request encodes, trailing breakpoint included; the
     // dialect decides the wire they render on (docs/transport.md).
-    let mut turns = efference::project::project_semantic(&entries);
-    let recorded = efference::project::recorded_dialect(&turns)?;
+    let mut turns = efference::record::project::project_semantic(&entries);
+    let recorded = efference::record::project::recorded_dialect(&turns)?;
     // The fixed identity is recorded once at boot. Placement is derived here, at
     // read time, rather than stored as a second copy that could drift from the
     // provider rules (docs/log-and-projection.md).
-    let identity = efference::log::recorded_inference(&entries).cloned();
+    let identity = efference::record::log::recorded_inference(&entries).cloned();
     let recorded_provider = identity.as_ref().map(|selection| selection.provider);
     let (placement, breakpoint) = wire_placements(identity.as_ref());
     if identity.is_none() {
@@ -77,14 +77,14 @@ pub(crate) async fn wire(
         && let Some(provider) = recorded_provider
         && let Some(dialect) = provider.inference_dialect()
     {
-        efference::project::check_dialect(&turns, dialect)?;
+        efference::record::project::check_dialect(&turns, dialect)?;
     }
     let dialect = recorded_provider
         .and_then(|provider| provider.inference_dialect())
         .or(recorded)
-        .unwrap_or(efference::log::WireDialect::Messages);
-    turns.push(efference::project::WireTurn::Breakpoint);
-    let messages = efference::project::encode_messages(&turns, placement, breakpoint);
+        .unwrap_or(efference::record::log::WireDialect::Messages);
+    turns.push(efference::record::project::WireTurn::Breakpoint);
+    let messages = efference::record::project::encode_messages(&turns, placement, breakpoint);
 
     let model = wire_model(identity.as_ref());
     let rendering = Rendering {
@@ -113,7 +113,7 @@ pub(crate) async fn wire(
     // the view shows exactly what the model saw, not a re-resolve of files that may have
     // drifted on disk since. Only logs that predate the snapshot fall back to a rebuild.
     let recorded_system = entries.iter().rev().find_map(|e| match &e.payload {
-        payload @ efference::log::Payload::Preamble { .. } => payload.preamble_system(),
+        payload @ efference::record::log::Payload::Preamble { .. } => payload.preamble_system(),
         _ => None,
     });
     let cwd = std::env::current_dir()?;
@@ -123,7 +123,7 @@ pub(crate) async fn wire(
              preamble; `tools[]` is {}.",
             entries.len(),
             messages.len(),
-            if efference::log::recorded_tools(&entries).is_some() {
+            if efference::record::log::recorded_tools(&entries).is_some() {
                 "the recorded array"
             } else {
                 "rebuilt from the current code and cwd"
@@ -215,10 +215,10 @@ fn rebuilt_system(
 /// renders from.
 struct Rendering<'a> {
     view_dialect: Option<ViewDialect>,
-    dialect: efference::log::WireDialect,
+    dialect: efference::record::log::WireDialect,
     format: WireFormat,
-    turns: &'a [efference::project::WireTurn],
-    messages: &'a [efference::project::ApiMessage],
+    turns: &'a [efference::record::project::WireTurn],
+    messages: &'a [efference::record::project::ApiMessage],
     model: &'a str,
     cache: efference::api::PromptCachePolicy,
 }
@@ -230,9 +230,11 @@ impl Rendering<'_> {
             (Some(ViewDialect::Completions), _, _) => serde_json::to_string_pretty(
                 &efference::api::translate_completions(self.turns, "", self.model)?,
             )?,
-            (None, efference::log::WireDialect::Responses, _) => serde_json::to_string_pretty(
-                &efference::api::encode_responses(self.turns, "", self.cache),
-            )?,
+            (None, efference::record::log::WireDialect::Responses, _) => {
+                serde_json::to_string_pretty(&efference::api::encode_responses(
+                    self.turns, "", self.cache,
+                ))?
+            }
             (None, _, WireFormat::Json) => efference::api::render_messages_pretty(self.messages)?,
             (None, _, WireFormat::Yaml) => efference::api::render_messages_yaml(self.messages)?,
         };
@@ -249,7 +251,7 @@ impl Rendering<'_> {
                     model, system, tools, choice, turns,
                 )?
             }
-            (None, efference::log::WireDialect::Responses, _) => {
+            (None, efference::record::log::WireDialect::Responses, _) => {
                 efference::api::render_responses_request_pretty(
                     model, system, tools, choice, turns, self.cache,
                 )?

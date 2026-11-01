@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::control_tools::{ClientExecutor, Control, Decide, Executor, Message};
-use crate::log::Telemetry;
 use crate::protocol::agents::Decision;
+use crate::record::log::Telemetry;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
@@ -48,7 +48,7 @@ fn issue(shared: &Session, call: &ToolCall) -> String {
     shared
         .append(
             1,
-            Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+            Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![],
                 vec![call.clone()],
@@ -73,7 +73,7 @@ fn message(text: &str, reply_to: Option<&str>) -> Message {
 async fn decide_maps_the_seq_and_records_the_client() {
     let shared = child();
     let call = ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         "toolu_curl",
         serde_json::json!({ "command": "curl -sI https://example.com" }),
     );
@@ -131,7 +131,7 @@ async fn decide_maps_the_seq_and_records_the_client() {
 async fn escalate_over_mcp_goes_to_the_operator() {
     let shared = child();
     let call = ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         "toolu_curl",
         serde_json::json!({ "command": "curl -sI https://example.com" }),
     );
@@ -172,7 +172,7 @@ async fn escalate_over_mcp_goes_to_the_operator() {
         .collect();
     assert_eq!(
         escalated,
-        [crate::log::Escalation::new(
+        [crate::record::log::Escalation::new(
             "toolu_curl",
             Some("mcp[claude-code]".into()),
             None,
@@ -201,7 +201,7 @@ async fn escalate_over_mcp_goes_to_the_operator() {
 async fn every_sender_names_the_question() {
     let shared = child();
     let ask = ToolCall::new(
-        crate::names::tools::ASK,
+        crate::record::names::tools::ASK,
         "toolu_q",
         serde_json::json!({ "question": "Which branch?" }),
     );
@@ -259,7 +259,7 @@ async fn post_turns_holds_every_client_to_naming_its_question() {
     let shared = child();
     shared.append(1, Payload::user("go")).unwrap();
     let ask = ToolCall::new(
-        crate::names::tools::ASK,
+        crate::record::names::tools::ASK,
         "toolu_q",
         serde_json::json!({ "question": "Proceed?" }),
     );

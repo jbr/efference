@@ -304,7 +304,7 @@ fn a_namespace_glob_does_not_cross_the_namespace_boundary() {
 }
 
 /// A granted `efference` namespace clears the built-ins, whose wire names carry no `__` prefix
-/// at all — the namespace is supplied by [`crate::names::tools::BUILTIN_NAMESPACE`]. The path-bearing
+/// at all — the namespace is supplied by [`crate::record::names::tools::BUILTIN_NAMESPACE`]. The path-bearing
 /// ones still need their `[paths]` grant: the namespace grant is a name grant, and a built-in's
 /// blast radius stays bounded by the second check.
 #[test]

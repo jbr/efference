@@ -5,7 +5,7 @@ use crate::config::testing::ConfigFixture;
 use std::path::Path;
 
 fn spot_completion(name: &str, input: Value) -> Completion {
-    Completion::new(crate::log::AssistantOutput::from_legacy_messages(
+    Completion::new(crate::record::log::AssistantOutput::from_legacy_messages(
         vec![],
         vec![],
         vec![ToolCall::new(name, "s", input)],

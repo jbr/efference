@@ -87,9 +87,9 @@ async fn wire_messages_skips_the_unparseable_config() {
 /// ambient provider selection.
 #[test]
 fn wire_model_prefers_the_recorded_native_model() {
-    let identity = efference::log::LoggedInference::new(
+    let identity = efference::record::log::LoggedInference::new(
         "router",
-        efference::log::Provider::OpenRouter,
+        efference::record::log::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
     assert_eq!(wire_model(Some(&identity)), "google/gemini-3.7-flash");
@@ -101,23 +101,23 @@ fn wire_model_prefers_the_recorded_native_model() {
 /// would silently change an image-bearing OpenRouter replay.
 #[test]
 fn wire_placements_follow_the_recorded_provider_and_model() {
-    let identity = efference::log::LoggedInference::new(
+    let identity = efference::record::log::LoggedInference::new(
         "router",
-        efference::log::Provider::OpenRouter,
+        efference::record::log::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
     assert_eq!(
         wire_placements(Some(&identity)),
         (
-            efference::project::ImagePlacement::AfterInterposedTurn,
-            efference::project::BreakpointPlacement::None,
+            efference::record::project::ImagePlacement::AfterInterposedTurn,
+            efference::record::project::BreakpointPlacement::None,
         )
     );
     assert_eq!(
         wire_placements(None),
         (
-            efference::project::ImagePlacement::default(),
-            efference::project::BreakpointPlacement::default(),
+            efference::record::project::ImagePlacement::default(),
+            efference::record::project::BreakpointPlacement::default(),
         )
     );
 }
@@ -129,12 +129,12 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
         std::process::id()
     ));
     let _ = std::fs::remove_file(&log_path);
-    let identity = efference::log::LoggedInference::new(
+    let identity = efference::record::log::LoggedInference::new(
         "anthropic",
-        efference::log::Provider::Anthropic,
+        efference::record::log::Provider::Anthropic,
         "claude",
     );
-    let mut log = efference::persist::Log::create(&log_path, None).unwrap();
+    let mut log = efference::record::persist::Log::create(&log_path, None).unwrap();
     log.append(
         0,
         Payload::preamble("", "sys", Default::default(), Some(identity)),
@@ -142,7 +142,7 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
     .unwrap();
     log.append(
         1,
-        Payload::assistant(efference::log::AssistantOutput::Responses(vec![])),
+        Payload::assistant(efference::record::log::AssistantOutput::Responses(vec![])),
     )
     .unwrap();
     drop(log);
@@ -166,16 +166,16 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
 }
 
 fn write_openrouter_image_log(path: &Path) {
-    use efference::log::{
+    use efference::record::log::{
         AssistantOutput, ContentBlock, Payload, RawResult, ResultImage, ToolCall, WireState,
     };
 
-    let identity = efference::log::LoggedInference::new(
+    let identity = efference::record::log::LoggedInference::new(
         "router",
-        efference::log::Provider::OpenRouter,
+        efference::record::log::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
-    let mut log = efference::persist::Log::create(path, None).unwrap();
+    let mut log = efference::record::persist::Log::create(path, None).unwrap();
     log.append(
         0,
         Payload::preamble("", "sys", Default::default(), Some(identity)),
@@ -353,19 +353,21 @@ fn entry(seq: u64, payload: Payload) -> LogEntry {
 /// A log with one bash call, a `Gate`(model) verdict on it, and a `Clear`(fallback)
 /// verdict on a call id that isn't in the log (the fail-closed-on-a-missing-call shape).
 fn spot_fixture() -> Vec<LogEntry> {
-    use efference::log::{CallId, Origin, Payload, Spot, Stance, ToolCall};
+    use efference::record::log::{CallId, Origin, Payload, Spot, Stance, ToolCall};
     vec![
         entry(
             1,
-            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![ToolCall::new(
-                    "bash",
-                    "toolu_a",
-                    serde_json::json!({ "command": "rm  -rf\n ./build" }),
-                )],
-            )),
+            Payload::assistant(
+                efference::record::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall::new(
+                        "bash",
+                        "toolu_a",
+                        serde_json::json!({ "command": "rm  -rf\n ./build" }),
+                    )],
+                ),
+            ),
         ),
         entry(
             2,
@@ -391,7 +393,7 @@ fn spot_fixture() -> Vec<LogEntry> {
 
 #[test]
 fn spots_in_correlates_calls_and_flattens_whitespace() {
-    use efference::log::Stance;
+    use efference::record::log::Stance;
     let rows = spots_in("sess", &spot_fixture(), &[], false);
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].stance, Stance::Gate);
@@ -404,7 +406,7 @@ fn spots_in_correlates_calls_and_flattens_whitespace() {
 
 #[test]
 fn spots_in_no_fallback_drops_fail_closed_verdicts() {
-    use efference::log::Origin;
+    use efference::record::log::Origin;
     let rows = spots_in("sess", &spot_fixture(), &[], true);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].origin, Origin::Model);
@@ -412,7 +414,7 @@ fn spots_in_no_fallback_drops_fail_closed_verdicts() {
 
 #[test]
 fn spots_in_stance_filter_keeps_only_matching() {
-    use efference::log::Stance;
+    use efference::record::log::Stance;
     let gates = spots_in("sess", &spot_fixture(), &[StanceArg::Gate], false);
     assert_eq!(gates.len(), 1);
     assert_eq!(gates[0].stance, Stance::Gate);
@@ -444,7 +446,7 @@ fn describe_call_prefers_the_obvious_field() {
 // ---- `triage` triage reconstruction (docs/triage.md) ----
 
 use crate::triage_replay::recorded_triages;
-use efference::log::{LogEntry, Payload, RawResult, ToolCall, Triage, WireState};
+use efference::record::log::{LogEntry, Payload, RawResult, ToolCall, Triage, WireState};
 
 fn call(id: &str) -> ToolCall {
     ToolCall::new("bash", id, serde_json::json!({"command": "ls"}))
@@ -473,11 +475,13 @@ fn a_triage_carries_a_completions_results_and_a_prefix_that_stops_short_of_them(
     let log = vec![
         entry(
             1,
-            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![call("a"), call("b")],
-            )),
+            Payload::assistant(
+                efference::record::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call("a"), call("b")],
+                ),
+            ),
         ),
         result(2, "a"),
         result(3, "b"),
@@ -500,11 +504,13 @@ fn a_triage_carries_its_recorded_first_attempt() {
     let log = vec![
         entry(
             1,
-            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![call("a")],
-            )),
+            Payload::assistant(
+                efference::record::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call("a")],
+                ),
+            ),
         ),
         result(2, "a"),
         triage(
@@ -514,11 +520,13 @@ fn a_triage_carries_its_recorded_first_attempt() {
         ),
         entry(
             4,
-            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![call("b")],
-            )),
+            Payload::assistant(
+                efference::record::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call("b")],
+                ),
+            ),
         ),
         result(5, "b"),
         triage(6, 5, vec![]),
@@ -542,7 +550,7 @@ fn a_triage_carries_its_recorded_first_attempt() {
 /// resolved them), and not ones an earlier triage resolved.
 #[test]
 fn a_triage_carries_the_inbox_it_was_shown() {
-    use efference::log::{Disposition, Notification};
+    use efference::record::log::{Disposition, Notification};
     let note = |seq, body: &str| entry(seq, Payload::Ambient(Notification::new("src", body, None)));
     let mut resolved = triage(5, 3, vec![]);
     if let Payload::Triage(t) = &mut resolved.payload {
@@ -555,11 +563,13 @@ fn a_triage_carries_the_inbox_it_was_shown() {
     let assistant = |seq, id| {
         entry(
             seq,
-            Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
-                vec![],
-                vec![],
-                vec![call(id)],
-            )),
+            Payload::assistant(
+                efference::record::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call(id)],
+                ),
+            ),
         )
     };
     let log = vec![
@@ -586,11 +596,13 @@ fn a_triage_carries_the_inbox_it_was_shown() {
 fn a_completion_with_no_results_opens_no_triage() {
     let log = vec![entry(
         1,
-        Payload::assistant(efference::log::AssistantOutput::from_legacy_messages(
-            vec![],
-            vec![],
-            vec![call("a")],
-        )),
+        Payload::assistant(
+            efference::record::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![call("a")],
+            ),
+        ),
     )];
     assert!(recorded_triages(&log).is_empty());
 }

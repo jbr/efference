@@ -3,7 +3,7 @@
 
 use super::{CATALOG_TTL, Snapshot};
 use crate::api::{ListedModel, ModelKind};
-use crate::log::Provider;
+use crate::record::log::Provider;
 use serde::{Deserialize, Serialize};
 
 /// Where a connection's listing stands.

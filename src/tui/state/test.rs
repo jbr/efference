@@ -161,10 +161,10 @@ fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
     s.submit_composer("look".into());
     assert!(srx.try_recv().is_err(), "a send waits for its upload");
 
-    let arrival = crate::log::attachment::Arrival {
+    let arrival = crate::record::log::attachment::Arrival {
         name: name.clone(),
         path: format!("att/composer/{name}"),
-        kind: crate::log::attachment::Kind::Binary { bytes: 1 },
+        kind: crate::record::log::attachment::Kind::Binary { bytes: 1 },
     };
     s.upload_landed(key, Ok(arrival.clone()));
     s.submit_composer("look".into());
@@ -192,7 +192,7 @@ fn ctrl_o_asks_for_a_fold() {
 #[test]
 fn the_operation_text_follows_the_topic_while_running() {
     let (mut s, _arx) = state_with_gate();
-    let now = crate::log::Timestamp::now().0;
+    let now = crate::record::log::Timestamp::now().0;
     let topic = serde_json::json!({
         "requests": [{"request": 0, "origin": "turn", "stage": "sent", "since": now}],
         "tools": [],
@@ -218,7 +218,7 @@ fn the_operation_text_follows_the_topic_while_running() {
 #[test]
 fn a_pending_gate_or_ask_leads_the_operation_text() {
     let (mut s, _arx) = state_with_gate();
-    let now = crate::log::Timestamp::now().0;
+    let now = crate::record::log::Timestamp::now().0;
     let topic = serde_json::json!({
         "requests": [{"request": 0, "origin": "title", "stage": "sent", "since": now}],
         "tools": [],

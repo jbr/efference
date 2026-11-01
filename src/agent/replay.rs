@@ -3,7 +3,7 @@
 //! captured before the restart join them at the gate.
 
 use super::*;
-use crate::recovery::{CallState, Completion};
+use crate::record::recovery::{CallState, Completion};
 
 /// Run what `pending` left undone and return the batch in call order. A call that never
 /// started runs as it would have in the first place, filed under the completion's turn,

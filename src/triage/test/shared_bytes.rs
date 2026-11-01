@@ -3,7 +3,7 @@
 //! agent's prefix plus the fork tail. Pinned so a change to the separate triage's view
 //! cannot move it.
 use super::*;
-use crate::log::{ContentBlock, Keep, Triaged};
+use crate::record::log::{ContentBlock, Keep, Triaged};
 
 fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     entry(

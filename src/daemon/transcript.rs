@@ -13,12 +13,12 @@
 //! A result's body is never part of a window; the zoom and `GET /log/:seq` are where
 //! it is read. The TUI keeps its own tree (docs/tui.md), which shows the bodies.
 
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, CallId, ConfigChange, ContentBlock, EditState, LogEntry, MessagesOutputBlock,
     Payload, ProcessEventKind, RawResult, ResponsesMessageContent, ResponsesOutputItem, Stance,
     ToolCall, WireState,
 };
-use crate::project::selection;
+use crate::record::project::selection;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -89,17 +89,17 @@ pub(crate) fn sender(source: Option<&str>, me: Option<&str>) -> String {
     if source == "web" {
         return "operator (web)".to_string();
     }
-    if crate::names::sources::is_review_source(source) {
+    if crate::record::names::sources::is_review_source(source) {
         return "the permission review".to_string();
     }
     let named = |name: &str| match me.is_some_and(|me| me == source || me == name) {
         true => "you".to_string(),
         false => name.to_string(),
     };
-    if let Some(predecessor) = crate::names::sources::handoff_predecessor(source) {
+    if let Some(predecessor) = crate::record::names::sources::handoff_predecessor(source) {
         return format!("{} (hand-off)", named(predecessor));
     }
-    named(crate::names::sources::source_name(source))
+    named(crate::record::names::sources::source_name(source))
 }
 
 /// `ok, 12 lines` — a result's outcome and size: `ok` or `error`, its text in lines,
@@ -127,7 +127,7 @@ fn saw(raw: &RawResult, wire: Option<&WireState>, of_total: bool) -> String {
         Some(WireState::Elided) => "it saw none of it".to_string(),
         Some(WireState::Interrupted(interruption)) => format!(
             "it saw none of it, but {}",
-            crate::project::render_interruption(interruption)
+            crate::record::project::render_interruption(interruption)
         ),
         Some(WireState::TriageFailed { why }) => format!("it saw none of it ({})", flat(why)),
         Some(WireState::Triaged(verdict)) => {
@@ -151,7 +151,7 @@ fn saw(raw: &RawResult, wire: Option<&WireState>, of_total: bool) -> String {
 
 /// How many lines a verdict kept, of how many the result has (the arithmetic the
 /// entry view's `selection` carries, `entry_view.rs`).
-fn kept_of(raw: &RawResult, verdict: &crate::log::Triaged) -> (usize, usize) {
+fn kept_of(raw: &RawResult, verdict: &crate::record::log::Triaged) -> (usize, usize) {
     let d = selection(&raw.content, &verdict.keep);
     let kept = d.ranges.iter().map(|&(a, b)| b - a + 1).sum();
     (kept, d.shown.len() + d.dropped)
@@ -160,8 +160,12 @@ fn kept_of(raw: &RawResult, verdict: &crate::log::Triaged) -> (usize, usize) {
 /// `allowed by parent` — a gate's recorded decision, its decider named for `me`. An
 /// allow carries the decider's note when one was sent with it (`note`, from
 /// `index.rs`): `allowed by you, with "use read next time"`.
-fn decided(decision: &crate::log::GateDecision, me: Option<&str>, note: Option<&str>) -> String {
-    use crate::log::Approval;
+fn decided(
+    decision: &crate::record::log::GateDecision,
+    me: Option<&str>,
+    note: Option<&str>,
+) -> String {
+    use crate::record::log::Approval;
     let by = sender(decision.source.as_deref(), me);
     match &decision.decision {
         Approval::Approve => match note {
@@ -179,7 +183,7 @@ fn decided(decision: &crate::log::GateDecision, me: Option<&str>, note: Option<&
 
 /// `escalated by p to g: "<note>"` — one escalation of a held call, its escalator and
 /// the session it went to named for `me` (docs/permissions.md).
-fn escalated(escalation: &crate::log::Escalation, me: Option<&str>) -> String {
+fn escalated(escalation: &crate::record::log::Escalation, me: Option<&str>) -> String {
     let by = sender(escalation.source.as_deref(), me);
     let to = match escalation.to.as_deref() {
         Some(to) => sender(Some(to), me),
@@ -192,8 +196,8 @@ fn escalated(escalation: &crate::log::Escalation, me: Option<&str>) -> String {
 }
 
 /// Whether a recorded decision refused the call: an abort or a redirect.
-fn refused(decision: &crate::log::GateDecision) -> bool {
-    use crate::log::Approval;
+fn refused(decision: &crate::record::log::GateDecision) -> bool {
+    use crate::record::log::Approval;
     matches!(decision.decision, Approval::Abort | Approval::Redirect(_))
 }
 
@@ -211,7 +215,7 @@ fn change_words(change: &ConfigChange) -> String {
         ConfigChange::Tool { name } => {
             format!(
                 "the tool {}",
-                code_span(&crate::names::tools::display_name(name))
+                code_span(&crate::record::names::tools::display_name(name))
             )
         }
         ConfigChange::Scope { .. } => "a new scope".to_string(),
@@ -284,7 +288,7 @@ const BODY_KEYS: &[&str] = &[
 /// A call's handle in the transcript: the bare `seq` of the assistant entry that
 /// issued it when it was alone there, `seq.n` (1-based) when it shared the entry.
 /// The status names a held call by the same handle (`status/view.rs`).
-pub(crate) fn call_label(seq: crate::log::Seq, index: usize, calls: usize) -> String {
+pub(crate) fn call_label(seq: crate::record::log::Seq, index: usize, calls: usize) -> String {
     if calls > 1 {
         format!("{seq}.{}", index + 1)
     } else {
@@ -370,7 +374,7 @@ fn assistant(output: &AssistantOutput) -> (Vec<String>, Vec<ToolCall>) {
 /// call's command, any other call's arguments as `audit::call_line` writes them. `None`
 /// for a call with nothing but its intent.
 pub(crate) fn call_summary(call: &ToolCall) -> Option<String> {
-    if call.name == crate::names::tools::BASH
+    if call.name == crate::record::names::tools::BASH
         && let Some(command) = call.input.get("command").and_then(Value::as_str)
     {
         return Some(clip(command, ARG_WIDE));
@@ -387,7 +391,7 @@ fn arguments(call: &ToolCall) -> String {
     match &call.input {
         Value::Object(map) => {
             for (key, value) in map {
-                if key == crate::names::tools::INTENT {
+                if key == crate::record::names::tools::INTENT {
                     continue;
                 }
                 let rendered = match value {

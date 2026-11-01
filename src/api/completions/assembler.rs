@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use crate::api::assembler::ResponseMeta;
 use crate::api::failure::{FailureClass, classify};
 use crate::api::{Completion, Error, Finish, FinishReason, Receipt, Streamed, Usage, UsageCost};
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, CompletionsMessage, Exclusion, FRAME_CAPTURE_CAP, Payload, StreamDiagnostics,
     UpstreamFailureRecord,
 };

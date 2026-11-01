@@ -170,7 +170,7 @@ pub(crate) enum TuiEvent {
     /// by the staging key, or why it could not.
     Uploaded {
         key: u64,
-        result: Result<crate::log::attachment::Arrival, String>,
+        result: Result<crate::record::log::attachment::Arrival, String>,
     },
     /// Whether the system clipboard holds an image and no text, learned from its type
     /// list alone when it changes — the strip then says `C-v` attaches it (docs/tui.md).
@@ -341,7 +341,7 @@ use futures_lite::StreamExt;
 use ratatui::{Terminal, backend::CrosstermBackend};
 
 use crate::client::Client;
-use crate::log::LogEntry;
+use crate::record::log::LogEntry;
 use render_context::{OutputMode, RenderContext};
 use theme::InteractiveTheme;
 use utils::set_cursor_shape;
@@ -381,7 +381,7 @@ use ui_loop::ui_loop;
 /// (docs/control-api.md). Saturating: a stamp in the future (clock skew between a
 /// remote daemon and this client) reads as 0 rather than wrapping.
 pub(crate) fn secs_since(at_ms: u64) -> u64 {
-    let now = crate::log::Timestamp::now().0;
+    let now = crate::record::log::Timestamp::now().0;
     now.saturating_sub(at_ms) / 1000
 }
 

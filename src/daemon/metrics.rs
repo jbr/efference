@@ -37,7 +37,7 @@ pub(super) struct Metrics {
     /// `usage.jsonl` when the record is attached, so a restarted host keeps it.
     pub(super) last_request_at: Option<Instant>,
     /// The same event as [`Metrics::last_request_at`], on the wall clock, for the wire.
-    pub(super) last_request_wall: Option<crate::log::Timestamp>,
+    pub(super) last_request_wall: Option<crate::record::log::Timestamp>,
     /// How many main-loop requests ([`RequestOrigin::Turn`]) this session has made, not
     /// counting keepalive pings. A fold compares it before and after writing its
     /// account to tell whether a turn read the cache meanwhile.
@@ -72,7 +72,7 @@ pub(super) struct Metrics {
     /// loop reads [`Metrics::last_request_at`]; the give-up cap stays on the real-turn clock.
     pub(super) last_triage_at: Option<Instant>,
     /// The same event as [`Metrics::last_triage_at`], on the wall clock, for the fold filter.
-    pub(super) last_triage_wall: Option<crate::log::Timestamp>,
+    pub(super) last_triage_wall: Option<crate::record::log::Timestamp>,
     /// The request the triage keepalive re-sends (docs/transport.md): the last primer, or
     /// the last result triage's request ending at its last breakpoint.
     pub(super) triage_request: Option<keepalive::StoredRequest>,
@@ -299,7 +299,7 @@ impl Session {
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .mode(crate::session_dir::FILE_MODE)
+            .mode(crate::record::session_dir::FILE_MODE)
             .open(path)
         {
             Ok(file) => *self.usage_log.lock().unwrap() = Some(io::BufWriter::new(file)),
@@ -326,7 +326,7 @@ impl Session {
             && let Some(at_ms) = last(UsageLine::touches_main_prefix)
         {
             m.last_request_at = instant(at_ms);
-            m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
+            m.last_request_wall = Some(crate::record::log::Timestamp(at_ms as u64));
         }
         // A ping of either lineage is not a real turn: it must not reset the cap.
         // The triage lineage's clock is not seeded (docs/transport.md): nothing stored
@@ -505,20 +505,20 @@ impl Session {
         m.last_cache_miss = Some(LastCacheMiss {
             reason: miss.reason,
             cache_missed_input_tokens: miss.cache_missed_input_tokens,
-            at: crate::log::Timestamp(at_ms as u64),
+            at: crate::record::log::Timestamp(at_ms as u64),
         });
     }
 
     /// Stamp the cache-touch clock, on both clocks, for a request on the main prefix.
     fn stamp_touch(m: &mut Metrics, at_ms: u128) {
         m.last_request_at = Some(Instant::now());
-        m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
+        m.last_request_wall = Some(crate::record::log::Timestamp(at_ms as u64));
     }
 
     /// The same stamp for the triage lineage's own prefix.
     fn stamp_triage_touch(m: &mut Metrics, at_ms: u128) {
         m.last_triage_at = Some(Instant::now());
-        m.last_triage_wall = Some(crate::log::Timestamp(at_ms as u64));
+        m.last_triage_wall = Some(crate::record::log::Timestamp(at_ms as u64));
     }
 
     /// Price one recorded request (docs/transport.md). A response that carried its

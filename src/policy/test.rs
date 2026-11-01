@@ -93,7 +93,7 @@ const CWD: &str = "/work";
 
 // --- effective_config: the policy fold over the log's changes ---
 
-use crate::log::{ConfigChange, ConfigEdit, EditState, LogEntry, Payload};
+use crate::record::log::{ConfigChange, ConfigEdit, EditState, LogEntry, Payload};
 
 // --- prefix-promotion: the probe ledger + descent (docs/permissions.md) ---
 

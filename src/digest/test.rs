@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{AssistantOutput, Keep, RawResult, Resumed, Summary, Timestamp, Triaged};
+use crate::record::log::{AssistantOutput, Keep, RawResult, Resumed, Summary, Timestamp, Triaged};
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -120,8 +120,8 @@ fn a_verdict_resolves_a_pending_result_and_resumption_skips_are_omitted() {
 /// triage and is left out of one read for the main model (docs/summary.md).
 #[test]
 fn a_triage_mark_renders_only_in_a_triage_digest() {
-    use crate::log::Audience;
-    use crate::project::Reader;
+    use crate::record::log::Audience;
+    use crate::record::project::Reader;
     let log = vec![
         entry(0, Payload::user("first")),
         entry(

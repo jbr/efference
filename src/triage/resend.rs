@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::api::SentRequest;
-use crate::log::Timestamp;
+use crate::record::log::Timestamp;
 
 /// A request the triage lineage sent, for its keepalive to re-send (docs/transport.md).
 pub struct SentTriage {

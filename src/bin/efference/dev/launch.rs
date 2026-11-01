@@ -52,7 +52,7 @@ pub(super) async fn view(
         .into());
     };
     let (path, label) = resolve_session_log(&target)?;
-    let entries = efference::persist::load(&path)?;
+    let entries = efference::record::persist::load(&path)?;
     if entries.is_empty() {
         return Err(format!("{} holds no entries", path.display()).into());
     }

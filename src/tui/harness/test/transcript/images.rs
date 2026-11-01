@@ -2,7 +2,7 @@
 //! the pending and off states, and the partial-scroll row slice.
 
 use super::*;
-use crate::log::ResultImage;
+use crate::record::log::ResultImage;
 
 /// A deterministic gradient PNG, carried inline the way an offline log's
 /// entries carry their bytes.

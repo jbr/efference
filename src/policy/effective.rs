@@ -22,7 +22,7 @@ pub fn effective_config(base: &Config, log: &[LogEntry]) -> Config {
         // Only a committed edit takes effect; a `Proposed`/`Cancelled` entry is audit-only and
         // inert in the effective config (docs/permissions.md).
         if let Payload::ConfigEdit(edit) = &entry.payload
-            && edit.state == crate::log::EditState::Committed
+            && edit.state == crate::record::log::EditState::Committed
         {
             apply_config_change(&mut role, &edit.change);
         }

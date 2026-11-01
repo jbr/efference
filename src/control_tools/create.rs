@@ -229,8 +229,8 @@ impl ControlVerb for Create {
         // (docs/worktrees.md).
         let cwd = request.cwd.clone();
         let child_project =
-            crate::session_dir::worktree::project_of(&cwd).unwrap_or_else(|| cwd.clone());
-        let base = child_project.join(crate::session_dir::SESSION_BASE);
+            crate::record::session_dir::worktree::project_of(&cwd).unwrap_or_else(|| cwd.clone());
+        let base = child_project.join(crate::record::session_dir::SESSION_BASE);
         let project = caller
             .storage_base()
             .map(crate::policy::lexical_normalize)

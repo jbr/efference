@@ -7,7 +7,7 @@
 //! the fast path's name grant and moves live with the session's grants.
 
 use super::*;
-use crate::names::tools::{
+use crate::record::names::tools::{
     AGENTS_NAMESPACE, ASK, BUILTIN_NAMESPACE, CHECK_INBOX, CONSOLIDATE, KILL_PROCESS,
     LIST_PROCESSES, LSP_NAMESPACE, NAMESPACE_SEPARATOR, READ_PROCESS, WAIT, WATCH_PROCESS,
     display_name, is_namespace_glob, is_triage_tool, namespace_glob, namespace_of,

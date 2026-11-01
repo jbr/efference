@@ -4,7 +4,7 @@
 //! detached task, so the loop never waits for it.
 
 use super::*;
-use crate::log::{LogEntry, Title, TitleAuthor, latest_title};
+use crate::record::log::{LogEntry, Title, TitleAuthor, latest_title};
 use std::sync::Arc;
 
 /// A trajectory count past which a title is re-asked with no user turn in

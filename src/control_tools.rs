@@ -26,8 +26,8 @@
 
 use std::path::PathBuf;
 
-use crate::log::ToolCall;
 use crate::protocol::agents::BoundAction;
+use crate::record::log::ToolCall;
 use anyhow::{Result, anyhow};
 
 mod archive;
@@ -224,7 +224,7 @@ fn operator_verb(name: &str) -> anyhow::Error {
 
 /// The clock the answers measure durations against, in Unix millis.
 fn now() -> u64 {
-    crate::log::Timestamp::now().0
+    crate::record::log::Timestamp::now().0
 }
 
 #[cfg(test)]

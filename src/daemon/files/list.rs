@@ -17,8 +17,8 @@
 //! terminate, and a link's target is one request away by its own path.
 
 use crate::daemon::files_view::ignores::Scope;
-use crate::log::Timestamp;
 use crate::protocol::files::{DirEntry, DirEntryKind, DirListing};
+use crate::record::log::Timestamp;
 use std::path::Path;
 
 /// The deepest a recursive listing walks. A finder wants the project's path

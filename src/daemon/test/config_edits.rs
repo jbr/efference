@@ -46,7 +46,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
     shared
         .append(
             0,
-            edit(crate::log::ConfigChange::Scope {
+            edit(crate::record::log::ConfigChange::Scope {
                 text: "stay in src/".into(),
             }),
         )
@@ -61,7 +61,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
     shared
         .append(
             0,
-            edit(crate::log::ConfigChange::Path {
+            edit(crate::record::log::ConfigChange::Path {
                 path: ".".into(),
                 read: true,
                 write: true,
@@ -96,7 +96,7 @@ fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
     let proposal_seq = shared
         .append(
             0,
-            proposed_edit(crate::log::ConfigChange::Command {
+            proposed_edit(crate::record::log::ConfigChange::Command {
                 command: "npm".into(),
             }),
         )
@@ -122,9 +122,9 @@ fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
         .append(
             0,
             Payload::ConfigEdit(
-                crate::log::ConfigEdit::new(
+                crate::record::log::ConfigEdit::new(
                     EditState::Committed,
-                    crate::log::ConfigChange::Command {
+                    crate::record::log::ConfigChange::Command {
                         command: "npm".into(),
                     },
                 )
@@ -276,7 +276,7 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
     let proposal_seq = shared
         .append(
             0,
-            proposed_edit(crate::log::ConfigChange::Command {
+            proposed_edit(crate::record::log::ConfigChange::Command {
                 command: "npm".into(),
             }),
         )
@@ -287,9 +287,9 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
         .append(
             0,
             Payload::ConfigEdit(
-                crate::log::ConfigEdit::new(
+                crate::record::log::ConfigEdit::new(
                     EditState::Cancelled,
-                    crate::log::ConfigChange::Command {
+                    crate::record::log::ConfigChange::Command {
                         command: "npm".into(),
                     },
                 )
@@ -332,7 +332,7 @@ fn resolve_proposal_decision_commits_and_cancels() {
     let seq = shared
         .append(
             0,
-            proposed_edit(crate::log::ConfigChange::Command {
+            proposed_edit(crate::record::log::ConfigChange::Command {
                 command: "npm".into(),
             }),
         )
@@ -369,7 +369,7 @@ fn resolve_proposal_decision_commits_and_cancels() {
     let seq2 = shared
         .append(
             0,
-            proposed_edit(crate::log::ConfigChange::Command {
+            proposed_edit(crate::record::log::ConfigChange::Command {
                 command: "cargo".into(),
             }),
         )

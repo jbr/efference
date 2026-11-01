@@ -23,14 +23,14 @@ use schemars::transform::{Transform, transform_subschemas};
 use serde_json::{Map, Value};
 
 use crate::catalog::{ConnectionCatalog, ModelRole};
-use crate::devices::Enrolled;
 use crate::inference::ResolvedOptions;
-use crate::log::LogEntry;
+use crate::platform::devices::Enrolled;
 use crate::process_monitor::ProcessRecord;
 use crate::protocol::stream::StreamDelta;
 use crate::protocol::{
     answers, attention, files, projects, sessions, sign_in, state, status, turns,
 };
+use crate::record::log::LogEntry;
 use crate::tools::ToolEntry;
 
 use super::artifacts::Link;

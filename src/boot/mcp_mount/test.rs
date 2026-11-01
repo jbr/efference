@@ -47,7 +47,7 @@ async fn a_refused_authorization_fails_the_mount_without_the_dance() {
         },
     )]);
     let store: Arc<dyn TokenStore> = Arc::new(auth::store::KeychainStore::new(Arc::new(
-        crate::secrets::Secrets::in_memory(),
+        crate::platform::secrets::Secrets::in_memory(),
     )));
     let waited = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let told = Arc::clone(&waited);

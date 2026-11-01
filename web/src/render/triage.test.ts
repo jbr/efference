@@ -1,4 +1,4 @@
-// Mirrors `src/project/test/triaged.rs` case for case (the cordon's
+// Mirrors `src/record/project/test/triaged.rs` case for case (the cordon's
 // divergence check — see triage.ts). If a case changes there, change it
 // here; if it can't be mirrored, the port has drifted.
 
@@ -199,7 +199,7 @@ test("wireView dispatches per wire state like tool_result_block", () => {
   );
 });
 
-// Parity with `render_interruption` (src/project/render.rs): the operator reads the
+// Parity with `render_interruption` (src/record/project/render.rs): the operator reads the
 // line the model read.
 test("an interruption renders as the wire's line", () => {
   expect(

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 
 use super::store::TokenStore;
-use crate::oauth::token::{self, Tokens};
+use crate::platform::oauth::token::{self, Tokens};
 
 /// One server's grant, held by the transport that sends it, with the store it
 /// was read from and is renewed into.
@@ -86,7 +86,7 @@ impl Credentials {
         }
         log::debug!("refreshing the grant for `{}`", self.server);
         let tokens = token::refresh(
-            &crate::oauth::http_client(),
+            &crate::platform::oauth::http_client(),
             &stored.token_endpoint,
             &stored.tokens,
             &stored.client_id,

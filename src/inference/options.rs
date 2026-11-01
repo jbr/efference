@@ -445,8 +445,8 @@ impl InferenceRegistry {
     /// within a provider so the choice is the same on every host with this config.
     fn decision_spotter(&self) -> Option<ModelSelection> {
         [
-            crate::log::Provider::TypeSafe,
-            crate::log::Provider::OpenRouter,
+            crate::record::log::Provider::TypeSafe,
+            crate::record::log::Provider::OpenRouter,
         ]
         .into_iter()
         .find_map(|provider| {

@@ -152,44 +152,44 @@ Read top-down; open the subsystem doc you need.
 
 | Subsystem | Doc | Governing modules |
 | --- | --- | --- |
-| The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/log.rs` (+ `src/log/`), `src/project.rs`, `src/persist.rs` |
-| The names a recorded entry carries — tool and namespace names, and the labels a turn's `source` is written in | [tools.md](tools.md), [log-and-projection.md](log-and-projection.md) | `src/names.rs`, `src/names/tools.rs`, `src/names/sources.rs` |
-| Per-result triage — how every tool result is triaged, and the text view a separate triage model reads | [triage.md](triage.md) | `src/triage.rs`, `src/triage/text_view.rs`, `src/project.rs` |
+| The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/record/log.rs` (+ `src/record/log/`), `src/record/project.rs`, `src/record/persist.rs` |
+| The names a recorded entry carries — tool and namespace names, and the labels a turn's `source` is written in | [tools.md](tools.md), [log-and-projection.md](log-and-projection.md) | `src/record/names.rs`, `src/record/names/tools.rs`, `src/record/names/sources.rs` |
+| Per-result triage — how every tool result is triaged, and the text view a separate triage model reads | [triage.md](triage.md) | `src/triage.rs`, `src/triage/text_view.rs`, `src/record/project.rs` |
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry; which tools a session mounts) | [tools.md](tools.md) | `src/tools.rs`, `src/tools/lsp.rs`, `src/bash.rs`, `src/agent/telemetry.rs`, `src/config/tools.rs` |
 | Trajectory consolidation (completed working spans and juncture checks) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
 | Trajectory digest (one line per call, the summarization substrate) | [digest.md](digest.md) | `src/digest.rs` |
-| Summaries (the record that replaces a range of the transcript) and compaction (the harness writing one from the digest) | [summary.md](summary.md) | `src/log/summary.rs`, `src/compact.rs`, `src/daemon/compact.rs`, `src/project.rs`, `assets/prompts/` |
+| Summaries (the record that replaces a range of the transcript) and compaction (the harness writing one from the digest) | [summary.md](summary.md) | `src/record/log/summary.rs`, `src/compact.rs`, `src/daemon/compact.rs`, `src/record/project.rs`, `assets/prompts/` |
 | Ambient notifications — the inbox (enqueue then triage), and the attachment store | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs`, `src/attachments.rs`, `src/daemon/attachments.rs` |
 | Session status — the one view of where a session stands (the `status` topic), its plaintext rendering, and the subscriptions that post it | [tools.md](tools.md), [control-api.md](control-api.md) | `src/protocol/status.rs`, `src/daemon/status.rs` (+ `src/daemon/status/`), `src/daemon/subscriptions.rs` |
 | Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/triage/title.rs` |
 | Starting sessions — the host's entry for a session while its environment and MCP servers are prepared, and how a failure or an archive ends it | [control-api.md](control-api.md) | `src/daemon/starting.rs`, `src/daemon/host/entries.rs`, `src/daemon/host/preparation.rs` |
 | Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/daemon/host_http/patch.rs`, `src/daemon/host_http/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |
-| Worktree sessions — a session's own git checkout, and the project/working directory pair | [worktrees.md](worktrees.md) | `src/worktree.rs`, `src/session_dir/worktree.rs`, `src/policy/directories.rs`, `src/boot.rs`, `src/daemon/host.rs` |
-| Background processes — the process monitor | [process-monitor.md](process-monitor.md) | `src/process_monitor.rs`, `src/bash.rs`, `src/spawn.rs`, `src/terminal_text.rs`, `src/daemon/background.rs` |
+| Worktree sessions — a session's own git checkout, and the project/working directory pair | [worktrees.md](worktrees.md) | `src/worktree.rs`, `src/record/session_dir/worktree.rs`, `src/policy/directories.rs`, `src/boot.rs`, `src/daemon/host.rs` |
+| Background processes — the process monitor | [process-monitor.md](process-monitor.md) | `src/process_monitor.rs`, `src/bash.rs`, `src/platform/spawn.rs`, `src/platform/terminal_text.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | The control channel's contract — the session collection's bodies, rows and answers, a turn's submission id and where it landed, `GET /state` (`StateTopics`) and a type per state topic, the status view, the `output` class's deltas, transcript reads and the read cursor, the attention report, and the small bodies routes answer with: the `{status}` word, the remembered locations, a directory listing, the sign-in and enrollment answers | [control-api.md](control-api.md) | `src/protocol.rs`, `src/protocol/sessions.rs`, `src/protocol/turns.rs`, `src/protocol/state.rs` (+ `src/protocol/state/`), `src/protocol/status.rs`, `src/protocol/stream.rs`, `src/protocol/transcript.rs`, `src/protocol/attention.rs`, `src/protocol/answers.rs`, `src/protocol/projects.rs`, `src/protocol/files.rs`, `src/protocol/inventory.rs`, `src/protocol/sign_in.rs` |
-| The session directory — the base session dirs live under, the log's file name, which ids may name a session, and the owner-only modes it and its files are created with | [control-channel.md](control-channel.md), [state-store.md](state-store.md) | `src/session_dir.rs`, `src/daemon/permissions.rs` |
+| The session directory — the base session dirs live under, the log's file name, which ids may name a session, and the owner-only modes it and its files are created with | [control-channel.md](control-channel.md), [state-store.md](state-store.md) | `src/record/session_dir.rs`, `src/daemon/permissions.rs` |
 | The `agents__*` tool contract — the namespace, the wire names the loop treats specially, the `decide` argument, and the `BoundAction` a decision binds | [tools.md](tools.md), [permissions.md](permissions.md) | `src/protocol.rs`, `src/protocol/agents.rs`, `src/control_tools.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |
 | The `[context]` preamble builder — what the session boots knowing | [context.md](context.md) | `src/context.rs`, `src/config.rs`, `src/env.rs`, `src/policy.rs`, `src/guide.rs` |
 | Operating a session — what an operator can see, change, and say (usage, not architecture) | [operating.md](operating.md) | `src/client.rs`, `src/control_tools.rs`, `src/bin/efference/control.rs`, `src/bin/efference/verbs.rs` |
-| The `[env]` table — stripping and injecting env vars at spawn, masking them at append, resolving vault references | [env.md](env.md) | `src/env_table.rs`, `src/env_table/resolve.rs`, `src/persist.rs`, `src/bash.rs` |
-| Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/http.rs` |
+| The `[env]` table — stripping and injecting env vars at spawn, masking them at append, resolving vault references | [env.md](env.md) | `src/env_table.rs`, `src/env_table/resolve.rs`, `src/record/persist.rs`, `src/bash.rs` |
+| Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/platform/http.rs` |
 | Host-owned inference — named connections, credential loading, per-role model selection | [transport.md](transport.md) | `src/user_config.rs`, `src/inference.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | Config schemas — the published JSON schemas for both config files, and the `#:schema` line that names them | [config-schemas.md](config-schemas.md) | `src/config_schemas.rs`, `src/config/raw.rs`, `src/user_config.rs`, `assets/schemas/` |
-| The user state database — `~/.efference/state.db`, and the table per module that owns it | [state-store.md](state-store.md) | `src/state.rs` (+ each table's module) |
+| The user state database — `~/.efference/state.db`, and the table per module that owns it | [state-store.md](state-store.md) | `src/platform/state.rs` (+ each table's module) |
 | Model catalog — each connection's normalized model listing, stored in the state database | [model-catalog.md](model-catalog.md) | `src/catalog.rs`, `src/daemon/host_http/catalog.rs`, `src/api/provider/row.rs` |
-| MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/auth.rs` (+ `src/mcp/auth/`), `src/mcp/http.rs` |
-| The secret store — API keys and OAuth grants in the OS credential store, or through `[secrets]` commands | [secrets.md](secrets.md) | `src/secrets.rs`, `src/secrets/commands.rs`, `src/mcp/auth/store.rs`, `src/user_config.rs`, `src/inference.rs` |
-| The TCP bind — the web client's front door (root-derived credentials, enrolled devices, signing a browser in by approval, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/devices.rs`, `src/sign_ins.rs`, `src/daemon/handler.rs`, `src/daemon/serve.rs`, `src/daemon/host_routes.rs`, `src/daemon/tcp.rs` (+ `src/daemon/tcp/`), `src/bin/efference/devices.rs` |
+| MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/platform/oauth.rs` (+ `src/platform/oauth/`), `src/platform/www_authenticate.rs`, `src/mcp/auth.rs` (+ `src/mcp/auth/`), `src/mcp/http.rs` |
+| The secret store — API keys and OAuth grants in the OS credential store, or through `[secrets]` commands | [secrets.md](secrets.md) | `src/platform/secrets.rs`, `src/platform/secrets/commands.rs`, `src/mcp/auth/store.rs`, `src/user_config.rs`, `src/inference.rs` |
+| The TCP bind — the web client's front door (root-derived credentials, enrolled devices, signing a browser in by approval, the gate) | [web-bind.md](web-bind.md) | `src/platform/auth.rs`, `src/platform/devices.rs`, `src/platform/sign_ins.rs`, `src/daemon/handler.rs`, `src/daemon/serve.rs`, `src/daemon/host_routes.rs`, `src/daemon/tcp.rs` (+ `src/daemon/tcp/`), `src/bin/efference/devices.rs` |
 | The web client, component gallery, and stream tape/replay API | [web-client.md](web-client.md) | `web/`, `src/daemon/tcp/gate.rs`, `src/daemon/tcp/headers.rs`, `src/daemon/tcp/routes.rs` |
-| Fenced HTML artifacts — signed links, sandbox, runtime, theme, built-in libraries and files | [artifacts.md](artifacts.md) | `src/artifact.rs`, `src/daemon/artifacts.rs` (+ `src/daemon/artifacts/`), `src/tui/artifacts.rs`, `web/src/ui/Artifact.tsx`, `web/public/artifacts/`, `web/src/theme/`, `assets/artifact-libs/`, `assets/guide/artifacts.md` |
-| The update check — the signed `latest.json`, `efference update --check`, the host's daily check, and the `newer_version` topic | [update-check.md](update-check.md) | `src/update_check.rs`, `src/user_config/updates.rs`, `src/daemon/host/update_check.rs`, `src/daemon/newer_version.rs`, `src/bin/efference/update.rs`, `src/setup/updates.rs` |
-| Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/push.rs` (+ `src/push/`), `src/daemon/push.rs`, `src/daemon/attention.rs`, `src/daemon/host/attention_report.rs`, `src/daemon/delayed_push.rs` |
-| The TUI client | [tui.md](tui.md) | `src/tui/`, `src/user_config/tui.rs`, `src/terminal_title.rs` |
+| Fenced HTML artifacts — signed links, sandbox, runtime, theme, built-in libraries and files | [artifacts.md](artifacts.md) | `src/record/artifact.rs`, `src/daemon/artifacts.rs` (+ `src/daemon/artifacts/`), `src/tui/artifacts.rs`, `web/src/ui/Artifact.tsx`, `web/public/artifacts/`, `web/src/theme/`, `assets/artifact-libs/`, `assets/guide/artifacts.md` |
+| The update check — the signed `latest.json`, `efference update --check`, the host's daily check, and the `newer_version` topic | [update-check.md](update-check.md) | `src/platform/update_check.rs`, `src/user_config/updates.rs`, `src/daemon/host/update_check.rs`, `src/daemon/newer_version.rs`, `src/bin/efference/update.rs`, `src/setup/updates.rs` |
+| Web push — the daemon notifies a pocketed phone | [web-push.md](web-push.md) | `src/platform/push.rs` (+ `src/platform/push/`), `src/daemon/push.rs`, `src/daemon/attention.rs`, `src/daemon/host/attention_report.rs`, `src/daemon/delayed_push.rs` |
+| The TUI client | [tui.md](tui.md) | `src/tui/`, `src/user_config/tui.rs`, `src/platform/terminal_title.rs` |
 
 Where a module has grown a directory beside it (`src/api/`, `src/config/`, `src/policy/`,
-`src/project/`, `src/triage/`, `src/context/`, `src/daemon/`, `src/tui/*/`), the `.rs` file
+`src/record/project/`, `src/triage/`, `src/context/`, `src/daemon/`, `src/tui/*/`), the `.rs` file
 holds the subsystem's vocabulary and public surface and the directory holds one file per
 concern; each module's tests live in its own `test.rs`.
 
@@ -215,27 +215,41 @@ inbox), `background.rs` (the process monitor), `phase.rs` (where the loop is) an
 
 ## Dependency direction
 
-The top-level modules import in one direction, and `src/test/layering.rs` fails on an
-import that runs the other way. Three rules hold:
+The crate's modules import in one direction, and `src/test/layering.rs` fails on an
+import that runs the other way. A group is a directory under `src/` whose file of the same
+name declares its members (`src/platform.rs`, `src/record.rs`); the modules not yet in a
+group are at the top of `src/`. Five rules hold:
 
-- **`names` imports no other top-level module.** It holds the names a recorded entry
+- **`record::names` imports no other module.** It holds the names a recorded entry
   carries and its readers match on: tool and namespace names with the helpers that take
-  them apart (`src/names/tools.rs`), and the labels a turn's `source` is written in
-  (`src/names/sources.rs`).
-- **`log` imports no other top-level module but `names`.** It holds the vocabulary a record
-  is written in, which includes the shapes other subsystems fill in or read: a provider and
+  them apart (`src/record/names/tools.rs`), and the labels a turn's `source` is written in
+  (`src/record/names/sources.rs`).
+- **`record::log` imports no other module but `record::names`.** It holds the vocabulary a
+  record is written in, which includes the shapes other subsystems fill in or read: a provider and
   its wire dialect, a gate's `Approval`, the resolved `[context]`, an attachment's
   `Arrival`, the spotter's `Axes`, and the triage model a preamble records. Behavior that
   needs another subsystem stays with it, as `impl` blocks on the type the log defines: `api`
   implements `Provider`, and `context` resolves and renders `Resolved`.
+- **`platform` imports no other group.** It holds the machine and user services that know
+  nothing of a session: the user state database, the secret store, the shared HTTP client,
+  OAuth and `WWW-Authenticate` parsing, push sending, the update check, the TCP bind's
+  credentials, enrolled devices and sign-ins, and the helpers for spawning processes,
+  watching files, terminal text and titles, home-relative paths and pretty-printing.
+- **`record` imports only `platform`.** It holds the log and its deterministic views:
+  `names`, `log`, `persist`, `recovery`, `project`, `artifact` and `session_dir`.
 - **A module outside the outer set imports nothing from it.** The outer set is `daemon`
   and `boot`, which host sessions; `control_tools`, the session-control verbs; and the
   clients `client`, `tui`, `setup` and the `bin` crate. What the inner modules and the
-  outer ones both need sits in modules that import nothing above them: `src/session_dir.rs`
+  outer ones both need sits in modules that import nothing above them: `src/record/session_dir.rs`
   (where a session lives on disk) and `src/protocol.rs` (the names and shapes that cross
   the control channel or the tool wire).
 
-The imports that still run against the third rule are named in the test, each by the
+A rule names a group, a module or a module inside a group, and covers the modules below
+it: the test keys a file by its module path (`record/log/summary.rs` is
+`record::log::summary`) and an import by the path it spells. A `super::` chain that leaves
+its file's module counts as the `crate::` path it resolves to.
+
+The imports that still run against the last rule are named in the test, each by the
 file that makes it and the path it imports: the turn loop (`agent`) holds the `Session`
 and refreshes the config through `daemon`. A new import of that kind fails the test, and
 so does a named one that has gone, until its line is deleted. The toolbox (`tools`)
@@ -260,7 +274,7 @@ in-tree and is embedded in the serving binary.
 - **Present tense.** Describe what *is*, not what landed when. The dated narrative lives
   in [`../journal/`](../journal/); the shipped-feature list in [`../CHANGELOG.md`](../CHANGELOG.md).
 - **No file:line citations** — they rot. Name the governing module inline (e.g.
-  "implemented in `src/project.rs`") so a reader knows where to look, and let the code
+  "implemented in `src/record/project.rs`") so a reader knows where to look, and let the code
   carry the line-level detail.
 - **Depth bar:** a sufficiently sophisticated peer should be able to write a rough
   approximation of the project from these docs alone. The key types, the

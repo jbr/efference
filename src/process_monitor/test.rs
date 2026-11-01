@@ -1,5 +1,5 @@
 use super::*;
-use crate::names::tools::{
+use crate::record::names::tools::{
     CHECK_INBOX, KILL_PROCESS, LIST_PROCESSES, READ_PROCESS, WAIT, WATCH_PROCESS,
 };
 
@@ -71,7 +71,7 @@ fn finish_marks_exited_summarizes_and_leaves_the_show() {
     );
     assert_eq!(
         finished.exit.outcome,
-        crate::log::ExitOutcome::Unknown,
+        crate::record::log::ExitOutcome::Unknown,
         "a wait that reported no status says so rather than inventing a code"
     );
     assert!(s.views().is_empty(), "exited → off the ambient show");

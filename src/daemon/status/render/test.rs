@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::daemon::status::held_because;
-use crate::log::{Axes, CallId, Origin, Precedent, Spot, Stance};
 use crate::protocol::state::Cost;
+use crate::record::log::{Axes, CallId, Origin, Precedent, Spot, Stance};
 
 mod gate;
 

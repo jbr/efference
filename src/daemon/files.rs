@@ -51,8 +51,8 @@
 use super::files_view::Files;
 use super::files_view::ignores::Scope;
 use super::*;
-use crate::fswatch::{FsChange, FsWatch, WatchGuard};
-use crate::log::Timestamp;
+use crate::platform::fswatch::{FsChange, FsWatch, WatchGuard};
+use crate::record::log::Timestamp;
 use list::{Options, listing, modified_at};
 use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};
@@ -124,7 +124,7 @@ impl Files {
     }
 
     /// `GET` with an Accept that names `text/event-stream`: change pokes for one
-    /// file, over the core watcher (`crate::fswatch`; docs/web-bind.md). Each
+    /// file, over the core watcher (`crate::platform::fswatch`; docs/web-bind.md). Each
     /// event is the file's root-relative path and nothing else — the client
     /// answers with the conditional GET it would otherwise poll with, so the
     /// stream replaces only the timer.

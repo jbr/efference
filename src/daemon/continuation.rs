@@ -12,7 +12,7 @@
 //! re-sends the same prefix it would have sent had control never been handed back.
 
 use super::*;
-use crate::log::ContinueOrigin;
+use crate::record::log::ContinueOrigin;
 
 /// Why a `POST /loop/continue` was declined (docs/control-api.md). The daemon
 /// answers `409 not_continuable` carrying the message; a client renders it and
@@ -122,7 +122,7 @@ impl Session {
         let verdict = self.continue_verdict();
         self.person_acted(PersonAction::Continue);
         let verdict = verdict?;
-        let entry = Payload::Telemetry(crate::log::Telemetry::Continue(origin));
+        let entry = Payload::Telemetry(crate::record::log::Telemetry::Continue(origin));
         // The record must not stop what it describes.
         if let Err(e) = self.append(self.latest_turn(), entry) {
             log::warn!("continue record: append failed: {e}");
@@ -205,8 +205,8 @@ impl Session {
     /// The last live completion when the log ends at a pending batch — calls that never
     /// ran, or results awaiting their verdict (docs/resumption.md) — read from the log each
     /// time rather than from a flag.
-    pub(crate) fn pending_batch(&self) -> Option<crate::recovery::Completion> {
-        crate::recovery::pending_batch(self.log.lock().unwrap().entries())
+    pub(crate) fn pending_batch(&self) -> Option<crate::record::recovery::Completion> {
+        crate::record::recovery::pending_batch(self.log.lock().unwrap().entries())
     }
 
     /// Resolve when a continue is pending (docs/control-channel.md). Raced by the

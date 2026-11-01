@@ -36,7 +36,7 @@ fn line(label: &str, usage: &efference::api::RequestUsage) -> String {
 /// an `Err` where the send failed (warned at the send site).
 async fn plant(
     triage: &Triager,
-    turns: &[efference::project::WireTurn],
+    turns: &[efference::record::project::WireTurn],
     tools: &[serde_json::Value],
     choice: efference::api::ToolChoice,
 ) -> Option<Result<efference::api::RequestUsage, efference::api::Error>> {
@@ -80,7 +80,7 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
     let model = model.as_str();
     let gaps = parse_gaps(&gaps)?;
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
-    let entries = efference::persist::load(&path)?;
+    let entries = efference::record::persist::load(&path)?;
     let inference = inference::resolve(
         Some(model),
         None,
@@ -93,7 +93,7 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
             )
         }),
     );
-    let recorded_identity = efference::log::recorded_inference(&entries);
+    let recorded_identity = efference::record::log::recorded_inference(&entries);
 
     let all = triage_replay::recorded_triages(&entries);
     let triage = match seq {
@@ -113,8 +113,8 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
     // the assistant turn's *callers*, not its calls: the live input ends before the
     // calls it produced, and replaying them without their results is refused.
     let prefix = &entries[..triage.prefix_end];
-    let mut turns = efference::project::project_semantic(&entries[..triage.calls_at]);
-    turns.push(efference::project::WireTurn::Breakpoint);
+    let mut turns = efference::record::project::project_semantic(&entries[..triage.calls_at]);
+    turns.push(efference::record::project::WireTurn::Breakpoint);
     let pending: Vec<Pending<'_>> = triage
         .calls
         .iter()
@@ -182,7 +182,7 @@ fn emit_row(rows: &mut Vec<String>, row: String) {
 async fn ladder_clients(
     inference: Result<efference::inference::SessionInference, efference::api::Error>,
     path: &Path,
-    recorded_identity: Option<&efference::log::LoggedInference>,
+    recorded_identity: Option<&efference::record::log::LoggedInference>,
     system: String,
     context_block: Option<&str>,
 ) -> Result<(Triager, Client), CliError> {
@@ -217,9 +217,9 @@ async fn ladder_clients(
 struct Ladder<'a> {
     triage: &'a Triager,
     client: &'a Client,
-    turns: &'a [efference::project::WireTurn],
+    turns: &'a [efference::record::project::WireTurn],
     tools: &'a [serde_json::Value],
-    prefix: &'a [efference::log::LogEntry],
+    prefix: &'a [efference::record::log::LogEntry],
     pending: &'a [Pending<'a>],
     rows: &'a mut Vec<String>,
 }

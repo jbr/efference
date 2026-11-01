@@ -89,7 +89,7 @@ impl Screenplay<'_> {
     /// A committed assistant turn: markdown prose plus zero or more tool calls.
     pub(crate) fn assistant(&mut self, text: &str, calls: Vec<ToolCall>) -> &mut Self {
         self.commit(Payload::assistant(
-            crate::log::AssistantOutput::from_legacy_messages(
+            crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![],
                 vec![ContentBlock::Text(text.into())],
                 calls,
@@ -100,7 +100,7 @@ impl Screenplay<'_> {
     /// A committed assistant turn that did extended thinking first.
     pub(crate) fn assistant_thinking(&mut self, thinking: &str, text: &str) -> &mut Self {
         self.commit(Payload::assistant(
-            crate::log::AssistantOutput::from_legacy_messages(
+            crate::record::log::AssistantOutput::from_legacy_messages(
                 vec![ContentBlock::Thinking {
                     text: thinking.into(),
                     signature: String::new(),
@@ -148,15 +148,17 @@ impl Screenplay<'_> {
         name: &str,
         arguments: &str,
     ) -> &mut Self {
-        self.commit(Payload::assistant(crate::log::AssistantOutput::Responses(
-            vec![crate::log::ResponsesOutputItem::FunctionCall {
-                id: Some(format!("fc_{call_id}")),
-                call_id: CallId(call_id.into()),
-                name: name.into(),
-                arguments: arguments.into(),
-                status: Some("completed".into()),
-            }],
-        )));
+        self.commit(Payload::assistant(
+            crate::record::log::AssistantOutput::Responses(vec![
+                crate::record::log::ResponsesOutputItem::FunctionCall {
+                    id: Some(format!("fc_{call_id}")),
+                    call_id: CallId(call_id.into()),
+                    name: name.into(),
+                    arguments: arguments.into(),
+                    status: Some("completed".into()),
+                },
+            ]),
+        ));
         self.phase(LoopPhase::Requesting)
     }
 
@@ -165,7 +167,7 @@ impl Screenplay<'_> {
     pub(crate) fn running_bash(&mut self, call_id: &str, command: &str) -> &mut Self {
         self.running_tool(
             call_id,
-            crate::names::tools::BASH,
+            crate::record::names::tools::BASH,
             json!({ "command": command }),
         )
     }
@@ -203,7 +205,7 @@ impl Screenplay<'_> {
     /// entry the spotter logs for *every* judged call, cleared ones included, not only the
     /// gated ones a human ever sees a prompt for.
     pub(crate) fn spot(&mut self, call_id: &str, stance: Stance, reason: &str) -> &mut Self {
-        self.commit(Payload::Spot(crate::log::Spot::new(
+        self.commit(Payload::Spot(crate::record::log::Spot::new(
             CallId(call_id.into()),
             stance,
             reason,
@@ -240,7 +242,7 @@ impl Screenplay<'_> {
         &mut self,
         call_id: &str,
         content: &str,
-        images: Vec<crate::log::ResultImage>,
+        images: Vec<crate::record::log::ResultImage>,
     ) -> &mut Self {
         self.commit(Payload::tool_result(
             call_id,

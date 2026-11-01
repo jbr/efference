@@ -1,7 +1,7 @@
 //! Flag values the `dev` verbs parse: the `--stance`, `--format` and `--view-dialect`
 //! choices and the spotter tester's `--path` grant spec.
 
-/// A spotter [`Stance`](efference::log::Stance) as a `--stance` filter value for the
+/// A spotter [`Stance`](efference::record::log::Stance) as a `--stance` filter value for the
 /// `spotter-log` dev survey. Mirrors the log's four verdicts.
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum StanceArg {
@@ -12,8 +12,8 @@ pub(crate) enum StanceArg {
 }
 
 impl StanceArg {
-    pub(crate) fn matches(self, stance: efference::log::Stance) -> bool {
-        use efference::log::Stance;
+    pub(crate) fn matches(self, stance: efference::record::log::Stance) -> bool {
+        use efference::record::log::Stance;
         matches!(
             (self, stance),
             (StanceArg::Clear, Stance::Clear)

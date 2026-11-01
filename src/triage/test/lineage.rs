@@ -8,7 +8,7 @@ use super::*;
 /// replay input.
 #[test]
 fn triage_thinking_joins_thinking_text_only() {
-    use crate::log::ContentBlock;
+    use crate::record::log::ContentBlock;
 
     let assistant = |thinking: Vec<ContentBlock>| {
         Payload::assistant(AssistantOutput::from_legacy_messages(
@@ -56,7 +56,7 @@ fn triage_thinking_joins_thinking_text_only() {
 fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_only_the_selection()
 {
     use crate::api::{PromptCachePolicy, encode_responses};
-    use crate::log::{Keep, ResponsesOutputItem, Triaged, WireState};
+    use crate::record::log::{Keep, ResponsesOutputItem, Triaged, WireState};
 
     let call = ToolCall::new("bash", "call_1", json!({ "command": "ls" }));
     let prefix = vec![
@@ -131,7 +131,7 @@ fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_o
             WireState::from(Triaged::new(Keep::Ranges(vec![(1, 1)])).with_note("kept the first")),
         ),
     ));
-    let mut canonical = crate::project::project_semantic(&log);
+    let mut canonical = crate::record::project::project_semantic(&log);
     canonical.push(WireTurn::Breakpoint);
     let canonical_input = encode_responses(&canonical, "", PromptCachePolicy::Explicit);
     let canonical_json: Vec<Value> = canonical_input
@@ -204,7 +204,7 @@ fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_o
 #[test]
 fn own_triage_sends_its_own_client_and_only_the_triage_tools() {
     let endpoint = crate::api::Endpoint::from_credentials(
-        crate::log::Provider::Anthropic,
+        crate::record::log::Provider::Anthropic,
         "sk-ant-xyz",
         None,
         None,
@@ -244,7 +244,7 @@ fn own_triage_sends_its_own_client_and_only_the_triage_tools() {
 #[test]
 fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
     let endpoint = crate::api::Endpoint::from_credentials(
-        crate::log::Provider::Anthropic,
+        crate::record::log::Provider::Anthropic,
         "sk-ant-xyz",
         None,
         None,

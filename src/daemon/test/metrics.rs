@@ -242,7 +242,7 @@ fn only_main_prefix_requests_stamp_the_touch_clock() {
 fn attaching_the_usage_record_seeds_the_clocks() {
     let (log_path, _log_path_dir) = temp_file("seed-clocks-test.jsonl");
     let (usage_path, _usage_path_dir) = temp_file("seed-clocks-test-usage.jsonl");
-    let now = crate::log::Timestamp::now().0 as u128;
+    let now = crate::record::log::Timestamp::now().0 as u128;
     let minutes_ago = |m: u128| now - m * 60_000;
     let lines = [
         (minutes_ago(30), "turn"),
@@ -292,7 +292,7 @@ fn a_shared_triage_line_seeds_the_touch_clock() {
     assert_eq!(lines[1]["main_prefix"], true);
 
     // Backdate the record so the seeded clock is distinguishable from a fresh stamp.
-    let now = crate::log::Timestamp::now().0 as u128;
+    let now = crate::record::log::Timestamp::now().0 as u128;
     let minutes_ago = |m: u128| now - m * 60_000;
     let record = format!(
         "{{\"at_ms\":{},\"origin\":\"turn\"}}\n{{\"at_ms\":{},\"origin\":\"triage\"}}\n",
@@ -414,7 +414,7 @@ fn inline_cost_prices_a_request_and_is_recorded() {
     // (not run here: no runtime). The first two must reach the total by themselves.
     shared.enable_cost_tracking(
         crate::api::Endpoint::at(
-            crate::log::Provider::OpenRouter,
+            crate::record::log::Provider::OpenRouter,
             "http://127.0.0.1:9/api/v1/messages",
         )
         .with_auth_value("Bearer test".into()),

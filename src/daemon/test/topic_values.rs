@@ -152,16 +152,16 @@ fn state_reports_the_session_identity() {
 
     // A title decision (docs/session-title.md) lands in the log and on the topic.
     let seq = shared
-        .set_title(crate::log::Title::new(
+        .set_title(crate::record::log::Title::new(
             "Session names: a random slug and a triage-kept title",
-            crate::log::TitleAuthor::Operator,
+            crate::record::log::TitleAuthor::Operator,
         ))
         .unwrap()
         .expect("an identity was set");
     let entries = shared.snapshot();
     assert!(matches!(
         &entries[seq as usize].payload,
-        Payload::Title(t) if t.author == crate::log::TitleAuthor::Operator
+        Payload::Title(t) if t.author == crate::record::log::TitleAuthor::Operator
     ));
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(
@@ -223,7 +223,7 @@ fn state_reports_cache_telemetry() {
     // `usage` topic does not re-emit on every read (docs/control-api.md); a client
     // subtracts from its own clock.
     let at = v["usage"]["last_request_at"].as_u64().expect("stamped");
-    let now = crate::log::Timestamp::now().0;
+    let now = crate::record::log::Timestamp::now().0;
     assert!(at <= now && now - at < 60_000, "a plausible recent stamp");
     // The cold-read streak rides the same topic (docs/log-and-projection.md): the
     // first turn's cold read was the session's boot, the second was warm, so nothing
@@ -257,7 +257,7 @@ fn state_reports_cache_telemetry() {
     let miss_at = v["usage"]["last_cache_miss"]["at"]
         .as_u64()
         .expect("an absolute stamp");
-    assert!(miss_at <= crate::log::Timestamp::now().0);
+    assert!(miss_at <= crate::record::log::Timestamp::now().0);
 }
 
 /// `GET /state` reports context-window occupancy (docs/transport.md): null with
@@ -385,7 +385,7 @@ fn state_reports_session_cost_only_when_armed() {
 
     shared.enable_cost_tracking(
         crate::api::Endpoint::at(
-            crate::log::Provider::OpenRouter,
+            crate::record::log::Provider::OpenRouter,
             "https://openrouter.ai/api/v1/messages",
         )
         .with_auth_value("Bearer sk-or-test".into()),
@@ -559,7 +559,7 @@ async fn state_json_surfaces_running_processes() {
     let at = procs[0]["spawned_at"]
         .as_u64()
         .expect("absolute spawn stamp");
-    let now = crate::log::Timestamp::now().0;
+    let now = crate::record::log::Timestamp::now().0;
     assert!(at <= now && now - at < 60_000, "a plausible recent stamp");
     assert!(
         procs[0]["tail"].is_null(),
@@ -578,7 +578,7 @@ async fn state_json_surfaces_running_processes() {
 /// that a withheld result stays out of the ratio it would otherwise flatter.
 #[test]
 fn state_reports_triage_retention() {
-    use crate::log::{Keep, RawResult, Triaged, WireState};
+    use crate::record::log::{Keep, RawResult, Triaged, WireState};
 
     let (shared, _turns_rx) = Session::in_memory();
     let result = |seq: u64, lines: usize, wire: WireState| {
@@ -725,7 +725,7 @@ fn state_reports_plan_windows_under_usage() {
 #[test]
 fn cold_topic_reports_an_expired_cache() {
     let (usage_path, _usage_path_dir) = temp_file("cold-topic-test-usage.jsonl");
-    let at = crate::log::Timestamp::now().0 - 10 * 60_000;
+    let at = crate::record::log::Timestamp::now().0 - 10 * 60_000;
     std::fs::write(
         &usage_path,
         format!(

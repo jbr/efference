@@ -17,7 +17,7 @@ pub(super) fn load_credential(
     let mut renew_at = None;
     let (token, account, label, reload) = match auth {
         AuthConfig::Keychain { name: item } => {
-            let item = crate::secrets::inference_name(item.as_deref().unwrap_or(name));
+            let item = crate::platform::secrets::inference_name(item.as_deref().unwrap_or(name));
             let token = secrets
                 .get(&item)
                 .map_err(|error| error.to_string())?

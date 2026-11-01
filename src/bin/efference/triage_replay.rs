@@ -17,7 +17,7 @@ mod sweep;
 use super::*;
 use crate::dev::TriageArgs;
 use efference::inference::TriageModel;
-use efference::project::Reader;
+use efference::record::project::Reader;
 use efference::triage::{Pending, TriageView, Triager, triage_request};
 use std::io::Write;
 
@@ -69,7 +69,7 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
     // A `log.jsonl`, or a session dir / name that resolves to one — the same target
     // grammar the other reader verbs take.
     let (path, label) = resolve_session_log(&path.to_string_lossy())?;
-    let entries = efference::persist::load(&path)?;
+    let entries = efference::record::persist::load(&path)?;
     let inference = inference::resolve(
         Some(model),
         None,
@@ -82,7 +82,7 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
             )
         }),
     );
-    let recorded_identity = efference::log::recorded_inference(&entries);
+    let recorded_identity = efference::record::log::recorded_inference(&entries);
     let (placement, breakpoint) =
         projection_shapes(inference.as_ref().ok(), recorded_identity, model);
     let all = recorded_triages(&entries);
@@ -164,11 +164,11 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
 /// legacy log falls back to the defaults (docs/log-and-projection.md).
 fn projection_shapes(
     inference: Option<&efference::inference::SessionInference>,
-    recorded: Option<&efference::log::LoggedInference>,
+    recorded: Option<&efference::record::log::LoggedInference>,
     model: &str,
 ) -> (
-    efference::project::ImagePlacement,
-    efference::project::BreakpointPlacement,
+    efference::record::project::ImagePlacement,
+    efference::record::project::BreakpointPlacement,
 ) {
     let (provider, placement_model) = match inference {
         Some(inference) => (Some(inference.main().1.provider), model),
@@ -232,13 +232,13 @@ fn note_unlogged_background(selected: &[&Recorded]) {
 /// `whole_session` is whether no `--seq` narrowed the triages, which prints the session's
 /// tail sizes rather than one request.
 fn dry_run_report(
-    entries: &[efference::log::LogEntry],
+    entries: &[efference::record::log::LogEntry],
     selected: &[&Recorded],
     (reader, view): (Reader, TriageView),
     whole_session: bool,
     (placement, breakpoint): (
-        efference::project::ImagePlacement,
-        efference::project::BreakpointPlacement,
+        efference::record::project::ImagePlacement,
+        efference::record::project::BreakpointPlacement,
     ),
 ) -> CliResult {
     if view == TriageView::Text {
@@ -292,7 +292,7 @@ fn dry_run_report(
         TriageView::Transcript => &messages[messages.len() - 1..],
         _ => &messages[..],
     };
-    let messages = efference::project::encode_messages(shown, placement, breakpoint);
+    let messages = efference::record::project::encode_messages(shown, placement, breakpoint);
     println!("{}", efference::api::render_messages_pretty(&messages)?);
     Ok(())
 }

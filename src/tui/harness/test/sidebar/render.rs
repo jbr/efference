@@ -8,13 +8,13 @@ use crate::api::Usage;
 use crate::config::CommandStance;
 use crate::config::{Perms, ToolSettings};
 use crate::inference::{InferenceIdentity, TriageIdentity};
-use crate::log::{ConfigChange, Provider, Timestamp};
 use crate::policy::ReviewLevel;
-use crate::project::Retention;
 use crate::protocol::state::{
     ContextWindow, Cost, CurrentOperations, KeepaliveSkip, KeepaliveSkipReason, LoopPhase,
     OpenCompaction, PendingProposal, RoleView, SessionIdentity, UsageView, VerbAnswer, Verbs,
 };
+use crate::record::log::{ConfigChange, Provider, Timestamp};
+use crate::record::project::Retention;
 use crate::tui::harness::{cold, process, session_identity};
 use crate::user_config::ModelSelection;
 

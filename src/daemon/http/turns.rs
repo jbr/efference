@@ -118,10 +118,10 @@ fn parse_turn(body: &str) -> Result<TurnBody, String> {
     // The kickoff's source is the harness's alone: the clients leave a turn carrying
     // it out of the transcript, so a client claiming it would be submitting a turn the
     // operator never sees (docs/context.md).
-    if turn.source.as_deref() == Some(crate::names::sources::KICKOFF_SOURCE) {
+    if turn.source.as_deref() == Some(crate::record::names::sources::KICKOFF_SOURCE) {
         return Err(format!(
             "source `{}` is reserved for the harness's first turn",
-            crate::names::sources::KICKOFF_SOURCE
+            crate::record::names::sources::KICKOFF_SOURCE
         ));
     }
     // Likewise a hand-off brief's: the clients render it as the predecessor's brief,
@@ -129,7 +129,7 @@ fn parse_turn(body: &str) -> Result<TurnBody, String> {
     if turn
         .source
         .as_deref()
-        .and_then(crate::names::sources::handoff_predecessor)
+        .and_then(crate::record::names::sources::handoff_predecessor)
         .is_some()
     {
         return Err("a `handoff[…]` source is reserved for a hand-off brief".to_string());
@@ -142,7 +142,7 @@ fn parse_turn(body: &str) -> Result<TurnBody, String> {
 fn resolve_attachments(
     shared: &Session,
     names: &[String],
-) -> Result<Vec<crate::log::attachment::Arrival>, String> {
+) -> Result<Vec<crate::record::log::attachment::Arrival>, String> {
     if names.is_empty() {
         return Ok(Vec::new());
     }

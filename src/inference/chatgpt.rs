@@ -18,13 +18,13 @@
 //! (`codex-rs/login/`), because OpenAI issues no client id to third parties —
 //! the public one below is what Codex, opencode, and pi all present.
 //!
-//! [`crate::oauth`] holds the protocol; this holds one issuer's choices.
+//! [`crate::platform::oauth`] holds the protocol; this holds one issuer's choices.
 
 use std::time::{Duration, SystemTime};
 
-use crate::oauth::token::Tokens;
-use crate::oauth::{authorize, loopback, pkce, token};
-use crate::secrets::Secrets;
+use crate::platform::oauth::token::Tokens;
+use crate::platform::oauth::{authorize, loopback, pkce, token};
+use crate::platform::secrets::Secrets;
 
 /// The issuer every request here goes to.
 const ISSUER: &str = "https://auth.openai.com";
@@ -93,7 +93,7 @@ impl std::fmt::Debug for Grant {
 impl Grant {
     /// Load the grant stored for `connection`, or `None` if there is none.
     pub fn load(secrets: &Secrets, connection: &str) -> Result<Option<Self>, String> {
-        let name = crate::secrets::oauth_name(connection);
+        let name = crate::platform::secrets::oauth_name(connection);
         let Some(json) = secrets.get(&name).map_err(|e| e.to_string())? else {
             return Ok(None);
         };
@@ -107,7 +107,7 @@ impl Grant {
     pub fn save(&self, secrets: &Secrets, connection: &str) -> Result<(), String> {
         let json = serde_json::to_string(self).map_err(|e| e.to_string())?;
         secrets
-            .set(&crate::secrets::oauth_name(connection), &json)
+            .set(&crate::platform::secrets::oauth_name(connection), &json)
             .map_err(|e| e.to_string())
     }
 
@@ -205,7 +205,7 @@ pub async fn log_in(
     .validate(&params)
     .map_err(|e| format!("the authorization response was rejected: {e}"))?;
 
-    let http = crate::oauth::http_client();
+    let http = crate::platform::oauth::http_client();
     let tokens = token::exchange_code(
         &http,
         &format!("{ISSUER}/oauth/token"),
@@ -259,7 +259,7 @@ pub async fn refresh(secrets: &Secrets, connection: &str, grant: &Grant) -> Resu
             grant.issuer
         ));
     }
-    let http = crate::oauth::http_client();
+    let http = crate::platform::oauth::http_client();
     let tokens = token::refresh_json(
         &http,
         &format!("{ISSUER}/oauth/token"),

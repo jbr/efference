@@ -12,7 +12,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::log::{Provider, WireDialect};
+use crate::record::log::{Provider, WireDialect};
 
 mod host;
 pub use host::HostConfig;
@@ -73,7 +73,7 @@ pub struct InferenceConfig {
     // docs/secrets.md), read by every process that opens the store. Its hover text is
     // `SecretCommands`'s.
     #[serde(default)]
-    pub(crate) secrets: Option<crate::secrets::SecretCommands>,
+    pub(crate) secrets: Option<crate::platform::secrets::SecretCommands>,
 }
 
 impl InferenceConfig {
@@ -100,15 +100,18 @@ impl InferenceConfig {
     /// unreadable or unparsable file is an error naming its path.
     pub fn secret_commands(
         home: &Path,
-    ) -> Result<Option<crate::secrets::SecretCommands>, Box<dyn std::error::Error + Send + Sync>>
-    {
+    ) -> Result<
+        Option<crate::platform::secrets::SecretCommands>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         Ok(Self::read_user(home)?.and_then(|config| config.secrets))
     }
 
     /// [`secret_commands`](Self::secret_commands) under this process's home directory.
-    pub fn user_secret_commands()
-    -> Result<Option<crate::secrets::SecretCommands>, Box<dyn std::error::Error + Send + Sync>>
-    {
+    pub fn user_secret_commands() -> Result<
+        Option<crate::platform::secrets::SecretCommands>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         let home = std::env::home_dir()
             .ok_or("no home directory to read ~/.efference/config.toml under")?;
         Self::secret_commands(&home)

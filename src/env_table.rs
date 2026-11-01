@@ -7,7 +7,7 @@
 //!   variable? Applied by [`ChildEnv`] at every spawn site.
 //! - **`mask`** — at log append: does the log ever store this variable's value?
 //!   Applied by [`Masker`] (see [`mask`]), which every text-bearing payload
-//!   passes through on its way into [`crate::persist::Log`].
+//!   passes through on its way into [`crate::record::persist::Log`].
 //!
 //! An entry may also say where its value **comes from** — a literal, or a
 //! reference resolved by running a command ([`resolve`]). A resolved value is
@@ -19,7 +19,7 @@
 //! secret a tool still needs.
 //!
 //! Masking is **irreversible filtering upstream of the log**, not a
-//! [`WireState`](crate::log::WireState) — the value never becomes `raw`, so
+//! [`WireState`](crate::record::log::WireState) — the value never becomes `raw`, so
 //! there is no reversible verdict to flip. See docs/log-and-projection.md for
 //! why that inversion is deliberate.
 
@@ -606,7 +606,7 @@ impl EnvPolicy {
     /// Mask a resolved `[context]` listing before the preamble is rendered from
     /// it, so the rendered `system` string and the `Preamble` snapshot of it
     /// stay byte-identical (docs/context.md).
-    pub fn mask_context(&self, resolved: &mut crate::log::context::Resolved) {
+    pub fn mask_context(&self, resolved: &mut crate::record::log::context::Resolved) {
         self.masker.mask_context(resolved);
     }
 }

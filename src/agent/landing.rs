@@ -98,10 +98,10 @@ struct Triaging {
     outcome: Option<HoldOutcome>,
     /// The must-wake notifications this triage first-shows (docs/inbox.md):
     /// pinned below whatever the triage decides.
-    forced_pins: Vec<crate::log::Seq>,
+    forced_pins: Vec<crate::record::log::Seq>,
     /// The arrival mark the batch's last `Triage` records (docs/inbox.md): the highest
     /// notification its rider showed, or `0` when the rider did not run here.
-    shown_through: crate::log::Seq,
+    shown_through: crate::record::log::Seq,
     /// The rider a triage of `ask` replies alone could not carry (docs/process-monitor.md).
     deferred: Option<Deferred>,
 }
@@ -110,7 +110,7 @@ struct Triaging {
 struct Deferred {
     shown: Vec<ShownNotification>,
     background: Vec<process_monitor::BgView>,
-    forced: Vec<crate::log::Seq>,
+    forced: Vec<crate::record::log::Seq>,
 }
 
 /// Run the triage over the batch's results (docs/triage.md), holding it until it has a
@@ -254,8 +254,8 @@ fn decide_inbox(
     shared: &Session,
     turn: Turn,
     outcome: &mut HoldOutcome,
-    forced_pins: &[crate::log::Seq],
-) -> std::io::Result<Vec<(crate::log::Seq, Disposition)>> {
+    forced_pins: &[crate::record::log::Seq],
+) -> std::io::Result<Vec<(crate::record::log::Seq, Disposition)>> {
     let mut inbox = std::mem::take(&mut outcome.inbox);
     force_pins(&mut inbox, forced_pins);
     for (handle, verdict) in &outcome.background {
@@ -282,9 +282,9 @@ fn decide_inbox(
 #[derive(Default)]
 struct Riders {
     /// The batch's arrival mark (docs/inbox.md).
-    shown_through: crate::log::Seq,
+    shown_through: crate::record::log::Seq,
     /// The inbox dispositions.
-    inbox: Vec<(crate::log::Seq, Disposition)>,
+    inbox: Vec<(crate::record::log::Seq, Disposition)>,
     /// The surfaced context.
     surfaced: Vec<String>,
     /// The non-compliant-attempt breadcrumbs, durable even when a retry recovered

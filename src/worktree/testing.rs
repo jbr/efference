@@ -18,7 +18,7 @@ pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
         .env("GIT_COMMITTER_NAME", "t")
         .env("GIT_COMMITTER_EMAIL", "t@t");
     super::unset_repository_env(&mut cmd);
-    let output = crate::spawn::std_output(&mut cmd).unwrap();
+    let output = crate::platform::spawn::std_output(&mut cmd).unwrap();
     assert!(
         output.status.success(),
         "git {args:?}: {}",

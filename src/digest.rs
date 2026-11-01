@@ -8,8 +8,10 @@
 //! rather than the volume of work they did. It is a deterministic fold over the log and
 //! asks no model anything.
 
-use crate::log::{CallId, ContentBlock, LogEntry, Payload, RawResult, Seq, ToolCall, WireState};
-use crate::project::Reader;
+use crate::record::log::{
+    CallId, ContentBlock, LogEntry, Payload, RawResult, Seq, ToolCall, WireState,
+};
+use crate::record::project::Reader;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -200,7 +202,7 @@ impl<'a> Fold<'a> {
 /// left out, as the digest leaves seqs out unless asked.
 fn verbatim_call(out: &mut String, call: &ToolCall, raw: &RawResult, wire: &WireState) {
     let _ = writeln!(out, "• {} {}", call.name, call.input);
-    let (content, is_error) = crate::project::result_content(raw, wire);
+    let (content, is_error) = crate::record::project::result_content(raw, wire);
     if is_error {
         let _ = writeln!(out, "    (error)");
     }

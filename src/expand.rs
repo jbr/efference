@@ -32,8 +32,8 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use crate::log::ToolCall;
 use crate::policy;
+use crate::record::log::ToolCall;
 
 /// The frozen session env map the structured tools expand against. Built once at
 /// boot (the daemon's own environment is stable for the session — an agent's
@@ -136,7 +136,7 @@ fn valid_name(name: &str) -> bool {
 /// classifier uses. Returns `Ok(None)` when the call is untouched (bash, a
 /// path-less tool, or no `$` in any target) so the common case never clones.
 pub fn expand_call(expander: &Expander, call: &ToolCall) -> Result<Option<ToolCall>, String> {
-    if call.name == crate::names::tools::BASH {
+    if call.name == crate::record::names::tools::BASH {
         return Ok(None); // bash expands in-shell against the child env.
     }
     let Some((key, _, _)) = policy::path_spec(&call.name) else {

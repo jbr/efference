@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::env_table::EnvSnapshot;
-use crate::secrets::Secrets;
+use crate::platform::secrets::Secrets;
 use crate::user_config::InferenceConfig;
 use std::path::Path;
 use std::sync::Arc;
@@ -806,7 +806,7 @@ fn a_hosts_preview_reads_back_as_what_it_wrote() {
 /// the whole response.
 #[test]
 fn every_provider_display_name_decodes_back() {
-    use crate::log::{Provider, WireDialect};
+    use crate::record::log::{Provider, WireDialect};
     for provider in [
         Provider::Anthropic,
         Provider::OpenRouter,
@@ -905,7 +905,7 @@ async fn the_borrowed_spotter_default_reads_the_catalog() {
     catalog
         .refresh_with(
             "main",
-            crate::log::Provider::Anthropic,
+            crate::record::log::Provider::Anthropic,
             crate::catalog::CATALOG_TTL,
             || async {
                 Ok(vec![

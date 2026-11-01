@@ -88,9 +88,9 @@ pub(super) async fn run_idle_triage(
 /// What a triage's rider holds when it opens (docs/inbox.md): the prefix it forks from,
 /// every unresolved notification, and the must-wake seqs among those no triage has shown.
 pub(super) struct Rider {
-    pub entries: Vec<crate::log::LogEntry>,
+    pub entries: Vec<crate::record::log::LogEntry>,
     pub shown: Vec<ShownNotification>,
-    pub forced: Vec<crate::log::Seq>,
+    pub forced: Vec<crate::record::log::Seq>,
 }
 
 /// Open a triage's rider (docs/inbox.md): log the queued slot notifications as `Ambient`
@@ -120,16 +120,16 @@ pub(super) fn open_rider(shared: &Arc<Session>, turn: Turn) -> Result<Rider, Err
 /// The `shown_through` a triage records for the rider it showed: the highest arrival in it.
 /// Everything the log held at or below that was in front of the model, and an arrival
 /// logged while the request was in flight is above it (docs/inbox.md).
-pub(super) fn rider_mark(shown: &[ShownNotification]) -> crate::log::Seq {
+pub(super) fn rider_mark(shown: &[ShownNotification]) -> crate::record::log::Seq {
     shown.iter().map(|n| n.seq).max().unwrap_or(0)
 }
 
 /// What a standalone triage looks at: the prefix it forks from, the notifications
 /// and background tails it shows, and the must-wake seqs pinned whatever it says.
 pub(super) struct Sight<'a> {
-    pub entries: &'a [crate::log::LogEntry],
+    pub entries: &'a [crate::record::log::LogEntry],
     pub shown: &'a [ShownNotification],
-    pub forced: &'a [crate::log::Seq],
+    pub forced: &'a [crate::record::log::Seq],
     pub background: &'a [BgView],
 }
 
@@ -216,7 +216,7 @@ pub(super) fn expire_unmentioned(shared: &Arc<Session>, turn: Turn) -> Result<()
     for (seq, shows) in crate::inbox::unmentioned_past_cap(&shared.snapshot()) {
         shared.append(
             turn,
-            Payload::Telemetry(crate::log::Telemetry::InboxExpired { seq, shows }),
+            Payload::Telemetry(crate::record::log::Telemetry::InboxExpired { seq, shows }),
         )?;
     }
     Ok(())
@@ -227,8 +227,8 @@ pub(super) fn expire_unmentioned(shared: &Arc<Session>, turn: Turn) -> Result<()
 /// Deterministic on purpose — the fork keeps everything downstream of *whether* the
 /// agent wakes (the note, the rest of the inbox), never the whether itself.
 pub(super) fn force_pins(
-    inbox: &mut Vec<(crate::log::Seq, Disposition)>,
-    forced: &[crate::log::Seq],
+    inbox: &mut Vec<(crate::record::log::Seq, Disposition)>,
+    forced: &[crate::record::log::Seq],
 ) {
     if forced.is_empty() {
         return;

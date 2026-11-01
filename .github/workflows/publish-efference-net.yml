@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-          sparse-checkout: src/update_check.rs
+          sparse-checkout: src/platform/update_check.rs
           sparse-checkout-cone-mode: false
       - name: Fetch artifacts
         uses: actions/download-artifact@v8
@@ -73,9 +73,9 @@ jobs:
       - name: Verify
         run: |
           set -euo pipefail
-          public=$(sed -n 's/^pub const RELEASE_PUBLIC_KEY: &str = "\(.*\)";$/\1/p' src/update_check.rs)
+          public=$(sed -n 's/^pub const RELEASE_PUBLIC_KEY: &str = "\(.*\)";$/\1/p' src/platform/update_check.rs)
           if [ -z "$public" ]; then
-            echo "::error::no RELEASE_PUBLIC_KEY in src/update_check.rs"
+            echo "::error::no RELEASE_PUBLIC_KEY in src/platform/update_check.rs"
             exit 1
           fi
           while read -r file; do

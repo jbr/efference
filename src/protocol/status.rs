@@ -8,8 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::log::Seq;
 use crate::protocol::state::{Cost, Stage};
+use crate::record::log::Seq;
 
 /// The most of a closing message the view carries. Past it the message is cut on a char
 /// boundary and the view says how much was left out.

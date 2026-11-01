@@ -603,7 +603,7 @@ therefore split:
   with a fixed `re your intent:` lead, so the agent reads it as the curator's remark
   about the channel rather than about the output. The sigil is render-layer only; the
   fork produces bare strings and is unaware of how they're rendered. Implemented in
-  `src/project.rs`.
+  `src/record/project.rs`.
 
 ## The verdict is the stored form
 
@@ -618,7 +618,7 @@ never persisted twice, and the structured decision is itself the record.
 The fork's bulky transcript — the full line-numbered output plus the `retain`
 instruction — stays throwaway and never enters canonical. That is what protects
 caching. The decision itself lands as the result's `ResultVerdict` (its `wire`), and
-the fork's audit record of it as a `Triage` entry right after (in `src/log.rs`):
+the fork's audit record of it as a `Triage` entry right after (in `src/record/log.rs`):
 
 | field | meaning |
 | --- | --- |
@@ -647,7 +647,7 @@ the wire or the cache.
 
 ## Retention — how much of the triage survives
 
-`Retention` (`src/project/retention.rs`) folds the log into cumulative
+`Retention` (`src/record/project/retention.rs`) folds the log into cumulative
 `kept_lines` / `shown_lines`, the lines the triage cap dropped before triage saw them,
 and a count of results whose output a failed triage withheld. `GET /state` reports it as
 `usage.retention` and the TUI session drawer renders it as `kept  55% · 13k/24k lines`
@@ -695,7 +695,7 @@ Deciding what to perceive next also runs *forward*: the same triage can pull an
 [context.md](context.md)) into view when it bears on the work in flight. A cheap
 model that recalls a stub's description but answers from memory anyway is missing a
 *decision* step, not a fact; the rider lands the nudge adjacent to the moment of
-need. Implemented in `src/triage.rs` (the roster + verdict) and `src/project.rs`
+need. Implemented in `src/triage.rs` (the roster + verdict) and `src/record/project.rs`
 (the render).
 
 - **Roster.** The triage view lists the surfaceable items — every `Item::Listed`
@@ -715,7 +715,7 @@ need. Implemented in `src/triage.rs` (the roster + verdict) and `src/project.rs`
   suppresses on *surfaced*, not *read*; closing that gap is pinning until read,
   which is the only part that would need path tracking.
 - **Verdict is the stored form.** The chosen names ride on `Triage.surfaced`
-  (`src/log.rs`); `project` re-renders each as a `⟢ context · <name> …: <desc> —
+  (`src/record/log.rs`); `project` re-renders each as a `⟢ context · <name> …: <desc> —
   read <path>` reminder **at the Triage position**, folding name→(path,
   description) from the `Preamble`'s structured listing snapshot — tail-ward, so the
   wire stays append-only, exactly like a pinned notification. Nothing but the names

@@ -57,7 +57,7 @@ auth = { kind = "env", key = "EFFERENCE_ISLAND_TEST_KEY" }
             .stdin(Stdio::piped())
             .stdout(log.try_clone().unwrap())
             .stderr(log);
-        let mut child = efference::spawn::std(&mut command).unwrap();
+        let mut child = efference::platform::spawn::std(&mut command).unwrap();
         let owner = child.stdin.take().unwrap();
         (child, owner)
     }

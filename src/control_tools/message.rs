@@ -3,8 +3,8 @@ use super::executor::{state_of, status_in};
 use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
 use crate::daemon::status::answers;
-use crate::log::Notification;
 use crate::protocol::turns::mint_submission_id;
+use crate::record::log::Notification;
 use anyhow::{Result, anyhow};
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
@@ -116,8 +116,8 @@ impl ControlVerb for Message {
             return Ok(answers::left_in_inbox(&id));
         }
         if blank && self.reply_to.is_none() {
-            let origin =
-                crate::log::ContinueOrigin::default().with_source(Some(state.source_for(&target)));
+            let origin = crate::record::log::ContinueOrigin::default()
+                .with_source(Some(state.source_for(&target)));
             return match target.request_continue(origin) {
                 Ok(()) => Ok(answers::continuing(&id)),
                 Err(why) => Err(anyhow!("not continued: {}", why.message())),

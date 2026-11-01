@@ -79,7 +79,7 @@ pub(crate) struct DecisionBody {
     /// config file, so there is no lifetime to choose; a `lifetime` field from an older client is
     /// ignored rather than rejected.
     #[serde(default)]
-    pub(crate) change: Option<crate::log::ConfigChange>,
+    pub(crate) change: Option<crate::record::log::ConfigChange>,
     #[serde(default)]
     pub(crate) note: Option<String>,
     /// Who is deciding, spelled as a turn's `source` is (`web`, `mcp[<name>]`,

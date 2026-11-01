@@ -1,7 +1,7 @@
 //! `efference dev stops` — read session logs and report what turn endings bought
 //! (docs/operating.md).
 //!
-//! The classification is [`efference::log::stops`]; this is the table over it. The
+//! The classification is [`efference::record::log::stops`]; this is the table over it. The
 //! number to read is the **barren** rate: endings where the model asked nothing and
 //! the next turn supplied nothing, so the round trip cost a request and a cache
 //! write and returned no information. It is the one stopping-behaviour measure the
@@ -11,7 +11,7 @@
 
 use super::*;
 
-use efference::log::{LogEntry, Stop, stops};
+use efference::record::log::{LogEntry, Stop, stops};
 
 #[derive(Default)]
 pub(crate) struct StopReport {

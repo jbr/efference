@@ -14,7 +14,7 @@ observer, not here.
 ## The sender identity is derived, not stored
 
 The VAPID keypair (RFC 8292) comes off the machine root the same way every other
-credential does ([web-bind.md](web-bind.md), `src/auth.rs`): HKDF under
+credential does ([web-bind.md](web-bind.md), `src/platform/auth.rs`): HKDF under
 `vapid v1 attempt-<n>`, where the counter increments until the 32 derived bytes are a
 valid P-256 scalar (a uniform string exceeds the group order with probability ~2⁻³²;
 the loop is deterministic per root). Every daemon under one root derives the identical
@@ -25,7 +25,7 @@ open — the same blast radius the device tokens already have.
 ## The subscription store
 
 The `push_subscriptions` table of the user state database ([state-store.md](state-store.md),
-`src/push.rs`), machine-scoped for the same reason the device table is user-scoped: the
+`src/platform/push.rs`), machine-scoped for the same reason the device table is user-scoped: the
 key is the machine's, so every daemon can send to every subscription, and a per-repo
 store would hide a subscription from the session that ought to reach it. One row per
 subscription, keyed by its endpoint — what `PushSubscription.toJSON()` produced
@@ -35,14 +35,14 @@ empty list, and a push that does not go out must never fail a turn.
 
 ## The send
 
-`src/push.rs` posts to the subscription endpoint with `TTL: 600` (both events mean
+`src/platform/push.rs` posts to the subscription endpoint with `TTL: 600` (both events mean
 "now"; a gate answered an hour later is about a moment that has passed),
 `Urgency: high`, `Content-Encoding: aes128gcm`, and a VAPID `Authorization` header. The
-payload is `{"title", "body", "path"}`, encrypted per RFC 8291 (`src/push/encrypt.rs`)
+payload is `{"title", "body", "path"}`, encrypted per RFC 8291 (`src/platform/push/encrypt.rs`)
 — ECDH against the subscription's key, HKDF with the RFC's info strings, one
 AES-128-GCM record. Every derivation step takes its salt and ephemeral key as
 parameters, so the tests pin the RFC's §5 example and every Appendix A intermediate
-byte-for-byte from the text in `reference/rfc/`. The JWT (`src/push/vapid.rs`) is
+byte-for-byte from the text in `reference/rfc/`. The JWT (`src/platform/push/vapid.rs`) is
 hand-assembled ES256 — two fixed JSON objects and a raw `r‖s` signature — with `aud`
 the endpoint's origin and no `sub` claim: the only value `sub` could carry is a
 personal contact handed to every push service.
@@ -143,7 +143,7 @@ app); a browser without `PushManager` shows nothing.
 ## The push record
 
 Every step of a moment's push is appended to the session's log as a
-`Payload::Push` entry (`src/log/push.rs`), which projects to nothing and which
+`Payload::Push` entry (`src/record/log/push.rs`), which projects to nothing and which
 transcripts and clients skip. Each entry carries `moment` (a number unique within the
 session), `kind` (`gate`, `ask`, `settle`), and an `event`:
 
@@ -162,7 +162,7 @@ session), `kind` (`gate`, `ask`, `settle`), and an `event`:
   pruned), or `failed {status?, reason}` (the reason has the endpoint removed and is
   cut to 120 characters). An empty `devices` means nothing was subscribed.
 
-`crate::push::send` returns the per-device answers; the spawned send task appends them
+`crate::platform::push::send` returns the per-device answers; the spawned send task appends them
 through a weak handle on the session. The same answers go to the host's log
 (`log::debug!`, with `warn!` for prune failures). A `sent` or `released` with no
 `delivery` after it means the host had no root installed (no binding), so it could not

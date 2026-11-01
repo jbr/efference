@@ -2,7 +2,7 @@
 //! with the artifacts it linked, and a run per call it made.
 
 use super::*;
-use crate::log::Seq;
+use crate::record::log::Seq;
 
 /// The nodes one assistant entry contributes, in reading order.
 pub(super) fn assistant_nodes(
@@ -142,7 +142,7 @@ fn call_nodes(
         // summary rendered below in full, and its result is a
         // constant acknowledgement (docs/consolidate.md). A pending,
         // gated, or failed one renders whole — an error is information.
-        if call.name == crate::names::tools::CONSOLIDATE
+        if call.name == crate::record::names::tools::CONSOLIDATE
             && let Some((_, raw, _)) = result
             && !raw.is_error
         {

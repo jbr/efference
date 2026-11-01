@@ -10,14 +10,14 @@
 //! keys.
 
 use super::*;
-use crate::log::{
+use crate::protocol::stream::StreamDelta;
+use crate::record::log::{
     AssistantOutput, ColdEvent, ConfigChange, ConfigEdit, ContinueOrigin, Escalation, ExitOutcome,
     GateDecision, InterruptOrigin, MomentKind, Notification, ProcessEvent, ProcessEventKind,
     ProcessExit, PushEvent, PushRecord, ReleasedBy, RequestStage, RequestStageKind, Resumed, Spot,
     Stance, Summary, Telemetry, Timestamp, Title, TitleAuthor, ToolOutcome, ToolTelemetry, Triage,
     WireDialect, WireState,
 };
-use crate::protocol::stream::StreamDelta;
 
 fn frame(delta: &StreamDelta) -> String {
     Frame::output(delta).to_json()

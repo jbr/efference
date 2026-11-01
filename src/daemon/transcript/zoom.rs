@@ -5,8 +5,8 @@
 
 use super::index::Index;
 use super::*;
-use crate::log::{ContentBlock, Seq, Spot, Telemetry};
 use crate::protocol::transcript::Handle;
+use crate::record::log::{ContentBlock, Seq, Spot, Telemetry};
 
 /// The entry `handle` names, in full, or why there is none.
 pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Result<String, String> {
@@ -203,7 +203,7 @@ impl<'a> Zoom<'a, '_> {
                     self.lines.push(format!(
                         "{}  {}{summary}",
                         call_label(seq, i, calls.len()),
-                        crate::names::tools::display_name(&call.name)
+                        crate::record::names::tools::display_name(&call.name)
                     ));
                 }
                 self.lines.push(format!(
@@ -220,14 +220,14 @@ impl<'a> Zoom<'a, '_> {
         let ask = self.index.call(id).and_then(|c| c.ask.clone());
         self.lines.push(format!(
             "call {handle}: {}",
-            crate::names::tools::display_name(&call.name)
+            crate::record::names::tools::display_name(&call.name)
         ));
         if let Some(intent) = call.intent() {
             self.lines.push(format!("intent: {intent}"));
         }
         let mut input = call.input.clone();
         if let Value::Object(map) = &mut input {
-            map.remove(crate::names::tools::INTENT);
+            map.remove(crate::record::names::tools::INTENT);
         }
         let pretty = serde_json::to_string_pretty(&input).unwrap_or_else(|_| input.to_string());
         self.lines.push(format!("input: {pretty}"));
@@ -272,7 +272,7 @@ impl<'a> Zoom<'a, '_> {
 
     /// Whether the gate held the call, and who decided it and how.
     fn decision(&mut self, id: &str, spot: Option<&Spot>) {
-        use crate::log::Approval;
+        use crate::record::log::Approval;
         for (seq, escalation) in self.index.escalations(id) {
             let line = escalated(escalation, self.reading.me);
             self.lines.push(format!("{line} (seq {seq})"));
@@ -372,7 +372,7 @@ impl<'a> Zoom<'a, '_> {
             Some(WireState::Interrupted(interruption)) => {
                 return format!(
                     "it saw: none of it, but {}",
-                    crate::project::render_interruption(interruption)
+                    crate::record::project::render_interruption(interruption)
                 );
             }
             Some(WireState::TriageFailed { why }) => {

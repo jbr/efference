@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::log::{
+use crate::record::log::{
     CallId, ResponsesMessageContent, ResponsesOutputItem, ResponsesPhase,
     ResponsesReasoningSummary, ResponsesReasoningText,
 };

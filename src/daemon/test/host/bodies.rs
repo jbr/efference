@@ -12,7 +12,7 @@ use super::starting::endless_hook;
 use super::*;
 use crate::api::{ListedModel, ModelKind, Price};
 use crate::history::{BUILTIN_CONFIG_KEY, History, Pick};
-use crate::log::{Payload, Provider};
+use crate::record::log::{Payload, Provider};
 
 fn quoted(text: &str) -> String {
     serde_json::to_string(text).unwrap()
@@ -145,7 +145,7 @@ disabled = true
             config,
             Path::new("/host"),
             &env,
-            &Arc::new(crate::secrets::Secrets::in_memory()),
+            &Arc::new(crate::platform::secrets::Secrets::in_memory()),
         )
         .unwrap()
         .with_history(History::at(roots.0.join("state.db"))),

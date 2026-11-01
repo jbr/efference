@@ -157,7 +157,7 @@ impl Session {
     /// write is reported and dropped: the record must not fail what it describes.
     fn record_supervisor(&self, supervisor: Option<String>) {
         let turn = self.latest_turn();
-        let entry = Payload::Telemetry(crate::log::Telemetry::SupervisorSet { supervisor });
+        let entry = Payload::Telemetry(crate::record::log::Telemetry::SupervisorSet { supervisor });
         if let Err(e) = self.append(turn, entry) {
             log::warn!("supervisor record: append failed: {e}");
         }

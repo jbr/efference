@@ -19,9 +19,9 @@ use std::path::PathBuf;
 use crate::api::Error;
 use crate::daemon::SessionBoot;
 use crate::inference::SessionOptions;
-use crate::persist::Log;
 use crate::protocol::sessions::CreateSession;
-use crate::session_dir::LOG_NAME;
+use crate::record::persist::Log;
+use crate::record::session_dir::LOG_NAME;
 use crate::spotter::MountedSpotter;
 
 mod env;
@@ -147,7 +147,7 @@ async fn prepare_minting(
     // The main role is fixed for the session's life. Keep its structured identity
     // for the boot record; offline readers must not recover it from prose or usage
     // telemetry (docs/log-and-projection.md).
-    let recorded_inference = crate::log::LoggedInference::new(
+    let recorded_inference = crate::record::log::LoggedInference::new(
         main_selection.connection.clone(),
         main_selection.provider,
         main_selection.model.clone(),
@@ -309,7 +309,7 @@ async fn prepare_minting(
     // record of the wire. `efference dev wire` reads it back instead of rebuilding.
     log.append(
         0,
-        crate::log::Payload::preamble(
+        crate::record::log::Payload::preamble(
             identity.clone(),
             body.clone(),
             resolved,
@@ -321,13 +321,16 @@ async fn prepare_minting(
     // (docs/resumption.md) and offline readers need not rebuild it.
     log.append(
         0,
-        crate::log::Payload::Telemetry(crate::log::Telemetry::Tools {
+        crate::record::log::Payload::Telemetry(crate::record::log::Telemetry::Tools {
             tools: crate::agent::tool_definitions(&toolbox),
         }),
     )?;
 
     if let Some(added) = worktree_added {
-        log.append(0, crate::log::Payload::Worktree(added.into_event(false)))?;
+        log.append(
+            0,
+            crate::record::log::Payload::Worktree(added.into_event(false)),
+        )?;
     }
 
     let client = parts::build_client(

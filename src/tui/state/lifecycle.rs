@@ -248,8 +248,8 @@ impl<'a> InteractiveState<'a> {
     /// pending on the call looks the same from here; callers that care check
     /// `topics.gate` first.
     ///
-    /// [`AssistantOutput::tool_calls`]: crate::log::AssistantOutput::tool_calls
-    pub(in crate::tui) fn in_flight_call(&self) -> Option<crate::log::ToolCall> {
+    /// [`AssistantOutput::tool_calls`]: crate::record::log::AssistantOutput::tool_calls
+    pub(in crate::tui) fn in_flight_call(&self) -> Option<crate::record::log::ToolCall> {
         let (idx, call) = self
             .log
             .iter()

@@ -1,6 +1,6 @@
 use super::*;
 use crate::daemon::entry_view::MAX_INLINE_RESULT_BYTES;
-use crate::log::{RawResult, WireState};
+use crate::record::log::{RawResult, WireState};
 
 fn one_entry(payload: Payload) -> LogEntry {
     let mut log = Log::in_memory();
@@ -32,9 +32,9 @@ fn a_verdict_frame_carries_the_counts_of_the_result_it_names() {
         1,
         Payload::result_verdict(
             0,
-            WireState::from(crate::log::Triaged::new(crate::log::Keep::Ranges(vec![(
-                1, 6,
-            )]))),
+            WireState::from(crate::record::log::Triaged::new(
+                crate::record::log::Keep::Ranges(vec![(1, 6)]),
+            )),
         ),
     )
     .expect("in-memory append");

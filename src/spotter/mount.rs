@@ -18,7 +18,7 @@
 
 use crate::api::{Endpoint, ModelKind};
 use crate::config::Config;
-use crate::log::ToolCall;
+use crate::record::log::ToolCall;
 use crate::tools::ToolBrief;
 
 use super::{ForkSpot, Spotter, Spotting, jev::JevSpot};

@@ -1,8 +1,8 @@
 //! Tool-result construction: the ok/err shapes, the size cap, and the payloads a withheld or aborted call logs (docs/tools.md).
 
 use super::*;
-use crate::log::Interruption;
-use crate::names::tools::{
+use crate::record::log::Interruption;
+use crate::record::names::tools::{
     CHECK_INBOX, KILL_PROCESS, LIST_PROCESSES, READ_PROCESS, WAIT, WATCH_PROCESS,
 };
 
@@ -215,12 +215,12 @@ pub(super) fn rejected(call: &ToolCall, decider: Option<&str>) -> Payload {
         None | Some("web") => {
             "Not run — the user replied instead of approving; see their next message.".to_string()
         }
-        Some(review) if crate::names::sources::is_review_source(review) => {
+        Some(review) if crate::record::names::sources::is_review_source(review) => {
             "Not run — the permission review declined it; see the next message.".to_string()
         }
         Some(source) => format!(
             "Not run — {} replied instead of approving; see the next message.",
-            crate::names::sources::wire_label(source)
+            crate::record::names::sources::wire_label(source)
         ),
     };
     Payload::tool_result(call.id.clone(), RawResult::error(text), WireState::Raw)

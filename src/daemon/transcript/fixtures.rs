@@ -1,10 +1,10 @@
 //! Logs for the conversation and zoom tests, built through the production appenders.
 
-use crate::log::{
+use crate::record::log::{
     Approval, AssistantOutput, ContentBlock, GateDecision, Payload, Seq, Spot, Stance, Telemetry,
     ToolCall,
 };
-use crate::persist::Log;
+use crate::record::persist::Log;
 
 /// An in-memory log: `seq` is the append index, as in a recorded one.
 pub(super) struct Fixture(pub(super) Log);
@@ -53,7 +53,7 @@ impl Fixture {
             .unwrap()
     }
 
-    pub(super) fn entries(&self) -> &[crate::log::LogEntry] {
+    pub(super) fn entries(&self) -> &[crate::record::log::LogEntry] {
         self.0.entries()
     }
 }
@@ -68,7 +68,7 @@ pub(super) fn turn(text: &str, calls: Vec<ToolCall>) -> Payload {
 
 pub(super) fn bash(id: &str, command: &str, intent: &str) -> ToolCall {
     ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         id,
         serde_json::json!({ "command": command }),
     )
@@ -77,7 +77,7 @@ pub(super) fn bash(id: &str, command: &str, intent: &str) -> ToolCall {
 
 pub(super) fn ask(id: &str, question: &str) -> ToolCall {
     ToolCall::new(
-        crate::names::tools::ASK,
+        crate::record::names::tools::ASK,
         id,
         serde_json::json!({ "question": question }),
     )
@@ -105,7 +105,7 @@ pub(super) fn escalation(
     to: Option<&str>,
     note: Option<&str>,
 ) -> Payload {
-    Payload::Telemetry(Telemetry::Escalation(crate::log::Escalation::new(
+    Payload::Telemetry(Telemetry::Escalation(crate::record::log::Escalation::new(
         id,
         source.map(str::to_string),
         to.map(str::to_string),

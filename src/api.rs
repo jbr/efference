@@ -1,7 +1,7 @@
 //! The upstream wire — request/response shapes and the HTTP call, in either dialect
 //! (`WireDialect`: Anthropic Messages or OpenAI Responses, docs/transport.md).
 //!
-//! Streaming. The request `messages` are produced by [`crate::project::project`];
+//! Streaming. The request `messages` are produced by [`crate::record::project::project`];
 //! the response arrives as a Server-Sent Events stream and is reassembled by
 //! [`Assembler`] back into a single [`Payload::Assistant`], so the result folds
 //! straight into the log — this is where the log and the transport meet.
@@ -15,10 +15,10 @@ use trillium_client::Client as HttpClient;
 use trillium_client::Conn;
 use trillium_client::sse::{EventStream, SseError, SseErrorKind};
 
-use crate::log::{
+use crate::record::log::{
     AssistantOutput, Exclusion, MessagesOutputBlock, Payload, Provider, ToolCall, WireDialect,
 };
-use crate::project::ApiMessage;
+use crate::record::project::ApiMessage;
 
 /// The `anthropic-version` header value. This is part of the Anthropic Messages
 /// *wire dialect*, not a provider identity — OpenRouter's `/api/v1/messages` skin

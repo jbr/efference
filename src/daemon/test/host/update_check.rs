@@ -2,9 +2,9 @@
 //! reaches every hosted session as the `newer_version` topic, and nothing else does.
 
 use super::*;
+use crate::platform::update_check::Release;
+use crate::platform::update_check::fixtures::{NEWER, NEWER_SIG, check};
 use crate::protocol::state::Topic;
-use crate::update_check::Release;
-use crate::update_check::fixtures::{NEWER, NEWER_SIG, check};
 
 async fn hosted(label: &str) -> (Arc<Host>, Arc<Session>, PathBuf) {
     use std::hash::{BuildHasher, Hasher, RandomState};

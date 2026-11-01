@@ -25,7 +25,7 @@ pub(super) struct ToolboxInputs<'a> {
     pub host: Option<std::sync::Arc<crate::daemon::Host>>,
     /// Where MCP grants are read and written: the store the session's credentials
     /// came from ([`SessionInference::secrets`]).
-    pub secrets: &'a std::sync::Arc<crate::secrets::Secrets>,
+    pub secrets: &'a std::sync::Arc<crate::platform::secrets::Secrets>,
     pub session_id: &'a str,
     pub reauth: &'a [String],
     pub authorization: &'a mcp_mount::AuthorizationHandling,
@@ -138,7 +138,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
 pub(super) struct FrozenPreamble {
     pub identity: String,
     pub body: String,
-    pub resolved: crate::log::context::Resolved,
+    pub resolved: crate::record::log::context::Resolved,
     pub context_block: Option<String>,
 }
 

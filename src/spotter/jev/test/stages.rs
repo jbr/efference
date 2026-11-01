@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::api::{StageRecorder, StageSink};
-use crate::log::{Provider, RequestStage, RequestStageKind, WireDialect};
+use crate::record::log::{Provider, RequestStage, RequestStageKind, WireDialect};
 use crate::testing::upstream::{Canned, ScriptedUpstream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -58,7 +58,11 @@ fn clean_answers() -> String {
 async fn assess(endpoint: Endpoint, recorder: &Arc<Recorder>) -> Spotting {
     let mut spot = JevSpot::new(endpoint, "jev");
     spot.set_stage_sink(Arc::clone(recorder) as StageSink);
-    let call = ToolCall::new(crate::names::tools::BASH, "c1", json!({ "command": "ls" }));
+    let call = ToolCall::new(
+        crate::record::names::tools::BASH,
+        "c1",
+        json!({ "command": "ls" }),
+    );
     spot.assess(&Config::default(), &call, None, &[], None, &[])
         .await
 }

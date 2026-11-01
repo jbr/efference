@@ -6,10 +6,10 @@ use super::verb::{ControlVerb, VerbCall};
 use super::{ClientExecutor, HostExecutor};
 use crate::daemon::Decider;
 use crate::daemon::status::{Moves, Reader, answers};
-use crate::log::Approval;
 use crate::protocol::agents::Decision;
 use crate::protocol::status::{Condition, HeldCall, Reviewer, StatusView};
 use crate::protocol::turns::mint_submission_id;
+use crate::record::log::Approval;
 use anyhow::{Result, anyhow};
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
@@ -212,7 +212,7 @@ fn escalate(
     target: &crate::daemon::Session,
     id: &str,
     held: &HeldCall,
-    call_id: &crate::log::CallId,
+    call_id: &crate::record::log::CallId,
     source: String,
     note: Option<&str>,
 ) -> Result<String> {

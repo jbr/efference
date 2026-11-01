@@ -39,7 +39,7 @@ A service doesn’t inherit your shell’s environment. For model keys, use the 
 keychain. For project tools and variables, an
 [`env_hook`](configuration.md#give-sessions-your-project-environment) can prepare the
 environment for sessions the host resumes or creates for the web client.
-<!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/secrets/commands.rs; src/daemon/host/preparation.rs::establish_environment; src/env_table/launch.rs::run_hook -->
+<!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/platform/secrets/commands.rs; src/daemon/host/preparation.rs::establish_environment; src/env_table/launch.rs::run_hook -->
 <!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. The service examples are host-as-a-service (backlog/inbox/host-as-a-service.md). -->
 
 ## Understand what leaves your machine
@@ -56,7 +56,7 @@ The efference process itself connects only to:
 
 There is no telemetry, analytics, or crash reporting. If you want to audit the destinations
 and what each receives, see [Every outbound connection](#every-outbound-connection) below.
-<!-- src: src/http.rs::client (the one outbound client; callers src/api/, src/mcp/http.rs, src/oauth.rs, src/push.rs, src/update_check.rs); src/bin/efference/serve.rs::host (UpdatesConfig::load gates check_for_updates); absence: no telemetry or crash-reporting code in src/ or crates in Cargo.lock -->
+<!-- src: src/platform/http.rs::client (the one outbound client; callers src/api/, src/mcp/http.rs, src/platform/oauth.rs, src/platform/push.rs, src/platform/update_check.rs); src/bin/efference/serve.rs::host (UpdatesConfig::load gates check_for_updates); absence: no telemetry or crash-reporting code in src/ or crates in Cargo.lock -->
 
 The programs efference starts are a different matter: the agent's commands, and the
 commands your configuration names (local MCP servers, an environment hook, secret
@@ -97,7 +97,7 @@ Each session keeps an append-only log in the project it runs in, at
 `.efference/<session id>/log.jsonl`, beside a copy of the project's configuration as that
 session sees it. Resuming a session reopens its log. [Credentials](credentials.md) covers
 what is kept out of it.
-<!-- src: src/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/persist.rs::Log; src/boot/resume.rs -->
+<!-- src: src/record/session_dir.rs::LOG_NAME; src/boot.rs::CONFIG_NAME; src/record/persist.rs::Log; src/boot/resume.rs -->
 
 ### What happens after a restart
 
@@ -105,7 +105,7 @@ Starting `efference --host` reopens sessions that were still open when a host la
 across all projects. They wait idle: interrupted work doesn’t continue until you message
 or continue the session. An idle session can still make small requests to keep the
 provider’s conversation cache warm or read an incoming notification.
-<!-- src: src/daemon/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/recovery.rs; src/daemon/keepalive.rs; src/daemon/metrics.rs::seed_clocks -->
+<!-- src: src/daemon/host/boot_resume.rs::resume_open_sessions, reopen; src/agent.rs (idle loop; pending batch replays on the first operator action); src/record/recovery.rs; src/daemon/keepalive.rs; src/daemon/metrics.rs::seed_clocks -->
 
 Standalone mode starts fresh rather than reopening sessions automatically. On a normal
 quit, it archives its sessions so no host reopens them later. Sessions with nothing said
@@ -124,7 +124,7 @@ library's name. The built-in providers are reached over HTTPS; a custom endpoint
 server given an `http://` address is reached in clear text, key included. The client does
 not read `HTTPS_PROXY` or other proxy variables, so a network that only allows traffic
 through a proxy blocks it.
-<!-- src: src/http.rs::client, user_agent; src/setup/flow.rs::describe_endpoint (http:// accepted); src/mcp/http.rs; absence of proxy handling in src/ -->
+<!-- src: src/platform/http.rs::client, user_agent; src/setup/flow.rs::describe_endpoint (http:// accepted); src/mcp/http.rs; absence of proxy handling in src/ -->
 
 | Destination | When | Notes |
 | --- | --- | --- |
@@ -138,8 +138,8 @@ through a proxy blocks it.
 | The authorization servers an MCP server names | When that server asks you to sign in, and when the sign-in is renewed | The server's own metadata names them |
 | The push address each notifying browser registered | When a session needs a decision from you, or finishes a turn | The message is encrypted to that browser; the push service sees where and when it is sent |
 | `efference.net/releases/latest.json` and `latest.json.minisig` | When a host starts and about once a day after, if `[updates] check = true`; and each time you run `efference update --check` | Sends nothing beyond the request itself. The answer is believed only when it is signed with efference's release key. To turn the daily check off, set `check = false` under `[updates]` in `~/.efference/config.toml`, or answer no in `efference setup`'s "Update check" entry |
-<!-- src: src/update_check.rs::LATEST_URL, UpdateCheck::newest, verify; src/daemon/host/update_check.rs::INTERVAL, RETRY; src/inference/updates.rs::UpdatesConfig; src/setup/updates.rs; src/bin/efference/update.rs -->
-<!-- src: src/api/provider/http.rs::messages_url, models_url, capabilities_url; src/api/provider/fetch.rs::fetch_capabilities, fetch_generation_cost; src/catalog.rs::CATALOG_TTL; src/daemon/host/catalog.rs::entry; src/api/provider/codex.rs::catalog, capabilities; src/daemon/runtime.rs (cost tracking for an OpenRouter main client); src/daemon/metrics.rs::price_request; src/inference/chatgpt.rs::ISSUER, refresh; src/mcp/http.rs; src/mcp/auth.rs::authorize; src/mcp/auth/credentials.rs::Credentials::renew; src/oauth/; src/push.rs::send_one; src/daemon/push.rs -->
+<!-- src: src/platform/update_check.rs::LATEST_URL, UpdateCheck::newest, verify; src/daemon/host/update_check.rs::INTERVAL, RETRY; src/inference/updates.rs::UpdatesConfig; src/setup/updates.rs; src/bin/efference/update.rs -->
+<!-- src: src/api/provider/http.rs::messages_url, models_url, capabilities_url; src/api/provider/fetch.rs::fetch_capabilities, fetch_generation_cost; src/catalog.rs::CATALOG_TTL; src/daemon/host/catalog.rs::entry; src/api/provider/codex.rs::catalog, capabilities; src/daemon/runtime.rs (cost tracking for an OpenRouter main client); src/daemon/metrics.rs::price_request; src/inference/chatgpt.rs::ISSUER, refresh; src/mcp/http.rs; src/mcp/auth.rs::authorize; src/mcp/auth/credentials.rs::Credentials::renew; src/platform/oauth/; src/platform/push.rs::send_one; src/daemon/push.rs -->
 
 Requests on an OpenRouter connection carry attribution headers naming efference,
 including `HTTP-Referer: https://efference.net`; requests to the ChatGPT backend carry

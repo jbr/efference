@@ -1,7 +1,7 @@
 //! `in_flight_call` across both wire dialects: the executing call is read off the
 //! unpaired tail of the committed log, whatever shape the provider recorded it in.
 
-use crate::log::{AssistantOutput, CallId, Payload, ResponsesOutputItem, WireState};
+use crate::record::log::{AssistantOutput, CallId, Payload, ResponsesOutputItem, WireState};
 use crate::tui::harness::Screenplay;
 use serde_json::json;
 
@@ -58,7 +58,7 @@ fn a_responses_bash_call_is_a_foreground_bash() {
     play.user("run it");
     play.running_responses_tool(
         "call_b",
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         r#"{"command":"cargo test"}"#,
     );
     let call = play.state.in_flight_call().expect("in flight");
@@ -75,7 +75,7 @@ fn malformed_responses_arguments_put_nothing_in_flight() {
     play.user("run it");
     play.running_responses_tool(
         "call_x",
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         r#"{"command": "cargo te"#,
     );
     assert_eq!(in_flight(&play), None);

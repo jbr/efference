@@ -22,8 +22,8 @@ use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
 use crate::api::stages::{ActiveTrace, StageSink, Trace};
 use crate::api::thinking::ThinkingSupport;
-use crate::log::{RequestOrigin, is_captured_header};
-use crate::project::{WireTurn, encode_messages};
+use crate::record::log::{RequestOrigin, is_captured_header};
+use crate::record::project::{WireTurn, encode_messages};
 
 mod forced_choice;
 mod images;
@@ -195,13 +195,13 @@ pub struct Client {
 impl Client {
     /// The provider-derived image placement this session's projections must use
     /// (docs/log-and-projection.md).
-    pub fn image_placement(&self) -> crate::project::ImagePlacement {
+    pub fn image_placement(&self) -> crate::record::project::ImagePlacement {
         self.endpoint.provider.image_placement(&self.model)
     }
 
     /// The provider-derived cache-breakpoint placement this session must use
     /// (docs/log-and-projection.md).
-    pub fn breakpoint_placement(&self) -> crate::project::BreakpointPlacement {
+    pub fn breakpoint_placement(&self) -> crate::record::project::BreakpointPlacement {
         self.endpoint.provider.breakpoint_placement(&self.model)
     }
 

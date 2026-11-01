@@ -13,7 +13,7 @@
 //! one, whose push names the session just the same.
 
 use super::*;
-use crate::log::{AttentiveClient, MomentKind, PushCancel, PushEvent};
+use crate::record::log::{AttentiveClient, MomentKind, PushCancel, PushEvent};
 
 /// How long an attended moment waits before it pushes. One value for every kind
 /// of moment: long enough for a person at the screen to act on a gate or read a
@@ -25,7 +25,7 @@ pub(crate) const PUSH_DELAY: Duration = Duration::from_secs(120);
 pub(super) struct DelayedPush {
     moment: u64,
     kind: MomentKind,
-    message: crate::push::Message,
+    message: crate::platform::push::Message,
     task: tokio::task::AbortHandle,
 }
 
@@ -42,7 +42,7 @@ impl Session {
         &self,
         moment: u64,
         kind: MomentKind,
-        message: crate::push::Message,
+        message: crate::platform::push::Message,
         attentive: Vec<AttentiveClient>,
     ) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
@@ -103,7 +103,7 @@ impl Session {
 
     /// The pending delayed push's message, for tests.
     #[cfg(test)]
-    pub(crate) fn pending_delayed_push(&self) -> Option<crate::push::Message> {
+    pub(crate) fn pending_delayed_push(&self) -> Option<crate::platform::push::Message> {
         self.delayed_push
             .lock()
             .unwrap()

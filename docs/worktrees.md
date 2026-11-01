@@ -4,7 +4,7 @@ A session can work in its own git worktree: a second checkout of the project, on
 branch, so its edits do not land in the checkout another session or the operator is
 using. `POST /sessions {"worktree": true}` asks for one (`efference` CLI `--worktree`,
 the `create` control tool's `worktree`). Worktree placement lives in
-`src/session_dir/worktree.rs` and the git operations in `src/worktree.rs`; the directory
+`src/record/session_dir/worktree.rs` and the git operations in `src/worktree.rs`; the directory
 pair lives in `src/policy/directories.rs`.
 
 ## Project and working directory
@@ -117,7 +117,7 @@ Discarding a kept worktree is git's: `git worktree remove --force` and `git bran
 
 ## The log entry
 
-`Payload::Worktree` (`src/log/worktree.rs`) records `added`, `restored` (git's base,
+`Payload::Worktree` (`src/record/log/worktree.rs`) records `added`, `restored` (git's base,
 exit status, and output, which carries the project hook's), `removed` (whether the branch
 went too), `kept` (why), and `remove_failed`. It projects to nothing, like `Cold`, and its
 free text is masked like any other ([log-and-projection.md](log-and-projection.md)). It

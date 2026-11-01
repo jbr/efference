@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::names::tools::BASH;
+use crate::record::names::tools::BASH;
 
 pub(super) fn call(name: &str) -> ToolCall {
     ToolCall::new(name, "toolu_x", serde_json::json!({}))

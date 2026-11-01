@@ -76,7 +76,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use toml_edit::{DocumentMut, InlineTable, Item, Table, Value, value};
 
-use crate::log::ConfigChange;
+use crate::record::log::ConfigChange;
 
 /// The shipped defaults, used when no `[bash]` config section says otherwise.
 /// 300s clears a real `cargo build --release` while firing on under 1% of this
@@ -140,7 +140,7 @@ pub struct TransportLimits {
     pub stream_ceiling: Duration,
     /// How long the cached prefix may go untouched at idle before the keepalive
     /// pings it (docs/transport.md). `None` derives it from the provider's cache
-    /// lifetime ([`crate::log::Provider::cache_ttl`]), so a set value is an override.
+    /// lifetime ([`crate::record::log::Provider::cache_ttl`]), so a set value is an override.
     /// **Zero turns the keepalive off** — the honest spelling for "do not ping",
     /// rather than a separate boolean that could disagree with it.
     pub keepalive_interval: Option<Duration>,

@@ -4,9 +4,9 @@
 
 use super::*;
 use crate::daemon::Host;
-use crate::log::{Approval, MomentKind, PushEvent, PushRecord, Telemetry};
 use crate::policy::ReviewLevel;
 use crate::protocol::state::LoopPhase;
+use crate::record::log::{Approval, MomentKind, PushEvent, PushRecord, Telemetry};
 
 struct Fixture {
     root: PathBuf,
@@ -58,7 +58,7 @@ impl Fixture {
 }
 
 /// What `session` sends from here on, in place of the push services.
-fn capture(session: &Session) -> Arc<Mutex<Vec<crate::push::Message>>> {
+fn capture(session: &Session) -> Arc<Mutex<Vec<crate::platform::push::Message>>> {
     let sent = Arc::new(Mutex::new(Vec::new()));
     let into = Arc::clone(&sent);
     session.set_push_transport(Arc::new(move |message| {
@@ -89,7 +89,7 @@ fn not_sent(kind: MomentKind, to: &str) -> (MomentKind, PushEvent) {
 
 fn curl(id: &str) -> ToolCall {
     ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         id,
         serde_json::json!({
             "command": "curl -sI https://example.com",

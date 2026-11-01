@@ -3,7 +3,7 @@
 //! and the client remembers.
 
 use super::*;
-use crate::project::WireTurn;
+use crate::record::project::WireTurn;
 use crate::testing::upstream::{Canned, Request, ScriptedUpstream};
 
 /// The refusal Sonnet 5.5 answers a forced `tool_choice` with.
@@ -99,7 +99,7 @@ async fn a_refused_forced_choice_falls_back_to_auto_and_is_remembered() {
 #[tokio::test]
 async fn the_forced_choice_fallback_stays_off_the_cache_chain() {
     let (client, server) = scripted(vec![(400, REFUSAL), (200, STREAM), (200, STREAM)]);
-    let client = client.with_origin(crate::log::RequestOrigin::Turn);
+    let client = client.with_origin(crate::record::log::RequestOrigin::Turn);
     let turns = [WireTurn::text("is this safe?")];
     let forced = ToolChoice::force("spot");
     client.complete(&turns, &[], forced, |_| {}).await.unwrap();
@@ -193,7 +193,7 @@ async fn a_keepalive_of_an_unforced_request_sends_the_fallbacks_envelope() {
     let mut sent = client.sent_form(turns.clone(), &[], forced);
     sent.turns.truncate(1);
     client
-        .keepalive(crate::log::RequestOrigin::TriageKeepalive, &sent)
+        .keepalive(crate::record::log::RequestOrigin::TriageKeepalive, &sent)
         .await
         .unwrap();
     let bodies = server.bodies();
@@ -209,7 +209,7 @@ async fn a_keepalive_of_an_unforced_request_sends_the_fallbacks_envelope() {
 /// after a breakpoint inside it. With no breakpoint there is nothing to end at.
 #[test]
 fn a_request_ends_at_its_last_breakpoint() {
-    use crate::project::UserPart;
+    use crate::record::project::UserPart;
     let history = WireTurn::User(vec![
         UserPart::Text("digest".into()),
         UserPart::Breakpoint,

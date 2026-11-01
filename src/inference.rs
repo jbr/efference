@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use crate::api::{AuthValue, Endpoint, Error, Reload, RequestOptions, Reread};
 use crate::env_table::EnvSnapshot;
-use crate::log::{Provider, WireDialect};
-use crate::secrets::Secrets;
+use crate::platform::secrets::Secrets;
+use crate::record::log::{Provider, WireDialect};
 use crate::user_config::{ConnectionConfig, ModelSelection};
 
 /// The triage choice a session creator makes. Omission inherits the configured
@@ -58,7 +58,7 @@ impl TriageChoice {
 }
 
 /// `--triage-model` and its two knobs, as the CLI collects them and as a host's
-/// creation body spells them. Not [`crate::log::TriageModel`], the record of which
+/// creation body spells them. Not [`crate::record::log::TriageModel`], the record of which
 /// inference a session's triage ran on.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TriageModel {

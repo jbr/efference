@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::log::{Provider, WireDialect};
+use crate::record::log::{Provider, WireDialect};
 
 mod defaults;
 mod flow;
@@ -345,10 +345,10 @@ impl ExistingAuth {
     /// credential is elsewhere.
     pub(crate) fn item_name(&self, connection: &str) -> Option<String> {
         match self {
-            ExistingAuth::Keychain { name } => Some(crate::secrets::inference_name(
+            ExistingAuth::Keychain { name } => Some(crate::platform::secrets::inference_name(
                 name.as_deref().unwrap_or(connection),
             )),
-            ExistingAuth::Oauth { name } => Some(crate::secrets::oauth_name(
+            ExistingAuth::Oauth { name } => Some(crate::platform::secrets::oauth_name(
                 name.as_deref().unwrap_or(connection),
             )),
             _ => None,
@@ -361,7 +361,7 @@ impl ExistingAuth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExistingConnection {
     /// The provider name, or the `custom-<dialect>` name a described endpoint
-    /// reports ([`crate::log::Provider::name`]) — so a row in the management list
+    /// reports ([`crate::record::log::Provider::name`]) — so a row in the management list
     /// says what it speaks either way.
     pub provider: String,
     /// The base URL a described endpoint carries, `None` for a named provider.

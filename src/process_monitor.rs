@@ -17,9 +17,9 @@
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
-use crate::names::tools::ASK;
+use crate::platform::terminal_text::strip_formatting;
 use crate::protocol::state::ProcessState;
-use crate::terminal_text::strip_formatting;
+use crate::record::names::tools::ASK;
 
 mod record;
 pub use record::{ProcessRecord, from_log};
@@ -32,8 +32,11 @@ pub use tools::{brief, tool_definitions};
 /// (docs/tui.md, docs/web-client.md). `None` for a call that is not an ask, or one
 /// with no usable `question` — which the loop answers with an error result and never
 /// puts to the operator.
-pub fn ask_of_call(calls: &[crate::log::ToolCall], index: usize) -> Option<(String, usize, usize)> {
-    let is_ask = |c: &&crate::log::ToolCall| c.name == ASK;
+pub fn ask_of_call(
+    calls: &[crate::record::log::ToolCall],
+    index: usize,
+) -> Option<(String, usize, usize)> {
+    let is_ask = |c: &&crate::record::log::ToolCall| c.name == ASK;
     let call = calls.get(index).filter(is_ask)?;
     let question = call.input.get("question")?.as_str()?.trim();
     (!question.is_empty()).then(|| {
@@ -124,7 +127,7 @@ struct Process {
     /// step can't make a process look younger), and this absolute stamp is what the
     /// control API's `processes` topic carries so clients compute elapsed themselves
     /// (docs/control-api.md).
-    spawned_wall: crate::log::Timestamp,
+    spawned_wall: crate::record::log::Timestamp,
     /// Muted (the process monitor's `dismiss` for a live process, docs/process-monitor.md): kept running, exit still
     /// notifies, but the running tail stops surfacing in the triage.
     muted: bool,
@@ -133,7 +136,7 @@ struct Process {
     /// record the log's exit entry carries, kept here so a live daemon answers
     /// `GET /processes/:id` for an exited process without re-reading the log
     /// (docs/process-monitor.md). `None` while it runs.
-    exit: Option<crate::log::ProcessExit>,
+    exit: Option<crate::record::log::ProcessExit>,
     /// Registered output patterns awaiting a hit (docs/process-monitor.md). Each fires
     /// once and is removed; an entry that never matches dies with the process.
     watches: Vec<String>,
@@ -167,7 +170,7 @@ pub struct BgView {
 #[derive(Clone, Debug)]
 pub struct Finished {
     /// The exit as the log records it — status, duration, and when.
-    pub exit: crate::log::ProcessExit,
+    pub exit: crate::record::log::ProcessExit,
     /// The notification's source: the plain `p#<n>` handle.
     pub source: String,
     /// The notification's body: status, duration, and the final tail.
@@ -175,7 +178,7 @@ pub struct Finished {
 }
 
 /// One fired watch (docs/process-monitor.md), ready to become a
-/// [`Notification`](crate::log::Notification). Produced under the registry lock by
+/// [`Notification`](crate::record::log::Notification). Produced under the registry lock by
 /// [`ProcessMonitor::push_chunk`] and posted by the caller once the lock is gone.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WatchHit {
@@ -367,7 +370,7 @@ impl ProcessMonitor {
             dropped: 0,
             spawned_at: now,
             last_chunk_at: now,
-            spawned_wall: crate::log::Timestamp::now(),
+            spawned_wall: crate::record::log::Timestamp::now(),
             muted: false,
             running: true,
             exit: None,
@@ -503,13 +506,13 @@ impl ProcessMonitor {
     /// built from the live entry: the payload the daemon appends when a process
     /// enters the background namespace — at a background spawn, or at the
     /// handoff that adopts a foreground command. `None` if the id is unknown.
-    pub fn spawn_event(&self, id: u64) -> Option<crate::log::ProcessEvent> {
+    pub fn spawn_event(&self, id: u64) -> Option<crate::record::log::ProcessEvent> {
         let p = self.find(id)?;
-        Some(crate::log::ProcessEvent {
+        Some(crate::record::log::ProcessEvent {
             id: p.id,
-            kind: crate::log::ProcessEventKind::Spawned(crate::log::ProcessSpawn {
+            kind: crate::record::log::ProcessEventKind::Spawned(crate::record::log::ProcessSpawn {
                 command: p.command.clone(),
-                call_id: p.call_id.clone().map(crate::log::CallId),
+                call_id: p.call_id.clone().map(crate::record::log::CallId),
                 pid: p.pgid,
                 // The spawn stamp, which for an adopted command is older than the
                 // entry this payload lands in.
@@ -539,7 +542,7 @@ impl ProcessMonitor {
 
     /// Snapshot a running process's current tail for a **pin** (docs/process-monitor.md): the
     /// model chose to freeze this moment onto the canonical wire. Returns
-    /// `(source, body)` ready to wrap in a [`Notification`](crate::log::Notification)
+    /// `(source, body)` ready to wrap in a [`Notification`](crate::record::log::Notification)
     /// that the pinning `Triage` projects as `⟢ <source>: <body>`. `None` if the
     /// id is unknown.
     pub fn pin_snapshot(&self, id: u64) -> Option<(String, String)> {
@@ -562,12 +565,12 @@ impl ProcessMonitor {
             let p = self.find(id)?;
             Instant::now().saturating_duration_since(p.spawned_at)
         };
-        let exit = crate::log::ProcessExit {
-            outcome: crate::log::ExitOutcome::of(status),
+        let exit = crate::record::log::ProcessExit {
+            outcome: crate::record::log::ExitOutcome::of(status),
             // Saturating: a duration past u64 milliseconds is unreachable, and a
             // wrapped one would read as a fast process.
             duration_ms: u64::try_from(ran.as_millis()).unwrap_or(u64::MAX),
-            at: crate::log::Timestamp::now(),
+            at: crate::record::log::Timestamp::now(),
         };
         let p = self.find_mut(id)?;
         p.running = false;

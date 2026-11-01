@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::client::Client;
-use crate::persist::Log;
+use crate::record::persist::Log;
 use mcplease::traits::Tool as _;
 use mcplease::types::{JsonRpcRequest, JsonRpcResponse, RequestContext};
 use serde_json::Value;
@@ -176,7 +176,7 @@ async fn the_mcp_mount_reads_what_is_new_with_its_own_cursor() {
     let mut log = Log::in_memory();
     log.append_submission(
         1,
-        crate::log::Payload::user("hello transcript"),
+        crate::record::log::Payload::user("hello transcript"),
         Some("sub-1".into()),
         Some("mcp[claude-code]".into()),
     )
@@ -209,7 +209,7 @@ async fn the_mcp_mount_reads_what_is_new_with_its_own_cursor() {
     assert!(zoom.contains("hello transcript"), "{zoom}");
 
     shared
-        .append(1, crate::log::Payload::user("later"))
+        .append(1, crate::record::log::Payload::user("later"))
         .unwrap();
     let later = read(None).execute(control.clone(), me()).await.unwrap();
     assert_eq!(
@@ -230,7 +230,7 @@ async fn the_mcp_mount_reads_what_is_new_with_its_own_cursor() {
 #[tokio::test]
 async fn the_command_line_reads_the_audit_grain_on_request() {
     let mut log = Log::in_memory();
-    log.append(1, crate::log::Payload::user("hello transcript"))
+    log.append(1, crate::record::log::Payload::user("hello transcript"))
         .unwrap();
     let (_shared, client) = session_over(log).await;
     let control = mounted(client, true);
@@ -265,10 +265,10 @@ async fn the_command_line_reads_the_audit_grain_on_request() {
 
 /// A `Proposed` config edit as a `Payload` — the spotter's prefix-promotion shape,
 /// inert until an orchestrator resolves it (docs/permissions.md).
-fn proposed_edit(command: &str) -> crate::log::Payload {
-    crate::log::Payload::ConfigEdit(crate::log::ConfigEdit::new(
-        crate::log::EditState::Proposed,
-        crate::log::ConfigChange::Command {
+fn proposed_edit(command: &str) -> crate::record::log::Payload {
+    crate::record::log::Payload::ConfigEdit(crate::record::log::ConfigEdit::new(
+        crate::record::log::EditState::Proposed,
+        crate::record::log::ConfigChange::Command {
             command: command.into(),
         },
     ))

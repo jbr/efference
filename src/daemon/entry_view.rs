@@ -48,8 +48,8 @@
 //! module fails there.
 
 use super::*;
-use crate::log::{ContentElision, RawResult, ResultImage, WireState};
-use crate::project::selection;
+use crate::record::log::{ContentElision, RawResult, ResultImage, WireState};
+use crate::record::project::selection;
 use serde::ser::{SerializeStruct, SerializeStructVariant, Serializer};
 
 /// How much of a tool result's `content` rides a window read or a `log` frame before

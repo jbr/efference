@@ -195,13 +195,13 @@ it should not). Neither subsumes the other, and neither is adversary-grade.
 ### The choke point is log append
 
 Every string about to enter the log is scanned, at
-`Log::append_submission` (`src/persist.rs`) — the one function both `append`
+`Log::append_submission` (`src/record/persist.rs`) — the one function both `append`
 paths funnel through. That single point covers tool results, the boot
 `Preamble` (including a `[context]` exec snapshot of the environment),
 `Ambient` notifications, user paste, and harness-written error text, and because
 every downstream surface reads the log, one choke point secures all of them: the
 wire, the jsonl on disk, the TUI, and the `control transcript`/`entries` reads.
-The log holds the mask as a `PayloadMask`, a one-method trait `src/persist.rs` defines
+The log holds the mask as a `PayloadMask`, a one-method trait `src/record/persist.rs` defines
 and `Masker` (`src/env_table/mask.rs`) implements, so the log imports nothing from the
 `[env]` table; a log with none installed masks nothing.
 

@@ -27,17 +27,17 @@ async fn child_policy_replaces_inheritance_in_std_and_tokio() {
     let mut tokio_cmd = tokio::process::Command::new("/usr/bin/env");
     tokio_cmd.env("NOT_IN_SNAPSHOT", "must-not-survive");
     child.apply_tokio(&mut tokio_cmd);
-    // Through the spawn lock, as every spawn in this binary must be (src/spawn.rs).
+    // Through the spawn lock, as every spawn in this binary must be (src/platform/spawn.rs).
     tokio_cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
-    let tokio_output = crate::spawn::tokio(&mut tokio_cmd)
+    let tokio_output = crate::platform::spawn::tokio(&mut tokio_cmd)
         .unwrap()
         .wait_with_output()
         .await
         .unwrap();
     for output in [
-        crate::spawn::std_output(&mut std_cmd).unwrap(),
+        crate::platform::spawn::std_output(&mut std_cmd).unwrap(),
         tokio_output,
     ] {
         assert!(output.status.success());

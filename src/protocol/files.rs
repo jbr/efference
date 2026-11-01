@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::log::Timestamp;
+use crate::record::log::Timestamp;
 
 /// A directory's listing. `path` is the directory's own path relative to the root, empty at
 /// the root itself, so a client can render a breadcrumb without reconstructing it from the

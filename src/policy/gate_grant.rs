@@ -3,7 +3,7 @@
 
 use super::*;
 
-use crate::names::tools::display_name;
+use crate::record::names::tools::display_name;
 
 /// The one grant a gate offers alongside approve and abort (docs/permissions.md): the
 /// change a client commits unchanged as the `config_edit` decision, and the label that

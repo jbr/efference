@@ -61,7 +61,7 @@ impl Session {
     /// Queue `turn` for the loop's next juncture, releasing the ask lock the caller holds
     /// once the turn is in the queue, so no ask can start between the check and the push.
     /// Returns whether the turn waits behind the operator's hold: an agent's turn
-    /// ([`agent_source`](crate::names::sources::agent_source)) submitted while held is queued but
+    /// ([`agent_source`](crate::record::names::sources::agent_source)) submitted while held is queued but
     /// not sent until the hold is released (docs/control-channel.md). Any other turn
     /// releases the hold.
     ///
@@ -90,7 +90,7 @@ impl Session {
                     interleaved(self);
                 }
             }
-            if !crate::names::sources::agent_source(turn.source.as_deref()) {
+            if !crate::record::names::sources::agent_source(turn.source.as_deref()) {
                 pace.release(&self.turns_tx);
             } else if pace.held {
                 pace.held_back.push(turn);
@@ -274,7 +274,7 @@ impl Session {
         let speed = self.pace_snapshot().0;
         if !speed.is_zero() {
             // Paced: proceed when the delay elapses or an interrupt (submit/release) ends it early.
-            let until = crate::log::Timestamp::now().0 + speed.as_millis() as u64;
+            let until = crate::record::log::Timestamp::now().0 + speed.as_millis() as u64;
             let _delayed = self.wait_phase(LoopPhase::Delayed { until }, LoopPhase::Requesting);
             tokio::select! {
                 _ = tokio::time::sleep(speed) => {}
@@ -329,7 +329,11 @@ impl Session {
             // A supervised session's settle is its supervisor's to read; only one
             // without a live supervisor pushes the operator (docs/web-push.md).
             let body = push::settle_body(self.log.lock().unwrap().entries());
-            self.moment(crate::log::MomentKind::Settle, self.supervisor(), body);
+            self.moment(
+                crate::record::log::MomentKind::Settle,
+                self.supervisor(),
+                body,
+            );
         }
     }
 
@@ -396,8 +400,8 @@ impl Session {
     /// first, so it precedes the `failed: interrupted` stage the signal causes in
     /// the log (docs/log-and-projection.md). A failed write is reported and
     /// dropped: the record must not stop what it describes.
-    pub(crate) fn interrupt(&self, origin: crate::log::InterruptOrigin) {
-        let entry = Payload::Telemetry(crate::log::Telemetry::Interrupt(origin));
+    pub(crate) fn interrupt(&self, origin: crate::record::log::InterruptOrigin) {
+        let entry = Payload::Telemetry(crate::record::log::Telemetry::Interrupt(origin));
         if let Err(e) = self.append(self.latest_turn(), entry) {
             log::warn!("interrupt record: append failed: {e}");
         }
@@ -419,7 +423,7 @@ impl Session {
             .iter()
             .rev()
             .find_map(|entry| match &entry.payload {
-                Payload::Telemetry(crate::log::Telemetry::Interrupt(origin)) => {
+                Payload::Telemetry(crate::record::log::Telemetry::Interrupt(origin)) => {
                     Some(origin.source.clone())
                 }
                 _ => None,
@@ -433,8 +437,8 @@ impl Session {
         &self,
         elapsed: Duration,
         result: &RawResult,
-    ) -> crate::log::Interruption {
-        crate::log::Interruption {
+    ) -> crate::record::log::Interruption {
+        crate::record::log::Interruption {
             by: self.interrupter(),
             after_ms: Some(elapsed.as_millis() as u64),
             killed: crate::bash::was_killed(result),

@@ -8,8 +8,8 @@
 
 use super::*;
 
-use crate::log::{BashTelemetry, EditTelemetry, ToolOutcome, ToolTelemetry};
-use crate::names::tools::BASH;
+use crate::record::log::{BashTelemetry, EditTelemetry, ToolOutcome, ToolTelemetry};
+use crate::record::names::tools::BASH;
 
 /// Argument names an edit-shaped call spells its anchor with. Several tools
 /// across two crates use one of these; a call carrying none simply records no

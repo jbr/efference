@@ -1,13 +1,13 @@
-# Every child process goes through the spawn lock (src/spawn.rs): on macOS an
+# Every child process goes through the spawn lock (src/platform/spawn.rs): on macOS an
 # unserialized spawn can hand its child another spawn's pipe, stalling that
 # command's reader until the stranger exits.
 disallowed-methods = [
-    { path = "std::process::Command::spawn", reason = "spawn through crate::spawn (src/spawn.rs)" },
-    { path = "std::process::Command::output", reason = "use crate::spawn::std_output (src/spawn.rs)" },
-    { path = "std::process::Command::status", reason = "spawn through crate::spawn (src/spawn.rs)" },
-    { path = "tokio::process::Command::spawn", reason = "spawn through crate::spawn (src/spawn.rs)" },
-    { path = "tokio::process::Command::output", reason = "spawn through crate::spawn (src/spawn.rs)" },
-    { path = "tokio::process::Command::status", reason = "spawn through crate::spawn (src/spawn.rs)" },
+    { path = "std::process::Command::spawn", reason = "spawn through crate::platform::spawn (src/platform/spawn.rs)" },
+    { path = "std::process::Command::output", reason = "use crate::platform::spawn::std_output (src/platform/spawn.rs)" },
+    { path = "std::process::Command::status", reason = "spawn through crate::platform::spawn (src/platform/spawn.rs)" },
+    { path = "tokio::process::Command::spawn", reason = "spawn through crate::platform::spawn (src/platform/spawn.rs)" },
+    { path = "tokio::process::Command::output", reason = "spawn through crate::platform::spawn (src/platform/spawn.rs)" },
+    { path = "tokio::process::Command::status", reason = "spawn through crate::platform::spawn (src/platform/spawn.rs)" },
 ]
 
 # efference publishes no library API: its `pub` items have one consumer, the binary,

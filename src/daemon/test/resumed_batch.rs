@@ -7,9 +7,9 @@ use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
-use crate::log::{Approval, Telemetry};
-use crate::log::{AssistantOutput, CallId, RawResult, Resumed, Spot, Stance, WireState};
-use crate::project::{ApiBlock, Role};
+use crate::record::log::{Approval, Telemetry};
+use crate::record::log::{AssistantOutput, CallId, RawResult, Resumed, Spot, Stance, WireState};
+use crate::record::project::{ApiBlock, Role};
 use crate::spotter::StaticSpotter;
 use crate::testing::upstream::{Canned, ScriptedUpstream, end_turn};
 use tempfile::TempDir;
@@ -17,7 +17,7 @@ use trillium_tokio::Swansong;
 
 fn call(id: &str, command: &str) -> ToolCall {
     ToolCall::new(
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         id,
         serde_json::json!({ "command": command }),
     )
@@ -73,7 +73,7 @@ pub(super) async fn start(
     let (cwd, dir) = workdir("resumed");
     let mut boot = boot(&cwd);
     boot.client = Client::new(
-        upstream.endpoint(crate::log::Provider::Anthropic, "/v1/messages"),
+        upstream.endpoint(crate::record::log::Provider::Anthropic, "/v1/messages"),
         "m",
         "sys",
     );

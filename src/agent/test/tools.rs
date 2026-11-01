@@ -1,7 +1,7 @@
 //! Tests for the advertised tool surface and the loop-owned tools.
 use super::*;
 
-use crate::names::tools::{CHECK_INBOX, CONSOLIDATE, WAIT, is_triage_tool};
+use crate::record::names::tools::{CHECK_INBOX, CONSOLIDATE, WAIT, is_triage_tool};
 
 /// `tool_catalog` covers every name `tool_definitions` advertises — the gap
 /// review found: a catalog built from `Toolbox::tool_catalog` alone answered

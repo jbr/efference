@@ -241,7 +241,7 @@ fn transcript_redirected_gate() {
 /// pace, which it can only be if all of it is here (docs/positions.md).
 #[test]
 fn committed_thinking_stays_readable_in_the_transcript() {
-    use crate::log::{ContentBlock, Payload};
+    use crate::record::log::{ContentBlock, Payload};
 
     let mut play = Screenplay::new(80, 60);
     play.user("Why is the cache cold?");
@@ -250,7 +250,7 @@ fn committed_thinking_stays_readable_in_the_transcript() {
         .collect::<Vec<_>>()
         .join("\n\n");
     play.commit(Payload::assistant(
-        crate::log::AssistantOutput::from_legacy_messages(
+        crate::record::log::AssistantOutput::from_legacy_messages(
             vec![ContentBlock::Thinking {
                 text: reasoning,
                 signature: "sig".into(),
@@ -277,12 +277,12 @@ fn committed_thinking_stays_readable_in_the_transcript() {
 /// the model didn't think when the provider merely withheld the text.
 #[test]
 fn redacted_thinking_says_so_rather_than_rendering_nothing() {
-    use crate::log::{ContentBlock, Payload};
+    use crate::record::log::{ContentBlock, Payload};
 
     let mut play = Screenplay::new(80, 12);
     play.user("Go.");
     play.commit(Payload::assistant(
-        crate::log::AssistantOutput::from_legacy_messages(
+        crate::record::log::AssistantOutput::from_legacy_messages(
             vec![ContentBlock::RedactedThinking {
                 data: "encrypted-blob".into(),
             }],
@@ -307,7 +307,7 @@ fn redacted_thinking_says_so_rather_than_rendering_nothing() {
 /// log; surfacing it is backlog/inbox/worktree-setup-detail.md).
 #[test]
 fn transcript_worktree_notices() {
-    use crate::log::{Checkout, Payload, WorktreeEvent, WorktreeEventKind};
+    use crate::record::log::{Checkout, Payload, WorktreeEvent, WorktreeEventKind};
     let checkout = |exit_code| Checkout {
         base: "abc1234".into(),
         exit_code,

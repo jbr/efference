@@ -2,7 +2,7 @@
 //! figures they add up to.
 
 use super::*;
-use efference::log::LogEntry;
+use efference::record::log::LogEntry;
 
 /// What is replayed: the recorded session's entries, the triages chosen from them, and how
 /// each is shown and drawn.

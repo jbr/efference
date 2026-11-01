@@ -49,7 +49,7 @@ impl ControlVerb for Interrupt {
             let source = turn_source(call.context);
             let control = source.is_none().then(|| "control-cli".to_string());
             client
-                .interrupt(&crate::log::InterruptOrigin { source, control })
+                .interrupt(&crate::record::log::InterruptOrigin { source, control })
                 .await?;
         }
         Ok(answer)
@@ -62,7 +62,7 @@ impl ControlVerb for Interrupt {
         let (answer, signal) = answers::interrupted(&view, now);
         if signal {
             // Attributed to the calling session, as its messages are (docs/tools.md).
-            target.interrupt(crate::log::InterruptOrigin {
+            target.interrupt(crate::record::log::InterruptOrigin {
                 source: Some(state.source_for(&target)),
                 control: None,
             });

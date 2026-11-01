@@ -113,7 +113,7 @@ impl<'a> PromptInputs<'a> {
         self
     }
 
-    /// The rendered `[context]` block ([`crate::log::context::Resolved::render`]).
+    /// The rendered `[context]` block ([`crate::record::log::context::Resolved::render`]).
     pub fn with_context_block(mut self, block: Option<&'a str>) -> Self {
         self.context_block = block;
         self
@@ -140,7 +140,7 @@ pub fn system_prompt(inputs: PromptInputs<'_>) -> String {
 
 /// The full system prompt sent in the request's `system` field (docs/log-and-projection.md): the
 /// curation-model [`PREAMBLE`], the `[context]` preamble builder's block when configured
-/// (`context_block`, rendered by [`crate::log::context::Resolved::render`] — docs/context.md; this is
+/// (`context_block`, rendered by [`crate::record::log::context::Resolved::render`] — docs/context.md; this is
 /// where orientation lives, as a config exec entry), and the config's preamble section
 /// when the session has a scope (`role_section`, rendered by
 /// [`crate::config::Config::preamble_section`]). Built once at session start and frozen into the

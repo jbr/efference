@@ -120,7 +120,7 @@ impl<'a> InteractiveState<'a> {
             // topic carries the path as the host knows it.
             rows.push((
                 "directory",
-                crate::home::tilde(std::path::Path::new(&identity.cwd)),
+                crate::platform::home::tilde(std::path::Path::new(&identity.cwd)),
                 text,
             ));
             rows.push(("session", identity.id.clone(), muted));

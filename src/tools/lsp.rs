@@ -9,7 +9,7 @@ use structural_lsp::host::AgentId;
 use structural_lsp::session::Session;
 use structural_lsp::tools::Tools;
 
-use crate::names::tools::{LSP_NAMESPACE, NAMESPACE_SEPARATOR};
+use crate::record::names::tools::{LSP_NAMESPACE, NAMESPACE_SEPARATOR};
 
 /// The host-wide language-server host: its workspaces are keyed by project root, so the
 /// sessions in one project share one set of servers.

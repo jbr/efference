@@ -10,11 +10,11 @@ fn user(text: &str) -> Payload {
 /// An assistant turn carrying one tool call — the shape `/tool_calls/:call_id` addresses
 /// into, since a call is embedded in an entry rather than being one.
 fn assistant_calling(call_id: &str, command: &str) -> Payload {
-    Payload::assistant(crate::log::AssistantOutput::from_legacy_messages(
+    Payload::assistant(crate::record::log::AssistantOutput::from_legacy_messages(
         vec![],
         vec![],
         vec![ToolCall::new(
-            crate::names::tools::BASH,
+            crate::record::names::tools::BASH,
             call_id,
             serde_json::json!({ "command": command }),
         )],
@@ -205,7 +205,7 @@ async fn a_tool_call_resolves_by_its_call_id() {
         // carrying it without a search.
         assert_eq!(body["seq"], 1);
         assert_eq!(body["call"]["id"], "toolu_9");
-        assert_eq!(body["call"]["name"], crate::names::tools::BASH);
+        assert_eq!(body["call"]["name"], crate::record::names::tools::BASH);
         assert_eq!(body["call"]["input"]["command"], "cargo test");
     });
 
@@ -220,14 +220,14 @@ fn result_with_image() -> Payload {
     Payload::tool_result(
         "toolu_img",
         RawResult::text("2×2 image/webp, 1 visual tokens").with_images(vec![
-            crate::log::ResultImage {
+            crate::record::log::ResultImage {
                 media_type: "image/webp".into(),
                 data: base64::engine::general_purpose::STANDARD.encode(IMAGE_BYTES),
                 width: 2,
                 height: 2,
             },
         ]),
-        crate::log::WireState::Raw,
+        crate::record::log::WireState::Raw,
     )
 }
 
@@ -308,7 +308,7 @@ async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
             Payload::tool_result(
                 "toolu_1",
                 RawResult::text(&content),
-                crate::log::WireState::Pending,
+                crate::record::log::WireState::Pending,
             ),
         )
         .unwrap();
@@ -317,9 +317,9 @@ async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
             1,
             Payload::result_verdict(
                 result_seq,
-                crate::log::WireState::from(crate::log::Triaged::new(crate::log::Keep::Ranges(
-                    vec![(1, 6)],
-                ))),
+                crate::record::log::WireState::from(crate::record::log::Triaged::new(
+                    crate::record::log::Keep::Ranges(vec![(1, 6)]),
+                )),
             ),
         )
         .unwrap();
@@ -364,9 +364,9 @@ async fn a_result_logged_with_its_verdict_serves_the_counts_on_itself() {
             Payload::tool_result(
                 "toolu_1",
                 RawResult::text(&content),
-                crate::log::WireState::from(crate::log::Triaged::new(crate::log::Keep::Ranges(
-                    vec![(1, 6)],
-                ))),
+                crate::record::log::WireState::from(crate::record::log::Triaged::new(
+                    crate::record::log::Keep::Ranges(vec![(1, 6)]),
+                )),
             ),
         )
         .unwrap();
@@ -388,7 +388,7 @@ async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
         Payload::tool_result(
             call_id,
             RawResult::text(content),
-            crate::log::WireState::Raw,
+            crate::record::log::WireState::Raw,
         )
     };
     shared.append(1, result("toolu_small", "small")).unwrap();
@@ -453,7 +453,7 @@ async fn the_transcript_reads_at_either_grain_or_zooms() {
             Payload::tool_result(
                 "toolu_1",
                 RawResult::text("a.rs\nb.rs"),
-                crate::log::WireState::Raw,
+                crate::record::log::WireState::Raw,
             ),
         )
         .unwrap();

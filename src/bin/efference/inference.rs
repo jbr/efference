@@ -11,7 +11,7 @@ use efference::inference::{InferenceRegistry, SessionInference, TriageChoice};
 pub(crate) fn registry() -> Result<InferenceRegistry, Error> {
     let cwd = std::env::current_dir()?;
     let env = efference::env_table::EnvSnapshot::capture()?;
-    let secrets = std::sync::Arc::new(efference::secrets::Secrets::configured(
+    let secrets = std::sync::Arc::new(efference::platform::secrets::Secrets::configured(
         efference::user_config::InferenceConfig::user_secret_commands()?,
     ));
     let registry = InferenceRegistry::load(&cwd, &env, &secrets)?;

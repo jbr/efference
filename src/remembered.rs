@@ -19,7 +19,7 @@
 //! [`Project::available`] checks and what the index hands a client back to create
 //! with.
 //!
-//! The table is in the user state database ([`crate::state`]) beside the model
+//! The table is in the user state database ([`crate::platform::state`]) beside the model
 //! picks and the catalog, every operation opening its own connection and every one
 //! best-effort: a store that cannot be opened or written reads as an empty list,
 //! and never fails the creation that was trying to remember itself.
@@ -31,7 +31,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// This table's half of the user state database ([`crate::state`]).
+/// This table's half of the user state database ([`crate::platform::state`]).
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS remembered_projects (
         last_used_at INTEGER NOT NULL,
         cwd TEXT NOT NULL,
@@ -109,7 +109,7 @@ pub struct Projects {
 impl Projects {
     /// Open the store at `path`, creating the database and this table on first
     /// use. `CREATE TABLE IF NOT EXISTS` is the migration story
-    /// ([`crate::state`]): a later table lands beside this one, and a later column
+    /// ([`crate::platform::state`]): a later table lands beside this one, and a later column
     /// in a follow-up change.
     pub fn at(path: PathBuf) -> Self {
         Self { path: Some(path) }
@@ -121,7 +121,7 @@ impl Projects {
     }
 
     fn connect(&self) -> Option<rusqlite::Connection> {
-        crate::state::open(self.path.as_ref()?, SCHEMA).ok()
+        crate::platform::state::open(self.path.as_ref()?, SCHEMA).ok()
     }
 
     /// Remember that a session started in `project`. An existing row for the same

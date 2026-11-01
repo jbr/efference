@@ -13,7 +13,7 @@
 //! provider differs from the configured connection's is discarded.
 
 use crate::api::ListedModel;
-use crate::log::Provider;
+use crate::record::log::Provider;
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;

@@ -13,7 +13,7 @@ release — `{"version": "0.2.0", "tag": "v0.2.0", "url": "https://efference.net
 — with `latest.json.minisig` beside it (the bucket layout is in `process/releasing.md`).
 A check is one GET for each, through the shared HTTP client ([transport.md](transport.md)),
 so the requests carry the address and the `User-Agent` with efference's version and
-nothing else (`src/update_check.rs`).
+nothing else (`src/platform/update_check.rs`).
 
 The document is believed only when its minisign signature checks against the release
 public key compiled into the binary (`RELEASE_PUBLIC_KEY`), verified in-process by

@@ -22,8 +22,8 @@ use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-use crate::log::RawResult;
-use crate::names::tools::BASH;
+use crate::record::log::RawResult;
+use crate::record::names::tools::BASH;
 use crate::tools::Interrupt;
 use std::time::Duration;
 
@@ -129,7 +129,7 @@ struct Input {
 /// (docs/process-monitor.md) — `{ "command": …, "background": true }`. Such a call is
 /// handled structurally by the loop (it registers a child with the process monitor)
 /// rather than run to completion here.
-pub fn is_background_call(call: &crate::log::ToolCall) -> bool {
+pub fn is_background_call(call: &crate::record::log::ToolCall) -> bool {
     call.name == BASH
         && call
             .input
@@ -144,7 +144,7 @@ pub fn is_background_call(call: &crate::log::ToolCall) -> bool {
 /// foreground→background handoff adopts its live child, so the clients that offer
 /// those verbs ask this before showing them. Lives beside the schema that defines
 /// the `background` flag, so there is one reader of it.
-pub fn is_foreground_call(call: &crate::log::ToolCall) -> bool {
+pub fn is_foreground_call(call: &crate::record::log::ToolCall) -> bool {
     call.name == BASH && !is_background_call(call)
 }
 
@@ -232,7 +232,7 @@ impl Bash {
         if let Some(tmpdir) = &self.tmpdir {
             cmd.env("TMPDIR", tmpdir);
         }
-        let mut child = match crate::spawn::tokio(&mut cmd) {
+        let mut child = match crate::platform::spawn::tokio(&mut cmd) {
             Ok(child) => child,
             Err(e) => return RawResult::error(format!("failed to spawn bash: {e}")).into(),
         };
@@ -276,7 +276,7 @@ impl Bash {
         match interrupted {
             Some(Interrupt::Kill) => {
                 if let Some(pgid) = pgid {
-                    crate::spawn::kill_group(pgid);
+                    crate::platform::spawn::kill_group(pgid);
                 }
                 let mut content = decode(&combined);
                 push_line_break(&mut content);
@@ -365,7 +365,7 @@ pub(crate) fn reported_exit_status(content: &str) -> Option<&str> {
 /// (docs/process-monitor.md). The result is what the agent and the triage read; the
 /// bytes as written went out through `on_output` as they arrived.
 fn decode(combined: &[u8]) -> String {
-    crate::terminal_text::strip_formatting(&String::from_utf8_lossy(combined))
+    crate::platform::terminal_text::strip_formatting(&String::from_utf8_lossy(combined))
 }
 
 /// Decode the accumulated (arrival-interleaved) output and mark `is_error` on a

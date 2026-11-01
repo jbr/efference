@@ -335,7 +335,7 @@ The one portable shape for asking again is a request without the model-turn tail
 negotiates HTTP/2 — Anthropic is fronted by Cloudflare, which does not
 advertise `alt-svc: h3`, so HTTP/3 is not a live option. HTTP/2 is the path.
 
-## One client per process (`src/http.rs`)
+## One client per process (`src/platform/http.rs`)
 
 Every outbound request that speaks TCP draws the same `trillium_client::Client`:
 the agent's turns and keepalive, the provider metadata and generation-cost GETs,
@@ -598,7 +598,7 @@ The generation ids these carry 404 permanently at OpenRouter, on both
 `previous_errors[]` with each upstream attempt's provider and raw body). Nothing
 is retrievable after the fact, so the log is the only place an answer can come
 from, and this one path keeps evidence with the mark. The mark itself is
-`UpstreamFailureRecord` (`src/log/upstream.rs`): a `why` and, on this path only,
+`UpstreamFailureRecord` (`src/record/log/upstream.rs`): a `why` and, on this path only,
 `StreamDiagnostics` —
 
 - **status and response headers**, restricted to a named allowlist

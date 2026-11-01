@@ -56,8 +56,11 @@ pub trait ControlServer: Send + Sync {
 /// The in-process server over `control`, its types erased: the namespaced verb set, ready to
 /// mount (docs/tools.md).
 pub fn control_server<Control: SessionControl>(control: Control) -> Box<dyn ControlServer> {
-    let server: McpServer<Control, Control::Verbs> =
-        McpServer::from_state_namespaced(control, &[], crate::names::tools::AGENTS_NAMESPACE);
+    let server: McpServer<Control, Control::Verbs> = McpServer::from_state_namespaced(
+        control,
+        &[],
+        crate::record::names::tools::AGENTS_NAMESPACE,
+    );
     Box::new(server)
 }
 

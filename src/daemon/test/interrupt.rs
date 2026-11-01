@@ -4,7 +4,7 @@
 use super::upstream_hold::start;
 use super::*;
 use crate::frontend::SubmittedTurn;
-use crate::log::WireState;
+use crate::record::log::WireState;
 use crate::testing::upstream::{Canned, ScriptedUpstream, Turnstile, end_turn, events, tool_call};
 
 /// A Messages upstream that answers by arrival order: request 0 calls a tool, so the loop
@@ -42,7 +42,7 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     session
         .wait_until_with(&upstream, "the triage is open", || upstream.count() == 2)
         .await;
-    session.interrupt(crate::log::InterruptOrigin {
+    session.interrupt(crate::record::log::InterruptOrigin {
         source: Some("web".into()),
         control: Some("stop-button".into()),
     });
@@ -70,7 +70,7 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
         .position(|e| {
             matches!(
                 &e.payload,
-                Payload::Telemetry(crate::log::Telemetry::Interrupt(origin))
+                Payload::Telemetry(crate::record::log::Telemetry::Interrupt(origin))
                     if origin.source.as_deref() == Some("web")
                         && origin.control.as_deref() == Some("stop-button")
             )
@@ -81,8 +81,8 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
         .position(|e| {
             matches!(
                 &e.payload,
-                Payload::Telemetry(crate::log::Telemetry::RequestStage(stage))
-                    if matches!(&stage.stage, crate::log::RequestStageKind::Failed { reason }
+                Payload::Telemetry(crate::record::log::Telemetry::RequestStage(stage))
+                    if matches!(&stage.stage, crate::record::log::RequestStageKind::Failed { reason }
                         if reason.contains("interrupt"))
             )
         })
@@ -102,7 +102,7 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
             &e.payload,
             Payload::ResultVerdict {
                 for_result,
-                wire: WireState::Interrupted(crate::log::Interruption { after_ms: None, .. }),
+                wire: WireState::Interrupted(crate::record::log::Interruption { after_ms: None, .. }),
             } if *for_result == captured_seq
         )),
         "the interrupted triage withholds the result it captured"
@@ -151,11 +151,11 @@ async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
 fn stage_of(
     entry: &LogEntry,
     origin: RequestOrigin,
-    stage: impl Fn(&crate::log::RequestStageKind) -> bool,
+    stage: impl Fn(&crate::record::log::RequestStageKind) -> bool,
 ) -> bool {
     matches!(
         &entry.payload,
-        Payload::Telemetry(crate::log::Telemetry::RequestStage(recorded))
+        Payload::Telemetry(crate::record::log::Telemetry::RequestStage(recorded))
             if recorded.origin == origin && stage(&recorded.stage)
     )
 }
@@ -171,7 +171,7 @@ async fn a_press_before_the_request_is_armed_stops_it_unsent() {
     let (host, runtime, _dir) = start(&upstream).await;
     let session = Arc::clone(runtime.session());
     *session.before_request.lock().unwrap() = Some(Box::new(|session: &Session| {
-        session.interrupt(crate::log::InterruptOrigin {
+        session.interrupt(crate::record::log::InterruptOrigin {
             source: Some("web".into()),
             control: Some("stop-button".into()),
         });
@@ -194,7 +194,7 @@ async fn a_press_before_the_request_is_armed_stops_it_unsent() {
         .position(|entry| {
             matches!(
                 &entry.payload,
-                Payload::Telemetry(crate::log::Telemetry::Interrupt(origin))
+                Payload::Telemetry(crate::record::log::Telemetry::Interrupt(origin))
                     if origin.control.as_deref() == Some("stop-button")
             )
         })
@@ -236,7 +236,7 @@ async fn a_press_at_idle_leaves_the_idle_triage_alone() {
             session.loop_phase() == LoopPhase::Idle
                 && session.snapshot().iter().any(|entry| {
                     stage_of(entry, RequestOrigin::Triage, |stage| {
-                        *stage == crate::log::RequestStageKind::Ended
+                        *stage == crate::record::log::RequestStageKind::Ended
                     })
                 })
         })
@@ -246,7 +246,7 @@ async fn a_press_at_idle_leaves_the_idle_triage_alone() {
     assert!(
         !session.snapshot().iter().any(|entry| {
             stage_of(entry, RequestOrigin::Triage, |stage| {
-                matches!(stage, crate::log::RequestStageKind::Failed { .. })
+                matches!(stage, crate::record::log::RequestStageKind::Failed { .. })
             })
         }),
         "the press at idle stopped no triage request"
@@ -280,7 +280,7 @@ async fn a_press_during_the_turns_stream_still_ends_it() {
         .wait_until_with(&upstream, "the turn's stream is open", || {
             session.snapshot().iter().any(|entry| {
                 stage_of(entry, RequestOrigin::Turn, |stage| {
-                    *stage == crate::log::RequestStageKind::FirstByte
+                    *stage == crate::record::log::RequestStageKind::FirstByte
                 })
             })
         })
@@ -297,7 +297,7 @@ async fn a_press_during_the_turns_stream_still_ends_it() {
         session.snapshot().iter().any(|entry| {
             stage_of(entry, RequestOrigin::Turn, |stage| {
                 *stage
-                    == crate::log::RequestStageKind::Failed {
+                    == crate::record::log::RequestStageKind::Failed {
                         reason: "interrupted".into(),
                     }
             })

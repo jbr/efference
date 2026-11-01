@@ -1,13 +1,13 @@
 use super::super::test::{Root, codex_registry, drop_boot, minting, request};
 use super::*;
 use crate::boot::prepare;
-use crate::log::Telemetry;
-use crate::log::{
+use crate::record::log::Telemetry;
+use crate::record::log::{
     AssistantOutput, CallId, ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit,
     ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,
 };
-use crate::recovery::{CallState, last_live_completion, pending_batch};
-use crate::session_dir::SESSION_BASE;
+use crate::record::recovery::{CallState, last_live_completion, pending_batch};
+use crate::record::session_dir::SESSION_BASE;
 
 mod switch;
 
@@ -125,7 +125,7 @@ async fn a_clean_log_resumes_with_its_state() {
     let dir = root.session_dir("clean");
     let config_before = std::fs::read(dir.join(CONFIG_NAME)).unwrap();
     let preamble_before =
-        frozen_preamble(&crate::persist::load(dir.join(LOG_NAME)).unwrap()).unwrap();
+        frozen_preamble(&crate::record::persist::load(dir.join(LOG_NAME)).unwrap()).unwrap();
 
     let registry = codex_registry(root.path(), "clean");
     let (boot, options) = resume(resume_request(&root, "clean", &registry))
@@ -153,7 +153,10 @@ async fn a_clean_log_resumes_with_its_state() {
     assert_eq!(entries.len() as u64, last.seq + 1);
 
     // The restored state, read the way the runtime reads it.
-    assert_eq!(crate::log::latest_title(entries), Some("Listing things"));
+    assert_eq!(
+        crate::record::log::latest_title(entries),
+        Some("Listing things")
+    );
     let (session, _turns) = crate::daemon::Session::full(crate::daemon::SessionParts::new(
         boot.paths.directories(),
         boot.log,
@@ -165,7 +168,7 @@ async fn a_clean_log_resumes_with_its_state() {
     );
 
     assert_eq!(std::fs::read(dir.join(CONFIG_NAME)).unwrap(), config_before);
-    let reread = crate::persist::load(dir.join(LOG_NAME)).unwrap();
+    let reread = crate::record::persist::load(dir.join(LOG_NAME)).unwrap();
     assert_eq!(frozen_preamble(&reread).unwrap(), preamble_before);
 }
 
@@ -187,7 +190,7 @@ async fn a_mid_batch_log_rolls_back() {
         .into_iter()
         .filter(|(name, _)| name != LOG_NAME)
         .collect();
-    let user_seq = crate::persist::load(dir.join(LOG_NAME))
+    let user_seq = crate::record::persist::load(dir.join(LOG_NAME))
         .unwrap()
         .iter()
         .position(|e| matches!(e.payload, Payload::User(_)))
@@ -208,9 +211,9 @@ async fn a_mid_batch_log_rolls_back() {
         "a spawn in the skipped range is still a lost process"
     );
     assert_eq!(entries.last().unwrap().turn, 1);
-    let notice = crate::project::render_resumed(resumed, entries.last().unwrap().seq);
+    let notice = crate::record::project::render_resumed(resumed, entries.last().unwrap().seq);
     assert!(notice.contains("2 entries after seq"), "{notice}");
-    let wire = serde_json::to_string(&crate::project::project(entries)).unwrap();
+    let wire = serde_json::to_string(&crate::record::project::project(entries)).unwrap();
     assert!(!wire.contains("call_9"), "{wire}");
 
     // The session's turn and process numbering stay above what is on disk.
@@ -287,7 +290,7 @@ async fn a_gate_held_log_resumes_at_the_gate() {
     };
     assert_eq!(resumed.resumes_after, None, "nothing is rolled back");
     assert_eq!(resumed.pending_calls, vec![CallId("call_5".into())]);
-    let notice = crate::project::render_resumed(resumed, entries.last().unwrap().seq);
+    let notice = crate::record::project::render_resumed(resumed, entries.last().unwrap().seq);
     assert!(
         notice.contains("stopped with 1 tool call pending")
             && notice.contains("operator's next action brings it back"),
@@ -328,9 +331,9 @@ fn started(id: &str) -> Payload {
 }
 
 fn gate_spot(id: &str) -> Payload {
-    Payload::Spot(crate::log::Spot::new(
+    Payload::Spot(crate::record::log::Spot::new(
         id,
-        crate::log::Stance::Gate,
+        crate::record::log::Stance::Gate,
         "out of scope",
     ))
 }
@@ -425,8 +428,8 @@ fn a_pre_marker_log_reads_a_gate_spot_as_never_started() {
     let mut cleared = bare.clone();
     cleared.push(at(
         2,
-        Payload::Spot(crate::log::Spot {
-            stance: crate::log::Stance::Clear,
+        Payload::Spot(crate::record::log::Spot {
+            stance: crate::record::log::Stance::Clear,
             ..match gate_spot("a") {
                 Payload::Spot(spot) => spot,
                 _ => unreachable!(),
@@ -518,12 +521,12 @@ async fn an_archived_worktree_is_restored_on_resume() {
     let mut req = request(root.path(), "wt-fox", None);
     req.create.worktree = true;
     let boot = prepare(req).await.unwrap();
-    let worktree = crate::session_dir::worktree::path(root.path(), "wt-fox");
+    let worktree = crate::record::session_dir::worktree::path(root.path(), "wt-fox");
     assert!(worktree.is_dir());
     drop_boot(boot);
     let dir = root.session_dir("wt-fox");
     let preamble_before =
-        frozen_preamble(&crate::persist::load(dir.join(LOG_NAME)).unwrap()).unwrap();
+        frozen_preamble(&crate::record::persist::load(dir.join(LOG_NAME)).unwrap()).unwrap();
 
     let env = crate::env_table::ChildEnv::default();
     assert!(matches!(
@@ -549,10 +552,10 @@ async fn an_archived_worktree_is_restored_on_resume() {
     assert_eq!(event.branch, "efference/wt-fox");
     assert!(matches!(
         event.kind,
-        crate::log::WorktreeEventKind::Restored(_)
+        crate::record::log::WorktreeEventKind::Restored(_)
     ));
     drop_boot(boot);
-    let reread = crate::persist::load(dir.join(LOG_NAME)).unwrap();
+    let reread = crate::record::persist::load(dir.join(LOG_NAME)).unwrap();
     assert_eq!(frozen_preamble(&reread).unwrap(), preamble_before);
 }
 
@@ -582,8 +585,8 @@ async fn an_unchanged_tool_set_adds_nothing_on_resume() {
     let root = Root::new("resume-tools-same");
     left_behind(&root, "same", |_| {}).await;
     let dir = root.session_dir("same");
-    let before = crate::persist::load(dir.join(LOG_NAME)).unwrap();
-    let recorded = crate::log::recorded_tools(&before).expect("boot records tools[]");
+    let before = crate::record::persist::load(dir.join(LOG_NAME)).unwrap();
+    let recorded = crate::record::log::recorded_tools(&before).expect("boot records tools[]");
     assert!(!recorded.is_empty());
 
     let registry = codex_registry(root.path(), "same");
@@ -595,7 +598,7 @@ async fn an_unchanged_tool_set_adds_nothing_on_resume() {
         panic!("Resumed is last: no second tools record");
     };
     assert!(resumed.tools_changed.is_empty());
-    assert!(!crate::project::render_resumed(resumed, 99).contains("tools available"));
+    assert!(!crate::record::project::render_resumed(resumed, 99).contains("tools available"));
     drop_boot(boot);
 }
 
@@ -605,7 +608,9 @@ async fn an_unchanged_tool_set_adds_nothing_on_resume() {
 async fn a_changed_tool_set_is_named_in_the_notice() {
     let root = Root::new("resume-tools-changed");
     left_behind(&root, "changed", |log| {
-        let mut tools = crate::log::recorded_tools(log.entries()).unwrap().to_vec();
+        let mut tools = crate::record::log::recorded_tools(log.entries())
+            .unwrap()
+            .to_vec();
         tools[0]["description"] = serde_json::json!("an older description");
         tools.push(serde_json::json!({"name": "ghost__lookup", "input_schema": {}}));
         log.append(0, Payload::Telemetry(Telemetry::Tools { tools }))
@@ -613,8 +618,9 @@ async fn a_changed_tool_set_is_named_in_the_notice() {
     })
     .await;
     let changed_name = {
-        let entries = crate::persist::load(root.session_dir("changed").join(LOG_NAME)).unwrap();
-        crate::log::recorded_tools(&entries).unwrap()[0]["name"]
+        let entries =
+            crate::record::persist::load(root.session_dir("changed").join(LOG_NAME)).unwrap();
+        crate::record::log::recorded_tools(&entries).unwrap()[0]["name"]
             .as_str()
             .unwrap()
             .to_string()
@@ -635,13 +641,13 @@ async fn a_changed_tool_set_is_named_in_the_notice() {
         .unwrap();
     assert_eq!(resumed.tools_changed.removed, vec!["ghost__lookup"]);
     assert_eq!(resumed.tools_changed.changed, vec![changed_name.clone()]);
-    let notice = crate::project::render_resumed(resumed, 99);
+    let notice = crate::record::project::render_resumed(resumed, 99);
     assert!(
         notice.contains(&format!("changed: {changed_name}"))
             && notice.contains("removed: ghost.lookup"),
         "{notice}"
     );
-    let now = crate::log::recorded_tools(entries).unwrap();
+    let now = crate::record::log::recorded_tools(entries).unwrap();
     assert!(now.iter().all(|t| t["name"] != "ghost__lookup"));
     drop_boot(boot);
 }

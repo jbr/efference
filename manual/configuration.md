@@ -181,7 +181,7 @@ sign-ins, and the web address's secret. Add it before running `efference setup` 
 want setup to keep a key for you; keys in environment variables need neither.
 [Credentials](credentials.md) has the details and examples for AWS, `pass`, 1Password, and
 `systemd-creds`.
-<!-- src: src/secrets/commands.rs::SecretCommands; src/secrets.rs::Secrets::configured; src/setup/flow.rs::api_key_source (the keychain choice is unavailable without a store) -->
+<!-- src: src/platform/secrets/commands.rs::SecretCommands; src/platform/secrets.rs::Secrets::configured; src/setup/flow.rs::api_key_source (the keychain choice is unavailable without a store) -->
 
 ## Open sessions in a browser: `[host]`
 
@@ -263,7 +263,7 @@ deleting the line stops that, and efference itself does not read it.
 | `[updates]` `check` | Whether a host checks efference.net for a newer version once a day | setup |
 | `[tui]` `theme`, `images` | How the terminal interface draws | by hand |
 | `[tui]` `frame-cost` | Time each frame and print a summary on exit, for developing efference | by hand |
-<!-- src: src/inference.rs::InferenceConfig, ConnectionConfig, AuthConfig, Defaults; src/api/provider.rs::Provider::NAMED; src/api/provider/dialect.rs::WireDialect::NAMED; src/inference.rs (body and output-cap-field refused off completions); src/api/request_options.rs::RequestOptions::new; src/secrets/commands.rs::SecretCommands; src/inference/host.rs::HostConfig; src/inference/updates.rs::UpdatesConfig; src/inference/tui.rs::TuiConfig; src/setup/render.rs::render, apply_change -->
+<!-- src: src/inference.rs::InferenceConfig, ConnectionConfig, AuthConfig, Defaults; src/api/provider.rs::Provider::NAMED; src/api/provider/dialect.rs::WireDialect::NAMED; src/inference.rs (body and output-cap-field refused off completions); src/api/request_options.rs::RequestOptions::new; src/platform/secrets/commands.rs::SecretCommands; src/inference/host.rs::HostConfig; src/inference/updates.rs::UpdatesConfig; src/inference/tui.rs::TuiConfig; src/setup/render.rs::render, apply_change -->
 
 `efference setup` creates the file readable only by you, and it holds no keys
 ([Credentials](credentials.md)). `efference setup --config <path>` writes another file.

@@ -29,8 +29,8 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::Value;
 
 use crate::config::{CommandStance, Config, Perms};
-use crate::log::{ConfigChange, LogEntry, Origin, Payload, Stance, ToolCall};
-use crate::names::tools::BASH;
+use crate::record::log::{ConfigChange, LogEntry, Origin, Payload, Stance, ToolCall};
+use crate::record::names::tools::BASH;
 
 /// The fast-path's decision for one tool call. `Gate` is the extension point for the
 /// spotter rung, which splits it into a graded `{clear, watch, gate}` stance

@@ -1,8 +1,8 @@
 //! Opportunistic consolidation at complete conversational junctures (docs/consolidate.md).
 use super::*;
 use crate::api::{FinishReason, Streamed};
-use crate::log::Telemetry;
 use crate::protocol::stream::StreamDelta;
+use crate::record::log::Telemetry;
 
 /// The owned request surface a detached consolidation check carries, like the
 /// title ask's (docs/session-title.md): a clone of the agent's client that does
@@ -50,7 +50,7 @@ impl ConsolidationCheck {
         if bytes == 0 || bytes < threshold {
             return None;
         }
-        let prefix = crate::project::project_semantic(&entries);
+        let prefix = crate::record::project::project_semantic(&entries);
         if examined_durably(&entries, span, &prefix) {
             return None;
         }
@@ -99,7 +99,7 @@ impl ConsolidationCheck {
     async fn ask(
         &self,
         shared: &Session,
-        entries: &[crate::log::LogEntry],
+        entries: &[crate::record::log::LogEntry],
         span: consolidate::Span,
         mut prefix: Vec<WireTurn>,
     ) -> Result<String, String> {
@@ -137,7 +137,7 @@ impl ConsolidationCheck {
 /// this range against the same projected context; telemetry and title entries
 /// since do not constitute new work.
 fn examined_durably(
-    entries: &[crate::log::LogEntry],
+    entries: &[crate::record::log::LogEntry],
     span: consolidate::Span,
     prefix: &[WireTurn],
 ) -> bool {
@@ -159,13 +159,13 @@ fn examined_durably(
                 .filter(|e| e.seq <= context)
                 .cloned()
                 .collect();
-            crate::project::project_semantic(&seen) == prefix
+            crate::record::project::project_semantic(&seen) == prefix
         })
 }
 
 fn event(
     span: consolidate::Span,
-    context: crate::log::Seq,
+    context: crate::record::log::Seq,
     tool_bytes: usize,
     outcome: &str,
     account_bytes: usize,
@@ -211,7 +211,7 @@ fn account(
     Ok(text.into())
 }
 
-fn endpoint(entries: &[crate::log::LogEntry], seq: crate::log::Seq) -> String {
+fn endpoint(entries: &[crate::record::log::LogEntry], seq: crate::record::log::Seq) -> String {
     let Some(entry) = entries.iter().find(|e| e.seq == seq) else {
         return format!("#{seq}");
     };
@@ -246,7 +246,7 @@ fn endpoint(entries: &[crate::log::LogEntry], seq: crate::log::Seq) -> String {
 
 /// What stays verbatim after the range: a report or question and what followed
 /// it, or an operator message that arrived while the work was under way.
-fn retained(entries: &[crate::log::LogEntry], span: consolidate::Span) -> &'static str {
+fn retained(entries: &[crate::record::log::LogEntry], span: consolidate::Span) -> &'static str {
     let next = entries.iter().find(|e| {
         e.seq > span.upto && matches!(e.payload, Payload::User(_) | Payload::Assistant { .. })
     });
@@ -260,7 +260,7 @@ fn retained(entries: &[crate::log::LogEntry], span: consolidate::Span) -> &'stat
     }
 }
 
-fn instruction(entries: &[crate::log::LogEntry], span: consolidate::Span) -> String {
+fn instruction(entries: &[crate::record::log::LogEntry], span: consolidate::Span) -> String {
     format!(
         "Consider replacing the working span #{from} through #{upto}, inclusive, with an account for continuation. It begins at {begin} and ends at {end}. Everything before that range, including earlier consolidation accounts, will remain verbatim. {after} Do not summarize those retained surroundings.\n\nPrefer completed tool-heavy investigation, reads, edits, execution and verification whose useful outcomes can now be stated directly. Prefer leaving pure planning/design sequences intact. Reply only `skip` if much of this span remains directly useful verbatim for ongoing or next work. Otherwise write the account itself, at least 100 words, as the record of this work going forward. Preserve current results, decisions and their reasons, still-operative scoped operator direction, unresolved threads, and relevant verification. Summarize operator messages by forward utility; quote where wording matters, without turning old permissions or acknowledgments into unscoped standing instructions. Omit superseded diffs and resolved compile/troubleshooting sidetracks unless they establish a continuing constraint or lesson. Exact quotations, snippets, identifiers and line ranges must be directly supported by visible evidence. Historical code may have changed after it was read: qualify or omit uncertain precision rather than reconstruct it. A small exact excerpt may belong in the account; needing to reproduce much of the span is a reason to skip. No tools: do not verify or investigate anything. Reply with the account text or `skip`.",
         from = span.from,

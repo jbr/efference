@@ -8,12 +8,12 @@
 
 use super::super::cold::ParkReason;
 use super::*;
-use crate::log::{Origin, Spot};
 use crate::protocol::state::Cost;
 use crate::protocol::status::{
     Activity, Background, Block, CLOSING_CAP, Closing, Condition, Escalated, Footer, HeldCall,
     Park, Reviewer, StatusView,
 };
+use crate::record::log::{Origin, Spot};
 
 impl Session {
     /// `status` as the view (docs/control-api.md). The status is passed in rather than
@@ -125,7 +125,7 @@ impl Session {
                     Some(format!(
                         "{}'s {}{leaf_summary}",
                         bound.session,
-                        crate::names::tools::display_name(&bound.name)
+                        crate::record::names::tools::display_name(&bound.name)
                     ))
                 }
                 None => transcript::call_summary(&ToolCall::new(
@@ -145,7 +145,7 @@ impl Session {
         };
         HeldCall {
             call_id: call_id.to_string(),
-            tool: crate::names::tools::display_name(name),
+            tool: crate::record::names::tools::display_name(name),
             summary,
             intent,
             handle: self.handle_of(call_id),

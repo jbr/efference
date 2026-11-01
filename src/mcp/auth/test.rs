@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::www_authenticate::Challenges;
+use crate::platform::www_authenticate::Challenges;
 
 fn protected(json: serde_json::Value) -> ProtectedResource {
     serde_json::from_value(json).unwrap()

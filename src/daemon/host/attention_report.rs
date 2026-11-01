@@ -2,8 +2,8 @@
 //! into is `attention.rs`, which the host shares with every session it adopts.
 
 use super::*;
-use crate::log::PushCancel;
 use crate::protocol::attention::AttentionReport;
+use crate::record::log::PushCancel;
 
 impl Host {
     /// Take a client's report: record it, and when it is an active report from a

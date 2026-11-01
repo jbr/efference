@@ -7,8 +7,8 @@
 
 use crate::api::{Client, RequestUsage, Streamed, ToolChoice};
 use crate::digest;
-use crate::log::{Audience, LogEntry, Payload, Seq};
-use crate::project::WireTurn;
+use crate::record::log::{Audience, LogEntry, Payload, Seq};
+use crate::record::project::WireTurn;
 use serde_json::Value;
 
 const PROMPT: &str = include_str!("../assets/prompts/compaction.md");
@@ -30,7 +30,7 @@ pub enum Error {
     #[error("a cut at seq {cut} splits {} call(s) from their results", calls.len())]
     SplitsCall {
         cut: Seq,
-        calls: Vec<crate::log::CallId>,
+        calls: Vec<crate::record::log::CallId>,
     },
     #[error("compaction request failed: {0}")]
     Request(crate::api::Error),
@@ -109,7 +109,7 @@ pub async fn summarize(
 ) -> Result<Compaction, Error> {
     let turns = request(entries, cut)?;
     let completion = client
-        .with_origin(crate::log::RequestOrigin::Compaction)
+        .with_origin(crate::record::log::RequestOrigin::Compaction)
         .complete(&turns, tools, ToolChoice::auto(), on_delta)
         .await
         .map_err(Error::Request)?;

@@ -121,7 +121,7 @@ fn every_guide_link_resolves() {
 /// group description, and one `<name path="…">` stub per document (docs/context.md).
 #[test]
 fn the_guide_renders_as_a_context_group() {
-    let resolved = crate::log::context::Resolved {
+    let resolved = crate::record::log::context::Resolved {
         sections: vec![section(DEFAULT_HEADING)],
     };
     let rendered = resolved.render().expect("a non-empty section renders");

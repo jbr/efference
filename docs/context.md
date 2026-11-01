@@ -8,7 +8,7 @@ boots with — nothing is auto-discovered.** No `EFFERENCE.md` convention, no au
 `CLAUDE.md`, no scanning for skill files. The one config file is the single source of
 truth for what the session starts knowing, the same way it already is for the session's
 perimeter. Schema in `src/config.rs`; resolution and render in `src/context.rs`, the resolved
-shapes the log records in `src/log/context.rs`; splicing in `src/env.rs`; the read/write grants in `src/policy.rs`.
+shapes the log records in `src/record/log/context.rs`; splicing in `src/env.rs`; the read/write grants in `src/policy.rs`.
 
 ## The identity line
 

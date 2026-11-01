@@ -7,9 +7,9 @@ use super::*;
 /// are the perimeter the acting session should learn moved; `commands`/`tools` are classifier-only.
 /// The `slot` lets a later edit of the same key supersede a still-pending notice.
 pub(super) fn session_visible_notice(
-    change: &crate::log::ConfigChange,
+    change: &crate::record::log::ConfigChange,
 ) -> Option<(String, String)> {
-    use crate::log::ConfigChange;
+    use crate::record::log::ConfigChange;
     match change {
         ConfigChange::Scope { text } => Some((
             format!("Your session scope was updated by the orchestrator:\n\n{text}"),
@@ -49,7 +49,7 @@ impl Session {
 
     /// Resolve a pending proposal by `seq` — the orchestrator-above's commit/cancel decision over
     /// `PATCH /proposals/:seq` (docs/permissions.md). **Commit** appends a
-    /// `Committed` [`ConfigEdit`](crate::log::ConfigEdit) carrying the proposal's `change`, which
+    /// `Committed` [`ConfigEdit`](crate::record::log::ConfigEdit) carrying the proposal's `change`, which
     /// `append`'s fold applies to the effective config (and notifies the session for
     /// `scope`/`paths`); **cancel** appends a `Cancelled` entry (audit-only). Both
     /// reference the proposal by `seq`, so the fold drops it from the pending queue. Returns
@@ -78,20 +78,20 @@ impl Session {
         } else {
             EditState::Cancelled
         };
-        let edit = crate::log::ConfigEdit::new(state, change)
+        let edit = crate::record::log::ConfigEdit::new(state, change)
             .with_resolves(Some(seq))
             .with_note(note);
         self.append(self.latest_turn(), Payload::ConfigEdit(edit))?;
         Ok(true)
     }
 
-    /// Edit a committed [`ConfigChange`](crate::log::ConfigChange) into the config file,
+    /// Edit a committed [`ConfigChange`](crate::record::log::ConfigChange) into the config file,
     /// preserving its formatting (docs/permissions.md). Every committed grant goes through
     /// here, so the file stays a complete record of the perimeter the session ran under —
     /// the file an operator reads, and copies grants up to the origin template from. A
     /// session with no config file (the built-in default role) is a no-op: there is no file
     /// to diverge from.
-    pub fn apply_config_change(&self, change: &crate::log::ConfigChange) -> io::Result<()> {
+    pub fn apply_config_change(&self, change: &crate::record::log::ConfigChange) -> io::Result<()> {
         match self.config_file.lock().unwrap().as_mut() {
             Some(file) => file.apply(change),
             None => Ok(()),

@@ -183,7 +183,7 @@ async fn interrupt_says_what_it_stopped() {
             .filter(|e| {
                 matches!(
                     &e.payload,
-                    Payload::Telemetry(crate::log::Telemetry::Interrupt(_))
+                    Payload::Telemetry(crate::record::log::Telemetry::Interrupt(_))
                 )
             })
             .count()
@@ -235,7 +235,7 @@ async fn archive_names_what_ended_with_it() {
 /// it records none.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn archive_records_the_calling_session() {
-    use crate::log::Payload;
+    use crate::record::log::Payload;
 
     let fixture = Fixture::new().await;
     let child = fixture.host.session("child").unwrap();

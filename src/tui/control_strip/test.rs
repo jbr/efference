@@ -107,7 +107,7 @@ fn strip_offers_background_only_for_foreground_bash_but_always_an_interrupt() {
     // (docs/process-monitor.md) — it is never the foreground tool either.
     play.running_tool(
         "toolu_g",
-        crate::names::tools::BASH,
+        crate::record::names::tools::BASH,
         json!({ "command": "cargo watch", "background": true }),
     );
     assert!(
@@ -338,7 +338,7 @@ fn strip_gate_set_leads_with_approve() {
     assert!(
         matches!(
             play.took_approval(),
-            Some((id, crate::log::Approval::Approve)) if id == "toolu_g"
+            Some((id, crate::record::log::Approval::Approve)) if id == "toolu_g"
         ),
         "…with an Approve decision"
     );
@@ -357,7 +357,10 @@ fn strip_abort_sends_abort_and_keeps_the_draft() {
     play.route_key(KeyCode::Right, NONE); // abort
     play.route_key(KeyCode::Enter, NONE);
     assert!(
-        matches!(play.took_approval(), Some((_, crate::log::Approval::Abort))),
+        matches!(
+            play.took_approval(),
+            Some((_, crate::record::log::Approval::Abort))
+        ),
         "⏎ on abort sends Abort"
     );
     assert_eq!(
@@ -433,7 +436,7 @@ fn strip_freezes_while_engaged_and_greys_what_stops_applying() {
     );
 
     // The command finishes. The verbs that only applied while it ran stop applying.
-    play.tool_result("toolu_b", "ok", false, crate::log::WireState::Raw);
+    play.tool_result("toolu_b", "ok", false, crate::record::log::WireState::Raw);
     play.phase(crate::protocol::state::LoopPhase::Idle);
     assert_eq!(
         labels(&play),
@@ -505,7 +508,7 @@ fn hovering_the_strip_pins_it_and_leaving_releases_it() {
     );
     play.render();
 
-    play.tool_result("toolu_b", "ok", false, crate::log::WireState::Raw);
+    play.tool_result("toolu_b", "ok", false, crate::record::log::WireState::Raw);
     play.phase(crate::protocol::state::LoopPhase::Idle);
     assert!(
         labels(&play).contains(&"kill"),

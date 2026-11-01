@@ -20,14 +20,14 @@ use trillium_tokio::UnixClientConfig;
 pub use crate::catalog::{CatalogModel, ConnectionCatalog, ModelRole, Status as CatalogStatus};
 use crate::frontend::SubmittedTurn;
 use crate::inference::{ConnectionInventory, ResolvedOptions};
-use crate::log::Approval;
-use crate::log::attachment::Arrival;
 use crate::protocol::sessions::{
     ArchivedSession, CreateSession, ListedSession, PatchSession, SessionOptionsRequest,
     SessionState,
 };
 use crate::protocol::transcript::TranscriptRead;
 use crate::protocol::turns::{Landing, QueuedTurn};
+use crate::record::log::Approval;
+use crate::record::log::attachment::Arrival;
 
 mod host;
 mod transport;
@@ -298,7 +298,7 @@ impl Client {
     /// Interrupt the loop (`POST /loop/interrupt`, docs/control-api.md) — the SIGINT
     /// equivalent that kills a running tool's process group (docs/process-monitor.md) —
     /// saying who is asking and through which affordance; the host records both.
-    pub async fn interrupt(&self, origin: &crate::log::InterruptOrigin) -> Result<()> {
+    pub async fn interrupt(&self, origin: &crate::record::log::InterruptOrigin) -> Result<()> {
         let body = serde_json::to_string(origin)?;
         self.post("/loop/interrupt", body).await.map(drop)
     }
@@ -328,7 +328,8 @@ impl Client {
     /// failure: the moment simply had no continue in it, and the daemon's message
     /// says which case. Errors are reserved for a request that didn't get an answer.
     pub async fn continue_loop(&self, source: Option<&str>) -> Result<ContinueOutcome> {
-        let origin = crate::log::ContinueOrigin::default().with_source(source.map(str::to_string));
+        let origin =
+            crate::record::log::ContinueOrigin::default().with_source(source.map(str::to_string));
         let body = serde_json::to_string(&origin)?;
         Ok(
             match self

@@ -15,7 +15,7 @@
 //! recorded in [`Axes`] — and it never returns `Watch`: how many approved calls a
 //! level needs ([`REQUIRED`]) is the dial between asking and not asking.
 
-use crate::log::{Axes, Stance};
+use crate::record::log::{Axes, Stance};
 
 /// The question keys, as they go on the wire and come back in `answers`.
 pub(super) const SKETCH: &str = "sketch";

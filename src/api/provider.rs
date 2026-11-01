@@ -8,7 +8,7 @@
 //! capability source), and that interface is deferred until
 //! the in-code providers show what it must carry.
 //!
-//! The enum itself is [`crate::log::Provider`], because a boot records it; this file holds
+//! The enum itself is [`crate::record::log::Provider`], because a boot records it; this file holds
 //! the identity's serde impls and the per-provider policy (cache lifetime, keepalive
 //! cap, placements, default models). The HTTP shape of a provider's requests is
 //! `provider/http.rs`; the capability types and their per-provider parses are
@@ -312,39 +312,41 @@ impl Provider {
     /// it reproduces on the provider's OpenAI-shaped endpoint too — so it follows
     /// the slug rather than the provider.
     ///
-    /// [`ImagePlacement::AfterInterposedTurn`]: crate::project::ImagePlacement::AfterInterposedTurn
+    /// [`ImagePlacement::AfterInterposedTurn`]: crate::record::project::ImagePlacement::AfterInterposedTurn
     // The equal bodies are coincidences: `TypeSafe` and `Custom(SystemOne)` take
     // `InToolResult` because no turn is ever projected for them, not because their
     // dialects place images there, and the OpenRouter default agrees with the portable
     // Messages shape without sharing its reason.
     #[allow(clippy::match_same_arms)]
-    pub fn image_placement(&self, model: &str) -> crate::project::ImagePlacement {
+    pub fn image_placement(&self, model: &str) -> crate::record::project::ImagePlacement {
         match self {
             Self::Anthropic | Self::OpenAI | Self::OpenAICodex => {
-                crate::project::ImagePlacement::InToolResult
+                crate::record::project::ImagePlacement::InToolResult
             }
             Self::OpenRouter if is_gemini(model) => {
-                crate::project::ImagePlacement::AfterInterposedTurn
+                crate::record::project::ImagePlacement::AfterInterposedTurn
             }
-            Self::OpenRouter => crate::project::ImagePlacement::FollowingUserBlock,
+            Self::OpenRouter => crate::record::project::ImagePlacement::FollowingUserBlock,
             // The portable shape on Messages: an unknown endpoint may be a bridge
             // to an upstream that drops `tool_result` images, and a following user
             // block survives that translation. Responses has one shape.
             Self::Custom(WireDialect::Messages) => {
-                crate::project::ImagePlacement::FollowingUserBlock
+                crate::record::project::ImagePlacement::FollowingUserBlock
             }
-            Self::Custom(WireDialect::Responses) => crate::project::ImagePlacement::InToolResult,
+            Self::Custom(WireDialect::Responses) => {
+                crate::record::project::ImagePlacement::InToolResult
+            }
             // Completions places a result's images itself, in the `user` message
             // after the run of `tool` messages (`api/completions.rs`).
             Self::Custom(WireDialect::Completions) => {
-                crate::project::ImagePlacement::FollowingUserBlock
+                crate::record::project::ImagePlacement::FollowingUserBlock
             }
             // Projection placement is read while encoding a turn, and a provider
             // with no inference dialect never has one encoded for it. The arm
             // exists because the match is exhaustive, not because the value means
             // anything here.
             Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => {
-                crate::project::ImagePlacement::InToolResult
+                crate::record::project::ImagePlacement::InToolResult
             }
         }
     }
@@ -361,7 +363,7 @@ impl Provider {
     /// while a trailing one advanced it every round (docs/log-and-projection.md).
     ///
     /// Gemini slugs on OpenRouter take no marker at all
-    /// ([`BreakpointPlacement::None`](crate::project::BreakpointPlacement::None)):
+    /// ([`BreakpointPlacement::None`](crate::record::project::BreakpointPlacement::None)):
     /// a marker there becomes a Gemini explicit cache that a tool loop cannot
     /// advance, while Gemini's implicit cache tracks the growing prefix unmarked
     /// (docs/transport.md).
@@ -375,33 +377,37 @@ impl Provider {
     // Responses providers reach it with their placement unused, since they place their
     // own marker.
     #[allow(clippy::match_same_arms)]
-    pub fn breakpoint_placement(&self, model: &str) -> crate::project::BreakpointPlacement {
+    pub fn breakpoint_placement(&self, model: &str) -> crate::record::project::BreakpointPlacement {
         match self {
             // Responses places its own marker (`api/responses.rs`); the Messages
             // placement is unused there.
             Self::Anthropic | Self::OpenAI | Self::OpenAICodex => {
-                crate::project::BreakpointPlacement::TrailingBlock
+                crate::record::project::BreakpointPlacement::TrailingBlock
             }
-            Self::OpenRouter if is_gemini(model) => crate::project::BreakpointPlacement::None,
+            Self::OpenRouter if is_gemini(model) => {
+                crate::record::project::BreakpointPlacement::None
+            }
             Self::OpenRouter if is_anthropic_slug(model) => {
-                crate::project::BreakpointPlacement::TrailingBlock
+                crate::record::project::BreakpointPlacement::TrailingBlock
             }
-            Self::OpenRouter => crate::project::BreakpointPlacement::LastTextBlock,
+            Self::OpenRouter => crate::record::project::BreakpointPlacement::LastTextBlock,
             // A text carrier is the marker placement that survives translation to
             // an OpenAI-ish upstream, which an unknown Messages endpoint may be.
             Self::Custom(WireDialect::Messages) => {
-                crate::project::BreakpointPlacement::LastTextBlock
+                crate::record::project::BreakpointPlacement::LastTextBlock
             }
             Self::Custom(WireDialect::Responses) => {
-                crate::project::BreakpointPlacement::TrailingBlock
+                crate::record::project::BreakpointPlacement::TrailingBlock
             }
             // Completions has no per-part cache marker; servers cache the prefix
             // implicitly.
-            Self::Custom(WireDialect::Completions) => crate::project::BreakpointPlacement::None,
+            Self::Custom(WireDialect::Completions) => {
+                crate::record::project::BreakpointPlacement::None
+            }
             // Unreachable for the same reason as `image_placement`'s arm: nothing
             // projects a turn for a provider that serves none.
             Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => {
-                crate::project::BreakpointPlacement::TrailingBlock
+                crate::record::project::BreakpointPlacement::TrailingBlock
             }
         }
     }

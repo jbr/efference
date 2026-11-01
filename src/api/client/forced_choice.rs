@@ -4,7 +4,7 @@
 //! re-sends.
 
 use super::*;
-use crate::project::UserPart;
+use crate::record::project::UserPart;
 
 /// The user line a forced call sent as `auto` ends with (docs/transport.md).
 pub(crate) fn forced_choice_instruction(tool: &str) -> String {

@@ -7,13 +7,13 @@
 //! safe by construction). The triager's job is to produce a **verdict** — which
 //! lines survive (`keep`) plus a `note` — not rendered bytes: the wire form is
 //! re-rendered from `raw` + the verdict at projection time
-//! ([`crate::project::render_triaged`], docs/triage.md), so the kept bytes
+//! ([`crate::record::project::render_triaged`], docs/triage.md), so the kept bytes
 //! are never stored twice and the structured decision doubles as the audit record.
 //!
 //! The same throwaway triage also triages the **inbox** (docs/inbox.md): the pending
 //! ambient notifications are shown under the output, and the `retain` verdict's
 //! `inbox` field pins / dismisses them by `[seq]`. The dispositions ride back on the
-//! [`TriageOutcome`] and land on the logged [`Triage`](crate::log::Triage). One type
+//! [`TriageOutcome`] and land on the logged [`Triage`](crate::record::log::Triage). One type
 //! does the triaging:
 //!
 //! - [`Triager`] — the universal triage (docs/triage.md): fork a
@@ -31,7 +31,7 @@
 
 use std::collections::HashSet;
 
-use crate::log::RequestOrigin;
+use crate::record::log::RequestOrigin;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -41,14 +41,14 @@ use crate::api::{
     ToolChoice, UpstreamFailureState, UpstreamRetryCell, stream_abort_backoff, stream_abort_retry,
 };
 use crate::inbox::ShownNotification;
-use crate::log::context::Item;
-use crate::log::{
+use crate::process_monitor::BgView;
+use crate::record::log::context::Item;
+use crate::record::log::{
     AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
     Triaged, WireState,
 };
-use crate::names::tools::{RETAIN, TRIAGE};
-use crate::process_monitor::BgView;
-use crate::project::{Reader, TRIAGE_LINE_CAP, UserPart, WireTurn, project_semantic_for};
+use crate::record::names::tools::{RETAIN, TRIAGE};
+use crate::record::project::{Reader, TRIAGE_LINE_CAP, UserPart, WireTurn, project_semantic_for};
 
 /// A live-process triage disposition (docs/process-monitor.md) — distinct from the seq-keyed
 /// notification [`Disposition`] because a running process is addressed by its live
@@ -73,7 +73,7 @@ pub struct Pending<'a> {
 }
 
 /// The verdict on **one** tool result (docs/triage.md): the wire form plus the
-/// audit pieces the loop stamps into that result's [`Triage`](crate::log::Triage)
+/// audit pieces the loop stamps into that result's [`Triage`](crate::record::log::Triage)
 /// entry. `raw` is never mutated — it stays in the log.
 pub struct TriageOutcome {
     /// The canonical wire form — a [`WireState::Triaged`] verdict ([`Triaged`]:
@@ -176,7 +176,7 @@ impl HoldOutcome {
         Self {
             results: (0..count)
                 .map(|_| TriageOutcome {
-                    wire: WireState::Interrupted(crate::log::Interruption {
+                    wire: WireState::Interrupted(crate::record::log::Interruption {
                         by: by.map(str::to_string),
                         after_ms: None,
                         killed: false,
@@ -198,7 +198,7 @@ impl HoldOutcome {
 
 /// The verdict of a **standalone** idle triage (docs/process-monitor.md) — a triage that rides no
 /// tool result, so it has no [`WireState`]; just the inbox/background dispositions (and
-/// the audit pieces the loop stamps into a [`Triage`](crate::log::Triage) with
+/// the audit pieces the loop stamps into a [`Triage`](crate::record::log::Triage) with
 /// `for_result: None`).
 pub struct InboxTriage {
     pub inbox: Vec<(Seq, Disposition)>,
@@ -458,7 +458,7 @@ impl Triager {
         // (docs/transport.md); the stamp precedes the send, as the primer's does.
         let resend = self
             .resends_results()
-            .then(|| (messages.clone(), crate::log::Timestamp::now()));
+            .then(|| (messages.clone(), crate::record::log::Timestamp::now()));
         let mut record = TriageRecord::default();
         let parsed = triage_with_retries(
             &client,

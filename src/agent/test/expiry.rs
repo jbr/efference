@@ -2,7 +2,7 @@
 //! number of shows, and the dismissal is a log entry (docs/inbox.md).
 use super::*;
 use crate::inbox::MAX_UNMENTIONED_SHOWS;
-use crate::log::Telemetry;
+use crate::record::log::Telemetry;
 
 fn idle_triage() -> Payload {
     Payload::Triage(Triage::new(None, String::new()))

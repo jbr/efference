@@ -95,7 +95,7 @@ impl Menu {
     }
 }
 
-pub(crate) use efference::home::tilde;
+pub(crate) use efference::platform::home::tilde;
 
 /// Every live host's session listing, in candidate order.
 pub(crate) async fn live_listings() -> Result<Vec<(PathBuf, Vec<ListedSession>)>, CliError> {

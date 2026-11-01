@@ -3,7 +3,7 @@
 use super::*;
 
 use crate::api::Endpoint;
-use crate::log::Provider;
+use crate::record::log::Provider;
 
 fn session() -> Arc<Session> {
     let (shared, _rx) = Session::in_memory();

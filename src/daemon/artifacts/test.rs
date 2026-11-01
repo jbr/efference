@@ -1,8 +1,8 @@
 use super::*;
 use crate::config::testing::ConfigFixture;
 use crate::daemon::SessionParts;
-use crate::log::{AssistantOutput, ContentBlock, Exclusion};
-use crate::persist::Log;
+use crate::record::log::{AssistantOutput, ContentBlock, Exclusion};
+use crate::record::persist::Log;
 use trillium_testing::TestServer;
 
 fn assistant(text: &str, excluded: Option<Exclusion>) -> Payload {

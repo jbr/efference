@@ -5,8 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::api::{CacheMissReason, PlanSnapshot, Usage};
-use crate::log::Timestamp;
-use crate::project::Retention;
+use crate::record::log::Timestamp;
+use crate::record::project::Retention;
 
 /// The `usage` topic: token counts, the prompt cache's health, the session's cost, and
 /// the Codex backend's plan windows, for the main loop and for a triage client of its own.

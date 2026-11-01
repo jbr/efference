@@ -393,8 +393,8 @@ fn a_turn_ending_with_a_turn_queued_sends_no_settle_push() {
             .filter(|e| {
                 matches!(
                     &e.payload,
-                    Payload::Telemetry(crate::log::Telemetry::Push(record))
-                        if record.kind == crate::log::MomentKind::Settle
+                    Payload::Telemetry(crate::record::log::Telemetry::Push(record))
+                        if record.kind == crate::record::log::MomentKind::Settle
                 )
             })
             .count()

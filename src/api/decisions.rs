@@ -29,7 +29,7 @@ use trillium_client_retry::RetryHandler;
 
 use super::stages::{ActiveTrace, StageSink, Trace};
 use super::*;
-use crate::log::RequestOrigin;
+use crate::record::log::RequestOrigin;
 
 /// How long a decisions request may spend retrying before the spotter gives up
 /// and the gate falls to the human (docs/permissions.md). Far shorter than the

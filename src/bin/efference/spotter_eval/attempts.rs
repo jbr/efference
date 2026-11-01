@@ -65,7 +65,7 @@ impl Eval {
     async fn attempt(&self, case_index: usize, run: usize) -> Attempt {
         let (case, expected, bucket) = &self.cases[case_index];
         let role = role(case);
-        let call = efference::log::ToolCall::new(
+        let call = efference::record::log::ToolCall::new(
             case.call.name.clone(),
             "toolu_spotter_eval",
             case.call.input.clone(),

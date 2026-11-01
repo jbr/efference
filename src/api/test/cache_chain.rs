@@ -42,7 +42,7 @@ async fn consecutive_turns_name_each_others_responses() {
         "m",
         "SYS",
     )
-    .with_origin(crate::log::RequestOrigin::Turn);
+    .with_origin(crate::record::log::RequestOrigin::Turn);
 
     for _ in 0..2 {
         client
@@ -74,7 +74,7 @@ async fn a_provider_without_the_field_is_sent_no_object() {
         "m",
         "SYS",
     )
-    .with_origin(crate::log::RequestOrigin::Turn);
+    .with_origin(crate::record::log::RequestOrigin::Turn);
 
     for _ in 0..2 {
         client
@@ -106,7 +106,7 @@ async fn a_triage_neither_opts_in_nor_extends_the_chain() {
         "m",
         "SYS",
     )
-    .with_origin(crate::log::RequestOrigin::Turn);
+    .with_origin(crate::record::log::RequestOrigin::Turn);
 
     client
         .complete(&[], &[], ToolChoice::auto(), |_| {})
@@ -114,7 +114,7 @@ async fn a_triage_neither_opts_in_nor_extends_the_chain() {
         .expect("the mock stream finalizes");
     // The triage, on the agent's own client, as the triager builds it.
     client
-        .with_origin(crate::log::RequestOrigin::Triage)
+        .with_origin(crate::record::log::RequestOrigin::Triage)
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect("the mock stream finalizes");

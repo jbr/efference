@@ -15,7 +15,7 @@ use super::*;
 ///    pins that it survives the turn boundary an interrupt introduces.
 #[test]
 pub(super) fn an_interrupted_call_is_paired_says_who_stopped_it_and_the_operator_speaks_next() {
-    use crate::project::ApiBlock;
+    use crate::record::project::ApiBlock;
     let (shared, _rx) = Session::in_memory();
     let call = bash_call("cat enormous.log");
     shared
@@ -34,7 +34,7 @@ pub(super) fn an_interrupted_call_is_paired_says_who_stopped_it_and_the_operator
             withheld(
                 &call,
                 RawResult::text("SECRET_TOKEN=hunter2\n…120k of log…"),
-                crate::log::Interruption {
+                crate::record::log::Interruption {
                     by: Some("session[parent]".into()),
                     after_ms: Some(65_000),
                     killed: false,
@@ -49,7 +49,7 @@ pub(super) fn an_interrupted_call_is_paired_says_who_stopped_it_and_the_operator
 
     let messages = shared.project_messages();
     let last = messages.last().expect("a projected message");
-    assert_eq!(last.role, crate::project::Role::User);
+    assert_eq!(last.role, crate::record::project::Role::User);
     match &last.content[..] {
         [
             ApiBlock::ToolResult {
@@ -100,7 +100,7 @@ pub(super) fn an_interrupted_call_is_paired_says_who_stopped_it_and_the_operator
 /// rejects the request.
 #[test]
 pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
-    use crate::project::ApiBlock;
+    use crate::record::project::ApiBlock;
     let (shared, _rx) = Session::in_memory();
     let first = ToolCall::new("search", "search_2", serde_json::json!({}));
     let second = ToolCall::new(BASH, "bash_3", serde_json::json!({ "command": "ls" }));
@@ -138,7 +138,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
     // Both results land in a *single* trailing user message, in call order — the shape
     // Anthropic expects for a multi-call turn, and the one the triage reproduces.
     let last = messages.last().expect("a trailing user message");
-    assert_eq!(last.role, crate::project::Role::User);
+    assert_eq!(last.role, crate::record::project::Role::User);
     let answered: Vec<&str> = last
         .content
         .iter()
@@ -157,7 +157,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
 /// once after each user turn, and on the trajectory-count fallback otherwise.
 #[test]
 fn title_is_solicited_after_a_user_turn_and_on_the_fallback() {
-    use crate::log::{LogEntry, Timestamp, Title, TitleAuthor};
+    use crate::record::log::{LogEntry, Timestamp, Title, TitleAuthor};
     fn entry(seq: u64, payload: Payload) -> LogEntry {
         LogEntry::new(seq, payload).with_at(Timestamp(seq))
     }

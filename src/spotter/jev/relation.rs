@@ -19,8 +19,8 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use crate::api::{Decisions, Instructions, Question};
-use crate::log::{Compared, ToolCall};
-use crate::names::tools::{BASH, INTENT, display_name};
+use crate::record::log::{Compared, ToolCall};
+use crate::record::names::tools::{BASH, INTENT, display_name};
 
 use super::questions::{RELATION_COUNTS, Reading};
 

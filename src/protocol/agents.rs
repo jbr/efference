@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::log::ToolCall;
+use crate::record::log::ToolCall;
 
 /// The wire name of the in-session `decide`: the one call the loop binds to its
 /// target's held action before running the permission ladder, when it allows

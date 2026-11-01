@@ -1,5 +1,7 @@
 use super::*;
-use crate::log::{AssistantOutput, ContentBlock, Keep, RawResult, Timestamp, ToolCall, Triaged};
+use crate::record::log::{
+    AssistantOutput, ContentBlock, Keep, RawResult, Timestamp, ToolCall, Triaged,
+};
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -105,7 +107,7 @@ fn views_parse_from_their_flag_spelling() {
 #[test]
 fn the_view_follows_the_triage_configuration() {
     let endpoint = crate::api::Endpoint::from_credentials(
-        crate::log::Provider::Anthropic,
+        crate::record::log::Provider::Anthropic,
         "sk-ant-xyz",
         None,
         None,

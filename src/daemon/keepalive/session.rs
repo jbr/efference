@@ -75,7 +75,7 @@ impl Session {
     pub(crate) fn store_triage_request(
         &self,
         request: SentRequest,
-        sent: crate::log::Timestamp,
+        sent: crate::record::log::Timestamp,
         usage: &RequestUsage,
     ) {
         self.metrics.lock().unwrap().triage_request = Some(StoredRequest {
