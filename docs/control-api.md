@@ -209,10 +209,15 @@ sessions from one process. Its own routes are the listener's, not a session's:
   absolute. That covers the `cwd` of `QUERY /sessions`, `POST /sessions` and an `active`
   `PATCH /sessions/:id`, and the `cwd` query parameter of the archived listing,
   `GET /sessions/:id`, `GET /inference/catalog`, and `DELETE /projects`. `~user` is not
-  expanded and is refused as relative. What the host stores and reports (sessions,
-  `GET /projects`, the remembered locations) is the expanded path, so a location typed
-  with `~` and one typed in full are one entry. Preview's issue for a path that is
-  neither reads "must be an absolute path or start with ~".
+  expanded and is refused as relative. An absolute path that resolves is then
+  canonicalized, following symlinks and, on a case-insensitive filesystem, taking the
+  on-disk case (`/users/x` is `/Users/x` on macOS). What the host stores and reports
+  (sessions, the session-id register, `GET /projects`, the remembered locations) is that
+  path, so a location typed with `~`, one typed in full, and one reached through another
+  spelling are one entry: the register keys an id by its root's spelling, and a second
+  spelling of one root would read as a clash of two roots. A path that does not resolve
+  keeps its expanded spelling. Preview's issue for a path that is neither absolute nor
+  `~`-led reads "must be an absolute path or start with ~".
 - `POST /sessions` — create a session. The body is the session request: `cwd`
   (absolute, always sent), the `QUERY /sessions` selections above, and optionally
   `env`, `name`, `config`, `temperature`, `effort`, `upstream`, `autonomous`,

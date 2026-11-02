@@ -44,7 +44,7 @@ impl Host {
                     .into(),
             ));
         };
-        let cwd = crate::platform::home::expand_here(&cwd);
+        let cwd = crate::platform::home::canonical_here(&cwd);
         if !cwd.is_absolute() {
             return Err(ResumeRefused::Refused(format!(
                 "cwd must be absolute or start with ~: {}",

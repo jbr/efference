@@ -1,5 +1,6 @@
 //! A path with the home directory written as `~`, and the reverse: a typed `~`
-//! read as the home directory (docs/tools.md, docs/control-api.md).
+//! read as the home directory, and a client's directory canonicalized as the host
+//! keys it (docs/tools.md, docs/control-api.md).
 
 use std::path::{Path, PathBuf};
 
@@ -41,10 +42,26 @@ pub fn expand(path: &Path, home: Option<&Path>) -> PathBuf {
     }
 }
 
-/// [`expand`] against this process's `$HOME`: the host's own home, which is where a
-/// client's `~` points because the path names a directory on the host.
-pub fn expand_here(path: &Path) -> PathBuf {
-    expand(path, std::env::var_os("HOME").as_deref().map(Path::new))
+/// A directory a client named, spelled as the host keys it: [`expand`] against
+/// `home`, then, when the path is absolute and resolves, canonicalized. Two
+/// spellings of one directory — through a symlink, or `/users` for `/Users` on a
+/// case-insensitive filesystem — reach the one root that the session register and
+/// the remembered locations key on (docs/control-api.md). A path that does not
+/// resolve keeps its expanded spelling, and a relative one stays relative, so the
+/// caller's absoluteness check still refuses it rather than reading it against the
+/// host's own working directory.
+pub fn canonical(path: &Path, home: Option<&Path>) -> PathBuf {
+    let path = expand(path, home);
+    if !path.is_absolute() {
+        return path;
+    }
+    std::fs::canonicalize(&path).unwrap_or(path)
+}
+
+/// [`canonical`] against this process's `$HOME`: the host's own home, which is where
+/// a client's `~` points because the path names a directory on the host.
+pub fn canonical_here(path: &Path) -> PathBuf {
+    canonical(path, std::env::var_os("HOME").as_deref().map(Path::new))
 }
 
 #[cfg(test)]

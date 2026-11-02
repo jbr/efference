@@ -175,6 +175,26 @@ async fn an_active_patch_under_another_root_is_a_conflict() {
     host.swansong().shut_down().await;
 }
 
+/// Another spelling of the root the session is hosted from — here a symlink to it;
+/// on macOS, `/users` for `/Users` — is the same root, not a clash: the host
+/// canonicalizes the `cwd` it is handed before comparing it (docs/control-api.md).
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_active_patch_through_another_spelling_of_the_root_is_the_same_session() {
+    let roots = Roots::new();
+    let (host, server) = hosting_one(&roots).await;
+    let alias = roots.0.join("alias");
+    std::os::unix::fs::symlink(roots.0.join("one"), &alias).expect("the symlink is made");
+
+    server
+        .patch("/sessions/one")
+        .with_json_body(&resume(&alias))
+        .await
+        .assert_status(200);
+
+    host.swansong().shut_down().await;
+}
+
 /// Archiving is `DELETE` under its other name, and the two must not drift: same
 /// teardown, and one state word between them. `DELETE` answers `archived`, and
 /// patching a session that is not hosted is a 404 rather than a bad request —

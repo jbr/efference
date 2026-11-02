@@ -6,6 +6,7 @@ one line per feature.
 ## [Unreleased]
 
 - `efference --version` names the git revision and cargo profile the binary was built from.
+- Fixed a session created under another spelling of its directory (`/users/…` for `/Users/…` on macOS, or through a symlink) refusing to resume from the directory's usual spelling; the host now canonicalizes every working directory a client names.
 
 ## [0.1.1] - 2026-11-01
 

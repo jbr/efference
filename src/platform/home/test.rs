@@ -48,3 +48,36 @@ fn any_other_path_is_left_as_written() {
     }
     assert_eq!(expand(Path::new("~/x"), None), Path::new("~/x"));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_directory_is_canonicalized_through_another_spelling() {
+    let dir = crate::platform::testing::temp_dir("home");
+    let real = dir.path().canonicalize().unwrap().join("real");
+    std::fs::create_dir(&real).unwrap();
+    let alias = dir.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    assert_eq!(canonical(&alias, None), real);
+    assert_eq!(canonical(&alias.join("../real"), None), real);
+}
+
+#[test]
+fn a_path_that_does_not_resolve_keeps_its_expanded_spelling() {
+    let home = Some(Path::new("/nonexistent-home"));
+    assert_eq!(
+        canonical(Path::new("~/x"), home),
+        Path::new("/nonexistent-home/x")
+    );
+    assert_eq!(
+        canonical(Path::new("/nonexistent/x"), home),
+        Path::new("/nonexistent/x")
+    );
+}
+
+/// A relative path is not read against the host's own working directory, where
+/// it might resolve: it stays relative, for the caller to refuse.
+#[test]
+fn a_relative_path_stays_relative() {
+    assert_eq!(canonical(Path::new("."), None), Path::new("."));
+    assert_eq!(canonical(Path::new("src"), None), Path::new("src"));
+}

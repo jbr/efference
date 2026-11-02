@@ -14,7 +14,7 @@ use std::path::PathBuf;
 fn scan_roots(host: &Host, query: &str) -> Result<Vec<PathBuf>, &'static str> {
     match http::query_value(query, "cwd") {
         Some(cwd) => {
-            let cwd = crate::platform::home::expand_here(std::path::Path::new(&cwd));
+            let cwd = crate::platform::home::canonical_here(std::path::Path::new(&cwd));
             if !cwd.is_absolute() {
                 return Err("cwd must be absolute or start with ~");
             }

@@ -27,7 +27,7 @@ impl Host {
         mut body: CreateSession,
         lineage: crate::config::env::Lineage,
     ) -> Result<Arc<Starting>, String> {
-        body.cwd = crate::platform::home::expand_here(&body.cwd);
+        body.cwd = crate::platform::home::canonical_here(&body.cwd);
         if !body.cwd.is_absolute() {
             return Err(format!(
                 "cwd must be absolute or start with ~: {}",

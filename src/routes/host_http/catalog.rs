@@ -22,7 +22,7 @@ fn recents(host: &Host, query: &str) -> Vec<(String, Recent)> {
         return Vec::new();
     };
     let scope = crate::config::history::Scope::for_request(
-        &crate::platform::home::expand_here(std::path::Path::new(&cwd)),
+        &crate::platform::home::canonical_here(std::path::Path::new(&cwd)),
         param("config").as_deref().map(std::path::Path::new),
     );
     host.inference

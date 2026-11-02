@@ -57,7 +57,7 @@ fn decode_session_options(body: &Value, home: Option<&Path>) -> Option<DecodedOp
             None
         }
         Some(Value::String(path)) => {
-            let path = crate::platform::home::expand(Path::new(path), home);
+            let path = crate::platform::home::canonical(Path::new(path), home);
             if path.is_absolute() {
                 Some(path)
             } else {
