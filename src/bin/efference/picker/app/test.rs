@@ -32,13 +32,10 @@ fn live(id: &str, title: Option<&str>, status: &str) -> ListedSession {
 /// One live titled session, and three archived: titled, untitled, titled.
 fn full_menu() -> Menu {
     menu(
-        &[(
-            PathBuf::from("/tmp/efference-picker/host.sock"),
-            vec![live(
-                "pickled-wombat",
-                Some("investigating the cause of the missing radish"),
-                "running",
-            )],
+        &[live(
+            "pickled-wombat",
+            Some("investigating the cause of the missing radish"),
+            "running",
         )],
         &here(),
     )
@@ -119,7 +116,6 @@ fn control_keys_move_to_a_live_row_and_back() {
     assert_eq!(
         press(&mut app, KeyCode::Enter),
         Outcome::Pick(Pick::Attach {
-            host: PathBuf::from("/tmp/efference-picker/host.sock"),
             id: "pickled-wombat".to_string()
         })
     );

@@ -39,9 +39,8 @@ whether a newer version is out and prints the install command when one is;
   `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor` (set or clear
   which session supervises another), `notify` (with a label and a slot, for scripts),
   `entries`, and `image`. `--host-socket <path>` names the host every verb addresses
-  (as on `mcp`); without it the host is the first live of `.efference/host.sock` here and
-  `~/.efference/host.sock`. A named session (`--agent`) resolves through that host, from
-  any directory; the verbs that act on an agent (`message`, `decide`, `interrupt`,
+  (as on `mcp`); without it the host is at `~/.efference/host.sock`. A named session
+  (`--agent`) resolves through that host, from any directory; the verbs that act on an agent (`message`, `decide`, `interrupt`,
   `transcript`) require `--agent`, `archive` takes the id as its argument, and a verb that
   takes it optionally and gets
   none drives the one session the host lists in this directory. `status --output json`
@@ -87,9 +86,8 @@ closes, which is the transport a locally-spawned MCP server speaks. A Claude Cod
 ```
 
 The mount addresses the host, not a session: nothing is resolved at startup, so the
-host need not be running yet and the mount outlives any one session. The host is the
-first live of `.efference/host.sock` in the mount's working directory and
-`~/.efference/host.sock`, else the latter, or `--host-socket <path>`.
+host need not be running yet and the mount outlives any one session. The host is at
+`~/.efference/host.sock`, or at `--host-socket <path>`.
 Every verb but `create` takes an `agent` id — what `status` lists and `create` returns —
 and `message`, `decide`, `interrupt`, `archive` and `transcript` require it: the tool
 schema marks it required, and a call without one is refused before the tool runs.
@@ -223,7 +221,7 @@ one-line title beside it in the TUI header and the session list does
 
 The session has no socket of its own: its host serves it under `/sessions/<id>/`. A client
 verb finds a session by `--name <id>` (bare `efference`) or `--agent <id>` (`control`), or by asking
-the live hosts for the single session they list in this directory
+the host for the single session it lists in this directory
 ([control-channel.md](control-channel.md)).
 
 ## Reading the session
@@ -271,7 +269,7 @@ session options it takes — and attaches nothing.
 A bare `efference` with no `--name` asks first
 (`src/bin/efference/picker/`): an inline ratatui prompt drawn with the same list, theme and
 keys as the new-session form ([tui.md](tui.md)). The top page is the entry that creates a
-session here, then, when the live hosts hold sessions whose cwd is this directory, a
+session here, then, when the host holds sessions whose cwd is this directory, a
 `running here` separator and a row for each, then, when this directory has resumable
 archived sessions, `resume an archived session…` with their count. The cursor starts on
 the create entry, so `efference` ⏎ ⏎ creates a default session: Enter here, then Enter on
@@ -282,7 +280,7 @@ one line in one shape wherever it appears: the title (cut with `…` to fit; the
 session has none), the id dimmed, then the status (`idle`, `running`) of a live session or
 the age (`16m ago`, `2d ago`) of an archived one, dimmed. A directory whose log cannot be
 resumed — unreadable, or one that predates the boot preamble — is not offered. The archived
-rows come from `GET /sessions?state=archived` on the first live host, or from the
+rows come from `GET /sessions?state=archived` on the host, or from the
 host-free scan (`src/host/inventory.rs`) when none is running
 ([log-and-projection.md](log-and-projection.md)); if the host's listing fails, a warning
 prints and the prompt continues without them. Picking a live row is the attach above;

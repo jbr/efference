@@ -24,23 +24,21 @@ use efference::protocol::sessions::{ListedSession, PatchSession};
 
 mod app;
 
-/// One session the picker can attach to, with the host that serves it — a host
-/// per row because a project host and the user's host can both be live.
+/// One session the picker can attach to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Row {
-    pub(crate) host: PathBuf,
     pub(crate) id: String,
     pub(crate) title: Option<String>,
     /// What the session is doing, in the word the listing carries.
     pub(crate) status: String,
 }
 
-/// What the live hosts hold, split by whether it belongs to this directory.
+/// What the live host holds, split by whether it belongs to this directory.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Menu {
-    /// Sessions whose cwd is this directory, in the order the hosts listed them.
+    /// Sessions whose cwd is this directory, in the order the host listed them.
     pub(crate) rows: Vec<Row>,
-    /// How many sessions the same hosts hold in other directories. Counted and
+    /// How many sessions the same host holds in other directories. Counted and
     /// named, not listed: attaching from here to a session rooted elsewhere
     /// would put the TUI's working directory and the session's out of step.
     pub(crate) elsewhere: usize,
@@ -52,34 +50,31 @@ pub(crate) struct Menu {
 /// What the person chose.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Pick {
-    /// Attach to this session on this host.
-    Attach { host: PathBuf, id: String },
+    /// Attach to this session on the host the picker listed.
+    Attach { id: String },
     /// Revive this archived session in this directory, then attach.
     Resume { id: String },
     /// Create a session in this directory.
     Create,
 }
 
-/// Split the live hosts' listings into this directory's sessions and a count of
-/// the rest.
-pub(crate) fn menu(listings: &[(PathBuf, Vec<ListedSession>)], here: &Path) -> Menu {
+/// Split the host's listing into this directory's sessions and a count of the
+/// rest.
+pub(crate) fn menu(sessions: &[ListedSession], here: &Path) -> Menu {
     let mut menu = Menu::default();
-    for (host, sessions) in listings {
-        for session in sessions {
-            let mine = session
-                .cwd
-                .as_ref()
-                .is_none_or(|cwd| same_dir(Path::new(cwd), here));
-            if mine {
-                menu.rows.push(Row {
-                    host: host.clone(),
-                    id: session.id.clone(),
-                    title: session.title.clone(),
-                    status: session.status.to_string(),
-                });
-            } else {
-                menu.elsewhere += 1;
-            }
+    for session in sessions {
+        let mine = session
+            .cwd
+            .as_ref()
+            .is_none_or(|cwd| same_dir(Path::new(cwd), here));
+        if mine {
+            menu.rows.push(Row {
+                id: session.id.clone(),
+                title: session.title.clone(),
+                status: session.status.to_string(),
+            });
+        } else {
+            menu.elsewhere += 1;
         }
     }
     menu
@@ -97,23 +92,20 @@ impl Menu {
 
 pub(crate) use efference::platform::home::tilde;
 
-/// Every live host's session listing, in candidate order.
-pub(crate) async fn live_listings() -> Result<Vec<(PathBuf, Vec<ListedSession>)>, CliError> {
-    let mut listings = Vec::new();
-    for host in host_candidates() {
-        if !is_live(&host) {
-            continue;
-        }
-        let sessions = ControlClient::new(&host)
-            .sessions()
-            .await
-            .map_err(|error| format!("listing {}: {error}", host.display()))?;
-        listings.push((host, sessions));
+/// The user's host and its session listing, or `None` when no host is live.
+pub(crate) async fn live_listing() -> Result<Option<(PathBuf, Vec<ListedSession>)>, CliError> {
+    let host = user_host_socket()?;
+    if !is_live(&host) {
+        return Ok(None);
     }
-    Ok(listings)
+    let sessions = ControlClient::new(&host)
+        .sessions()
+        .await
+        .map_err(|error| format!("listing {}: {error}", host.display()))?;
+    Ok(Some((host, sessions)))
 }
 
-/// The verb: gather what the live hosts hold here, ask, and hand off to the
+/// The verb: gather what the live host holds here, ask, and hand off to the
 /// path the explicit flag would have taken.
 pub(crate) async fn run(
     display: efference::config::user_config::TuiConfig,
@@ -121,8 +113,7 @@ pub(crate) async fn run(
 ) -> CliResult {
     let theme = display.theme.clone();
     let here = std::env::current_dir()?;
-    let listings = live_listings().await?;
-    if listings.is_empty() {
+    let Some((host, sessions)) = live_listing().await? else {
         // Nothing live to pick from: the archived sessions here, read from disk
         // since there is no host to ask, are all the menu can hold.
         let archived = scan_archived(&here).await;
@@ -145,20 +136,17 @@ pub(crate) async fn run(
         // do it there (docs/operating.md). A `bind` makes it the browser island
         // rather than the TUI.
         return island::run(bind, creation, display).await;
-    }
-    // The first live candidate: the host the form creates on, and so the one
-    // an archived session is revived on (docs/control-channel.md).
-    let archived = match ControlClient::new(&listings[0].0)
-        .archived_sessions(&here)
-        .await
-    {
+    };
+    // The host the form creates on, and so the one an archived session is
+    // revived on (docs/control-channel.md).
+    let archived = match ControlClient::new(&host).archived_sessions(&here).await {
         Ok(rows) => rows.into_iter().map(|archived| archived.row).collect(),
         Err(error) => {
             eprintln!("could not list archived sessions: {error}");
             Vec::new()
         }
     };
-    let menu = menu(&listings, &here).with_archived(archived, now_ms());
+    let menu = menu(&sessions, &here).with_archived(archived, now_ms());
     // Without a terminal to draw in there is nothing to ask with; resolve the
     // way an explicit target resolves instead.
     if !inline::interactive() {
@@ -167,7 +155,6 @@ pub(crate) async fn run(
     let Some(pick) = app::ask(&menu, &here, inline::styles(theme.clone())?)? else {
         return Ok(());
     };
-    let host = listings[0].0.clone();
     match hosted_target(pick, &host).await? {
         Some(target) => tui(target, display).await,
         None => create_through_form(host, display).await,
@@ -179,7 +166,7 @@ pub(crate) async fn run(
 /// the form still to run.
 async fn hosted_target(pick: Pick, host: &Path) -> Result<Option<ClientTarget>, CliError> {
     match pick {
-        Pick::Attach { host, id } => Ok(Some(ClientTarget::hosted(host, &id))),
+        Pick::Attach { id } => Ok(Some(ClientTarget::hosted(host.to_path_buf(), &id))),
         Pick::Resume { id } => {
             resume_on(&ControlClient::new(host), &id).await?;
             Ok(Some(ClientTarget::hosted(host.to_path_buf(), &id)))

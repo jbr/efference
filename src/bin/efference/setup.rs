@@ -29,8 +29,11 @@ pub(crate) async fn default_verb(bind: Option<&str>) -> CliResult {
     let display = display()?;
     let configured = here.join(efference::config::DEFAULT_PATH).exists();
     if !configured {
-        let listings = picker::live_listings().await?;
-        if picker::menu(&listings, &here).rows.is_empty() {
+        let sessions = picker::live_listing().await?.map(|(_, sessions)| sessions);
+        if picker::menu(&sessions.unwrap_or_default(), &here)
+            .rows
+            .is_empty()
+        {
             return offer_here(&mut Terminal::open()?, None, bind, display).await;
         }
     }

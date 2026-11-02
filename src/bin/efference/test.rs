@@ -4,7 +4,7 @@ use efference::platform::secrets::Secrets;
 #[cfg(feature = "dev")]
 use efference::record::persist::Log;
 
-/// Target resolution (docs/control-channel.md): a `--name` no host lists here is an
+/// Target resolution (docs/control-channel.md): a `--name` the host does not list here is an
 /// error, not a blank UI. (Live discovery is exercised live.)
 #[tokio::test]
 async fn a_name_nothing_serves_is_an_error() {
@@ -20,7 +20,7 @@ async fn a_name_nothing_serves_is_an_error() {
 #[tokio::test]
 async fn a_name_resolves_against_the_given_host() {
     let err = resolve_client_target_at(
-        vec![PathBuf::from("/nonexistent/efference/host.sock")],
+        PathBuf::from("/nonexistent/efference/host.sock"),
         Some("definitely-not-live"),
     )
     .await
@@ -134,14 +134,16 @@ fn a_hosts_listing_is_scoped_to_this_directory() {
     assert_eq!(got, ["here", "dotted", "unplaced"]);
 }
 
-/// The candidate order is this project's host, then the user's.
+/// Clients address `~/.efference/host.sock` and nothing under the working
+/// directory (docs/control-channel.md); `--host-socket` is the only other address.
 #[test]
-fn host_candidates_are_project_then_user() {
-    let candidates = host_candidates();
-    assert_eq!(candidates[0], PathBuf::from(".efference/host.sock"));
-    if let Some(home) = std::env::var_os("HOME") {
-        assert_eq!(candidates[1], Path::new(&home).join(".efference/host.sock"));
-    }
+fn clients_address_the_user_host_socket() {
+    let home = std::env::var_os("HOME").expect("tests run with a HOME");
+    let user = Path::new(&home).join(".efference/host.sock");
+    assert_eq!(user_host_socket().unwrap(), user);
+    assert_eq!(mount_host(None).unwrap(), user);
+    let elsewhere = PathBuf::from("/nonexistent/efference/host.sock");
+    assert_eq!(mount_host(Some(elsewhere.clone())).unwrap(), elsewhere);
 }
 
 #[test]

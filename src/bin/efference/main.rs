@@ -65,11 +65,9 @@ async fn run() -> CliResult {
     match command {
         Command::Setup { config } => setup::run(config, cli.bind.as_deref()).await,
         Command::Control { host_socket, tools } => {
-            control::run_cli(tools, host_socket.unwrap_or_else(mount_host)).await
+            control::run_cli(tools, mount_host(host_socket)?).await
         }
-        Command::Mcp { host_socket } => {
-            control::run_stdio(host_socket.unwrap_or_else(mount_host)).await
-        }
+        Command::Mcp { host_socket } => control::run_stdio(mount_host(host_socket)?).await,
         #[cfg(feature = "dev")]
         Command::Dev(command) => dev::run(command).await,
         Command::Check { path } => check(path).await,
@@ -88,7 +86,7 @@ fn rotate() -> CliResult {
     // the old one in memory and would keep serving it after the store moved on. A
     // false positive — something answering the socket that is not a host — only
     // skips a rotation, so the probe may over-refuse.
-    let socket = mount_host();
+    let socket = user_host_socket()?;
     if local_daemon_is_listening(&socket) {
         return Err(format!(
             "refusing to rotate: a local daemon is listening on {}; stop it first. \

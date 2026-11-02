@@ -21,7 +21,7 @@ to outlive the terminal interface or be available in the web client.
   on the machine uses it. Quitting the terminal interface detaches from a session, which
   keeps working, and you can attach again later. This is the mode that can serve the web
   client ([Remote access](remote-access.md)).
-  <!-- src: src/bin/efference/serve.rs::host; src/bin/efference/cli.rs::user_host_socket, host_candidates -->
+  <!-- src: src/bin/efference/serve.rs::host; src/bin/efference/cli.rs::user_host_socket -->
 
 You don’t have to remember which mode you’re in when you leave. The terminal interface
 labels the action **quit** when leaving ends the session, and **detach** when the session
@@ -72,10 +72,10 @@ you first ([Permissions](permissions.md)).
 A host listens on a Unix socket: `~/.efference/host.sock` in host mode, and
 `~/.efference/standalone/<pid>/host.sock` for a standalone host. Every client on the machine
 — the terminal interface, `efference control`, `efference mcp` — speaks HTTP to the host
-over that socket. `efference` looks for a host at `.efference/host.sock` in the current
-directory, then at `~/.efference/host.sock`; it never finds another terminal's standalone
-host.
-<!-- src: src/bin/efference/cli.rs::user_host_socket, host_candidates; src/host/island.rs::island_dir, ISLAND_SOCKET; src/clients/client.rs::Client -->
+over that socket. `efference` addresses `~/.efference/host.sock`; it never finds another
+terminal's standalone host. A host started with `--socket <path>` is reached by passing the
+same path as `--host-socket` to `efference control` or `efference mcp`.
+<!-- src: src/bin/efference/cli.rs::user_host_socket, mount_host; src/host/island.rs::island_dir, ISLAND_SOCKET; src/clients/client.rs::Client -->
 
 Connections over the socket are not authenticated. Any program that can open the socket
 has full control of every session in the host, including starting one, and — when the

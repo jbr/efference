@@ -33,7 +33,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
   -h, --help
           Print help (see a summary with '-h')
@@ -53,7 +53,7 @@ Options:
           The working directory, relative to yours; defaults to yours
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --name <NAME>
           The id, a single path segment. Minted (`adjective-noun`) when omitted
@@ -99,7 +99,7 @@ Usage: efference control create [OPTIONS]
 Options:
       --bind <ADDR:PORT>               Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
       --cwd <CWD>                      The working directory, relative to yours; defaults to yours
-      --host-socket <PATH>             The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>             The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --name <NAME>                    The id, a single path segment. Minted (`adjective-noun`) when omitted
       --message <MESSAGE>              Its first message
       --model <MODEL>                  The main model, `<connection>/<model>`
@@ -132,7 +132,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --reply-to <REPLY_TO>
           The seq of the question this answers, as the agent's status gives it
@@ -151,7 +151,7 @@ Arguments:
 Options:
       --agent <AGENT>        The agent's id
       --bind <ADDR:PORT>     Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>   The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>   The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --reply-to <REPLY_TO>  The seq of the question this answers, as the agent's status gives it
   -h, --help                 Print help (see more with '--help')
 
@@ -179,7 +179,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --message <MESSAGE>
           With `allow`, a note the agent reads with the call's result; with `deny`, the message it goes on under; with `escalate`, a note to whoever decides next
@@ -199,7 +199,7 @@ Arguments:
 Options:
       --agent <AGENT>       The agent's id
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --message <MESSAGE>   With `allow`, a note the agent reads with the call's result; with `deny`, the message it goes on under; with `escalate`, a note to whoever decides next
   -h, --help                Print help (see more with '--help')
 
@@ -218,7 +218,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
   -h, --help
           Print help (see a summary with '-h')
@@ -231,7 +231,7 @@ Usage: efference control interrupt [OPTIONS] --agent <AGENT>
 Options:
       --agent <AGENT>       The agent's id
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
   -h, --help                Print help (see more with '--help')
 
 $ efference control archive --help
@@ -250,7 +250,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
   -h, --help
           Print help (see a summary with '-h')
@@ -265,7 +265,7 @@ Arguments:
 
 Options:
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
   -h, --help                Print help (see more with '--help')
 
 $ efference control status --help
@@ -283,7 +283,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --follow
           Print each followed agent's status, then each new decision point, until every one has ended; exits non-zero when the host stops answering
@@ -308,7 +308,7 @@ Usage: efference control status [OPTIONS]
 Options:
       --agent <AGENT>       The agent's id; omitted, every agent in view. With `--follow` it repeats, one per followed agent
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --follow              Print each followed agent's status, then each new decision point, until every one has ended; exits non-zero when the host stops answering
       --output <OUTPUT>     `text` (default) or `json` [default: text] [possible values: text, json]
   -h, --help                Print help (see more with '--help')
@@ -328,7 +328,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --seq <SEQ>
           One entry in full, by its seq (`8`, or `8.2` for one of several calls)
@@ -353,7 +353,7 @@ Usage: efference control transcript [OPTIONS] --agent <AGENT>
 Options:
       --agent <AGENT>       The agent's id
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --seq <SEQ>           One entry in full, by its seq (`8`, or `8.2` for one of several calls)
       --since <SINCE>       Read from this seq on
       --tail <TAIL>         Read only the last this many conversation lines (a call and its outcome are one line), extended back so no result shows without its call. `audit` counts log entries
@@ -372,7 +372,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --timeout-s <TIMEOUT_S>
           Seconds to wait before answering with where it is then. Omitted, the wait has no bound
@@ -390,7 +390,7 @@ Usage: efference control settle [OPTIONS]
 
 Options:
       --bind <ADDR:PORT>       Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>     The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>     The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --timeout-s <TIMEOUT_S>  Seconds to wait before answering with where it is then. Omitted, the wait has no bound
       --agent <AGENT>          The agent's id
   -h, --help                   Print help (see more with '--help')
@@ -410,7 +410,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
   -h, --help
           Print help (see a summary with '-h')
@@ -423,7 +423,7 @@ Usage: efference control state [OPTIONS]
 Options:
       --agent <AGENT>       The agent's id. Defaults to the one session live here
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
   -h, --help                Print help (see more with '--help')
 
 $ efference control pace --help
@@ -438,7 +438,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --speed-ms <SPEED_MS>
           Between-turns delay in milliseconds. 0 is as fast as possible
@@ -462,7 +462,7 @@ Usage: efference control pace [OPTIONS]
 
 Options:
       --bind <ADDR:PORT>     Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>   The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>   The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --speed-ms <SPEED_MS>  Between-turns delay in milliseconds. 0 is as fast as possible
       --hold                 Pause at the next between-turns juncture
       --resume               Release a hold
@@ -488,7 +488,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
   -h, --help
           Print help (see a summary with '-h')
@@ -504,7 +504,7 @@ Arguments:
 Options:
       --agent <AGENT>       The agent's id. Defaults to the one session live here
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
   -h, --help                Print help (see more with '--help')
 
 $ efference control background --help
@@ -519,7 +519,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --note <NOTE>
           A message delivered to the model as the next user turn, alongside the handoff — what it should do while the process runs
@@ -537,7 +537,7 @@ Usage: efference control background [OPTIONS]
 
 Options:
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --note <NOTE>         A message delivered to the model as the next user turn, alongside the handoff — what it should do while the process runs
       --agent <AGENT>       The agent's id. Defaults to the one session live here
   -h, --help                Print help (see more with '--help')
@@ -566,7 +566,7 @@ Options:
           Drop the proposal instead of committing it. Audit-only: the queue empties, nothing else changes
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --agent <AGENT>
           The agent's id. Defaults to the one session live here
@@ -586,7 +586,7 @@ Arguments:
 Options:
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
       --cancel              Drop the proposal instead of committing it. Audit-only: the queue empties, nothing else changes
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --agent <AGENT>       The agent's id. Defaults to the one session live here
   -h, --help                Print help (see more with '--help')
 
@@ -609,7 +609,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
   -h, --help
           Print help (see a summary with '-h')
@@ -625,7 +625,7 @@ Arguments:
 Options:
       --agent <AGENT>       The agent's id. Defaults to the one session live here
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
   -h, --help                Print help (see more with '--help')
 
 $ efference control supervisor --help
@@ -647,7 +647,7 @@ Options:
           Clear the supervisor instead of setting one
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --agent <AGENT>
           The agent whose supervisor is being set, by id
@@ -666,7 +666,7 @@ Arguments:
 Options:
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
       --clear               Clear the supervisor instead of setting one
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --agent <AGENT>       The agent whose supervisor is being set, by id
   -h, --help                Print help (see more with '--help')
 
@@ -689,7 +689,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --slot <SLOT>
           Bind to a logical slot: a later notification on the same slot supersedes this one instead of piling up beside it
@@ -711,7 +711,7 @@ Arguments:
 
 Options:
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --slot <SLOT>         Bind to a logical slot: a later notification on the same slot supersedes this one instead of piling up beside it
       --agent <AGENT>       The agent's id. Defaults to the one session live here
   -h, --help                Print help (see more with '--help')
@@ -735,7 +735,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
   -h, --help
           Print help (see a summary with '-h')
@@ -751,7 +751,7 @@ Arguments:
 Options:
       --agent <AGENT>       The agent's id. Defaults to the one session live here
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
   -h, --help                Print help (see more with '--help')
 
 $ efference control image --help
@@ -775,7 +775,7 @@ Options:
           Without `--host` this is the standalone host's: with no host running, a standalone host answers in the browser on that address instead of in the TUI.
 
       --host-socket <PATH>
-          The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+          The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
   -o, --out <OUT>
           Where to write the bytes. Command-line only; over MCP the image is returned inline and nothing is written. Defaults to `image-<seq>-<idx>.<ext>` in the current directory
@@ -797,7 +797,7 @@ Arguments:
 
 Options:
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
-      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to the first live of `.efference/host.sock` here and `~/.efference/host.sock`, else the latter
+      --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
   -o, --out <OUT>           Where to write the bytes. Command-line only; over MCP the image is returned inline and nothing is written. Defaults to `image-<seq>-<idx>.<ext>` in the current directory
       --agent <AGENT>       The agent's id. Defaults to the one session live here
   -h, --help                Print help (see more with '--help')

@@ -6,16 +6,12 @@ fn listing(json: &str) -> ListedSession {
     serde_json::from_str(json).unwrap()
 }
 
-fn host() -> PathBuf {
-    PathBuf::from("/tmp/efference-picker/host.sock")
-}
-
 fn here() -> PathBuf {
     PathBuf::from("/tmp/efference-picker/project")
 }
 
-fn listings(entries: &[&str]) -> Vec<(PathBuf, Vec<ListedSession>)> {
-    vec![(host(), entries.iter().map(|json| listing(json)).collect())]
+fn listings(entries: &[&str]) -> Vec<ListedSession> {
+    entries.iter().map(|json| listing(json)).collect()
 }
 
 const HERE_SESSION: &str = r#"{
@@ -37,7 +33,6 @@ fn rows_are_this_directorys_sessions_and_the_rest_is_a_count() {
     let menu = menu(&listings(&[HERE_SESSION, ELSEWHERE_SESSION]), &here());
     assert_eq!(menu.rows.len(), 1);
     assert_eq!(menu.rows[0].id, "pickled-wombat");
-    assert_eq!(menu.rows[0].host, host());
     assert_eq!(menu.rows[0].status, "idle");
     assert_eq!(menu.elsewhere, 1);
 }
@@ -179,7 +174,6 @@ async fn resuming_patches_the_host_and_attaches() {
     assert_eq!(
         hosted_target(
             Pick::Attach {
-                host: socket.clone(),
                 id: "pickled-wombat".to_string()
             },
             &socket

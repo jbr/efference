@@ -100,10 +100,7 @@ impl<'a> App<'a> {
                 Item::Create => return Outcome::Pick(Pick::Create),
                 Item::Live(at) => {
                     let row = &self.menu.rows[at];
-                    return Outcome::Pick(Pick::Attach {
-                        host: row.host.clone(),
-                        id: row.id.clone(),
-                    });
+                    return Outcome::Pick(Pick::Attach { id: row.id.clone() });
                 }
                 Item::Resume => {
                     self.page = Page::Resume;

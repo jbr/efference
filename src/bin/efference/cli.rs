@@ -68,8 +68,8 @@ pub(crate) struct HostFlags {
     #[arg(id = "host", long = "host")]
     pub(crate) run: bool,
     /// Bind the host's control socket here. Defaults to `~/.efference/host.sock`,
-    /// which every project's clients look for after their own directory; a
-    /// project-local host is `.efference/host.sock`.
+    /// the socket clients address; a host bound elsewhere is reached with
+    /// `--host-socket` on the client verbs.
     #[arg(long, value_name = "PATH", requires = "host")]
     pub(crate) socket: Option<PathBuf>,
     /// The address browsers open, `https://name[:port]` — the printed link and
@@ -121,42 +121,27 @@ pub(crate) fn session_dir(id: &str) -> PathBuf {
 /// The host socket's name under a base dir (docs/control-channel.md).
 pub(crate) const HOST_SOCKET_NAME: &str = "host.sock";
 
-/// A project-local host: `.efference/host.sock` here. What `efference --host
-/// --socket .efference/host.sock` binds; consulted before the user's host.
-pub(crate) fn project_host_socket() -> PathBuf {
-    Path::new(SESSION_BASE).join(HOST_SOCKET_NAME)
-}
-
 /// The user's host: `~/.efference/host.sock`, what `efference --host` binds
-/// and where every project's clients look after their own directory
-/// (docs/control-channel.md). `None` without a home directory.
-pub(crate) fn user_host_socket() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|home| Path::new(&home).join(SESSION_BASE).join(HOST_SOCKET_NAME))
+/// and the one socket every client addresses (docs/control-channel.md). An error
+/// without a home directory.
+pub(crate) fn user_host_socket() -> Result<PathBuf, CliError> {
+    let home = std::env::var_os("HOME").ok_or("no HOME to place ~/.efference/host.sock under")?;
+    Ok(Path::new(&home).join(SESSION_BASE).join(HOST_SOCKET_NAME))
 }
 
-/// Where a client looks for a host, in order: this project's, then the user's.
-pub(crate) fn host_candidates() -> Vec<PathBuf> {
-    let mut hosts = vec![project_host_socket()];
-    hosts.extend(user_host_socket());
-    hosts
-}
-
-/// The host the new-session form creates on: the first live candidate. `None`
-/// is where a terminal-owned island starts instead.
+/// The host the new-session form creates on: the user's host when it is live.
+/// `None` is where a terminal-owned island starts instead.
 pub(crate) fn live_host() -> Option<PathBuf> {
-    host_candidates().into_iter().find(|host| is_live(host))
+    user_host_socket().ok().filter(|host| is_live(host))
 }
 
-/// The host a mount addresses (`control`, `mcp`): the first live candidate, else
+/// The host a mount addresses (`control`, `mcp`): the `--host-socket` given, else
 /// the user's host, which need not be running yet — the mount outlives it.
-pub(crate) fn mount_host() -> PathBuf {
-    let candidates = host_candidates();
-    candidates
-        .iter()
-        .find(|host| is_live(host))
-        .cloned()
-        .or_else(|| candidates.last().cloned())
-        .unwrap_or_else(project_host_socket)
+pub(crate) fn mount_host(host_socket: Option<PathBuf>) -> Result<PathBuf, CliError> {
+    match host_socket {
+        Some(socket) => Ok(socket),
+        None => user_host_socket(),
+    }
 }
 
 /// Where a *client* verb's session lives: a host's socket and the session's
@@ -216,66 +201,59 @@ pub(crate) fn hosted_here(
         .collect()
 }
 
-/// Resolve the session a *client* verb should talk to: the named session, as a
-/// host lists it in this directory; else the single session the live hosts list
-/// here (docs/control-channel.md). The hosts are [`host_candidates`]: this
-/// project's, then the user's. Anything that is not live is an error here, before
-/// a UI opens or a call is made.
+/// Resolve the session a *client* verb should talk to: the named session, as the
+/// user's host lists it in this directory; else the single session it lists here
+/// (docs/control-channel.md). A host that is not live is an error here, before a
+/// UI opens or a call is made.
 pub(crate) async fn resolve_client_target(name: Option<&str>) -> Result<ClientTarget, CliError> {
-    resolve_client_target_at(host_candidates(), name).await
+    resolve_client_target_at(user_host_socket()?, name).await
 }
 
-/// [`resolve_client_target`] against the given hosts rather than the default
-/// candidates.
+/// [`resolve_client_target`] against the given host rather than the user's.
 pub(crate) async fn resolve_client_target_at(
-    hosts: Vec<PathBuf>,
+    host: PathBuf,
     name: Option<&str>,
 ) -> Result<ClientTarget, CliError> {
     let here = std::env::current_dir()?;
-    // (host, ids it serves in this directory), live hosts only.
-    let mut hosted: Vec<(PathBuf, Vec<String>)> = Vec::new();
-    let mut down: Vec<String> = Vec::new();
-    for host in hosts {
-        if !is_live(&host) {
-            down.push(host.display().to_string());
-            continue;
+    if !is_live(&host) {
+        return Err(match name {
+            Some(name) => format!(
+                "no live session {name:?}: the host at {} is not running",
+                host.display()
+            ),
+            None => format!(
+                "no live efference session found here: the host at {} is not running — \
+                 create one with `efference`",
+                host.display()
+            ),
         }
-        let listings = ControlClient::new(&host)
-            .sessions()
-            .await
-            .map_err(|e| format!("listing {}: {e}", host.display()))?;
-        hosted.push((host, hosted_here(&listings, &here)));
+        .into());
     }
+    let listings = ControlClient::new(&host)
+        .sessions()
+        .await
+        .map_err(|e| format!("listing {}: {e}", host.display()))?;
+    let mut ids = hosted_here(&listings, &here);
     if let Some(name) = name {
-        if let Some((host, _)) = hosted
-            .iter()
-            .find(|(_, ids)| ids.iter().any(|id| id == name))
-        {
-            return Ok(ClientTarget::hosted(host.clone(), name));
+        if ids.iter().any(|id| id == name) {
+            return Ok(ClientTarget::hosted(host, name));
         }
-        let mut why = Vec::new();
-        if !hosted.is_empty() {
-            why.push("no host lists it here".to_string());
-        }
-        if !down.is_empty() {
-            why.push(format!("the host at {} is not running", down.join(" or ")));
-        }
-        return Err(format!("no live session {name:?}: {}", why.join("; ")).into());
+        return Err(format!(
+            "no live session {name:?}: the host at {} lists no such session here",
+            host.display()
+        )
+        .into());
     }
-    let mut live: Vec<ClientTarget> = Vec::new();
-    for (host, ids) in &hosted {
-        live.extend(ids.iter().map(|id| ClientTarget::hosted(host.clone(), id)));
-    }
-    match live.len() {
+    match ids.len() {
         0 => Err(
             "no live efference session found here — create one with `efference`, or pass --name"
                 .into(),
         ),
-        1 => Ok(live.pop().unwrap()),
+        1 => Ok(ClientTarget::hosted(host, &ids.pop().unwrap())),
         _ => {
-            let names: Vec<String> = live
+            let names: Vec<String> = ids
                 .iter()
-                .map(|target| format!("{} ({})", target.socket.display(), target.prefix))
+                .map(|id| format!("{} (/sessions/{id})", host.display()))
                 .collect();
             Err(format!(
                 "multiple live sessions ({}); pass --name to choose",
@@ -369,8 +347,7 @@ pub(crate) enum Command {
     /// `notify`, `entries`, `image`). `efference control --help` lists them.
     Control {
         /// The host's control socket every verb addresses; a named session resolves
-        /// through it. Defaults to the first live of `.efference/host.sock`
-        /// here and `~/.efference/host.sock`, else the latter.
+        /// through it. Defaults to `~/.efference/host.sock`.
         #[arg(long, value_name = "PATH", global = true)]
         host_socket: Option<PathBuf>,
         #[command(subcommand)]
@@ -384,8 +361,7 @@ pub(crate) enum Command {
     /// Connects to the host: nothing needs to be running when it starts, and each
     /// call names its agent (`status` lists them, `create` makes one).
     Mcp {
-        /// The host's control socket. Defaults to the first live of
-        /// `.efference/host.sock` here and `~/.efference/host.sock`, else the latter.
+        /// The host's control socket. Defaults to `~/.efference/host.sock`.
         #[arg(long, value_name = "PATH")]
         host_socket: Option<PathBuf>,
     },

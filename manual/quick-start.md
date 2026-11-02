@@ -110,4 +110,4 @@ now **detaches** from the session instead of stopping it, so you can come back l
 [How efference runs](how-it-runs.md) explains the two modes and running a host as a
 service. For a browser on your computer or phone, continue to
 [Remote access](remote-access.md).
-<!-- src: src/bin/efference/cli.rs::host_candidates; src/clients/tui/control_strip.rs::strip_live_items -->
+<!-- src: src/bin/efference/cli.rs::user_host_socket; src/clients/tui/control_strip.rs::strip_live_items -->

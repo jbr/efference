@@ -41,10 +41,9 @@ legitimately reads a body that size — the one exception, `POST /attachments`, 
 its own read cap to 64 MiB — so an over-cap body failing as malformed input is the
 intended shape, and a route that wants more raises the cap at its own read.
 
-A client finds the host by `--host-socket <path>`, else the first live of
-`.efference/host.sock` here and `~/.efference/host.sock`, and the session on it by id
-(`efference --name <id>`, `control --agent <id>`), or as the single session the host lists in
-this directory ([control-channel.md](control-channel.md)).
+A client finds the host by `--host-socket <path>`, else at `~/.efference/host.sock`, and
+the session on it by id (`efference --name <id>`, `control --agent <id>`), or as the single
+session the host lists in this directory ([control-channel.md](control-channel.md)).
 
 Requests dial the fixed socket path; the request URL's host is a placeholder
 (`http://localhost/`) supplying only the `Host` header. Path and headers are all

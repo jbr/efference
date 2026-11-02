@@ -23,7 +23,7 @@ pub(crate) async fn gallery(
 /// (docs/web-bind.md), over the Unix socket only. A script's token is
 /// `efference devices add`.
 pub(super) async fn open(print: bool) -> CliResult {
-    // The credential routes live at the socket root: the first live host's.
+    // The credential routes live at the socket root: the user's host's.
     let host = live_host().ok_or("no host is running; start one with `efference --host`")?;
     let client = ControlClient::new(host);
     let url = client.auth_link().await?;

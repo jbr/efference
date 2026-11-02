@@ -47,7 +47,7 @@ pub(crate) enum DevicesCommand {
 }
 
 pub(crate) async fn run(command: Option<DevicesCommand>) -> CliResult {
-    // The device routes live at the socket root: the first live host's.
+    // The device routes live at the socket root: the user's host's.
     let host = live_host().ok_or("no host is running; start one with `efference --host`")?;
     let client = ControlClient::new(host);
     match command {

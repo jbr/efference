@@ -13,6 +13,7 @@ one line per feature.
 - Fixed an interrupt pressed just before a model request started taking effect only after that request finished.
 - Fixed waiting for a session to settle: it could answer while a queued turn was starting, or wait out its timeout when an agent's message reached a paused session.
 - Fixed project setup writing a `.gitignore` in a directory that is not a git repository.
+- Clients find the host only at `~/.efference/host.sock`; a project's `.efference/host.sock` is no longer consulted, which also stops `efference` in the home directory listing each session twice. A host bound elsewhere is reached with `--host-socket`.
 
 ## [0.1.0] - 2026-10-27
 

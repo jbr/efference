@@ -375,10 +375,9 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
 }
 
 /// `efference --host`: a hosting process with no sessions until `POST /sessions`.
-/// Binds the user's host socket, `~/.efference/host.sock`, which every project's
-/// clients look for after their own directory; `socket` (`--socket`)
-/// binds elsewhere — `.efference/host.sock` for a project-local host
-/// (docs/control-channel.md).
+/// Binds the user's host socket, `~/.efference/host.sock`, which every client
+/// addresses; `socket` (`--socket`) binds elsewhere, and clients reach that host
+/// with `--host-socket` (docs/control-channel.md).
 ///
 /// `flags.island` binds the host's life to the process that launched it: stdin is the
 /// ownership connection, watched from before anything else initializes
@@ -390,7 +389,7 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     let HostFlags { socket, island, .. } = flags;
     let socket = match socket {
         Some(socket) => socket,
-        None => user_host_socket().ok_or("no HOME to place ~/.efference/host.sock under")?,
+        None => user_host_socket()?,
     };
     let home = std::env::var_os("HOME").ok_or("no HOME to read ~/.efference/config.toml under")?;
     // An island takes no bind from the table (docs/operating.md): the machine's

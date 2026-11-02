@@ -83,7 +83,10 @@ impl ClientExecutor {
     pub(crate) fn over(host: Client) -> Self {
         Self {
             host_client: Some(Arc::new(host)),
-            ..Self::new(PathBuf::from(".efference/host.sock"), Fallback::None)
+            ..Self::new(
+                PathBuf::from("/nonexistent/efference/host.sock"),
+                Fallback::None,
+            )
         }
     }
 
