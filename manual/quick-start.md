@@ -68,9 +68,9 @@ asking you.
 Project setup is itself an agent **session**: a conversation with a model, billed as
 normal use. You choose the model on a form first. The agent then asks before reading your
 files and talks through the project’s permissions and context with you. It writes
-`efference.toml` and, if you don’t already have an agent guide, `AGENTS.md`. It also asks
-whose project this is, so it can keep efference’s own files out of version control to
-match.
+`efference.toml` and, if you don’t already have an agent guide, `AGENTS.md`. In a git
+repository it also asks whose project this is, so it can keep efference’s own files out of
+version control to match.
 <!-- src: src/bin/efference/picker.rs::create_through_form; src/host/boot/scaffold.rs::CONFIG_SCAFFOLD; assets/guide/new-project.md -->
 
 ## Start a conversation

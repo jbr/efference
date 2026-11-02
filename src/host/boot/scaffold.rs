@@ -79,7 +79,7 @@ pub const CONFIG_SCAFFOLD: &str = "\
 
 # What this session is for. The permission spotter judges each move against it, so an
 # ordinary look around the project reads as part of the task.
-scope = \"Set this project up for efference: look over the project to learn how it is built and laid out, ask the operator what they want sessions here to be allowed and to know, write efference.toml and AGENTS.md at the project root, and keep efference's files out of version control in .gitignore or .git/info/exclude, as the operator chooses. Stay out of any file the operator asks you to avoid.\"
+scope = \"Set this project up for efference: look over the project to learn how it is built and laid out, ask the operator what they want sessions here to be allowed and to know, write efference.toml and AGENTS.md at the project root, and in a git repository keep efference's files out of version control in .gitignore or .git/info/exclude, as the operator chooses. Stay out of any file the operator asks you to avoid.\"
 
 # The kickoff: in a session that has said nothing yet, the harness sends this as the opening
 # turn, so the agent speaks first. Like the preamble, it is not shown as a

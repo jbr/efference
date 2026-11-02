@@ -12,6 +12,7 @@ one line per feature.
 - Fixed an archived session leaving the session list before its archive was recorded; an archive now answers once the session and the agents it ends have left.
 - Fixed an interrupt pressed just before a model request started taking effect only after that request finished.
 - Fixed waiting for a session to settle: it could answer while a queued turn was starting, or wait out its timeout when an agent's message reached a paused session.
+- Fixed project setup writing a `.gitignore` in a directory that is not a git repository.
 
 ## [0.1.0] - 2026-10-27
 

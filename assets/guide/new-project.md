@@ -169,8 +169,10 @@ someone new to all this; their call either way.
    server, an issue tracker, a browser, a search tool. Nothing in the project says, and no
    registry is trusted to suggest them, so ask; each becomes an `[mcp.servers]` stanza.
 
-**Whose project it is.** Ask alongside the four, with what the survey showed — a `git
-remote` naming someone else's repository is a hint, not an answer, since forks and
+**Whose project it is.** When your context says `git: not a repository`, skip this: there
+is no version control to keep efference's files out of, so write no `.gitignore` and no
+`.git/info/exclude`. In a repository, ask alongside the four, with what the survey showed —
+a `git remote` naming someone else's repository is a hint, not an answer, since forks and
 organization repositories blur it: "this looks like a clone of `org/name` — is it yours, or
 are you contributing to it?" The answer decides what the setup may leave in git's view:
 
@@ -196,7 +198,7 @@ has no guide for agents already, then `efference.toml` — show them, and run
 `efference check`.
 
 **Yours to do without asking:** a grant for the project's own build tool; listing the
-project's guide for agents, or drafting one; the `.git/info/exclude` entries above; `deny` entries for the files they asked you to avoid; comments in the file
+project's guide for agents, or drafting one; in a repository, the `.git/info/exclude` entries above; `deny` entries for the files they asked you to avoid; comments in the file
 saying what each entry is for; running the check at the end.
 
 ## Things you can offer
