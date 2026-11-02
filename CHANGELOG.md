@@ -5,6 +5,8 @@ one line per feature.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-01
+
 - The source is public at [github.com/jbr/efference](https://github.com/jbr/efference), under MIT OR Apache-2.0.
 - Release archives carry a GitHub build-provenance attestation, checked with `gh attestation verify`.
 - Fixed the TUI's policy drawer, which never showed pending config proposals.
