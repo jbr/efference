@@ -5,6 +5,8 @@ one line per feature.
 
 ## [Unreleased]
 
+- `efference --version` names the git revision and cargo profile the binary was built from.
+
 ## [0.1.1] - 2026-11-01
 
 - The source is public at [github.com/jbr/efference](https://github.com/jbr/efference), under MIT OR Apache-2.0.

@@ -1,6 +1,6 @@
 [package]
 name = "efference"
-version = "0.1.1"
+version = "0.1.2-dev"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 # dist's GitHub workflow names the repository it runs in (process/releasing.md).

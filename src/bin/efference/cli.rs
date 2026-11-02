@@ -5,7 +5,7 @@ use super::*;
 #[derive(Parser)]
 #[command(
     name = "efference",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), env!("EFFERENCE_BUILD_INFO")),
     about = "An API-backed agentic coding harness."
 )]
 pub(crate) struct Cli {

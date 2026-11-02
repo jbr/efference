@@ -37,7 +37,7 @@ the same version. `latest.json` names stable releases only.
   and newest versions, and the install command when the newest is newer
   (`src/bin/efference/update.rs`). Running it is the permission, so it asks whatever the
   configuration says, and it needs no host. `efference update` without `--check` refuses,
-  naming the check and the install command. `efference --version` prints the version.
+  naming the check and the install command. `efference --version` prints the version, then the git revision (`+dirty` with uncommitted changes) and cargo profile directory the binary was built from: `0.1.3-dev (a1b2c3d4e+dirty, debug)`. A version with a `-dev` suffix is a build from the tree between releases (process/releasing.md); the revision and profile are stamped by `build.rs` and left out where git or the target layout is unavailable.
 - **A host asks automatically only when `[updates] check = true`** in
   `~/.efference/config.toml` (`src/config/user_config/updates.rs`). A file without the key never
   checks; the key is not a default to find and turn off. `efference setup` asks the

@@ -23,7 +23,7 @@ TUI draws is not a flag: `theme`, `images` and `frame-cost` under `[tui]` in
 `~/.efference/config.toml`, read by whichever surface draws it ([tui.md](tui.md)).
 Whether a host checks for a newer efference is `[updates] check` in the same file, which
 `efference setup` asks about ([update-check.md](update-check.md)). `efference --version`
-prints the version. `efference --help` lists the subcommands a person types, `setup`,
+prints the version, the build's git revision and its cargo profile. `efference --help` lists the subcommands a person types, `setup`,
 `auth`, `devices` (the browsers and scripts enrolled at the web bind: list them and the
 browsers waiting to sign in, `approve` a waiting browser's code, `add`, `revoke`;
 [web-bind.md](web-bind.md)), `check`, and `update` (`update --check` asks efference.net once

@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn main() {
+    stamp_build_info();
+
     // Tell Cargo to rerun this script if the themes directory changes
     println!("cargo:rerun-if-changed=assets/themes");
 
@@ -142,4 +144,67 @@ fn generate_themes_module(theme_set: &syntect::highlighting::ThemeSet, out_dir: 
 
     let module_path = out_dir.join("themes.rs");
     fs::write(&module_path, content).expect("Failed to write themes.rs");
+}
+
+/// Sets `EFFERENCE_BUILD_INFO`, the text after the version in `efference --version`: the
+/// git revision the tree was at (`+dirty` when it had uncommitted changes) and the cargo
+/// profile directory the build went to (`debug`, `release`, `dist`). Either is left out
+/// when it cannot be read, as in a source archive with no `.git`.
+fn stamp_build_info() {
+    // A build script cannot import the crate it builds, so `platform::spawn` is out of
+    // reach; the helper exists to bound a child's lifetime under the host, and this one
+    // runs a short `git` at build time.
+    #[allow(clippy::disallowed_methods)]
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git").args(args).output().ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+
+    // The dirty flag follows the source, so the script reruns when it changes; HEAD and the
+    // index cover commits and staging.
+    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    if let Some(git_dir) = git(&["rev-parse", "--git-dir"]) {
+        println!("cargo:rerun-if-changed={git_dir}/HEAD");
+        println!("cargo:rerun-if-changed={git_dir}/index");
+    }
+
+    let revision = git(&["rev-parse", "--short=9", "HEAD"]).filter(|r| !r.is_empty());
+    let dirty =
+        git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
+
+    // OUT_DIR is `<target>/[<triple>/]<profile>/build/<package>/.../out`; the profile is
+    // the directory above `build`. (`PROFILE` says only debug or release, not `dist`.)
+    let profile = env::var("OUT_DIR")
+        .ok()
+        .and_then(|out| {
+            Path::new(&out)
+                .ancestors()
+                .find(|p| p.file_name().is_some_and(|n| n == "build"))
+                .and_then(|build| {
+                    build
+                        .parent()?
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                })
+        })
+        .or_else(|| env::var("PROFILE").ok());
+
+    let mut parts = Vec::new();
+    if let Some(revision) = revision {
+        parts.push(if dirty {
+            format!("{revision}+dirty")
+        } else {
+            revision
+        });
+    }
+    parts.extend(profile);
+    let info = if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", parts.join(", "))
+    };
+    println!("cargo:rustc-env=EFFERENCE_BUILD_INFO={info}");
 }

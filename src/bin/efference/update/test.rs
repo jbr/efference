@@ -47,7 +47,8 @@ async fn update_without_check_names_the_check_and_the_install_command() {
     assert!(err.contains("install.sh | sh"), "{err}");
 }
 
-/// `--version` prints the version; `update` takes `--check`.
+/// `--version` prints the version and the build's revision and profile; `update` takes
+/// `--check`.
 #[test]
 fn the_version_flag_and_the_update_verb_parse() {
     use clap::Parser;
@@ -57,7 +58,11 @@ fn the_version_flag_and_the_update_verb_parse() {
     assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
     assert_eq!(
         err.to_string(),
-        format!("efference {}\n", env!("CARGO_PKG_VERSION"))
+        format!(
+            "efference {}{}\n",
+            env!("CARGO_PKG_VERSION"),
+            env!("EFFERENCE_BUILD_INFO")
+        )
     );
     let cli = Cli::try_parse_from(["efference", "update", "--check"]).unwrap();
     assert!(matches!(cli.command, Some(Command::Update { check: true })));
