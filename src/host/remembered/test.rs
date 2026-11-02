@@ -78,6 +78,36 @@ fn two_configurations_in_one_directory_are_two_entries() {
     );
 }
 
+/// A directory that gains an `efference.toml` between two launches that named
+/// none: the probe answers differently, but both rows would ask creation to
+/// probe again, so the later launch is the directory's one unnamed entry. A named
+/// configuration's row is a different request and stays.
+#[test]
+fn a_probed_launch_replaces_the_directorys_earlier_probed_launch() {
+    let (projects, dir) = store();
+    let cwd = project_dir(dir.path(), "one");
+    std::fs::write(cwd.join("a.toml"), "").unwrap();
+
+    projects.record(&launch(&cwd, 100));
+    projects.record(&named_launch(&cwd, Path::new("a.toml"), 150));
+    let probed = cwd.join(crate::config::DEFAULT_PATH);
+    projects.record(&Project {
+        config_key: probed.to_string_lossy().into_owned(),
+        ..launch(&cwd, 200)
+    });
+
+    let rows = projects.recent();
+    let keys: Vec<&str> = rows.iter().map(|row| row.config_key.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            probed.to_string_lossy().as_ref(),
+            cwd.join("a.toml").to_string_lossy().as_ref()
+        ],
+        "the later probe's row, and the named one"
+    );
+}
+
 #[test]
 fn entries_read_back_most_recently_used_first() {
     let (projects, dir) = store();

@@ -271,7 +271,11 @@ sessions from one process. Its own routes are the listener's, not a session's:
   /sessions` records the directory it started in, keyed by that directory plus the
   *source* configuration the boot consumed (never the per-session copy under
   `.efference/<id>/`, whose path is per session). A relaunch refreshes the entry's
-  timestamp rather than adding one, so the list reads most-recently-used first.
+  timestamp rather than adding one, so the list reads most-recently-used first. A
+  directory holds at most one entry whose launch named no configuration: that entry
+  asks creation to probe again, so when the directory gains or loses an
+  `efference.toml` between two such launches — a different source configuration, so a
+  different key — the later launch's entry replaces the earlier one.
   There is no registration and no nickname: the `label` is the directory's own
   name, falling back to the full path at a filesystem root.
   `200 {"projects":[{"label", "cwd", "config", "config_key", "last_used_at"}, …]}`,

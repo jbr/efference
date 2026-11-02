@@ -9,7 +9,11 @@
 //! The identity is [`crate::config::history::Scope`], unchanged — never the per-session
 //! snapshot — and `config` is stored beside it because the key alone cannot say
 //! whether the configuration was named, which is what [`Project::available`]
-//! checks ([`crate::config::load_in`]).
+//! checks ([`crate::config::load_in`]). A directory keeps at most one row whose
+//! configuration was not named: such a row stands for the request "probe here",
+//! and the probe's answer — the identity — changes when the directory gains or
+//! loses an `efference.toml`, which would otherwise leave two rows that launch
+//! the same way.
 //!
 //! Every operation opens its own connection and is best-effort: a store that cannot
 //! be opened or written reads as an empty list. Availability is a read-time question,
@@ -104,13 +108,27 @@ impl Projects {
     }
 
     /// Remember that a session started in `project`. An existing row for the same
-    /// identity is refreshed, not duplicated. Best-effort: a store that cannot be
-    /// written must never fail the creation remembering itself.
+    /// identity is refreshed, not duplicated, and a launch that named no
+    /// configuration replaces the directory's other such row, whose probe found
+    /// something else at the time. Best-effort: a store that cannot be written must
+    /// never fail the creation remembering itself.
     pub fn record(&self, project: &Project) {
-        let Some(connection) = self.connect() else {
+        let Some(mut connection) = self.connect() else {
             return;
         };
-        connection
+        let Ok(transaction) = connection.transaction() else {
+            return;
+        };
+        if project.config.is_none() {
+            transaction
+                .execute(
+                    "DELETE FROM remembered_projects
+                     WHERE cwd = ?1 AND config IS NULL AND config_key != ?2",
+                    rusqlite::params![project.cwd.to_string_lossy(), project.config_key],
+                )
+                .ok();
+        }
+        transaction
             .execute(
                 "INSERT OR REPLACE INTO remembered_projects
                      (last_used_at, cwd, config_key, config)
@@ -126,6 +144,7 @@ impl Projects {
                 ],
             )
             .ok();
+        transaction.commit().ok();
     }
 
     /// The stored entries, most recently used first, up to [`INDEX_LIMIT`].
