@@ -62,8 +62,11 @@ impl<'a> InteractiveState<'a> {
                 self.images.insert((seq, idx), image);
                 self.dirty = true;
             }
-            TuiEvent::ArtifactUrl { coordinate, url } => {
-                if self.transcript.set_artifact_url(&self.log, coordinate, url) {
+            TuiEvent::Artifact { coordinate, kind } => {
+                if self
+                    .transcript
+                    .set_artifact_kind(&self.log, coordinate, kind)
+                {
                     self.mark_reproject();
                 }
             }

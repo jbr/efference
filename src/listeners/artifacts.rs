@@ -8,12 +8,10 @@
 //! fence is written into one that draws it ([`mermaid_document`]). A session that leaves
 //! the host takes its key with it, so its URLs stop resolving with nothing to clean up.
 //!
-//! The same routes are served at the web origin's root and on the artifact-only
-//! loopback listener ([`spawn_listener`]), which the host starts under its `Swansong`
-//! at its first adopt, once the process serving it has installed the starter
-//! (`Host::set_artifact_listener`).
+//! The routes are served at the web origin's root, outside the device-token gate
+//! (docs/web-bind.md): a document's tag is its authority, and the shared assets
+//! are as public as the web client's own.
 
-use std::io;
 use std::sync::Arc;
 
 use base64::Engine;
@@ -64,7 +62,7 @@ pub(crate) const ARTIFACT_CSP: &str = "default-src 'none'; \
 
 pub(crate) mod libraries;
 
-/// The routes, mounted at the web origin's root and on the loopback listener. They sit
+/// The routes, mounted at the web origin's root. They sit
 /// outside the device-token gate (docs/web-bind.md): a document's tag is its authority,
 /// and the shared assets are as public as the web client's own.
 pub(crate) fn routes() -> Router {
@@ -270,54 +268,6 @@ fn not_found(conn: Conn) -> Conn {
     conn.with_status(404)
         .with_response_header(KnownHeaderName::CacheControl, "no-store")
         .halt()
-}
-
-/// Bind the artifact-only loopback listener and serve [`routes`] on it under `host`'s
-/// `Swansong`, with the host as its state, so host shutdown ends it with everything
-/// else. Answers the listener's origin. The starter a serving process installs on its
-/// host (`Host::set_artifact_listener`).
-pub fn spawn_listener(host: &Arc<Host>) -> io::Result<String> {
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
-    let port = listener.local_addr()?.port();
-    listener.set_nonblocking(true)?;
-    let listener = tokio::net::TcpListener::from_std(listener)?;
-    trillium_tokio::config()
-        .without_signals()
-        .with_swansong(host.swansong().clone())
-        .with_shared_state(Arc::clone(host))
-        .listeners()
-        .bind_server(listener)
-        .spawn((super::tcp::SecurityHeaders::new(false), routes(), fonts()));
-    Ok(format!("http://127.0.0.1:{port}"))
-}
-
-/// The web client's fonts, which the stylesheet names at `/fonts/`, served from the
-/// build the web origin embeds; nothing else of the client's reaches this listener.
-/// Not under `dev-proxy`, where each frontend handler starts a dev server of its own:
-/// there the stylesheet's fonts fall back to the stacks' system faces.
-fn fonts() -> impl trillium::Handler {
-    #[cfg(not(feature = "dev-proxy"))]
-    let frontend = Some(super::tcp::frontend(super::tcp::Surface::Session));
-    #[cfg(feature = "dev-proxy")]
-    let frontend: Option<()> = None;
-    FontsOnly(frontend)
-}
-
-struct FontsOnly<H>(Option<H>);
-
-impl<H: trillium::Handler> trillium::Handler for FontsOnly<H> {
-    async fn run(&self, conn: Conn) -> Conn {
-        match &self.0 {
-            Some(frontend) if conn.path().starts_with("/fonts/") => frontend.run(conn).await,
-            _ => conn,
-        }
-    }
-
-    async fn init(&mut self, info: &mut trillium::Info) {
-        if let Some(frontend) = &mut self.0 {
-            frontend.init(info).await;
-        }
-    }
 }
 
 /// Whether `path` is an artifact route — the gate's anonymous exception and the

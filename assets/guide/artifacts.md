@@ -38,12 +38,13 @@ diagrams, Gantt and pie charts, and the rest of Mermaid 11.4.1. For boxes and ar
 the shorter source. The diagram takes its colours and font from the operator's theme and
 is drawn again when the theme changes; a `classDef` or `style` line you write overrides
 them for its nodes. A diagram that does not parse shows the parser's error in its
-place, which the operator can read out to you. In the TUI it stays source, with a link.
+place, which the operator can read out to you. In the TUI it stays source, with a
+line saying the diagram renders in the web client.
 
 ## What the operator sees
 
 - **Web client:** the page, with a Source toggle beside it.
-- **TUI:** your source as a code block, and a link that opens the page in a local browser.
+- **TUI:** your source as a code block, and a line saying it renders in the web client.
   Keep the source readable: semantic elements, a title on what you draw, a comment where
   the script is not obvious.
 

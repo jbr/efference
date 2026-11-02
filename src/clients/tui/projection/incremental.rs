@@ -22,6 +22,7 @@ use super::{CallIndex, Gate, LiveTail, ViewState, entry_nodes, tail_nodes};
 use crate::clients::tui::artifacts::Coordinate;
 use crate::clients::tui::state::DocumentState;
 use crate::protocol::agents::BoundAction;
+use crate::record::artifact::Kind;
 use crate::record::log::LogEntry;
 
 /// The incremental transcript projection: what the document currently reflects, so
@@ -39,8 +40,9 @@ pub(crate) struct Transcript {
     /// Committed entries whose nodes are stale. Ascending, so a rebuild pass can
     /// keep running offsets straight as splices change later entries' positions.
     dirty: BTreeSet<usize>,
-    /// Resolved artifact-only URLs keyed by their assistant entry and fence coordinates.
-    artifact_urls: BTreeMap<Coordinate, String>,
+    /// Artifact kinds keyed by their assistant entry and fence coordinates, for the
+    /// notices the terminal draws where the web client would render the page.
+    artifact_kinds: BTreeMap<Coordinate, Kind>,
     /// The gate this document was last built with — a change dirties both the call
     /// it left and the call it moved to. The bound action is part of the value: a
     /// bound `agents__decide` moving onto the same call still changes the render.
@@ -51,22 +53,22 @@ pub(crate) struct Transcript {
 }
 
 impl Transcript {
-    /// Cache a resolver answer and invalidate the assistant entry that owns it.
-    /// `true` means the URL changed, including the first answer for this coordinate.
-    pub(crate) fn set_artifact_url(
+    /// Note an artifact fence and invalidate the assistant entry that owns it.
+    /// `true` means the kind is new, including the first notice for this coordinate.
+    pub(crate) fn set_artifact_kind(
         &mut self,
         log: &[LogEntry],
         coordinate: Coordinate,
-        url: String,
+        kind: Kind,
     ) -> bool {
         if self
-            .artifact_urls
+            .artifact_kinds
             .get(&coordinate)
-            .is_some_and(|previous| previous == &url)
+            .is_some_and(|previous| previous == &kind)
         {
             return false;
         }
-        self.artifact_urls.insert(coordinate, url);
+        self.artifact_kinds.insert(coordinate, kind);
         if let Some(idx) = log.iter().position(|entry| entry.seq == coordinate.seq)
             && idx < self.counts.len()
         {
@@ -170,7 +172,7 @@ impl Transcript {
                     self.owner.insert(call.id.0.clone(), idx);
                 }
             }
-            let nodes = entry_nodes(log, idx, &self.index, view, gate, &self.artifact_urls);
+            let nodes = entry_nodes(log, idx, &self.index, view, gate, &self.artifact_kinds);
             self.counts.push(nodes.len());
             let at = doc.document.nodes.len();
             doc.splice_nodes(at..at, nodes);
@@ -188,7 +190,7 @@ impl Transcript {
             }
             offset += self.counts[cursor..idx].iter().sum::<usize>();
             cursor = idx;
-            let nodes = entry_nodes(log, idx, &self.index, view, gate, &self.artifact_urls);
+            let nodes = entry_nodes(log, idx, &self.index, view, gate, &self.artifact_kinds);
             let was = self.counts[idx];
             self.counts[idx] = nodes.len();
             doc.splice_nodes(offset..offset + was, nodes);

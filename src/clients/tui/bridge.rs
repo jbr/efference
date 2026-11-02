@@ -83,12 +83,12 @@ fn decode_frame(
             };
             // The view's artifact links ride beside the entry, not in it: they are
             // derived on every read, never logged (docs/artifacts.md).
-            let links = artifacts::external_links(&data);
+            let fences = artifacts::linked_fences(&data);
             if tx.send(TuiEvent::Entry(entry)).is_err() {
                 return Break(());
             }
-            for (coordinate, url) in links {
-                if tx.send(TuiEvent::ArtifactUrl { coordinate, url }).is_err() {
+            for (coordinate, kind) in fences {
+                if tx.send(TuiEvent::Artifact { coordinate, kind }).is_err() {
                     return Break(());
                 }
             }

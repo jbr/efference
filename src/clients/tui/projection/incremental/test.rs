@@ -6,6 +6,7 @@ use super::*;
 use crate::clients::tui::document::Document;
 use crate::clients::tui::projection::project;
 use crate::clients::tui::state::DocumentState;
+use crate::record::artifact::Kind;
 use crate::record::log::{
     ContentBlock, LogEntry, Payload, RawResult, ToolCall, Triaged, WireState,
 };
@@ -96,7 +97,7 @@ fn incremental_matches_a_from_scratch_projection() {
 }
 
 #[test]
-fn an_artifact_url_reprojects_only_its_committed_assistant_entry() {
+fn an_artifact_notice_reprojects_only_its_committed_assistant_entry() {
     let log = vec![
         user(6, "before"),
         entry(
@@ -118,7 +119,7 @@ fn an_artifact_url_reprojects_only_its_committed_assistant_entry() {
     transcript.update(&mut doc, &log, &tail, &mut view, Gate::default(), &[]);
     let source_only = shape(&doc.document.nodes);
     assert!(source_only.contains("<svg>chart</svg>"));
-    assert!(!source_only.contains("127.0.0.1"));
+    assert!(!source_only.contains("renders in the web client"));
 
     // Stand in for a completed layout pass; only the target entry should lose its layout.
     doc.layouts = (0..doc.document.nodes.len())
@@ -138,27 +139,19 @@ fn an_artifact_url_reprojects_only_its_committed_assistant_entry() {
         text_block: 0,
         fence: 0,
     };
-    assert!(transcript.set_artifact_url(
-        &log,
-        coordinate,
-        "http://127.0.0.1:4321/artifacts/token/".into(),
-    ));
+    assert!(transcript.set_artifact_kind(&log, coordinate, Kind::Html));
     transcript.update(&mut doc, &log, &tail, &mut view, Gate::default(), &[]);
 
-    let with_link = shape(&doc.document.nodes);
+    let with_notice = shape(&doc.document.nodes);
     assert!(
-        with_link.contains("<svg>chart</svg>"),
+        with_notice.contains("<svg>chart</svg>"),
         "source remains visible"
     );
-    assert!(with_link.contains("↗ artifact · http://127.0.0.1:4321/artifacts/token/"));
+    assert!(with_notice.contains("artifact · renders in the web client — source above"));
     assert!(doc.layouts[..before].iter().all(Option::is_some));
     assert!(doc.layouts[before..target_end].iter().all(Option::is_none));
     assert!(doc.layouts[target_end..].iter().all(Option::is_some));
-    assert!(!transcript.set_artifact_url(
-        &log,
-        coordinate,
-        "http://127.0.0.1:4321/artifacts/token/".into(),
-    ));
+    assert!(!transcript.set_artifact_kind(&log, coordinate, Kind::Html));
 }
 
 /// A result arrives for a call several entries back: it must re-render *that*

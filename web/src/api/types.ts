@@ -1742,11 +1742,6 @@ export interface Arrival {
  * via the `definition` "ArtifactLink".
  */
 export interface ArtifactLink {
-  /**
-   * The same document on the artifact-only loopback listener, for a local browser;
-   * absent for a session outside a host.
-   */
-  external_url?: string | null;
   fence: number;
   kind: ArtifactKind;
   text_block: number;

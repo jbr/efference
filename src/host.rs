@@ -140,15 +140,6 @@ pub struct Host {
     /// docs/update-check.md). Shared with each adopted session, which publishes it as
     /// its `newer_version` topic; empty on a host that does not check.
     newer_version: Arc<newer_version::NewerVersionCell>,
-    /// What starts the artifact-only loopback listener on this host and answers its
-    /// origin (docs/artifacts.md). The listener's module (`artifacts.rs`) sits above the
-    /// host, so the process that serves this host installs it
-    /// ([`Self::set_artifact_listener`]) before anything is adopted.
-    artifact_listener: std::sync::OnceLock<StartArtifactListener>,
-    /// The artifact-only loopback listener's origin (docs/artifacts.md): started by
-    /// the first adopt, under this host's `Swansong`; `None` once its bind failed, so
-    /// the bind is tried once.
-    artifact_origin: std::sync::OnceLock<Option<String>>,
     /// What builds the in-session `agents__*` server a hosted session mounts
     /// (docs/tools.md). The verbs' module (`control_tools`) sits above the host, so the
     /// process that serves this host installs it ([`Self::set_session_control`]) before
@@ -164,10 +155,6 @@ pub struct Host {
     /// [`serve_host`](crate::listeners::serve::serve_host) stops what remains after the sessions have ended.
     language_servers: Arc<crate::tools::lsp::LanguageServers>,
 }
-
-/// Installed by the process serving the host ([`Host::set_artifact_listener`])
-/// (docs/artifacts.md).
-pub type StartArtifactListener = fn(&Arc<Host>) -> io::Result<String>;
 
 /// Installed by the process serving the host ([`Host::set_session_control`])
 /// (docs/tools.md).
@@ -250,8 +237,6 @@ impl Host {
             listing_changed: Notify::new(),
             attention: Arc::default(),
             newer_version: Arc::default(),
-            artifact_listener: std::sync::OnceLock::new(),
-            artifact_origin: std::sync::OnceLock::new(),
             session_control: std::sync::OnceLock::new(),
             mcp_refresh_locks: Default::default(),
             language_servers: crate::tools::lsp::language_servers(),
@@ -264,32 +249,6 @@ impl Host {
 
     pub(crate) fn mcp_refresh_locks(&self) -> crate::tools::mcp::auth::store::RefreshLocks {
         self.mcp_refresh_locks.clone()
-    }
-
-    /// Install what starts the artifact-only loopback listener (docs/artifacts.md),
-    /// before the first adopt. The first install stands.
-    pub fn set_artifact_listener(&self, start: StartArtifactListener) {
-        let _ = self.artifact_listener.set(start);
-    }
-
-    /// The artifact-only loopback listener's origin, starting the listener on first
-    /// use (docs/artifacts.md). It serves only artifact routes, so it is started for
-    /// any host, with or without a TCP bind. `None`, with nothing started, on a host
-    /// no listener was installed on.
-    pub(crate) fn artifact_origin(self: &Arc<Self>) -> Option<&str> {
-        let start = self.artifact_listener.get()?;
-        self.artifact_origin
-            .get_or_init(|| match start(self) {
-                Ok(origin) => {
-                    log::info!("artifacts: {origin}");
-                    Some(origin)
-                }
-                Err(e) => {
-                    log::warn!("artifacts: could not bind the loopback listener: {e}");
-                    None
-                }
-            })
-            .as_deref()
     }
 
     /// Register the session directories under the remembered roots in a background
@@ -363,9 +322,6 @@ impl Host {
         session.set_web_path(format!("/sessions/{id}/"));
         session.set_attention(Arc::clone(&self.attention));
         session.set_newer_version(Arc::clone(&self.newer_version));
-        if let Some(origin) = self.artifact_origin() {
-            session.set_artifact_origin(origin.to_owned());
-        }
         let departure = Departure::default();
         let hosted = Hosted {
             files: Files::rooted_at(session.cwd()),

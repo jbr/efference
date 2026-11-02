@@ -15,6 +15,7 @@ use crate::clients::tui::document::{
 };
 use crate::clients::tui::markdown::MarkdownRenderer;
 use crate::protocol::agents::BoundAction;
+use crate::record::artifact::Kind;
 use crate::record::log::{
     AssistantOutput, ContentBlock, Exclusion, LogEntry, MessagesOutputBlock, Payload, RawResult,
     Summary, ToolCall, Triaged, WireState,
@@ -45,9 +46,9 @@ pub(crate) fn project(
     }
 
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
-    let artifact_urls = BTreeMap::new();
+    let artifact_kinds = BTreeMap::new();
     for idx in 0..log.len() {
-        nodes.extend(entry_nodes(log, idx, &index, view, gate, &artifact_urls));
+        nodes.extend(entry_nodes(log, idx, &index, view, gate, &artifact_kinds));
     }
     nodes.extend(tail_nodes(live, view, pending_turns));
     Document::with_nodes(nodes)
@@ -206,7 +207,7 @@ pub(crate) fn entry_nodes(
     index: &CallIndex,
     view: &ViewState,
     gate: Gate<'_>,
-    artifact_urls: &BTreeMap<Coordinate, String>,
+    artifact_kinds: &BTreeMap<Coordinate, Kind>,
 ) -> Vec<DocumentNode<'static>> {
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
     let Some(entry) = log.get(idx) else {
@@ -262,7 +263,7 @@ pub(crate) fn entry_nodes(
                     index,
                     view,
                     gate,
-                    artifact_urls,
+                    artifact_kinds,
                 ));
             }
             // Drawn after the entry its range ends in (see `CallIndex`); in place

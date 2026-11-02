@@ -239,7 +239,6 @@ impl Session {
             attachment_store: std::sync::OnceLock::new(),
             web_path: std::sync::OnceLock::new(),
             artifact_key: artifact_links::new_key(),
-            artifact_origin: std::sync::OnceLock::new(),
             cache_ttl: std::sync::OnceLock::new(),
             cache_lost: std::sync::OnceLock::new(),
             person_acted: AtomicBool::new(false),

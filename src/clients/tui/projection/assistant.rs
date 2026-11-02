@@ -11,7 +11,7 @@ pub(super) fn assistant_nodes(
     index: &CallIndex,
     view: &ViewState,
     gate: Gate<'_>,
-    artifact_urls: &BTreeMap<Coordinate, String>,
+    artifact_kinds: &BTreeMap<Coordinate, Kind>,
 ) -> Vec<DocumentNode<'static>> {
     let Payload::Assistant { output, excluded } = &entry.payload else {
         return Vec::new();
@@ -19,7 +19,7 @@ pub(super) fn assistant_nodes(
     let mut nodes: Vec<DocumentNode<'static>> = Vec::new();
     nodes.extend(record_only_mark(excluded.as_ref()));
     nodes.extend(thinking_item(entry.seq, output));
-    nodes.extend(prose_entry(entry.seq, output, artifact_urls));
+    nodes.extend(prose_entry(entry.seq, output, artifact_kinds));
     nodes.extend(call_nodes(log, index, view, gate, output));
     nodes
 }
@@ -88,18 +88,19 @@ fn thinking_item(seq: Seq, output: &AssistantOutput) -> Option<DocumentNode<'sta
     })
 }
 
-/// The entry's prose, followed by its artifacts as the links the bridge received.
+/// The entry's prose, followed by a notice per artifact fence the bridge received.
+/// The page renders in the web client; the terminal keeps the source above.
 fn prose_entry(
     seq: Seq,
     output: &AssistantOutput,
-    artifact_urls: &BTreeMap<Coordinate, String>,
+    artifact_kinds: &BTreeMap<Coordinate, Kind>,
 ) -> Option<DocumentNode<'static>> {
     let prose = output.text().join("\n");
     if prose.trim().is_empty() {
         return None;
     }
     let mut body = markdown(&prose);
-    // The entry's artifacts, in order, as the links the bridge received.
+    // The entry's artifacts, in order, as the bridge received them.
     let entry_artifacts = Coordinate {
         seq,
         text_block: 0,
@@ -109,9 +110,15 @@ fn prose_entry(
         text_block: usize::MAX,
         fence: usize::MAX,
     };
-    for url in artifact_urls.range(entry_artifacts).map(|(_, url)| url) {
+    for kind in artifact_kinds.range(entry_artifacts).map(|(_, kind)| kind) {
+        let what = match kind {
+            Kind::Html => "artifact",
+            Kind::Mermaid => "diagram",
+        };
         body.push(DocumentNode::Paragraph {
-            spans: vec![Span::plain(format!("↗ artifact · {url}"))],
+            spans: vec![Span::plain(format!(
+                "{what} · renders in the web client — source above"
+            ))],
         });
     }
     Some(DocumentNode::entry(EntryKind::AssistantMessage, body))

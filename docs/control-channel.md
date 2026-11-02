@@ -164,8 +164,7 @@ own. A `static` with interior mutability under `src/session/`, `src/host/`, `src
 state outside both owners, and `the_daemon_keeps_no_state_in_statics`
 (`src/test/statics.rs`, which names the directories it reads) fails on one; a value
 computed once and never changed can be a `const`, or live outside the daemon. Artifacts follow the pattern: their links are derived from the
-log and signed with a key on `Session`, and their loopback listener runs under the
-host's `Swansong` ([artifacts.md](artifacts.md)).
+log and signed with a key on `Session` ([artifacts.md](artifacts.md)).
 
 The `*` rewrites the conn's *path*, so the control routes match `/v1/…` exactly as
 they do at a session bind's root; it does not clear the *params*. Both live in one

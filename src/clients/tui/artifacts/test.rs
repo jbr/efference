@@ -1,24 +1,26 @@
 use super::*;
+use crate::record::artifact::Kind;
 
 #[test]
-fn loopback_links_are_read_from_the_entry_view() {
+fn linked_fences_are_read_from_the_entry_view() {
     let view = serde_json::json!({
         "seq": 19,
         "payload": {"Assistant": {
             "output": {"Messages": []},
             "artifacts": [
-                {"text_block": 0, "fence": 0, "url": "/artifacts/a/19/0/0/t",
-                 "external_url": "http://127.0.0.1:4321/artifacts/a/19/0/0/t"},
-                {"text_block": 1, "fence": 2, "url": "/artifacts/a/19/1/2/u",
-                 "external_url": "http://127.0.0.1:4321/artifacts/a/19/1/2/u"},
-                // Outside a host there is no listener, so nothing to open.
-                {"text_block": 2, "fence": 0, "url": "/artifacts/a/19/2/0/v"},
+                {"text_block": 0, "fence": 0, "kind": "html",
+                 "url": "/artifacts/a/19/0/0/t"},
+                {"text_block": 1, "fence": 2, "kind": "mermaid",
+                 "url": "/artifacts/a/19/1/2/u"},
+                // A fence whose kind the view does not name is not an artifact.
+                {"text_block": 2, "fence": 0, "kind": "svg",
+                 "url": "/artifacts/a/19/2/0/v"},
             ],
         }},
     });
 
     assert_eq!(
-        external_links(&view),
+        linked_fences(&view),
         [
             (
                 Coordinate {
@@ -26,7 +28,7 @@ fn loopback_links_are_read_from_the_entry_view() {
                     text_block: 0,
                     fence: 0
                 },
-                "http://127.0.0.1:4321/artifacts/a/19/0/0/t".to_owned()
+                Kind::Html,
             ),
             (
                 Coordinate {
@@ -34,7 +36,7 @@ fn loopback_links_are_read_from_the_entry_view() {
                     text_block: 1,
                     fence: 2
                 },
-                "http://127.0.0.1:4321/artifacts/a/19/1/2/u".to_owned()
+                Kind::Mermaid,
             ),
         ]
     );
@@ -43,9 +45,9 @@ fn loopback_links_are_read_from_the_entry_view() {
 #[test]
 fn entries_without_artifacts_have_no_links() {
     for view in [
-        serde_json::json!({"seq": 3, "payload": {"User": [{"Text": "```html-artifact\n<p/>\n```"}]}}),
+        serde_json::json!({"seq": 3, "payload": {"User": [{"Text": "```html-artifact\n<p/>\n"}]}}),
         serde_json::json!({"seq": 4, "payload": {"Assistant": {"output": {"Messages": []}}}}),
     ] {
-        assert!(external_links(&view).is_empty(), "{view}");
+        assert!(linked_fences(&view).is_empty(), "{view}");
     }
 }

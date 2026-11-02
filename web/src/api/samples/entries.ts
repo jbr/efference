@@ -85,8 +85,6 @@ export const entries: {
               fence: 0,
               kind: "mermaid",
               url: "/artifacts/amber-heron/20/0/0/0123456789abcdef",
-              external_url:
-                "http://127.0.0.1:7979/amber-heron/20/0/0/0123456789abcdef",
             },
           ],
         },

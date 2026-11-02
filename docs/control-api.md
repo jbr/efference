@@ -1671,19 +1671,16 @@ gains `artifacts` beside `output`:
 ```jsonc
 "artifacts": [
   { "text_block": 1, "fence": 0, "kind": "mermaid",
-    "url": "/artifacts/brisk-otter/12/1/0/<tag>",
-    "external_url": "http://127.0.0.1:52144/artifacts/brisk-otter/12/1/0/<tag>" }
+    "url": "/artifacts/brisk-otter/12/1/0/<tag>" }
 ]
 ```
 
 `text_block` counts the entry's text blocks and `fence` that block's artifact
 fences of both kinds; `kind` is `html` or `mermaid`, by the fence's info string.
-`url` is root-relative; `external_url` is the same document
-on the host's artifact-only loopback listener, absent outside a host. The tag in
-both is an HMAC under the session's own key, so the links stop resolving when the
-session leaves the host. Absent on an entry with no such fence, whose view stays
-the derived bytes. The routes they name and what they serve are in
-[artifacts.md](artifacts.md).
+`url` is root-relative, and its tag is an HMAC under the session's own key, so
+the links stop resolving when the session leaves the host. Absent on an entry
+with no such fence, whose view stays the derived bytes. The routes they name and
+what they serve are in [artifacts.md](artifacts.md).
 
 Both elisions keep a bulky payload from riding every window, replay, and SSE
 frame, where it would queue every later frame behind it on an expensively-framed

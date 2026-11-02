@@ -328,13 +328,6 @@
     "ArtifactLink": {
       "description": "One artifact's address, as the client entry view carries it (docs/control-api.md).",
       "properties": {
-        "external_url": {
-          "description": "The same document on the artifact-only loopback listener, for a local browser;\nabsent for a session outside a host.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "fence": {
           "format": "uint",
           "minimum": 0,

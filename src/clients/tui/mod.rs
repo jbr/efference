@@ -145,10 +145,11 @@ pub(crate) enum TuiEvent {
         idx: usize,
         image: Result<::image::DynamicImage, String>,
     },
-    /// The artifact-only loopback URL resolved for one committed assistant fence.
-    ArtifactUrl {
+    /// An artifact fence in one committed assistant entry. It renders in the web
+    /// client; the terminal draws a notice in its place.
+    Artifact {
         coordinate: artifacts::Coordinate,
-        url: String,
+        kind: crate::record::artifact::Kind,
     },
     /// A one-line note from a control-channel call the UI thread dispatched and
     /// could not await — today the continue gesture's decline (docs/tui.md).

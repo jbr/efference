@@ -34,10 +34,6 @@ pub(crate) struct Link {
     pub(crate) kind: Kind,
     /// Root-relative: a web client loads it from the origin it already uses.
     pub(crate) url: String,
-    /// The same document on the artifact-only loopback listener, for a local browser;
-    /// absent for a session outside a host.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) external_url: Option<String>,
 }
 
 /// The links of a committed assistant entry's artifacts, in order. Empty for every
@@ -58,15 +54,11 @@ pub(crate) fn links(session: &Session, entry: &LogEntry) -> Vec<Link> {
         for (fence, Fence { kind, .. }) in fences(text).into_iter().enumerate() {
             let tag = tag(session.artifact_key(), id, entry.seq, text_block, fence);
             let url = format!("/artifacts/{id}/{}/{text_block}/{fence}/{tag}", entry.seq);
-            let external_url = session
-                .artifact_origin()
-                .map(|origin| format!("{origin}{url}"));
             links.push(Link {
                 text_block,
                 fence,
                 kind,
                 url,
-                external_url,
             });
         }
     }

@@ -65,7 +65,6 @@ fn links_belong_to_committed_assistant_text_of_an_addressable_session() {
             .url
             .starts_with(&format!("/artifacts/work/{assistant_seq}/0/1/"))
     );
-    assert_eq!(links[1].external_url, None, "no host, so no listener");
     assert!(artifact_links::links(&work, &entry(user_seq)).is_empty());
     assert!(artifact_links::links(&work, &entry(excluded_seq)).is_empty());
 

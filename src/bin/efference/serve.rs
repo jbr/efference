@@ -444,9 +444,6 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
     // The snapshot the registry read is also the baseline a session created without an
     // environment of its own inherits (docs/env.md).
     let host = efference::host::Host::new(inference, host_env);
-    // The artifact-only loopback listener, which the first adopt starts (docs/artifacts.md):
-    // installed before anything below can adopt a session.
-    host.set_artifact_listener(efference::listeners::artifacts::spawn_listener);
     // The `agents__*` verbs a hosted session's toolbox mounts, which the host does not name
     // (docs/tools.md): installed before anything below can boot a session.
     host.set_session_control(efference::clients::control_tools::in_session_server);

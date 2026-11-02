@@ -84,9 +84,6 @@ pub struct Session {
     /// random per session, so the links stop verifying when the session is gone and a
     /// resumed session issues new ones.
     artifact_key: [u8; artifact_links::KEY_BYTES],
-    /// The artifact-only loopback listener's origin, set once by the host's adopt;
-    /// unset for a session outside a host.
-    artifact_origin: std::sync::OnceLock<String>,
     /// The provider's cache lifetime, set at boot only when the model has a prompt
     /// cache; the `cold` topic reads it (`session/cold.rs`).
     cache_ttl: std::sync::OnceLock<Duration>,
@@ -438,17 +435,6 @@ impl Session {
     /// The key this session's artifact links are signed under (docs/artifacts.md).
     pub(crate) fn artifact_key(&self) -> &[u8; artifact_links::KEY_BYTES] {
         &self.artifact_key
-    }
-
-    /// Name the artifact-only listener's origin. Called once, by the host's adopt.
-    pub(crate) fn set_artifact_origin(&self, origin: String) {
-        let _ = self.artifact_origin.set(origin);
-    }
-
-    /// The origin of the listener that serves this session's artifacts to a local
-    /// browser, when a host started one.
-    pub(crate) fn artifact_origin(&self) -> Option<&str> {
-        self.artifact_origin.get().map(String::as_str)
     }
 
     /// The path a push notification opens for this session (docs/web-push.md):
