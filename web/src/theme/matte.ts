@@ -185,6 +185,13 @@ export function installMatteFinish() {
       output.width = output.height = 0;
     }
   }
+  // A surface that transitions its background reports the colour it is
+  // leaving until the transition ends, so the end redraws from the final one.
+  function transitioned(event: Event) {
+    if ((event as TransitionEvent).propertyName !== "background-color") return;
+    const surface = surfaces.get(event.target as HTMLElement);
+    if (surface) schedule(surface);
+  }
   const mutations = new MutationObserver((records) => {
     let removed = false;
     for (const record of records) {
@@ -218,6 +225,8 @@ export function installMatteFinish() {
   });
   discover(document.body);
   window.addEventListener("resize", resized);
+  document.addEventListener("transitionend", transitioned);
+  document.addEventListener("transitioncancel", transitioned);
   forced.addEventListener("change", invalidate);
   print.addEventListener("change", invalidate);
 
@@ -228,6 +237,8 @@ export function installMatteFinish() {
     resize.disconnect();
     visibility.disconnect();
     window.removeEventListener("resize", resized);
+    document.removeEventListener("transitionend", transitioned);
+    document.removeEventListener("transitioncancel", transitioned);
     forced.removeEventListener("change", invalidate);
     print.removeEventListener("change", invalidate);
     disable();

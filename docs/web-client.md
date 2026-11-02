@@ -1239,6 +1239,9 @@ bound. No new public grain asset is fetched or precached.
 Resize and intersection observers schedule coalesced draws only for visible
 surfaces. A mutation observer discovers newly inserted surface subtrees and
 invalidates theme/class changes; appended text does not redraw existing surfaces.
+A document-level `transitionend`/`transitioncancel` listener redraws a surface whose
+`background-color` transition finished, since the computed colour read during a
+theme flip or a focus change is the transition's starting value.
 Offscreen or removed surfaces release their URL reference; the last reference
 revokes it. Late encodings from invalidated/disposed surfaces are discarded.
 The page owner disconnects observers, revokes URLs and destroys the GPU context

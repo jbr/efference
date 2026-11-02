@@ -17,6 +17,7 @@ one line per feature.
 - A session directory may be typed as `~` or `~/…`, read as the host's home directory.
 - The new-session forms offer "Start in its own worktree" only in a directory that can start one: inside a git work tree whose `HEAD` resolves.
 - With one connection, the model picker opens on that connection's models instead of a one-row list of connections.
+- Fixed the web client's composer input keeping the previous theme's colour after the system switched between light and dark, and not showing its focus colour in Lilac.
 
 ## [0.1.0] - 2026-10-27
 

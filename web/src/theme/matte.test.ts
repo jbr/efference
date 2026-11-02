@@ -264,3 +264,63 @@ it("removes textures in forced colors and regenerates when it ends", () => {
   encode();
   expect(texture(document.body)).toBe('url("blob:grain-2")');
 });
+
+function transition(
+  type: string,
+  target: Element,
+  propertyName: string,
+): Event {
+  const event = new Event(type, { bubbles: true });
+  Object.defineProperty(event, "propertyName", { value: propertyName });
+  target.dispatchEvent(event);
+  return event;
+}
+
+it("redraws a surface when its background-color transition ends or is cancelled", () => {
+  stop = installMatteFinish();
+  enter(document.body, header());
+  flush();
+  encode();
+  expect(draw).toHaveBeenCalledTimes(1);
+  // The settled colour differs from the one baked mid-transition.
+  const context = HTMLCanvasElement.prototype.getContext("2d") as unknown as {
+    getImageData: () => { data: Uint8ClampedArray };
+  };
+  context.getImageData = () => ({
+    data: new Uint8ClampedArray([240, 238, 250, 255]),
+  });
+
+  transition("transitionend", header(), "color");
+  transition("transitionend", header(), "border-color");
+  expect(frames).toHaveLength(0);
+  transition(
+    "transitionend",
+    document.createElement("div"),
+    "background-color",
+  );
+  expect(frames).toHaveLength(0);
+
+  transition("transitionend", header(), "background-color");
+  expect(frames).toHaveLength(1);
+  flush();
+  expect(draw).toHaveBeenCalledTimes(2);
+  expect(draw.mock.calls[1][1].base).toEqual([240, 238, 250]);
+
+  context.getImageData = () => ({
+    data: new Uint8ClampedArray([255, 255, 255, 255]),
+  });
+  transition("transitioncancel", header(), "background-color");
+  expect(frames).toHaveLength(1);
+  flush();
+  expect(draw).toHaveBeenCalledTimes(3);
+});
+
+it("stops listening for transitions on cleanup", () => {
+  stop = installMatteFinish();
+  enter(header());
+  flush();
+  stop();
+  stop = undefined;
+  transition("transitionend", header(), "background-color");
+  expect(frames).toHaveLength(0);
+});
