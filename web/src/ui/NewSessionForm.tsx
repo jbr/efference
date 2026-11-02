@@ -173,10 +173,13 @@ export function NewSessionForm({
 
   function commitTyped() {
     const path = typed.trim();
-    // Creation takes an absolute path or refuses; the form does not widen what
-    // it accepts, so a relative path is not committed.
-    if (path === "" || !path.startsWith("/")) {
-      setNote("Enter a full, absolute directory path on the host.");
+    // Creation takes an absolute path, or one that starts with `~` for the
+    // host's home, and refuses anything else; the form does not widen what it
+    // accepts, so a relative path is not committed.
+    if (path === "" || !(path.startsWith("/") || /^~(\/|$)/.test(path))) {
+      setNote(
+        "Enter a full directory path on the host, absolute or starting with ~.",
+      );
       return;
     }
     setTyped("");

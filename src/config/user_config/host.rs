@@ -46,10 +46,7 @@ impl HostConfig {
     }
 
     fn expand_home(mut self, home: &Path) -> Self {
-        let expand = |path: PathBuf| match path.strip_prefix("~") {
-            Ok(rest) => home.join(rest),
-            Err(_) => path,
-        };
+        let expand = |path: PathBuf| crate::platform::home::expand(&path, Some(home));
         self.tls_cert = self.tls_cert.map(expand);
         self.tls_key = self.tls_key.map(expand);
         self

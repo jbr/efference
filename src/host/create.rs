@@ -27,8 +27,12 @@ impl Host {
         mut body: CreateSession,
         lineage: crate::config::env::Lineage,
     ) -> Result<Arc<Starting>, String> {
+        body.cwd = crate::platform::home::expand_here(&body.cwd);
         if !body.cwd.is_absolute() {
-            return Err(format!("cwd must be absolute: {}", body.cwd.display()));
+            return Err(format!(
+                "cwd must be absolute or start with ~: {}",
+                body.cwd.display()
+            ));
         }
         // The session is rooted at its project and works in the directory the client
         // sent: they differ when that directory is inside a worktree

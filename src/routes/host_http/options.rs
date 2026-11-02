@@ -12,7 +12,7 @@
 
 use super::*;
 use crate::inference::{Issue, IssueCode, SessionOptions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A preview body decoded field by field. Preview is deliberately lenient where
 /// creation is strict: one ill-typed value must not stop the other fields from
@@ -43,7 +43,8 @@ fn options_string(
     }
 }
 
-fn decode_session_options(body: &Value) -> Option<DecodedOptions> {
+/// `home` is the host's own, which a leading `~` in `cwd` names.
+fn decode_session_options(body: &Value, home: Option<&Path>) -> Option<DecodedOptions> {
     let object = body.as_object()?;
     let mut issues = Vec::new();
     let cwd = match object.get("cwd") {
@@ -51,19 +52,19 @@ fn decode_session_options(body: &Value) -> Option<DecodedOptions> {
             issues.push(Issue::new(
                 "cwd",
                 IssueCode::Required,
-                "must be an absolute path",
+                "must be an absolute path or start with ~",
             ));
             None
         }
         Some(Value::String(path)) => {
-            let path = PathBuf::from(path);
+            let path = crate::platform::home::expand(Path::new(path), home);
             if path.is_absolute() {
                 Some(path)
             } else {
                 issues.push(Issue::new(
                     "cwd",
                     IssueCode::InvalidSelection,
-                    "must be an absolute path",
+                    "must be an absolute path or start with ~",
                 ));
                 None
             }
@@ -72,7 +73,7 @@ fn decode_session_options(body: &Value) -> Option<DecodedOptions> {
             issues.push(Issue::new(
                 "cwd",
                 IssueCode::InvalidType,
-                "must be an absolute path string",
+                "must be an absolute path string, or one that starts with ~",
             ));
             None
         }
@@ -155,7 +156,9 @@ pub(crate) async fn preview_session(mut conn: Conn) -> Conn {
             );
         }
     };
-    let Some(decoded) = decode_session_options(&body) else {
+    let Some(decoded) =
+        decode_session_options(&body, std::env::var_os("HOME").as_deref().map(Path::new))
+    else {
         return fail(
             conn,
             ErrorCode::BadRequest,
@@ -221,3 +224,6 @@ fn session_options_response(host: &Host, decoded: DecodedOptions) -> String {
         String::from(r#"{"effective":null,"issues":[]}"#)
     })
 }
+
+#[cfg(test)]
+mod test;

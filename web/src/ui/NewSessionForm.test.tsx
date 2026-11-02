@@ -220,6 +220,32 @@ test("Somewhere else remains a full-row disclosure and Escape closes it with foc
   expect(props.onClose).not.toHaveBeenCalled();
 });
 
+test("a typed directory commits when absolute or starting with ~ and not otherwise", async () => {
+  const props = await render();
+  await click(host.querySelector<HTMLElement>(".directory-disclosure")!);
+  const submit = async (typed: string) => {
+    const input = host.querySelector<HTMLInputElement>("#launch-directory")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, typed);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(
+      host.querySelector<HTMLElement>(".new-session-other .primary")!,
+    );
+  };
+  for (const typed of ["project", "~other/project"]) {
+    await submit(typed);
+    expect(props.onDraft, typed).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("starting with ~");
+  }
+  await submit("~/project");
+  expect(props.onDraft).toHaveBeenCalledWith(emptyDraft("~/project"));
+  expect(props.onNavigate).toHaveBeenCalledWith("settings");
+});
+
 test("the worktree toggle says what it does and keeps it in the draft", async () => {
   vi.mocked(previewSession).mockResolvedValue(previewAnswer());
   const draft = emptyDraft(alpha.cwd);

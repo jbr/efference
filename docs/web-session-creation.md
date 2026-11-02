@@ -66,8 +66,9 @@ not just directory, so another remembered configuration cannot hide the current
 choice.
 
 `ui/DirectoryDisclosure.tsx` renders **Somewhere else…** as a persistent full-width
-row with a down chevron, `aria-expanded` and `aria-controls`. It unfolds an
-absolute-path input and **Use this directory** below the row without navigating.
+row with a down chevron, `aria-expanded` and `aria-controls`. It unfolds a
+path input and **Use this directory** below the row without navigating. The input takes an
+absolute path or one starting with `~`, which the host reads as its own home directory.
 Opening intentionally focuses the input; closing through the row, **Close** or
 Escape returns focus to the trigger. The path names a directory on the host, not
 necessarily on the browser's device. Choosing or committing a location collapses

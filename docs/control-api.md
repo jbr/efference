@@ -196,6 +196,15 @@ sessions from one process. Its own routes are the listener's, not a session's:
   creation, which resolves again through the same flow (`inference/options.rs`).
   Available on every authenticated listener, Unix and TCP alike: it mints nothing
   and reads no environment.
+- A working directory a client sends may begin with `~`, alone or followed by `/`: the
+  host reads it as its own process's home directory before checking that the path is
+  absolute. That covers the `cwd` of `QUERY /sessions`, `POST /sessions` and an `active`
+  `PATCH /sessions/:id`, and the `cwd` query parameter of the archived listing,
+  `GET /sessions/:id`, `GET /inference/catalog`, and `DELETE /projects`. `~user` is not
+  expanded and is refused as relative. What the host stores and reports (sessions,
+  `GET /projects`, the remembered locations) is the expanded path, so a location typed
+  with `~` and one typed in full are one entry. Preview's issue for a path that is
+  neither reads "must be an absolute path or start with ~".
 - `POST /sessions` — create a session. The body is the session request: `cwd`
   (absolute, always sent), the `QUERY /sessions` selections above, and optionally
   `env`, `name`, `config`, `temperature`, `effort`, `upstream`, `autonomous`,

@@ -144,6 +144,16 @@ async fn an_unknown_state_or_relative_cwd_is_refused() {
         .get("/sessions?state=archived&cwd=relative/path")
         .await
         .assert_status(400);
+    // `~` names the host's home, so a `~/` path is a root and answers a listing;
+    // another user's `~other` is not expanded and is relative.
+    server
+        .get("/sessions?state=archived&cwd=~/no-such-efference-root")
+        .await
+        .assert_ok();
+    server
+        .get("/sessions?state=archived&cwd=~other/path")
+        .await
+        .assert_status(400);
 
     host.swansong().shut_down().await;
 }

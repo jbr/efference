@@ -303,6 +303,8 @@ async fn creation_validates_its_body_on_every_listener() {
         (serde_json::json!(["not", "an", "object"]), "invalid body"),
         (base("../up", &roots.0), "not a single plain path segment"),
         (base("fresh", Path::new("relative")), "cwd must be absolute"),
+        // `~` is the host's home; another user's is not expanded, so it is relative.
+        (base("fresh", Path::new("~other/x")), "cwd must be absolute"),
         (base("one", &roots.0), "already hosted"),
     ];
     for (body, reason) in &cases {

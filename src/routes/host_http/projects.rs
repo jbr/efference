@@ -91,7 +91,7 @@ pub(crate) async fn forget_project(conn: Conn) -> Conn {
              e.g. ?cwd=/Users/jbr/code/efference&config_key=builtin-default",
         );
     };
-    let cwd = PathBuf::from(cwd);
+    let cwd = crate::platform::home::expand_here(&PathBuf::from(cwd));
     if !host.remembered.forget(&cwd, &config_key) {
         return fail(
             conn,
