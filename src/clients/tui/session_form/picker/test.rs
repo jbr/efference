@@ -295,3 +295,4 @@ fn under_a_group_chip_a_bare_typed_id_carries_the_author() {
 
 mod actions;
 mod render;
+mod sole;

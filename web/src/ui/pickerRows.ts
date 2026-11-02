@@ -49,6 +49,29 @@ export function catalogNodes(entries: ConnectionCatalog[]): Node[] {
   return nodes;
 }
 
+/** The connection an untouched root stands for: the catalog's only entry, when
+ * it is usable. The picker treats that root as the connection's own level, so a
+ * pick does not begin with descending into the only connection
+ * (docs/web-session-creation.md, *The one-connection root*). An `unavailable`
+ * entry keeps its row at the root, where its reason shows. */
+export const soleConnection = (entries: ConnectionCatalog[]): string | null =>
+  entries.length === 1 && entries[0].status !== "unavailable"
+    ? entries[0].connection
+    : null;
+
+/** The path the picker lists and describes: the chips taken, or, at an empty
+ * path with a sole connection, that connection's chip. This is the one rule for
+ * the one-connection root; `rows`, `typedIdRow`, the section headings, the row
+ * ids and the miss refresh all read it. Search ranking and the breadcrumb keep
+ * the chips as taken. */
+export const levelChips = (
+  chips: Chip[],
+  entries: ConnectionCatalog[],
+): Chip[] => {
+  const sole = chips.length === 0 ? soleConnection(entries) : null;
+  return sole === null ? chips : [sole];
+};
+
 /** The rows for a path, a query and a role.
  *
  * With a query, every visible row is the matcher's ordering and the typed-id
@@ -63,14 +86,21 @@ export function rows(
 ): Row[] {
   // Recents are the matcher's own tie-break, so ranking first is what puts the
   // best picks first for the main role; the other roles do not count them.
-  const ranked = rank(nodes, chips, query, role === "main").map(
-    (index) => nodes[index],
-  );
+  // A query ranks under the chips as taken, so search at the one-connection
+  // root still spans `connection/model` slugs; browsing lists the level.
+  const browsing = query.trim() === "";
+  const level = levelChips(chips, entries);
+  const ranked = rank(
+    nodes,
+    browsing ? level : chips,
+    query,
+    role === "main",
+  ).map((index) => nodes[index]);
 
-  if (query.trim() !== "") {
+  if (!browsing) {
     return [
       ...ranked.map((node) => rowFor(node, entries)).filter(notNull),
-      ...typedIdRow(chips, query),
+      ...typedIdRow(chips, query, entries),
     ];
   }
 
@@ -86,8 +116,8 @@ export function rows(
   // models are found by descending into it, and offering every group's rows
   // here would bury them.
   const rest = ranked.filter((node) => {
-    if (chips.length === 0) return node.kind === "connection";
-    if (chips.length === 1) {
+    if (level.length === 0) return node.kind === "connection";
+    if (level.length === 1) {
       return (
         node.kind === "group" ||
         (node.kind === "model" && node.group === undefined)
@@ -105,15 +135,21 @@ export function rows(
   ];
 }
 
-/** The typed-id row: *use `<typed>` as model id*. Under a group chip the bare
+/** The typed-id row: *use `<typed>` as model id*. At the one-connection root it
+ * targets that connection, as under its chip. Under a group chip the bare
  * id is prefixed with the group, since the chip already names the author. It is
  * offered whenever the query is one word and a chip is in — its presence says
  * nothing about whether anything matched, because a wanted id can be a prefix
  * of a listed one. */
-export function typedIdRow(chips: Chip[], query: string): Row[] {
+export function typedIdRow(
+  chips: Chip[],
+  query: string,
+  entries: ConnectionCatalog[],
+): Row[] {
   const typed = query.trim();
-  if (chips.length === 0 || typed === "" || /\s/.test(typed)) return [];
-  const [connection, group] = chips;
+  const level = levelChips(chips, entries);
+  if (level.length === 0 || typed === "" || /\s/.test(typed)) return [];
+  const [connection, group] = level;
   return [
     {
       kind: "typed",

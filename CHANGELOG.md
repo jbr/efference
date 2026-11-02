@@ -16,6 +16,7 @@ one line per feature.
 - Clients find the host only at `~/.efference/host.sock`; a project's `.efference/host.sock` is no longer consulted, which also stops `efference` in the home directory listing each session twice. A host bound elsewhere is reached with `--host-socket`.
 - A session directory may be typed as `~` or `~/…`, read as the host's home directory.
 - The new-session forms offer "Start in its own worktree" only in a directory that can start one: inside a git work tree whose `HEAD` resolves.
+- With one connection, the model picker opens on that connection's models instead of a one-row list of connections.
 
 ## [0.1.0] - 2026-10-27
 

@@ -95,7 +95,7 @@ impl Form {
         let chips: Vec<String> = path.iter().map(|chip| chip.label().to_string()).collect();
         // What under a chip needs saying is the typed-id path, which no row shows
         // until something is typed.
-        let placeholder = match path.is_empty() {
+        let placeholder = match self.picker_level().is_empty() {
             true => "type to filter every connection's models",
             false => "type to filter, or to name any model id",
         };
@@ -122,9 +122,11 @@ impl Form {
     }
 
     /// What the window says when it has no rows.
-    fn picker_placeholder(&self) -> &'static str {
+    pub(super) fn picker_placeholder(&self) -> &'static str {
         match &self.page {
-            Page::Picker { path, query, .. } if !path.is_empty() && query.text().is_empty() => {
+            Page::Picker { query, .. }
+                if !self.picker_level().is_empty() && query.text().is_empty() =>
+            {
                 "no models listed — type a model id"
             }
             _ if self.connections().is_empty() => "no connections read from this host",
@@ -138,8 +140,9 @@ impl Form {
         if let Some(note) = &self.note {
             return note.clone();
         }
-        if let Page::Picker { path, .. } = &self.page
-            && let Some(Chip::Connection(connection)) = path.first()
+        let level = self.picker_level();
+        if let Page::Picker { .. } = &self.page
+            && let Some(Chip::Connection(connection)) = level.first()
             && let Some(entry) = self.catalog_entry(connection)
         {
             match entry.status {

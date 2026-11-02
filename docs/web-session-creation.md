@@ -141,6 +141,15 @@ With an empty query:
 
 - The root shows up to five recent picks for the main role, then configured
   connections. Spotter and triage show connections without main-role recents.
+- **The one-connection root.** When the catalog holds exactly one connection and
+  its status is not `unavailable`, the root lists that connection's own level
+  (`levelChips` in `ui/pickerRows.ts`): the same recents, author folders and
+  ungrouped models, with the section labels of a connection page and no
+  **Browse connections** heading. An author folder descends into the connection
+  and author; a model row picks that connection's model. A one-word query keeps
+  the root's search and offers the typed-ID row for the connection. The
+  breadcrumb stays **All models /**. An `unavailable` connection keeps its row,
+  where its status shows.
 - A connection with author categories shows main-role recent picks, alphabetic
   author folders, and any ungrouped models. It does not repeat every author's
   models below the folders. Section labels distinguish recents, authors, and

@@ -136,7 +136,6 @@ impl Form {
     pub(super) fn refresh_on_miss(&mut self) -> Action {
         let Page::Picker {
             role,
-            path,
             query,
             refreshed,
             ..
@@ -144,7 +143,8 @@ impl Form {
         else {
             return Action::Continue;
         };
-        let Some(Chip::Connection(connection)) = path.first() else {
+        let level = self.picker_level();
+        let Some(Chip::Connection(connection)) = level.first() else {
             return Action::Continue;
         };
         let text = query.text();
@@ -155,7 +155,7 @@ impl Form {
             return Action::Continue;
         }
         let (nodes, _) = self.tree(*role);
-        if !matcher::rank(&nodes, path, &text, *role == Role::Main).is_empty() {
+        if !matcher::rank(&nodes, &level, &text, *role == Role::Main).is_empty() {
             return Action::Continue;
         }
         let connection = connection.clone();

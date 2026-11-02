@@ -117,6 +117,39 @@ impl Form {
                 .is_some_and(|entry| entry.status == CatalogStatus::Unavailable)
     }
 
+    /// The connection an untouched root stands for: the one the role can choose
+    /// from, when it is the only one and has a usable credential. The picker
+    /// treats that root as the connection's own level, so a pick does not begin
+    /// with descending into the only connection (docs/tui.md, *The one-connection
+    /// root*). An unavailable connection keeps its row at the root, where its
+    /// reason shows.
+    pub(super) fn sole_connection(&self, role: Role) -> Option<&str> {
+        let role = role.model_role();
+        let mut accepted = self
+            .connections()
+            .iter()
+            .filter(|inventory| role.accepts_provider(inventory.provider));
+        let only = accepted.next()?;
+        (accepted.next().is_none() && !self.connection_unavailable(&only.name))
+            .then_some(only.name.as_str())
+    }
+
+    /// The path the picker lists and describes: the chips taken, or, at an
+    /// empty path with a sole connection, that connection's chip. This is the one
+    /// rule for the one-connection root; the row builder, the typed-id row, the
+    /// miss refresh, the placeholder and the status line all read it (docs/tui.md,
+    /// *The one-connection root*). Search ranking and the breadcrumb keep the path
+    /// as taken.
+    pub(super) fn picker_level(&self) -> Vec<Chip> {
+        let Page::Picker { role, path, .. } = &self.page else {
+            return Vec::new();
+        };
+        match (path.is_empty(), self.sole_connection(*role)) {
+            (true, Some(connection)) => vec![Chip::Connection(connection.to_string())],
+            _ => path.clone(),
+        }
+    }
+
     /// The whole tree in list order: each connection, its groups by name, then
     /// its models as the catalog ordered them — only those `role` may choose
     /// (`ModelRole`, the same rule the host's `?role=` filter applies).
@@ -255,16 +288,19 @@ impl Form {
         };
         let recents = *role == Role::Main;
         let text = query.text();
+        let level = self.picker_level();
         let (nodes, extra) = self.tree(*role);
-        let order = match text.trim().is_empty() {
-            true => Self::browse(&nodes, path, recents),
-            false => rank(&nodes, path, &text, recents),
+        // Browsing lists the level; a query ranks under the path as taken, so
+        // search at the one-connection root still spans `connection/model` slugs.
+        let (order, shown_under) = match text.trim().is_empty() {
+            true => (Self::browse(&nodes, &level, recents), &level),
+            false => (rank(&nodes, path, &text, recents), path),
         };
         let mut rows: Vec<PickerRow> = order
             .into_iter()
             .map(|i| {
                 let node = &nodes[i];
-                let id = node.relative(path);
+                let id = node.relative(shown_under);
                 let blank = PickerRow {
                     target: Target::Connection(node.connection.clone()),
                     id,
@@ -316,13 +352,13 @@ impl Form {
                 }
             })
             .collect();
-        if let Some(Chip::Connection(connection)) = path.first()
+        if let Some(Chip::Connection(connection)) = level.first()
             && !text.is_empty()
             && !text.chars().any(char::is_whitespace)
         {
             // Under a group chip a bare id is the group's: the chip already
             // says the author, and the id the host needs carries it.
-            let model = match (path.get(1), text.contains('/')) {
+            let model = match (level.get(1), text.contains('/')) {
                 (Some(Chip::Group(group)), false) => format!("{group}/{text}"),
                 _ => text.clone(),
             };

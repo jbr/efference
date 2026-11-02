@@ -567,6 +567,17 @@ price (`$0.15/$0.50`, `free` at zero), and age from `created` (absent when unset
 across the visible rows; at narrow widths the facts go first (age, price, context), then
 the name, then the id is truncated.
 
+**The one-connection root.** When the role can choose from exactly one connection
+and it is not unavailable, the untouched root stands for that connection's own level
+(`Form::picker_level`): the same recents, then the same groups or models, with no
+connection row, and a group row descends to the connection's and its own chip as it
+does under the connection chip. Typing at that root keeps the root's search (slugs
+stay `connection/model`) and offers the "use `<typed>` as model id" row for the
+connection. The breadcrumb stays empty, Backspace has nothing to remove at it, and
+the placeholder and the status line (`reading <connection>'s models…`, a failure's
+reason) read the connection's level. An unavailable only connection keeps its row at
+the root, where its reason shows.
+
 With a query, the rows under the chips are filtered and sorted by the matching rule in
 `matcher.rs`: case-insensitive, whitespace-separated tokens that must all match. A token
 without `/` is matched against the row's own text (a connection's or group's name, a

@@ -11,6 +11,7 @@ import {
   rowSlug,
   rowKey,
   rows,
+  soleConnection,
   typedIdRow,
 } from "./pickerRows.ts";
 
@@ -130,14 +131,14 @@ test("a query filters through the matcher, and the typed-id row follows it", () 
     "router/glm",
   );
   // At the root there is no connection to type an id into.
-  expect(typedIdRow([], "glm")).toEqual([]);
+  expect(typedIdRow([], "glm", entries)).toEqual([]);
   // Two words is not one id.
-  expect(typedIdRow(["router"], "glm 5")).toEqual([]);
+  expect(typedIdRow(["router"], "glm 5", entries)).toEqual([]);
 });
 
 test("a typed id under a group chip carries the group", () => {
   // The chip already names the author, so the bare id is completed with it.
-  expect(typedIdRow(["router", "z-ai"], "glm-9")).toEqual([
+  expect(typedIdRow(["router", "z-ai"], "glm-9", entries)).toEqual([
     { kind: "typed", connection: "router", model: "z-ai/glm-9" },
   ]);
 });
@@ -212,4 +213,51 @@ test("search within a connection still finds models inside its authors", () => {
     "router/z-ai/glm-5.3-flash",
     "router/glm",
   ]);
+});
+
+test("a catalog with one connection lists that connection's level at the root", () => {
+  const only = [router];
+  const index = catalogNodes(only);
+  for (const role of ["main", "spotter"] as const) {
+    expect(slugs(rows(index, only, [], "", role))).toEqual(
+      slugs(rows(index, only, ["router"], "", role)),
+    );
+  }
+  // Recents lead for main, then the groups.
+  expect(slugs(rows(index, only, [], "", "main"))).toEqual([
+    "router/z-ai/glm-5.3",
+    "router/anthropic",
+    "router/z-ai",
+  ]);
+  expect(
+    rows(index, only, [], "", "main").some((row) => row.kind === "connection"),
+  ).toBe(false);
+  // Search keeps the root's slugs.
+  expect(slugs(rows(index, only, [], "glm", "main"))).toEqual([
+    "router/z-ai/glm-5.3",
+    "router/z-ai/glm-5.3-flash",
+    "router/glm",
+  ]);
+});
+
+test("the typed id at the one-connection root targets the connection", () => {
+  expect(typedIdRow([], "glm-9", [router])).toEqual([
+    { kind: "typed", connection: "router", model: "glm-9" },
+  ]);
+  // Two connections have no connection to attach it to.
+  expect(typedIdRow([], "glm-9", entries)).toEqual([]);
+});
+
+test("two connections, or an unavailable one, keep the connection rows", () => {
+  expect(slugs(rows(nodes, entries, [], "", "spotter"))).toEqual([
+    "router",
+    "lab",
+  ]);
+  const down = [{ ...router, status: "unavailable" as const, models: [] }];
+  expect(soleConnection(down)).toBeNull();
+  expect(slugs(rows(catalogNodes(down), down, [], "", "main"))).toEqual([
+    "router",
+  ]);
+  expect(typedIdRow([], "glm-9", down)).toEqual([]);
+  expect(soleConnection([router])).toBe("router");
 });

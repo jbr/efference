@@ -25,10 +25,21 @@ const catalog: ConnectionCatalog[] = [
       { connection: "openrouter", model: "acme/alpha-old", group: "acme" },
     ],
   },
+  // A second connection keeps the root a list of connections; the
+  // one-connection root has its own tests below.
+  {
+    connection: "lab",
+    provider: "openai",
+    status: "fresh",
+    models: [{ connection: "lab", model: "local-model" }],
+  },
 ];
 
+// What the host serves: the two connections, or a test's own catalog.
+let served = catalog;
+
 vi.mock("../api/sessionForm.ts", () => ({
-  fetchCatalog: async () => ({ connections: catalog }),
+  fetchCatalog: async () => ({ connections: served }),
   fetchConnection: vi.fn(async () => catalog[0]),
 }));
 
@@ -38,6 +49,7 @@ afterEach(() => {
   act(() => root?.unmount());
   host?.remove();
   vi.clearAllMocks();
+  served = catalog;
 });
 
 async function render(initialBrowse?: PickerBrowseState) {
@@ -494,4 +506,67 @@ test("Backspace returns to the parent namespace and resets the keyboard index", 
     selected: 0,
   });
   expect(onPick).not.toHaveBeenCalled();
+});
+
+test("a catalog with one connection opens on that connection's own level", async () => {
+  served = [catalog[0]];
+  const { onPick, onClose } = await render();
+  // The recents lead, then the author folder; no connection row or heading.
+  expect(
+    [...host.querySelectorAll(".picker-section")].map(
+      (node) => node.textContent,
+    ),
+  ).toEqual(["Recent models", "Browse authors"]);
+  expect(host.querySelector(".picker-origin")).toBeNull();
+  expect(button("acme").classList.contains("picker-folder")).toBe(true);
+  expect(button("acme").textContent).toContain("2 models");
+  // The breadcrumb is still the root.
+  expect(host.querySelector(".picker-root")).not.toBeNull();
+  expect(host.querySelectorAll(".picker-breadcrumb")).toHaveLength(0);
+  // A group row descends into the connection and the group.
+  await act(async () => button("acme").click());
+  expect(
+    [...host.querySelectorAll(".picker-breadcrumb")].map(
+      (node) => node.textContent,
+    ),
+  ).toEqual(["openrouter", "acme"]);
+  expect(onClose).not.toHaveBeenCalled();
+  expect(onPick).not.toHaveBeenCalled();
+});
+
+test("a model row at the one-connection root picks that connection's model", async () => {
+  served = [catalog[0]];
+  const { onPick, onClose } = await render();
+  await act(async () => button("acme/alpha-new").click());
+  expect(onPick).toHaveBeenCalledWith({
+    connection: "openrouter",
+    model: "acme/alpha-new",
+  });
+  expect(onClose).toHaveBeenCalled();
+});
+
+test("the typed id at the one-connection root targets the connection", async () => {
+  served = [catalog[0]];
+  const { onPick } = await render();
+  await act(async () => {
+    const input = host.querySelector<HTMLInputElement>("input")!;
+    const set = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    set.call(input, "brand-new");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => button("brand-new").click());
+  expect(onPick).toHaveBeenCalledWith({
+    connection: "openrouter",
+    model: "brand-new",
+  });
+});
+
+test("an unavailable only connection keeps its row at the root", async () => {
+  served = [{ ...catalog[0], status: "unavailable", models: [] }];
+  await render();
+  expect(button("openrouter").classList.contains("picker-folder")).toBe(true);
+  expect(button("openrouter").textContent).toContain("unavailable");
 });

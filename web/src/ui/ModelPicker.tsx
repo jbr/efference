@@ -29,6 +29,7 @@ import {
   type Row,
   catalogNodes,
   descends,
+  levelChips,
   rowKey,
   rows,
 } from "./pickerRows.ts";
@@ -141,6 +142,13 @@ export function ModelPicker({
   }, [cwd, config, role, replace]);
 
   const nodes = useMemo(() => catalogNodes(entries ?? []), [entries]);
+  // The path the rows, headings and ids read: the chips, or the only
+  // connection's chip at an empty path (docs/web-session-creation.md, *The
+  // one-connection root*). The breadcrumb and Escape keep `chips` as taken.
+  const level = useMemo(
+    () => levelChips(chips, entries ?? []),
+    [chips, entries],
+  );
   const list_ = useMemo(
     () => rows(nodes, entries ?? [], chips, query, role),
     [nodes, entries, chips, query, role],
@@ -150,7 +158,7 @@ export function ModelPicker({
   // read of that connection: a model released since the last read shows up by
   // the time its id is typed.
   useEffect(() => {
-    const connection = chips.length === 1 ? chips[0] : null;
+    const connection = level.length === 1 ? level[0] : null;
     if (
       entries === null ||
       connection === null ||
@@ -165,7 +173,7 @@ export function ModelPicker({
     fetchConnection(connection, cwd, config, role, MISS_MAX_AGE)
       .then((entry) => replace(connection, entry))
       .catch(() => {});
-  }, [entries, list_, chips, query, cwd, config, role, replace]);
+  }, [entries, list_, level, query, cwd, config, role, replace]);
 
   /** Set the query and return the selection to the first row (docs/tui.md): the
    * highlight is otherwise left over rows the new query does not have. Done at
@@ -250,9 +258,9 @@ export function ModelPicker({
   const firstAuthor = list_.findIndex((row) => row.kind === "group");
   const sections = list_.map((row, index) => {
     if (query.trim() !== "") return null;
-    if (chips.length === 0)
+    if (level.length === 0)
       return row.kind === "connection" ? "Browse connections" : "Recent models";
-    if (chips.length === 1 && firstAuthor >= 0) {
+    if (level.length === 1 && firstAuthor >= 0) {
       if (index < firstAuthor) return "Recent models";
       return row.kind === "group" ? "Browse authors" : "Other models";
     }
@@ -329,7 +337,9 @@ export function ModelPicker({
           <p className="picker-note dim">
             {entries.length === 0
               ? "no connections read from this host"
-              : "nothing matches"}
+              : level.length > 0 && query.trim() === ""
+                ? "no models listed — type a model id"
+                : "nothing matches"}
           </p>
         )}
         {list_.map((row, index) => (
@@ -340,7 +350,7 @@ export function ModelPicker({
               )}
             <ModelPickerRow
               row={row}
-              chips={chips}
+              chips={query.trim() === "" ? level : chips}
               openedAt={openedAt}
               selected={keyboardNavigation && index === selected}
               onPick={() => {
