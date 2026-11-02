@@ -786,7 +786,8 @@ fn a_hosts_preview_reads_back_as_what_it_wrote() {
             "effort": {"value": null, "source": "provider_default"},
             "temperature": {"value": null, "source": "provider_default"}
         },
-        "issues": []
+        "issues": [],
+        "worktree": true
     }"#;
     let decoded: ResolvedOptions = serde_json::from_str(wire).expect("decode a preview");
     assert_eq!(

@@ -4247,6 +4247,11 @@ export interface RemovedDevice {
 export interface ResolvedOptions {
   effective: EffectiveOptions;
   issues: PreviewIssue[];
+  /**
+   * Whether the proposed `cwd` can start a worktree: it is inside a git work tree
+   * whose `HEAD` resolves. A form offers the worktree option only when this is true.
+   */
+  worktree: boolean;
 }
 /**
  * Lines kept vs. lines triage was shown, plus the count of results whose output was

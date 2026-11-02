@@ -121,22 +121,24 @@ export function Settings({
           onClick={() => onPick("triage")}
         />
       </Setting>
-      <Setting label="Worktree" error={error("worktree")}>
-        <label className="worktree-toggle">
-          <input
-            type="checkbox"
-            checked={draft.worktree}
-            onChange={(event) =>
-              edit({ worktree: event.currentTarget.checked })
-            }
-          />
-          Start in its own worktree
-        </label>
-        <p className="worktree-description">
-          Its own checkout and branch at{" "}
-          <code>.efference/worktrees/&lt;id&gt;</code>.
-        </p>
-      </Setting>
+      {preview?.worktree === true && (
+        <Setting label="Worktree" error={error("worktree")}>
+          <label className="worktree-toggle">
+            <input
+              type="checkbox"
+              checked={draft.worktree}
+              onChange={(event) =>
+                edit({ worktree: event.currentTarget.checked })
+              }
+            />
+            Start in its own worktree
+          </label>
+          <p className="worktree-description">
+            Its own checkout and branch at{" "}
+            <code>.efference/worktrees/&lt;id&gt;</code>.
+          </p>
+        </Setting>
+      )}
     </section>
   );
 }

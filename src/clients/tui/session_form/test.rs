@@ -146,6 +146,44 @@ fn the_worktree_toggle_flips_and_rides_in_the_creation() {
     );
 }
 
+/// Where the host says a worktree cannot start, the row is neither drawn nor
+/// reachable, and a draft that had it on loses it; where it says one can, the row is
+/// drawn (docs/worktrees.md).
+#[test]
+fn the_worktree_row_is_absent_where_the_preview_says_it_cannot_start() {
+    let rendered = |form: &Form| drawn(form, 12);
+    let mut form = form();
+    assert!(form.resolved.as_ref().unwrap().worktree);
+    assert_eq!(form.rows(), 7);
+    assert!(rendered(&form).contains("worktree"));
+
+    form.selected = 6;
+    press(&mut form, KeyCode::Enter);
+    assert!(form.draft.worktree);
+
+    let mut answer = resolve(&SessionOptions::default());
+    answer.worktree = false;
+    form.pending = Some(SessionOptions::default());
+    assert_eq!(form.preview_returned(Ok(answer)), Action::Continue);
+    assert_eq!(form.rows(), 6);
+    assert!(!form.draft.worktree, "the draft's knob is cleared");
+    assert_eq!(form.selected, 5, "a cursor on the vanished row moves up");
+    assert!(!rendered(&form).contains("worktree"));
+
+    for _ in 0..10 {
+        press(&mut form, KeyCode::Down);
+    }
+    assert_eq!(form.selected, 5, "the cursor cannot reach a seventh row");
+    form.selected = 0;
+    assert_eq!(
+        key(&mut form, KeyCode::Enter),
+        Action::Create {
+            options: SessionOptions::default(),
+            worktree: false,
+        }
+    );
+}
+
 /// A reply that arrives after the draft moved on describes a draft nobody is
 /// looking at: it is dropped, and the current draft is re-sent.
 #[test]

@@ -168,11 +168,20 @@ pub(crate) async fn preview_session(mut conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
-    let response = session_options_response(&host, decoded);
+    // Whether the form should offer a worktree there. Skipped, as false, when `cwd`
+    // did not decode: its own issue already says so, and there is nothing to ask git.
+    // Git runs off the async workers; a run that did not finish answers false.
+    let worktree = match decoded.cwd.clone() {
+        Some(cwd) => tokio::task::spawn_blocking(move || crate::host::worktree::can_start(&cwd))
+            .await
+            .unwrap_or(false),
+        None => false,
+    };
+    let response = session_options_response(&host, decoded, worktree);
     conn.with_status(200).with_body(response).halt()
 }
 
-fn session_options_response(host: &Host, decoded: DecodedOptions) -> String {
+fn session_options_response(host: &Host, decoded: DecodedOptions, worktree: bool) -> String {
     let DecodedOptions {
         cwd,
         config,
@@ -218,10 +227,11 @@ fn session_options_response(host: &Host, decoded: DecodedOptions) -> String {
     }
     issues.append(&mut resolved.issues);
     resolved.issues = issues;
+    resolved.worktree = worktree;
     serde_json::to_string(&resolved).unwrap_or_else(|_| {
         // Every field is plain data; a failure here would be a serde bug, not a
         // request the caller can fix.
-        String::from(r#"{"effective":null,"issues":[]}"#)
+        String::from(r#"{"effective":null,"issues":[],"worktree":false}"#)
     })
 }
 

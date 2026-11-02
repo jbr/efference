@@ -40,6 +40,7 @@ export const inference: {
         temperature: { source: "provider_default", value: null },
       },
       issues: [],
+      worktree: false,
     },
     {
       effective: {
@@ -77,6 +78,7 @@ export const inference: {
           message: "must be a whole number from 0 to 100",
         },
       ],
+      worktree: false,
     },
   ],
   catalogLists: [

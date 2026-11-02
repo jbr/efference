@@ -167,7 +167,8 @@ sessions from one process. Its own routes are the listener's, not a session's:
   {"effective": {"main": {"value": {"connection": …, "provider": …, "model": …},
                           "source": "user_default"},
                  "spotter": {…}, "triage": {…}, "effort": {…}, "temperature": {…}},
-   "issues": [{"field": "model", "code": "invalid_selection", "message": …}]}
+   "issues": [{"field": "model", "code": "invalid_selection", "message": …}],
+   "worktree": true}
   ```
 
   **`effective` is what a session would actually get**, field by field: the value
@@ -189,6 +190,13 @@ sessions from one process. Its own routes are the listener's, not a session's:
   to be wrong. `code` is closed — `required`, `invalid_type`, `out_of_range`,
   `invalid_selection`, `unavailable_connection`, `invalid_config` — and a config
   that will not load reports that it did not, never its contents.
+
+  **`worktree` says whether the `cwd` can start a worktree**: it is inside a git work
+  tree whose `HEAD` resolves, the two preconditions creation checks
+  ([worktrees.md](worktrees.md)). It is `false` for a `cwd` that did not decode, and a
+  form offers the worktree option only when it is `true`. Creation keeps its own
+  refusal for a request that sends `worktree: true` anyway. The answer costs one git
+  process per preview, run with the host's environment.
 
   Only malformed JSON or a non-object body is `400`; every field-level problem is
   an issue inside a `200`. This is a preview, not a reservation: the host retains

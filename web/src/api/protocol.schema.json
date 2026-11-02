@@ -6005,11 +6005,16 @@
             "$ref": "#/definitions/PreviewIssue"
           },
           "type": "array"
+        },
+        "worktree": {
+          "description": "Whether the proposed `cwd` can start a worktree: it is inside a git work tree\nwhose `HEAD` resolves. A form offers the worktree option only when this is true.",
+          "type": "boolean"
         }
       },
       "required": [
         "effective",
-        "issues"
+        "issues",
+        "worktree"
       ],
       "type": "object"
     },

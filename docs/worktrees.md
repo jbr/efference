@@ -38,8 +38,12 @@ With `worktree: true`, boot runs `git worktree add -b efference/<id>
 <project>/.efference/worktrees/<id> <HEAD>`, from the creator's working directory and on
 the commit its `HEAD` names, with the session's child environment. The worktrees sit
 together under one directory rather than inside each session dir, so one path prefix
-covers all of them. A project that is not a git work tree is refused before anything
-is minted; a boot that fails after the add removes the worktree and its branch.
+covers all of them. A project that is not a git work tree, or whose `HEAD` does not
+resolve, is refused before anything is minted; a boot that fails after the add removes
+the worktree and its branch. The creation preview answers the same two preconditions
+as a `worktree` boolean (`worktree::can_start`, sharing the check with `add`), and the
+new-session forms show their worktree option only where it is `true`
+(docs/control-api.md).
 
 The checkout is a plain one, so the project's `post-checkout` hook runs. Warming a new
 worktree — cloning build output, initializing submodules — is the project's concern,

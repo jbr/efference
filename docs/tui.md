@@ -528,7 +528,10 @@ client-only toggle — `⏎` on its row flips it, `r` puts it back off — whose
 sends outside the options a preview resolves, so neither gesture previews. Its dim trailer
 states what turning it on does rather than where a value came from, and it follows the
 value rather than sitting in the source column, so the description is not padded off the
-modal's capped width.
+modal's capped width. The row is drawn only where the preview's `worktree` answer is not
+`false` (the directory is a git work tree whose `HEAD` resolves; the row shows until the
+first answer lands): where the host says it cannot start, the row is neither rendered nor
+reachable by the cursor, and the draft's toggle is cleared so creation does not send it.
 
 Preview is recomputed on *committed* edits — leaving a picker, accepting an editor, `r`
 resetting a field — never per keystroke, so the request rate follows selections and no

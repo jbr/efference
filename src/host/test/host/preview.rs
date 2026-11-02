@@ -43,6 +43,7 @@ async fn query_sessions_previews_a_proposed_session_without_creating_one() {
                 "temperature": {"value": null, "source": "provider_default"},
             },
             "issues": [],
+            "worktree": false,
         })
     );
     assert!(host.ids().is_empty());
@@ -76,7 +77,7 @@ async fn a_preview_keeps_its_bytes() {
             r#""spotter":{"value":{"connection":"test","provider":"anthropic","model":"claude-haiku-4-5"},"source":"main_provider"},"#,
             r#""triage":{"value":{"mode":"shared"},"source":"shared_main"},"#,
             r#""effort":{"value":null,"source":"provider_default"},"#,
-            r#""temperature":{"value":null,"source":"provider_default"}},"issues":[]}"#
+            r#""temperature":{"value":null,"source":"provider_default"}},"issues":[],"worktree":false}"#
         )
     );
     assert_eq!(
@@ -92,7 +93,7 @@ async fn a_preview_keeps_its_bytes() {
             r#""triage":{"value":{"mode":"separate","connection":"test","provider":"anthropic","model":"t","thinking":true,"auto_choice":false,"effort":"low"},"source":"request"},"#,
             r#""effort":{"value":"high","source":"request"},"#,
             r#""temperature":{"value":null,"source":null}},"#,
-            r#""issues":[{"field":"temperature","code":"invalid_type","message":"must be a whole number from 0 to 100"}]}"#
+            r#""issues":[{"field":"temperature","code":"invalid_type","message":"must be a whole number from 0 to 100"}],"worktree":false}"#
         )
     );
     host.swansong().shut_down().await;
@@ -206,5 +207,66 @@ async fn a_network_host_previews_and_creates_the_same_way() {
     );
     assert!(host.ids().is_empty(), "a rejected creation mints nothing");
     let _ = roots;
+    host.swansong().shut_down().await;
+}
+
+/// **The preview says whether its `cwd` can start a worktree** (docs/worktrees.md): a
+/// directory outside any repository and a fresh `git init` with no commit cannot, a
+/// repository with a commit can, and so can a directory inside it. A `cwd` that did not
+/// decode answers `false` beside its issue.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn query_sessions_answers_whether_a_worktree_can_start() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let server = host_server(&host).await;
+    let worktree = async |body: Value| {
+        let response = server
+            .build(trillium::Method::Query, "/sessions")
+            .with_json_body(&body)
+            .await;
+        response.assert_status(200);
+        json(response.body())["worktree"].clone()
+    };
+
+    let outside = roots.0.join("one");
+    assert_eq!(
+        worktree(serde_json::json!({"cwd": outside})).await,
+        false,
+        "outside any repository"
+    );
+
+    let unborn = roots.0.join("unborn");
+    std::fs::create_dir_all(&unborn).unwrap();
+    crate::host::worktree::testing::git(&unborn, &["init", "-q"]);
+    assert_eq!(
+        worktree(serde_json::json!({"cwd": unborn})).await,
+        false,
+        "a repository with no commit has no HEAD to branch from"
+    );
+
+    crate::host::worktree::testing::commit(&unborn, "one");
+    assert_eq!(
+        worktree(serde_json::json!({"cwd": unborn})).await,
+        true,
+        "a repository with a commit"
+    );
+    let inside = unborn.join("sub");
+    std::fs::create_dir_all(&inside).unwrap();
+    assert_eq!(
+        worktree(serde_json::json!({"cwd": inside})).await,
+        true,
+        "a directory inside the work tree"
+    );
+
+    assert_eq!(
+        worktree(serde_json::json!({"cwd": "relative/path"})).await,
+        false,
+        "a cwd that did not decode"
+    );
+    assert_eq!(
+        worktree(serde_json::json!({"cwd": roots.0.join("missing")})).await,
+        false,
+        "a directory that does not exist"
+    );
     host.swansong().shut_down().await;
 }

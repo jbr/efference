@@ -37,6 +37,7 @@ export const preview: ResolvedOptions = {
     temperature: { value: null, source: "provider_default" },
   },
   issues: [],
+  worktree: true,
 };
 
 export const pickerRows: Row[] = [

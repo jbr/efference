@@ -322,47 +322,51 @@ impl Form {
         );
         let (effort, effort_source) = self.effective(|e| &e.effort, Clone::clone);
         let (temperature, temperature_source) = self.effective(|e| &e.temperature, u8::to_string);
+        let mut rows = vec![
+            Row::plain(match self.creating {
+                true => "creating…",
+                false => "start session",
+            }),
+            self.row(
+                Role::Main.label(),
+                &["model", "connection"],
+                main,
+                main_source,
+            ),
+            self.row("effort", &["effort"], effort, effort_source),
+            self.row(
+                "temperature",
+                &["temperature"],
+                temperature,
+                temperature_source,
+            ),
+            self.row(
+                Role::Spotter.label(),
+                &["spotter_model", "spotter_connection"],
+                spotter,
+                spotter_source,
+            ),
+            self.row(Role::Triage.label(), &["triage"], triage, triage_source),
+        ];
+        // A client-only knob: the host resolves no worktree value, so this row has
+        // no source column. Its trailer states what turning it on does rather than
+        // where the value came from (docs/worktrees.md). Absent where the host says
+        // a worktree cannot start.
+        if self.worktree_offered() {
+            rows.push(Row {
+                label: "worktree".into(),
+                value: if self.draft.worktree { "on" } else { "off" }.into(),
+                trailer: "its own checkout and branch at .efference/worktrees/<id>".into(),
+                flagged: false,
+                align_trailer: false,
+            });
+        }
         (
             format!(
                 "new session in {}",
                 crate::platform::home::tilde(&self.context.cwd)
             ),
-            vec![
-                Row::plain(match self.creating {
-                    true => "creating…",
-                    false => "start session",
-                }),
-                self.row(
-                    Role::Main.label(),
-                    &["model", "connection"],
-                    main,
-                    main_source,
-                ),
-                self.row("effort", &["effort"], effort, effort_source),
-                self.row(
-                    "temperature",
-                    &["temperature"],
-                    temperature,
-                    temperature_source,
-                ),
-                self.row(
-                    Role::Spotter.label(),
-                    &["spotter_model", "spotter_connection"],
-                    spotter,
-                    spotter_source,
-                ),
-                self.row(Role::Triage.label(), &["triage"], triage, triage_source),
-                // A client-only knob: the host resolves no worktree value, so this
-                // row has no source column. Its trailer states what turning it on
-                // does rather than where the value came from (docs/worktrees.md).
-                Row {
-                    label: "worktree".into(),
-                    value: if self.draft.worktree { "on" } else { "off" }.into(),
-                    trailer: "its own checkout and branch at .efference/worktrees/<id>".into(),
-                    flagged: false,
-                    align_trailer: false,
-                },
-            ],
+            rows,
             self.selected,
         )
     }

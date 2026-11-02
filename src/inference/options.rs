@@ -201,6 +201,11 @@ pub enum IssueCode {
 pub struct ResolvedOptions {
     pub effective: EffectiveOptions,
     pub issues: Vec<Issue>,
+    /// Whether the proposed `cwd` can start a worktree: it is inside a git work tree
+    /// whose `HEAD` resolves. A form offers the worktree option only when this is true.
+    // (docs/worktrees.md) Resolution here knows nothing of the directory, so it answers
+    // `false`; the preview route, in a group above this one, sets it from git.
+    pub worktree: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -297,6 +302,7 @@ impl InferenceRegistry {
                 temperature,
             },
             issues,
+            worktree: false,
         }
     }
 

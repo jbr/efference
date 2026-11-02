@@ -137,6 +137,20 @@ export function NewSessionForm({
     if (draft !== null) preview(draft);
   }, [draft, preview]);
 
+  // A directory that cannot start a worktree takes the option away (the settings hide
+  // it), and a draft still holding it on would send what creation refuses. Cleared
+  // only from the answer to the current draft, so a stale reply never edits it.
+  useEffect(() => {
+    if (
+      draft !== null &&
+      draft.worktree &&
+      answered !== null &&
+      answered.request === request &&
+      !answered.answer.worktree
+    )
+      onDraft({ ...draft, worktree: false });
+  }, [draft, answered, request, onDraft]);
+
   // Measure the wait while creation is in flight; its progress is not reported
   // by the host (docs/web-session-creation.md).
   useEffect(() => {

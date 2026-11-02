@@ -38,9 +38,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use matcher::Chip;
 use std::path::PathBuf;
 
-/// The form page's fixed rows: start, main, effort, temperature, spotter,
-/// triage, worktree. Named because the height calculation and the cursor bound
-/// are the same seven (`render.rs`).
+/// The form page's most rows: start, main, effort, temperature, spotter, triage,
+/// worktree. The viewport is sized for this many (`render.rs`); the cursor bound is
+/// [`Form::rows`], which is one fewer where the host says a worktree cannot start.
 const FORM_ROWS: usize = 7;
 
 /// Rows the model picker gets before it scrolls. Sized so the root view — the
@@ -193,10 +193,30 @@ impl Form {
             Ok(resolved) => {
                 self.resolved = Some(resolved);
                 self.note = None;
+                // A directory that cannot start a worktree takes the row away, and
+                // the draft's knob with it, so creation never sends what the host
+                // would refuse (docs/worktrees.md).
+                if !self.worktree_offered() {
+                    self.draft.worktree = false;
+                    self.selected = self.selected.min(self.rows() - 1);
+                }
             }
             Err(error) => self.note = Some(error),
         }
         Action::Continue
+    }
+
+    /// Whether the form offers the worktree row: until the host has answered, it is
+    /// shown; once it has, only if the preview says a worktree can start there.
+    fn worktree_offered(&self) -> bool {
+        self.resolved
+            .as_ref()
+            .is_none_or(|resolved| resolved.worktree)
+    }
+
+    /// The rows the form page shows and the cursor can reach.
+    fn rows(&self) -> usize {
+        FORM_ROWS - usize::from(!self.worktree_offered())
     }
 
     /// Creation failed. The draft is kept exactly as it was: the operator's edits
@@ -292,7 +312,7 @@ impl Form {
     fn handle_form_key(&mut self, key: KeyEvent) -> Action {
         match step(key) {
             Some(Step::Back) => self.selected = self.selected.saturating_sub(1),
-            Some(Step::Forward) => self.selected = (self.selected + 1).min(FORM_ROWS - 1),
+            Some(Step::Forward) => self.selected = (self.selected + 1).min(self.rows() - 1),
             None => {}
         }
         match key.code {

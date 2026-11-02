@@ -57,7 +57,8 @@ pub(in crate::clients::tui::session_form) fn connections() -> Vec<ConnectionInve
 /// route runs, so the form folds in a real `effective`/`issues` pair. History
 /// seeds the omitted main branch the way a lived-in store would: one past pick
 /// of `work/claude-sonnet-4-5` in this form's scope, so the untouched draft
-/// resolves (as `History`) rather than refusing.
+/// resolves (as `History`) rather than refusing. The directory is a repository with a
+/// commit, so the answer offers a worktree.
 pub(in crate::clients::tui::session_form) fn resolve(options: &SessionOptions) -> ResolvedOptions {
     let registry = registry();
     let dir = crate::platform::testing::temp_dir("session-form");
@@ -74,7 +75,9 @@ pub(in crate::clients::tui::session_form) fn resolve(options: &SessionOptions) -
         provider: "anthropic".to_string(),
         model: "claude-sonnet-4-5".to_string(),
     });
-    registry.resolve_options(options, None, Some((&store, &scope)))
+    let mut resolved = registry.resolve_options(options, None, Some((&store, &scope)));
+    resolved.worktree = true;
+    resolved
 }
 
 /// One listed model as the catalog route serves it: a group where the provider

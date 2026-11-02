@@ -90,8 +90,11 @@ returns it to inheritance; the resolved shared state reads **Same as main model*
 The worktree toggle starts the session in its own checkout and branch at
 `.efference/worktrees/<id>` (docs/worktrees.md). On it sends `worktree: true`
 in the creation body; off it sends nothing, like any other untouched field.
-Outside a git repository the host refuses the creation, shown like any other
-refusal beside **Start session**.
+The row is shown only where the preview's `worktree` answer is `true` (a git work
+tree whose `HEAD` resolves); where it is `false` the row is absent and a draft's
+`worktree: true` is cleared, so the creation never sends it. A creation that sends
+it anyway is refused by the host, shown like any other refusal beside **Start
+session**.
 
 Effort is a discrete choice strip over low, medium, high, xhigh, and max.
 **Use default** clears the override and is separate from that ordinal scale.

@@ -286,7 +286,24 @@ test("starting with the worktree on sends it in the creation body", async () => 
   });
 });
 
-const previewAnswer = (): ResolvedOptions => ({
+test("the worktree row is absent where the preview says a worktree cannot start", async () => {
+  vi.mocked(previewSession).mockResolvedValue(previewAnswer(false));
+  await render({ draft: emptyDraft(alpha.cwd), page: "settings" });
+  await act(async () => {});
+  expect(host.querySelector(".worktree-toggle")).toBeNull();
+  expect(host.textContent).not.toContain("Worktree");
+  expect(host.textContent).toContain("Spotter model");
+});
+
+test("a draft's worktree is cleared once the preview says it cannot start", async () => {
+  vi.mocked(previewSession).mockResolvedValue(previewAnswer(false));
+  const draft = { ...emptyDraft(alpha.cwd), worktree: true };
+  const props = await render({ draft, page: "settings" });
+  await act(async () => {});
+  expect(props.onDraft).toHaveBeenCalledWith({ ...draft, worktree: false });
+});
+
+const previewAnswer = (worktree = true): ResolvedOptions => ({
   effective: {
     main: { value: null, source: null },
     spotter: { value: null, source: null },
@@ -295,6 +312,7 @@ const previewAnswer = (): ResolvedOptions => ({
     temperature: { value: null, source: "provider_default" },
   },
   issues: [],
+  worktree,
 });
 
 test("directory disclosure commits a path without discarding settings and collapses afterward", async () => {

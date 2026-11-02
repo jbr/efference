@@ -161,20 +161,9 @@ fn without_overwrites(text: &str) -> String {
         .collect()
 }
 
-/// Create the session's worktree: `git worktree add -b efference/<id> <path> <base>`,
-/// run in `from` (the creator's working directory) with the session's child
-/// environment, on the commit `from`'s `HEAD` names (docs/worktrees.md). The
-/// checkout is plain, so the project's `post-checkout` hook runs.
-///
-/// The directory existing afterward is the success criterion. A hook that fails makes
-/// git exit nonzero with the tree in place; that returns `Ok` with the status and
-/// output recorded.
-pub fn add(
-    project: &Path,
-    id: &str,
-    from: &Path,
-    env: &crate::config::env_table::ChildEnv,
-) -> Result<Added, String> {
+/// The commit `from`'s `HEAD` names, when `from` is inside a git work tree and `HEAD`
+/// resolves: the two preconditions of [`add`]. The error says which one failed.
+fn head(from: &Path, env: &crate::config::env_table::ChildEnv) -> Result<String, String> {
     let inside = git(from, env, &["rev-parse", "--is-inside-work-tree"])?;
     if !inside.status.success() || String::from_utf8_lossy(&inside.stdout).trim() != "true" {
         return Err(format!(
@@ -190,7 +179,31 @@ pub fn add(
             combined(&head).trim()
         ));
     }
-    let base = String::from_utf8_lossy(&head.stdout).trim().to_string();
+    Ok(String::from_utf8_lossy(&head.stdout).trim().to_string())
+}
+
+/// Whether [`add`] could start a worktree from `from`: the creation preview's
+/// `worktree` answer (docs/control-api.md). Run with the host's own environment, as
+/// the session's is not known until creation.
+pub fn can_start(from: &Path) -> bool {
+    head(from, &crate::config::env_table::ChildEnv::default()).is_ok()
+}
+
+/// Create the session's worktree: `git worktree add -b efference/<id> <path> <base>`,
+/// run in `from` (the creator's working directory) with the session's child
+/// environment, on the commit `from`'s `HEAD` names (docs/worktrees.md). The
+/// checkout is plain, so the project's `post-checkout` hook runs.
+///
+/// The directory existing afterward is the success criterion. A hook that fails makes
+/// git exit nonzero with the tree in place; that returns `Ok` with the status and
+/// output recorded.
+pub fn add(
+    project: &Path,
+    id: &str,
+    from: &Path,
+    env: &crate::config::env_table::ChildEnv,
+) -> Result<Added, String> {
+    let base = head(from, env)?;
     let path = crate::record::session_dir::worktree::path(project, id);
     let branch = branch(id);
     let added = git(
