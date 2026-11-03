@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { UsageView } from "../api/types.ts";
+import { BundleNoticeStrip } from "../ui/BundleNotice.tsx";
 import { MoreButton, Tab } from "../ui/SessionSwitcher.tsx";
 import { TopBar } from "../ui/TopBar.tsx";
 import { tabCards } from "./fixtures.ts";
@@ -92,6 +93,16 @@ export function SessionChromeSpecimens() {
           </button>
         ))}
       </div>
+      <Specimen name="stale bundle notice">
+        <div className="g-session-chrome">
+          <BundleNoticeStrip onReload={() => {}} />
+          <div className="g-chrome-body g-caption">
+            Shown when the host serves a build newer than the one this page
+            loaded (api/bundle.ts). The reload is a button, not a timer: only
+            the person knows when the page is theirs to lose.
+          </div>
+        </div>
+      </Specimen>
       <Specimen name="transcript header + composer status">
         <div className="g-session-chrome">
           <GalleryTranscriptHeader />

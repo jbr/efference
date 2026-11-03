@@ -409,6 +409,33 @@ input[type="checkbox"]:disabled {
   color: var(--muted);
   margin-left: auto;
 }
+/* This page runs an older build than the host serves (api/bundle.ts,
+   docs/web-client.md). A strip in the upstream notice's shape, under the top
+   bar row and inside the same sticky header. It stays until the page is
+   reloaded, so it states rather than alerts, and it never reloads by itself:
+   the accent is on the one action, which the person takes when they are
+   ready to lose the page they are looking at. */
+.bundle-notice {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-chip);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bundle-notice span {
+  color: var(--warn);
+}
+
+.bundle-reload {
+  margin-left: auto;
+  flex: none;
+}
 
 .meter {
   width: 6.5rem;

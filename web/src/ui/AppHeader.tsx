@@ -1,7 +1,12 @@
 // Shared header frame and home wordmark (docs/web-client.md).
 // Launch navigation can handle an ordinary home click without reloading its
 // draft owner; modified clicks retain the link's native browser behavior.
+//
+// Every view of the app is inside one of these, so the header is also where the
+// app-level notice lives: that this page runs an older build than the host
+// serves (`BundleNotice`, api/bundle.ts).
 import type { ReactNode, Ref } from "react";
+import { BundleNotice } from "./BundleNotice.tsx";
 
 export function AppHeader({
   children,
@@ -51,6 +56,7 @@ export function AppHeader({
         )}
         {children}
       </div>
+      <BundleNotice />
       {below}
     </header>
   );

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { bearer } from "./api/bearer.ts";
 import { startAttention } from "./attention.ts";
+import { startBundleWatch } from "./api/bundle.ts";
 import { registerServiceWorker } from "./pwa.ts";
 import { resubscribeOnOpen } from "./push.ts";
 import { App } from "./ui/App.tsx";
@@ -27,6 +28,7 @@ void bearer.load().then(start);
 
 function start() {
   startAttention();
+  startBundleWatch();
   void resubscribeOnOpen(
     "serviceWorker" in navigator ? navigator.serviceWorker : undefined,
   );

@@ -7,6 +7,7 @@
 // dispatching; the abort, status, backoff and silence handling are here.
 
 import { apiFetch, throwIfFailed } from "./http.ts";
+import { checkBundle } from "./bundle.ts";
 
 export interface StreamHandle {
   close(): void;
@@ -136,6 +137,11 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
           if (closed) return;
           lastRead = Date.now();
           attempt = 0;
+          // The host answered, so it may have been replaced by a newer build
+          // under a page that never reloaded (api/bundle.ts). Every stream
+          // reconnects when the host restarts, which makes the transport the one
+          // place that sees it, rather than each reader remembering.
+          checkBundle();
           options.onConnect?.();
           const reads = (bytes: number) => {
             lastRead = Date.now();

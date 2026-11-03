@@ -9,6 +9,7 @@ one line per feature.
 - `efference --version` names the git revision and cargo profile the binary was built from.
 - Fixed a session created under another spelling of its directory (`/users/…` for `/Users/…` on macOS, or through a symlink) refusing to resume from the directory's usual spelling; the host now canonicalizes every working directory a client names.
 - Fixed the recent-locations list showing a directory twice when it gained an `efference.toml` between two launches that named no configuration.
+- A web page left open across a host upgrade now notices that the host serves a newer build and offers a reload, instead of going on rendering with the old one.
 
 ## [0.1.1] - 2026-11-01
 

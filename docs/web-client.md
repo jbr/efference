@@ -2139,6 +2139,47 @@ so the query reaches the same file in the embedded build and under the proxy.
 Push — the worker's third job, and the "receive
 notifications" opt-in in the Interface tab — is [web-push.md](web-push.md).
 
+## A page outlives a host upgrade
+
+The host is one process, and a release replaces it: every open page's streams
+reconnect, and a page loaded before the restart runs the build it was loaded
+with. The control API can have moved under it — an entry view gaining a field, a
+route removed — so a page open across an upgrade can render wrongly while
+looking live.
+
+`api/bundle.ts` compares the page's build with the host's. The page asks for the
+shell it would get on a reload (`GET /`, or its session prefix, `no-store`) and
+compares the files the two documents name: the entry scripts and the
+stylesheets. Vite names every asset by its content hash, so the comparison is
+exact — a release in which nothing the page runs changed names the same URLs and
+is not an update, and one that changed anything the page runs names new ones.
+Nothing is stamped into the build for this, which is what lets the first release
+carrying the check be told apart by a tab running an older one. Under Vite both
+documents name the same dev module, so the check is quiet there.
+
+The `modulepreload` links are not read, though a shell document may carry them:
+Vite's built runtime appends one to the head for every chunk a dynamic import
+pulls in, so a used page's head names chunks the shell never did and reading them
+would report every page stale as soon as it opened a code-split view. The
+preloads a shell does declare are covered anyway — the entry script embeds the
+hashed names of the chunks it imports.
+
+It runs where a tab can learn that the host changed: on every stream's connect,
+which `readEventStream` does for every reader in one place (`api/sse.ts`) —
+because a host restart is a reconnect — and when the page returns to view. A host
+restart reconnects every stream at once and the burst asks once (`CHECK_GAP_MS`).
+
+The verdict is stated, never acted on. `ui/BundleNotice.tsx` renders "efference
+was updated" with a **Reload** button in the shared header
+(`ui/AppHeader.tsx`), so every view of the app carries it, and then waits. A
+reload costs the page what it holds — the reading position, the focused field, a
+long transcript's scroll — and an installed app has no browser chrome to reload
+with, so the button is the whole affordance. Composer drafts survive a reload
+(`ui/drafts.ts`); an upload in flight is the one thing it interrupts, and the
+chip says so. `stale` is final for the page: a later check cannot make an old
+page new, so a page that reloads into the same skew states it again rather than
+reloading in a loop.
+
 ## The gate surface
 
 The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state
