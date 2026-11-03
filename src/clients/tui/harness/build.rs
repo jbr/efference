@@ -2,6 +2,7 @@
 //! entries, running tools, and approval gates before rendering.
 
 use super::*;
+use crate::protocol::status::Escalated;
 
 impl Screenplay<'_> {
     /// Commit a [`Payload`] to the transcript as the next sequential log entry,
@@ -269,6 +270,29 @@ impl Screenplay<'_> {
     ) -> &mut Self {
         let mut held = gate(call_id, name, input);
         held.reason = reason.map(String::from);
+        self.topic(TopicUpdate::Gate(Some(held)))
+    }
+
+    /// A pending gate that reached the operator by **escalation** (docs/permissions.md):
+    /// `source` is the escalator as a turn's `source` spells it (`session[<id>]`,
+    /// `mcp[<name>]`), or `None` for the operator's own command line, and `note` is the
+    /// message it sent with the call. `to` is the operator, the reader of this gate.
+    pub(crate) fn pending_gate_escalated(
+        &mut self,
+        call_id: &str,
+        name: &str,
+        input: Value,
+        reason: Option<&str>,
+        source: Option<&str>,
+        note: Option<&str>,
+    ) -> &mut Self {
+        let mut held = gate(call_id, name, input);
+        held.reason = reason.map(String::from);
+        held.escalations = vec![Escalated {
+            source: source.map(String::from),
+            to: None,
+            note: note.map(String::from),
+        }];
         self.topic(TopicUpdate::Gate(Some(held)))
     }
 

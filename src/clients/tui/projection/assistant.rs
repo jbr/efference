@@ -174,10 +174,29 @@ fn call_nodes(
         // is the source; `pending_reason` (from `/state`) covers only the
         // window where a gate has registered but its log entry hasn't
         // reached this client yet, so the two never both render.
-        if let Some(spot) = index.spot(log, call.id.0.as_str()) {
-            nodes.push(spotter_line(Some(spot.stance), &spot.reason));
-        } else if is_pending && let Some(reason) = gate.reason {
-            nodes.push(spotter_line(None, reason));
+        //
+        // A call that reached this client by escalation names its escalator, and the
+        // escalator's note takes the spotter's place when it says something: it is
+        // written for whoever decides the call now, where the spotter's account is the
+        // older judgment (docs/permissions.md). A noteless escalation keeps the
+        // spotter's account beneath the attribution.
+        let escalation = if is_pending {
+            gate.escalations.last()
+        } else {
+            None
+        };
+        let escalation_note = escalation
+            .and_then(|hop| hop.note.as_deref())
+            .filter(|note| !note.trim().is_empty());
+        if let Some(hop) = escalation {
+            nodes.push(escalation_line(hop, escalation_note));
+        }
+        if escalation_note.is_none() {
+            if let Some(spot) = index.spot(log, call.id.0.as_str()) {
+                nodes.push(spotter_line(Some(spot.stance), &spot.reason));
+            } else if is_pending && let Some(reason) = gate.reason {
+                nodes.push(spotter_line(None, reason));
+            }
         }
         if is_pending {
             // A bound `agents__decide` shows the child's held move

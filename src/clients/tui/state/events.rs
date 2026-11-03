@@ -255,6 +255,7 @@ impl<'a> InteractiveState<'a> {
             ask: self.topics.ask.as_ref().map(|a| a.call_id.as_str()),
             reason: held.and_then(|g| g.reason.as_deref()),
             acting_on: held.and_then(|g| g.acting_on.as_ref()),
+            escalations: held.map_or_default(|g| g.escalations.as_slice()),
         };
         self.transcript.update(
             &mut self.document,

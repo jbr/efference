@@ -22,6 +22,7 @@ use super::{CallIndex, Gate, LiveTail, ViewState, entry_nodes, tail_nodes};
 use crate::clients::tui::artifacts::Coordinate;
 use crate::clients::tui::state::DocumentState;
 use crate::protocol::agents::BoundAction;
+use crate::protocol::status::Escalated;
 use crate::record::artifact::Kind;
 use crate::record::log::LogEntry;
 
@@ -43,13 +44,24 @@ pub(crate) struct Transcript {
     /// Artifact kinds keyed by their assistant entry and fence coordinates, for the
     /// notices the terminal draws where the web client would render the page.
     artifact_kinds: BTreeMap<Coordinate, Kind>,
-    /// The gate this document was last built with — a change dirties both the call
-    /// it left and the call it moved to. The bound action is part of the value: a
-    /// bound `agents__decide` moving onto the same call still changes the render.
-    gate: Option<(String, Option<String>, Option<BoundAction>)>,
+    /// The gate this document was last built with, owned so the cache outlives the
+    /// frame's borrow — a change dirties both the call it left and the call it moved
+    /// to. Every rendered part is in the value: a bound `agents__decide` moving onto
+    /// the same call, or another escalation arriving, still changes the render.
+    gate: Option<HeldGate>,
     /// The `ask` call the document was last built as current. The mark changes with
     /// no log entry, so a move dirties the ask it left and the one it reached.
     ask: Option<String>,
+}
+
+/// The parts of a rendered gate the cache must own, since the gate is ephemeral
+/// control state that outlives no frame (docs/tui.md).
+#[derive(Debug)]
+struct HeldGate {
+    call: String,
+    reason: Option<String>,
+    acting_on: Option<BoundAction>,
+    escalations: Vec<Escalated>,
 }
 
 impl Transcript {
@@ -114,11 +126,12 @@ impl Transcript {
         // The gate is ephemeral control state, not a log entry, so its movement has
         // to be noticed here: both the call it left and the call it arrived at
         // render differently (docs/tui.md).
-        let held = self.gate.as_ref().map(|(call, reason, acting_on)| Gate {
-            call: Some(call.as_str()),
+        let held = self.gate.as_ref().map(|held| Gate {
+            call: Some(held.call.as_str()),
             ask: gate.ask,
-            reason: reason.as_deref(),
-            acting_on: acting_on.as_ref(),
+            reason: held.reason.as_deref(),
+            acting_on: held.acting_on.as_ref(),
+            escalations: &held.escalations,
         });
         if held.unwrap_or_default() != gate {
             for call_id in [held.and_then(|g| g.call), gate.call].into_iter().flatten() {
@@ -126,12 +139,11 @@ impl Transcript {
                     self.dirty.insert(owner);
                 }
             }
-            self.gate = gate.call.map(|call| {
-                (
-                    call.to_string(),
-                    gate.reason.map(str::to_string),
-                    gate.acting_on.cloned(),
-                )
+            self.gate = gate.call.map(|call| HeldGate {
+                call: call.to_string(),
+                reason: gate.reason.map(str::to_string),
+                acting_on: gate.acting_on.cloned(),
+                escalations: gate.escalations.to_vec(),
             });
         }
 

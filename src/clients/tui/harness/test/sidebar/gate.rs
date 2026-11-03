@@ -40,6 +40,80 @@ fn gate_shows_spotter_reason_inline() {
     );
 }
 
+/// A gate that reached the operator by escalation names who sent it and shows the note
+/// they wrote (docs/permissions.md). The note takes the spotter's place: it is what the
+/// escalator wants the decider to know now, where the spotter's account is the older
+/// judgment on the call.
+#[test]
+fn an_escalated_gate_shows_its_note() {
+    let mut play = Screenplay::new(80, 16);
+    play.user("Clean the build directory.");
+    play.assistant(
+        "Sure — I'll remove it.",
+        vec![ToolCall::new(
+            "bash",
+            "toolu_e",
+            json!({ "command": "rm -rf ./build" }),
+        )],
+    );
+    play.pending_gate_escalated(
+        "toolu_e",
+        "bash",
+        json!({ "command": "rm -rf ./build" }),
+        Some("deletes outside the git tree — not reversible"),
+        Some("session[calm-finch]"),
+        Some("Please confirm: this changes the shared build."),
+    );
+    let screen = play.render();
+    assert!(
+        screen.contains("escalated by calm-finch")
+            && screen.contains("Please confirm: this changes the shared build."),
+        "the gate names its escalator and shows the note:\n{screen}"
+    );
+    assert!(
+        !screen.contains("deletes outside the git tree"),
+        "a note replaces the spotter's account rather than stacking under it:\n{screen}"
+    );
+    assert!(
+        screen.contains("awaiting your approval"),
+        "the affordance still renders — the escalation does not take the decision away:\n{screen}"
+    );
+}
+
+/// An escalation that said nothing keeps the spotter's account, attributed: the operator
+/// still sees why the call was judged dangerous, and that someone sent it on without a
+/// word (docs/permissions.md).
+#[test]
+fn a_noteless_escalation_keeps_the_spotter_reason() {
+    let mut play = Screenplay::new(80, 16);
+    play.user("Clean the build directory.");
+    play.assistant(
+        "Sure — I'll remove it.",
+        vec![ToolCall::new(
+            "bash",
+            "toolu_n",
+            json!({ "command": "rm -rf ./build" }),
+        )],
+    );
+    play.pending_gate_escalated(
+        "toolu_n",
+        "bash",
+        json!({ "command": "rm -rf ./build" }),
+        Some("deletes outside the git tree — not reversible"),
+        Some("mcp[claude-code]"),
+        Some("   "),
+    );
+    let screen = play.render();
+    assert!(
+        screen.contains("escalated by claude-code"),
+        "an MCP driver's escalation names the client, not its bracket spelling:\n{screen}"
+    );
+    assert!(
+        screen.contains("deletes outside the git tree"),
+        "with no note, the spotter's reason stays:\n{screen}"
+    );
+}
+
 /// The whole gate survives a **long** call, because every part of it is a sibling of
 /// the exchange rather than a child of it (docs/tui.md). A multi-line bash command
 /// fills the exchange's collapsed body on its own; while the spotter's reason and the

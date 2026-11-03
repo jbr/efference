@@ -436,6 +436,46 @@ pub(in crate::clients::tui) fn spotter_line(
     )
 }
 
+/// A held call that came to this client by escalation: who sent it here, and the note
+/// they wrote for whoever decides it now (docs/permissions.md, docs/tui.md). The
+/// escalator's name is the scannable part, as the target is on a bound `agents__decide`;
+/// the note is an account of the call like the spotter's, so it stays in the dim register.
+///
+/// `note` is already filtered to a nonblank one: a noteless escalation shows only the
+/// attribution, and the caller keeps the spotter's account beneath it.
+pub(in crate::clients::tui) fn escalation_line(
+    hop: &Escalated,
+    note: Option<&str>,
+) -> DocumentNode<'static> {
+    let by = match hop.source.as_deref().filter(|source| *source != "web") {
+        Some(source) => crate::record::names::sources::source_name(source),
+        None => "you",
+    };
+    let mut spans = vec![
+        Span {
+            text: "escalated by ".into(),
+            style: SpanStyle::Comment,
+            action: None,
+        },
+        Span {
+            text: by.to_string().into(),
+            style: SpanStyle::UserAccent,
+            action: None,
+        },
+    ];
+    if let Some(note) = note {
+        spans.push(Span {
+            text: format!(" · {note}").into(),
+            style: SpanStyle::Comment,
+            action: None,
+        });
+    }
+    DocumentNode::entry(
+        EntryKind::Annotation,
+        vec![DocumentNode::Paragraph { spans }],
+    )
+}
+
 /// The call marker: `❯`, always. A call is a call regardless of how it went — what
 /// happened to it is the *result*'s marker ([`status_span`]).
 pub(in crate::clients::tui) fn prompt_span() -> Span<'static> {

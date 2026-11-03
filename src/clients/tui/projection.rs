@@ -15,6 +15,7 @@ use crate::clients::tui::document::{
 };
 use crate::clients::tui::markdown::MarkdownRenderer;
 use crate::protocol::agents::BoundAction;
+use crate::protocol::status::Escalated;
 use crate::record::artifact::Kind;
 use crate::record::log::{
     AssistantOutput, ContentBlock, Exclusion, LogEntry, MessagesOutputBlock, Payload, RawResult,
@@ -71,6 +72,11 @@ pub(crate) struct Gate<'g> {
     /// The leaf action a bound `agents__decide` authorizes (docs/permissions.md),
     /// shown beside the approval so the human sees the child's held move.
     pub acting_on: Option<&'g BoundAction>,
+    /// Each pass of the held call up the supervisor chain, in order, as the live `gate`
+    /// topic carries them (docs/permissions.md): the last names who sent it here, and
+    /// its note is written for whoever decides it now. Empty when the gate was never
+    /// escalated, which is every gate not reached through `decide(…, escalate)`.
+    pub escalations: &'g [Escalated],
 }
 
 /// Where a call's *late-arriving* annotations live: `call_id` → the log index of

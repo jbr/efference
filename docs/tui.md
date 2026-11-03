@@ -391,7 +391,7 @@ The verbs a unit carries are a pure function of the entry (`block_menu::menu_ite
 
 The approval gate is ephemeral control state: the daemon gates *after* appending the `tool_use` to the log and *before* running the tool. The transition arrives as a `gate` state frame — the topic's whole value when a gate registers, `null` when it resolves — stored as `topics.gate`. Delivery is coherent with the log ([control-api](control-api.md)): the frame never precedes the entries it reflects, so the gate renders against a transcript that already shows its call.
 
-The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail call with no result. `project` receives `pending_call` + `pending_reason` and emits the gate beside that call, where the result will land — the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)), then the affordance carrying the `⏸`:
+The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail call with no result. `project` receives the live gate — the `call_id` it holds, the spotter's reason, and any escalation hops — and emits it beside that call, where the result will land: the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)) or the escalator's note, then the affordance carrying the `⏸`:
 
 ```
 › rm -rf /tmp/scratch
@@ -408,6 +408,16 @@ When the held call is a session's allowing `agents__decide`, the gate shows the 
 ⤷ acting on child's bash · rm -rf ./build — clean the build tree
 ⏸ awaiting your approval  ·  ⏎ approve · type to redirect
 ```
+
+**An escalated gate names who sent it, and shows the note they wrote.** `decide(…, escalate)` leaves the call held and passes it up the supervisor chain with a message for whoever decides it now ([permissions](permissions.md)). The TUI reads the hops from the live `gate` topic and renders the **last** one where the spotter's account would sit — because the call arrived here from somewhere, and the route before that is history, not something to decide against. A note takes the spotter's place: it is the newer judgment about *why* this decision is being asked. A noteless escalation keeps the spotter's line beneath the attribution, so escalating without a message loses nothing.
+
+```
+› rm -rf ./build
+escalated by calm-finch · this changes the shared build; please confirm
+⏸ awaiting your approval  ·  ⏎ approve · type to redirect
+```
+
+The escalator is named the way a turn's `source` names it: `session[<id>]` reads as its id and `mcp[<name>]`/`agent[<name>]` as the client's name ([control-api](control-api.md)). A hop with no `source` reads `you` — it is the operator's own command line. Like the `pending_reason` fallback below, the attribution is live-only: the hops travel on the `gate` topic and not in the log, so once the call is decided the topic clears and the call keeps only its committed verdict.
 
 **Every judged call carries its verdict, not only a held one.** The `Spot` entries are indexed by `call_id` alongside the results and emitted with the call they judge, so a *cleared* call shows its reason too — which is most of them, since clearing is the common verdict and nothing ever interrupts for one. The stance leads the line (`spotter cleared · …`, `watching`, `gated`) because it is the scannable part; without it every verdict looks alike. The whole line sits in the dim register: before the decision it is why the call is held, and after it is a gloss on what the call was taken to be, so it never competes with the call or its result for attention. A resolved gate keeps its verdict, which is the only surviving record when a human approves something the spotter wanted to stop. `Origin` is not drawn — a fail-closed verdict's own reason reads "spotter unavailable", so a glyph would only repeat the line. The committed entry is the source; `pending_reason` from the gate covers only a client holding the gate without the `Spot` entry behind it — a window the stream's coherence rule closes (a `gate` frame never precedes the entry it quotes, [control-api](control-api.md)), so the fallback survives as robustness rather than as a path that renders (it has no stance, and reads `spotter · …`).
 
