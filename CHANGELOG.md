@@ -9,6 +9,7 @@ one line per feature.
 - The installed web app cycles session tabs with platform keyboard shortcuts, including sessions in the overflow menu.
 - A session's tab row offers a right-aligned `+` to start another session in the same project without returning to the overview first.
 - Cmd+N in the installed web app opens same-project session settings from a session, or location selection from the home screen.
+- Removed false truncation errors caused by providers' token accounting; local-server setup now explains how to configure Ollama's context window.
 - The TUI's approval gate names who escalated it and shows their note, as the web client does.
 - Fixed the TUI linking artifact fences to loopback pages that loaded broken outside the web client; it now says the fence renders in the web client, and the host no longer binds the extra listener.
 - `efference --version` names the git revision and cargo profile the binary was built from.

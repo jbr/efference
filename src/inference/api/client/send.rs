@@ -176,7 +176,7 @@ impl Client {
                 max_tokens = retry;
                 continue;
             }
-            return Ok(self.settle(completion, turns, tools, body_bytes));
+            return Ok(self.settle(completion, body_bytes));
         }
     }
 
@@ -566,30 +566,10 @@ impl Client {
 
     /// The checks a read completion still owes once its stream is done, and the
     /// reservation's calibration from it.
-    fn settle(
-        &self,
-        mut completion: Completion,
-        turns: &[WireTurn],
-        tools: &[Value],
-        body_bytes: usize,
-    ) -> Completion {
-        // A server that read far fewer prompt tokens than the request's text could
-        // encode to cut the prompt and said nothing (`api/truncation.rs`). Its
-        // answer is to a conversation the model did not see, so the turn is
-        // record-only, and a retry would be cut the same way.
-        if completion.upstream_failure().is_none()
-            && let Some(why) = truncation::truncated(
-                completion.usage.prompt_tokens(),
-                truncation::text_bytes(&self.system, tools, turns),
-            )
-        {
-            log::warn!("{why}");
-            completion.fail_terminal(why);
-        }
-        // Anchor the next estimate to this response's exact prompt count
+    fn settle(&self, completion: Completion, body_bytes: usize) -> Completion {
+        // Anchor the next estimate to this response's reported prompt count
         // (`api/reservation.rs`). An attempt that died with zero usage
-        // counted nothing and teaches nothing, and a truncated one counted the
-        // wrong thing.
+        // counted nothing and teaches nothing.
         let prompt_tokens = completion.usage.prompt_tokens();
         if completion.terminal_failure().is_none() && prompt_tokens > 0 {
             self.reservation

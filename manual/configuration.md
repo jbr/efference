@@ -55,6 +55,15 @@ base-url = "http://localhost:11434/v1"   # a local server that takes no key: no 
 ```
 <!-- src: src/config/user_config.rs::ConnectionConfig; src/inference/registry.rs (a described endpoint with no auth sends no credential); src/setup/render.rs::render (dialect and base-url for a described endpoint) -->
 
+For Ollama, configure the server's context window before using it with an agent:
+set `OLLAMA_CONTEXT_LENGTH=64000` when starting `ollama serve`, or set
+`PARAMETER num_ctx 64000` in a model's Modelfile. `ollama ps` shows the loaded
+context window. Ollama [recommends at least 64k for coding agents](https://docs.ollama.com/context-length);
+allow room for the system prompt, tool definitions, conversation, and reply.
+A window that is too small can silently discard part of the prompt. efference does
+not detect this from reported token counts, so configure the window for both main
+and spotter models served locally.
+
 A host refuses to start while any connection's key cannot be read, and names each one.
 `disabled = true`, which setup writes when you turn a connection off, keeps a connection in
 the file without using it.

@@ -536,15 +536,6 @@ impl Completion {
         }
     }
 
-    /// Mark a completion that streamed cleanly as one no retry can repair: its turn
-    /// becomes record-only, and the loop stalls with `why`.
-    pub(crate) fn fail_terminal(&mut self, why: String) {
-        if let Payload::Assistant { excluded, .. } = &mut self.assistant {
-            *excluded = Some(Exclusion::Upstream(why.into()));
-        }
-        self.failure_class = FailureClass::Terminal;
-    }
-
     /// The failure `upstream_failure` reports, when the provider named it as one
     /// a retry cannot change (docs/transport.md).
     pub fn terminal_failure(&self) -> Option<&str> {
@@ -630,7 +621,6 @@ mod stages;
 #[cfg(test)]
 mod testing;
 mod thinking;
-mod truncation;
 
 pub use auth_value::{AuthValue, Reload, Reloaded, Reread, sync_reload};
 pub use client::{Client, KeepaliveError, SentRequest};
