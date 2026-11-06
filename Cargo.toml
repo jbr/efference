@@ -135,7 +135,7 @@ brush-parser = "0.4.0"
 # reads the config and writes the harness's auto-persisted edits back, comments intact. A parse
 # error carries a source span; its `Display` renders the offending line (the load-time diagnostic
 # that stands in for KDL's miette report).
-toml_edit = { version = "0.25.17", features = ["serde"] }
+toml_edit = { version = "0.25.18", features = ["serde"] }
 # Order-preserving map. `[context]` entries render as preamble sections in the operator's
 # document order (backlog/preamble-context.md), so they can't ride the sorted BTreeMap the
 # policy tables use. Already compiled in-tree via toml_edit; this just promotes it to direct.
@@ -167,7 +167,7 @@ data-encoding = "2"
 # Opens the operator's browser for the MCP authorization step (docs/mcp-auth.md).
 # Only reached from `efference serve` with a tty; a headless boot prints the URL
 # instead, since there is no browser to hand a redirect back to.
-webbrowser = "1.2.5"
+webbrowser = "1.2.6"
 jiter = { version = "0.18.0", default-features = false }
 image = { version = "0.25.10", default-features = false, features = [
   "png",
@@ -194,7 +194,7 @@ aes-gcm = "0.11"
 # session creation, read back as the model default and the recent menu. Bundled
 # build, so no system sqlite is needed; concurrent readers/writers are why this
 # is a real store rather than one more machine-written text file.
-rusqlite = { version = "0.41.0", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 
 # The secret store (docs/secrets.md): one get/set/delete over the user's OS
 # credential store. `keyring-core` is the store-agnostic entry API; the platform
