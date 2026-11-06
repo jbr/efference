@@ -336,3 +336,21 @@ test("directory disclosure commits a path without discarding settings and collap
   expect(props.onNavigate).toHaveBeenCalledWith("settings");
   expect(host.querySelector("#launch-directory-form")).toBeNull();
 });
+
+test("the wordmark links explicitly home while Cancel closes to the launch origin", async () => {
+  const props = await render();
+  const home = host.querySelector<HTMLAnchorElement>(".wordmark")!;
+  expect(home.getAttribute("href")).toBe("/");
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+  document.addEventListener("click", (event) => event.preventDefault(), {
+    once: true,
+  });
+  await act(async () => home.dispatchEvent(event));
+  expect(props.onClose).not.toHaveBeenCalled();
+  await click(
+    [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Cancel",
+    )!,
+  );
+  expect(props.onClose).toHaveBeenCalledOnce();
+});

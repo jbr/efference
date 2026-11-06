@@ -328,3 +328,54 @@ test("modified current-tab clicks retain native link behavior", () => {
   expect(event.defaultPrevented).toBe(false);
   expect(host.querySelector('[role="dialog"]')).toBeNull();
 });
+
+test("installed-app shortcuts cycle rendered slots, including overflow, from text fields", () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  room = 220;
+  listing.push({ id: "gamma", status: "idle", processes: 0 });
+  mount("gamma");
+  const hrefs = Array.from(
+    host.querySelectorAll<HTMLElement>("[data-session-href]"),
+    (tab) => tab.dataset.sessionHref!,
+  );
+  const input = document.createElement("input");
+  host.append(input);
+  input.focus();
+  const event = new KeyboardEvent("keydown", {
+    code: "Tab",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  act(() => input.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(location.pathname).toBe(
+    hrefs[(hrefs.indexOf("/sessions/gamma/") + 1) % hrefs.length],
+  );
+  expect(document.activeElement).toBe(input);
+});
+
+test("browser mode, a single tab, and an unmounted switcher leave shortcuts alone", () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  const press = () => {
+    const event = new KeyboardEvent("keydown", {
+      code: "BracketRight",
+      key: "}",
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => document.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+    expect(location.pathname).toBe("/sessions/alpha/");
+  };
+  mount();
+  press();
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  act(() => updateListing([listing[0]]));
+  press();
+  act(() => updateListing(listing));
+  act(() => root.render(null));
+  press();
+});

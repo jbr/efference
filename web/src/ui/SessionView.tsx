@@ -362,6 +362,7 @@ export function SessionView() {
           // Only under a host is there a list to go back to — at a session
           // daemon's root this view is the whole app (api/base.ts).
           listHref={apiBase() === "" ? null : "/"}
+          project={project}
           identity={session.topics.session_identity ?? null}
           usage={session.topics.usage ?? null}
           upstreamFailure={session.topics.upstream_failure ?? null}

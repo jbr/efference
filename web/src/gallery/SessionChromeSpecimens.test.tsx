@@ -58,5 +58,5 @@ test("scene header uses real meters and fixture tabs without session links", () 
   expect(html).toContain("$0.42");
   expect(html).toContain("App settings");
   expect(html).toContain("switcher-tab dot-working is-current");
-  expect(html).not.toContain('href="/sessions/');
+  expect(html).not.toMatch(/<a\b[^>]*\shref="\/sessions\//);
 });

@@ -49,8 +49,8 @@ export function NewSessionForm({
   /** The draft so far, or `null` when nothing has been chosen yet. Held by the
    * list page, so it outlives this component and survives a cancel. */
   draft: Draft | null;
-  /** The directory a workspace `+` asked for, or `null` for the top bar's
-   * entry. Applied once the remembered locations are read, since which
+  /** The directory a workspace or session `+` asked for, or `null` for the
+   * general entry. Applied once the remembered locations are read, since which
    * configuration a directory was last launched with is what that answer
    * carries. */
   requested: string | null;
@@ -305,7 +305,6 @@ export function NewSessionForm({
       <AppHeader
         className="new-session-bar"
         innerClassName="new-session-bar-inner"
-        onHome={onClose}
       >
         <button onClick={onClose}>Cancel</button>
       </AppHeader>

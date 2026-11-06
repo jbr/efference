@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { launchPage, launchUrl } from "./newSessionNavigation.ts";
 
 describe("launch routes", () => {
@@ -29,4 +29,15 @@ describe("launch routes", () => {
     );
     expect(launchUrl(url, null)).toBe("/?view=all#anchor");
   });
+});
+
+test("project launch URLs round-trip cwd through settings and model selection", () => {
+  const cwd = "/work/a & b/#é";
+  const settings = launchUrl("/", "settings", cwd);
+  const url = new URL(settings, "https://host");
+  expect(launchPage(url.search)).toBe("settings");
+  expect(url.searchParams.get("cwd")).toBe(cwd);
+  const model = launchUrl(url.href, "main");
+  expect(new URL(model, url).searchParams.get("cwd")).toBe(cwd);
+  expect(launchUrl(new URL(model, url).href, null)).toBe("/");
 });

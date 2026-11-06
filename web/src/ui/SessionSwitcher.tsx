@@ -40,6 +40,7 @@ import {
   recordVisit,
 } from "./switcherOrder.ts";
 import { navigate } from "./route.ts";
+import { adjacentTab, standaloneApp, tabDirection } from "./tabShortcuts.ts";
 import { HoverCard } from "./SessionHoverCard.tsx";
 import { useLiveSessions } from "./liveSessions.ts";
 import { useKeepOnScreen } from "./useKeepOnScreen.ts";
@@ -131,6 +132,26 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
     cards.map((c) => c.id),
     currentId,
   );
+  useEffect(() => {
+    const cycle = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const direction = tabDirection(event, standaloneApp());
+      if (direction === null) return;
+      // The measuring row renders every tab in slot order, even when some
+      // spill into the closed overflow menu.
+      const tabs = Array.from(
+        measure.current?.querySelectorAll<HTMLElement>("[data-session-href]") ??
+          [],
+        (tab) => tab.dataset.sessionHref!,
+      );
+      const href = adjacentTab(tabs, sessionHref(currentId), direction);
+      if (href === null) return;
+      event.preventDefault();
+      navigate(href);
+    };
+    document.addEventListener("keydown", cycle);
+    return () => document.removeEventListener("keydown", cycle);
+  }, [currentId, measure]);
   const shown =
     requestedShown !== null &&
     entries.has(requestedShown) &&
@@ -313,7 +334,9 @@ export function Tab({
   );
   const className = `switcher-tab dot-${dotKind(card)}${current ? " is-current" : ""}`;
   return inert ? (
-    <span className={className}>{body}</span>
+    <span className={className} data-session-href={sessionHref(card.id)}>
+      {body}
+    </span>
   ) : (
     <a
       className={className}

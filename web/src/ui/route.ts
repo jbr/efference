@@ -10,6 +10,7 @@
 
 import { useSyncExternalStore } from "react";
 import { deriveRoute } from "../api/base.ts";
+import { launchPage } from "./newSessionRoutes.ts";
 
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((listener) => listener());
@@ -68,8 +69,24 @@ export function navigate(href: string, mode: "push" | "replace" = "push") {
   }
   const changedPage = url.pathname !== location.pathname;
   const target = url.pathname + url.search;
-  if (mode === "replace") history.replaceState(null, "", target);
-  else history.pushState(null, "", target);
+  // Launch entries own only the history created inside this client. A direct
+  // URL has no depth, even after visiting further launch stages.
+  let state = null;
+  if (url.pathname === "/" && launchPage(url.search) !== null) {
+    const from = location.pathname === "/" ? launchPage(location.search) : null;
+    const depth = history.state?.launchDepth;
+    state = {
+      launchDepth:
+        from === null
+          ? 1
+          : typeof depth === "number"
+            ? depth + (mode === "push" ? 1 : 0)
+            : undefined,
+      launchFrom: mode === "replace" ? history.state?.launchFrom : from,
+    };
+  }
+  if (mode === "replace") history.replaceState(state, "", target);
+  else history.pushState(state, "", target);
   if (changedPage) window.scrollTo(0, 0);
   notify();
 }

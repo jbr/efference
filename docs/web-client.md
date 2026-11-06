@@ -1480,10 +1480,15 @@ session uses that session's listing title or id rather than the previous view's.
 
 `ui/TopBar.tsx`: sticky interface chrome — the serif wordmark (under a host,
 also the link back to the session list), the session's title
-([session-title.md](session-title.md), the id until one is written), the
-context meter, the session cost where the provider prices requests, and the
-app-settings link. What the session is — models, directory — and how it runs
-belong to the surfaces that show them whole; the bar carried them on one line
+([session-title.md](session-title.md), the id until one is written), the context
+meter, the session cost where the provider prices requests, and the app-settings
+link. A **+** at the right of the tab row starts another session in the same
+project. The switcher measures the space left after this action. The **+** is a
+plain link to `/?new=settings&cwd=<encoded>`; ordinary clicks use client-side
+navigation, and modified clicks retain browser behavior. It is absent at a
+session daemon's root and until the host's listing resolves the project directory.
+What the session is — models, directory — and how it runs belong to the surfaces
+that show them whole; the bar carried them on one line
 and could show none of them. The title is the one element that yields width,
 and on the phone breakpoint it is dropped: the start of a title says less than
 nothing. The **context meter** is the bar,
@@ -1576,6 +1581,15 @@ overflow, the selected tab's measured width is reserved first, and other visible
 retain their relative order. Those that do not fit are listed in a `+N` menu whose button
 carries an accent dot when a session in it is waiting on the operator; attention does not
 reorder tabs. Entering a session from a tab is a client-side navigation, as from a card.
+
+In the installed app, `ui/tabShortcuts.ts` recognizes Cmd+Shift+`[` / `]`,
+Ctrl+Tab / Ctrl+Shift+Tab, and Ctrl+PageUp / Ctrl+PageDown by physical key code.
+The switcher's global keydown listener enables them only when the standalone
+display-mode media query or iOS `navigator.standalone` is true, leaving native
+browser tabs alone. They work while a text field has focus. Next and previous
+walk the measuring row's rendered tab order, including overflowed sessions,
+with wrap-around; empty and single-session rows do nothing. Switching uses the
+same client-side navigation as tab links, not a full page load.
 
 Below the top bar and session switcher, one wrapping transport notice shows the
 latest failure, never a list of prior attempts. `ui/upstream.ts` combines the

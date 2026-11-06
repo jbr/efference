@@ -17,6 +17,7 @@ import type { StateSnapshot } from "../api/frames.ts";
 import { cardModel, foldRecent, type Recent, workspaces } from "./overview.ts";
 import { SessionCard } from "./SessionCard.tsx";
 import { useLaunchNavigation } from "./newSessionNavigation.ts";
+import { useNewSessionShortcut } from "./useNewSessionShortcut.ts";
 import { NewSessionForm } from "./NewSessionForm.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { archiveWarning } from "./sessionRow.ts";
@@ -127,15 +128,19 @@ export function SessionList({
   // The new-session form's draft, held here rather than by the form: the draft
   // survives while the page is open, so cancelling and reopening returns to it
   // and only a reload discards it (docs/web-session-creation.md). `requested`
-  // is the directory a workspace `+` asked for, applied once the form knows
+  // is the directory a workspace or session `+` asked for, applied once the form knows
   // which configuration that directory was last launched with.
   // A retry of a creation that did not start reopens on the draft that made it
   // (ui/launchRetry.ts).
   const [draft, setDraft] = useState<Draft | null>(
     () => reopenedLaunch()?.draft ?? null,
   );
-  const [requested, setRequested] = useState<string | null>(null);
   const launch = useLaunchNavigation();
+  const [requested, setRequested] = useState<string | null>(() =>
+    launch.page !== null && typeof location !== "undefined"
+      ? new URLSearchParams(location.search).get("cwd")
+      : null,
+  );
   const resume = useResumeNavigation();
   const narrow = useNarrow();
   const [archivedByCwd, setArchivedByCwd] = useState<
@@ -153,6 +158,15 @@ export function SessionList({
       ? null
       : ([...archivedByCwd.values()].flat().find((s) => s.id === switchId) ??
         null);
+  function openNewSession() {
+    setRequested(null);
+    launch.navigate("location");
+  }
+  useNewSessionShortcut(
+    launch.page === null && resume.route === null && switchId === null
+      ? openNewSession
+      : null,
+  );
   const feeds = useSessionFeeds(sessions);
   const {
     page,
@@ -280,13 +294,7 @@ export function SessionList({
         >
           Resume…
         </button>
-        <button
-          className="primary"
-          onClick={() => {
-            setRequested(null);
-            launch.navigate("location");
-          }}
-        >
+        <button className="primary" onClick={openNewSession}>
           New session
         </button>
         <AppSettingsLink />

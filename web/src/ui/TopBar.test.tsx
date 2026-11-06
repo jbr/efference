@@ -111,3 +111,25 @@ describe("transport notice", () => {
     expect(recovered).not.toContain("upstream-notice");
   });
 });
+
+test("the host session offers a project launch in the tab row, but a daemon does not", () => {
+  const props = {
+    identity: null,
+    usage: null,
+    upstreamFailure: null,
+    upstreamRetry: null,
+  };
+  const host = renderToStaticMarkup(
+    <TopBar {...props} listHref="/" project="/work/a & b" />,
+  );
+  expect(host).toContain('<div class="session-tabs"><a class="session-new"');
+  expect(host).toContain('aria-label="New session in this project"');
+  expect(host).toContain('href="/?new=settings&amp;cwd=%2Fwork%2Fa+%26+b"');
+  for (const markup of [
+    renderToStaticMarkup(
+      <TopBar {...props} listHref={null} project="/work/a" />,
+    ),
+    renderToStaticMarkup(<TopBar {...props} listHref="/" />),
+  ])
+    expect(markup).not.toContain("New session in this project");
+});

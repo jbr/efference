@@ -22,6 +22,9 @@ import { PlanMeter } from "./PlanMeter.tsx";
 import { costLabel } from "./cost.ts";
 import { AppHeader } from "./AppHeader.tsx";
 import { SessionSwitcher } from "./SessionSwitcher.tsx";
+import { launchUrl } from "./newSessionNavigation.ts";
+import { navigate } from "./route.ts";
+import { useNewSessionShortcut } from "./useNewSessionShortcut.ts";
 
 const tokens = (n: number) =>
   n >= 1_000_000
@@ -134,6 +137,7 @@ function FilesToggle({ open, toggle }: { open: boolean; toggle: () => void }) {
 
 export function TopBar({
   listHref,
+  project = null,
   identity,
   usage,
   upstreamFailure,
@@ -144,6 +148,8 @@ export function TopBar({
   /** The session list to go back to, when this page is served by a host —
    * `null` at a session daemon's root, where there is no list. */
   listHref: string | null;
+  /** The project directory resolved from the host's live listing. */
+  project?: string | null;
   identity: SessionIdentity | null;
   usage: UsageView | null;
   upstreamFailure: UpstreamFailure | null;
@@ -154,6 +160,13 @@ export function TopBar({
 }) {
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
   const routeId = sessionId();
+  const newSessionHref =
+    listHref !== null && project !== null
+      ? launchUrl(listHref, "settings", project)
+      : null;
+  useNewSessionShortcut(
+    newSessionHref === null ? null : () => navigate(newSessionHref),
+  );
   const context = usage?.context ?? null;
   const cost = usage?.cost ?? null;
   return (
@@ -161,8 +174,20 @@ export function TopBar({
       homeHref={listHref}
       below={
         <>
-          {listHref !== null && routeId !== null && (
-            <SessionSwitcher currentId={routeId} />
+          {listHref !== null && (
+            <div className="session-tabs">
+              {routeId !== null && <SessionSwitcher currentId={routeId} />}
+              {newSessionHref !== null && (
+                <a
+                  className="session-new"
+                  href={newSessionHref}
+                  aria-label="New session in this project"
+                  title="New session in this project"
+                >
+                  +
+                </a>
+              )}
+            </div>
           )}
           {chip !== null && <UpstreamNotice chip={chip} />}
         </>

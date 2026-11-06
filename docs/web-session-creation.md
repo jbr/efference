@@ -6,25 +6,39 @@ the launch draft; `NewSessionForm.tsx` renders location, settings, and model
 selection. The routes, requests, and host behavior are part of the same control
 API used by other clients ([control-api.md](control-api.md)).
 
+In the installed app, Cmd+N opens the same-project settings from a session,
+matching the tab row's **+**; on the overview it opens location selection,
+matching **New session**. `ui/useNewSessionShortcut.ts` enables this only in
+standalone display mode (or iOS standalone), including while a text field is
+focused. It cancels the native new-window action and ignores key repeats.
+Launch, resume, and model-switch pages do not bind it; session pages without a
+host listing or a resolved project do not bind it either.
+
 ## Navigation and draft ownership
 
 `ui/newSessionNavigation.ts` identifies the surface from query parameters on `/`:
 
 - `?new=location` selects a working directory.
-- `?new=settings` edits session settings.
+- `?new=settings` edits session settings; `&cwd=<encoded>` preselects a project
+  when entering from the session page's **+**. The list initializes `requested`
+  from that parameter, using the same last-launch configuration lookup as a
+  workspace **+**. It remains in the URL across launch stages and is removed
+  with the launch parameters on direct-entry cancellation.
 - `?new=model&role=main|spotter|triage` selects a model for that role.
 
 The query changes the client surface without adding a server SPA route. Forward
 navigation pushes a history entry; `popstate` updates the rendered page. An
-entry records its predecessor and, for flows entered from the overview, its
-owned history depth. **Back to settings** uses the predecessor when it matches,
-otherwise replaces the current surface. **Cancel** unwinds the owned launch
-entries to the overview. A direct entry without owned depth cancels by removing
-the launch query parameters from the current URL.
+entry records its predecessor and, for flows entered within the client, its
+owned history depth. The shared router establishes that depth for session links
+and keyboard entry as well as overview buttons. **Back to settings** uses the
+predecessor when it matches, otherwise replaces the current surface. **Cancel**
+and top-level Escape unwind the owned launch entries to the originating session
+or overview. A direct entry without owned depth cancels by removing the launch
+query parameters from the current URL.
 
 The shared `ui/AppHeader.tsx` wordmark links home on every launch surface. An
-ordinary click exits through the same history/draft-preserving path as Cancel;
-modified clicks retain native link behavior.
+ordinary click navigates explicitly to the overview rather than cancelling back
+to the origin; modified clicks retain native link behavior.
 
 The draft contains raw overrides, not the host's resolved values. It survives
 Cancel and reopening while the overview is mounted; reloading discards it. A
@@ -195,7 +209,8 @@ selector values prevents a larger-looking temperature placeholder.
 Escape clears a nonempty search, then removes a namespace level, then returns
 to settings. Backspace on an empty search removes the final namespace level.
 Information-button keyboard activation is not intercepted as model selection.
-Outside the picker, Escape cancels the launch flow.
+Outside the picker, Escape first dismisses an open location editor or directory
+disclosure, then cancels the launch flow.
 
 ## Catalog loading
 
