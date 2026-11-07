@@ -32,7 +32,8 @@ pub struct Create {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub message: Option<String>,
-    /// The main model, `<connection>/<model>`.
+    /// The main model, `<connection>/<model>`. Read the resource
+    /// `efference://models` to discover exact slugs and known prices.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub model: Option<String>,

@@ -7,6 +7,7 @@ impl Toolbox {
     pub fn new(providers: Vec<Provider>) -> Self {
         Self {
             providers,
+            resources: None,
             child_env: crate::config::env_table::ChildEnv::default(),
             image_input: true,
         }

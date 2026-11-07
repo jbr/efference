@@ -351,6 +351,7 @@ pub fn unknown_tool_message(name: &str, available: &[String]) -> String {
 /// routes each `tool_use` to the backend that handles it.
 pub struct Toolbox {
     providers: Vec<Provider>,
+    resources: Option<Box<dyn resources::ResourceReader>>,
     /// The `[env]` spawn policy — strip, then inject — applied to every
     /// subprocess this toolbox spawns: the `bash` child and each stdio MCP
     /// server (docs/env.md). Held here as well as on the bash provider so a
@@ -384,6 +385,7 @@ mod provider;
 pub mod read_image;
 mod session_control;
 pub use session_control::{ControlServer, SessionControl, control_server};
+pub mod resources;
 mod toolbox;
 #[cfg(test)]
 use toolbox::strip_unreadable_images;

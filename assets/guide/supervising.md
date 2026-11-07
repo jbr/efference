@@ -140,6 +140,35 @@ next time"`, rather than as a message of its own.
 
 ## Creating and ending agents
 
+### Finding model IDs
+
+In a hosted session, use `read` on `efference://models` before guessing a model
+slug. It lists configured connections and exact `connection/model` spellings, with
+recent picks first. Narrow it with combinable URL query parameters, for example:
+
+`efference://models?connection=openrouter&q=deepseek&limit=20`
+
+`connection` is an exact configured name; `q` searches model ID, display name and
+provider description case-insensitively. URL-encode query values. `limit` defaults
+to 40 (maximum 100); `offset` defaults to 0 and pages through all matches. Results
+state the match count and whether more remain.
+
+Known context windows, reasoning/image capabilities, and input/output prices
+(USD per million tokens) appear on each row. A missing price is unknown, not free.
+Connection status and listing age distinguish a missing or failed listing from an
+empty search. Missing/stale listings refresh in the background; read again for
+updated results. An unlisted model ID can still work.
+
+`role=main` is the default. `role=triage` has exactly the same compatibility
+filter; `role=spotter` also includes decision-only models. These are not task
+ratings or recommendations. Recent ranks use the project's default-config pick
+history, not any separate history for a custom config.
+
+External MCP clients can read the same URI as a resource. The server advertises
+the base resource and a query template, and includes a discovery hint in its
+instructions. MCP ranks use system-wide decayed past picks, without a project
+scope. There are no subscriptions; read again to see refreshed listings.
+
 `agents__create` takes, among others:
 
 - `message` — the task, written for a reader with none of your context.

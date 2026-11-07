@@ -37,7 +37,11 @@ pub(crate) async fn run_stdio(host: PathBuf) -> CliResult {
         mcplease::ServerConfig::new(mcplease::server_info!()).with_instructions(MCP_INSTRUCTIONS);
     let stdin = async_compat::Compat::new(tokio::io::stdin());
     let stdout = async_compat::Compat::new(tokio::io::stdout());
-    let mut calls = mcplease::calls::<mcp::Tools, _>(stdin, stdout, state, &config);
+    let mut calls = mcplease::calls_with_resources::<
+        mcp::Tools,
+        efference::clients::control_tools::resources::ModelResources,
+        _,
+    >(stdin, stdout, state, &config);
     while let Some(call) = calls.next().await {
         tokio::spawn(call?);
     }

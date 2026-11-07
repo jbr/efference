@@ -53,7 +53,9 @@ whether a newer version is out and prints the install command when one is;
   follower as `wait` and the status streams, so a script or a shell-capable agent reads
   the sequence a `Monitor` would.
 - **`efference mcp`** — the agent verbs, with `wait` in place of `settle`, served as an
-  MCP server over stdin/stdout, and a status stream per agent on loopback (below). The verbs are written once as mcplease tools (`src/clients/control_tools.rs` and
+  MCP server over stdin/stdout, and a status stream per agent on loopback (below).
+  The MCP server also advertises and reads the `efference://models` resource and
+  its query template ([model-catalog.md](model-catalog.md)). The verbs are written once as mcplease tools (`src/clients/control_tools.rs` and
   `src/clients/control_tools/`, one file per tool) and listed by three tool sets — the command
   line's, the stdio server's, and a hosted session's own toolbox (below) — so the paths
   cannot drift apart ([tools.md](tools.md)).

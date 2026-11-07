@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+pub mod resource;
 mod store;
 mod view;
 pub use view::{CatalogModel, ConnectionCatalog, ModelRole, Recent, Status, assemble};

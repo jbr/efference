@@ -7,7 +7,7 @@
 //! *source* and the path *resolution* differ from an operator's group; the render is the
 //! same code.
 //!
-//! A `read` of one of those paths is intercepted at dispatch ([`read_documents`],
+//! A `read` of one of those paths is intercepted at dispatch (`Toolbox::read_resources`,
 //! `crate::agent::step`) and answered from the binary as an ordinary [`RawResult`], so
 //! `project` never learns the result was special and no log or wire type changes. The
 //! prefix is read-granted by the fast path (`crate::config::policy`) and never write-granted: the
@@ -28,6 +28,9 @@ pub const SCHEME: &str = "efference://";
 /// A mount under [`SCHEME`]. `[context]` names it as `{ builtin = "guide" }`;
 /// [`BUILTIN`] is that config value and this is the path segment it serves at.
 pub const MOUNT: &str = "efference://guide/";
+
+/// The dynamic model catalog mount (docs/model-catalog.md).
+pub const MODELS: &str = "efference://models";
 
 /// The `[context]` value that lists this mount: `Label = { builtin = "guide" }`.
 /// `guide/<slug>` names one document, which rides in full rather than as a stub
@@ -246,10 +249,10 @@ fn listing() -> String {
         .join("\n")
 }
 
-/// The path target(s) a call names, for the two hooks below. Reuses the classifier's own
+/// The path target(s) a call names, for virtual reads and non-read rejection. Reuses the classifier's own
 /// per-tool key map so a tool's path field is named in exactly one place
 /// (docs/permissions.md).
-fn targets(call: &ToolCall) -> Vec<&str> {
+pub(crate) fn targets(call: &ToolCall) -> Vec<&str> {
     let Some((key, _, default)) = crate::config::policy::path_spec(&call.name) else {
         return Vec::new();
     };
@@ -270,47 +273,19 @@ pub fn reject_non_read(call: &ToolCall) -> Option<RawResult> {
         return None;
     }
     Some(RawResult::error(format!(
-        "`{}` does not resolve on `{SCHEME}` paths. These are documents compiled into \
-         the harness binary, not files: `read` is the only tool that opens them, and \
-         nothing writes to them.\n\nThe documents are:\n{}",
+        "`{}` does not resolve on `{SCHEME}` paths. These are harness resources, not files: `read` is the only tool that opens them, and \
+         nothing writes to them.\n\nThe resources include efference://models and these guides:\n{}",
         call.name,
         listing()
     )))
 }
 
-/// Serve a `read` of the virtual mount from the binary, or `None` when the call names no
-/// virtual path and the real `read` should run.
-///
-/// A batch mixing virtual and real paths is refused rather than split: the two halves come
-/// from different places, and answering half a batch silently would be worse than one
-/// corrective turn.
-pub fn read_documents(call: &ToolCall) -> Option<RawResult> {
-    if call.name != "read" {
-        return None;
-    }
-    let targets = targets(call);
-    if !targets.iter().any(|t| is_virtual(t)) {
-        return None;
-    }
-    if let Some(real) = targets.iter().find(|t| !is_virtual(t)) {
-        return Some(RawResult::error(format!(
-            "this `read` mixes harness documents with a file on disk (`{real}`). They are \
-             served from different places, so read them in separate calls.",
-        )));
-    }
-    let mut bodies = Vec::with_capacity(targets.len());
-    for target in &targets {
-        match lookup(target) {
-            Some(document) => bodies.push(document.body.trim_end().to_string()),
-            None => {
-                return Some(RawResult::error(format!(
-                    "no harness document at `{target}`. The documents are:\n{}",
-                    listing()
-                )));
-            }
-        }
-    }
-    Some(RawResult::text(bodies.join("\n\n---\n\n")))
+/// An unknown reserved URI, with the available mounts.
+pub(crate) fn unknown(target: &str) -> String {
+    format!(
+        "no harness resource at `{target}`. Available resources:\n  efference://models — model slugs, prices, and capabilities\n{}",
+        listing()
+    )
 }
 
 #[cfg(test)]

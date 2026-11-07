@@ -2,44 +2,24 @@
 //! every connection's normalized listing with recent picks folded in.
 
 use super::{ErrorCode, Host, fail, host_of, missing_host};
-use crate::inference::ConnectionInventory;
-use crate::inference::catalog::{ConnectionCatalog, ModelRole, Recent, assemble};
+use crate::inference::catalog::{ModelRole, Recent};
 use crate::protocol::answers::CatalogList;
 use crate::routes::views;
 use std::time::Duration;
 use trillium::Conn;
 use trillium_router::RouterConnExt;
 
-/// How many recent picks fold into the rows. The history store ranks every pick
-/// it holds; a long tail adds nothing a typeahead shows.
-const RECENT_LIMIT: usize = 20;
-
-/// The recent picks for the project scope a request names, by connection. Empty
-/// when the request names no `cwd`.
+/// Recent picks in the project scope named by this request.
 fn recents(host: &Host, query: &str) -> Vec<(String, Recent)> {
     let param = |name: &str| crate::routes::http::query_value(query, name);
     let Some(cwd) = param("cwd") else {
-        return Vec::new();
+        return host.catalog_recents(None);
     };
     let scope = crate::config::history::Scope::for_request(
         &crate::platform::home::canonical_here(std::path::Path::new(&cwd)),
         param("config").as_deref().map(std::path::Path::new),
     );
-    host.inference
-        .history()
-        .recent_all(&scope, crate::config::history::now(), RECENT_LIMIT)
-        .into_iter()
-        .enumerate()
-        .map(|(index, candidate)| {
-            (
-                candidate.connection,
-                Recent {
-                    model: candidate.model,
-                    rank: index as u32 + 1,
-                },
-            )
-        })
-        .collect()
+    host.catalog_recents(Some(&scope))
 }
 
 /// The role a request names, if any: `Ok(None)` for no `role` parameter, an
@@ -53,53 +33,11 @@ fn role_of(query: &str) -> Result<Option<ModelRole>, String> {
     }
 }
 
-/// One connection's entry. With `wait`, a copy older than that is refreshed and
-/// awaited; without it a missing or stale copy starts a background refresh and
-/// the stored one is served as it stands.
-async fn entry(
-    host: &Host,
-    row: &ConnectionInventory,
-    picks: &[(String, Recent)],
-    wait: Option<Duration>,
-) -> ConnectionCatalog {
-    let recents: Vec<Recent> = picks
-        .iter()
-        .filter(|(connection, _)| *connection == row.name)
-        .map(|(_, recent)| recent.clone())
-        .collect();
-    let (unavailable, endpoint) = match host.inference.endpoint(&row.name) {
-        Ok((_, endpoint)) => (None, Some(endpoint)),
-        Err(error) => (Some(error.to_string()), None),
-    };
-    let snapshot = match (&endpoint, wait) {
-        (Some(endpoint), Some(max_age)) => {
-            host.catalog
-                .refresh(&row.name, row.provider, endpoint, max_age)
-                .await
-        }
-        (Some(endpoint), None) => {
-            host.catalog.kick(&row.name, row.provider, endpoint.clone());
-            host.catalog
-                .snapshot(&row.name, row.provider, crate::config::history::now())
-        }
-        (None, _) => host
-            .catalog
-            .snapshot(&row.name, row.provider, crate::config::history::now()),
-    };
-    assemble(
-        &row.name,
-        row.provider,
-        snapshot,
-        unavailable.as_deref(),
-        &recents,
-    )
-}
-
 /// `GET /inference/catalog?cwd=<root>&config=<path>&role=<role>`: every configured
 /// connection's stored listing, its age, and its status. Never waits on a
 /// provider: a missing or stale copy starts a background refresh and is served
 /// as it stands. `cwd` (+ optional `config`) scopes the recent ranks; without
-/// `cwd` no row carries one. With `role` (`main`, `triage`, or `spotter`) the
+/// `cwd` ranks use the system-wide aggregate. With `role` (`main`, `triage`, or `spotter`) the
 /// answer holds only what that role may choose: no decision models for a role
 /// that runs turns, and no connection that serves none. Without it nothing is
 /// filtered.
@@ -117,7 +55,7 @@ pub(crate) async fn catalog_all(conn: Conn) -> Conn {
         if role.is_some_and(|role| !role.accepts_provider(row.provider)) {
             continue;
         }
-        let listed = entry(&host, &row, &picks, None).await;
+        let listed = host.catalog_entry(&row, &picks, None).await;
         connections.push(match role {
             Some(role) => match listed.for_role(role) {
                 Some(listed) => listed,
@@ -182,7 +120,7 @@ pub(crate) async fn catalog_one(conn: Conn) -> Conn {
         None => crate::inference::catalog::CATALOG_TTL,
     };
     let picks = recents(&host, query);
-    let mut answer = entry(&host, &row, &picks, Some(max_age)).await;
+    let mut answer = host.catalog_entry(&row, &picks, Some(max_age)).await;
     if let Some(role) = role {
         answer.retain_for_role(role);
     }

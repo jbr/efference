@@ -310,11 +310,20 @@ impl History {
     /// one menu covers every provider without opening each connection's own
     /// recent menu first. Capped like [`Self::recent`]: memory, not the domain.
     pub fn recent_all(&self, scope: &Scope, now: i64, limit: usize) -> Vec<Candidate> {
+        self.ranked_all(Some(scope), now, limit)
+    }
+
+    /// System-wide decayed pick frequencies, with no project promoted.
+    pub fn recent_global(&self, now: i64, limit: usize) -> Vec<Candidate> {
+        self.ranked_all(None, now, limit)
+    }
+
+    fn ranked_all(&self, scope: Option<&Scope>, now: i64, limit: usize) -> Vec<Candidate> {
         let picks = self.picks();
         let mut candidates = aggregate(picks.iter().collect(), None, now);
         candidates.sort_by(|a, b| {
-            let a_project = scope.matches(&a.cwd, &a.config_key);
-            let b_project = scope.matches(&b.cwd, &b.config_key);
+            let a_project = scope.is_some_and(|scope| scope.matches(&a.cwd, &a.config_key));
+            let b_project = scope.is_some_and(|scope| scope.matches(&b.cwd, &b.config_key));
             b_project.cmp(&a_project).then(
                 b.mass
                     .partial_cmp(&a.mass)

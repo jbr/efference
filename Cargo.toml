@@ -324,3 +324,7 @@ unused_self = "warn"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+# Local resource-API integration trial; remove when mcplease is published.
+[patch.crates-io]
+mcplease = { path = "../mcplease" }

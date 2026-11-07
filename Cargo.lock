@@ -2995,8 +2995,6 @@ dependencies = [
 [[package]]
 name = "mcplease"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26c0c384baaa06c1a0580fd527ee9c337cc41962790376699a494568fc92f253"
 dependencies = [
  "anyhow",
  "async-channel",

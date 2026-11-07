@@ -48,6 +48,7 @@ mod notify;
 mod pace;
 mod proposal;
 mod read_image;
+pub mod resources;
 mod results;
 mod review_level;
 mod settle;

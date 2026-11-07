@@ -105,8 +105,9 @@ fn every_guide_link_resolves() {
     for document in DOCUMENTS {
         for link in virtual_links(document.body) {
             assert!(
-                lookup(&link).is_some(),
-                "`{}` links to `{link}`, which is not a document",
+                lookup(&link).is_some()
+                    || link.split_once('?').map_or(link.as_str(), |(base, _)| base) == MODELS,
+                "`{}` links to `{link}`, which is not a resource",
                 path(document.slug)
             );
         }
@@ -180,62 +181,6 @@ fn a_bad_builtin_entry_fails_the_file() {
             "expected `{bad}` to be rejected"
         );
     }
-}
-
-/// A `read` of a document path is answered from the binary, verbatim.
-#[test]
-fn a_read_of_a_document_is_served_from_the_binary() {
-    let result = read_documents(&call("read", json!({ "paths": [path("config-format")] })))
-        .expect("a virtual read is intercepted");
-    assert!(!result.is_error);
-    assert_eq!(
-        result.content,
-        lookup(&path("config-format")).unwrap().body.trim_end()
-    );
-
-    // Several at once concatenate, in the order asked.
-    let both = read_documents(&call(
-        "read",
-        json!({ "paths": [path("editing"), path("new-project")] }),
-    ))
-    .expect("intercepted");
-    assert!(
-        both.content
-            .starts_with(lookup(&path("editing")).unwrap().body.trim_end())
-    );
-    assert!(
-        both.content
-            .ends_with(lookup(&path("new-project")).unwrap().body.trim_end())
-    );
-
-    // A read that names no virtual path is not this module's business.
-    assert!(read_documents(&call("read", json!({ "paths": ["src/lib.rs"] }))).is_none());
-}
-
-/// A wrong slug is answered by the overlay, not handed to the filesystem, and the answer
-/// says what does exist.
-#[test]
-fn an_unknown_slug_lists_the_documents() {
-    let result = read_documents(&call(
-        "read",
-        json!({ "paths": ["efference://guide/how-to-fly"] }),
-    ))
-    .expect("intercepted");
-    assert!(result.is_error);
-    assert!(result.content.contains(&path("config-format")));
-}
-
-/// A batch mixing a document and a file is refused whole, naming the file — the stated
-/// edge, answered in one corrective turn rather than half-served.
-#[test]
-fn a_mixed_batch_is_refused() {
-    let result = read_documents(&call(
-        "read",
-        json!({ "paths": [path("editing"), "src/lib.rs"] }),
-    ))
-    .expect("intercepted");
-    assert!(result.is_error);
-    assert!(result.content.contains("src/lib.rs"));
 }
 
 /// Only `read` resolves on the prefix; everything else is refused ahead of the permission

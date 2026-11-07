@@ -313,3 +313,24 @@ fn only_an_explicit_separate_triage_is_recorded() {
     );
     assert!(store.picks().is_empty(), "the main table is untouched");
 }
+
+#[test]
+fn global_recents_rank_decayed_frequencies_without_a_project() {
+    let (store, dir) = history();
+    let local = scope(dir.path());
+    let other = scope(Path::new("/code/other"));
+    let new = scope(Path::new("/code/new-project"));
+    let now = 1_800_000_000;
+    store.record(&pick(now, &local, "work", "local"));
+    store.record(&pick(now, &other, "work", "popular"));
+    store.record(&pick(now, &other, "work", "popular"));
+    store.record(&pick(now - 90 * 86_400, &other, "work", "old"));
+    let global = store.recent_global(now, 10);
+    assert_eq!(
+        global.iter().map(|c| c.model.as_str()).collect::<Vec<_>>(),
+        ["popular", "local", "old"]
+    );
+    assert_eq!(store.recent_all(&new, now, 10), global);
+    assert_eq!(store.recent_all(&local, now, 10)[0].model, "local");
+    assert_eq!(store.recent_global(now, 1).len(), 1);
+}

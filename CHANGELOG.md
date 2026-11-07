@@ -7,6 +7,8 @@ one line per feature.
 
 ### Added
 
+- Hosted agents and external MCP clients can read `efference://models` to discover exact model slugs, known prices and capabilities, with combined filters and pagination.
+
 - efference's http client now picks up HTTP proxy related environment variables: `http_proxy`/`HTTP_PROXY`, `https_proxy`/`HTTPS_PROXY`, `all_proxy`/`ALL_PROXY`, and `no_proxy`/`NO_PROXY`. Lowercase variables take precedence, including when empty. A missing or empty per-scheme proxy uses the all-proxy fallback.
 - The installed web app cycles session tabs with platform keyboard shortcuts, including sessions in the overflow menu.
 - A session's tab row offers a right-aligned `+` to start another session in the same project without returning to the overview first.

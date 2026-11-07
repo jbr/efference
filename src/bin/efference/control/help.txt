@@ -62,7 +62,7 @@ Options:
           Its first message
 
       --model <MODEL>
-          The main model, `<connection>/<model>`
+          The main model, `<connection>/<model>`. Read the resource `efference://models` to discover exact slugs and known prices
 
       --spotter-model <SPOTTER_MODEL>
           The spotter model, `<connection>/<model>`
@@ -102,7 +102,7 @@ Options:
       --host-socket <PATH>             The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --name <NAME>                    The id, a single path segment. Minted (`adjective-noun`) when omitted
       --message <MESSAGE>              Its first message
-      --model <MODEL>                  The main model, `<connection>/<model>`
+      --model <MODEL>                  The main model, `<connection>/<model>`. Read the resource `efference://models` to discover exact slugs and known prices
       --spotter-model <SPOTTER_MODEL>  The spotter model, `<connection>/<model>`
       --config <CONFIG>                A config file to seed the session's `config.toml` from, instead of the project template
       --effort <EFFORT>                Reasoning effort for the main model, as the provider names its levels

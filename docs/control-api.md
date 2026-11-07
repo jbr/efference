@@ -137,7 +137,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   provider: a `missing` or `stale` connection starts a background refresh and is
   served as stored; a `failed` one keeps its old copy in `models`. `cwd` (+ optional
   `config`) names the project scope whose recent picks fold in as `recent`; without
-  `cwd` no row has one. `role` is `main`, `triage`, or `spotter` and narrows the answer to
+  `cwd` recent ranks use system-wide decayed pick frequencies. `role` is `main`, `triage`, or `spotter` and narrows the answer to
   what that role may choose: a decision model answers questions about a state and produces
   no turn, so `main` and `triage` get no decision rows and no connection that serves none,
   while `spotter` gets everything. With no `role` nothing is filtered; any other value is

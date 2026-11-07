@@ -71,6 +71,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
     let mut store =
         crate::tools::mcp::auth::store::KeychainStore::new(std::sync::Arc::clone(secrets));
     if let Some(host) = host {
+        toolbox.mount_resources(host.model_resource_reader(cwd));
         // A hosted session refreshes under the host's locks, so the host's
         // sessions share one refresh of a server's grant (docs/mcp-auth.md).
         store = store.with_refresh_locks(host.mcp_refresh_locks());

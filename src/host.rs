@@ -52,7 +52,9 @@ pub(crate) mod starting;
 pub(crate) mod subscriptions;
 pub mod worktree;
 
+mod catalog;
 mod create;
+mod model_resource;
 
 pub(crate) mod resume;
 

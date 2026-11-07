@@ -96,6 +96,13 @@ impl Client {
         serde_json::from_str(&body).with_context(|| format!("decoding QUERY {path}"))
     }
 
+    /// Stored model listings ranked by system-wide pick frequencies, without a
+    /// project scope (docs/model-catalog.md).
+    pub async fn catalog_global(&self) -> Result<Vec<ConnectionCatalog>> {
+        let catalog: CatalogList = self.get_root("/inference/catalog").await?;
+        Ok(catalog.connections)
+    }
+
     /// Every configured connection's stored model listing, with recent ranks for
     /// the project at `cwd` (`GET /inference/catalog`). Never waits on a provider:
     /// an entry's `status` says whether its copy is fresh, stale, missing, or

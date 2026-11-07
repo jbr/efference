@@ -115,7 +115,8 @@ menu.
 `GET /inference/catalog` and `/inference/catalog/:connection` take the project scope the
 history store keys on (`cwd`, optional `config`) and fold the ranked picks of
 `recent_all` (up to 20, counted across connections, project picks first) onto the
-matching (connection, model) row as `recent`. A pick the listing does not name — a typed
+matching (connection, model) row as `recent`. Without `cwd`, ranks use system-wide
+decayed pick frequencies without promoting any project. A pick the listing does not name — a typed
 id — becomes a row with only `connection`, `model`, the OpenRouter `group` derived from
 the id, `recent`, and a `kind` taken from the connection. The catalog routes are the only source of recents: the terminal
 picker ([tui.md](tui.md)) ranks its root and connection views from them.
@@ -127,3 +128,61 @@ with no usable credential (or disabled) reports status `unavailable` with the re
 no read is attempted. The list route never waits on a provider; the single-connection
 route awaits a refresh when its copy is older than `max_age` (default the TTL, floor 60
 seconds).
+
+## Agent resource
+
+Hosted sessions read `efference://models` with the existing `read` tool. No new
+wire tool is added. `src/tools/resources.rs` dispatches virtual batches, resolving
+compiled guides locally and dynamic content through a `ResourceReader` installed
+on the toolbox. `src/host/model_resource.rs` implements the models reader over a
+weak host reference, independently of whether any session-control verbs are
+enabled. Boot and resume both mount it. A standalone toolbox reports that the
+catalog needs a hosted session rather than handing the URI to filesystem tools.
+The HTTP routes and the resource share `Host::catalog_entry` and
+`Host::catalog_recents` in `src/host/catalog.rs`.
+
+The concrete URI accepts combinable `connection`, `role`, `q`, `limit`, and
+`offset` parameters. `connection` is exact. `q` is a case-insensitive substring
+of native model ID, display name, or provider description. Values use URL query
+encoding, including percent escapes and `+` for space. Invalid encodings, unknown
+or repeated parameters, and unknown connections are errors with usage guidance.
+`role` defaults to `main`; `main` and `triage` apply the same compatibility rule,
+not task ratings, and `spotter` includes decision-only models. `limit` defaults to
+20 and admits 1–100; `offset` is a nonnegative integer, default 0.
+
+`src/inference/catalog/resource.rs` filters and renders the normalized entries.
+Rows sort by recent rank, then connection and native ID; all matches remain
+accessible through pagination. The response states the total match count,
+current offset, and next offset when more remain. Each row names the exact
+`connection/model` slug, known context and capabilities, lifecycle, and provider
+input/output prices in USD per million tokens. Missing prices are explicitly
+unknown, not zero. Provider names are labeled as facts, not editorial advice.
+Filtered reads and subsequent pages omit the full query help; the initial
+unfiltered page includes it. Description-only search matches include an excerpt
+identifying the match. The connection summary carries lowercase status,
+human-readable age, and errors. Reads serve cached copies
+and start missing/stale refreshes without waiting on providers. The resource uses
+the working directory's project and its default config to scope recent picks;
+separate history for custom configs is not selected. It neither authorizes model
+choices nor changes acceptance of typed IDs.
+
+`efference mcp` exposes the same URI through `resources/read`, advertises its base
+resource through `resources/list`, and declares
+`efference://models{?connection,q,role,limit,offset}` through
+`resources/templates/list`. `ModelResources` in `src/clients/control_tools/resources.rs`
+uses the control client's unscoped HTTP catalogue read and the same query parser
+and renderer. MCP ranks use system-wide decayed pick frequencies, without a
+project scope. Server instructions point clients to the resource. Discovery has
+one complete page; a supplied discovery cursor is invalid. Catalogue pagination
+remains in the resource URI. Reads are ordinary text contents with the requested
+URI preserved. Invalid catalogue queries return readable text with usage guidance,
+including unknown connections; unrelated URIs and host failures remain JSON-RPC
+errors. Claude Code replaces resource protocol error messages with stale-resource
+advice, so query guidance is returned as contents to reach the agent. Discovery
+keeps parameter descriptions on both the concrete resource and template: Claude
+Code exposes the former but not template discovery. There are no
+resource subscriptions or update notifications.
+
+The resource API is currently exercised against a local Cargo patch pointing to
+the sibling mcplease checkout; replacing that patch requires a published version
+with the resource-provider API.

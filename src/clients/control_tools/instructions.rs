@@ -9,6 +9,11 @@ Drive the agents on one efference host. Each agent is a session on this host run
 its own agent loop; its id names both. `create` starts one in a working directory; \
 every other tool takes the id as `agent`, which only `status` and `wait` leave out.
 
+Before choosing a model, read the MCP resource `efference://models` for exact configured \
+connection/model slugs, known capabilities and prices. Its resource template supports \
+combined connection, q, role, limit and offset filters; main and triage have identical \
+compatibility. Rankings use system-wide decayed past picks, not task recommendations.
+
 `status` says where an agent stands; with no agent, one line per agent. A status that \
 waits on you ends with the exact call that answers it, its seq filled in.
 

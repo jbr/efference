@@ -17,6 +17,7 @@ mod departure;
 mod discard;
 mod files;
 mod island;
+mod model_resource;
 mod preview;
 mod projects;
 mod resume;

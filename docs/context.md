@@ -256,8 +256,8 @@ Each stub's `path` is a reserved, **scheme-shaped** prefix rather than a filesys
 front of a path against a string, and this leaves room for `read` to grow other schemes
 without re-deciding what a leading `/` would have meant.
 
-- **Interception is at tool dispatch, before the real `read`** (`src/agent/step.rs`): a
-  `read` naming the prefix is answered with the embedded bytes as an ordinary `RawResult`.
+- **Interception is at tool dispatch, before the real `read`**
+  (`src/tools/resources.rs`, called by `src/agent/step/execute.rs`): a `read` naming a guide path is answered with the embedded bytes as an ordinary `RawResult`.
   Because the served body is a normal tool result, `project` and byte-stability never learn
   it is special — the log and projection core is untouched, which is what makes the whole
   mechanism cheap.
@@ -276,6 +276,14 @@ without re-deciding what a leading `/` would have meant.
 - **Snapshot.** The stubs ride the `Payload::Preamble` snapshot like any group; the bodies
   are served later and stored on their `ToolResult`. Across a mid-session binary upgrade
   those can diverge, and the log honestly records what was served each time.
+
+**Dynamic resources.** The same reserved scheme also serves `efference://models`
+([model-catalog.md](model-catalog.md)). Hosted boot installs a `ResourceReader` on
+`Toolbox`, separately from tool providers and their enabled-tool filtering. The
+reader holds a weak host reference and reads the host's cached catalog. It changes
+neither tool definitions nor the preamble when inventory changes. A virtual batch
+can combine guide and model reads; a virtual/filesystem batch remains refused
+whole. Unknown URIs and non-read calls name both available mounts.
 
 **One document in full: `builtin = "guide/<slug>"`.** The same value with a slug renders
 that document's body inline, tagged with the operator's label the way an `exec` section is
@@ -296,7 +304,7 @@ fenced `toml` block in a document parses and validates as a real config (the sch
 unknown fields, so a renamed key fails there; operating.md's blocks are held to the same
 check), every tool name a document declares is one `agent::tool_definitions` advertises for
 a hosted session, `agents__*` verbs included, and is actually mentioned in its prose, and
-every `efference://` link resolves to a document that exists.
+every `efference://` link names a known resource mount or a document that exists.
 
 ## The kickoff: `first-turn`
 
