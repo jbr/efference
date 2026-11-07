@@ -62,21 +62,21 @@ trillium = "1.4.1"
 # gate reads `authority()` from — h2's `:authority` is not consulted by
 # `trillium::Conn::host()` (docs/web-bind.md).
 trillium-http = "1.8"
-trillium-client = { version = "0.9.20", features = ["sse"] }
+trillium-client = { version = "0.9.21", features = ["sse"] }
 trillium-client-retry = "0.1"
-trillium-rustls = "0.11.3"
+trillium-rustls = "0.11.5"
 # 0.6.4 adds `UnixClientConfig` — the client-side Unix-socket connector the
 # control-channel client (src/clients/client.rs) dials the daemon through (DESIGN §10).
 trillium-tokio = "0.6.4"
 # StreamExt for consuming the SSE EventStream; already in-tree via trillium.
 futures-lite = "2.6.1"
-trillium-router = "0.5.3"
+trillium-router = "0.6.0"
 # Already in-tree under trillium-tokio; a direct dependency only to *name* the
 # `ServerHandle` the TCP bind's spawn returns (docs/web-bind.md).
 trillium-server-common = "0.7"
 # HTTP/3 for the TLS bind (docs/web-bind.md): a QUIC listener on the same port,
 # auto-paired with the TLS listener and advertised via alt-svc.
-trillium-quinn = "0.1.7"
+trillium-quinn = "0.1.8"
 # HEAD requests: rewritten to GET going in, body stripped (content-length kept)
 # coming out — the router itself has no HEAD story.
 trillium-head = "0.3"
@@ -135,7 +135,7 @@ brush-parser = "0.4.0"
 # reads the config and writes the harness's auto-persisted edits back, comments intact. A parse
 # error carries a source span; its `Display` renders the offending line (the load-time diagnostic
 # that stands in for KDL's miette report).
-toml_edit = { version = "0.25.18", features = ["serde"] }
+toml_edit = { version = "0.25.19", features = ["serde"] }
 # Order-preserving map. `[context]` entries render as preamble sections in the operator's
 # document order (backlog/preamble-context.md), so they can't ride the sorted BTreeMap the
 # policy tables use. Already compiled in-tree via toml_edit; this just promotes it to direct.
@@ -168,7 +168,7 @@ data-encoding = "2"
 # Only reached from `efference serve` with a tty; a headless boot prints the URL
 # instead, since there is no browser to hand a redirect back to.
 webbrowser = "1.2.6"
-jiter = { version = "0.18.0", default-features = false }
+jiter = { version = "0.19.0", default-features = false }
 image = { version = "0.25.10", default-features = false, features = [
   "png",
   "jpeg",
@@ -273,7 +273,7 @@ insta = "1.49.0"
 trillium-testing = { version = "0.10.2", features = ["tokio"] }
 # The status stream tests' WebSocket client (docs/operating.md): the mount only serves
 # one, so the client half is a test-only feature.
-trillium-client = { version = "0.9.20", features = ["sse", "websockets"] }
+trillium-client = { version = "0.9.21", features = ["sse", "websockets"] }
 
 [build-dependencies]
 # The theme set is baked at build time from assets/themes/*/*.tmTheme into OUT_DIR

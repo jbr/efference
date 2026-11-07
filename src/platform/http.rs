@@ -41,7 +41,8 @@
 
 use std::sync::{LazyLock, OnceLock};
 
-use trillium_client::{Client, KnownHeaderName};
+use trillium_client::{Client, KnownHeaderName, Proxy};
+use trillium_quinn::ClientQuicConfig;
 use trillium_rustls::RustlsConfig;
 use trillium_tokio::ClientConfig;
 
@@ -70,7 +71,12 @@ pub fn user_agent() -> &'static str {
 pub fn client() -> Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT
-        .get_or_init(|| configured(Client::new(RustlsConfig::<ClientConfig>::default())))
+        .get_or_init(|| {
+            configured(Client::new_with_quic(
+                RustlsConfig::<ClientConfig>::default(),
+                ClientQuicConfig::default(),
+            ))
+        })
         .clone()
 }
 
@@ -84,7 +90,18 @@ pub(crate) fn client_over(connector: impl trillium_client::Connector) -> Client 
 
 /// What every request this process sends carries, whatever it is sent over.
 fn configured(client: Client) -> Client {
-    client.with_default_header(KnownHeaderName::UserAgent, user_agent())
+    let client = client.with_default_header(KnownHeaderName::UserAgent, user_agent());
+    match Proxy::from_env() {
+        Ok(proxy) if proxy.is_empty() => client,
+        Ok(proxy) => {
+            log::debug!("Using proxy: {proxy:?}");
+            client.with_proxy(proxy)
+        }
+        Err(e) => {
+            log::error!("Unable to configure client proxy: {e}");
+            client
+        }
+    }
 }
 
 #[cfg(test)]

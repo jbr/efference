@@ -5,17 +5,22 @@ one line per feature.
 
 ## [Unreleased]
 
-- Cancelling web session creation returns to the session or overview it was opened from; the wordmark still goes home.
+### Added
+
+- efference's http client now picks up HTTP proxy related environment variables: `http_proxy`/`HTTP_PROXY`, `https_proxy`/`HTTPS_PROXY`, `all_proxy`/`ALL_PROXY`, and `no_proxy`/`NO_PROXY`. Lowercase variables take precedence, including when empty. A missing or empty per-scheme proxy uses the all-proxy fallback.
 - The installed web app cycles session tabs with platform keyboard shortcuts, including sessions in the overflow menu.
 - A session's tab row offers a right-aligned `+` to start another session in the same project without returning to the overview first.
 - Cmd+N in the installed web app opens same-project session settings from a session, or location selection from the home screen.
-- Removed false truncation errors caused by providers' token accounting; local-server setup now explains how to configure Ollama's context window.
 - The TUI's approval gate names who escalated it and shows their note, as the web client does.
 - Fixed the TUI linking artifact fences to loopback pages that loaded broken outside the web client; it now says the fence renders in the web client, and the host no longer binds the extra listener.
 - `efference --version` names the git revision and cargo profile the binary was built from.
-- Fixed a session created under another spelling of its directory (`/users/…` for `/Users/…` on macOS, or through a symlink) refusing to resume from the directory's usual spelling; the host now canonicalizes every working directory a client names.
-- Fixed the recent-locations list showing a directory twice when it gained an `efference.toml` between two launches that named no configuration.
 - A web page left open across a host upgrade now notices that the host serves a newer build and offers a reload, instead of going on rendering with the old one.
+
+### Fixed
+
+- Removed false-positive truncation errors caused by providers' token accounting; local-server setup now explains how to configure Ollama's context window.
+- A session created under another spelling of its directory (`/users/…` for `/Users/…` on macOS, or through a symlink) refused to resume from the directory's usual spelling; the host now canonicalizes every working directory a client names.
+- The recent-locations list showed a directory twice when it gained an `efference.toml` between two launches that named no configuration.
 
 ## [0.1.1] - 2026-11-01
 

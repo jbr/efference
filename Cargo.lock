@@ -723,9 +723,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "375989decec1a0fa424442bed520fa12ede43a48475ce8c7417d2c69b32b5f6b"
+checksum = "4ff2a8126fff0f8c839080d619675a585e61720bb12d2baceae45769fd66f155"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1831,9 +1831,9 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flate2"
-version = "1.1.10"
+version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
+checksum = "626d4928326b646e70f65ed36fc7cf9f206bdb68a0019ee7c6b4709da4e084c4"
 dependencies = [
  "crc32fast",
  "miniz_oxide 0.9.1",
@@ -2572,6 +2572,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipnet"
+version = "2.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
+
+[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2649,9 +2655,9 @@ dependencies = [
 
 [[package]]
 name = "jiter"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49e31424b61d85292bd805dbf643c3ccc44f5f3871fb751209b889ee70585029"
+checksum = "4027f86130c7a1997f880ed407580e58514b867af49e7ce44370f80fa6ff999f"
 dependencies = [
  "bitvec",
  "lexical-parse-float",
@@ -4427,13 +4433,12 @@ dependencies = [
 
 [[package]]
 name = "routefinder"
-version = "0.5.4"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0971d3c8943a6267d6bd0d782fdc4afa7593e7381a92a3df950ff58897e066b5"
+checksum = "fe6fbf8ca14f58cee7a718f58ce9ded435a2d0cef651b1d67379f19f12b0f0f2"
 dependencies = [
+ "compact_str 0.10.0",
  "memchr",
- "smartcow",
- "smartstring",
 ]
 
 [[package]]
@@ -4545,15 +4550,6 @@ dependencies = [
  "rustls-pki-types",
  "schannel",
  "security-framework",
-]
-
-[[package]]
-name = "rustls-pemfile"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dce314e5fee3f39953d46bb63bb8a46d40c2f8fb7cc5a3b6cab2bde9721d6e50"
-dependencies = [
- "rustls-pki-types",
 ]
 
 [[package]]
@@ -4854,9 +4850,9 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
-version = "1.1.2"
+version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
+checksum = "9c187e0a369471c550af028cba56d4f4fa2a489ad28151ae95a4d340a2a8b782"
 dependencies = [
  "serde_core",
 ]
@@ -5056,29 +5052,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.16.4"
+version = "1.16.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
-
-[[package]]
-name = "smartcow"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "656fcb1c1fca8c4655372134ce87d8afdf5ec5949ebabe8d314be0141d8b5da2"
-dependencies = [
- "smartstring",
-]
-
-[[package]]
-name = "smartstring"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb72c633efbaa2dd666986505016c32c3044395ceaf881518399d2f4127ee29"
-dependencies = [
- "autocfg",
- "static_assertions",
- "version_check",
-]
+checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 
 [[package]]
 name = "smol"
@@ -5384,7 +5360,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
  "windows-sys 0.61.2",
@@ -5654,9 +5630,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.2.0+spec-1.1.0"
+version = "1.2.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5ffcdf8f50436dbbfd675c1fe1b8e0854f42b7defea8584bdebe1aee900e561"
+checksum = "d5755c51863cdac711f1956baf8eb9588e060755f7d3c4c979e70ea1e1f32cd7"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -5669,18 +5645,18 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
-version = "1.1.2+spec-1.1.0"
+version = "1.1.3+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053"
+checksum = "173f25c883cd2176a2d8212155638c0a60d484a9d84546d270866f40f56b6e49"
 dependencies = [
  "serde_core",
 ]
 
 [[package]]
 name = "toml_edit"
-version = "0.25.18+spec-1.1.0"
+version = "0.25.19+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ec6e78bd70db9420d8d212fa9dc97f116448a1ceff5d00eabb991d407e21396"
+checksum = "dd43688c4858d7264ae1cf9a9f874a67c3feb74a883b1cd7bebd6a4ea8307218"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -5866,7 +5842,7 @@ dependencies = [
  "futures-lite",
  "log",
  "trillium-http",
- "trillium-macros",
+ "trillium-macros 0.1.0",
 ]
 
 [[package]]
@@ -5882,23 +5858,26 @@ dependencies = [
 
 [[package]]
 name = "trillium-client"
-version = "0.9.20"
+version = "0.9.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac23da1317cd2fa1367a28824f95e803bdc2a967c2e6cb8e11436042c52dbb12"
+checksum = "5b4036e707b735e90eec9b6e7e6e3d9808c2878980196134c44fe270005f24c6"
 dependencies = [
  "async-lock",
+ "base64 0.22.1",
  "crossbeam-queue",
  "dashmap",
  "encoding_rs",
  "fieldwork",
  "futures-lite",
+ "ipnet",
  "log",
  "memchr",
  "mime",
+ "percent-encoding",
  "smallvec",
  "thiserror 2.0.21",
  "trillium-http",
- "trillium-macros",
+ "trillium-macros 0.2.0",
  "trillium-server-common",
  "trillium-websockets",
 ]
@@ -5986,7 +5965,7 @@ dependencies = [
  "swansong",
  "sync_wrapper",
  "thiserror 2.0.21",
- "trillium-macros",
+ "trillium-macros 0.1.0",
  "type-set",
 ]
 
@@ -6029,10 +6008,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "trillium-proxy"
-version = "0.8.5"
+name = "trillium-macros"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e1e9059d4690ec52e1eff86e208cc5f4aca3c57ee5db444b13ff65216b9ffc3"
+checksum = "8d6ef31920e7125a69da032831dd8e4ce60735460ad4841d124abfd9fa883040"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "trillium-proxy"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b06047f839aafabebc61e5cc7b668e4b221bfcaf388b68847ea4990791628cda"
 dependencies = [
  "event-listener",
  "fastrand",
@@ -6051,18 +6041,19 @@ dependencies = [
 
 [[package]]
 name = "trillium-quinn"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64fb3c1bafc9e12303e431079c7e5d2d618df6dc206bd42a1031b0f42012d2d5"
+checksum = "f80c610faba4aefe5ba54d3532ab019ee98de0b72366a205f5222722f150ca3d"
 dependencies = [
  "async-compat",
  "futures-lite",
  "log",
  "quinn",
  "rustls",
- "rustls-pemfile",
- "trillium-macros",
+ "rustls-platform-verifier",
+ "trillium-macros 0.2.0",
  "trillium-server-common",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -6078,9 +6069,9 @@ dependencies = [
 
 [[package]]
 name = "trillium-router"
-version = "0.5.3"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95d8699286507e794512e07404c190989a3b12317aa51f83e8a4e15ec58b7273"
+checksum = "72a35b4b6944896c1cd6e80ffd56364af3be426242b42fe0effd7e18429768cd"
 dependencies = [
  "log",
  "routefinder",
@@ -6089,13 +6080,12 @@ dependencies = [
 
 [[package]]
 name = "trillium-rustls"
-version = "0.11.3"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8c7da9a57686f04771d29d25d3b2c11d5180063d3fb12fb2cf89d1e8516c81f"
+checksum = "a526ac494fecb7ac21accd1315c2c1bea73dca408518bf24fdb3e90405b48343"
 dependencies = [
  "futures-rustls",
  "log",
- "rustls-pemfile",
  "rustls-platform-verifier",
  "trillium-server-common",
  "webpki-roots",
@@ -6186,7 +6176,7 @@ dependencies = [
  "trillium",
  "trillium-client",
  "trillium-http",
- "trillium-macros",
+ "trillium-macros 0.1.0",
  "trillium-server-common",
  "trillium-tokio",
  "url",
@@ -6206,7 +6196,7 @@ dependencies = [
  "tokio-stream",
  "trillium",
  "trillium-http",
- "trillium-macros",
+ "trillium-macros 0.1.0",
  "trillium-server-common",
 ]
 
@@ -6367,9 +6357,9 @@ checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
 
 [[package]]
 name = "uuid"
-version = "1.29.0"
+version = "1.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
+checksum = "4a06f08a856b009bc7bbaf7d3e79808595d032dd19074c0c2ef26e49e03e6bdc"
 dependencies = [
  "atomic",
  "getrandom 0.4.3",
