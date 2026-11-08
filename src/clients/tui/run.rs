@@ -41,7 +41,7 @@ pub async fn run(client: Client, display: TuiConfig, mut attached: Attached) -> 
 pub struct Attached {
     /// This client launched the host, and quitting it ends the host with every
     /// session on it (docs/operating.md): the island owner. `detach` would be
-    /// false there, so the strip says `quit`.
+    /// false there, so the strip displays `quit`.
     pub owns_host: bool,
     /// Text for the composer as the attach opens: the turns a failed start handed
     /// back, carried to the session its retry made (`starting.rs`).
@@ -55,7 +55,7 @@ async fn attach(client: Client, display: TuiConfig, attached: Attached) -> Resul
     // name surfaces a clean error (with the list) instead of a silent fallback.
     let display = resolved(display)?;
     // Open the event stream up front for the same reason: a socket nobody is
-    // listening on, or a host prefix that names no session, is a plain error
+    // listening on, or a host prefix with no matching session, is a plain error
     // here rather than an empty screen whose turns go nowhere.
     let events = client.events(Some(0), Some("log,output,state")).await?;
 
@@ -97,9 +97,9 @@ pub async fn run_gallery(
 /// docs/tui.md): the same transcript rendering as a live attach, over entries
 /// loaded from a jsonl file rather than a daemon's event stream. `label` names the
 /// session in the status bar. Nothing here can write — the log is read once, and
-/// the read-only state renders no composer and carries no loop verbs.
+/// the read-only state renders no composer and has no loop verbs.
 pub async fn run_view(entries: Vec<LogEntry>, label: String, display: TuiConfig) -> Result<()> {
-    // The read-only view does not time its paints, whatever `[tui] frame-cost` says.
+    // The read-only view does not time its paints, regardless of `[tui] frame-cost`.
     let display = TuiConfig {
         frame_cost: false,
         ..display
@@ -110,7 +110,7 @@ pub async fn run_view(entries: Vec<LogEntry>, label: String, display: TuiConfig)
 /// The shared offline runner behind [`run_gallery`] and [`run_view`]: seed the
 /// events channel with a fixed entry list and run the real [`ui_loop()`] over it with
 /// no daemon behind it. The events sender is held for the session's life so the UI
-/// never sees a `Disconnected` (which would exit immediately); the
+/// never receives a `Disconnected` (which would exit immediately); the
 /// submit/approve/pace/interrupt far-ends are likewise held so a send from inside
 /// the state can't error. Real `ui_loop`, real rendering — just an offline log.
 async fn run_offline(
@@ -124,8 +124,8 @@ async fn run_offline(
 
     let (tx, rx) = crossbeam_channel::unbounded::<TuiEvent>();
     // The far ends are held for the run's life rather than consumed: an offline
-    // log's images ride the entries themselves (docs/control-api.md) and there
-    // is no daemon for the rest to reach, so nothing should answer them — but a
+    // log's entries include the images (docs/control-api.md) and there
+    // is no daemon to receive the rest, so nothing should answer them — but a
     // dropped receiver would make a send from inside the state an error.
     let (senders, receivers) = Senders::channels();
 
@@ -172,7 +172,7 @@ async fn run_offline(
 /// crossterm event loop blocks, so the UI runs on a dedicated blocking thread while
 /// the SSE bridge runs as a tokio task (docs/README.md — the TUI is one client of the
 /// socket).
-/// The default theme — nicer than `THEME_NAMES[0]` ("1337", which only wins by
+/// The default theme — nicer than `THEME_NAMES[0]` ("1337", first by
 /// sort order). Overridable with `[tui] theme` in the user configuration.
 pub(super) const DEFAULT_THEME: &str = "Catppuccin Frappe";
 

@@ -6,7 +6,7 @@
 //! (`tui/inline_list.rs`), so both look and key the same. [`ResumePage`] is pure
 //! state — rows, a query, a cursor, a note — with keys in, a [`ResumeKey`] out,
 //! and a buffer drawn; the container does the reading of the rows and the
-//! `PATCH {"state": "active"}` that a pick asks for (docs/control-api.md).
+//! `PATCH {"state": "active"}` after a pick (docs/control-api.md).
 //!
 //! Every row has one shape: the title (the id when there is none), the id
 //! dimmed, then the age dimmed. The query keeps the rows whose title or id holds
@@ -75,7 +75,7 @@ pub fn now_ms() -> u64 {
         .map_or(0, |since| since.as_millis() as u64)
 }
 
-/// What a key asked of the container.
+/// The container action for a key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResumeKey {
     Continue,
@@ -128,7 +128,7 @@ impl ResumePage {
         self.selected = 0;
     }
 
-    /// The rows could not be read; `note` says why.
+    /// The rows could not be read; `note` contains the reason.
     pub fn read_failed(&mut self, note: String) {
         self.loading = false;
         self.note = Some(note);

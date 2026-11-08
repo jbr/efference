@@ -3,11 +3,11 @@
 //!
 //! What is **not** here is a successful `POST /sessions` recorded end to end.
 //! `boot::prepare` makes the provider's capability lookup a required step and a
-//! failed one fails the creation, so a creation that reaches the record has
-//! already reached a provider — and the repo has no stand-in provider to reach.
+//! failed one fails the creation, so a creation recorded here has
+//! already contacted a provider — and the repo has no stand-in provider to contact.
 //! The write itself is [`crate::host::remembered`]'s to test, and the refusal below
 //! covers the other half of the placement: a creation that never started
-//! remembers nothing.
+//! has no remembered entry.
 
 use super::*;
 
@@ -48,9 +48,9 @@ fn count(body: &str) -> usize {
     json(body)["projects"].as_array().map_or(0, Vec::len)
 }
 
-/// Percent-encode a query value. A `cwd` carries a `/` and `Roots` puts one
+/// Percent-encode a query value. A `cwd` contains a `/` and `Roots` puts one
 /// under `/var/folders/…`, where a space and a digit-run are common; a query that
-/// is not encoded names a different path than the one stored.
+/// is not encoded specifies a different path than the one stored.
 fn query_value(value: &str) -> String {
     value
         .bytes()
@@ -110,7 +110,7 @@ async fn the_index_reports_launches_newest_first_with_a_derived_label() {
 }
 
 /// The index and the forget answer keep their bytes: each entry's keys sorted, `config`
-/// `null` for a launch that named none, and the forgotten identity echoed back.
+/// `null` for a launch that specified none, and the forgotten identity echoed back.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_index_and_the_forget_answer_keep_their_bytes() {
     let roots = Roots::new();
@@ -281,7 +281,7 @@ async fn forgetting_deletes_the_entry_and_nothing_else() {
         "and the session that ran there is untouched"
     );
 
-    // An identity that is not remembered, and requests that name no identity.
+    // An identity that is not remembered, and requests with no identity.
     server
         .delete(&forget_url(&roots.0.join("one"), &named.config_key))
         .await
@@ -312,7 +312,7 @@ async fn forgetting_uses_the_reported_identity_rather_than_recomputing_it() {
     store(&roots).record(&row);
     assert_eq!(row.config_key, crate::config::history::BUILTIN_CONFIG_KEY);
 
-    // The directory gains a template afterwards, so re-probing resolves to a key
+    // A template is created in the directory afterwards, so re-probing resolves to a key
     // this row was never stored under.
     std::fs::write(cwd.join("efference.toml"), "").unwrap();
     assert_eq!(
@@ -343,7 +343,7 @@ async fn forgetting_uses_the_reported_identity_rather_than_recomputing_it() {
 }
 
 /// Recording is placed after the session starts, so a creation that never got
-/// that far remembers nothing — and, like every other refusal, mints nothing.
+/// that far has no remembered entry — and, like every other refusal, mints nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_creation_that_does_not_start_remembers_nothing() {
     let roots = Roots::new();

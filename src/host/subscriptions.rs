@@ -85,7 +85,7 @@ impl Host {
     ///
     /// A question that returned a session's queued message is that session's news as
     /// well (docs/process-monitor.md): a sender that is not subscribed is woken with the
-    /// status, which tells it its message came back. Only a driver's message is queued,
+    /// status, which shows that its message came back. Only a driver's message is queued,
     /// so it reads as a driver.
     pub(super) fn post_status(&self, id: &str, session: &Session, status: &SessionStatus) {
         let view = session.status_view(id, status);
@@ -132,8 +132,8 @@ impl Host {
                 inbox.notify(Notification::new(id, body, Some(status_slot(id))).waking());
             }
         }
-        // A gate the operator is asked, or one escalated past its subscribers, asks
-        // someone named: it reaches the other subscribers without waking them.
+        // A gate the operator is asked, or one escalated past its subscribers, has
+        // a named recipient: it is sent to the other subscribers without waking them.
         let asks_another = matches!(
             &view.condition,
             Condition::Gated(held)
@@ -220,7 +220,7 @@ impl Host {
 /// (docs/permissions.md). A held call whose routing moves — the dial turned to hand the
 /// child back, the supervisor set to another session or cleared, or the supervisor
 /// ending — is re-routed rather than dropped: the status has not changed, so only the
-/// routing carries the news. An escalation moves the routing the same way, and from then
+/// routing reflects the change. An escalation moves the routing the same way, and from then
 /// on the call's escalations route it rather than the dial ([`Routing`]). A reviewer moved
 /// this way is a push moment too ([`Session::gate_rerouted`]): a gate that comes to rest
 /// with the operator is pushed.
@@ -244,7 +244,7 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
         appended.as_mut().enable();
 
         let status = session.status();
-        // Read after the status: the count moves before the phase reaches idle
+        // Read after the status: the count moves before the phase becomes idle
         // (`going_idle`), so an idle read here already counts the turn it ended.
         let ended = session.turns_ended();
         let routing = session.gate_routing();
@@ -268,7 +268,7 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
             if notable {
                 host.post_status(&id, &session, &status);
             }
-            // The listing carries a status and a process count per row
+            // The listing contains a status and a process count per row
             // (`listing.rs`), and both move with the control state this loop
             // already wakes on — so every wake pings it. Subscribers diff for
             // themselves, so a wake that moved nothing costs a comparison.

@@ -95,8 +95,8 @@ async fn the_cold_check_parks_until_a_person_acts() {
     .expect("parks");
     assert!(shared.is_settled());
 
-    // The park is its own phase and status, and rides the `cold` topic so a session
-    // view can tell it from a slow request.
+    // The park is its own phase and status, and is in the `cold` topic so a session
+    // view can distinguish it from a slow request.
     let crate::session::status::SessionStatus::Parked {
         reason: ParkReason::Expired { since, .. },
     } = shared.status()
@@ -132,7 +132,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
 }
 
 /// A compaction at a mid-turn park ends the cold belief but not the park: the loop waits for
-/// the next turn or continue, and the phase says so while `cold` is null.
+/// the next turn or continue, and the phase reflects the wait while `cold` is null.
 #[tokio::test]
 async fn a_fold_leaves_the_park_folded() {
     let (shared, _rx) = cold_session();
@@ -222,7 +222,7 @@ fn cold_records(shared: &Session) -> Vec<crate::record::log::ColdEvent> {
 }
 
 /// An approval while the session is cold is a person's action noted before the decision
-/// reaches the loop, so the cold check after the approved call does not park
+/// is delivered to the loop, so the cold check after the approved call does not park
 /// (docs/control-api.md). The log records the release and no park.
 #[tokio::test]
 async fn an_approval_releases_the_next_check_and_no_park_follows() {
@@ -396,7 +396,7 @@ async fn an_inbox_wake_while_cold_waits_for_a_person() {
     assert!(!wake.is_finished(), "held while cold");
 }
 
-/// A resume on another main model starts cold whatever the usage record says: the
+/// A resume on another main model starts cold regardless of the usage record: the
 /// record's fresh requests cached the old model's prefix, so they seed no touch clock
 /// (nothing for the keepalive to ping) and the session is cold from the moment of the
 /// switch, until a request on the new prefix is made.

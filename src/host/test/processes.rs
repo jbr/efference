@@ -198,8 +198,8 @@ async fn patch_background_requests_the_handoff() {
     shared.kill_all_bg();
 }
 
-/// The `PATCH` rejections: un-backgrounding names no transition, a note needs a
-/// handoff to ride, and an unknown id is 404.
+/// The `PATCH` rejections: un-backgrounding is not a transition, a note requires a
+/// handoff, and an unknown id is 404.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn patch_rejections() {
     let (shared, _turns_rx) = Session::in_memory();
@@ -229,7 +229,7 @@ async fn patch_rejections() {
     shared.kill_all_bg();
 }
 
-/// `DELETE /processes/:id` kills the group; the drain task then sees EOF and the
+/// `DELETE /processes/:id` kills the group; the drain task then receives EOF and the
 /// exit notification fires like any other exit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delete_kills_a_running_process() {
@@ -278,7 +278,7 @@ async fn client_background_resolves_the_foreground_process() {
     assert_eq!(shared.take_detach_note().as_deref(), Some("keep going"));
 }
 
-/// The call↔process mapping reaches the wire (docs/control-api.md): the `tool_use`
+/// The call↔process mapping is in the response (docs/control-api.md): the `tool_use`
 /// id that spawned a process is on its `/processes` representation, so a client
 /// holding the transcript entry can read `GET /processes/:id/output` for a
 /// backgrounded command, and a client holding the process row can jump to the entry.

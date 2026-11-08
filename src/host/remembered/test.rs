@@ -24,7 +24,7 @@ fn launch(cwd: &Path, at: i64) -> Project {
     }
 }
 
-/// A row for a creation that named its configuration: the identity is that
+/// A row for a creation that specified its configuration: the identity is that
 /// file's own path, and the spelling is kept beside it.
 fn named_launch(cwd: &Path, config: &Path, at: i64) -> Project {
     Project {
@@ -78,8 +78,8 @@ fn two_configurations_in_one_directory_are_two_entries() {
     );
 }
 
-/// A directory that gains an `efference.toml` between two launches that named
-/// none: the probe answers differently, but both rows would ask creation to
+/// An `efference.toml` is created between two launches that specified
+/// none: the probe returns a different result, but both rows cause creation to
 /// probe again, so the later launch is the directory's one unnamed entry. A named
 /// configuration's row is a different request and stays.
 #[test]
@@ -155,7 +155,7 @@ fn the_configuration_recorded_is_the_template_not_a_session_copy() {
 }
 
 /// The identity is the scope a creation already computed, so this pins that the
-/// two agree — including that a named configuration keys on the template rather
+/// two match — including that a named configuration keys on the template rather
 /// than on a session's private copy of it.
 #[test]
 fn the_identity_is_the_scope_creation_computed() {
@@ -288,7 +288,7 @@ fn forgetting_deletes_the_entry_and_nothing_on_disk() {
 }
 
 /// A store whose database cannot be opened folds the error away, which is what
-/// keeps an unusable path from failing the creation that was remembering itself.
+/// keeps an unusable path from failing the creation it was recording.
 #[test]
 fn an_unusable_database_reads_empty() {
     let dir = dir();

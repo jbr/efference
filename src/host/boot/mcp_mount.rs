@@ -7,7 +7,7 @@
 //! ## The sequence per server
 //!
 //! 1. Mount with whatever credentials are stored — refreshing a stale grant
-//!    first, since one round trip beats a `401` plus full rediscovery.
+//!    first, since that takes one round trip instead of a `401` plus full rediscovery.
 //! 2. If that comes back [`AuthorizationRequired`], run the dance and mount
 //!    again with the new token.
 //! 3. Anything else, or a second failure, is a mount failure like any other:
@@ -71,7 +71,7 @@ pub async fn mount_all(
             Err(e) => format!("{e:#}"),
         };
         if !entry.optional {
-            // The reason and the fix ride the returned error — the create
+            // The returned error contains the reason and the fix — the create
             // response is where the operator reads it, and no print repeats it.
             return Err(format!(
                 "mcp server `{name}` is declared in the configuration but did not mount: \

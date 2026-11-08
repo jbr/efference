@@ -108,14 +108,14 @@ async fn triage_is_shown_the_masked_result() {
         1 => Canned::stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
         _ => Canned::stream(end_turn()),
     });
-    // The value reaches the child as an ordinary `[env]` entry, so the tool prints it
+    // The value is supplied to the child as an ordinary `[env]` entry, so the tool prints it
     // and the masker is what removes it — not the command.
     let env = masking(secret);
     let (host, runtime, _dir) = start(&upstream, env).await;
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    // The loop is idle until the submission reaches it, so the turn is waited for by
+    // The loop is idle until the submission is delivered, so the turn is waited for by
     // what it did as well as by the phase, which is idle in both states.
     session
         .wait_until_with(&upstream, "the turn finishes", || {

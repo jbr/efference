@@ -21,7 +21,7 @@ use crate::record::session_dir::{DIR_MODE, FILE_MODE};
 /// The files beside the control socket that hold user state or secrets.
 /// `state.db` is the current store (the name of `crate::platform::state::RELATIVE_PATH`)
 /// and `config.toml` the user configuration; the rest are legacy paths a machine
-/// may still carry, tightened too.
+/// may still have, tightened too.
 const STATE_FILES: [&str; 5] = [
     "state.db",
     "config.toml",
@@ -42,7 +42,7 @@ pub(crate) fn tighten_state_dir(dir: &Path) {
 }
 
 /// Tighten the host socket itself, after the bind mints it under the process
-/// umask. Owner-only is exactly the accounts that may reach the control
+/// umask. Owner-only is exactly the accounts that may connect to the control
 /// channel: connecting to a socket needs write permission.
 pub(crate) fn tighten_socket(socket: &Path) {
     tighten(socket, DIR_MODE);
@@ -73,7 +73,7 @@ pub(crate) fn tighten_project_base(base: &Path) {
 }
 
 /// Tighten a file efference just wrote that it did not create with
-/// [`FILE_MODE`] (a copy carries its source's mode; a plain write takes the umask's).
+/// [`FILE_MODE`] (a copy has its source's mode; a plain write takes the umask's).
 pub(crate) fn tighten_file(path: &Path) {
     tighten(path, FILE_MODE);
 }

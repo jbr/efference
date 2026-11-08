@@ -152,8 +152,8 @@ async fn a_message_queues_behind_a_gate() {
 }
 
 /// While the child asks, a message without `reply_to` is refused with the question;
-/// one naming it answers it; and a reply naming it once it was answered is refused,
-/// saying who answered and how.
+/// one referencing it is accepted as an answer; and a reply referencing it once answered is refused,
+/// with who answered and how in the refusal.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn questions_are_answered_by_naming_them() {
     let fixture = Fixture::new().await;

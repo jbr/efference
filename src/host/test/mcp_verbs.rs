@@ -1,6 +1,6 @@
 //! The agent verbs over the control channel, as `efference mcp` and the command line
 //! send them (docs/tools.md, docs/control-api.md): an operator client drives every
-//! session, and a turn from an agent answers a question only by naming it.
+//! session, and an agent answers a question only by naming it in a turn.
 
 use super::*;
 use crate::clients::control_tools::{ClientExecutor, Control, Decide, Executor, Message};
@@ -33,7 +33,7 @@ async fn mounted(shared: &Arc<Session>) -> Control {
     )
 }
 
-/// The context a call from Claude Code carries.
+/// The context in a call from Claude Code.
 fn claude_code() -> RequestContext {
     RequestContext::from_params(Some(&serde_json::json!({
         "_meta": {
@@ -125,8 +125,8 @@ async fn decide_maps_the_seq_and_records_the_client() {
 }
 
 /// `escalate` over MCP goes to the operator, whose side the mounting harness is on: the
-/// call stays held, the gate topic and the log name the client as its escalator with
-/// its note, and the status reads it as escalated to the operator.
+/// call stays held, the gate topic and the log contain the client as its escalator with
+/// its note, and the status is escalated to the operator.
 #[tokio::test]
 async fn escalate_over_mcp_goes_to_the_operator() {
     let shared = child();
@@ -251,7 +251,7 @@ async fn every_sender_names_the_question() {
     assert_eq!(wait.reply().await.expect("answered").source, None);
 }
 
-/// `POST /turns` answers a pending question only by naming it, whoever sends it:
+/// A client answers a pending question with `POST /turns` only by naming it:
 /// otherwise `409 not_delivered`, the pending ask in `detail`. A turn naming a question
 /// that is not pending is refused the same way.
 #[tokio::test]

@@ -14,7 +14,7 @@ use super::state::InteractiveState;
 /// around it (docs/tui.md).
 const CODE_DIM_BLEND: f32 = 0.55;
 
-/// Whether a style carries syntax information worth keeping distinguishable in
+/// Whether a style contains syntax information worth keeping distinguishable in
 /// the dimmed register. These are the categories a highlighter assigns; the
 /// prose and structural styles around them dim the whole way.
 fn is_code_style(style: SpanStyle) -> bool {

@@ -32,8 +32,8 @@ impl Client {
     /// retried once as
     /// `auto`, with a user line naming the tool and thinking kept off as the forced
     /// call had it (docs/transport.md). Some models refuse forced choice outright
-    /// and their metadata does not say so; the retry is how the client learns it.
-    /// When the retry succeeds, the client remembers, and later forced requests go
+    /// and their metadata does not indicate it; the retry is how the client detects it.
+    /// When the retry succeeds, the client records that, and later forced requests go
     /// straight to the fallback. When it fails too, the rejection had another cause: the
     /// first error is returned and nothing is learned.
     pub async fn complete(
@@ -92,17 +92,17 @@ impl Client {
             .await
     }
 
-    /// This client as the fallback sends: thinking off, which the forced request had,
+    /// The client the fallback is sent with: thinking off, as the forced request had it,
     /// and off the cache chain, since the fallback's body is not the turn's prompt.
     pub(super) fn unforced(&self) -> Client {
         self.clone().without_thinking().without_cache_chain()
     }
 
     /// The request a [`Self::complete`] over these inputs went out as, read after it
-    /// returned (docs/transport.md): as given, or — once this client has learned the
+    /// returned (docs/transport.md): as given, or — once this client has recorded that the
     /// model refuses a forced choice — `auto`, with [`forced_choice_instruction`]
-    /// appended and thinking off. The lesson is only ever learned by a fallback that
-    /// succeeded, so after an answered `complete` the flag says which form its last
+    /// appended and thinking off. The refusal is only ever recorded after a fallback that
+    /// succeeded, so after an answered `complete` the flag shows which form its last
     /// attempt took.
     pub(crate) fn sent_form(
         &self,

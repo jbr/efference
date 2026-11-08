@@ -1,8 +1,8 @@
 //! The archived-session inventory: a filesystem scan of one working root's
 //! `.efference/` directory (docs/log-and-projection.md).
 //!
-//! A session is a directory holding a `log.jsonl`, and the log answers every
-//! question a listing asks. The scan reads each log's header, first and last
+//! A session is a directory holding a `log.jsonl`, and the log contains all the
+//! information a listing needs. The scan reads each log's header, first and last
 //! entries, and title — never parsing a log whole, so cost per log does not grow
 //! with its length.
 //!
@@ -111,7 +111,7 @@ impl Inventory {
                     );
                     rows.push(row);
                 }
-                // Not cached: a refused read says nothing about the length, so
+                // Not cached: a refused read provides no information about the length, so
                 // the next refresh tries again.
                 Err(error) => {
                     self.cache.lock().unwrap().remove(&log);

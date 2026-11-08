@@ -43,7 +43,7 @@ fn add_makes_a_worktree_on_a_new_branch_at_head_and_remove_undoes_it() {
     std::fs::remove_dir_all(&project).unwrap();
 }
 
-/// A `GIT_DIR` in the session environment, as one captured inside a git hook carries,
+/// A `GIT_DIR` in the session environment, as in one captured inside a git hook,
 /// names another repository; the worktree is still made in the project's.
 #[test]
 fn add_ignores_a_git_dir_in_the_environment() {
@@ -209,9 +209,9 @@ fn progress_redraws_keep_their_last_state() {
     assert_eq!(without_overwrites("no newline"), "no newline");
 }
 
-/// What an archive answers with about the worktree, in the three shapes it takes
+/// What an archive returns about the worktree, in the three shapes it takes
 /// (docs/control-api.md): the host builds each from the outcome and a client reads the
-/// key that names which it was. A git failure is not reachable from a route test, so its
+/// key identifying which it was. A git failure is not reachable from a route test, so its
 /// bytes are pinned here.
 #[test]
 fn a_retired_worktree_answers_with_the_key_that_names_it() {

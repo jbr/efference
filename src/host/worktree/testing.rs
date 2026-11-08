@@ -1,6 +1,6 @@
 //! Git for tests that build scratch repositories: one `git` that ignores the
 //! developer's own configuration, so a global `commit.gpgsign` (a signing agent that
-//! prompts, or refuses) or a hook path cannot reach a test's commit.
+//! prompts, or refuses) or a hook path cannot affect a test's commit.
 
 use std::path::Path;
 use std::process::Command;

@@ -7,7 +7,7 @@ use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, ev
 use crate::record::log::Exclusion;
 use crate::session::submitted::SubmittedTurn;
 
-/// A finalized turn that only thinks.
+/// A finalized turn containing only thinking.
 fn thinking_only() -> String {
     events(&[
         r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),

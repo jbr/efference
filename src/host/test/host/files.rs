@@ -63,7 +63,7 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
 /// stage hands its stream to the transport through the upgrade hook, which the
 /// server looks up on the whole stack, so a `/files` handler reached through a
 /// wrapper that forwards only `run` answers `200` and closes. A client then
-/// hears nothing until its reconnect, and polls on the reconnect interval.
+/// receives nothing until its reconnect, and polls on the reconnect interval.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_hosted_sessions_directory_stream_delivers_its_pokes() {
     let roots = Roots::new();

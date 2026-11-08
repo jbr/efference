@@ -142,7 +142,7 @@ async fn query_sessions_reports_an_invalid_field_without_hiding_the_rest() {
 }
 
 /// A body that is not a JSON object has no fields to resolve independently, so it
-/// is the one shape that answers `400` rather than a preview.
+/// is the one shape that receives `400` rather than a preview.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn query_sessions_refuses_a_non_object_body() {
     let host = Host::new(one_connection_registry(), baseline_env());
@@ -210,7 +210,7 @@ async fn a_network_host_previews_and_creates_the_same_way() {
     host.swansong().shut_down().await;
 }
 
-/// **The preview says whether its `cwd` can start a worktree** (docs/worktrees.md): a
+/// **The preview indicates whether its `cwd` can start a worktree** (docs/worktrees.md): a
 /// directory outside any repository and a fresh `git init` with no commit cannot, a
 /// repository with a commit can, and so can a directory inside it. A `cwd` that did not
 /// decode answers `false` beside its issue.

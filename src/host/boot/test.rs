@@ -221,7 +221,7 @@ pub(crate) fn drop_boot(boot: SessionBoot<MountedSpotter>) {
 }
 
 /// The error a preparation that must fail returned, cleaning up after it if it
-/// unexpectedly succeeded. `Result::expect_err` wants a `Debug` boot.
+/// unexpectedly succeeded. `Result::expect_err` requires a `Debug` boot.
 pub(super) fn failure(result: Result<SessionBoot<MountedSpotter>, Error>, what: &str) -> Error {
     match result {
         Ok(boot) => {

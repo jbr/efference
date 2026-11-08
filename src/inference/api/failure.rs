@@ -24,7 +24,7 @@ pub enum FailureClass {
     Aborted,
     /// The credential itself expired, rather than being wrong. A provider that
     /// names the expiry (`token_expired`) is the one case classified apart from
-    /// the other rejected credentials, which [`rejects_credential`] recognizes
+    /// the other rejected credentials, which [`rejects_credential`] matches
     /// without a class of their own (docs/transport.md). Terminal if the
     /// re-read changes nothing.
     CredentialExpired,
@@ -65,7 +65,7 @@ const TERMINAL: &[&str] = &[
     "cyber_policy",
     "misalignment_policy_violation",
     // z.ai, whose codes are numeric strings: no balance and no Coding Plan
-    // package, answered as a 429 whose `type` says `rate_limit_error`.
+    // package, answered as a 429 with `type` set to `rate_limit_error`.
     "1113",
 ];
 
@@ -113,7 +113,7 @@ fn body_names(body: &str) -> (Option<String>, Option<String>) {
             .and_then(Value::as_str)
             .map(str::to_string)
     };
-    // The outer `type` of an envelope is `"error"`, which names nothing; the
+    // The outer `type` of an envelope is `"error"`, not a class; the
     // nested one is the class.
     (field("type").filter(|k| k != "error"), field("code"))
 }
@@ -125,10 +125,10 @@ pub fn classify_body(body: &str) -> FailureClass {
     classify(kind.as_deref(), code.as_deref())
 }
 
-/// Whether the body of a 401 or 403 says the credential was refused, so a second
+/// Whether the body of a 401 or 403 indicates the credential was refused, so a second
 /// read of its source is worth one attempt (docs/transport.md): the provider named
-/// an expiry or one of the [`CREDENTIAL`] names, or named nothing this table
-/// knows (a gateway's HTML page, a code the table has not met). A name for
+/// an expiry or one of the [`CREDENTIAL`] names, or supplied no name in this table
+/// (a gateway's HTML page, a code absent from the table). A name for
 /// something else — a quota, a spend limit, a missing model — is not a refusal of
 /// the credential, and re-reading it would change nothing.
 pub fn rejects_credential(body: &str) -> bool {
@@ -157,7 +157,7 @@ impl OpenError {
     /// Classify an open failure by its status and the upstream's words. No status
     /// means no response arrived — a refused or timed-out connection — which is
     /// transient. The statuses the transport itself retries are transient unless
-    /// the body names a terminal condition. Every other status is a rejection of
+    /// the body contains a terminal condition. Every other status is a rejection of
     /// the request, which a retry would repeat.
     pub(super) fn new(status: Option<u16>, message: String, detail: &str) -> Self {
         let class = match status {

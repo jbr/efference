@@ -135,7 +135,7 @@ async fn mcp_call(method: &str, params: Value) -> JsonRpcResponse {
 
 /// The MCP mount includes its agent on every call but `create`, `status` and `wait`: a
 /// call without it is refused before any tool runs (docs/operating.md). The schema
-/// that says so is pinned in `surfaces`.
+/// with that requirement is pinned in `surfaces`.
 #[tokio::test]
 async fn an_mcp_call_without_agent_is_refused() {
     for (name, arguments) in [
@@ -356,7 +356,7 @@ fn source_comes_from_client_info() {
 /// A state body with a phase marker, so a test can tell which answer it holds.
 const STATE_BODY: &str = r#"{"loop_phase":{"phase":"requesting"}}"#;
 
-/// A client executor over an in-memory host whose waits answer `efference-settled`
+/// A client executor over an in-memory host whose wait responses include `efference-settled`
 /// from `header(n)`, `n` counting the wait requests so far (`None` sends no header),
 /// plus the counter. Reads without `wait` answer the same body, unmarked.
 fn waiting_executor(

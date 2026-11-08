@@ -3,15 +3,15 @@
 //!
 //! A creation or a resume puts its id here as [`Entry::Starting`] before anything is
 //! prepared, and adoption replaces it with [`Entry::Hosted`]. The accessors name which
-//! kind they read, so a lookup that means a running session cannot be answered by one
-//! that is still starting, and one that means "is this id taken" sees both.
+//! kind they read, so a lookup for a running session cannot return one
+//! that is still starting, and a lookup for a taken id includes both.
 
 use super::*;
 use crate::host::starting::Starting;
 
 /// One id's entry.
 // One entry per session on the host, so the size of the larger variant is never
-// multiplied by anything that would make boxing it pay.
+// multiplied enough to make boxing it worthwhile.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub(crate) enum Entry {

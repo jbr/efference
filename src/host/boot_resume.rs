@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::{Semaphore, watch};
 
 /// How many sessions prepare at once during the boot resume. Preparation runs each
-/// session's env hook and mounts its MCP servers, which spawns processes and may reach
+/// session's env hook and mounts its MCP servers, spawning processes that may connect to
 /// the network; the pass takes this many at a time and starts the next when one has
 /// started or failed.
 pub(super) const BOOT_PREPARING: usize = 4;
@@ -182,7 +182,7 @@ fn header_creator(root: &std::path::Path, id: &str) -> Option<String> {
     header.metadata()?.created_by.clone()
 }
 
-/// Drop the creator from any session whose chain of creators leads back to itself, so
+/// Drop the creator from any session whose chain of creators contains itself, so
 /// no session waits on a cycle. Headers written by this host never form one.
 fn without_cycles(mut sessions: Vec<Reopening>) -> Vec<Reopening> {
     let creators: HashMap<String, Option<String>> = sessions

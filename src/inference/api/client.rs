@@ -53,7 +53,7 @@ const RETRY_MAX_ATTEMPTS: u32 = 4;
 const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
 
 /// The non-2xx statuses the transport retries on its own, before the agent loop
-/// sees a failure (docs/transport.md): the rate-limit and server-side family.
+/// receives a failure (docs/transport.md): the rate-limit and server-side family.
 const RETRY_STATUSES: [Status; 5] = [
     Status::TooManyRequests,
     Status::InternalServerError,
@@ -64,7 +64,7 @@ const RETRY_STATUSES: [Status; 5] = [
 
 /// The previous response's id on one client's cache chain (docs/transport.md): the
 /// value the next request names as `diagnostics.previous_message_id`. A named type
-/// because a bare `Mutex<Option<String>>` in a struct field says nothing about what
+/// because a bare `Mutex<Option<String>>` in a struct field does not specify what
 /// the string is, and no compile error would follow from passing it the wrong one.
 type CacheChain = Arc<Mutex<Option<String>>>;
 
@@ -82,8 +82,8 @@ fn cache_chain() -> CacheChain {
 ///
 /// `Clone` is a cheap hand-off of *the same* client: the Arc-backed live states
 /// (reservation, upstream retry and failure, the cache chain) are shared, so a
-/// clone observes and joins the same retry story the original does — and the keepalive
-/// ping, which is a clone, names the same previous response the turn did.
+/// clone uses the same retry state as the original — and the keepalive
+/// ping, which is a clone, uses the same previous response as the turn did.
 #[derive(Clone)]
 pub struct Client {
     http: HttpClient,
@@ -114,14 +114,14 @@ pub struct Client {
     /// daemon's `GET /state` view (docs/transport.md).
     reservation: ReservationState,
     /// How long one response's SSE stream may stay open (docs/transport.md).
-    /// Session-constant and transport-only — it never reaches the request body,
-    /// so it cannot move the cached prefix. Both stream surfaces ride it: the
+    /// Session-constant and transport-only — it is never in the request body,
+    /// so it cannot move the cached prefix. Both stream surfaces use it: the
     /// turn loop and the triage call the same [`Self::complete`].
     stream_ceiling: Duration,
-    /// The operator's interrupt, when this client's reads answer to one
+    /// The operator's interrupt, when this client's reads respond to one
     /// (docs/control-channel.md): `POST /loop/interrupt` fires it, and a read in
     /// flight ends there — the stream is dropped, which is what frees a hung
-    /// socket, and the partial comes back marked [`FailureClass::Aborted`].
+    /// socket, and the partial is returned marked [`FailureClass::Aborted`].
     /// `None` for clients nothing interrupts (the spotter, the dev verbs).
     abort: Option<Arc<tokio::sync::Notify>>,
     /// The loop's interrupt latch, on the model request the loop sends between its
@@ -160,7 +160,7 @@ pub struct Client {
     /// above: the model reads images, so a later rejection has another cause.
     images_accepted: Arc<std::sync::atomic::AtomicBool>,
     /// A retry in flight, written by both retry loops (docs/transport.md). It
-    /// rides on the client because the triage retries with a `Client` and no
+    /// is on the client because the triage retries with a `Client` and no
     /// `Session` in scope.
     upstream_retry: UpstreamRetryState,
     /// Failed HTTP attempts the retry handler absorbed, waiting for the agent
@@ -178,8 +178,8 @@ pub struct Client {
     /// Where this client reports each request's stages, installed by the session
     /// (`set_stage_sink`; docs/log-and-projection.md). `None` records nothing.
     stages: Option<StageSink>,
-    /// What the caller says these requests are for, tagged on each recorded stage
-    /// ([`Self::with_origin`]). [`RequestOrigin::Unknown`] until a caller says.
+    /// What the caller specifies these requests are for, tagged on each recorded stage
+    /// ([`Self::with_origin`]). [`RequestOrigin::Unknown`] until a caller sets it.
     origin: RequestOrigin,
     /// This client's cache chain, when it has one: the id of the previous response, which
     /// the next request names as `diagnostics.previous_message_id` (docs/transport.md).
@@ -223,10 +223,10 @@ impl Client {
             // `with_statuses` replaces the default (429, 503), so enumerate the
             // whole transient set. Other 4xx responses remain immediate errors.
             .with_statuses(RETRY_STATUSES)
-            // The status set above, with one veto: a body that names a condition
+            // The status set above, with one veto: a body specifying a condition
             // no retry can change (`api/failure.rs`) — the Codex backend answers
-            // an exhausted plan with a 429 whose body says `usage_limit_reached`
-            // and when it resets — fails at once instead of spending the
+            // an exhausted plan with a 429 whose body contains `usage_limit_reached`
+            // and when it resets — fails at once instead of using the retry
             // schedule on the same answer. The status handler runs first in the
             // reverse pass and stashes the body, which is what this reads.
             .retry_when(|conn| {
@@ -332,7 +332,7 @@ impl Client {
         self
     }
 
-    /// A user turn is starting (docs/transport.md): forget the previous turn's
+    /// A user turn is starting (docs/transport.md): clear the previous turn's
     /// routing token so the first request of this one goes out without a header
     /// and the backend issues a fresh token. Called by the agent loop at each
     /// trajectory start and each queued user turn delivered mid-task; the triage shares this
@@ -487,7 +487,7 @@ impl Client {
     }
 
     /// The authenticated POST every request starts from. The `anthropic-version`
-    /// header is part of the Messages dialect, not a provider identity, so it rides
+    /// header is part of the Messages dialect, not a provider identity, so it is sent with
     /// only that dialect (docs/transport.md).
     fn post(&self) -> Conn {
         let conn = self
@@ -516,8 +516,8 @@ impl Client {
 
     /// The Codex backend's routing headers (docs/transport.md): the model hint
     /// on every request, and the turn's sticky token once the backend has issued
-    /// one. Both are transport-only — neither reaches the body, so neither can
-    /// move the cached prefix; what they move is which machine sees it.
+    /// one. Both are transport-only — neither is in the body, so neither can
+    /// move the cached prefix; they determine which machine receives it.
     fn with_turn_routing(&self, conn: Conn) -> Conn {
         let provider = &self.endpoint.provider;
         let conn = match provider.routing_hint_header() {
@@ -530,8 +530,8 @@ impl Client {
         }
     }
 
-    /// The session's `--temperature` in the provider's native float range, as a
-    /// request body carries it; `None` when the session set none.
+    /// The session's `--temperature` in the provider's native float range, as in a
+    /// request body; `None` when the session set none.
     fn wire_temperature(&self) -> Option<f64> {
         self.temperature
             .map(|t| self.endpoint.provider.map_temperature(t))
@@ -595,9 +595,9 @@ impl Client {
     }
 
     /// The `reasoning` field a request carries: OpenRouter's switch, off, and only
-    /// where `thinking` says nothing — a foreign model on OpenRouter gets that
-    /// field omitted, so the switch this client asked for has to be said in
-    /// OpenRouter's own word. `None` everywhere else, which serializes nothing.
+    /// where `thinking` is omitted — a foreign model on OpenRouter gets that
+    /// field omitted, so the switch this client requested must use
+    /// OpenRouter's own spelling. `None` everywhere else, which serializes nothing.
     pub(super) fn reasoning_off(&self, thinking: Thinking) -> Option<ReasoningOff> {
         (self.thinking_off && thinking.is_omit() && self.endpoint.provider == Provider::OpenRouter)
             .then_some(ReasoningOff { enabled: false })
@@ -605,7 +605,7 @@ impl Client {
 
     /// Send every request with thinking off, whatever the model would do on its
     /// own (docs/triage.md): the separate-model triage's default. Spelled
-    /// the way the model's metadata says ([`ThinkingSupport::off`]), so set the
+    /// according to the model's metadata ([`ThinkingSupport::off`]), so set the
     /// capability answer with [`Self::with_thinking`] as well.
     pub fn without_thinking(mut self) -> Self {
         self.thinking_off = true;
@@ -621,14 +621,14 @@ impl Client {
         self
     }
 
-    /// Make this client's reads answer to the operator's interrupt
+    /// Make this client's reads interruptible by the operator
     /// (docs/control-channel.md). Set by the runtime once the session exists,
     /// on the agent client and the own-triage client alike.
     pub fn set_abort(&mut self, abort: Arc<tokio::sync::Notify>) {
         self.abort = Some(abort);
     }
 
-    /// A client whose reads do not answer to the operator's interrupt: for a
+    /// A client whose reads are unaffected by the operator's interrupt: for a
     /// detached request that is not part of the trajectory the interrupt stops
     /// (docs/consolidate.md).
     pub fn without_interrupt(mut self) -> Self {

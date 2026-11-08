@@ -95,7 +95,7 @@ pub use wait::Wait;
 // The verb table (docs/tools.md): each verb's tool struct, the name it is advertised
 // under, and the sets that list it — a session's own toolbox, `efference mcp`, and
 // `efference control` — with `-` for a set that does not. A set lists its verbs in table
-// order, which is the order a mounting harness caches and a session's `tools[]` carries.
+// order, which is the order a mounting harness caches and a session's `tools[]` contains.
 // `status` has a struct per set, since the MCP one adds `follow` and the command line's
 // repeats `--agent` and prints JSON on request; `as Status` names the latter two as the
 // command line names its subcommand.
@@ -167,7 +167,7 @@ impl crate::tools::SessionControl for Control {
 
     /// Whether `call` is this session archiving its own predecessor — the session whose
     /// recorded succession names the caller (docs/permissions.md). Only the in-process
-    /// [`Executor::Host`] knows the caller; the host wrote the link at `hand_off`, so the
+    /// [`Executor::Host`] has the caller; the host wrote the link at `hand_off`, so the
     /// agent cannot assert it.
     fn completes_hand_off(&self, call: &ToolCall) -> bool {
         match &self.executor {
@@ -177,9 +177,9 @@ impl crate::tools::SessionControl for Control {
     }
 
     /// Resolve an allowing `agents__decide` call to the leaf action it authorizes
-    /// (docs/permissions.md). Only the in-process [`Executor::Host`] can: it knows
+    /// (docs/permissions.md). Only the in-process [`Executor::Host`] can: it has
     /// the caller and can read the target's pending gate. The HTTP executor never
-    /// sees this call — the binding happens inside the target's own daemon.
+    /// receives this call — the binding happens inside the target's own daemon.
     fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
         match &self.executor {
             Executor::Host(state) => state.resolve_bound_action(call),
@@ -216,8 +216,8 @@ impl Executor {
     }
 }
 
-/// What a verb that is not on the agent surfaces answers when an in-session executor
-/// reaches it: these are the operator's, on `efference control` (docs/operating.md).
+/// The error for a verb that is not on the agent surfaces when an in-session executor
+/// invokes it: these are the operator's, on `efference control` (docs/operating.md).
 fn operator_verb(name: &str) -> anyhow::Error {
     // docs/tools.md
     anyhow!("`{name}` is an operator verb on `efference control`, not mounted in a session")

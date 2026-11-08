@@ -36,7 +36,7 @@ fn empty_tool_input_is_empty_object() {
 
 /// A streamed thinking block is assembled into a leading `ContentBlock::Thinking`
 /// (docs/transport.md, docs/transport.md): `thinking_delta` chunks concatenate,
-/// the `signature_delta` is preserved verbatim (mandatory for replay), and the block leads
+/// the `signature_delta` is preserved verbatim (mandatory for replay), and the block is first in
 /// the turn — before the text block that follows it in the stream.
 #[test]
 fn assembles_thinking_block_leading_the_turn() {

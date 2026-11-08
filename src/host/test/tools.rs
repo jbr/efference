@@ -58,7 +58,7 @@ async fn a_loop_owned_tools_full_definition_is_present() {
     // Unlike a `Toolbox`-mounted tool, the loop-owned family is advertised
     // without `intent` injected (`agent::tool_definitions` pushes these onto
     // the array *after* `with_intent` already ran over the toolbox half), so
-    // the served schema must not claim a property the wire never carried.
+    // the served schema must not include a property absent from the wire.
     assert!(
         entry["input_schema"]["properties"].get("intent").is_none(),
         "check_inbox declares no properties at all, let alone an injected intent: {entry}"

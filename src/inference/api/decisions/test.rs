@@ -16,7 +16,7 @@ fn a_boolean_question_serializes_as_the_route_documents() {
     );
 }
 
-/// A score question carries its levels as an ordered array, lowest first.
+/// A score question contains its levels as an ordered array, lowest first.
 #[test]
 fn a_score_question_serializes_its_levels_in_order() {
     let question = Question::score("How concerning?", ["Routine.", "Mild.", "Severe."]);
@@ -133,7 +133,7 @@ fn usage_maps_with_zero_cache_counts() {
 }
 
 /// The first-party API validates its body and answers an unrecognized top-level
-/// key with a 422, so `session_id` rides only where the provider documents it.
+/// key with a 422, so `session_id` is sent only where the provider documents it.
 #[test]
 fn the_session_id_rides_only_where_it_is_documented() {
     let body = |provider: Provider| {
@@ -246,7 +246,7 @@ async fn a_long_retry_after_is_not_waited_out() {
     );
 }
 
-/// The first-party listing's shape, as `GET /v1/models` answered on 2026-09-25:
+/// The first-party listing's shape, as returned by `GET /v1/models` on 2026-09-25:
 /// aliases are listed by name, so a configured `jev-latest` matches exactly.
 #[test]
 fn the_decisions_listing_names_aliases() {

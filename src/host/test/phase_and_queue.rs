@@ -39,7 +39,7 @@ fn idle_with_a_turn_queued() -> Arc<Session> {
 }
 
 /// **The settle race.** The idle loop claims the queued turn while a `settle` is between its
-/// reads: `settle` sees the turn queued or the loop running it, not an idle loop with an
+/// reads: for `settle` the turn is queued or the loop is running it, not an idle loop with an
 /// empty queue.
 #[test]
 fn a_claim_between_the_reads_is_not_settled() {
@@ -77,8 +77,8 @@ fn a_submit_and_a_turn_ending_between_the_reads_are_not_settled() {
     );
 }
 
-/// The loop takes a pending continue while a `settle` is between its reads: `settle` sees the
-/// continue pending or taken, not an idle loop with nothing pending.
+/// The loop takes a pending continue while a `settle` is between its reads: for `settle` the
+/// continue is pending or taken, not an idle loop with nothing pending.
 #[test]
 fn a_continue_taken_between_the_reads_is_not_settled() {
     let (session, _rx) = Session::in_memory();
@@ -110,7 +110,7 @@ fn a_claim_between_the_reads_leaves_the_next_turn_queued() {
 }
 
 /// A continue asked for while the loop claims a turn is declined as busy: accepted, it would
-/// re-prompt the wire once the claimed turn ended.
+/// cause another model request once the claimed turn ended.
 #[test]
 fn a_claim_between_the_reads_declines_a_continue() {
     let session = idle_with_a_turn_queued();

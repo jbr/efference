@@ -190,7 +190,7 @@ fn priced_rule_accepts_the_glm_example() {
 }
 
 /// A ping whose completion cost exceeds half the premium is refused, with the
-/// numbers that decided it.
+/// numbers used in the decision.
 #[test]
 fn priced_rule_refuses_a_ping_costing_over_half_the_premium() {
     let prices = glm();
@@ -211,7 +211,7 @@ fn priced_rule_refuses_a_ping_costing_over_half_the_premium() {
     assert!((premium_usd.unwrap() - 0.024).abs() < 1e-9);
 }
 
-/// Without prices the token-ratio rule decides, and a ping that generated nothing
+/// Without prices the token-ratio rule applies, and a ping that generated nothing
 /// passes either rule.
 #[test]
 fn unpriced_sessions_fall_back_to_the_token_ratio() {
@@ -356,7 +356,7 @@ async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
     task.abort();
 }
 
-/// A permanent rejection still ends the loop, and the state says why.
+/// A permanent rejection still ends the loop, and the state includes the reason.
 #[tokio::test(start_paused = true)]
 async fn a_permanent_rejection_ends_the_loop() {
     let upstream = ScriptedUpstream::new(|_| Canned::json(400, r#"{"error":"bad"}"#));

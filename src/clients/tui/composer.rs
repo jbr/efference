@@ -257,7 +257,7 @@ impl Composer {
             KeyCode::Char('_') if alt => self.redo(),
 
             // Submit on plain Enter; insert a newline on C-j / Alt-Enter (Enter is
-            // ambiguous for newline across terminals, so the explicit keys win).
+            // ambiguous for newline across terminals, so the explicit keys take precedence).
             KeyCode::Enter if alt => self.insert_newline(),
             KeyCode::Enter => {
                 if self.is_empty() {

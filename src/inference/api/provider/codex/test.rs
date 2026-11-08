@@ -1,5 +1,5 @@
-//! Tests for the subscription backend's model catalog: what an entry reports,
-//! what a model the catalog does not name gets, and what a menu is offered
+//! Tests for the subscription backend's model catalog: an entry's fields,
+//! the baseline for a model absent from the catalog, and the menu entries offered
 //! (docs/transport.md).
 //!
 //! The bodies here are trimmed from what the route answered on 2026-09-24,
@@ -104,7 +104,7 @@ fn an_entry_reports_its_window_levels_and_modalities() {
     assert!(text_only.check_effort("ultra", "gpt-5.5").is_ok());
 }
 
-/// A model the catalog does not name is not an error and not a guess: it passes
+/// A model absent from the catalog is not an error and not a guess: it passes
 /// boot on the arm's baseline, with no effort validation to refuse a configured
 /// level over. This is what keeps a model released after the build usable — the
 /// turn is the test of whether the provider serves it.
@@ -154,7 +154,7 @@ fn a_body_that_is_not_a_catalog_is_refused() {
 
 /// The read is cached so a session's boot and its spotter's lookup share one
 /// round trip, and the entry stands for the interval a catalog takes to change.
-/// Past it the next lookup asks again.
+/// Past it the next lookup reads the catalog again.
 #[test]
 fn a_cached_catalog_is_fresh_within_its_ttl_and_stale_after() {
     let read_at = std::time::Instant::now();

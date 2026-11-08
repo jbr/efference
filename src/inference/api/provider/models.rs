@@ -1,8 +1,8 @@
 //! Reading a connection's model listing as normalized rows (docs/model-catalog.md).
 //!
 //! Each provider's normalization sits beside its other listing code
-//! (`anthropic.rs`, `codex.rs`, `openrouter.rs`, `listing.rs`); this file picks
-//! the source for an endpoint. Storage, age, and refresh are the catalog's
+//! (`anthropic.rs`, `codex.rs`, `openrouter.rs`, `listing.rs`); endpoint source
+//! selection is here. Storage, age, and refresh are the catalog's
 //! (`src/inference/catalog.rs`).
 
 use super::row::{ListedModel, ModelKind};
@@ -37,10 +37,10 @@ impl Endpoint {
             // the capability path uses, minus the entries it hides from a menu
             // (`provider/codex.rs`).
             Provider::OpenAICodex => Ok(codex::catalog(self).await?.rows()),
-            // The platform listing names every model the key can reach —
+            // The platform listing includes every model available to the key —
             // embeddings, speech, image, and dated snapshots among them — and
-            // says nothing of which are agent models, so the menu is the Codex
-            // catalog's suggested entries that the listing also names. The
+            // has no indication of which are agent models, so the menu is the Codex
+            // catalog's suggested entries that the listing also includes. The
             // catalog is a borrowed source here: unreadable, the menu is the
             // listing less what has passed its shutdown date.
             Provider::OpenAI => {
@@ -91,7 +91,7 @@ impl Endpoint {
 
     /// How a spotter model takes `thinking` (`ModelCapabilities::thinking`): the
     /// prose rung forces its `spot` call, which sends thinking off, spelled as the
-    /// model's metadata says (docs/transport.md). The lookup doubles as a text
+    /// model's metadata specifies (docs/transport.md). The lookup doubles as a text
     /// model's existence check. A decision model sends no `thinking` field, so it
     /// is not asked.
     pub async fn spotter_thinking(
@@ -106,7 +106,7 @@ impl Endpoint {
     }
 
     /// `(id, display name)` pairs for a flat prompt, in the listing's order. An
-    /// OpenRouter connection answers none here: its catalog is a few hundred
+    /// OpenRouter connection has none here: its catalog is a few hundred
     /// rows, which a line prompt does not serve.
     pub async fn list_models(&self) -> Result<Vec<(String, String)>, Error> {
         if self.provider == Provider::OpenRouter {
@@ -126,7 +126,7 @@ impl Endpoint {
 
 /// The `openai` platform menu (docs/model-catalog.md): the catalog's suggested
 /// entries whose id the platform listing also names, in the catalog's order and
-/// with its fields. With no catalog, or a catalog that names none of the
+/// with its fields. With no catalog, or a catalog containing none of the
 /// listing's models, the listing's own rows without those whose `shutdown_date`
 /// is before `today` (`YYYY-MM-DD`, UTC); the first case logs the catalog's
 /// failure as the capability path does (`provider/codex.rs`).

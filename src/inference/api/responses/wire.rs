@@ -82,7 +82,7 @@ impl CacheBreakpoint {
     pub const EXPLICIT: Self = Self { mode: "explicit" };
 }
 
-/// A function result's `output`: a bare string, or parts when images ride along.
+/// A function result's `output`: a bare string, or parts when images are included.
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum FunctionOutput {

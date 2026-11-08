@@ -74,7 +74,7 @@ pub enum Message {
     /// Every key the message arrived with, under its arrival name; `role` is the
     /// tag, so the stored message does not carry it.
     Assistant(CompletionsMessage),
-    /// A tool result. Carries text only: a result's images ride the `user`
+    /// A tool result. Contains text only: a result's images are in the `user`
     /// message after the run of tool messages ([`encode_user`]). Completions has
     /// no error flag, so `is_error` does not reach this wire, as on Responses.
     Tool {

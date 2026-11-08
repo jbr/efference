@@ -189,7 +189,7 @@ impl Host {
 }
 
 /// What an MCP server asking for authorization meets while `starting` is prepared:
-/// the dance names the server in the session's state while it waits, unless `refuse`
+/// the server is named in the session's state while it waits, unless `refuse`
 /// fails the mount instead (docs/mcp-auth.md).
 pub(super) fn authorization_for(starting: &Arc<Starting>, refuse: bool) -> AuthorizationHandling {
     let starting = Arc::downgrade(starting);

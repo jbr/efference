@@ -1,6 +1,6 @@
 //! The host's update check (docs/update-check.md): it asks at start and then about once
 //! a day, and holds what it found for every session's `newer_version` topic. The launch
-//! starts it only when the user configuration answered `[updates] check = true`. It
+//! starts it only when the user configuration has `[updates] check = true`. It
 //! never installs anything.
 
 use crate::session::Session;

@@ -65,7 +65,7 @@ fn models(rows: &[ListedModel]) -> Vec<&str> {
 /// The menu is the catalog's suggested entries the listing also names, in the
 /// catalog's order (not the listing's, which dates newest first) and with the
 /// catalog's fields. A hidden entry and a catalog entry the listing lacks are
-/// out, and so is every listing entry the catalog does not name.
+/// out, and so is every listing entry absent from the catalog.
 #[test]
 fn the_menu_is_the_suggested_catalog_entries_the_listing_names() {
     let catalog = codex::parse(CATALOG).unwrap();
@@ -115,8 +115,8 @@ fn without_the_catalog_the_menu_is_the_listing_less_shut_down_models() {
     assert!(models(&rows).contains(&"sora-2"));
 }
 
-/// A shutdown date in a spelling the parse does not read says nothing, so it
-/// neither drops the entry nor fails the listing.
+/// A shutdown date in a spelling the parse does not read is ignored, so it
+/// neither causes the entry to be dropped nor fails the listing.
 #[test]
 fn an_unreadable_shutdown_date_says_nothing() {
     let body = r#"{"data":[

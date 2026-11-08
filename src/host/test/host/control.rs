@@ -1,4 +1,4 @@
-//! The agent verbs against a host, as `efference mcp` reaches it (docs/tools.md): the
+//! The agent verbs against a host, as accessed by `efference mcp` (docs/tools.md): the
 //! overview of every session, an archive's cascade, and a creation the host cannot run.
 
 use super::*;
@@ -138,7 +138,7 @@ async fn the_overview_reads_every_session_on_the_host() {
     host.swansong().shut_down().await;
 }
 
-/// An archive over the host route names the sessions that ended with it.
+/// An archive over the host route lists the sessions that ended with it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_archive_names_its_cascade() {
     let roots = Roots::new();
@@ -156,8 +156,8 @@ async fn an_archive_names_its_cascade() {
     host.swansong().shut_down().await;
 }
 
-/// A creation naming a model the host cannot run is refused before anything is
-/// minted, and the refusal says what the host offers.
+/// A creation specifying a model the host cannot run is refused before anything is
+/// minted, and the refusal includes what the host offers.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_creation_the_host_cannot_run_names_what_it_offers() {
     let roots = Roots::new();

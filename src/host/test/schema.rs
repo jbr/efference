@@ -44,7 +44,7 @@ const PATH: &str = "web/src/api/protocol.schema.json";
 /// declares for it and names in the comment on every other.
 const TITLE: &str = "ControlChannel";
 
-/// A schema that says nothing but its prose accepts any JSON value, which is what a
+/// A schema containing only prose accepts any JSON value, which is what a
 /// documented `serde_json::Value` field comes out as. json-schema-to-typescript reads such
 /// a schema as an object with any keys and `{}` or `true` as `unknown`, so the first is
 /// marked to read as the second (`tsType` is its own keyword; a validator ignores it).
@@ -154,8 +154,8 @@ fn render(schema: &Value) -> String {
     text
 }
 
-/// The committed schema is what the generator emits now. A change to a type the channel
-/// carries moves it and fails here; regenerate with `EFFERENCE_WRITE_SCHEMAS=1 cargo test
+/// The committed schema is what the generator emits now. A change to a type sent over the channel
+/// moves it and fails here; regenerate with `EFFERENCE_WRITE_SCHEMAS=1 cargo test
 /// schema`, then `pnpm run types` in `web/` for the TypeScript.
 #[test]
 fn the_committed_schema_matches_the_generator() {
@@ -176,7 +176,7 @@ fn the_committed_schema_matches_the_generator() {
 }
 
 /// schemars gives a second type of an already-used name a numeric suffix, in whichever
-/// order the roots reach them, so which of two same-named types keeps the plain name could
+/// order the roots are traversed, so which of two same-named types keeps the plain name could
 /// swap with an unrelated change. Every type has a name of its own instead
 /// (`schemars(rename = …)` on the type).
 #[test]

@@ -112,8 +112,8 @@ impl Grant {
     }
 
     /// Whether the access token is at or past the point where it should be
-    /// renewed. A token with no stated expiry is taken as current: the issuer
-    /// said nothing, and guessing would refresh on every request.
+    /// renewed. A token with no stated expiry is taken as current: no expiry
+    /// was supplied, and guessing would refresh on every request.
     pub fn needs_refresh(&self) -> bool {
         self.renew_at().is_some_and(|at| at <= SystemTime::now())
     }
@@ -127,7 +127,7 @@ impl Grant {
     }
 }
 
-/// The `https://api.openai.com/auth` claim block, which carries the account and
+/// The `https://api.openai.com/auth` claim block, which contains the account and
 /// plan. Read from the access token rather than the id token: the id token
 /// lives one hour where the access token lives days, so a stored grant's id
 /// token is expired long before its access token is.

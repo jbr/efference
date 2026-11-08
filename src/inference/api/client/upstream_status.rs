@@ -97,7 +97,7 @@ impl ClientHandler for UpstreamStatusHandler {
         }
         if status.is_success() {
             clear_upstream_failure(&self.failure);
-            // First token of the turn wins: the backend issues it at turn start and
+            // The first token of the turn is retained: the backend issues it at turn start and
             // the contract is to replay that value unchanged until the turn ends.
             if let Some((header, cell)) = &self.turn_routing
                 && let Some(token) = conn.response_headers().get_str(*header)

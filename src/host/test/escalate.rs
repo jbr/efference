@@ -1,5 +1,5 @@
 //! `decide` with `escalate`: a held call passed up the supervisor chain undecided, routed
-//! by its escalation rather than the dial, and decidable by the session it reached
+//! by its escalation rather than the dial, and decidable by the receiving session
 //! (docs/permissions.md, docs/tools.md).
 
 use super::*;
@@ -207,7 +207,7 @@ async fn a_two_level_chain_escalates_to_the_grandparent() {
         )]
     );
 
-    // `g` is woken as the reviewer and reads the note; `p` hears it went to `g`, unwoken.
+    // `g` is woken as the reviewer and reads the note; `p` is notified it went to `g`, unwoken.
     let reviewer = format!(
         "waiting for your decision on bash `curl -sI https://example.com` (seq \
          {seq})\nescalated: by p to you: \"{NOTE}\"\nintent: fetch only the response headers"
@@ -370,7 +370,7 @@ async fn a_one_level_chain_reaches_the_operator_with_a_push() {
         .is_some_and(|n| !n.wake)
     })
     .await;
-    // A session it did not reach cannot pass it on again.
+    // A session that did not receive it cannot pass it on again.
     let err = decide("k", &seq, Decision::Escalate, None)
         .execute(fixture.control("q"), RequestContext::default())
         .await

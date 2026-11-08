@@ -87,7 +87,7 @@ fn bash_call(command: &str) -> ToolCall {
 
 /// A role that resolved from `path`, so `Session` opens it as the live [`ConfigFile`] — what
 /// makes the refresh/revert path reachable in a test without a real daemon boot. The base role
-/// stays default: the file's contents reach effective policy through a refresh, like any edit.
+/// stays default: a refresh applies the file's contents to effective policy, like any edit.
 fn file_role(path: &std::path::Path) -> LoadedConfig {
     LoadedConfig {
         source: ConfigSource::Path(path.to_path_buf()),
@@ -247,8 +247,8 @@ fn told(session: &Session) -> Vec<Notification> {
     logged.chain(queued).collect()
 }
 
-/// The latest notification `session` has been told ([`told`]) that `matches` accepts, or
-/// `None` when it has heard none.
+/// The latest notification recorded for `session` ([`told`]) that `matches` accepts, or
+/// `None` when there is none.
 fn heard(session: &Session, matches: impl Fn(&Notification) -> bool) -> Option<Notification> {
     told(session).into_iter().rev().find(|n| matches(n))
 }

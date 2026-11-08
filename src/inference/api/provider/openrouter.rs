@@ -1,6 +1,6 @@
 //! OpenRouter's model catalog, normalized (docs/model-catalog.md).
 //!
-//! `GET /api/v1/models` answers the whole text-model catalog in one body. Each
+//! `GET /api/v1/models` returns the whole text-model catalog in one body. Each
 //! entry is reduced to a [`ListedModel`]: the routable id, the author it groups
 //! under, the display name, and the facts the entry declares.
 //!
@@ -25,7 +25,7 @@ struct Listing {
 #[derive(Deserialize)]
 struct Entry {
     id: String,
-    // No `default`: the name is how this body tells itself from Anthropic's
+    // No `default`: the name distinguishes this body from Anthropic's
     // listing shape, which OpenRouter answers a request carrying
     // `anthropic-version` with (`display_name` instead).
     name: String,

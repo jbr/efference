@@ -101,7 +101,7 @@ impl Server {
             streams: Mutex::default(),
         });
         let swansong = Swansong::new();
-        // The token is the credential: a page without it gains nothing from
+        // The token is the credential: a page without it is granted no access by
         // opening the socket, so the handshake's origin is not what admits it.
         let upgrade = WebSocket::new(stream)
             .allow_any_origin()

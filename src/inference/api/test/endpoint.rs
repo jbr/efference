@@ -141,7 +141,7 @@ fn session_key_is_stable_across_derivations() {
 }
 
 /// Session ids are unique per `.efference/` dir, not per account: two repos both
-/// served `--name work` must not pin each other's routing. The name stays readable
+/// served `--name work` must not share routing. The name stays readable
 /// in front (the Sessions view is the other thing the key buys) and the path hash
 /// separates them.
 #[test]
@@ -220,7 +220,7 @@ fn each_provider_declares_the_session_header_it_reads() {
 }
 
 /// Which providers read the body field, and which read the header. OpenRouter
-/// takes both (the header wins its own precedence order; the body copy is what an
+/// takes both (the header has its own precedence order; the body copy is what an
 /// OpenAI-dialect upstream reads for its own cache). Anthropic takes neither —
 /// there is one upstream to route to, and an unrecognized top-level key is a 400
 /// there, so this cannot be sent unconditionally (docs/transport.md).
@@ -378,10 +378,10 @@ async fn a_probe_reports_a_refusal_and_carries_the_turns_identity() {
     );
 }
 
-/// Every provider names the route its own listing is read from, and the two
-/// OpenAI arms are the only ones whose credential and catalog do not travel
-/// together: the platform listing wants a platform key's `api.model.read`
-/// scope, and a ChatGPT grant answers the subscription backend's route instead
+/// Every provider specifies the route its own listing is read from, and the two
+/// OpenAI arms are the only ones with separate credential and catalog routes:
+/// the platform listing requires a platform key's `api.model.read`
+/// scope, and a ChatGPT grant is used for the subscription backend's route instead
 /// (docs/transport.md).
 #[test]
 fn each_provider_names_its_own_listing_route() {

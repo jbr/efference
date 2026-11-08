@@ -102,7 +102,7 @@ async fn the_hosts_wait_wakes_on_the_listing() {
     task.await.unwrap();
 }
 
-/// A predicate no signal can make true fails at the hang guard, and the failure says where
+/// A predicate no signal can make true fails at the hang guard, with details of where
 /// the session was: its phase, its queue, the call it holds, and the end of its log.
 #[tokio::test(start_paused = true)]
 async fn a_wait_that_cannot_succeed_fails_with_where_the_session_stood() {

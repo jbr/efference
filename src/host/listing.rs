@@ -1,14 +1,14 @@
 //! The host's session listing, and the level-triggered stream of it
 //! (docs/control-api.md).
 //!
-//! One resource, two readings of the same value. `GET /sessions` answers the
+//! One resource, two readings of the same value. `GET /sessions` returns the
 //! whole listing as JSON; the same request with `Accept: text/event-stream`
 //! subscribes to it and receives the whole listing again on every change. There
 //! is no durable class and no replay cursor here — a listing is a *current
 //! value*, so a late subscriber is caught up by the next frame rather than by a
 //! history, and a client that misses one frame is repaired by the next.
 //!
-//! The vocabulary is what the listing already answered — id, title, cwd,
+//! The vocabulary is what the listing already contained — id, title, cwd,
 //! created_by — plus two fields a list surface needs and cannot get without one
 //! `GET /sessions/<id>/v1/state` per row: the session's [`status`] and how many
 //! background processes it holds. The second is what a destructive affordance
@@ -22,7 +22,7 @@ use crate::session::status::SessionStatus;
 
 /// The one word a row's `status` carries.
 impl From<&SessionStatus> for ListedStatus {
-    // `Idle` and `Ended | Failed` reach the same word for unrelated reasons: one is the
+    // `Idle` and `Ended | Failed` map to the same word for unrelated reasons: one is the
     // status itself, the other is unreachable here and stands in only so the match is
     // exhaustive.
     #[allow(clippy::match_same_arms)]
@@ -54,7 +54,7 @@ impl Host {
 
     /// One session's row — what `GET /sessions/:id` answers and what the listing
     /// holds for it. `None` when this host is neither running nor starting `id`. A
-    /// starting session's row says `starting`, and has no title or processes yet.
+    /// starting session's row shows `starting`, and has no title or processes yet.
     pub fn listed(&self, id: &str) -> Option<ListedSession> {
         let session = match self.entry(id)? {
             Entry::Hosted(hosted) => hosted.session,

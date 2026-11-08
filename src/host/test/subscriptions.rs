@@ -110,7 +110,7 @@ fn pinned(session: &Session, seq: Seq) -> bool {
 /// The child's gate reaches the parent as a must-wake notification on the
 /// child's slot, and the parent's idle loop pins it even though its triage
 /// cannot reach a model (the stub endpoint refuses connections); the resolution's
-/// idle follows on the same slot. A sibling that did not subscribe hears nothing.
+/// idle follows on the same slot. A sibling that did not subscribe receives nothing.
 #[tokio::test(start_paused = true)]
 async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says() {
     let fixture = Fixture::new().await;
@@ -282,9 +282,9 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     fixture.host.swansong().shut_down().await;
 }
 
-/// A child's question reaches its parent as a must-wake status on the child's slot, with
-/// the question and how to answer it; answering it moves the child on, and the parent
-/// hears the next condition on the same slot.
+/// A child's question is sent to its parent as a must-wake status on the child's slot, with
+/// the question and how to answer it; answering it lets the child proceed, and the parent
+/// receives the next condition on the same slot.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_childs_question_wakes_the_parent() {
     let fixture = Fixture::new().await;
@@ -329,9 +329,9 @@ async fn a_childs_question_wakes_the_parent() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// A question that returns a driver's queued message tells that driver, subscribed or not:
+/// When a question returns a driver's queued message, the driver is notified whether subscribed or not:
 /// `parent` drives `grandchild` through the creator chain without a subscription, and is
-/// woken with the status saying its message came back. `child`, subscribed, hears the
+/// woken with a status indicating its message came back. `child`, subscribed, receives the
 /// question without that line.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_question_tells_a_driver_its_message_came_back() {

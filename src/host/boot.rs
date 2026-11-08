@@ -40,7 +40,7 @@ pub const CONFIG_NAME: &str = "config.toml";
 pub struct SessionRequest {
     /// What the creator asked for, as it arrived (docs/control-api.md): the origin
     /// `config`, the `upstream` pin, `autonomous`, `reauth`, `keep_scratch`, `detached`
-    /// (recorded in the header so a resume reads it back), `worktree`, and the
+    /// (recorded in the header so it can be read back on resume), `worktree`, and the
     /// `temperature` and `effort` among its options. A new creation option is read from
     /// here where it is used. Its `name`, `cwd`, `env`, `refuse_authorization` and the
     /// role selections in its options are spent: the fields below hold what they
@@ -63,7 +63,7 @@ pub struct SessionRequest {
     /// standalone session, which has no host to address.
     pub host: Option<std::sync::Arc<crate::host::Host>>,
     /// Where this session came from — its creator and its predecessor, when a
-    /// session made it (docs/tools.md). Both reach the prompt's identity line
+    /// session made it (docs/tools.md). Both appear in the prompt's identity line
     /// (docs/context.md); the host records the same values when it adopts the
     /// started runtime. Default for a human root.
     pub lineage: crate::config::env::Lineage,
@@ -175,7 +175,7 @@ async fn prepare_minting(
     // dir, which is fixed for the session's life. It pins the session to one upstream
     // so consolidation — which rewrites the opening messages, and with them the key
     // OpenRouter would otherwise derive by hashing them — can't re-route mid-session.
-    // Whether it rides a request is the provider's call; a session that never talks to
+    // Whether it is included in a request is the provider's call; a session that never talks to
     // a provider with sticky routing simply derives a key nothing reads.
     endpoint.session_id = Some(crate::inference::api::sticky_session_id(&session_dir));
 

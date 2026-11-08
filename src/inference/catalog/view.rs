@@ -1,4 +1,4 @@
-//! The catalog as a route answers it (docs/model-catalog.md): one entry per
+//! The catalog in a route response (docs/model-catalog.md): one entry per
 //! connection with its status, age, and rows, with recent picks folded in.
 
 use super::{CATALOG_TTL, Snapshot};
@@ -110,10 +110,10 @@ pub struct Recent {
     pub rank: u32,
 }
 
-/// Build one connection's entry. `unavailable` carries the reason a connection
+/// Build one connection's entry. `unavailable` contains the reason a connection
 /// cannot be read; such an entry has no stored rows, only recent picks.
 ///
-/// A recent pick the listing does not name (a typed id) becomes a row holding
+/// A recent pick absent from the listing (a typed id) becomes a row holding
 /// only the connection, the model, the group where the provider derives one from
 /// the id, and the rank.
 pub fn assemble(

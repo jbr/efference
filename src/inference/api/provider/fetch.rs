@@ -13,8 +13,8 @@ impl Endpoint {
 
     /// An authenticated GET reported whole: the status, the `ETag` a catalog can
     /// be revalidated against, and the body as the provider sent it. A non-2xx
-    /// answer is a result here rather than a failure — whether a response is
-    /// usable is the question a listing probe asks (`efference dev models`,
+    /// answer is a result here rather than a failure — a listing probe checks
+    /// whether a response is usable (`efference dev models`,
     /// docs/transport.md).
     ///
     /// Carries the identity a turn carries, because a listing scoped to an
@@ -71,15 +71,15 @@ impl Endpoint {
     /// tolerates it). Any failure — network, non-2xx, missing fields — is an
     /// error the caller treats as fatal to startup.
     ///
-    /// Anthropic asks one route ([`Provider::capabilities_url`]). OpenRouter
-    /// asks two: the endpoints listing for the ceilings, then the singular
+    /// Anthropic uses one route ([`Provider::capabilities_url`]). OpenRouter
+    /// uses two: the endpoints listing for the ceilings, then the singular
     /// model entry ([`Provider::effort_levels_url`]) for the effort levels,
     /// merged in here. Both are fatal at boot — the boot rule validates a
     /// configured effort against this metadata, so "the entry route didn't
     /// answer" must not silently degrade into no validation.
     ///
     /// `upstream` is the session's `--upstream` order (empty when unpinned): a
-    /// pinned session's ceilings come from the endpoints it will actually reach,
+    /// pinned session's ceilings come from the endpoints it will actually use,
     /// not from every endpoint serving the slug (docs/transport.md).
     pub async fn fetch_capabilities(
         &self,
@@ -134,10 +134,10 @@ impl Endpoint {
             // A list this route names is checked against: OpenRouter maps an
             // unsupported level to the nearest supported one silently, so a
             // session could otherwise believe it set a knob that did nothing.
-            // An absent list is not a refusal. `openai/o4-mini` names none and
+            // An absent list is not a refusal. `openai/o4-mini` has none and
             // honors effort all the same (2,752 reasoning tokens at `low`, the
             // 6,000 cap at `high`, 2026-09-25), so the level passes unchecked
-            // and the boot line says so.
+            // and the boot line reports that.
             capabilities.validates_efforts = efforts.supported.is_some();
             capabilities.supported_efforts = efforts.supported;
             capabilities.default_effort = efforts.default;
@@ -198,9 +198,9 @@ impl Endpoint {
         }
     }
 
-    /// A GET that must answer 2xx: every metadata and credential read on the boot
+    /// A GET that must receive 2xx: every metadata and credential read on the boot
     /// path, where any other status is a failure to report. The transport is
-    /// [`Self::probe`]'s, so these reads carry the same identity a turn does.
+    /// [`Self::probe`]'s, so these reads use the same identity a turn does.
     pub(in crate::inference::api) async fn authed_get(&self, url: &str) -> Result<String, Error> {
         let response = self.probe(url).await?;
         match response.status {

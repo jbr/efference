@@ -10,7 +10,7 @@
 //!
 //! Preparation ends one of three ways. Started: the queued turns go to the session in
 //! submission order, and every open `/events` connection continues into the session's
-//! own stream. Failed: the queued turns ride the failure back for the clients to put in
+//! own stream. Failed: the queued turns are returned with the failure for clients to put in
 //! a composer, and the connections end after the frame that carries it. Archived: the
 //! preparation was cancelled on purpose, and the connections end.
 
@@ -76,7 +76,7 @@ pub(crate) struct Starting {
     pub(crate) changed: Notify,
 }
 
-/// Who a starting session is: what the host knows before anything is prepared.
+/// Who a starting session is: what the host holds before anything is prepared.
 pub(crate) struct StartingParts {
     pub(crate) id: String,
     pub(crate) directories: crate::config::policy::Directories,
@@ -220,7 +220,7 @@ impl Starting {
         true
     }
 
-    /// Record the failure; the queued turns ride it back.
+    /// Record the failure; the queued turns are returned with it.
     pub(crate) fn failed(&self, reason: String) -> bool {
         let mut inner = self.inner.lock().unwrap();
         if inner.outcome.is_some() {

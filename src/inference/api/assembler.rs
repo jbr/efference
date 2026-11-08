@@ -179,7 +179,7 @@ impl Assembler {
                     #[serde(default)]
                     provider: Option<String>,
                     /// The cache-diagnostics result, when the request opted in
-                    /// (docs/transport.md). It rides on the `message_start` frame
+                    /// (docs/transport.md). It is in the `message_start` frame
                     /// and nowhere else — the other frames of the stream carry no
                     /// copy — so this is the streamed parse site.
                     #[serde(default)]
@@ -233,7 +233,7 @@ impl Assembler {
                             .to_string(),
                         partial_json: String::new(),
                     },
-                    // Thinking leads the turn; `thinking`/`signature` accumulate via deltas
+                    // Thinking comes first in the turn; `thinking`/`signature` accumulate via deltas
                     // (docs/transport.md). `content_block_start` may already carry an initial
                     // `thinking` string, so seed from it.
                     "thinking" => BlockAccum::Thinking {
@@ -348,7 +348,7 @@ impl Assembler {
             // Keepalive.
             Some("ping") => {}
             // An in-stream error (e.g. `overloaded_error` after a 200) carries a
-            // full JSON body — surface it verbatim, so it reaches the completion's
+            // full JSON body — surface it verbatim, for the completion's
             // `upstream_failure` and thus the log (docs/transport.md).
             Some("error") => {
                 self.failure_class = classify_body(data);

@@ -57,10 +57,10 @@ const REFUSED: &str = r#"{"type":"error","error":{"type":"invalid_request_error"
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
 
 /// **A triage without a verdict holds; continue retries it.** The triage's
-/// request is refused, so the triage has no verdict. Nothing reaches the log for the
+/// request is refused, so the triage has no verdict. Nothing is logged for the
 /// call — no error result the agent would read — and the session reports a stall
 /// while its loop still runs. The operator's continue runs the triage again, the
-/// verdict lands, and the held attempt's breadcrumb rides the `Triage`.
+/// verdict is recorded, and the held attempt's breadcrumb is in the `Triage`.
 // A scenario read top to bottom: the scripted refusal, the hold, the continue, and the log it
 // leaves.
 #[allow(clippy::too_many_lines)]
@@ -241,7 +241,7 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
 /// that pause unspent.
 #[tokio::test(start_paused = true)]
 async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
-    // The transport makes four attempts before the loop sees the failure.
+    // The transport makes four attempts before the loop receives the failure.
     let upstream = ScriptedUpstream::new(|n| match n {
         0..4 => Canned::json(503, OVERLOADED),
         _ => Canned::stream(end_turn()),
@@ -299,7 +299,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
 /// **Fresh forks, then a harness defect.** A triage that answers every attempt of
 /// every fork without a usable verdict is not an upstream condition: after
 /// `TRIAGE_RESTARTS` fresh forks of `TRIAGE_ATTEMPTS` each, the triage holds under
-/// `TriageDefect`, and still nothing reaches the agent.
+/// `TriageDefect`, and still nothing is sent to the agent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
     use crate::curation::triage::TRIAGE_RESTARTS;

@@ -20,14 +20,14 @@ use crate::config::user_config::ModelSelection;
 use crate::inference::api::Error;
 
 /// The accepted temperature, stated once. Both control routes and the CLI reach
-/// it through [`InferenceRegistry::resolve_options`], so none of them carries its
+/// it through [`InferenceRegistry::resolve_options`], so none of them has its
 /// own copy of the bound.
 pub const TEMPERATURE: std::ops::RangeInclusive<u8> = 0..=100;
 
 /// The editable selections a client proposes, shared by preview and creation. A
-/// role names its connection and its provider-native model separately, or gives
-/// the `connection/model` slug alone and lets [`InferenceRegistry::parse_model`]
-/// split it. Naming the connection is what makes a native id containing a slash
+/// role has its connection and its provider-native model separately, or has
+/// the `connection/model` slug alone for [`InferenceRegistry::parse_model`]
+/// to split. Naming the connection is what makes a native id containing a slash
 /// unambiguous; the slug stays for surfaces where one opaque string is the
 /// convenient thing to pass.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ pub enum SelectionSource {
     UserDefault,
     /// The main connection's provider supplied its own cheap-band spotter.
     MainProvider,
-    /// A connection that can reach a decision model supplied jev as the spotter.
+    /// A connection with access to a decision model supplied jev as the spotter.
     DecisionConnection,
     /// The selected project config's `[transport]`.
     ProjectConfig,
@@ -105,7 +105,7 @@ impl<T> Effective<T> {
         }
     }
 
-    /// A field whose resolution failed. The paired issue carries the reason.
+    /// A field whose resolution failed. The paired issue contains the reason.
     fn failed() -> Self {
         Self {
             value: None,
@@ -203,7 +203,7 @@ pub struct ResolvedOptions {
     pub issues: Vec<Issue>,
     /// Whether the proposed `cwd` can start a worktree: it is inside a git work tree
     /// whose `HEAD` resolves. A form offers the worktree option only when this is true.
-    // (docs/worktrees.md) Resolution here knows nothing of the directory, so it answers
+    // (docs/worktrees.md) Resolution here has no directory information, so it returns
     // `false`; the preview route, in a group above this one, sets it from git.
     pub worktree: bool,
 }
@@ -221,7 +221,7 @@ pub struct EffectiveOptions {
 impl ResolvedOptions {
     /// Mark a field as failed because something upstream of resolution rejected
     /// it — a preview body whose JSON value would not even decode into the
-    /// field's type. Resolution sees such a field as absent and would otherwise
+    /// field's type. Resolution treats such a field as absent and would otherwise
     /// report the omission branch, which reads as "nothing was sent" rather than
     /// "what you sent was unusable". One rule holds either way: **a field with an
     /// issue has no source.**
@@ -240,7 +240,7 @@ impl ResolvedOptions {
     }
 }
 
-/// What the request said about one role, kept apart from "nothing was said" so an
+/// The request's selection for one role, kept apart from no selection so an
 /// invalid override never silently falls back to a default.
 enum Requested {
     /// The request named nothing; the default precedence applies.
@@ -401,13 +401,13 @@ impl InferenceRegistry {
                     issues,
                 ),
                 // Then the main connection's own `spotter-model`, then a decision
-                // model on any connection that reaches one, then the main
+                // model on any connection with access to one, then the main
                 // provider's cheap band.
                 None => match main.value.as_ref() {
-                    // The main connection answers first, in its own configuration
+                    // The main connection's own configuration comes first
                     // (`spotter-model`), then the arm's built-in default. Both are
                     // answers about a catalog this harness does not compile, so a
-                    // connection that names its own cheap model is the more
+                    // connection with its own cheap model is the more
                     // specific of the two.
                     Some(main) => match self
                         .connections
@@ -499,7 +499,7 @@ impl InferenceRegistry {
                     issues,
                 ) {
                     Requested::Reference(reference) => reference,
-                    // `Some(model)` above means `requested` never answers Omitted.
+                    // `Some(model)` above means `requested` is never Omitted.
                     Requested::Omitted | Requested::Failed => return Effective::failed(),
                 };
                 (
@@ -535,7 +535,7 @@ impl InferenceRegistry {
         )
     }
 
-    /// Split what the request said about one role into the three cases
+    /// Split the request's selection for one role into the three cases
     /// resolution distinguishes. An explicit connection makes `model` a native
     /// id, so a slash inside it is never read as a connection prefix.
     fn requested(
@@ -768,7 +768,7 @@ fn main_selection(main: &ModelSelection, model: String) -> ModelSelection {
 
 /// Reject a selection whose provider serves no inference, for a role that needs
 /// it. Separate from `select` because the spotter role is exactly the one that
-/// may name such a provider (docs/permissions.md).
+/// may use such a provider (docs/permissions.md).
 fn requires_inference(
     selection: &ModelSelection,
     field: &'static str,

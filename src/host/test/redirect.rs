@@ -1,5 +1,5 @@
-//! A redirect names who decided it (docs/permissions.md): the stub the model reads, the
-//! user turn carrying the message, and the gate decision on the log.
+//! A redirect identifies its decider (docs/permissions.md): the stub the model reads, the
+//! user turn containing the message, and the gate decision on the log.
 
 use super::upstream_hold::start_with;
 use super::*;
@@ -71,7 +71,7 @@ async fn a_supervisors_deny_names_the_supervisor() {
 }
 
 /// The autonomous redirect is the permission review's: it is recorded as a gate decision
-/// under `review[autonomous]`, its stub says so, and its turn carries no source.
+/// under `review[autonomous]`, its stub indicates that, and its turn has no source.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_autonomous_redirect_is_the_reviews() {
     let upstream = ScriptedUpstream::new(script);

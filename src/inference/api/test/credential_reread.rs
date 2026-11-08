@@ -78,7 +78,7 @@ async fn a_revoked_key_is_re_read_and_the_attempt_retried() {
 }
 
 /// A source still holding the dead value costs one read and one request: the stall
-/// carries the provider's words and says what was tried, and nothing loops.
+/// includes the provider's words and what was tried, and nothing loops.
 #[tokio::test]
 async fn a_revoked_key_the_source_still_holds_fails_once() {
     let run = run(vec![Canned::json(401, REVOKED)], "stale").await;
@@ -89,7 +89,7 @@ async fn a_revoked_key_the_source_still_holds_fails_once() {
     assert_eq!(run.reads, 1);
 }
 
-/// A 401 naming nothing the table knows is read the same way, whatever its body.
+/// A 401 with no name in the table is read the same way, whatever its body.
 #[tokio::test]
 async fn an_unrecognized_401_is_re_read_once() {
     for body in [UNRECOGNIZED, NOT_JSON] {
@@ -120,8 +120,8 @@ async fn a_403_is_re_read_once() {
     assert_eq!(run.sent, ["stale", "fresh"]);
 }
 
-/// A refusal that names the account rather than the credential (a quota, a 429) does
-/// not read the source: a new value could not change it.
+/// For a refusal concerning the account rather than the credential (a quota, a 429),
+/// the source is not read: a new value could not change it.
 #[tokio::test]
 async fn a_refusal_that_is_not_the_credentials_does_not_read_the_source() {
     for reply in [Canned::json(403, QUOTA), Canned::json(401, QUOTA)] {

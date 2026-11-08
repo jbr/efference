@@ -3,7 +3,7 @@
 //! and ones that cannot start dormant.
 //!
 //! Sessions are minted by `boot::prepare` on the seeded Codex catalog, so nothing here
-//! reaches a provider; the state database and every root are under a temp directory.
+//! is sent to a provider; the state database and every root are under a temp directory.
 
 use super::*;
 use crate::host::boot::test::{Root, codex_registry, drop_boot, request};
@@ -60,7 +60,7 @@ async fn a_restarted_host_resumes_what_was_open_and_not_what_was_archived() {
     left(&root, "closed", None, true, |_| {}).await;
     left(&root, "plain", None, false, |_| {}).await;
     left(&root, "parent", None, false, |_| {}).await;
-    // Written last, so the scan reaches the child before its creator.
+    // Written last, so the scan encounters the child before its creator.
     tokio::time::sleep(Duration::from_millis(20)).await;
     left(&root, "kid", Some("parent"), false, |_| {}).await;
     let host = host_over(&root);

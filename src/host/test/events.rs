@@ -106,7 +106,7 @@ async fn an_idle_stream_heartbeats_with_comments() {
     assert!(text.contains("event: gate"), "{text}");
 }
 
-/// `?include=output` carries ephemeral deltas published after a client subscribes:
+/// `?include=output` includes ephemeral deltas published after a client subscribes:
 /// assistant prose (`assistant_delta`), tool output (`tool_output`), and process
 /// output (`process_output`), each typed by the frame's `kind`, payloaded under the
 /// envelope's `data`, and crucially **id-less** — they're pre-commit and have no

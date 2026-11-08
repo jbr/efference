@@ -99,7 +99,7 @@ auth = { kind = "env", key = "MISSING_KEY" }
 }
 
 /// One connection's endpoint, resolved the way that connection's roles are —
-/// and each way a name fails to yield one says what to do about it
+/// and each error includes guidance on what to do about it
 /// (docs/transport.md). This is what a caller with a single connection in hand
 /// reads, rather than inventing a role to resolve one.
 #[test]
@@ -609,7 +609,7 @@ auth = { kind = "oauth" }
     assert!(unavailable[0].1.contains("no issuer"), "{unavailable:?}");
 }
 
-/// An endpoint this build knows no name for is a dialect plus a base URL. Both are
+/// An endpoint without a name in this build is a dialect plus a base URL. Both are
 /// required, because neither has a default that would be safe to invent, and a
 /// half-declared connection must not load and fail later at a request.
 #[test]
@@ -713,7 +713,7 @@ auth = {{ kind = "env", key = "K" }}
     assert!(base.contains("takes no base-url"), "{base}");
 }
 
-/// Every connection's environment credential variable reaches the session, disabled
+/// Every connection's environment credential variable is included in the session, disabled
 /// connections included, for its env table to strip (docs/env.md).
 #[test]
 fn a_session_carries_the_hosts_credential_variables() {
@@ -745,7 +745,7 @@ disabled = true
     );
 }
 
-/// A `completions` connection's `body` and `output-cap-field` reach its endpoint,
+/// A `completions` connection's `body` and `output-cap-field` are included in its endpoint,
 /// and are refused on any other dialect and for keys the encoder writes.
 #[test]
 fn request_options_load_on_a_completions_connection_only() {

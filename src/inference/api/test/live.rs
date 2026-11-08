@@ -132,7 +132,7 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
         stream.headers.get("x-generation-id").map(String::as_str),
         Some("gen-abc123")
     );
-    // Off the allowlist, so it never reaches the log (docs/env.md).
+    // Off the allowlist, so it is never recorded in the log (docs/env.md).
     assert!(!stream.headers.contains_key("set-cookie"));
     assert!(stream.frames.contains("data: [DONE]"), "{stream:?}");
 }
@@ -149,7 +149,7 @@ fn the_stream_ceiling_defaults_generously_and_is_operator_settable() {
     assert!(crate::config::DEFAULT_STREAM_CEILING >= std::time::Duration::from_secs(3600));
 }
 
-/// The attribution headers ride an OpenRouter inference POST and no other
+/// The attribution headers are sent with an OpenRouter inference POST and no other
 /// (docs/transport.md). Asserted on the request as sent rather than off
 /// `Provider::attribution` alone, because the thing that can break is the wiring:
 /// `with_attribution` is applied on two conn-building paths and would be silently
@@ -162,8 +162,8 @@ fn the_stream_ceiling_defaults_generously_and_is_operator_settable() {
 async fn attribution_rides_openrouter_turns_and_nothing_else() {
     use crate::inference::testing::upstream::Request;
 
-    /// The request one round trip sends against a canned answer. `sse` picks the
-    /// path: an empty stream for `complete`, a usage-only body for `keepalive`.
+    /// The request one round trip sends against a canned answer. The path depends on
+    /// `sse`: an empty stream for `complete`, a usage-only body for `keepalive`.
     async fn request(provider: Provider, sse: bool) -> Request {
         let upstream = ScriptedUpstream::answering([if sse {
             Canned::stream(

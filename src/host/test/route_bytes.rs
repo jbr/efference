@@ -119,7 +119,7 @@ async fn the_routes_that_answer_with_a_word_keep_their_bytes() {
 }
 
 /// A process's retained output, read after it has exited: the capture outlives the
-/// process, and the answer names the cursor to resume from.
+/// process, and the response contains the cursor to resume from.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_process_output_read_keeps_its_bytes() {
     let (shared, _turns_rx) = Session::in_memory();
@@ -148,7 +148,7 @@ async fn a_process_output_read_keeps_its_bytes() {
     );
 }
 
-/// A notification answers with the seq of the entry it arrived as, and with nothing for a
+/// A notification has the seq of its entry in the response, and nothing for a
 /// slot, which has no entry yet.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_filed_notification_keeps_its_bytes() {
@@ -168,7 +168,7 @@ async fn a_filed_notification_keeps_its_bytes() {
     assert_eq!(arrived.body(), r#"{"seq":0}"#);
 }
 
-/// A proposal resolved either way answers with the state it reached.
+/// A proposal resolved either way has its resulting state in the response.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_resolved_proposal_keeps_its_bytes() {
     let (shared, _turns_rx) = Session::in_memory();

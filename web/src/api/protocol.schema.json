@@ -860,7 +860,7 @@
         },
         {
           "const": "tools_changed",
-          "description": "The tools array differs: added, removed, reordered, or serialized\nnon-deterministically. The divergence that has cost this harness a cache before\n(docs/log-and-projection.md).",
+          "description": "The tools array differs: added, removed, reordered, or serialized\nnon-deterministically. This divergence has caused a cache miss in this harness before\n(docs/log-and-projection.md).",
           "type": "string"
         },
         {
@@ -880,7 +880,7 @@
         },
         {
           "const": "other",
-          "description": "A reason this build does not know. Kept so a new provider value reads as an\nunnamed miss rather than failing the whole response.",
+          "description": "An unknown reason. Kept so a new provider value reads as an\nunnamed miss rather than failing the whole response.",
           "type": "string"
         }
       ]
@@ -971,7 +971,7 @@
           ]
         },
         "model": {
-          "description": "The provider-native id a session draft carries.",
+          "description": "The provider-native id in a session draft.",
           "type": "string"
         },
         "name": {
@@ -6271,7 +6271,7 @@
       "type": "object"
     },
     "ResumeSwitch": {
-      "description": "The model selections an `active` patch may carry, in the shapes creation takes\n(docs/control-api.md). A field left out keeps what the session recorded.",
+      "description": "The model selections an `active` patch may contain, in the shapes creation takes\n(docs/control-api.md). A field left out keeps what the session recorded.",
       "properties": {
         "connection": {
           "description": "The main model: a connection and a native model id, or the `connection/model`\nslug as `model` alone.",
@@ -6664,7 +6664,7 @@
         },
         {
           "const": "decision_connection",
-          "description": "A connection that can reach a decision model supplied jev as the spotter.",
+          "description": "A connection with access to a decision model supplied jev as the spotter.",
           "type": "string"
         },
         {
@@ -8907,7 +8907,7 @@
       "description": "Why an assistant entry is record-only, plus the transport evidence when the\npath that produced it captured any.\n\nSerializes as a **bare string** when there are no diagnostics, and deserializes\nfrom either shape — so an old log line parses and an ordinary failure keeps\nits bytes."
     },
     "UpstreamRetry": {
-      "description": "A retry in flight: what a client renders while the loop is waiting out an\naborted stream (docs/transport.md).\n\n`next_attempt_at` is an **absolute** instant rather than a countdown, so the\ndaemon never has to re-emit a ticking field — a client computes the remaining\nwait itself (docs/control-api.md). It is control state, never projected, so the\nwall-clock reading cannot reach the cached prefix.",
+      "description": "A retry in flight: what a client renders while the loop is waiting out an\naborted stream (docs/transport.md).\n\n`next_attempt_at` is an **absolute** instant rather than a countdown, so the\ndaemon never has to re-emit a ticking field — a client computes the remaining\nwait itself (docs/control-api.md). It is control state, never projected, so the\nwall-clock reading cannot appear in the cached prefix.",
       "properties": {
         "attempt": {
           "description": "Which attempt just failed — 1-based, so `attempt` of `budget` reads directly.",

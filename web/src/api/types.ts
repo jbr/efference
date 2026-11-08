@@ -2102,7 +2102,7 @@ export interface CatalogModel {
    */
   line?: string | null;
   /**
-   * The provider-native id a session draft carries.
+   * The provider-native id in a session draft.
    */
   model: string;
   name?: string | null;
@@ -2675,7 +2675,7 @@ export interface DormantSession {
   title?: string | null;
 }
 /**
- * The model selections an `active` patch may carry, in the shapes creation takes
+ * The model selections an `active` patch may contain, in the shapes creation takes
  * (docs/control-api.md). A field left out keeps what the session recorded.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
@@ -4748,7 +4748,7 @@ export interface UpstreamFailure {
  * `next_attempt_at` is an **absolute** instant rather than a countdown, so the
  * daemon never has to re-emit a ticking field — a client computes the remaining
  * wait itself (docs/control-api.md). It is control state, never projected, so the
- * wall-clock reading cannot reach the cached prefix.
+ * wall-clock reading cannot appear in the cached prefix.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "UpstreamRetry".

@@ -92,8 +92,8 @@ fn continuable_tail_is_a_question_about_the_wire() {
 }
 
 /// A finished turn declines in every dialect. The Messages encoding drops Responses and
-/// Completions assistant turns, so a precondition read from it saw every such tail as
-/// an unanswered user turn and accepted the continue (observed 2026-10-17 on a Codex
+/// Completions assistant turns, so with a precondition read from it every such tail was
+/// classified as an unanswered user turn and the continue was accepted (observed 2026-10-17 on a Codex
 /// session).
 #[test]
 fn a_finished_turn_declines_in_every_dialect() {
@@ -191,7 +191,7 @@ fn a_pending_continue_is_not_settled() {
 }
 
 /// `continue_wake` resolves when a continue is requested — including one that
-/// lands before the waiter registers, which the flag (not the notify) carries.
+/// occurs before the waiter registers, which is retained by the flag (not the notify).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn continue_wake_resolves_on_request() {
     let (shared, _rx) = Session::in_memory();
@@ -259,7 +259,7 @@ async fn the_route_accepts_and_declines() {
     );
 }
 
-/// The decline carries the typed envelope, so a client branches on `code` rather
+/// The decline contains the typed envelope, so a client branches on `code` rather
 /// than on prose.
 #[tokio::test]
 async fn a_decline_carries_the_typed_envelope() {

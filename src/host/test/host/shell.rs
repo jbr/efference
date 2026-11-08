@@ -22,7 +22,7 @@ async fn missing_session_pages_reach_the_shell_but_content_stays_missing() {
         .await
         .assert_status(200)
         .assert_body("");
-    // `/files` is priced like the control paths beside it: the bearer reaches the
+    // `/files` is priced like the control paths beside it: the bearer passes the gate to the
     // missing-session lookup, and no credential stops at the gate.
     for path in [
         "/sessions/gone/v1/log?tail=200",

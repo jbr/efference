@@ -41,7 +41,7 @@ fn stored(turns: Vec<WireTurn>) -> SentRequest {
 }
 
 /// The triage lineage's ping is the stored request (docs/transport.md): its turns, its
-/// `tools[]` and its forced `retain`, and nothing appended. The loop's own spec carries no
+/// `tools[]` and its forced `retain`, and nothing appended. The loop's own spec has no
 /// envelope for this lineage. Taken on a paused clock, with the ping due at once: the
 /// interval is read off `std::time::Instant`, which a paused clock does not move.
 #[tokio::test(start_paused = true)]
@@ -191,7 +191,7 @@ async fn idle_triage_is_no_touch_and_a_triage_ping_keeps_the_cap() {
 
 // ---- a separate Messages triage model, end to end ----
 
-/// The model name the separate triage client sends, which tells its requests apart.
+/// The model name the separate triage client sends, distinguishing its requests.
 const TRIAGE_MODEL: &str = "triage-m";
 
 /// The interval the end-to-end sessions run their keepalive at. The clocks it is read

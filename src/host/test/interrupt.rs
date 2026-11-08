@@ -28,7 +28,7 @@ fn scripted_upstream(open: &Turnstile) -> ScriptedUpstream {
 /// **An interrupt during the triage ends the turn there.** The press ends the triage's
 /// read and the results are withheld with a line saying they were interrupted before
 /// they were read (nothing blaming triage); the loop then consumes the latch after
-/// the triage and goes idle without another request. Left set, the latch rides into the
+/// the triage and goes idle without another request. Left set, the latch remains for the
 /// next completion and stops its first call as "aborted by user" — the model's
 /// answer to whatever the operator queued to explain the press.
 #[tokio::test]
@@ -114,7 +114,7 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     runtime.finished().await.unwrap();
 }
 
-/// The press lands after the triage's request reached the upstream but before its
+/// The press occurs after the upstream receives the triage's request but before its
 /// stream opened — the window `notify_waiters`, which stores no permit, would lose
 /// if the client armed its abort only once the stream was open. The upstream holds
 /// the triage's response headers until the interrupt has fired, so this ordering is

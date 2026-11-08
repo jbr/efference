@@ -22,7 +22,7 @@ fn feed(events: &[(&str, &str)]) -> Completion {
     a.finish()
 }
 
-/// Everything the sink sees, in order — the live channel, as distinct from the assembled
+/// Everything the sink receives, in order — the live channel, as distinct from the assembled
 /// [`Completion`] that `feed` returns.
 fn live(events: &[(&str, &str)]) -> Vec<Streamed> {
     let mut a = Assembler::new();

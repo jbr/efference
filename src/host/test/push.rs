@@ -9,7 +9,7 @@
 use super::*;
 use base64::Engine;
 
-/// `GET /v1/push` answers the derived VAPID public key in exactly the encoding
+/// `GET /v1/push` returns the derived VAPID public key in exactly the encoding
 /// `applicationServerKey` takes: base64url of the uncompressed X9.62 point. It is
 /// the same derivation the sender signs with, which is what makes a subscription
 /// created against it verifiable. Without a root there is no signing key to hand
@@ -17,7 +17,7 @@ use base64::Engine;
 ///
 /// Both branches are one test because the difference between them is the *process
 /// environment*, which is shared: two tests toggling `EFFERENCE_ROOT_SECRET`
-/// concurrently would each see the other's setting. Nothing else in this suite
+/// concurrently would each read the other's setting. Nothing else in this suite
 /// reads that variable, so one test owning it for its duration is sound.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn push_key_is_the_derived_vapid_public_key() {
@@ -59,7 +59,7 @@ async fn push_key_is_the_derived_vapid_public_key() {
 }
 
 /// A body that is not the browser's `PushSubscription.toJSON()` shape is refused,
-/// so nothing partial reaches the store.
+/// so nothing partial is written to the store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_malformed_subscription_is_refused() {
     let (shared, _turns_rx) = Session::in_memory();
@@ -172,7 +172,7 @@ mod settle_body {
     }
 }
 
-/// [`gate_body`] prefers the call's own `intent` — the purpose — over the
+/// [`gate_body`] uses the call's own `intent` — the purpose — before the
 /// spotter's reason — the risk — and falls through the pair to a plain waiting
 /// line.
 #[test]

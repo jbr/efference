@@ -12,7 +12,7 @@
 //!   for the loop to drain them into durable record-only log entries. The handler sits
 //!   below the loop and cannot append, so the body crosses that boundary here.
 //!
-//! None of these is projected. The queue's *contents* reach the log, but as
+//! None of these is projected. The loop appends the queue's *contents* as
 //! record-only entries that project to nothing (docs/log-and-projection.md).
 //!
 //! The schedule both retry loops follow — [`STREAM_ABORT_ATTEMPTS`],
@@ -100,7 +100,7 @@ impl RetrySurface {
 /// `next_attempt_at` is an **absolute** instant rather than a countdown, so the
 /// daemon never has to re-emit a ticking field — a client computes the remaining
 /// wait itself (docs/control-api.md). It is control state, never projected, so the
-/// wall-clock reading cannot reach the cached prefix.
+/// wall-clock reading cannot appear in the cached prefix.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct UpstreamRetry {
@@ -134,8 +134,8 @@ pub struct UpstreamRetry {
 /// legible to a supervising client through the `stall` topic, but the continue
 /// still has to come from somewhere (docs/transport.md). Sized against an endpoint whose p99
 /// latency sits near the client's timeout, where abort streaks run several deep rather
-/// than recovering on the first retry. Twelve attempts on the capped schedule spends
-/// about three and a half minutes before giving up.
+/// than recovering on the first retry. Twelve attempts on the capped schedule take
+/// about three and a half minutes before the client gives up.
 pub(crate) const STREAM_ABORT_ATTEMPTS: u32 = 12;
 
 /// The pause before the next attempt after `aborted` of them have died, or
@@ -181,7 +181,7 @@ pub(crate) fn stream_abort_retry(
 /// the upstream-failure cell, a retry is *not* followed by an append, so the
 /// daemon's wake-on-`appended` fallback would leave the topic late for the whole
 /// pause (session/topics.rs). "Retry now" lives here for the same reason: the waits it
-/// cuts short run in both loops, and only this cell reaches both.
+/// cuts short run in both loops, and only this cell is available to both.
 #[derive(Default, Debug)]
 pub struct UpstreamRetryCell {
     state: Mutex<Option<UpstreamRetry>>,
@@ -213,7 +213,7 @@ impl UpstreamRetryCell {
     }
 
     /// Publish a retry. Signals only on an actual change, so a re-set of an
-    /// identical value costs no wake.
+    /// identical value produces no wake.
     pub fn set(&self, retry: UpstreamRetry) {
         let mut state = self.state.lock().unwrap();
         if state.as_ref() == Some(&retry) {
@@ -280,7 +280,7 @@ impl UpstreamRetryCell {
     /// [`pause`](Self::pause) for `pause`, as the loop's own wait between attempts:
     /// [`delaying`](Self::delaying) names when it ends for as long as it lasts, which
     /// is what the `delayed` loop phase reads (docs/control-api.md). The end is the
-    /// published retry's `next_attempt_at`, so the phase and the retry topic agree.
+    /// published retry's `next_attempt_at`, so the phase and retry topic have the same time.
     pub async fn delay(&self, pause: Duration) -> bool {
         let until = self.get().map_or_else(
             || crate::record::log::Timestamp::now().0 + pause.as_millis() as u64,
@@ -319,8 +319,8 @@ impl Drop for DelayEnds<'_> {
 ///
 /// Produced by the client handler that observes each response and consumed by the
 /// agent loop, which appends it to the log as a record-only entry. Between those two
-/// points it holds no timestamp: the log stamps the entry when it lands, and nothing
-/// here reaches a projection (docs/log-and-projection.md).
+/// points it holds no timestamp: the log stamps the entry on append, and nothing
+/// here is projected (docs/log-and-projection.md).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UpstreamAttemptFailure {
     pub status: u16,

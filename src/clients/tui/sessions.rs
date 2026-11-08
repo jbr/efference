@@ -26,7 +26,7 @@ pub(crate) struct SessionMenu {
     /// The resume page, while it is open over the listing (docs/tui.md). Like
     /// the form it owns every key, Escape and Ctrl-C included.
     pub(super) resume: Option<Box<resume_list::ResumePage>>,
-    /// The listing as the host last answered it, sorted by id. Empty while the
+    /// The last listing returned by the host, sorted by id. Empty while the
     /// first read is out.
     pub rows: Vec<ListedSession>,
     /// The row the keys act on. Clamped at use, because the listing is replaced
@@ -51,7 +51,7 @@ impl SessionMenu {
 /// Why ending this session should be confirmed, or `None` when there is nothing
 /// to lose by ending it now.
 ///
-/// The two conditions the listing can answer (`host/listing.rs`): the session is
+/// The two conditions in the listing (`host/listing.rs`): the session is
 /// doing something — running a turn, holding a call at a gate, or parked on a
 /// stall it has not been told about — or it holds background processes, which
 /// ending reaps.
@@ -63,7 +63,7 @@ pub(crate) fn needs_confirm(row: &ListedSession) -> Option<String> {
         ListedStatus::Asking => Some("is waiting on your answer to a question"),
         ListedStatus::Parked => Some("is paused on an expired cache, waiting for you"),
         ListedStatus::Blocked => Some("is stopped mid-turn until someone acts"),
-        // A word this build does not know says nothing to confirm.
+        // An unknown status supplies no reason to confirm.
         ListedStatus::Starting | ListedStatus::Idle | ListedStatus::Other(_) => None,
     };
     match (doing, row.processes) {
@@ -148,8 +148,8 @@ impl InteractiveState<'_> {
                 let mut form = Box::new(session_form::Form::new(context));
                 menu.note = None;
                 // Resolve the empty draft before the operator touches anything:
-                // the defaults are most of what the form shows, and they are the
-                // host's answer rather than something the client can assume
+                // the defaults are most of what the form shows, and they are
+                // resolved by the host rather than supplied by the client
                 // (docs/control-api.md).
                 if let session_form::Action::Preview(options) = form.initial_preview() {
                     let _ = self.host_tx.send(HostCmd::Preview(options));
@@ -160,7 +160,7 @@ impl InteractiveState<'_> {
         }
     }
 
-    /// A preview answered. Dropped when no form is open: a reply that outlived
+    /// A preview response. Dropped when no form is open: a reply that outlived
     /// its form describes a draft nobody can see.
     pub(super) fn apply_preview(
         &mut self,
@@ -194,7 +194,7 @@ impl InteractiveState<'_> {
         }
     }
 
-    /// Creation answered. On success the TUI leaves this session's stream for the
+    /// A creation response. On success the TUI leaves this session's stream for the
     /// new one, which is the same one-cursor-per-handshake switch `⏎` performs —
     /// the session was created in this client's own working root, so that is
     /// where its attachment store lives (docs/inbox.md).
@@ -233,7 +233,7 @@ impl InteractiveState<'_> {
         }
     }
 
-    /// A revive answered. On success the TUI leaves this session's stream for the
+    /// A revive response. On success the TUI leaves this session's stream for the
     /// revived one, as `⏎` on a live row does; on failure the page stays, with
     /// the host's message. Dropped when the page was closed meanwhile.
     pub(super) fn apply_resumed(&mut self, resumed: Result<String, String>) -> bool {
@@ -270,7 +270,7 @@ impl InteractiveState<'_> {
     }
 
     /// A key while the resume page is open. Esc on an empty query and Ctrl-C
-    /// close it back to the listing; Enter asks the host to revive the row.
+    /// close it back to the listing; on Enter, the client requests a revive from the host.
     pub(super) fn handle_resume_key(&mut self, key: event::KeyEvent) {
         use super::resume_list::ResumeKey;
         use crossterm::event::{KeyCode, KeyModifiers};

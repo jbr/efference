@@ -95,7 +95,7 @@ impl OwnerWatch {
     /// this comes before the resume is spawned (docs/resumption.md). Called on the
     /// host's runtime, which its exit will run on.
     ///
-    /// If the owner already went, the exit starts here: the watch thread saw no
+    /// If the owner already went, the exit starts here: the watch thread had no
     /// host and ran `before_host`, which for the process launch exits — so this
     /// branch is reached only by a `before_host` that returns.
     pub fn adopt(&self, host: &Arc<Host>) {

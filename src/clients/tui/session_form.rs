@@ -60,7 +60,7 @@ const EFFORTS: &[&str] = &["Use default", "low", "medium", "high", "xhigh", "max
 
 /// Where a created session would run, and what the host has to offer for it.
 /// The client that opened the form supplies both: the working root is that
-/// client's own, and so is the environment creation will carry — which is why
+/// client's own, and so is the environment used for creation — which is why
 /// the form displays this rather than asking, and why it cannot be edited until
 /// there is a way to capture an environment at an arbitrary directory
 /// (backlog/new-session-form.md).
@@ -88,7 +88,7 @@ enum Page {
         query: Line,
         selected: usize,
         /// Connections whose no-match refresh was already requested during this
-        /// visit, so a miss asks the host at most once per connection.
+        /// visit, so the client requests at most one refresh per connection.
         refreshed: Vec<String>,
     },
     Effort {
@@ -120,7 +120,7 @@ pub(super) struct Form {
     note: Option<String>,
 }
 
-/// What a keypress asked the container to do. The form issues no requests
+/// The container action for a keypress. The form issues no requests
 /// itself: it names them, and the container's host dispatcher addresses the
 /// socket (`tui/run.rs`).
 #[derive(Debug, PartialEq, Eq)]
@@ -207,14 +207,14 @@ impl Form {
     }
 
     /// Whether the form offers the worktree row: until the host has answered, it is
-    /// shown; once it has, only if the preview says a worktree can start there.
+    /// shown; once it has, only if the preview permits a worktree there.
     fn worktree_offered(&self) -> bool {
         self.resolved
             .as_ref()
             .is_none_or(|resolved| resolved.worktree)
     }
 
-    /// The rows the form page shows and the cursor can reach.
+    /// The rows shown on the form page and available for cursor selection.
     fn rows(&self) -> usize {
         FORM_ROWS - usize::from(!self.worktree_offered())
     }
@@ -251,7 +251,7 @@ impl Form {
         Action::Continue
     }
 
-    /// The connections a role may choose from. Every configured connection is
+    /// The connections available for a role. Every configured connection is
     /// listed, including an unavailable one: omitting it would present a
     /// credential problem as a connection that was never configured, and the
     /// host says which it is (docs/control-api.md).

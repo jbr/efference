@@ -1,8 +1,8 @@
 //! A session leaves the host's map after its archive is recorded (`Departure`,
 //! docs/control-channel.md): an end appends `Archived` and closes the log before the
 //! session's watcher removes the entry, and resolves once the entry has gone. The watcher
-//! runs once the session's loop has returned, so it can reach its removal while the end is
-//! still recording; the tests here land it just before the record (`before_archived`).
+//! runs once the session's loop has returned, so it can remove the entry while the end is
+//! still recording; the tests here schedule it just before the record (`before_archived`).
 //! A session that ends with no end under way leaves without waiting for one.
 
 use super::resume::{adopt_logged, last_payload};

@@ -10,11 +10,11 @@
 //!
 //! [`AuthValue::reload`] re-runs whatever produced the value. Not every kind has
 //! something to re-run: an `env` credential comes from the environment captured
-//! when the host started, which no outside change can reach, so that kind
-//! carries no reloader and reports as much. `From<&str>` and `From<String>`
-//! build a cell with no reloader, which is what a literal in a test wants.
+//! when the host started, which outside changes cannot alter, so that kind
+//! has no reloader and reports as much. `From<&str>` and `From<String>`
+//! build a cell with no reloader, as used for a literal in a test.
 //!
-//! A value whose source states when it expires carries a renewal deadline, and
+//! A value whose source states when it expires has a renewal deadline, and
 //! [`AuthValue::current`] re-reads ahead of it rather than waiting for a
 //! rejection. That covers every request path alike — a turn, a listing probe,
 //! a decisions call — where the rejection-driven re-read is only wired into the
@@ -51,7 +51,7 @@ pub struct Reread {
 
 /// How long a failed renewal waits before the next request tries again. The
 /// value it kept may still be accepted until its real expiry, so every request
-/// in that window would otherwise pay an issuer round-trip that is failing.
+/// in that window would otherwise cause a failing issuer round-trip.
 const RENEW_RETRY: Duration = Duration::from_secs(5 * 60);
 
 /// Wrap a synchronous re-read — a file, a store lookup — as a [`Reload`].

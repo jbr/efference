@@ -8,7 +8,7 @@ use crate::record::session_dir::LOG_NAME;
 #[cfg(test)]
 tokio::task_local! {
     /// The scratch dirs [`mint_scratch_dir`] made inside a test's scope: what a rollback
-    /// test checks, where a scan of the system temp dir would also see the scratch of
+    /// test checks, where a scan of the system temp dir would also include the scratch of
     /// every test running beside it.
     pub(super) static MINTED_SCRATCH: std::cell::RefCell<Vec<PathBuf>>;
 }

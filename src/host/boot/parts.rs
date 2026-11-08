@@ -62,8 +62,8 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
     let mut toolbox = Toolbox::bash_and_mcps(cwd.to_path_buf(), Some(scratch.to_path_buf()))?
         .with_bash_limits(loaded.role.bash)
         .with_child_env(env_policy.child_env())
-        // The image gate (docs/tools.md): what the boot capability lookup said
-        // about this model's image input, so an image-producing tool refuses
+        // The image gate (docs/tools.md): the boot capability lookup's result
+        // for this model's image input, so an image-producing tool refuses
         // clearly instead of attaching bytes the model cannot read.
         .with_image_input(capabilities.supports_image_input);
     // Credentials live in the user's secret store (docs/secrets.md): an
@@ -113,7 +113,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
     let unmounted_section = crate::tools::mcp::unmounted_section(&unmounted);
     // The frozen toolbox against the dialect's name rule (docs/tools.md): a name the
     // request would reject fails the boot here, by its display name, instead of the
-    // first turn failing with a 400 that names nothing.
+    // first turn failing with a 400 without a name.
     // Boot's endpoint is the session's main model, which resolution already
     // refused for a provider that serves no turns (`src/inference/options.rs`).
     let dialect = endpoint
@@ -122,7 +122,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         .expect("the main model's provider serves turns");
     let illegal = toolbox.illegal_names(dialect);
     if !illegal.is_empty() {
-        // Each problem rides the returned error: the create response is where
+        // Each problem is in the returned error: the create response is where
         // the operator reads it, and no print repeats it.
         return Err(format!(
             "{} mounted tool name{} the {} dialect rejects: {}",
@@ -154,7 +154,7 @@ pub(super) struct FrozenPreamble {
 /// docs/context.md; orientation rides here as a config exec entry), the role's
 /// brief, and the config note.
 ///
-/// `inputs` carries what the boot already knows; the `[context]` block and the role
+/// `inputs` contains the values already resolved at boot; the `[context]` block and the role
 /// section come from `loaded`, resolved here.
 pub(super) fn freeze_preamble(
     loaded: &LoadedConfig,
@@ -174,13 +174,13 @@ pub(super) fn freeze_preamble(
     ) {
         Ok(resolved) => resolved,
         Err(e) => {
-            // The failure rides the returned error: the create response is
+            // The failure is in the returned error: the create response is
             // where the operator reads it, and no print repeats it.
             return Err(format!("could not resolve [context] entries: {e}").into());
         }
     };
     // Mask the resolved sections *before* rendering (docs/env.md). The preamble is
-    // the one string that both rides the request's `system` field and is
+    // the one string that is both in the request's `system` field and
     // snapshotted into the log, so masking it at the log's choke point alone would
     // leave the wire copy unfiltered and the two copies no longer byte-identical —
     // which is the whole point of the `Preamble` entry (docs/context.md). A
@@ -223,8 +223,8 @@ pub(super) fn build_client(
         upstream,
         effort,
     } = settings;
-    // The upstream pin rides the agent client, which the triage shares — so
-    // turns and gates route alike. It deliberately does **not** reach the spotter:
+    // The upstream pin is on the agent client, which the triage shares — so
+    // turns and gates route alike. The spotter deliberately does **not** receive it:
     // endpoint slugs are per-model, the spotter runs a different (Haiku-band)
     // model, and an order naming endpoints that do not serve it would fail
     // outright with fallbacks disabled.
@@ -236,10 +236,10 @@ pub(super) fn build_client(
         .with_temperature(temperature)
         .with_upstream(upstream.clone())
         // `[transport] stream-ceiling` (docs/transport.md): the bound on a stream
-        // that stays open without finalizing. It rides the agent client, which
+        // that stays open without finalizing. It is on the agent client, which
         // the triage shares, so both stream surfaces are bounded alike.
         .with_stream_ceiling(loaded.role.transport.stream_ceiling)
-        // The effort level rides the agent client, so the turn and the triage send
+        // The effort level is on the agent client, so the turn and the triage send
         // one envelope (docs/triage.md). The spotter's client is built
         // separately and never carries it; the keepalive omits it by construction.
         .with_effort(effort)
@@ -290,7 +290,7 @@ pub(super) async fn mount_spotter(
     //
     // A decision model has no such metadata: there is no context window, output
     // cap, or cache policy behind a decisions request (docs/permissions.md). The
-    // provider's own statement about the model says which kind it is, and for a
+    // provider's own metadata specifies the model's kind, and for a
     // decision model that lookup doubles as the existence check.
     let kind = match spotter_endpoint.spotter_kind(&spotter_model).await {
         Ok(kind) => kind,

@@ -60,8 +60,8 @@ fn draw() -> String {
 }
 
 /// Mint an id no current session holds: a random `adjective-noun`, redrawn while
-/// `taken` says the pair is in use. A random name carries nothing worth keeping
-/// through a collision, so another draw beats a numbered suffix; only after
+/// `taken` returns true for the pair. A random name has nothing worth keeping
+/// through a collision, so another draw is used instead of a numbered suffix; only after
 /// [`DRAWS`] taken pairs does the last one get the first free `-2`, `-3`, … so the
 /// call still terminates when the space is nearly full.
 pub fn mint(taken: impl Fn(&str) -> bool) -> String {

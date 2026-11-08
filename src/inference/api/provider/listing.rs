@@ -1,7 +1,7 @@
 //! Reading capabilities out of a model listing, for a custom endpoint
 //! (docs/transport.md).
 //!
-//! A named provider has a capability source this crate knows the shape of. A
+//! A named provider has a capability source whose shape is handled by this crate. A
 //! custom endpoint has only whatever `GET {base}/models` happens to return, and
 //! that varies from the bare OpenAI object — `id`, `object`, `created`,
 //! `owned_by`, and nothing else — to a listing carrying context window, output
@@ -20,7 +20,7 @@
 //! Deliberately **not** keyed off [`WireDialect`]: the listing's shape and the
 //! dialect the endpoint serves turns in are independent axes. A bare
 //! OpenAI-shaped listing can front both dialects, and a capability-rich one can
-//! front a dialect this crate does not speak at all.
+//! front a dialect this crate does not support at all.
 
 use super::row::{ListedModel, arrange};
 use super::*;
@@ -50,8 +50,8 @@ struct Entry {
     input_modalities: Option<Vec<String>>,
     #[serde(default)]
     architecture: Option<Architecture>,
-    /// Accepted sampling parameters, in either spelling. A listing that names them
-    /// but omits `temperature` is stating that the model rejects it.
+    /// Accepted sampling parameters, in either spelling. A listing that includes them
+    /// but omits `temperature` indicates that the model rejects it.
     #[serde(default)]
     supported_sampling_parameters: Option<Vec<String>>,
     #[serde(default)]
@@ -133,7 +133,7 @@ impl Entry {
                 .or(self.max_output_tokens)
                 .or(self.max_completion_tokens)
                 .or(self.max_tokens),
-            // A listing carries no reasoning support or requirement. OpenRouter
+            // A listing contains no reasoning support or requirement. OpenRouter
             // puts them on its singular model entry, a route a custom endpoint is
             // not assumed to have.
             thinking: ThinkingSupport::UNKNOWN,
@@ -170,13 +170,13 @@ impl Entry {
     }
 }
 
-/// The capabilities a listing declares for `model`, or [`ModelCapabilities::unknown`]
-/// when the listing does not name it.
+/// The capabilities in a listing for `model`, or [`ModelCapabilities::unknown`]
+/// when the listing does not include it.
 ///
 /// A missing entry is **not** an error. A listing can be paginated, can omit an
 /// alias the endpoint nonetheless serves, and is in no case a statement about
 /// what the endpoint will accept — so refusing to boot over one would turn a
-/// non-authoritative document into an authorization check. The boot line says
+/// non-authoritative document into an authorization check. The boot line lists
 /// which capabilities went unanswered, and the first turn is the real test
 /// (docs/transport.md).
 pub(super) fn capabilities_for(body: &str, model: &str) -> Result<ModelCapabilities, Error> {

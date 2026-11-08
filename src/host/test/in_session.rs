@@ -133,8 +133,8 @@ async fn self_target_is_refused() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// An id reaches its session in any project (docs/tools.md): a session in another
-/// project is read and messaged by its id, and what it hears names the sender's
+/// An id addresses its session in any project (docs/tools.md): a session in another
+/// project is read and messaged by its id, and the messages identify the sender's
 /// project, on a note and, once the sender supervises it, on a turn. The overview
 /// stays the caller's project, and an id the host does not hold is not found.
 #[tokio::test(start_paused = true)]
@@ -279,7 +279,7 @@ async fn a_create_outside_the_project_is_refused() {
 }
 
 /// A succession (docs/tools.md): the successor's first turn is the brief under the
-/// reserved hand-off source, the predecessor names its successor for the clients to
+/// reserved hand-off source, the predecessor identifies its successor for the clients to
 /// follow, and the successor — which drives its predecessor — may archive it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {

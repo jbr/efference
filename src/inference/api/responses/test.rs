@@ -97,7 +97,7 @@ fn responses_envelope_matches_expected_wire_bytes() {
     assert_eq!(serde_json::to_string(&request).unwrap(), expected);
 }
 
-/// The Codex-backend profile: the preamble rides `instructions`, `include` names
+/// The Codex-backend profile: the preamble is in `instructions`, `include` contains
 /// the encrypted reasoning, and the fields Codex CLI never sends
 /// (`max_output_tokens`, `truncation`, `temperature`, `prompt_cache_options`) are
 /// absent. Pinned like the platform envelope.
@@ -134,7 +134,7 @@ fn codex_profile_envelope_matches_expected_wire_bytes() {
     assert_eq!(serde_json::to_string(&request).unwrap(), expected);
 }
 
-/// Results answer as `function_call_output` items ahead of the prose that follows
+/// Results are encoded as `function_call_output` items ahead of the prose that follows
 /// them, and a logged Responses turn replays as the items the provider emitted —
 /// reasoning with its opaque continuation, message with its phase, call with its
 /// exact argument string.
@@ -413,7 +413,7 @@ fn an_error_event_marks_the_turn_record_only() {
 }
 
 /// The live quota error nests its fields under `error`; the reference's flat shape
-/// is read too. The code rides the message so a log line names the class.
+/// is read too. The code is included in the message so a log line contains the class.
 #[test]
 fn a_nested_error_event_surfaces_code_and_message() {
     let (completion, _) = feed(&[
@@ -497,7 +497,7 @@ fn a_responses_turn_round_trips_through_the_log() {
     assert_eq!(back, output);
 }
 
-/// The provider's naming of an in-stream failure decides its retry class
+/// An in-stream failure's retry class depends on the provider's name for it
 /// (`api/failure.rs`): a quota error is terminal, a server error transient, and
 /// an unnamed death transient.
 #[test]
@@ -522,7 +522,7 @@ fn an_error_events_name_sets_the_failure_class() {
     assert_eq!(died.failure_class, FailureClass::Transient);
 }
 
-/// `response.failed` carries the name under `response.error`, the shape Codex
+/// `response.failed` contains the name under `response.error`, the shape Codex
 /// CLI's fixture records for an exhausted platform quota.
 #[test]
 fn a_failed_response_with_a_quota_code_is_terminal() {

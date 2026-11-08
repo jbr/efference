@@ -20,7 +20,7 @@ impl Host {
 
     /// The sessions that end when `id` does (docs/tools.md): the children it created
     /// that are not detached, theirs in turn, and so on, in the order the cascade
-    /// reaches them.
+    /// processes them.
     pub(crate) fn ending_with(&self, id: &str) -> Vec<String> {
         let mut ending = Vec::new();
         let mut next = vec![id.to_string()];

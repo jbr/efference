@@ -136,7 +136,7 @@ pub(super) fn lay_out<'a>(
 /// Choose column widths that fit in `available_width` (which includes
 /// `num_cols + 1` border characters). When natural widths overflow, the widest
 /// column is reduced one column at a time until the budget is met or columns
-/// reach `MIN_COL_WIDTH`.
+/// are at `MIN_COL_WIDTH`.
 fn compute_column_widths(natural: &[usize], available_width: usize) -> Vec<usize> {
     let num_cols = natural.len();
     if num_cols == 0 {

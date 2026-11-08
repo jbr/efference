@@ -14,7 +14,7 @@ pub(super) fn resolve_env_table(
 ) -> Result<Vec<crate::config::env_table::ResolvedValue>, Error> {
     let (values, errors) = resolver.resolve_table(table);
     if !errors.is_empty() {
-        // Each reference's failure rides the returned error: the create response
+        // The returned error contains each reference's failure: the create response
         // is where the operator reads it, and no print repeats it.
         let detail = errors
             .iter()
@@ -84,7 +84,7 @@ pub(super) fn build_env_policy(
         );
     }
     if !env_report.conflicts.is_empty() {
-        // The conflicts ride the returned error: the create response is where
+        // The returned error contains the conflicts: the create response is where
         // the operator reads them, and no print repeats them.
         let detail = env_report
             .conflicts

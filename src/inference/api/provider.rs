@@ -1,4 +1,4 @@
-//! Provider identity and the model-metadata (capability) query it answers
+//! Provider identity and its model-metadata (capability) query
 //! (docs/transport.md).
 //!
 //! The provider is **declared** by a host connection's configuration, never
@@ -138,7 +138,7 @@ impl Provider {
     /// Responses dialect has no zero (the Codex backend refuses `max_output_tokens`
     /// below 16). OpenRouter treats 0 as unset and lets the model generate to
     /// `end_turn`, but honours a positive cap on most upstreams, and OpenAI models
-    /// behind it floor the cap at 16, so 16 is the smallest cap that costs the same
+    /// behind it floor the cap at 16, so 16 is the smallest cap with the same cost
     /// everywhere. An upstream that ignores every cap is left to the keepalive's
     /// affordability check (the measured models are in docs/transport.md).
     pub fn keepalive_output_cap(&self) -> u32 {
@@ -153,14 +153,14 @@ impl Provider {
 
     /// The Responses request shape, for providers on that dialect.
     /// How long this provider's prompt cache keeps an entry after its last write or
-    /// read, as far as anything says (docs/transport.md): the keepalive's cadence
-    /// derives from it, and a ping that lands after expiry pays the full uncached read
-    /// it exists to avoid, while one that lands early costs a cached read. OpenAI
+    /// read, as far as documented (docs/transport.md): the keepalive's cadence
+    /// derives from it, and a ping after expiry incurs the full uncached read cost
+    /// it is meant to avoid, while an earlier ping incurs a cached read cost. OpenAI
     /// documents 30 minutes since the last write or reuse for GPT-5.6+, but a
     /// gpt-5.6-luna ping 16 minutes after its last request read cold, and the corpus
     /// has the 5.6 family mixed past 7 minutes, so its two arms take 10. Anthropic's
     /// default is 5 minutes. Everything else documents nothing, and OpenRouter's
-    /// endpoint metadata carries no lifetime, so 5 minutes stands as the conservative
+    /// endpoint metadata contains no lifetime, so 5 minutes stands as the conservative
     /// reading.
     pub fn cache_ttl(&self) -> std::time::Duration {
         match self {
@@ -189,15 +189,15 @@ impl Provider {
     /// provider's capability check.
     /// `None` for a custom endpoint: the cheap band of an arbitrary catalog is
     /// not knowable, and guessing a slug would fail at the metadata lookup with a
-    /// message about a model nobody chose. Resolution asks for `[defaults].spotter`
+    /// message about a model nobody chose. Resolution requires `[defaults].spotter`
     /// instead (`inference/options.rs`).
     ///
     /// Compiled in, so it ages with the build; where the host holds the
-    /// provider's listing, resolution asks [`Self::newest_spotter_model`] first.
+    /// provider's listing, resolution uses [`Self::newest_spotter_model`] first.
     pub fn default_spotter_model(&self) -> Option<&'static str> {
         match self {
             Self::Anthropic => Some("claude-haiku-4-5"),
-            // OpenRouter ids carry the author: the bare id fails its metadata
+            // OpenRouter ids include the author: the bare id fails its metadata
             // route before the first request.
             Self::OpenRouter => Some("anthropic/claude-haiku-4-5"),
             Self::OpenAI | Self::OpenAICodex => Some(OPENAI_DEFAULT_SPOTTER_MODEL),
@@ -210,7 +210,7 @@ impl Provider {
     }
 
     /// The default spotter read from this provider's cached listing, where the
-    /// listing says which models form the cheap band: Anthropic files each model
+    /// listing includes the cheap band: Anthropic files each model
     /// under a `line`, so the answer is the newest `active` model on the `haiku`
     /// line, by `created_at` (docs/model-catalog.md). `None` where the listing
     /// names no lines, or holds no such model; the caller then takes
@@ -237,7 +237,7 @@ impl Provider {
     }
 
     /// The decision model this provider serves, for the spotter default
-    /// (docs/permissions.md): any connection that can reach jev supplies it, ahead
+    /// (docs/permissions.md): any connection with jev support supplies it, ahead
     /// of the main provider's cheap band. Floating aliases on both — the
     /// first-party `jev-latest`, and OpenRouter's `~`-prefixed alias for it — so
     /// a new jev version needs no new build.
@@ -249,9 +249,9 @@ impl Provider {
         }
     }
 
-    /// Every name [`Self::from_name`] accepts, with the hover text the published user
-    /// schema shows for it (docs/config-schemas.md): one table for the parser, its error,
-    /// and the schema's `enum`, so the three cannot disagree.
+    /// Every name [`Self::from_name`] accepts, with its hover text in the published user
+    /// schema (docs/config-schemas.md): one table for the parser, its error,
+    /// and the schema's `enum`, so the three stay consistent.
     const NAMED: &[(&str, Self, &str)] = &[
         ("anthropic", Self::Anthropic, "Anthropic's API."),
         ("openrouter", Self::OpenRouter, "OpenRouter."),
@@ -315,8 +315,8 @@ impl Provider {
     /// [`ImagePlacement::AfterInterposedTurn`]: crate::record::project::ImagePlacement::AfterInterposedTurn
     // The equal bodies are coincidences: `TypeSafe` and `Custom(SystemOne)` take
     // `InToolResult` because no turn is ever projected for them, not because their
-    // dialects place images there, and the OpenRouter default agrees with the portable
-    // Messages shape without sharing its reason.
+    // dialects place images there, and the OpenRouter default matches the portable
+    // Messages shape for a different reason.
     #[allow(clippy::match_same_arms)]
     pub fn image_placement(&self, model: &str) -> crate::record::project::ImagePlacement {
         match self {
@@ -444,8 +444,8 @@ impl Provider {
         match self {
             // Anthropic's scale is already 0..1, and the 0..1 range is the subset
             // both scales accept, so a custom endpoint on either dialect cannot be
-            // sent an out-of-range value. An endpoint that wanted the wider range
-            // reads the whole scale as half-strength, which is a dull knob rather
+            // sent an out-of-range value. For an endpoint using the wider range,
+            // the whole scale is half-strength, which is a dull knob rather
             // than a 400.
             Self::Anthropic | Self::Custom(_) => v,
             Self::OpenRouter | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => v * 2.0,

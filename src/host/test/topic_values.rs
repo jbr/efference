@@ -30,7 +30,7 @@ fn state_reports_upstream_failure() {
     );
 }
 
-/// `GET /state` carries the retry in flight as its own topic — surface, attempt,
+/// `GET /state` contains the retry in flight as its own topic — surface, attempt,
 /// budget, and when the next attempt fires — and reports `null` once the attempt
 /// that finalizes clears it (docs/transport.md).
 #[test]
@@ -123,8 +123,8 @@ fn state_reports_a_stalled_trajectory() {
 
 /// `GET /state` names what the session is — the configured model and its working
 /// directory (docs/control-api.md) — as a topic, so a client reads it off the
-/// connect snapshot. `null` before boot sets it, which is what a test or an
-/// offline verb sees.
+/// connect snapshot. `null` before boot sets it, as available to a test or an
+/// offline verb.
 #[test]
 fn state_reports_the_session_identity() {
     let (shared, _turns_rx) = Session::in_memory();
@@ -225,7 +225,7 @@ fn state_reports_cache_telemetry() {
     let at = v["usage"]["last_request_at"].as_u64().expect("stamped");
     let now = crate::record::log::Timestamp::now().0;
     assert!(at <= now && now - at < 60_000, "a plausible recent stamp");
-    // The cold-read streak rides the same topic (docs/log-and-projection.md): the
+    // The cold-read streak is in the same topic (docs/log-and-projection.md): the
     // first turn's cold read was the session's boot, the second was warm, so nothing
     // is outstanding.
     assert_eq!(v["usage"]["cold_streak"], 0);
@@ -528,7 +528,7 @@ fn state_reports_the_review_level_dial() {
 ///
 /// The topic carries **structure only** (docs/control-api.md): no `tail` and no
 /// last-chunk stamp, because both change with every output chunk and would make a
-/// level-triggered topic re-emit a whole-topic replacement per chunk. That content rides
+/// level-triggered topic re-emit a whole-topic replacement per chunk. That content is in
 /// `process_output` on the ephemeral `output` class. This asserts their absence, since
 /// their return would be a silent regression to a per-chunk firehose.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -573,7 +573,7 @@ async fn state_json_surfaces_running_processes() {
 }
 
 /// `GET /state` reports cumulative triage retention (docs/triage.md), folded
-/// from the log behind a cursor. Drives the two things the unit tests can't reach: that
+/// from the log behind a cursor. Drives the two things the unit tests can't exercise: that
 /// the cursor *advances* across successive polls rather than refolding or freezing, and
 /// that a withheld result stays out of the ratio it would otherwise flatter.
 #[test]
@@ -637,7 +637,7 @@ fn state_reports_triage_retention() {
 /// [`Topic::as_str`] — the structural half of "`GET /state` ≡ the fold of every `state`
 /// frame since connect" (docs/control-api.md).
 ///
-/// The fold identity needs the two sides to agree on *names*, not just on values, so this
+/// The fold identity requires matching *names* on both sides, not just values, so this
 /// pins the key set from both directions: no topic missing from the snapshot, and no
 /// snapshot key that is not a topic. `last_seq` is the one deliberate exception — the log's
 /// cursor rather than control state, so it is outside the fold and named here explicitly

@@ -6,7 +6,7 @@
 //! The comparison is of whole strings, key order included: the frame's own keys
 //! (`class`, `kind`, `data`) in the order the envelope declares them, and the keys of
 //! `data` sorted, as every object the channel builds from a `serde_json::Value` is.
-//! Each input carries a character JSON escapes, so the escaping is pinned with the
+//! Each input contains a character JSON escapes, so the escaping is pinned with the
 //! keys.
 
 use super::*;
@@ -317,7 +317,7 @@ fn the_log_frame_kinds_keep_their_bytes() {
 fn no_log_frame_kind_is_named_like_a_state_topic() {
     for (payload, _) in log_kinds() {
         let kind = frames::payload_kind(&payload);
-        // Against the names `Topic::ALL` carries rather than `Topic::parse`, so the
+        // Against the names in `Topic::ALL` rather than `Topic::parse`, so the
         // check cannot pass by the lookup answering `None` for every name.
         assert!(
             !Topic::ALL.iter().any(|topic| topic.as_str() == kind),

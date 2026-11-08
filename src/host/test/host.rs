@@ -46,7 +46,7 @@ impl Roots {
 
 /// The host's socket stack over `host`, as `serve_host` mounts it.
 /// A host registry with one env-backed connection, so creation gets past role
-/// resolution and into `boot::prepare`. The credential never reaches a provider:
+/// resolution and into `boot::prepare`. The credential is never sent to a provider:
 /// every case here fails before the first request.
 fn one_connection_registry() -> crate::inference::InferenceRegistry {
     let config = crate::config::user_config::InferenceConfig::from_toml(
@@ -178,9 +178,9 @@ async fn network_host_server(
     (server, format!("Bearer {}", enrolled.token), scratch)
 }
 
-/// A hosted session's control answers under its prefix, over the web transport:
-/// `no-store` names the inner route a session-prefixed path counts as, the
-/// browsing-context isolation rides every answer, and the plaintext web
+/// A hosted session's control routes are served under its prefix, over the web transport:
+/// `no-store` applies to the inner route a session-prefixed path counts as, the
+/// browsing-context isolation is on every response, and the plaintext web
 /// transport sends no HSTS (docs/web-bind.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_hosted_sessions_control_answers_are_never_stored() {
@@ -237,9 +237,9 @@ fn json(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {body}"))
 }
 
-/// Post a creation, which answers once the id is reserved, and read where its
+/// Post a creation, which returns once the id is reserved, and read where its
 /// preparation ended from the session's own `/state?wait=settled`, as a client would:
-/// a started session's state, or the starting state carrying the failure
+/// a started session's state, or the starting state containing the failure
 /// (docs/control-api.md).
 async fn created_state(server: &TestServer<impl trillium::Handler>, body: &Value) -> Value {
     let created = server.post("/sessions").with_json_body(body).await;
@@ -272,7 +272,7 @@ fn failure_reason(state: &Value) -> String {
 /// Two hosted sessions select different provider/auth/model tuples from the one
 /// host registry, `session_identity` names every role by connection, a triage
 /// selection on a foreign dialect is refused before anything is minted, and the
-/// host's credentials reach neither the log, the state, nor a tool child's
+/// host's credentials are absent from the log, the state, and a tool child's
 /// environment (docs/transport.md, docs/env.md).
 // A scenario read top to bottom: one host registry, the sessions created against it, then
 // the canary checks that follow from them.
@@ -389,7 +389,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
             .contains("platform-canary-secret")
     );
 
-    // Settled, so through the start: creation answers once the id is reserved.
+    // Settled, so through the start: creation returns once the id is reserved.
     let state_a = server.get("/sessions/a/v1/state?wait=settled").await;
     state_a.assert_status(200);
     let body_a = state_a.body().to_string();
@@ -428,7 +428,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         .assert_body_contains("not configured");
 
     // Canaries: no host credential in state, the log (which holds the child's
-    // `env` output), or the session config. A secret that does reach a log by
+    // `env` output), or the session config. A secret written to a log by
     // another route is masked by name, without a value prefix — for every role
     // the session selected, and only those: session A never held the platform key.
     let log = |cwd: &str, id: &str| {
@@ -480,7 +480,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     host.swansong().shut_down().await;
 }
 
-/// `?role=` narrows the catalog to what a role may choose (docs/model-catalog.md):
+/// `?role=` narrows the catalog to models eligible for a role (docs/model-catalog.md):
 /// a connection that serves no turns drops out for main and triage and stays for
 /// the spotter. Both connections are disabled, so no refresh leaves the process.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -646,7 +646,7 @@ async fn a_process_id_survives_the_session_prefix() {
     killed.assert_status(200);
     killed.assert_body_contains(r#""status":"killed""#);
 
-    // The signal landed: the drain saw the exit and cleared the running set.
+    // The signal was delivered: the drain processed the exit and cleared the running set.
     tokio::time::timeout(Duration::from_secs(5), async {
         while session.running_process(1).is_some() {
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -700,7 +700,7 @@ disabled = true
             {"name": "test", "provider": "anthropic", "available": true},
         ])
     );
-    // The row type carries three plain fields, so a credential could only reach a
+    // The row type has three plain fields, so a credential could only be sent to a
     // client by being added to it — which the structural assertion above would
     // fail to compile against. This scans the encoding anyway, because the
     // property is about bytes leaving the host.
@@ -712,7 +712,7 @@ disabled = true
     host.swansong().shut_down().await;
 }
 
-/// The listing is one resource with two readings: `GET /sessions` answers the
+/// The listing is one resource with two readings: `GET /sessions` returns the
 /// array, and the same path with `Accept: text/event-stream` subscribes to it —
 /// the current value on connect, then the whole value again on every change,
 /// with no cursor and nothing to reconcile (`host/listing.rs`).
@@ -781,7 +781,7 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
     }
     let server = host_server(&host).await;
 
-    // Each entry carries the session's cwd — what a client scopes a shared
+    // Each entry contains the session's cwd — what a client scopes a shared
     // host's listing to its own project by (docs/control-channel.md).
     let list = server.get("/sessions").await;
     list.assert_status(200);

@@ -17,7 +17,7 @@ use super::{InteractiveState, UiMode};
 use crate::protocol::state::PaceView;
 use crate::tools::bash;
 
-/// A verb the strip can carry — and the thing strip focus, a click target, and a
+/// A verb the strip can contain — and the thing strip focus, a click target, and a
 /// sidebar return all hold, in place of a position (docs/tui.md). Dispatch happens
 /// in [`activate_strip_verb`](InteractiveState::activate_strip_verb), always onto
 /// mechanisms that also exist without the strip (pace, interrupt, gate approval).
@@ -100,7 +100,7 @@ impl InteractiveState<'_> {
         };
         // Frozen while engaged: the pinned *order* is what the operator's hands and
         // eyes are aimed at, so it holds. Each slot's label is re-read from the live
-        // list, because a slot whose verb still applies must say what it currently
+        // list, because a slot whose verb still applies must show what it currently
         // does; a slot whose verb has gone keeps its last label and greys (below).
         pinned
             .iter()
@@ -175,7 +175,7 @@ impl InteractiveState<'_> {
     }
 
     /// Whether the operator is *on* the strip — keyboard focus, or the mouse over
-    /// its row. Either engagement pins the list; it re-ranks when both are gone.
+    /// its row. The list is pinned while either is engaged; it re-ranks when both are gone.
     fn strip_engaged(&self) -> bool {
         self.strip_focus.is_some() || self.viewport.strip_hovered
     }
@@ -267,7 +267,7 @@ impl InteractiveState<'_> {
     /// `Detach` raises [`quit_requested`](super::state::UiState) for the caller
     /// (key handler or UI loop) to act on.
     ///
-    /// A verb the state has stopped ranking fires **nothing** and says so, rather
+    /// For a verb the state has stopped ranking, the handler does **nothing** and reports it, rather
     /// than falling through to whatever verb occupies its slot.
     pub(super) fn activate_strip_verb(&mut self, verb: StripVerb) {
         if !self.strip_verb_applies(verb) {
@@ -370,7 +370,7 @@ impl InteractiveState<'_> {
     /// [`strip_hits`](InteractiveState::strip_hits), the column-range → item map
     /// mouse clicks resolve against.
     pub(super) fn render_control_strip(&mut self, buf: &mut Buffer, area: Rect) {
-        // One place decides whether the list is pinned, and it runs before the list
+        // `sync_strip_engagement` determines whether the list is pinned, and runs before the list
         // is read — so what is drawn, what a click resolves against, and what a key
         // dispatches on are the same list.
         self.sync_strip_engagement();

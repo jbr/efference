@@ -78,8 +78,8 @@ async fn allow_with_a_note_sends_the_note_after_the_result() {
          arrives with its result"
     );
     assert_eq!(gate.await, Ok(Approval::Approve));
-    // The decision names the note's turn, so a reader of the log can tell it from any
-    // other message the parent sends. The decision entry carries the parent as its
+    // The decision identifies the note's turn, so a reader of the log can tell it from any
+    // other message the parent sends. The decision entry has the parent as its
     // source too, so the note is found by its submission id, not by sender.
     let named = decisions(&child)[0]
         .note_submission
@@ -187,7 +187,7 @@ async fn a_peer_cannot_decide() {
 
 /// Driving is not deciding (docs/permissions.md): `parent` drives `grandchild` through
 /// the creation chain, and a successor drives its predecessor, but neither supervises
-/// it, so both are refused `decide` — an allow and a deny alike — naming who does. The
+/// it, so both are refused `decide` — an allow and a deny alike — with the supervisor identified. The
 /// drive relation is otherwise unchanged: the same caller still interrupts it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_driver_that_does_not_supervise_cannot_decide() {

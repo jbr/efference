@@ -129,7 +129,7 @@ fn turn_sender(
     })
 }
 
-/// Clipboard watch (docs/tui.md): a terminal's own paste carries no image, so the strip says
+/// Clipboard watch (docs/tui.md): a terminal's own paste carries no image, so the strip indicates
 /// when `C-v` would fetch one. Learned from the pasteboard's change count and type list —
 /// never its contents — polled because nothing announces a change.
 fn clipboard_watcher(events: &Sender<TuiEvent>) -> JoinHandle<()> {
@@ -221,9 +221,9 @@ fn recall_dispatcher(
 
 /// Continue sender: the empty-composer `⏎` hands control back with no input
 /// (`POST /loop/continue`, docs/control-api.md). Unlike the other dispatchers
-/// this one answers back: a decline is a normal outcome — the moment had no
+/// this one reports a decline: it is a normal outcome — the moment had no
 /// continue in it — and the operator only learns which case from the daemon's
-/// message, so it rides home as a `Notice` for the status line.
+/// message, which the dispatcher sends as a `Notice` for the status line.
 fn continue_sender(
     client: &Client,
     mut continue_rx: UnboundedReceiver<()>,
@@ -326,9 +326,9 @@ fn interrupt_sender(
     })
 }
 
-/// Image fetcher (docs/tui.md): dereference a result image the UI thread saw
+/// Image fetcher (docs/tui.md): dereference a result image supplied to the UI thread
 /// only as metadata — `GET /log/:seq/images/:idx` over the socket, decoded
-/// here (off the UI thread), landed as a `TuiEvent::Image`. A failure lands
+/// here (off the UI thread), sent as a `TuiEvent::Image`. A failure lands
 /// too: the reserved rows render the reason instead of pixels.
 fn image_fetcher(
     client: &Client,

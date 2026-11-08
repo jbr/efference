@@ -40,8 +40,8 @@ fn seqs(body: &str) -> Vec<u64> {
 }
 
 /// The query grammar (docs/control-api.md). `since` and `tail` are mutually exclusive
-/// rather than resolved by precedence: one asks to resume from a position and the other
-/// to open at the end, so a request carrying both has no single reading.
+/// rather than resolved by precedence: one specifies resumption from a position and the other
+/// opening at the end, so a request containing both has no single reading.
 #[test]
 fn log_select_parses_positions_and_counts() {
     assert_eq!(
@@ -201,8 +201,8 @@ async fn a_tool_call_resolves_by_its_call_id() {
     conn.assert_ok();
     assert!(conn.response_headers().get_str("etag").is_some());
     conn.assert_json_body_with(|body: &Value| {
-        // The seq rides along so a client that resolved a call can reach the entry
-        // carrying it without a search.
+        // The seq is included so a client that resolved a call can retrieve the entry
+        // containing it without a search.
         assert_eq!(body["seq"], 1);
         assert_eq!(body["call"]["id"], "toolu_9");
         assert_eq!(body["call"]["name"], crate::record::names::tools::BASH);
@@ -233,8 +233,8 @@ fn result_with_image() -> Payload {
 
 const IMAGE_BYTES: &[u8] = &[0x52, 0x49, 0x46, 0x46, 0x00, 0x01, 0x02, 0x03];
 
-/// The log reads serve entries as views — a result image's base64 `data` never rides
-/// `GET /log` or `GET /log/:seq`; the layout metadata does, and the bytes resolve
+/// The log reads serve entries as views — a result image's base64 `data` is absent from
+/// `GET /log` and `GET /log/:seq`; the layout metadata is included, and the bytes resolve
 /// through `GET /log/:seq/images/:idx` (entry_view.rs, docs/control-api.md).
 #[tokio::test]
 async fn log_reads_reference_images_instead_of_inlining_them() {
@@ -291,9 +291,9 @@ async fn an_image_resolves_by_seq_and_index() {
 /// what it cut; `GET /log/:seq` — the dereference address — serves it whole. A result
 /// under the threshold is byte-identical through both, which is the property the
 /// frame ≡ window pin now states (`frames.rs`).
-/// The line counts ride whichever entry decided the result (docs/triage.md): a
-/// result captured before its triage carries none of its own, and its verdict — which
-/// names the result but holds none of its bytes — carries them, so a client updating
+/// The line counts are on the entry with the result's decision (docs/triage.md): a
+/// result captured before its triage has none of its own, and its verdict — which
+/// references the result but holds none of its bytes — contains them, so a client updating
 /// its slot from that one frame states the same numbers.
 #[tokio::test]
 async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
@@ -341,7 +341,7 @@ async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
     assert_eq!(verdict["selection"]["total_lines"], 40);
     assert_eq!(verdict["selection"]["kept_lines"], 6);
 
-    // The same entry by address carries the same counts — the two routes are one view.
+    // The same entry by address contains the same counts — the two routes are one view.
     let by_seq = app.get(&format!("/v1/log/{verdict_seq}")).await;
     by_seq.assert_ok();
     by_seq.assert_json_body_with(|entry: &Value| {

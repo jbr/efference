@@ -1,4 +1,4 @@
-//! `wait` over a host, as `efference mcp` reaches it (docs/operating.md): the statuses
+//! `wait` over a host, as accessed by `efference mcp` (docs/operating.md): the statuses
 //! the mount has not shown of the agents it created or named, nothing for a working
 //! one, and an end once.
 

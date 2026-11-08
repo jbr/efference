@@ -380,8 +380,8 @@ fn tool_definition_keys_serialize_sorted() {
 }
 
 /// **Two tool calls in one response stay distinguishable on the live sink.** Blocks
-/// stream sequentially, so an unscoped sink cannot tell the second call's input from the
-/// first's continuing: a client holding one slot per kind resets it when the second
+/// stream sequentially, so the second call's input is indistinguishable from the
+/// first's continuing input on an unscoped sink: a client holding one slot per kind resets it when the second
 /// `ToolStart` arrives and the first call's arriving arguments vanish from the display.
 /// Carrying `index` — and the `tool_use` id the eventual result keys on — is what lets a
 /// client bind each fragment to the call it belongs to (docs/control-api.md).
@@ -439,7 +439,7 @@ fn parallel_tool_calls_are_scoped_to_their_blocks() {
 /// serializes unconditionally would move every session's prefix
 /// (docs/log-and-projection.md), so `None` must skip entirely rather than emit
 /// `null`. The rename is pinned too — the type is `Upstream` because `Provider`
-/// already means anthropic-vs-openrouter, and only the wire says `provider`.
+/// already means anthropic-vs-openrouter, and only the wire uses `provider`.
 #[test]
 fn a_pinned_upstream_renders_as_the_provider_object() {
     let pin = Upstream::pinned(vec!["google-ai-studio".into()]).expect("non-empty order");

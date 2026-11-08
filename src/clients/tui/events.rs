@@ -7,7 +7,7 @@ use crate::clients::tui::projection::ViewState;
 /// Apply a [`TuiAction`] to the document.
 ///
 /// **Nothing here mutates the document.** Folding is render state (docs/tui.md), so
-/// `FocusEntry` carries focus and nothing else; `SelectTheme` is handled by the theme
+/// `FocusEntry` contains focus and nothing else; `SelectTheme` is handled by the theme
 /// picker, and `OpenUrl` is a no-op in the read-only viewer.
 ///
 /// This is kept as the single dispatch point so a per-entry verb that *does* act on

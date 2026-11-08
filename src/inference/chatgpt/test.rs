@@ -1,6 +1,6 @@
 use super::*;
 
-/// The three values the issuer exact-matches. A redirect URI that says
+/// The three values the issuer exact-matches. A redirect URI with
 /// `127.0.0.1` — which is what the listener actually binds — is refused by the
 /// issuer, so the spelling is asserted rather than left to a helper's default.
 #[test]
@@ -60,7 +60,7 @@ fn the_account_and_plan_come_off_the_access_token() {
     assert_eq!(plan.as_deref(), Some("plus"));
 }
 
-/// The account is required — it rides `ChatGPT-Account-ID` on every request, so
+/// The account is required — it is sent as `ChatGPT-Account-ID` on every request, so
 /// a token without it cannot address the backend and must not be stored as if
 /// it could.
 #[test]
@@ -160,7 +160,7 @@ fn an_unreadable_record_is_not_read_as_a_missing_one() {
     assert!(error.contains("oauth:codex"), "{error}");
 }
 
-/// The tokens never reach a log line through Debug.
+/// The tokens never appear in a log line through Debug.
 #[test]
 fn a_grant_does_not_debug_print_its_tokens() {
     let printed = format!("{:?}", stored(None));

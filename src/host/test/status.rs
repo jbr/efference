@@ -1,4 +1,4 @@
-//! A session's status as a subscriber hears it (docs/tools.md).
+//! A session's status as sent to a subscriber (docs/tools.md).
 
 use super::*;
 use crate::protocol::state::{BlockedReason, LoopPhase};

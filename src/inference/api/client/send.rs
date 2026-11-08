@@ -9,8 +9,8 @@ use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use tokio::sync::futures::Notified;
 
-/// Why a read the operator's interrupt ended stopped: the failure its record-only entry
-/// carries (docs/log-and-projection.md).
+/// Why a read the operator's interrupt ended stopped: the failure in its record-only entry
+/// (docs/log-and-projection.md).
 const INTERRUPTED: &str = "generation interrupted";
 
 impl Client {
@@ -22,16 +22,16 @@ impl Client {
     /// The operator's interrupt (docs/control-channel.md) is armed here, before anything
     /// is sent, and the one armed future serves every attempt below — the image-withheld
     /// retry ([`Self::send_with_image_fallback`]), a reservation or credential retry — so a
-    /// press between two attempts reaches the later one. Armed before sending rather than
-    /// once a stream opens: `notify_waiters` stores no permit, so a press that lands after
-    /// the request reached the upstream but before the read loop registered would
+    /// press between two attempts interrupts the later one. Armed before sending rather than
+    /// once a stream opens: `notify_waiters` stores no permit, so a press made after
+    /// the upstream received the request but before the read loop registered would
     /// otherwise be lost, leaving the read on a stream that may never finish.
     ///
     /// The loop's model request then reads the loop's latch ([`Self::with_interrupt_latch`]),
     /// which closes the gap before the arm. A press sets the latch and then notifies, and
     /// `notify_waiters` wakes every future created before it: a press after the arm wakes
-    /// the read, and one before it set the latch first, so the read here sees it. A request
-    /// a press has reached here is not sent, and ends as a read the interrupt ended.
+    /// the read, and one before it set the latch first, so the read here checks it. A request
+    /// interrupted here is not sent, and ends as a read the interrupt ended.
     pub(super) async fn send(
         &self,
         turns: &[WireTurn],
@@ -475,8 +475,8 @@ impl Client {
     /// never finalizes is bounded by nothing else — the retry policy applies only
     /// while opening a response — so the read loop carries an absolute deadline.
     /// Exceeding it is marked exactly like a mid-stream death: the partial is kept,
-    /// `finish` folds the reason into the completion's `upstream_failure`, and the
-    /// caller's abort-retry budget decides what happens next.
+    /// `finish` folds the reason into the completion's `upstream_failure`, and
+    /// what happens next depends on the caller's abort-retry budget.
     ///
     /// The operator's interrupt, armed before the request went out, is the other
     /// way out: it ends the read the same way, and `Aborted` tells the caller not
@@ -494,8 +494,8 @@ impl Client {
         // that path's whole record is otherwise one prose string, and the edge's
         // `x-generation-id` is the join key every after-the-fact query needs.
         // The `UpstreamStatusHandler` cannot do this: an empty stream is a 200, so
-        // the handler takes its success early-return, and at that point nothing
-        // yet knows the stream will arrive empty.
+        // the handler takes its success early-return, and at that point the
+        // empty stream has not yet been detected.
         assembler.observed_response(response_meta(events.conn()));
         let mut operator_abort = false;
         let mut first_byte_reported = false;
@@ -564,7 +564,7 @@ impl Client {
         Ok(completion)
     }
 
-    /// The checks a read completion still owes once its stream is done, and the
+    /// The checks on a read completion once its stream is done, and the
     /// reservation's calibration from it.
     fn settle(&self, completion: Completion, body_bytes: usize) -> Completion {
         // Anchor the next estimate to this response's reported prompt count
@@ -645,7 +645,7 @@ impl Client {
     /// Turn a failed `into_sse` into a status and a legible detail, reading the
     /// response body on a non-2xx. The `SseError` still owns the `Conn` (it `Deref`s
     /// to it and converts back via `Into<Conn>`), so the body is read off it —
-    /// Anthropic's error responses carry a JSON `error.message` that names the
+    /// Anthropic's error responses contain a JSON `error.message` with the
     /// actual problem.
     ///
     /// The failure *propagates*: the agent loop treats an open failure as terminal
@@ -665,7 +665,7 @@ impl Client {
         // Any other open failure still owns the conn: an unexpected content-type (a
         // JSON error body on a 4xx the retry handler let through, or a 200 that is
         // not a stream) is read the same way a status error is, so the upstream's
-        // words reach the record instead of "content-type: None".
+        // words are recorded instead of "content-type: None".
         let kind = e.kind.to_string();
         let mut conn: Conn = e.into();
         let status = conn.status();

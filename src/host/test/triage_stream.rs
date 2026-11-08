@@ -11,7 +11,7 @@ use crate::record::log::Provider;
 use crate::session::submitted::SubmittedTurn;
 use trillium_tokio::Swansong;
 
-/// A completion that thinks, writes a line of text, then makes the `retain` call.
+/// A completion with thinking, a line of text, then a `retain` call.
 fn thinking_verdict() -> String {
     events(&[
         r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
@@ -106,8 +106,8 @@ fn assert_streamed(seen: &[(&'static str, Vec<String>, String)], session: &Sessi
     assert_eq!(log.matches("weighing the read").count(), 1, "{log}");
 }
 
-/// **The shared triage streams.** The fork rides the agent's client; its fragments
-/// still reach the stream as triage kinds, naming the call being triaged.
+/// **The shared triage streams.** The fork uses the agent's client; its fragments
+/// are still on the stream as triage kinds, with the call being triaged identified.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_shared_triage_streams_its_thinking_and_text() {
     let (seen, session) = run(false).await;

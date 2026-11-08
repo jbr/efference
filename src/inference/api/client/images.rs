@@ -1,5 +1,5 @@
 //! Image input learned from the endpoint's refusal (docs/transport.md). A model
-//! whose metadata says nothing about images is sent them; a request rejection
+//! whose metadata has nothing about images is sent them; a request rejection
 //! ([`is_request_rejection`]) on a request that
 //! carries image blocks is retried once with every image replaced by a text
 //! placeholder, and when that retry succeeds the client withholds images from then
@@ -19,8 +19,8 @@ fn withheld_note(count: usize) -> String {
 }
 
 impl Client {
-    /// The refusal this client, or a clone of it, learned that the endpoint
-    /// refuses image input from — `None` while images are sent. Read by the agent
+    /// The endpoint's refusal of image input, as recorded by this client or a clone
+    /// of it — `None` while images are sent. Read by the agent
     /// loop, which closes the tool layer's image gate and records the lesson
     /// (docs/tools.md).
     pub fn images_refused(&self) -> Option<&str> {

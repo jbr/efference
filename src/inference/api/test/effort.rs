@@ -128,8 +128,8 @@ fn thinking_follows_the_models_metadata() {
     );
 }
 
-/// The wire spellings: `between_tools` is its own type, and an `Omit` never
-/// reaches the wire — the offline dev view, which has no metadata to consult,
+/// The wire spellings: `between_tools` is its own type, and an `Omit` is never
+/// sent on the wire — the offline dev view, which has no metadata to consult,
 /// renders the request with no `thinking` key at all.
 #[test]
 fn thinking_spellings_on_the_wire() {
@@ -163,14 +163,14 @@ fn openrouter_model_entry_yields_effort_levels() {
         Some(vec!["max".into(), "high".into(), "low".into()])
     );
     assert_eq!(efforts.default.as_deref(), Some("max"));
-    // `mandatory` decides how a client says thinking-off (docs/transport.md).
+    // The client's thinking-off representation depends on `mandatory` (docs/transport.md).
     assert!(efforts.mandatory);
 }
 
 /// An absent block — a non-reasoning model (live: `openai/gpt-4.1-mini`,
 /// 2026-09-04) — declares nothing, and an empty list is the same state:
 /// neither affirms a level. `default_effort` is read independently, so
-/// incoherent metadata (a default with no list) still reaches the boot line
+/// incoherent metadata (a default with no list) is still included in the boot line
 /// rather than disappearing.
 #[test]
 fn openrouter_model_entry_declaring_nothing_reads_as_none() {
@@ -262,9 +262,9 @@ fn thinking_off_rejects_the_two_levels_that_need_thinking() {
     }
 }
 
-/// The boot membership check (docs/transport.md): a configured level rides the
-/// wire only when the metadata names it; the declared default, when present,
-/// points at the unset path in the rejection.
+/// The boot membership check (docs/transport.md): a configured level is sent on the
+/// wire only when the metadata contains it; the declared default, when present,
+/// is associated with the unset path in the rejection.
 #[test]
 fn check_effort_rejects_unnamed_levels() {
     let caps = caps_with_effort_levels(Some(&["max", "high", "low"]), Some("max"));
@@ -351,8 +351,8 @@ fn auto_turns_send_thinking_off_only_without_adaptive_and_when_spelled() {
 async fn the_keepalive_sends_the_turns_thinking_and_effort() {
     use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
 
-    /// One request and its answer; returns the body the client sent. `sse` picks the
-    /// canned answer: an empty stream for `complete`, a usage-only JSON body for
+    /// One request and its answer; returns the body the client sent. Depending on `sse`,
+    /// the canned answer is an empty stream for `complete` or a usage-only JSON body for
     /// `keepalive`.
     async fn round_trip(provider: Provider, effort: Option<&str>, sse: bool) -> String {
         let upstream = ScriptedUpstream::answering([if sse {
@@ -411,7 +411,7 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
     assert_eq!(envelope(&ping), envelope(&turn));
 
     // The shape of the spotter's client: never given an effort, so neither path
-    // carries one.
+    // includes one.
     let turn = round_trip(Provider::Anthropic, None, true).await;
     assert!(!turn.contains("output_config"), "{turn}");
     let ping = round_trip(Provider::Anthropic, None, false).await;
@@ -450,12 +450,12 @@ fn thinking_off_takes_the_models_spelling() {
         (thinking, reasoning)
     };
     let off = |endpoint: &Endpoint| Client::new(endpoint.clone(), "m", "sys").without_thinking();
-    // Mandatory or undeclared reasoning on OpenRouter: omitted, and the switch rides.
+    // Mandatory or undeclared reasoning on OpenRouter: omitted, and the switch is sent.
     assert_eq!(
         sent(&off(&openrouter), ThinkingOff::Omit),
         (Thinking::Omit, Some(r#"{"enabled":false}"#.into()))
     );
-    // An explicit spelling says it alone.
+    // An explicit spelling is sent alone.
     assert_eq!(
         sent(&off(&openrouter), ThinkingOff::Disabled),
         (Thinking::Disabled, None)

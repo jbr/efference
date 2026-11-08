@@ -4,7 +4,7 @@
 //! control channel, and it fails here first, as a change to the prompt's bytes fails the
 //! wire pins (`projection_matches_expected_wire_bytes`).
 //!
-//! The comparison is of whole strings, key order included. Every topic reaches the channel
+//! The comparison is of whole strings, key order included. Every topic is sent on the channel
 //! through `serde_json::Value`, which this crate builds without `preserve_order`, so an
 //! object's keys come out sorted at every depth whatever order a struct declares its fields
 //! in. A topic serialized any other way would reorder its keys and fail here.
@@ -362,7 +362,7 @@ fn the_cold_topic_keeps_its_bytes() {
     );
 }
 
-/// The open operations and the compaction's failure, from logs whose entries carry fixed
+/// The open operations and the compaction's failure, from logs whose entries have fixed
 /// instants.
 #[test]
 fn the_operations_topics_keep_their_bytes() {

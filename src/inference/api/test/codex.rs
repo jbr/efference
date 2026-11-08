@@ -22,9 +22,9 @@ const CACHED: &str = "event: response.completed\ndata: {\"type\":\"response.comp
     {\"cached_tokens\":900},\"output_tokens\":16}}}\n\n";
 
 /// The Codex backend's turn-routing contract (docs/transport.md): the first request of
-/// a turn carries no token, the token the backend issues on that response rides every
+/// a turn carries no token, the token the backend issues on that response is sent with every
 /// later request of the turn unchanged (a second issued value does not replace it), and
-/// a new turn starts without one. The model hint rides every request.
+/// a new turn starts without one. The model hint is sent with every request.
 #[tokio::test]
 async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_next() {
     let upstream = ScriptedUpstream::answering([
@@ -365,7 +365,7 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
     );
 }
 
-/// The primer wants the write, not the read: a 16-token budget at a call-eliciting
+/// The primer is for the write, not the read: a 16-token budget at a call-eliciting
 /// position truncates the model's function call mid-arguments, which marks the
 /// completion without unmaking its input prefix. The primer still plants.
 /// (docs/transport.md — pinned after the first live run

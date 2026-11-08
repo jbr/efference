@@ -102,7 +102,7 @@ impl Client {
     /// type-erases its connector, so this adds no type parameter to [`Client`] or to
     /// anything holding one.
     ///
-    /// The same interface carries a non-UDS binding (TCP + TLS, docs/web-bind.md): the API
+    /// The same interface supports a non-UDS binding (TCP + TLS, docs/web-bind.md): the API
     /// surface is identical across bindings, and only the connector differs.
     pub fn with_connector(connector: impl Connector) -> Self {
         // The connector targets a fixed endpoint, so the URL host is irrelevant — but a
@@ -413,8 +413,8 @@ impl Client {
     }
 
     /// Kill a background process (`DELETE /processes/:id`, docs/process-monitor.md) —
-    /// SIGKILL to its whole process group; the drain task sees EOF and fires the
-    /// exit notification like any other exit. A stale id answers 404 and is the
+    /// SIGKILL to its whole process group; the drain task receives EOF and fires the
+    /// exit notification like any other exit. A request with a stale id returns 404, the
     /// caller's cue to drop focus from the vanished row.
     pub async fn kill_process(&self, id: u64) -> Result<()> {
         self.delete(&format!("/processes/{id}")).await.map(drop)
@@ -538,7 +538,7 @@ impl Client {
     /// `id`, so a reconnect resumes with `since = last_id + 1`.
     ///
     /// `since` replays the durable class from that `seq` then follows; `None` streams the
-    /// whole session then live. `include` names the classes and topics wanted (`"log"`,
+    /// whole session then live. `include` specifies the classes and topics requested (`"log"`,
     /// `"log,output"`, `"state:gate"`); `None` subscribes to everything.
     pub async fn events(
         &self,
@@ -563,7 +563,7 @@ impl Client {
 
     /// One logged result image's decoded bytes (`GET /log/:seq/images/:idx`,
     /// docs/control-api.md) — the dereference target for the image references
-    /// entry views carry (`data` is omitted there; this is where it lives).
+    /// entry views contain (`data` is omitted there; this is where it lives).
     pub async fn log_image(&self, seq: u64, idx: usize) -> Result<Vec<u8>> {
         self.get_bytes(&format!("/log/{seq}/images/{idx}")).await
     }

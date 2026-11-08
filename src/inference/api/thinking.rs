@@ -30,10 +30,10 @@ impl Thinking {
 
     /// The `thinking` a request carries, from the model's [`ThinkingSupport`],
     /// the `tool_choice`, and whether the client asked for thinking off
-    /// (`Client::without_thinking`). An `auto` turn thinks adaptively where the
+    /// (`Client::without_thinking`). An `auto` turn uses adaptive thinking where the
     /// model accepts it; everything else — a forced choice (Anthropic answers
     /// forced choice with thinking on with a 400), a client built without
-    /// thinking, a model without adaptive — takes the model's spelling of off.
+    /// thinking, a model without adaptive — uses the model's spelling of off.
     ///
     /// The keepalive calls this too, with the turn's own `tool_choice`: a ping
     /// whose thinking differs from the turn's misses the message-level cache on
@@ -51,8 +51,8 @@ impl Thinking {
     }
 }
 
-/// What a model's metadata says about the `thinking` field (docs/transport.md):
-/// whether an `auto` turn may think adaptively, and how to say "don't think".
+/// A model's metadata for the `thinking` field (docs/transport.md):
+/// whether an `auto` turn may use adaptive thinking, and how to disable thinking.
 /// One answer per model, taken from the capability lookup at boot and never
 /// changed, so a session's thinking never moves its cached prefix.
 ///
@@ -63,7 +63,7 @@ impl Thinking {
 pub struct ThinkingSupport {
     /// The model accepts `thinking: {type: adaptive}`.
     pub adaptive: bool,
-    /// How a request says thinking off.
+    /// How disabled thinking is represented in a request.
     pub off: ThinkingOff,
 }
 
@@ -83,7 +83,7 @@ impl ThinkingSupport {
     }
 }
 
-/// How a request says thinking off, per the model's metadata (docs/transport.md).
+/// How disabled thinking is represented in a request, per the model's metadata (docs/transport.md).
 ///
 /// `Disabled` is `{type: disabled}`: Anthropic's `thinking.types.disabled`, or an
 /// OpenRouter model whose reasoning is optional. `BetweenTools` is
@@ -118,18 +118,18 @@ impl ThinkingOff {
 /// bytes it always did. One field today; the wrapper exists because the API
 /// nests `effort` inside it. The effort is the configured string verbatim: the
 /// vocabulary is the model's metadata (`supported_efforts`), not an enum here,
-/// so a level the metadata invents rides the wire as spelled.
+/// so a level in the metadata is sent as spelled.
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct OutputConfig {
     pub effort: String,
 }
 
 /// An effort level is a string end to end — the flag, the config key, and the
-/// wire all carry the configured spelling verbatim (docs/transport.md). The
+/// wire all contain the configured spelling verbatim (docs/transport.md). The
 /// vocabulary is the model's metadata (`ModelCapabilities::supported_efforts`),
-/// not an enum here: when a model invents a level, it is validated against the
-/// metadata that names it and sent as spelled, not rejected by a local list
-/// that cannot know it.
+/// not an enum here: a model's level is validated against the
+/// metadata containing it and sent as spelled, not rejected by a local list
+/// that may not contain it.
 ///
 /// One coupling with the thinking axis: these levels are legal only with
 /// thinking on, and Anthropic answers the pairing with a 400 — `between_tools`

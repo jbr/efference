@@ -63,7 +63,7 @@ pub(super) async fn bridge(
 ///
 /// An unparseable frame, an unknown class, an unknown state topic, and a topic value that
 /// does not deserialize are all skipped rather than fatal, so a daemon that grows a class
-/// or topic this client doesn't know stays usable (the slot keeps the value it had).
+/// or topic unknown to this client stays usable (the slot keeps the value it had).
 fn decode_frame(
     data: &str,
     seeded: &mut std::collections::HashSet<u64>,
@@ -81,7 +81,7 @@ fn decode_frame(
             let Ok(entry) = serde_json::from_value::<LogEntry>(data.clone()) else {
                 return Continue(Vec::new());
             };
-            // The view's artifact links ride beside the entry, not in it: they are
+            // The view's artifact links are separate from the entry, not in it: they are
             // derived on every read, never logged (docs/artifacts.md).
             let fences = artifacts::linked_fences(&data);
             if tx.send(TuiEvent::Entry(entry)).is_err() {
@@ -119,7 +119,7 @@ fn decode_frame(
 
 /// Decode one `output`-class frame's payload, sending the matching [`TuiEvent`].
 fn decode_delta(kind: &str, value: &serde_json::Value, tx: &Sender<TuiEvent>) -> ControlFlow<()> {
-    // A failed send carries the whole rejected `TuiEvent` back in `SendError`,
+    // A failed send returns the whole rejected `TuiEvent` in `SendError`,
     // which makes the `Err` variant large; we only care *that* it failed, so box
     // it to keep the result small (clippy `result_large_err`).
     let sent = match kind {

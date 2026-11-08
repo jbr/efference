@@ -10,9 +10,9 @@ fn status(agent: Option<&str>) -> Status {
     }
 }
 
-/// A gate routed to the reader reads as its decision, with the call that decides it;
+/// A gate routed to the reader is presented as its decision, with the call for deciding it;
 /// the same gate read by a session that drives the target but is not its reviewer
-/// names who decides; a session that does not drive it reads no move at all.
+/// identifies the decider; a session that does not drive it reads no move at all.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_status_reads_as_the_callers_relation() {
     let fixture = Fixture::new().await;
@@ -82,7 +82,7 @@ async fn the_overview_marks_the_sessions_you_drive() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// A project with no other agent says so and names the in-session spelling of the verb
+/// An overview of a project with no other agent includes the in-session spelling of the verb
 /// that starts one; a session addressing itself is told what would work, and no
 /// refusal sends the reader to a doc.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -168,7 +168,7 @@ async fn each_reader_has_its_own_cursor() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// `interrupt` says what it stopped, and at an idle session signals nothing.
+/// `interrupt` reports what it stopped, and at an idle session signals nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn interrupt_says_what_it_stopped() {
     let fixture = Fixture::new().await;
@@ -206,7 +206,7 @@ async fn interrupt_says_what_it_stopped() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// `archive` names the sessions that ended with it.
+/// `archive` lists the sessions that ended with it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn archive_names_what_ended_with_it() {
     let fixture = Fixture::new().await;

@@ -2,7 +2,7 @@
 //! archives each session it holds through the archive path `DELETE` takes, and only
 //! then shuts down. The owner is a pipe the test holds, as the launcher holds the
 //! host's stdin; sessions are idle runtimes over file logs, or one whose model
-//! request is held open, so nothing reaches a provider.
+//! request is held open, so nothing is sent to a provider.
 
 use super::*;
 use crate::host::island::OwnerWatch;

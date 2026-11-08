@@ -16,7 +16,7 @@ fn an_osc8_link_still_reads_as_a_url_when_the_escape_is_stripped() {
     assert_eq!(rendered.matches(url).count(), 2);
 }
 
-/// An upstream that answers every request `401`, as a server that wants authorization
+/// An upstream that answers every request `401`, as a server requiring authorization
 /// does. The MCP client is resolved from the server's configured URL, so the upstream is
 /// reached over a loopback port (`ScriptedUpstream::bind`); it closes the port when it
 /// drops. Returns it with its origin.

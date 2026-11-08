@@ -95,7 +95,7 @@ pub(super) fn load_credential(
             // Codex CLI rewrites the file on its own refresh, so re-reading it is
             // how a host outlives an expired token: the operator runs `codex
             // login` and the next attempt carries the new one. The account id is
-            // not re-read — it rides `extra_headers` and is stable across a
+            // not re-read — it is in `extra_headers` and is stable across a
             // refresh of the same login.
             let (cwd, env) = (host_cwd.to_path_buf(), host_env.clone());
             let reload: Option<Reload> = Some(api::sync_reload(move || {

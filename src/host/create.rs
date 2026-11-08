@@ -13,7 +13,7 @@ use crate::record::session_dir::{SESSION_BASE, plain_id};
 impl Host {
     /// Create a session on this host: the path behind `POST /sessions`
     /// (docs/control-api.md) and the in-session `agents__create` tool
-    /// (docs/tools.md). `lineage` names the calling session as creator when a
+    /// (docs/tools.md). `lineage` identifies the calling session as creator when a
     /// session commissioned this one, and the predecessor for a `hand_off`;
     /// default for a human root.
     ///
@@ -201,7 +201,7 @@ impl Host {
         // An omitted environment is established here, for the session's project,
         // from the user-wide `env_hook` or the host environment (docs/env.md). The
         // project, not the working directory: resume establishes it there too, before
-        // the header says where the session works, so a session gets one environment
+        // the header records where the session works, so a session gets one environment
         // either way.
         let base_env = match supplied_env {
             Some(base) => base,
@@ -222,12 +222,12 @@ impl Host {
             base_env,
             inference,
             authorization: authorization_for(starting, body.refuse_authorization),
-            // The request travels whole: boot reads the options it uses from the body.
+            // The whole request is passed: boot reads the options it uses from the body.
             create: body,
             // The new session's toolbox mounts the `sessions` provider against
             // this host, with the new session itself as the caller (docs/tools.md).
             host: Some(Arc::clone(self)),
-            // The creator and predecessor reach the identity line
+            // The creator and predecessor appear in the identity line
             // (docs/context.md); adoption below records the same values as
             // control state.
             lineage: lineage.clone(),

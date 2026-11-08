@@ -46,7 +46,7 @@ impl ControlVerb for Archive {
     }
 
     async fn host(self, state: &HostExecutor, _call: &VerbCall<'_>) -> Result<String> {
-        // Archiving drives the target: a descendant, a supervised session, or the
+        // Archiving requires a driven target: a descendant, a supervised session, or the
         // caller's own predecessor.
         let (target, id) = state.resolve_driven(Some(&self.agent))?;
         let host = state.host()?;

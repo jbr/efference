@@ -7,7 +7,7 @@
 //! than adding one, which is what makes the index read as most-recently-used.
 //!
 //! The identity is [`crate::config::history::Scope`], unchanged — never the per-session
-//! snapshot — and `config` is stored beside it because the key alone cannot say
+//! snapshot — and `config` is stored beside it because the key alone does not indicate
 //! whether the configuration was named, which is what [`Project::available`]
 //! checks ([`crate::config::load_in`]). A directory keeps at most one row whose
 //! configuration was not named: such a row stands for the request "probe here",
@@ -72,7 +72,7 @@ impl Project {
     }
 
     /// What a picker shows without being told a name: the directory's own. Falls
-    /// back to the full path where a basename says nothing — at a filesystem root
+    /// back to the full path where there is no basename — at a filesystem root
     /// there isn't one.
     pub fn label(&self) -> String {
         self.cwd.file_name().map_or_else(
@@ -84,7 +84,7 @@ impl Project {
 
 /// The store: a path to `state.db`, opened per operation. A store with no path is
 /// disabled — every read empty, every write dropped — which is what
-/// [`crate::inference::InferenceRegistry`] hands a config that names no home
+/// [`crate::inference::InferenceRegistry`] hands a config with no home
 /// directory.
 #[derive(Clone, Debug, Default)]
 pub struct Projects {
@@ -108,10 +108,10 @@ impl Projects {
     }
 
     /// Remember that a session started in `project`. An existing row for the same
-    /// identity is refreshed, not duplicated, and a launch that named no
+    /// identity is refreshed, not duplicated, and a launch with no named
     /// configuration replaces the directory's other such row, whose probe found
     /// something else at the time. Best-effort: a store that cannot be written must
-    /// never fail the creation remembering itself.
+    /// never fail the creation being recorded.
     pub fn record(&self, project: &Project) {
         let Some(mut connection) = self.connect() else {
             return;

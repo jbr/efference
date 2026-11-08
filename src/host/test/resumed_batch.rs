@@ -23,8 +23,8 @@ fn call(id: &str, command: &str) -> ToolCall {
     )
 }
 
-/// A log stopped mid-batch: a completion calling `calls`, and what `extra` says happened
-/// to them, then the `Resumed` entry naming `pending`.
+/// A log stopped mid-batch: a completion calling `calls`, and their outcomes in `extra`,
+/// then the `Resumed` entry with `pending`.
 fn stopped_log(calls: Vec<ToolCall>, pending: &[&str], extra: impl FnOnce(&mut Log)) -> Log {
     let mut log = Log::in_memory();
     log.append(1, user("go")).unwrap();
@@ -166,7 +166,7 @@ async fn a_continue_replays_the_batch_through_the_gate() {
         "the first request is the triage over both results: {triage}"
     );
 
-    // The wire answers both calls, with the notice after the results.
+    // The wire contains results for both calls, with the notice after the results.
     let messages = session.project_messages();
     let answered = &messages[2];
     assert_eq!(answered.role, Role::User);

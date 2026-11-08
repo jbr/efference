@@ -272,7 +272,7 @@ fn a_role_is_offered_only_the_models_it_can_run() {
             rank: 1,
         }],
     );
-    // A pick the listing does not name inherits the connection's kind.
+    // A pick absent from the listing inherits the connection's kind.
     assert_eq!(typesafe.models[0].row.kind, ModelKind::Decisions);
     assert!(typesafe.clone().for_role(ModelRole::Main).is_none());
     assert_eq!(
@@ -285,7 +285,7 @@ fn a_role_is_offered_only_the_models_it_can_run() {
 }
 
 /// A role is spelled one way: serde's is `name`'s, which is also what the `role` query
-/// parameter carries and `from_name` reads.
+/// parameter contains and `from_name` reads.
 #[test]
 fn a_model_role_is_spelled_one_way() {
     for role in [ModelRole::Main, ModelRole::Triage, ModelRole::Spotter] {

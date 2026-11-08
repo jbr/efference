@@ -9,7 +9,7 @@ use crate::record::persist::LoadedRecording;
 /// The main, spotter and triage selections the session last ran on, in the shapes an
 /// `active` patch takes. A role the log records nothing for is left out: a log with no
 /// header metadata names only its main inference, and only when its boot preamble
-/// carries one.
+/// contains one.
 pub fn recorded_selections(recording: &LoadedRecording) -> ResumeSwitch {
     let mut selections = ResumeSwitch::default();
     if let Some(main) = recorded_main(recording) {

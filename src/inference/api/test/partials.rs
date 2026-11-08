@@ -68,7 +68,7 @@ fn a_finalized_stream_with_unparseable_tool_input_is_marked_retryable() {
 /// The empty stream is the one path that keeps evidence (docs/transport.md).
 /// Nothing else survives it — the generation id it allocates 404s at OpenRouter
 /// on both `GET /generation` and `GET /generation/content` — so the record-only
-/// entry carries the response status, the allowlisted response headers (the
+/// entry contains the response status, the allowlisted response headers (the
 /// edge's own `x-generation-id`), the `message_start` body as received, and the
 /// frames that arrived.
 #[test]
@@ -100,7 +100,7 @@ fn an_empty_stream_records_status_headers_and_frames() {
         Some("gen-abc123")
     );
     // Kept whole, so a field the assembler does not model — OpenRouter's
-    // `provider`, naming the serving leg — reaches the log anyway.
+    // `provider`, naming the serving leg — is recorded in the log anyway.
     assert_eq!(stream.message_start.as_deref(), Some(message_start));
     assert!(stream.frames.contains("event: message_start"), "{stream:?}");
     assert!(stream.frames.contains("data: [DONE]"), "{stream:?}");
@@ -177,7 +177,7 @@ fn a_death_before_finalizing_carries_no_diagnostics() {
 }
 
 /// …but **only** with zero usage to corroborate. A turn billed for output that
-/// nonetheless carries no blocks is the model's own answer, not a gateway
+/// nonetheless contains no blocks is the model's own answer, not a gateway
 /// swallowing one, so it is not an upstream failure. It does say nothing, which the
 /// turn loop asks again for as an empty completion (docs/transport.md).
 #[test]
@@ -196,9 +196,9 @@ fn an_empty_turn_that_was_billed_is_left_alone() {
     assert!(completion.says_nothing());
 }
 
-/// A finalized turn says nothing when it has neither prose nor a call: thinking alone,
+/// A finalized turn is empty when it has neither prose nor a call: thinking alone,
 /// or whitespace text. A call, an `ask` included, is something; so is a turn the output
-/// cap cut, which asked again would meet the same cap (docs/transport.md).
+/// cap cut, since a retry would meet the same cap (docs/transport.md).
 #[test]
 fn a_turn_says_nothing_without_prose_or_a_call() {
     let start = (

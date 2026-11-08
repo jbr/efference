@@ -73,7 +73,7 @@ fn session_visible_config_edit_enqueues_a_notification() {
         "path edit is session-visible"
     );
 
-    // A command edit does not — its effect reaches the model only through the classifier.
+    // A command edit does not — it affects the model only through the classifier.
     let (shared, _rx) = Session::in_memory();
     shared.append(0, allow_grant("npm")).unwrap();
     assert!(
@@ -230,7 +230,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
     );
 
     // Now a malformed save — the exact footgun from session 1784334112726: `[scope]` as a
-    // table where the schema wants a string, which fails the whole file.
+    // table where the schema requires a string, which fails the whole file.
     std::fs::write(
         &path,
         "[scope]\ndefault = \"read\"\n[commands]\ncargo = true\n",
@@ -413,7 +413,7 @@ fn resumed_log_edits_fold_into_the_initial_effective_config() {
     );
 }
 
-/// The one outcome the adopted-or-rejected invariant can't reach: the file fails to
+/// The one outcome outside the adopted-or-rejected invariant: the file fails to
 /// parse **and** the restore fails too, leaving invalid content on disk
 /// (docs/permissions.md). That parks the loop on an explicit "human must repair"
 /// gate rather than running on under a policy the file no longer shows — and the

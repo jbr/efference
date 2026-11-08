@@ -1,7 +1,7 @@
 //! Fold a Chat Completions SSE stream into one [`Completion`] (docs/transport.md).
 //! Each chunk's `choices[0].delta` merges into the assistant message under one
 //! recursive rule ([`merge`]), so every vendor's reasoning keys assemble without
-//! the assembler knowing them; deltas also feed the live view. Mirrors the other
+//! being specified in the assembler; deltas also feed the live view. Mirrors the other
 //! assemblers' contract: a stream that never finishes yields a record-only partial.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,7 +23,7 @@ use crate::record::log::{
 mod test;
 
 /// Keys a server repeats whole in every fragment rather than splitting: the last
-/// value wins instead of concatenating. OpenRouter repeats `role` in every delta
+/// value is retained instead of concatenating. OpenRouter repeats `role` in every delta
 /// and `type` / `format` in every `reasoning_details` fragment (measured,
 /// backlog/inbox/completions-dialect.md).
 const IDENTITY: [&str; 5] = ["id", "type", "role", "format", "index"];
@@ -333,7 +333,7 @@ impl CompletionsAssembler {
 /// where each clause's measured cause is recorded):
 ///
 /// - `null` is absent and never overwrites;
-/// - strings concatenate, except under [`IDENTITY`] keys, where the last value wins;
+/// - strings concatenate, except under [`IDENTITY`] keys, where the last value is retained;
 /// - objects merge key by key;
 /// - an array element with `index` merges into the element with the same `index`
 ///   and a matching `type` (a fragment without `type` matches: OpenRouter's later

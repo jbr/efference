@@ -29,7 +29,7 @@ use super::stages::{ActiveTrace, StageSink, Trace};
 use super::*;
 use crate::record::log::RequestOrigin;
 
-/// How long a decisions request may spend retrying before the spotter gives up
+/// How long the spotter may retry a decisions request before giving up
 /// and the gate falls to the human (docs/permissions.md). Far shorter than the
 /// inference client's budget: a turn waiting on a model has nothing better to do,
 /// but a gate has a fallback that is always available and often faster — an
@@ -63,7 +63,7 @@ pub(super) fn decisions_retry() -> RetryHandler {
 /// among named options.
 ///
 /// `instructions` is a string or an object ([`Instructions`]); an object lets a
-/// question carry the text it is about (an earlier call, say) beside the question
+/// question include the text it is about (an earlier call, say) beside the question
 /// itself, without a state field per candidate.
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "type")]
@@ -141,7 +141,7 @@ impl Question {
     }
 }
 
-/// What a question asks: a string, or an object of named strings. The object keeps
+/// A question's instructions: a string, or an object of named strings. The object keeps
 /// the order it was built in on the wire, for the same reason [`OptionCriteria`]
 /// does: the model reads the fields in sequence, so which comes first is part of
 /// the prompt.
@@ -271,8 +271,8 @@ impl Decisions {
         self.answers.get(question)?.noul
     }
 
-    /// The distribution a `choice` or `score` question answered with, or `None`
-    /// when the question went unanswered or came back as some other shape.
+    /// The distribution in a `choice` or `score` question's answer, or `None`
+    /// when the question is unanswered or the answer has some other shape.
     pub fn probabilities(&self, question: &str) -> Option<&BTreeMap<String, f64>> {
         self.answers.get(question)?.probabilities.as_ref()
     }
@@ -304,7 +304,7 @@ struct DecisionsRequest<'a> {
     model: &'a str,
     state: &'a Value,
     questions: &'a BTreeMap<String, Question>,
-    /// The sticky key this endpoint already carries, for grouping in the
+    /// The sticky key already sent to this endpoint, for grouping in the
     /// provider's own accounting. Omitted where there is no session, and where
     /// the provider does not document the field: the first-party API answers an
     /// unrecognized top-level key with a 422, so an undocumented extra is a

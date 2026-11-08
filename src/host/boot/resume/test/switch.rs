@@ -127,7 +127,7 @@ async fn a_switch_creation_would_refuse_refuses_the_resume() {
 }
 
 /// The registry behind [`codex_registry`] plus a Messages-dialect connection, so a switch
-/// can name a model on the other side of the dialect line. Nothing contacts `msg`: the
+/// can specify a model on the other side of the dialect line. Nothing contacts `msg`: the
 /// dialect check refuses before capabilities are read.
 fn two_dialect_registry(root: &std::path::Path, id: &str) -> InferenceRegistry {
     let codex_home = root.join(format!("codex-home-{id}"));

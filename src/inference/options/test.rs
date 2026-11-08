@@ -82,7 +82,7 @@ fn codes(resolved: &ResolvedOptions) -> Vec<(&str, IssueCode)> {
 
 /// **The effective triage is what creation would build.** An omitted triage
 /// shares the main client, so reporting `shared` here describes the session
-/// the host creates — and creation agrees, with no client of its own.
+/// the host creates — with no triage client of its own.
 #[test]
 fn an_omitted_triage_shares_main() {
     let registry = one_connection();
@@ -96,7 +96,7 @@ fn an_omitted_triage_shares_main() {
         resolved.effective.triage.source,
         Some(SelectionSource::SharedMain)
     );
-    // And creation agrees: the same resolution, prepared, has no triage client.
+    // The same resolution, prepared for creation, has no triage client.
     assert!(registry.prepare(resolved).unwrap().triage().is_none());
 }
 
@@ -370,7 +370,7 @@ fn an_omitted_tuning_value_is_an_omission_not_a_failure() {
     );
 }
 
-/// The request beats the project config; the project config beats omission.
+/// The request takes precedence over the project config, which takes precedence over omission.
 #[test]
 fn request_effort_beats_project_effort_which_beats_omission() {
     let registry = one_connection();
@@ -392,7 +392,7 @@ fn request_effort_beats_project_effort_which_beats_omission() {
     );
 }
 
-/// **Naming the connection makes the model a native id.** OpenRouter ids carry a
+/// **Naming the connection makes the model a native id.** OpenRouter ids contain a
 /// slash of their own, so the slug grammar cannot tell `work/x` the connection
 /// from `anthropic/claude` the model — the split spelling has no such ambiguity.
 #[test]
@@ -465,7 +465,7 @@ fn an_unknown_model_on_a_known_connection_resolves() {
     );
 }
 
-/// A form picks a connection before it has a model. There is no provider-default
+/// A form has a selected connection before it has a model. There is no provider-default
 /// main model to stand in, so the honest answer is that one is still needed.
 #[test]
 fn a_connection_without_a_model_asks_for_a_model() {
@@ -670,7 +670,7 @@ fn the_temperature_bound_is_the_resolver_s() {
     }
 }
 
-/// The loader's own words reach the operator at creation and stop at the wire: a
+/// The operator receives the loader's own words at creation, but not on the wire: a
 /// credential error may name an environment key or a keychain item, and the
 /// preview response is the one surface that is not certainly local.
 #[test]
@@ -826,9 +826,9 @@ fn every_provider_display_name_decodes_back() {
     }
 }
 
-/// With no spotter named anywhere, a connection that reaches jev supplies it ahead
-/// of the main provider's cheap band — first-party typesafe ahead of OpenRouter —
-/// while a main connection's own `spotter-model` still outranks both
+/// With no spotter named anywhere, a connection to jev supplies it in preference
+/// to the main provider's cheap band — first-party typesafe before OpenRouter —
+/// while a main connection's own `spotter-model` takes precedence over both
 /// (docs/permissions.md).
 #[test]
 fn a_reachable_decision_model_is_the_default_spotter() {

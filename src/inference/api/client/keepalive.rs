@@ -36,9 +36,9 @@ impl KeepaliveError {
         }
     }
 
-    /// Whether the body names a condition no retry changes before it resets — the
-    /// Codex backend's `usage_limit_reached` arrives as a 429, which the status alone
-    /// reads as a moment (`api/failure.rs`). The same request would succeed after a
+    /// Whether the body contains a condition no retry changes before it resets — the
+    /// Codex backend's `usage_limit_reached` arrives as a 429, classified from the status
+    /// alone as a moment (`api/failure.rs`). The same request would succeed after a
     /// reset, so this is not [`is_permanent`](Self::is_permanent).
     pub fn is_exhausted(&self) -> bool {
         match self {
@@ -47,7 +47,7 @@ impl KeepaliveError {
         }
     }
 
-    /// When an exhausted limit resets, in epoch milliseconds, where the body says
+    /// When an exhausted limit resets, in epoch milliseconds, where present in the body
     /// (`error.resets_at`, in seconds, on the Codex backend).
     pub fn resets_at(&self) -> Option<u64> {
         let Self::Status { body, .. } = self else {
@@ -228,7 +228,7 @@ impl Client {
     /// in (anything but Responses-with-implicit-policy), so the caller sends nothing
     /// speculative there; the triage then goes out unprimed, the failure mode being fixed.
     ///
-    /// The primer wants the write, not the read, so a marked output does not fail it:
+    /// The primer is for the write, not the read, so a marked output does not fail it:
     /// a 16-token budget at a call-eliciting position truncates the model's function
     /// call mid-arguments, which marks the completion without unmaking its input
     /// prefix — the provider still processed (and wrote) the whole replayed prefix.

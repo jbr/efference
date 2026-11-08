@@ -18,14 +18,14 @@ use ratatui::prelude::Backend;
 use super::policy_view::PolicyView;
 use super::{InteractiveState, SidebarCmd, SidebarReturn, SidebarRow};
 
-/// One verb a focused row carries.
+/// One verb available on a focused row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SidebarVerb {
     Kill,
     /// Jump the transcript focus to the entry whose call spawned this process
     /// (docs/process-monitor.md, the call↔process mapping). Chrome-only: it moves this
-    /// client's focus and touches no daemon state, so unlike `kill` it never
-    /// travels over [`SidebarCmd`].
+    /// client's focus and touches no daemon state, so unlike `kill` the client never
+    /// sends it over [`SidebarCmd`].
     View,
     Commit,
     Cancel,
@@ -65,7 +65,7 @@ impl<'a> InteractiveState<'a> {
     /// id 404); a proposal commits or cancels (`PATCH /proposals/:seq`,
     /// docs/permissions.md).
     ///
-    /// `view` leads where it exists, so a bare `⏎` on a process row reads rather than
+    /// `view` is first where it exists, so a bare `⏎` on a process row opens it rather than
     /// sending SIGKILL. It is offered only when the daemon supplied a `call_id` for
     /// the process: with no entry to land on there is no jump to make.
     pub(super) fn sidebar_verbs(&self, row: SidebarRow) -> Vec<SidebarVerb> {
@@ -295,7 +295,7 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// The `view` verb: leave the sidebar and focus the transcript unit whose entry
-    /// carries this process's spawning `call_id` (docs/tui.md "Focus model",
+    /// has this process's spawning `call_id` (docs/tui.md "Focus model",
     /// docs/process-monitor.md for the mapping).
     ///
     /// The landing target is the entry keyed by `call_id`, i.e. the result. A miss is
@@ -329,7 +329,7 @@ impl<'a> InteractiveState<'a> {
         self.ui.debug_message = format!("p#{id} — navigate · ←/→ verb · ⏎ act").into();
     }
 
-    /// The `action_index` of the transcript unit whose entry carries `key` — the
+    /// The `action_index` of the transcript unit whose entry has `key` — the
     /// index space [`KeyboardCursor`](crate::clients::tui::state::KeyboardCursor) is
     /// expressed in. `None` when no rendered entry has that key.
     pub(in crate::clients::tui) fn entry_action_index(&self, key: &str) -> Option<usize> {

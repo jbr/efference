@@ -62,7 +62,7 @@ pub(super) struct ResponsesRequest<'a> {
 pub(super) struct Reasoning {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    /// `auto` asks for the visible summary; without it reasoning items carry
+    /// `auto` enables the visible summary; without it reasoning items contain
     /// only their opaque continuation.
     pub summary: &'static str,
 }
@@ -99,8 +99,8 @@ pub(super) fn tool_definitions(tools: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-/// Encode semantic turns as Responses `input`. The preamble leads as a developer
-/// message (a breakpoint-eligible carrier, which top-level `instructions` is not).
+/// Encode semantic turns as Responses `input`. The preamble is first as a developer
+/// message (eligible for a breakpoint, unlike top-level `instructions`).
 /// A [`WireTurn::Breakpoint`] marks the nearest preceding `input_text` / `input_image`
 /// part when `cache` is explicit; other policies place no marker.
 pub fn encode_responses(
@@ -126,7 +126,7 @@ pub fn encode_responses(
                 input.extend(items.iter().filter_map(item_to_wire));
             }
             // Messages and Completions output belong to other dialects
-            // (docs/transport.md). Unreachable while provider routing pins one
+            // (docs/transport.md). Unreachable while provider routing uses one
             // dialect per session.
             WireTurn::Assistant(AssistantOutput::Messages(_) | AssistantOutput::Completions(_)) => {
             }

@@ -4,7 +4,7 @@
 //! `source`, and only then shuts down.
 //!
 //! The order is what makes it an archive. `end` archives only while the host's
-//! `Swansong` is running: a session it reaches once the shutdown has begun is stopped
+//! `Swansong` is running: a session it processes once the shutdown has begun is stopped
 //! without `Archived` and keeps its worktree, which is a host shutdown's behaviour. So
 //! the shutdown starts once every session has left the map. A crash, a signal, and the
 //! shutdown of a host that is not an island take none of this, and leave their
@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
 /// The `source` an island's exit records on each `Archived` entry it appends, so the
-/// log tells the standalone closing from an operator's archive
+/// log distinguishes the standalone closing from an operator's archive
 /// (docs/log-and-projection.md).
 const STANDALONE_EXIT: &str = "standalone exit";
 

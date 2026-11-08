@@ -161,8 +161,8 @@ async fn a_decision_over_http_is_recorded_with_its_decider() {
     );
 }
 
-/// The conversation names the decider for the reader (docs/control-api.md): the
-/// operator's own decision reads "operator", the reader's own reads "you".
+/// The conversation identifies the decider for the reader (docs/control-api.md): the
+/// operator's own decision is labeled "operator", the reader's own "you".
 #[tokio::test]
 async fn the_transcript_names_who_decided() {
     let (shared, _rx) = Session::in_memory();

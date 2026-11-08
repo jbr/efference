@@ -53,8 +53,8 @@ async fn a_patch_validates_its_body_on_every_listener() {
             serde_json::json!(["not", "an", "object"]),
             "invalid body",
         ),
-        // A state word the enum does not carry, rather than a free-form string:
-        // "ended" was the word `DELETE` used to answer with, and it is gone.
+        // A state word absent from the enum, rather than a free-form string:
+        // "ended" was the word `DELETE` used to return, and it is gone.
         (
             "one".into(),
             serde_json::json!({"state": "ended"}),
@@ -78,9 +78,9 @@ async fn a_patch_validates_its_body_on_every_listener() {
             serde_json::json!({"state": "active"}),
             "needs `cwd`",
         ),
-        // A name that is not a single plain segment reaches the route only when it
+        // A name that is not a single plain segment is routed only when it
         // survives URL normalization: `../up` is collapsed by the HTTP layer before
-        // it is routed, so the encoded form is what actually reaches the check, and
+        // it is routed, so only the encoded form is passed to the check, and
         // decoding to a slash is what it refuses. The check is defense in depth
         // either way — the guard below the route is the codebase's standard one for
         // an id that becomes a path.
@@ -196,7 +196,7 @@ async fn an_active_patch_through_another_spelling_of_the_root_is_the_same_sessio
 }
 
 /// Archiving is `DELETE` under its other name, and the two must not drift: same
-/// teardown, and one state word between them. `DELETE` answers `archived`, and
+/// teardown, and one state word between them. `DELETE` returns `archived`, and
 /// patching a session that is not hosted is a 404 rather than a bad request —
 /// the difference between "I can't do that" and "there is nothing there".
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -244,8 +244,8 @@ async fn a_refused_resume_leaves_the_session_directory_alone() {
         .with_json_body(&serde_json::json!({"state": "active", "cwd": roots.0.join("elsewhere")}))
         .await
         .assert_status(400);
-    // A log that cannot be opened — boot's refusal, reached after the route found the
-    // directory, so the patch answers and the failure is the starting session's.
+    // A log that cannot be opened — boot's refusal, after the route found the
+    // directory, so the patch returns and the failure is the starting session's.
     server
         .patch("/sessions/dormant")
         .with_json_body(&resume(&roots.0))
@@ -314,7 +314,7 @@ async fn an_archive_releases_the_log_while_a_stream_holds_the_session() {
         .unwrap();
     // Polled briefly rather than tried once: a test elsewhere in this process that forks a
     // child holds a copy of every open descriptor until the child's exec closes them, and
-    // the lock rides the descriptor. Without the fix the lock is held for as long as the
+    // the lock is associated with the descriptor. Without the fix the lock is held for as long as the
     // stream is, so a short poll still fails it.
     let mut released = false;
     for _ in 0..50 {

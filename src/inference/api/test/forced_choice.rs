@@ -90,7 +90,7 @@ async fn a_refused_forced_choice_falls_back_to_auto_and_is_remembered() {
     }
 }
 
-/// The fallback carries a turn's origin but not the turn's prompt — it appends an
+/// The fallback retains a turn's origin but not the turn's prompt — it appends an
 /// instruction turn and turns thinking off — so it is off the cache chain
 /// (docs/transport.md): the turn's own request opts in, and the retry that follows it
 /// neither sends the object nor leaves an id for the next turn to be compared against.

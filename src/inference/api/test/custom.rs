@@ -28,7 +28,7 @@ fn caps(body: &str, model: &str) -> ModelCapabilities {
     MESSAGES.parse_capabilities(body, model, &[]).unwrap()
 }
 
-/// A listing that names the model but declares nothing about it is a valid
+/// A listing that includes the model but no information about it is a valid
 /// answer: every capability reads unknown, and none of them is guessed.
 #[test]
 fn a_bare_listing_declares_no_capabilities() {
@@ -63,7 +63,7 @@ fn a_rich_listing_fills_in_what_it_declares() {
     assert_eq!(caps.prompt_cache, PromptCachePolicy::Implicit);
 }
 
-/// A model the listing does not name is unknown, not an error: a listing can be
+/// A model absent from the listing is unknown, not an error: a listing can be
 /// paginated or omit an alias the endpoint still serves, so it is not a statement
 /// about what the endpoint will accept.
 #[test]
@@ -71,7 +71,7 @@ fn a_model_absent_from_the_listing_is_unknown_not_refused() {
     let absent = caps(RICH, "mercury-9");
     assert_eq!(absent.context_length, None);
     assert_eq!(absent.max_output_tokens, None);
-    // An empty listing and an unparseable one are different: the first says
+    // An empty listing and an unparseable one are different: the first contains
     // nothing, the second is not a listing.
     assert_eq!(caps(r#"{"data": []}"#, "m").context_length, None);
     assert!(MESSAGES.parse_capabilities("not json", "m", &[]).is_err());
@@ -124,7 +124,7 @@ fn image_input_is_read_from_either_modality_shape() {
     assert!(!images(r#""input_modalities": ["text"]"#));
 }
 
-/// The dialect picks the route, and the base's trailing slash is optional
+/// The route depends on the dialect, and the base's trailing slash is optional
 /// because both spellings of one endpoint are what an operator will paste.
 #[test]
 fn the_dialect_picks_the_route_off_the_configured_base() {
@@ -144,8 +144,8 @@ fn the_dialect_picks_the_route_off_the_configured_base() {
         Some("https://api.example.com/v1/messages")
     );
     // Capabilities and the credential check are the same listing route on both
-    // dialects — one request answers the model menu, the key, and what little
-    // the endpoint says about the model.
+    // dialects — one request supplies the model menu, checks the key, and retrieves
+    // the endpoint's limited model metadata.
     for provider in [MESSAGES, RESPONSES] {
         assert_eq!(
             provider.capabilities_url(base, "any").unwrap(),
@@ -155,7 +155,7 @@ fn the_dialect_picks_the_route_off_the_configured_base() {
             provider.key_check_url(base).as_deref(),
             Some("https://api.example.com/v1/models")
         );
-        // A listing carries no effort levels, and there is no second route to ask
+        // A listing contains no effort levels, and there is no second route to query
         // at an endpoint this crate did not choose.
         assert_eq!(provider.effort_levels_url("any").unwrap(), None);
     }
@@ -270,7 +270,7 @@ fn the_dialect_name_vocabulary_is_closed() {
     assert!(error.contains("messages"), "{error}");
 }
 
-/// A custom `systemone` connection speaks the decision-model contract on the URL
+/// A custom `systemone` connection uses the decision-model contract on the URL
 /// it was given, whole: providers that adopted the contract spell its path
 /// differently, so no segment is appended. It has no turns route, no listing, and
 /// no capability or key-check route, and serves no inference.

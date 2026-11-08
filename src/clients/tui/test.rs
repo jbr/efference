@@ -28,7 +28,7 @@ fn a_tmtheme_path_is_accepted_without_membership() {
     let p = "/tmp/Custom.tmTheme";
     assert_eq!(resolve_theme(Some(p.into())).unwrap(), p);
 }
-/// The failure indicator names the upstream's status and how many times in a row it came
+/// The failure indicator shows the upstream's status and how many times in a row it came
 /// back. A failure the upstream gave no status for names nothing, and the bar shows none.
 #[test]
 fn failure_indicator_names_the_status_and_the_count() {
@@ -44,8 +44,8 @@ fn failure_indicator_names_the_status_and_the_count() {
     assert!(upstream_failure_indicator(None).is_none());
 }
 
-/// The indicator leads with the daemon's own sentence, never the status code, marks
-/// a triage retry apart from a turn's, and says `⏎` retries now (docs/transport.md).
+/// The indicator starts with the daemon's own sentence, never the status code, marks
+/// a triage retry apart from a turn's, and shows `⏎` retries now (docs/transport.md).
 #[test]
 fn retry_indicator_names_the_surface() {
     let view = |surface| UpstreamRetry {

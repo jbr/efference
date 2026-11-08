@@ -6,8 +6,8 @@ use super::*;
 
 /// The provider's attribution of a cache miss arrives on `message_start` — it is on no
 /// other frame of the stream — and rides the completion from there (docs/transport.md).
-/// This is the parse the offline report reads: the reason names where the prompt moved,
-/// and the count says how much prefix fell after it.
+/// This is the parse the offline report reads: the reason identifies where the prompt moved,
+/// and the count gives the amount of prefix after it.
 #[test]
 fn a_named_cache_miss_rides_the_completion() {
     let completion = feed(&[
@@ -69,9 +69,9 @@ fn the_quiet_cache_diagnostics_states_read_as_no_attribution() {
     }
 }
 
-/// **Every output kind reaches the live sink**, not just prose
-/// (docs/transport.md). A sink carrying only text fragments publishes nothing on
-/// a turn that thinks and then emits a tool call, which is indistinguishable
+/// **Every output kind is sent to the live sink**, not just prose
+/// (docs/transport.md). A sink with only text fragments publishes nothing on
+/// a turn with thinking followed by a tool call, which is indistinguishable
 /// from a hung harness. The tool call is named at `content_block_start`, before
 /// its arguments, because a large input can take seconds to stream.
 #[test]
@@ -146,7 +146,7 @@ fn every_phase_reaches_the_live_sink_not_just_prose() {
 }
 
 /// Prose still streams as before, and is typed as prose — the regression guard on the
-/// existing live view, which is what the sink carried before it was typed.
+/// existing live view, which is what the sink emitted before it was typed.
 #[test]
 fn prose_still_reaches_the_sink_as_text() {
     let seen = live(&[

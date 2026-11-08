@@ -88,8 +88,8 @@ fn dir_contents(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
 }
 
 /// A log ending after a finished trajectory reopens under its own id: the entries
-/// stand, the `Resumed` entry follows them in the last turn, and the state the log
-/// carries is what the session continues from.
+/// stand, the `Resumed` entry follows them in the last turn, and the state in the log
+/// is what the session continues from.
 #[tokio::test]
 async fn a_clean_log_resumes_with_its_state() {
     let root = Root::new("resume-clean");

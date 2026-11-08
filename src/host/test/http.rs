@@ -73,8 +73,8 @@ async fn turn_submission_ids_adopt_or_mint() {
     assert!(turns_rx.try_recv().is_err(), "rejected turn never queued");
 }
 
-/// `POST /turns` carries an optional client-asserted `source` onto the queued
-/// turn (docs/control-api.md); absent, the turn is the operator's and carries
+/// `POST /turns` adds an optional client-asserted `source` to the queued
+/// turn (docs/control-api.md); absent, the turn is the operator's and has
 /// none.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn turn_source_reaches_the_queued_turn() {
@@ -187,7 +187,7 @@ async fn the_kickoff_source_is_reserved() {
 }
 
 /// Recall over the wire (docs/control-api.md): `DELETE /turns/:submission_id` pops the suffix
-/// and answers with what it actually popped, the `queued` state topic reflects the remainder,
+/// and returns what it actually popped, the `queued` state topic reflects the remainder,
 /// and an id the loop already consumed pops nothing rather than erroring.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn withdraw_turns_pops_a_suffix_and_reports_what_it_popped() {
@@ -251,14 +251,14 @@ fn config_edit_decision_body_decodes() {
 
 /// `PUT /approvals/:call_id` treats the id as a precondition (docs/control-api.md):
 /// addressing anything but the pending gate is 409 `gate_moved`, whose `detail`
-/// carries the *current* gate (`null` = none) so a client re-renders without a
+/// contains the *current* gate (`null` = none) so a client re-renders without a
 /// second round-trip. The old ambiguous 404 is gone.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn put_approvals_enforces_the_gate_precondition() {
     let (shared, _turns_rx) = Session::in_memory();
     let app = test_server(&shared).await;
 
-    // No gate at all: the precondition fails, and the detail says "none pending".
+    // No gate at all: the precondition fails, and the detail is "none pending".
     let conn = app
         .put("/v1/approvals/toolu_x")
         .with_body(r#"{"decision":"approve"}"#)
@@ -333,9 +333,9 @@ async fn loop_resource_moves_both_dials_in_one_call() {
 }
 
 /// `GET /state?wait=settled` blocks until a decision point — an idle daemon is
-/// already settled, so it answers at once with the snapshot — and the `wait`
+/// already settled, so it returns the snapshot at once — and the `wait`
 /// grammar rejects a missing or unknown predicate with a 400, never silently
-/// answering "now": a client that asked to wait must not be told the present is
+/// returning "now": a client that asked to wait must not be told the present is
 /// what it waited for. (The predicate's lifecycle itself is pinned in `pace.rs`
 /// at the `Session` level.)
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -353,7 +353,7 @@ async fn state_wait_takes_a_predicate() {
 
     app.get("/v1/state?wait=now").await.assert_status(400);
     app.get("/v1/state?wait").await.assert_status(400);
-    // And an un-waited read still answers immediately.
+    // And an un-waited read still returns immediately.
     app.get("/v1/state").await.assert_status(200);
 }
 

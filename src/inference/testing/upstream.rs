@@ -78,8 +78,8 @@ impl Request {
 
 impl ScriptedUpstream {
     /// An upstream answering the `n`th request it is sent, counting from zero, with
-    /// `script(n)`. A title ask (docs/session-title.md) rides its own detached task and
-    /// lands between a session's requests, so it is answered aside with [`end_turn`],
+    /// `script(n)`. A title ask (docs/session-title.md) runs in its own detached task and
+    /// occurs between a session's requests, so it is answered aside with [`end_turn`],
     /// whose text line the title takes, and is neither recorded nor counted: the script
     /// numbers the session's own requests.
     pub(crate) fn new(script: impl Fn(usize) -> Canned + Send + Sync + 'static) -> Self {
@@ -100,7 +100,7 @@ impl ScriptedUpstream {
         })
     }
 
-    /// [`new`](Self::new) for a test of the title ask itself: a title ask goes to the
+    /// [`new`](Self::new) for a test of the title ask itself: the upstream passes a title ask to the
     /// script like any other request.
     pub(crate) fn scripting_title_asks(
         script: impl Fn(usize) -> Canned + Send + Sync + 'static,
@@ -134,8 +134,8 @@ impl ScriptedUpstream {
     }
 
     /// The URL of `path` at the origin every upstream answers on, for an endpoint built
-    /// another way. A URL names no upstream: a request reaches one through its client,
-    /// [`Self::http`].
+    /// another way. A URL names no upstream: the client, [`Self::http`], sends
+    /// requests to one.
     pub(crate) fn url(path: &str) -> String {
         format!("{ORIGIN}{path}")
     }

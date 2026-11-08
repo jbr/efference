@@ -131,7 +131,7 @@ async fn a_stale_absent_or_unnamed_gate_is_refused() {
 }
 
 /// The target rules the verb enforces apply to the binding too (docs/permissions.md):
-/// self is never a target, a decision reaches only the sessions the caller supervises —
+/// self is never a target, a decision applies only to sessions the caller supervises —
 /// not a peer, nor a grandchild it drives through the creation chain — and each hop of
 /// a chain must be supervised by the session before it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

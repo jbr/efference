@@ -11,17 +11,17 @@
 //! Two properties of the route shape what is read here:
 //!
 //! - It requires a `client_version` query parameter, and the backend returns
-//!   only the entries whose `minimal_client_version` the claim satisfies. What a
-//!   client can see therefore follows the version it claims, and a claim below
-//!   every entry's minimum answers 200 with an empty catalog rather than an
+//!   only the entries whose `minimal_client_version` the claim satisfies. The entries
+//!   available to a client therefore depend on its claimed version; for a claim below
+//!   every entry's minimum the backend returns 200 with an empty catalog rather than an
 //!   error — which is why [`CLAIMED_CLIENT_VERSION`] is a claim of its own and
 //!   not this crate's version.
-//! - An entry carries no output cap, no temperature acceptance, and no cache
+//! - An entry contains no output cap, no temperature acceptance, and no cache
 //!   policy. Those stay as the arm's baseline asserts (or, for the cap and the
-//!   temperature, as nothing asserted), because a source that says nothing is
-//!   not a source that says no.
+//!   temperature, as nothing asserted), because absence of a field in a source
+//!   does not mean rejection.
 //!
-//! A model the catalog does not name is **not** an error: a listing can lag a
+//! A model absent from the catalog is **not** an error: a listing can lag a
 //! release, and the id may still be served. The model passes boot on the
 //! baseline, and the provider's own answer is the test.
 
@@ -40,7 +40,7 @@ mod test;
 /// rather than as a wrong claim.
 pub(super) const CLAIMED_CLIENT_VERSION: &str = "99.99.99";
 
-/// How long a catalog read stands before the next one asks again, matching the
+/// How long a catalog read remains valid before the next read, matching the
 /// interval Codex CLI caches its own copy over. A catalog changes when OpenAI
 /// ships a model, not within a session's life.
 const CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(300);
@@ -125,8 +125,8 @@ impl Entry {
         (!levels.is_empty()).then_some(levels)
     }
 
-    /// What this entry reports about the model, over the arm's baseline: the
-    /// fields the catalog speaks for are filled in, and the ones it does not
+    /// This entry's model fields, over the arm's baseline: the
+    /// fields present in the catalog are filled in, and the ones absent
     /// keep whatever the baseline asserted.
     pub(super) fn capabilities(&self, baseline: &ModelCapabilities) -> ModelCapabilities {
         let efforts = self.efforts();
@@ -137,7 +137,7 @@ impl Entry {
                 off: ThinkingOff::Omit,
             },
             // An entry that lists no modality accepts no image: the upload would
-            // spend itself on a rejection, and the tool reports success either
+            // be rejected, and the tool reports success either
             // way (docs/tools.md).
             supports_image_input: self.input_modalities.iter().any(|m| m == "image"),
             supported_efforts: efforts.clone(),
@@ -185,7 +185,7 @@ pub(super) fn baseline(provider: Provider) -> ModelCapabilities {
 }
 
 /// One model's capabilities on either OpenAI arm: its catalog entry over the
-/// arm's baseline, or the baseline alone for a model the catalog does not name.
+/// arm's baseline, or the baseline alone for a model absent from the catalog.
 ///
 /// A catalog that cannot be read is the caller's failure on the Codex arm, where
 /// it is the arm's own source. On the platform arm it is a borrowed one — an
@@ -217,14 +217,14 @@ pub(super) async fn capabilities(
 /// One catalog read: the entries in the order the backend listed them.
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct Listing {
-    // No `default`: the key is how a body says it is a catalog at all. An
+    // No `default`: the key distinguishes a catalog body. An
     // absent one is a refusal or some other document, and reading it as an
     // empty catalog would claim the account serves no models.
     models: Vec<Entry>,
 }
 
 impl Listing {
-    /// The entry for `model`, or `None` when the catalog does not name it.
+    /// The entry for `model`, or `None` when the catalog does not include it.
     pub(super) fn entry(&self, model: &str) -> Option<&Entry> {
         self.models.iter().find(|entry| entry.slug == model)
     }
@@ -236,8 +236,8 @@ impl Listing {
         self.rows_where(|_| true)
     }
 
-    /// [`Self::rows`] limited to the entries `served` names: the platform menu,
-    /// which offers a catalog entry only when the key's own listing carries its
+    /// [`Self::rows`] limited to the entries in `served`: the platform menu,
+    /// which offers a catalog entry only when the key's own listing contains its
     /// id (docs/model-catalog.md).
     pub(super) fn rows_served(&self, served: &[String]) -> Vec<ListedModel> {
         self.rows_where(|entry| served.contains(&entry.slug))
@@ -312,8 +312,8 @@ pub(super) fn seed(provider: Provider, base: Option<&str>, account: &str, body: 
 
 /// The catalog for one connection, read through the process cache: within the
 /// TTL the last read stands, and a read that fails falls back to an older one
-/// rather than failing the lookup that asked — a catalog that has gone stale is
-/// still the provider's last word about which models exist, and the turn is the
+/// rather than failing the lookup — a catalog that has gone stale is
+/// still the provider's latest information about which models exist, and the turn is the
 /// real test. With nothing cached, the read's failure is the caller's.
 pub(super) async fn catalog(endpoint: &Endpoint) -> Result<Listing, Error> {
     let key = cache_key(endpoint);
@@ -326,8 +326,8 @@ pub(super) async fn catalog(endpoint: &Endpoint) -> Result<Listing, Error> {
     {
         return parse(&cached.body);
     }
-    // The subscription backend's route whichever arm is asking: the platform
-    // arm's own listing carries none of these fields.
+    // The subscription backend's route for either arm: the platform
+    // arm's own listing contains none of these fields.
     let url = Provider::OpenAICodex
         .models_url(None)
         .ok_or("the openai-codex backend has no model catalog route")?;
@@ -339,7 +339,7 @@ pub(super) async fn catalog(endpoint: &Endpoint) -> Result<Listing, Error> {
                 .is_some_and(|status| (200..300).contains(&status)) =>
         {
             // A body that does not parse is not cached: the next lookup should
-            // see the provider's current answer rather than this one's shape.
+            // use the provider's current answer rather than this one's shape.
             let catalog = parse(&response.body)?;
             if let Ok(mut cache) = cache().lock() {
                 cache.insert(
@@ -353,7 +353,7 @@ pub(super) async fn catalog(endpoint: &Endpoint) -> Result<Listing, Error> {
             Ok(catalog)
         }
         // A refusal is a fact about the route rather than a transport failure,
-        // and a body that says why is worth more than the status alone.
+        // and a body with the reason is worth more than the status alone.
         Ok(Ok(response)) => {
             let status = response
                 .status
@@ -398,7 +398,7 @@ fn stale(cached: Option<&Cached>, endpoint: &Endpoint, error: Error) -> Result<L
     parse(&cached.body)
 }
 
-/// A catalog naming the models the boot-path fixtures configure, in the shape
+/// A catalog containing the models the boot-path fixtures configure, in the shape
 /// the backend answered on 2026-09-24. Seeding it is how a test runs the boot
 /// path for a Codex connection without a provider (`codex::seed`).
 #[cfg(test)]

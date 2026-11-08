@@ -36,7 +36,7 @@ async fn an_adopted_sessions_artifact_links_resolve_until_it_ends() {
         .unwrap();
     let socket = host_server(&host).await;
 
-    // The entry view carries one link per fence, signed for this session.
+    // The entry view contains one link per fence, signed for this session.
     let view: Value = serde_json::from_str(
         socket
             .get(&format!("/sessions/one/v1/log/{seq}"))
@@ -75,7 +75,7 @@ async fn an_adopted_sessions_artifact_links_resolve_until_it_ends() {
         Some(crate::listeners::artifacts::ARTIFACT_CSP)
     );
 
-    // The gated web stack serves it with no credential, as a sandboxed frame asks.
+    // The gated web stack serves it with no credential, as requested by a sandboxed frame.
     let (web, _bearer, _state) = network_host_server(&host).await;
     let anonymous = web.get(&url).await;
     anonymous.assert_status(200);

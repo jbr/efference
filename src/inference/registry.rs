@@ -53,8 +53,8 @@ impl InferenceRegistry {
             .map_err(|error| format!("inference config {}: {error}", path.display()))?;
         let mut registry = Self::from_config(config, host_cwd, host_env, secrets)?;
         // The state database lives beside the config file that named it
-        // (`~/.efference/state.db`), so a relocated config carries its history
-        // along rather than keying it off wherever the host happened to start.
+        // (`~/.efference/state.db`), so a relocated config has its history
+        // alongside it rather than keying it off wherever the host happened to start.
         if let Some(dir) = path.parent() {
             registry.history = crate::config::history::History::at(dir.join("state.db"));
         }
@@ -267,7 +267,7 @@ impl InferenceRegistry {
     /// Resolve a session's roles from the slug spellings the CLI and offline
     /// verbs carry, then attach credentials. One call through the shared flow
     /// (`options.rs`), so these surfaces and the control routes cannot drift.
-    /// Offline verbs name no working root, so no history scope applies: an
+    /// Offline verbs have no working root, so no history scope applies: an
     /// omitted model there is a refusal, never a remembered pick from some
     /// other directory.
     pub fn resolve(
@@ -302,7 +302,7 @@ impl InferenceRegistry {
     }
 
     /// Split a `connection/model` slug. A native id may itself contain a slash,
-    /// so a prefix only names a connection when one by that name exists; the
+    /// so a prefix is a connection name only when one by that name exists; the
     /// unambiguous spelling is a separate `connection` field (`options.rs`).
     /// A bare id with no connection prefix is refused: with no default model
     /// there is nothing to resolve it against (docs/transport.md).

@@ -69,7 +69,7 @@ pub(super) async fn resolve_capabilities(
     }
     match (effort, &capabilities.default_effort) {
         (Some(effort), _) if capabilities.validates_efforts => log::debug!("effort: {effort}"),
-        // Sent without a check against the model's metadata, which may name no
+        // Sent without a check against the model's metadata, which may contain no
         // levels at all: the provider may honor it, refuse it, or drop it
         // silently, and only the last one leaves no trace (docs/transport.md).
         (Some(effort), _) => {

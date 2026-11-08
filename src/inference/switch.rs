@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{SessionOptions, TriageChoice};
 
-/// The model selections an `active` patch may carry, in the shapes creation takes
+/// The model selections an `active` patch may contain, in the shapes creation takes
 /// (docs/control-api.md). A field left out keeps what the session recorded.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -43,12 +43,12 @@ impl ResumeSwitch {
         }
     }
 
-    /// Whether the switch names a main model.
+    /// Whether the switch contains a main model selection.
     pub fn switches_main(&self) -> bool {
         self.connection.is_some() || self.model.is_some()
     }
 
-    /// Whether the switch names nothing.
+    /// Whether the switch contains nothing.
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
     }

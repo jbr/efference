@@ -182,7 +182,7 @@ async fn a_submit_resumes_and_skips_the_juncture() {
 /// An agent's turn waits behind the operator's hold (docs/control-channel.md): it is queued and
 /// reported held but not sent to the loop, the juncture stays held, and an idle loop holding it
 /// reads as settled, since it waits on the operator. The operator's own turn releases the hold,
-/// and both reach the loop in submission order.
+/// and both are sent to the loop in submission order.
 #[tokio::test(start_paused = true)]
 async fn an_agents_turn_waits_behind_the_operators_hold() {
     let (shared, mut turns_rx) = Session::in_memory();
@@ -239,7 +239,7 @@ async fn releasing_the_hold_sends_what_it_held_back() {
     assert_eq!(turns_rx.try_recv().unwrap().submission_id, "m1");
 }
 
-/// A turn queued before the hold landed waits for the release too: the hold outranks queued
+/// A turn queued before the hold was set waits for the release too: the hold takes priority over queued
 /// input at the juncture.
 #[tokio::test(start_paused = true)]
 async fn the_hold_outranks_a_turn_queued_before_it() {
@@ -381,7 +381,7 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
 }
 
 /// A turn ending with another already queued is not a settle: the queued turn runs at once,
-/// so no push says the session is waiting (as when an interrupt ends a turn and a message
+/// so no push indicates the session is waiting (as when an interrupt ends a turn and a message
 /// is queued behind it). With nothing queued, the push goes out.
 #[test]
 fn a_turn_ending_with_a_turn_queued_sends_no_settle_push() {

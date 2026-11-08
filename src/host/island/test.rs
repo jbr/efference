@@ -24,7 +24,7 @@ fn pipe() -> (std::io::PipeReader, std::io::PipeWriter) {
 }
 
 /// The early exit an [`OwnerWatch`] runs on its own thread when the owner goes before the
-/// host exists, and the channel that hears it run.
+/// host exists, and the channel its run is signalled on.
 fn early_exit() -> (impl FnOnce() + Send + 'static, mpsc::Receiver<()>) {
     let (ran, heard) = mpsc::channel();
     (

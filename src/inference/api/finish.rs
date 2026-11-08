@@ -54,8 +54,8 @@ impl Finish {
     }
 
     /// A Responses terminal `status` and its `incomplete_details.reason`. The
-    /// status says only completed or incomplete, so a completed response that
-    /// carries a call is the tool-call ending. The raw word is the status, then
+    /// status is only completed or incomplete, so a completed response that
+    /// contains a call is the tool-call ending. The raw word is the status, then
     /// the reason after a colon when there is one.
     pub fn responses(status: &str, incomplete: Option<&str>, has_calls: bool) -> Self {
         let reason = match (status, incomplete) {

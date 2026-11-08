@@ -16,7 +16,7 @@ pub struct Ended {
 }
 
 impl Ended {
-    /// The answer to an archive (docs/control-api.md): the `state` it reached,
+    /// The answer to an archive (docs/control-api.md): the resulting `state`,
     /// `archived` or `discarded` when the session was removed, and the fate of its
     /// worktree when it made one. A route adds what only it knows.
     pub(crate) fn answer(self, id: &str) -> SessionArchived {
@@ -50,7 +50,7 @@ impl Host {
     /// This is the archive path only, which an island's exit also takes for each of
     /// its sessions before it shuts down (`island_exit.rs`). A host shutdown stops
     /// sessions without it and leaves every worktree in place, including through the
-    /// cascade that ends a stopped session's children: those reach here with the host
+    /// cascade that ends a stopped session's children: those are processed with the host
     /// already shutting down, and retire nothing.
     ///
     /// A session still starting has its preparation cancelled instead

@@ -119,8 +119,8 @@ fn a_window_overflow_is_not_read_as_a_rejected_cap() {
     assert_eq!(output_cap_rejection(anthropic), None);
     assert!(is_window_overflow(openrouter));
     assert_eq!(output_cap_rejection(openrouter), None);
-    // A prompt too long on its own names no output parameter; no reservation
-    // fixes it, and neither matcher claims it.
+    // An error for a prompt too long on its own contains no output parameter; no reservation
+    // fixes it, and neither matcher matches it.
     let too_long = r#"{"error":{"message":"prompt is too long: 210000 tokens > 200000 maximum"}}"#;
     assert!(!is_window_overflow(too_long));
     assert_eq!(output_cap_rejection(too_long), None);
@@ -159,7 +159,7 @@ fn a_stated_ceiling_converges_in_one_retry() {
 
 /// A stated ceiling is remembered, not re-learned every turn. `compute` reads the
 /// client's configured cap fresh each request, so without this the correction
-/// would last one request and the next turn would buy the same 400.
+/// would last one request and the next turn would receive the same 400.
 #[test]
 fn a_refused_ceiling_is_remembered_for_the_session() {
     let mut r = Reservation::default();

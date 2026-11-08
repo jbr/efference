@@ -24,9 +24,9 @@ pub(crate) struct ResponsesAssembler {
     items: BTreeMap<usize, ResponsesOutputItem>,
     id: Option<String>,
     model: String,
-    /// The terminal `response.status`, once seen.
+    /// The terminal `response.status`, once received.
     status: Option<String>,
-    /// `response.incomplete_details.reason`, once seen.
+    /// `response.incomplete_details.reason`, once received.
     incomplete_reason: Option<String>,
     usage: Usage,
     finalized: bool,
@@ -217,9 +217,9 @@ impl ResponsesAssembler {
     }
 
     /// Fold one SSE event. The event's `type` is read off the JSON body — the
-    /// `event:` line carries the same string but the body is what the schema
+    /// `event:` line contains the same string but the body is what the schema
     /// defines. Events outside the handled set are ignored under one rule: the
-    /// terminal event's `output` carries every item whole, so no semantic output
+    /// terminal event's `output` contains every item whole, so no semantic output
     /// depends on an intermediate event being understood.
     pub(crate) fn apply(
         &mut self,

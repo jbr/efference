@@ -10,7 +10,7 @@ use crate::record::project::{UserPart, WireTurn};
 const REFUSAL: &str =
     r#"{"type":"error","error":{"type":"invalid_request_error","message":"bad request"}}"#;
 
-/// A history whose one tool result carries an image.
+/// A history whose one tool result contains an image.
 fn with_image() -> Vec<WireTurn> {
     vec![WireTurn::User(vec![UserPart::ToolResult {
         call_id: CallId("c".into()),

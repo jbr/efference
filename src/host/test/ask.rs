@@ -1,5 +1,5 @@
 //! A pending `ask` as the daemon reports it (docs/process-monitor.md): the state topic,
-//! the status a subscriber hears, settle, and the resume a reply performs.
+//! the status sent to a subscriber, settle, and resumption after a reply.
 
 use super::*;
 use crate::record::log::Approval;

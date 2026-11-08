@@ -40,7 +40,7 @@ fn anthropic_capabilities_missing_context_is_an_error() {
 /// routing filters to endpoints that fit, so the widest is reachable.
 /// `max_completion_tokens` takes the **min** (over the endpoints at or above
 /// `OUTPUT_FLOOR`, see the next test) — it is sent as `max_tokens`, and a max
-/// there would pin routing to one endpoint. Trimmed from a live
+/// there would restrict routing to one endpoint. Trimmed from a live
 /// `GET /api/v1/models/anthropic/claude-haiku-4.5/endpoints` response.
 #[test]
 fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
@@ -69,7 +69,7 @@ fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
 
 /// The output-cap min skips endpoints below `OUTPUT_FLOOR` (docs/transport.md):
 /// the live case was `z-ai/glm-5.3-flash` with twenty-one endpoints at 128k or
-/// more and one at 2048, which held every turn to 2048 output tokens — on a
+/// more and one at 2048, limiting every turn to 2048 output tokens — on a
 /// thinking model, a turn cut off before its first tool call. The plain min
 /// survives only when nothing clears the floor.
 #[test]
@@ -152,7 +152,7 @@ fn openrouter_capabilities_no_endpoints_is_an_error() {
 
 /// OpenRouter's generation record prices one request authoritatively —
 /// `total_cost` is what the account was billed (docs/transport.md). Unknown
-/// fields ride through; a record without the field is an error the daemon
+/// fields are preserved; a record without the field is an error the daemon
 /// counts as unpriced, never a silent zero.
 #[test]
 fn generation_cost_parses_total_cost() {
@@ -279,12 +279,12 @@ fn prompt_caching_is_read_off_the_endpoint_metadata() {
     );
 }
 
-/// The platform arm reads the subscription backend's catalog, which answers a
-/// platform key and reports what the platform's own Models API does not: the
+/// The platform arm reads the subscription backend's catalog, accessible with a
+/// platform key and containing what the platform's own Models API does not: the
 /// window, the reasoning levels, the modalities (docs/transport.md). The cache
 /// policy stays the platform's own — explicit, where the Codex arm's is
-/// implicit — because the catalog reports none. A model the catalog does not
-/// name boots on that baseline rather than failing.
+/// implicit — because the catalog reports none. A model absent from the catalog
+/// boots on that baseline rather than failing.
 #[tokio::test]
 async fn the_platform_arm_reads_the_catalog_over_its_own_baseline() {
     seed_codex_catalog(Provider::OpenAI, "");
@@ -308,12 +308,12 @@ async fn the_platform_arm_reads_the_catalog_over_its_own_baseline() {
     assert_eq!(unnamed.prompt_cache, PromptCachePolicy::Explicit);
 }
 
-/// The spotter default each arm falls back to, for a connection that names none
+/// The spotter default each arm falls back to, for a connection with none
 /// of its own (docs/permissions.md).
 #[test]
 fn each_arm_names_its_own_default_spotter() {
     // One default per arm, not a catalog: the spotter shares the endpoint and
-    // wants the cheap band, and no source reports which model that is.
+    // uses the cheap band, and no source reports which model that is.
     assert_eq!(
         Provider::OpenAI.default_spotter_model(),
         Some("gpt-5.6-luna")
@@ -330,7 +330,7 @@ fn each_arm_names_its_own_default_spotter() {
         Provider::OpenRouter.default_spotter_model(),
         Some("anthropic/claude-haiku-4-5")
     );
-    // A custom endpoint publishes no catalog to pick from, so resolution asks for
+    // A custom endpoint publishes no catalog to pick from, so resolution requires
     // `[defaults].spotter` rather than guessing a slug.
     assert_eq!(
         Provider::Custom(WireDialect::Messages).default_spotter_model(),

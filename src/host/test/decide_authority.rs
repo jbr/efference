@@ -1,5 +1,5 @@
 //! Who may decide a held gate, apart from whom it is routed to: the session's supervisor
-//! and the operator decide, and the review dial picks who is asked (docs/permissions.md,
+//! and the operator decide, and the review dial determines who is asked (docs/permissions.md,
 //! docs/tools.md).
 
 use super::*;
@@ -117,9 +117,9 @@ fn decisions(c: &Session) -> Vec<crate::record::log::GateDecision> {
 }
 
 /// Case A: the operator turns `c`'s dial to `spotter_human` while its creator `p` is
-/// still its supervisor. The gate is routed to the operator, and reaches `p`'s inbox
-/// without waking it; `p`'s reading of `c` says the operator is asked and names the
-/// `decide` call it may make; and `p`'s decision lands.
+/// still its supervisor. The gate is routed to the operator, and is sent to `p`'s inbox
+/// without waking it; `p`'s reading of `c` identifies the operator as asked and includes the
+/// `decide` call it may make; and `p`'s decision is accepted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_supervisor_may_decide_a_gate_routed_to_the_operator_and_is_not_woken() {
     let fixture = Fixture::new().await;

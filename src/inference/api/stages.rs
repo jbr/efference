@@ -28,7 +28,7 @@ pub trait StageRecorder: Send + Sync {
 /// The shared handle a client carries.
 pub type StageSink = Arc<dyn StageRecorder>;
 
-/// The request in flight on a client, for the transport's retry handler, which sees
+/// The request in flight on a client, for the transport's retry handler, which has
 /// attempts but not the request that made them (the retry handler builds each
 /// follow-up on a fresh connection). Requests that overlap on one client family are
 /// attributed to the later one; the stage this feeds is advisory.

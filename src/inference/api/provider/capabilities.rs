@@ -1,4 +1,4 @@
-//! What the boot capability fetch learns about a model, and how each
+//! Model capabilities from the boot fetch, and how each
 //! provider's metadata response is parsed into it (docs/transport.md).
 
 use super::*;
@@ -103,13 +103,13 @@ fn openrouter_capabilities(body: &str, upstream: &[String]) -> Result<ModelCapab
     // Sent, not merely displayed: this is the cap each request's
     // `max_tokens` is shrunk from (`api/reservation.rs`), and
     // OpenRouter routes only to endpoints that support a response
-    // that long. So **min** — a max would pin
+    // that long. So **min** — a max would restrict
     // routing to the single widest endpoint, changing price and
     // availability as a side effect of a display value — but the
     // min over endpoints that clear [`OUTPUT_FLOOR`]: an outlier
     // below it would otherwise cap every turn of the session at
     // its number (one of twenty-two
-    // endpoints at 2048 holds a thinking model to 2048 output
+    // endpoints at 2048 limits a thinking model to 2048 output
     // tokens per turn, docs/transport.md). Only when no endpoint
     // clears the floor is the plain min kept.
     let max_output_tokens =
@@ -138,7 +138,7 @@ fn openrouter_capabilities(body: &str, upstream: &[String]) -> Result<ModelCapab
         .any(|e| e.pricing.input_cache_read.is_some());
     let prompt_cache = PromptCachePolicy::from_support(has_explicit_cache, has_implicit_cache);
     // The same pinned set, so a pinned session is priced by the
-    // upstreams it can reach.
+    // upstreams it can use.
     let prices = prices::conservative(endpoints.iter().map(|e| prices::ListedPrices {
         prompt: e.pricing.prompt.as_deref(),
         completion: e.pricing.completion.as_deref(),
@@ -186,7 +186,7 @@ impl Provider {
     /// `upstream` is the session's `--upstream` order (empty when unpinned). It
     /// narrows the endpoint set the OpenRouter aggregations run over: a pinned
     /// session routes to exactly those endpoints, so aggregating across the ones
-    /// it will never reach reports someone else's ceiling. Anthropic ignores it —
+    /// it will never use reports someone else's ceiling. Anthropic ignores it —
     /// there is one upstream.
     pub(in crate::inference::api) fn parse_capabilities(
         &self,
@@ -212,9 +212,9 @@ impl Provider {
     /// `reasoning.default_effort`. An absent block, an absent field, or an
     /// empty list all read as `None` — the metadata declares no levels, and
     /// [`EffortLevels`]'s boot rule refuses a configured effort against that.
-    /// Only the OpenRouter fetch reaches this: Anthropic names its levels in the
+    /// Only the OpenRouter fetch uses this: Anthropic includes its levels in the
     /// capabilities response (`effort_levels_url` returns `None` there).
-    /// `mandatory` decides how thinking off is spelled ([`ThinkingOff`]);
+    /// The spelling of thinking off depends on `mandatory` ([`ThinkingOff`]);
     /// `default_enabled` has no consumer.
     pub(in crate::inference::api) fn parse_model_entry(
         &self,
@@ -297,7 +297,7 @@ pub const OUTPUT_FLOOR: u64 = 32_768;
 /// Fold per-endpoint output caps into the one that is sent: the min over caps
 /// at or above [`OUTPUT_FLOOR`], else the plain min (a model none of whose
 /// endpoints clears the floor is a short-output model, and narrowing its
-/// routing would buy nothing). `None` when no endpoint reports a cap.
+/// routing would provide no benefit). `None` when no endpoint reports a cap.
 fn output_ceiling(caps: impl Iterator<Item = u64>) -> Option<u64> {
     let caps: Vec<u64> = caps.collect();
     caps.iter()
@@ -351,7 +351,7 @@ impl PromptCachePolicy {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelCapabilities {
     /// Maximum prompt tokens the model accepts, or `None` where the source
-    /// declares none — a custom endpoint whose listing carries no window
+    /// declares none — a custom endpoint whose listing contains no window
     /// (`provider/listing.rs`). Unknown is not a number to guess: the consumers
     /// already tolerate its absence, since `Client` and `api/reservation.rs` take
     /// an `Option` and `GET /state` reports a null context. What is lost is the
@@ -366,12 +366,12 @@ pub struct ModelCapabilities {
     pub context_length: Option<u64>,
     /// Maximum response tokens, where the provider reports one. OpenRouter:
     /// the **min** `max_completion_tokens` across serving endpoints — unlike
-    /// `context_length` this value reaches the wire — as the cap each request's
+    /// `context_length` this value is sent on the wire — as the cap each request's
     /// `max_tokens` is shrunk from (`api/reservation.rs`) — and routing skips
     /// endpoints that cannot produce a response that long (docs/transport.md).
     pub max_output_tokens: Option<u64>,
-    /// How the model takes the `thinking` field: whether an `auto` turn may think
-    /// adaptively, and how a request says thinking off (`api::thinking`,
+    /// How the model takes the `thinking` field: whether an `auto` turn may use
+    /// adaptive thinking, and how a request represents thinking off (`api::thinking`,
     /// docs/transport.md). Anthropic: `capabilities.thinking.types`. OpenRouter:
     /// adaptive only when every endpoint currently serving the model lists
     /// `reasoning` in `supported_parameters` — conservative like
@@ -414,9 +414,9 @@ pub struct ModelCapabilities {
     /// the levels `capabilities.effort` marks supported, an empty list when the
     /// model takes no effort at all. The consumer is the boot check: a
     /// configured `--effort`/`[transport] effort` is sent only when this list
-    /// names it, where [`Self::validates_efforts`] says the list binds.
+    /// contains it, where [`Self::validates_efforts`] makes the list binding.
     pub supported_efforts: Option<Vec<String>>,
-    /// The effort level the model's metadata says it defaults to — OpenRouter
+    /// The model's default effort level in its metadata — OpenRouter
     /// `reasoning.default_effort` — printed on the boot line even when no
     /// effort is configured, which answers "what will the knob actually do"
     /// in one glance (docs/transport.md). Never sent. Anthropic's metadata names
@@ -482,7 +482,7 @@ impl ModelCapabilities {
     ///
     /// Without declared levels there is nothing to check against, and the level
     /// is left for the provider to accept or refuse. That is the honest reading
-    /// of a source that names none, and on the OpenAI arms it is also what keeps
+    /// of a source with none, and on the OpenAI arms it is also what keeps
     /// a newly published model usable: its catalog entry may be missing while
     /// the model is not.
     pub fn check_effort(&self, effort: &str, model: &str) -> Result<(), String> {

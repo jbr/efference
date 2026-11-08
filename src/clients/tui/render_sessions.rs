@@ -1,7 +1,7 @@
 //! Painting the session switcher (docs/tui.md).
 //!
-//! A plain centred list: one row per session, the status and process count the
-//! listing carries, and a note line. The keys it teaches are the ones
+//! A plain centred list: one row per session, the status and process count in the
+//! listing, and a note line. The keys it teaches are the ones
 //! `sessions.rs` implements.
 
 use ratatui::{

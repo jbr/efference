@@ -6,16 +6,16 @@
 //! again. Everything between those is the shared steps (`model`, `scaffold`, `env`,
 //! `parts`), so a resumed session is built by the same code a created one is.
 //!
-//! A log whose last completion is clean (no calls, or every call answered and decided)
-//! resumes after its last entry, and one with calls that never ran resumes at that batch
-//! (`Resumed.pending_calls`); a call that started and has no result rolls back to just
+//! When the last completion is clean (no calls, or every call has a result and decision),
+//! the session resumes after the last entry; with calls that never ran it resumes at that batch
+//! (`Resumed.pending_calls`); for a call that started and has no result it rolls back to just
 //! before the completion ([`resume_point`]), and the
 //! `Resumed` entry records where. The reopen itself is the last fallible
 //! step: everything before it reads the log without writing, so a refusal or a failed boot
 //! leaves the session directory as it was found. The directory is never in [`Minted`]; only
 //! the scratch this attempt makes is.
 //!
-//! State the log carries is restored where it is consumed, not here: the turn counter from
+//! State the log contains is restored where it is consumed, not here: the turn counter from
 //! the log's last turn (`agent::run`), the title from the latest `Title` entry, and the
 //! background-process numbering past the highest `p#<n>` the log mentions (both in
 //! `Session::full`).

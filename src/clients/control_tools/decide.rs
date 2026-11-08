@@ -224,7 +224,7 @@ fn escalate(
         reviewer => return Err(anyhow!(answers::not_yours_to_escalate(id, held, reviewer))),
     }
     // The next supervisor up. The holder never decides its own gate, so a chain that
-    // led back to it would go to the operator instead.
+    // includes it again results in routing to the operator instead.
     let next = state
         .caller_session()?
         .supervisor()

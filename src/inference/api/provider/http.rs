@@ -23,7 +23,7 @@ impl Provider {
             // No turns route: TypeSafe serves no inference, and a System One
             // endpoint's one route is [`Self::decisions_url`].
             Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => None,
-            // The dialect picks the path: these two are the conventional routes,
+            // The path depends on the dialect: these two are the conventional routes,
             // and an endpoint that serves the dialect on a different path is a
             // base URL that includes it.
             Self::Custom(WireDialect::Messages) => Some(join(base?, "messages")),
@@ -44,7 +44,7 @@ impl Provider {
             // OpenRouter fronts the same models on its own alpha route, which is
             // how this rung was reachable before first-party access existed.
             Self::OpenRouter => Some("https://openrouter.ai/api/alpha/decisions".to_string()),
-            // No decisions route: these serve turns only, and a turn dialect says
+            // No decisions route: these serve turns only, and a turn dialect implies
             // nothing about serving the System One contract.
             Self::Anthropic
             | Self::OpenAI
@@ -302,7 +302,7 @@ impl Provider {
     ///
     /// The Codex arm is the subscription backend's own listing, not the
     /// platform's `/v1/models`: a ChatGPT grant authenticates against
-    /// `chatgpt.com/backend-api`, and the catalog that route serves carries the
+    /// `chatgpt.com/backend-api`, and the catalog that route serves contains the
     /// per-model context window, reasoning levels, and input modalities the
     /// platform listing omits (Codex CLI reads the same route). That route
     /// requires a `client_version` and filters the catalog by it, so the claim
@@ -326,7 +326,7 @@ impl Provider {
         })
     }
 
-    /// A GET that answers 2xx only to a valid credential, for `efference setup`'s
+    /// A GET with a 2xx response only for a valid credential, for `efference setup`'s
     /// live check (docs/operating.md): Anthropic's and OpenAI's model listings
     /// both require the key, and OpenRouter's key-info route describes the key
     /// itself. The Codex backend has no cheap authenticated read and answers
@@ -362,8 +362,8 @@ impl Provider {
             | Self::OpenAI
             | Self::OpenAICodex
             | Self::TypeSafe
-            // A listing carries no effort levels, and there is no second route to
-            // ask at an endpoint this crate did not choose.
+            // A listing contains no effort levels, and there is no second route to
+            // query at an endpoint this crate did not choose.
             | Self::Custom(_) => Ok(None),
             Self::OpenRouter => {
                 let (author, slug) = openrouter_slug(model)?;

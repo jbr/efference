@@ -1,4 +1,4 @@
-//! A session's supervisor set after creation: one action carrying gates, driving
+//! A session's supervisor set after creation: one action for gates, driving
 //! authority, and a wake subscription (docs/permissions.md, docs/tools.md).
 
 use super::*;
@@ -219,7 +219,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
 
 /// The supervisor drives the session it supervises — `message` and `interrupt` — and a
 /// peer that neither created nor supervises it is still refused. Supervision is not
-/// transitive: `b` supervising `a` does not reach `kid`, which `a` created.
+/// transitive: `b` supervising `a` does not supervise `kid`, which `a` created.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
     let fixture = Fixture::new().await;

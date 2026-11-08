@@ -3,8 +3,8 @@
 //!
 //! A listing's shape is the provider's; the row is the host's. Each provider
 //! module reads its own source into [`ListedModel`]s, and [`arrange`] gives the
-//! set one order. Facts are filled only where the source declares them: an
-//! absent field means the source said nothing, not that the answer is no.
+//! set one order. Facts are filled only where the source contains them: an
+//! absent field means no information from the source, not a negative answer.
 
 use super::*;
 
@@ -61,7 +61,7 @@ impl ModelKind {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ListedModel {
-    /// The provider-native id a session draft carries.
+    /// The provider-native id in a session draft.
     pub model: String,
     /// OpenRouter's author, alias marker removed.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -9,7 +9,7 @@ use super::*;
 
 /// An omitted environment is established for the request's own directory: the
 /// hook runs there, inheriting the launch baseline, and its failure fails the
-/// creation before anything is minted (docs/env.md). The creation answers once its
+/// creation before anything is minted (docs/env.md). The creation returns once its
 /// id is reserved; the failure is read from the starting session's state.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_omitted_environment_runs_the_hook_for_that_directory() {
@@ -129,7 +129,7 @@ async fn a_supplied_environment_never_runs_the_hook() {
 /// the winner's entry and leaving a running session unreachable.
 ///
 /// Tested at the insert rather than through two requests, because two creates that
-/// both *reach* the insert need a provider — every path short of it stops earlier
+/// both execute the insert need a provider — every path short of it stops earlier
 /// (docs/control-api.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_name_already_hosted_is_refused_rather_than_replaced() {
@@ -246,8 +246,8 @@ async fn host_shutdown_cancels_an_establishment_in_progress() {
 }
 
 /// With no hook there is nothing to run, so establishment returns the host's own
-/// environment and creation proceeds to the same preparation failure every other
-/// branch reaches (docs/env.md).
+/// environment and creation proceeds to the same preparation failure as every other
+/// branch (docs/env.md).
 ///
 /// What this shows is the *absence* of an environment error, not that the base is
 /// the baseline: that would need a booted session, and every branch here stops at

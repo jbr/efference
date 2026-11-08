@@ -1,7 +1,7 @@
 //! Anthropic's model metadata: the listing, normalized (docs/model-catalog.md),
 //! and one model's capabilities (docs/transport.md).
 //!
-//! `GET /v1/models?limit=100` answers `id`, `display_name`, `created_at` (RFC
+//! `GET /v1/models?limit=100` returns `id`, `display_name`, `created_at` (RFC
 //! 3339), `max_input_tokens`, and a `capabilities` object. The image fact reads
 //! the same `capabilities.image_input.supported` key the boot-time metadata
 //! lookup (`GET /v1/models/{id}`, [`capabilities()`]) does, and is left absent
@@ -69,7 +69,7 @@ struct ThinkingTypes {
 }
 
 /// `capabilities.effort`: a `supported` flag beside one `{supported}` entry per
-/// level. The levels are read as whatever keys the object carries, so a level
+/// level. The levels are read as whatever keys the object contains, so a level
 /// the API adds is offered without a change here.
 #[derive(Deserialize)]
 struct EffortCapability {
@@ -84,7 +84,7 @@ struct EffortCapability {
 const EFFORT_ORDER: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 
 /// One model's capabilities from `GET /v1/models/{id}`: `max_input_tokens` is
-/// the context window, `max_tokens` the output cap, and `capabilities` carries
+/// the context window, `max_tokens` the output cap, and `capabilities` contains
 /// image input, the `thinking` types the model accepts, and its effort levels.
 pub(super) fn capabilities(body: &str) -> Result<ModelCapabilities, Error> {
     #[derive(Deserialize)]

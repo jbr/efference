@@ -29,7 +29,7 @@ pub use view::{CatalogModel, ConnectionCatalog, ModelRole, Recent, Status, assem
 /// listing changes when a lab ships a model, not within a day.
 pub const CATALOG_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// The shortest `max_age` a read may ask for, and the pause after a failed
+/// The shortest `max_age` for a read, and the pause after a failed
 /// refresh before a background read tries again. Keeps a typed query that
 /// matches nothing from re-reading a large listing on every miss.
 pub const MAX_AGE_FLOOR: Duration = Duration::from_secs(60);

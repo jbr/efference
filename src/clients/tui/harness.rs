@@ -62,7 +62,7 @@ pub(crate) struct Screenplay<'a> {
 impl Screenplay<'static> {
     /// A fresh session at the given terminal size, empty transcript, default theme.
     pub(crate) fn new(width: u16, height: u16) -> Self {
-        // Load the same theme the real app defaults to, so the harness sees the
+        // Load the same theme the real app defaults to, so the harness uses the
         // production color scheme (`RenderContext::new` alone leaves an empty
         // `ColorScheme` where every semantic style falls back to one gray). Snapshots
         // drop color, so this only matters to `cell`-based style assertions — but it
@@ -128,7 +128,7 @@ impl Screenplay<'_> {
     }
 
     /// Route a fully specified crossterm key event. Test key construction differs
-    /// from terminals that carry a `KeyEventKind`, so clipboard scenarios use this
+    /// from terminal events that include a `KeyEventKind`, so clipboard scenarios use this
     /// to exercise the same modifier path without host input.
     pub(crate) fn route_event(&mut self, event: KeyEvent) -> &mut Self {
         let _ = self.route_key_event_inner(event);
@@ -482,7 +482,7 @@ pub(crate) struct CellStyle {
 }
 
 impl CellStyle {
-    /// Whether this cell carries a given modifier (e.g. `Modifier::CROSSED_OUT`,
+    /// Whether this cell has a given modifier (e.g. `Modifier::CROSSED_OUT`,
     /// `Modifier::BOLD`, `Modifier::ITALIC`).
     pub(crate) fn has(&self, modifier: Modifier) -> bool {
         self.modifier.contains(modifier)

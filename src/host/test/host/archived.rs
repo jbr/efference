@@ -228,7 +228,7 @@ async fn one_session_reads_as_its_hosted_or_dormant_row() {
     assert_eq!(row["title"], "Asleep");
     assert!(row.get("status").is_none());
 
-    // The dormant row carries what the listing's does, `problem` included.
+    // The dormant row contains what the listing's does, `problem` included.
     std::fs::create_dir_all(root.join(".efference/broken")).unwrap();
     let url = format!("/sessions/broken?cwd={}", encode(&root));
     let broken = server.get(&url).await;

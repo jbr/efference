@@ -83,7 +83,7 @@ fn recorded_requests_land_in_the_usage_record() {
 /// move the streak, a warm read clears it, and the three explained cold starts —
 /// boot, a model change, an idle gap past the TTL — clear it too, because none of
 /// them is evidence about the prefix. The side channels are invisible to it: a spot
-/// carries its own prefix, so a cold spot means nothing about the trajectory's.
+/// has its own prefix, so a cold spot means nothing about the trajectory's.
 #[test]
 fn cold_streak_counts_only_unexplained_main_loop_reads() {
     let mut streak = ColdStreak::default();
@@ -147,7 +147,7 @@ fn cold_streak_counts_only_unexplained_main_loop_reads() {
 
 /// An aborted attempt is a real HTTP round-trip against the main-loop prefix, but
 /// its usage is all-zero by construction (docs/transport.md) — a stream that
-/// finalized with no content and no usage. That zero says nothing about whether
+/// finalized with no content and no usage. That zero is not evidence of whether
 /// the prefix moved, so a run of aborted attempts must not accumulate as
 /// unexplained cold-read evidence the way a run of real cold turns does.
 /// Counting them drives the streak up per aborted attempt — two on one turn
@@ -194,7 +194,7 @@ fn aborted_attempts_do_not_count_as_cold_prefix_evidence() {
     assert_eq!(streak.streak(), 1);
 }
 
-/// The streak the daemon publishes is the one `GET /state` carries and the sidebar
+/// The streak the daemon publishes is the one in `GET /state` and the sidebar
 /// reads (docs/control-api.md), folded as each request is recorded.
 #[test]
 fn recorded_requests_move_the_published_cold_streak() {
@@ -269,7 +269,7 @@ fn attaching_the_usage_record_seeds_the_clocks() {
     );
 }
 
-/// A shared triage's usage line says so (`main_prefix`), and a restarted host seeds the
+/// A shared triage's usage line has `main_prefix`, and a restarted host seeds the
 /// touch clock from it; the same triage without the flag, and the flag's absence on old
 /// lines, leave the clock on the earlier turn.
 #[test]
@@ -411,7 +411,7 @@ fn inline_cost_prices_a_request_and_is_recorded() {
     let (shared, _turns_rx) = Session::in_memory();
     shared.attach_usage_log(&usage_path);
     // Armed, so the request without an inline cost would be queued for the lookup
-    // (not run here: no runtime). The first two must reach the total by themselves.
+    // (not run here: no runtime). The first two must sum to the total by themselves.
     shared.enable_cost_tracking(
         crate::inference::api::Endpoint::at(
             crate::record::log::Provider::OpenRouter,
@@ -458,8 +458,8 @@ fn inline_cost_prices_a_request_and_is_recorded() {
 
 /// The provider's own attribution of a cache miss is persisted in the provider's spelling
 /// and read back the same way (docs/transport.md). Absent on most lines — a request the
-/// provider saw no divergence in carries nothing, and a line written before the field
-/// existed reads as `None` — which is what makes the offline report's attribution block
+/// reported no divergence in has no attribution, and a line written before the field
+/// existed is read as `None` — which is what makes the offline report's attribution block
 /// appear only for records that have one.
 #[test]
 fn an_attributed_cache_miss_round_trips_through_the_usage_line() {
@@ -493,7 +493,7 @@ fn an_attributed_cache_miss_round_trips_through_the_usage_line() {
     let json = serde_json::to_value(&quiet).unwrap();
     assert!(json.get("cache_miss").is_none(), "{json}");
 
-    // And a reason this build does not know reads as its own name rather than failing
+    // And an unknown reason is read as its own name rather than failing
     // the line: the provider can add one.
     let unknown: CacheMiss = serde_json::from_value(
         serde_json::json!({"type": "something_new", "cache_missed_input_tokens": 7}),

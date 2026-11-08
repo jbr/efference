@@ -252,7 +252,7 @@ async fn the_client_reads_a_compaction_refusal_as_a_decline() {
     );
 }
 
-/// While a compaction's account is written, the writer's thinking and text reach the
+/// While a compaction's account is written, the writer's thinking and text are on the
 /// session's `output` broadcast as writer deltas, in the order they streamed
 /// (docs/summary.md), never as the main loop's response.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -304,9 +304,9 @@ async fn a_compaction_streams_its_writers_deltas() {
     assert_eq!(seen, ["thinking:weighing it", "text:the ", "text:account"]);
 }
 
-/// A connection whose capabilities name no prompt cache still writes a compaction asked
-/// for with `warm: true` (docs/summary.md). The request is accepted without a cold
-/// belief, so the worker has to exist whatever the capabilities say; the cache-expiry
+/// A compaction asked for with `warm: true` is still written on a connection whose
+/// capabilities have no prompt cache (docs/summary.md). The request is accepted without a cold
+/// belief, so the worker has to exist regardless of the capabilities; the cache-expiry
 /// machinery (the cache lifetime the cold watcher reads, the keepalive) stays off.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_warm_compaction_runs_on_a_connection_without_a_prompt_cache() {

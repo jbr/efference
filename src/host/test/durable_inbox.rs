@@ -27,7 +27,7 @@ fn quiet_log() -> Log {
     log
 }
 
-/// An idle triage's verdict that mentions nothing: every notification is left.
+/// An idle triage's verdict with no entries: every notification is left.
 fn leave_it() -> String {
     tool_call("t1", "triage", r#"{"inbox":{}}"#)
 }
@@ -132,8 +132,8 @@ async fn an_arrival_during_a_triage_request_is_shown_by_the_next_one() {
     host.shut_down().await;
 }
 
-/// **A must-wake message from before a restart** still pins at its first show whatever the
-/// triage says (the first show being the triage a later arrival starts), and the pin wakes
+/// **A must-wake message from before a restart** still pins at its first show regardless of the
+/// triage verdict (the first show being the triage a later arrival starts), and the pin wakes
 /// the idle agent into a turn.
 #[tokio::test(start_paused = true)]
 async fn a_must_wake_message_still_pins_after_a_restart() {
@@ -168,9 +168,9 @@ async fn a_must_wake_message_still_pins_after_a_restart() {
     host.shut_down().await;
 }
 
-/// The same for the rider a tool result's triage carries: what arrived before the rider
+/// The same for the rider on a tool result's triage: what arrived before the rider
 /// opened is shown and the triage records it as its mark; what arrives during the request
-/// reads as new at the next triage.
+/// is new at the next triage.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_result_triage_marks_what_its_rider_held() {
     let (model, triage) = (Turnstile::new(), Turnstile::new());

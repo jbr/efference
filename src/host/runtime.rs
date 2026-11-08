@@ -186,7 +186,7 @@ impl SessionRuntime {
         // pool connections across them (docs/control-channel.md). The loop parks in
         // `read_user_turn` on the turn channel, whose senders live in the still-alive
         // `Arc<Session>`, so shutdown has to cancel it rather than wait for it: the
-        // child `Swansong`'s `interrupt` drives the loop normally until shutdown is
+        // child `Swansong`'s `interrupt` runs the loop normally until shutdown is
         // initiated, then cancels it and resolves to `None`. The guard taken below
         // holds the runtime's shutdown open until teardown — background reaping and
         // scratch cleanup — has run, so `shut_down().await` on this runtime (or on its
@@ -397,7 +397,7 @@ fn spawn_cache_tasks(
         tokio::spawn(swansong.interrupt(cold::cold_watch(Arc::clone(session))));
     }
     // The compaction writes on the session's own client (docs/summary.md). It starts
-    // whatever the capabilities say about a prompt cache: a warm `POST /loop/compact`
+    // regardless of prompt cache capabilities: a warm `POST /loop/compact`
     // is accepted without a cold belief, and unknown cache support is not evidence
     // that none exists.
     tokio::spawn(swansong.interrupt(compact::compact_loop(

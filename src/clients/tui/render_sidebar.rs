@@ -67,7 +67,7 @@ impl<'a> InteractiveState<'a> {
         let bg = self.theme.document_bg_style;
         let muted = self.theme.muted_style;
         // The status style's foreground on the drawer's own background: the status
-        // style also carries the status row's band, which does not belong here.
+        // style also includes the status row's band, which does not belong here.
         let text = bg.fg(self.theme.status_style.fg.unwrap_or_default());
         let header = text.add_modifier(Modifier::BOLD);
 
@@ -139,7 +139,7 @@ impl<'a> InteractiveState<'a> {
             return;
         }
         self.paint_focus_bar(buf, area.x, y, 1);
-        // The menu's width claims the line first; the label gets what remains.
+        // Reserve the menu's width first; the label uses the remaining line.
         let menu_w: u16 = self
             .sidebar_verbs(row)
             .iter()

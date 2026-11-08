@@ -92,7 +92,7 @@ async fn a_normal_request_records_sent_first_byte_ended() {
             .all(|s| s.origin == RequestOrigin::Turn)
     );
     // The ended stage keeps the provider's own word for the finish; no other
-    // stage carries one.
+    // stage contains one.
     let finishes: Vec<_> = recorder
         .stages
         .lock()
@@ -169,7 +169,7 @@ fn press(interrupt: &tokio::sync::Notify, latch: &AtomicBool) {
     interrupt.notify_waiters();
 }
 
-/// A client whose reads answer to `interrupt`, as the runtime wires the agent's.
+/// A client whose reads are interrupted by `interrupt`, as the runtime wires the agent's.
 fn interruptible(
     upstream: &ScriptedUpstream,
     recorder: &Arc<Recorder>,
@@ -180,9 +180,9 @@ fn interruptible(
     client
 }
 
-/// The loop's model request reads the latch once its abort is armed. A press that landed
+/// The loop's model request reads the latch once its abort is armed. A press made
 /// before then — the notifier fired with nothing waiting, the latch left set — stops it
-/// unsent: nothing reaches the upstream and no stage is recorded, and it comes back as a
+/// unsent: nothing is sent to the upstream and no stage is recorded, and the result is a
 /// read the interrupt ended.
 #[tokio::test(start_paused = true)]
 async fn a_request_carrying_a_pressed_latch_is_not_sent() {

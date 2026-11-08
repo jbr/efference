@@ -22,7 +22,7 @@ use crate::record::project::ApiMessage;
 
 /// The `anthropic-version` header value. This is part of the Anthropic Messages
 /// *wire dialect*, not a provider identity — OpenRouter's `/api/v1/messages` skin
-/// speaks the same dialect and tolerates the header — so it rides every request
+/// uses the same dialect and accepts the header — so it is sent with every request
 /// regardless of which `Endpoint` is targeted (docs/transport.md).
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -71,7 +71,7 @@ impl Upstream {
 /// `diagnostics` object, whose `previous_message_id` names the response this
 /// request is to be compared against. The object *is* the opt-in — the API
 /// stores a fingerprint for a request only when it carries one — so a client
-/// that wants the comparison sends it on every request of a chain.
+/// sends it on every request of a chain to obtain the comparison.
 ///
 /// `previous_message_id` is `None` on the first request of a chain, and that
 /// `null` is the opt-in without anything to compare against. It never skips
@@ -207,8 +207,8 @@ impl Usage {
     /// The whole prompt as the provider counted it: the uncached remainder plus
     /// what was read from and written to the cache (docs/transport.md).
     /// `input_tokens` alone is only the uncached part on both dialects, so
-    /// every consumer that wants "how big was the prompt" — the reservation
-    /// anchor, context occupancy — reads this rather than summing the fields.
+    /// consumers needing "how big was the prompt" — the reservation
+    /// anchor, context occupancy — use this rather than summing the fields.
     pub fn prompt_tokens(&self) -> u64 {
         self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens
     }
@@ -243,7 +243,7 @@ impl Usage {
 
 /// A cache miss the provider itself attributed to a divergence (docs/transport.md) —
 /// one `diagnostics.cache_miss_reason` object off a response. It names *which part* of
-/// the request the provider saw differ from the request it compared against, which no
+/// the request differed from the request the provider compared it against, which no
 /// token total can: the four `*_changed` reasons are the projection, the system prompt,
 /// the tools array, and the message history, in the provider's own comparison order.
 ///
@@ -271,7 +271,7 @@ pub enum CacheMissReason {
     /// The system prompt differs — typically a per-request value interpolated into it.
     SystemChanged,
     /// The tools array differs: added, removed, reordered, or serialized
-    /// non-deterministically. The divergence that has cost this harness a cache before
+    /// non-deterministically. This divergence has caused a cache miss in this harness before
     /// (docs/log-and-projection.md).
     ToolsChanged,
     /// Model, system, and tools all match, but an earlier entry in `messages` was
@@ -284,7 +284,7 @@ pub enum CacheMissReason {
     /// tools/messages differs (docs/transport.md), or the divergence sits beyond the
     /// provider's comparison horizon.
     Unavailable,
-    /// A reason this build does not know. Kept so a new provider value reads as an
+    /// An unknown reason. Kept so a new provider value reads as an
     /// unnamed miss rather than failing the whole response.
     #[serde(other)]
     Other,
@@ -295,7 +295,7 @@ impl CacheMissReason {
     /// as opposed to the two that report no comparison happened.
     ///
     /// The split matters where a reason is counted as attribution: `Unavailable` and
-    /// `PreviousMessageNotFound` say nothing about the prefix, so a cold read carrying
+    /// `PreviousMessageNotFound` contain no prefix attribution, so a cold read with
     /// one is still unexplained ([`crate::session::CacheRead`]).
     pub fn names_a_divergence(self) -> bool {
         matches!(
@@ -306,7 +306,7 @@ impl CacheMissReason {
 }
 
 impl std::fmt::Display for CacheMissReason {
-    /// The provider's own spelling, so a report and a raw response line agree.
+    /// The provider's own spelling, for the same text in a report and a raw response line.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
             Self::ModelChanged => "model_changed",
@@ -528,7 +528,7 @@ impl Completion {
             && output.tool_calls().is_ok_and(|calls| calls.is_empty())
     }
 
-    /// Mark a completion that [says nothing](Self::says_nothing) record-only, as the
+    /// Mark a completion that [has no actionable output](Self::says_nothing) record-only, as the
     /// empty completion it is.
     pub(crate) fn exclude_as_empty(&mut self) {
         if let Payload::Assistant { excluded, .. } = &mut self.assistant {
@@ -569,7 +569,7 @@ impl Completion {
 /// stream, so a turn spent thinking or emitting a large tool-call input is expressible
 /// rather than reading as a hung harness.
 ///
-/// **Every variant carries the `index` of the content block it belongs to**, because a
+/// **Every variant has the `index` of the content block it belongs to**, because a
 /// streamed fragment is partial delivery *of a specific item* and a client has to know
 /// which. Without it a client can only hold one slot per kind, and a response with two
 /// tool calls overwrites the first the moment the second opens. `index` is

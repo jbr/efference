@@ -204,7 +204,7 @@ fn the_attempt_queue_is_bounded() {
 }
 
 /// The transport's own retry gate reads the non-2xx body (docs/transport.md): a
-/// 429 whose body names an exhausted plan is answered once, where the status
+/// 429 whose body indicates an exhausted plan is answered once, where the status
 /// alone would be retried. The upstream counts the requests.
 #[tokio::test]
 async fn a_terminal_429_body_is_answered_once() {

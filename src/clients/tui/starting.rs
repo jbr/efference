@@ -23,7 +23,7 @@ pub(crate) fn line(starting: &StartingView) -> String {
 
 impl InteractiveState<'_> {
     /// Fold the `starting` topic. A failure's turns go back in the composer once, and
-    /// the status line says what happened and where the retry is.
+    /// the status line displays what happened and where the retry is.
     pub(super) fn apply_starting(&mut self, starting: Option<StartingView>) {
         let newly_failed = self
             .topics

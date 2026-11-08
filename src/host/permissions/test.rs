@@ -19,7 +19,7 @@ impl std::ops::Deref for ScratchDir {
 }
 
 /// For the `AsRef<Path>` call sites (`set_permissions` and friends), where
-/// deref coercion does not reach a generic.
+/// deref coercion does not apply to a generic.
 impl AsRef<Path> for ScratchDir {
     fn as_ref(&self) -> &Path {
         &self.0
@@ -89,7 +89,7 @@ fn stricter_modes_are_kept() {
 }
 
 /// An absent state file is skipped without failing, and nothing is created:
-/// the tightening runs on every boot, most of which see only some of the names.
+/// the tightening runs on every boot, most of which find only some of the names.
 #[test]
 fn absent_files_are_skipped() {
     let dir = scratch();
@@ -107,7 +107,7 @@ fn absent_files_are_skipped() {
 #[test]
 fn the_socket_is_tightened_after_bind() {
     // A short absolute path: Darwin refuses to bind a socket past its 104-byte
-    // `SUN_LEN`, and a session temp dir alone can spend most of that budget —
+    // `SUN_LEN`, and a session temp dir alone can use up most of that budget —
     // so the fixture binds under `/tmp` directly, not inside a scratch dir.
     let n = {
         use std::hash::{BuildHasher, Hasher, RandomState};

@@ -5,7 +5,7 @@
 //!
 //! The comparison is of whole strings. A body built from values has its keys sorted at
 //! every depth, and a body serialized from a type keeps the type's field order, so a pin
-//! here also says which of the two a route does. The remembered locations, the preview,
+//! here also fixes which of the two a route does. The remembered locations, the preview,
 //! and the worktree answers are pinned in `projects.rs`, `preview.rs` and `worktree.rs`.
 
 use super::starting::endless_hook;
@@ -18,7 +18,7 @@ fn quoted(text: &str) -> String {
     serde_json::to_string(text).unwrap()
 }
 
-/// `body` with the one clock-dependent number a catalog entry carries, the seconds since
+/// `body` with the one clock-dependent number in a catalog entry, the seconds since
 /// its listing was stored, set to 0.
 fn without_age(body: &str) -> String {
     let Some(start) = body.find(r#""age":"#) else {
@@ -323,8 +323,8 @@ async fn a_supervisor_answer_keeps_its_bytes() {
     host.swansong().shut_down().await;
 }
 
-/// Archiving answers the state it reached; `DELETE` names the sessions that ended with
-/// the one archived, and a patch to `archived` says in `resumed` that it reopened nothing.
+/// Archiving returns the resulting state; `DELETE` lists the sessions that ended with
+/// the one archived, and a patch to `archived` has an empty `resumed` field.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_archive_answer_keeps_its_bytes() {
     let roots = Roots::new();

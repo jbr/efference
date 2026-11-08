@@ -44,9 +44,9 @@ const RESERVATION_MIN: u64 = 1024;
 /// set as high as [`Reservation::clamp_to`] can recover from. A cap set too low is
 /// not a short turn: on a model whose reasoning is mandatory the whole budget can
 /// go to thinking and the response arrives **empty**, reading as a broken model
-/// rather than as a misconfigured reservation. A cap set too high costs one
+/// rather than as a misconfigured reservation. A cap set too high incurs one
 /// refused request, once — [`Reservation::learned_cap`] keeps it from recurring —
-/// and gains nothing, since a turn wanting more than 65536 output tokens is not a
+/// with no benefit, since a turn requiring more than 65536 output tokens is not a
 /// case this harness has. So the asymmetry runs one way only down to the empty-
 /// response cliff, and flat above it.
 pub const UNKNOWN_OUTPUT_CAP: u64 = 65_536;
@@ -74,7 +74,7 @@ pub struct Reservation {
     ///
     /// Without this the correction would last exactly one request: [`Self::compute`]
     /// reads the client's configured cap fresh each time, so the next turn would
-    /// send the refused number again and buy the same 400. A wrong guess would
+    /// send the refused number again and receive the same 400. A wrong guess would
     /// then cost a wasted round trip *per turn* rather than once — which is what
     /// makes a guessed cap ([`UNKNOWN_OUTPUT_CAP`]) affordable at all.
     learned_cap: Option<u64>,
@@ -188,15 +188,15 @@ pub fn is_window_overflow(body: &str) -> bool {
     body.contains("context") && (body.contains("max_tokens") || body.contains("you requested"))
 }
 
-/// Why a 4xx says the **output reservation** is too large, as distinct from the
-/// prompt-plus-reservation overflow [`is_window_overflow`] matches. The two want
-/// different retries: an overflowing window is answered by halving toward a fit,
+/// Why a 4xx means the **output reservation** is too large, as distinct from the
+/// prompt-plus-reservation overflow [`is_window_overflow`] matches. The two require
+/// different retries: an overflowing window is handled by halving toward a fit,
 /// while a rejected cap has one right answer the provider usually states.
 ///
 /// Distinguished from window overflow by the absence of the window: every
 /// overflow phrasing names the *context*, and a cap rejection names only the
 /// output parameter and its ceiling. `is_window_overflow` is checked first, so
-/// this arm sees only what that one declined.
+/// this arm handles only cases that did not match it.
 ///
 /// The stated maximum is read from the two shapes providers use for it — the
 /// comparison (`max_tokens: N > M`) and the phrase (`at most M`). A rejection

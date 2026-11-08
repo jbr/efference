@@ -1,7 +1,7 @@
-//! What a described connection says about its request body beyond the dialect
+//! Request-body settings for a described connection beyond the dialect
 //! (docs/transport.md, "The Chat Completions dialect"). Vendors serving the same
-//! dialect spell a few fields differently; these settings name the behaviour, not
-//! the vendor, so one connection block describes any of them.
+//! dialect spell a few fields differently; these settings specify the behaviour, not
+//! the vendor, so one connection block covers any of them.
 
 use serde_json::{Map, Value};
 
@@ -18,7 +18,7 @@ pub struct RequestOptions {
     /// never changes (`parallel_tool_calls`, `safe_prompt`). A key the encoder
     /// writes is refused at load ([`RequestOptions::new`]).
     pub body: Map<String, Value>,
-    /// The key the output cap travels under.
+    /// The key for the output cap in the request.
     pub output_cap_field: OutputCapField,
 }
 

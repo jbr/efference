@@ -13,7 +13,7 @@ use crate::session::submitted::SubmittedTurn;
 
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
 
-/// A `settle` started now: resolves with the `/state` it answered with.
+/// A `settle` started now: resolves with the resulting `/state`.
 fn settle(session: &Arc<Session>) -> tokio::task::JoinHandle<Value> {
     let session = Arc::clone(session);
     tokio::spawn(async move {
@@ -63,7 +63,7 @@ async fn settle_waits_through_a_results_triage() {
 
 /// **The 2026-10-03 guard.** Under `autonomous`, a call the spotter would hold is
 /// declined inside the loop and the model is told so; the decline never enters the
-/// gated phase, so a `settle` racing it answers only when the turn ends.
+/// gated phase, so a `settle` racing it resolves only when the turn ends.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn settle_waits_through_an_autonomous_decline() {
     let next = Turnstile::new();
@@ -159,7 +159,7 @@ async fn settle_returns_on_a_held_pace() {
 /// A finite pace delay ends on its own timer: `settle` waits through it. The scripted
 /// call runs a real process, so the clock is paused once the loop is delayed at its
 /// juncture, with nothing left to wait on but the timer (`upstream_hold.rs`). The delay
-/// is long enough that the real time between the juncture and the pause cannot reach it.
+/// exceeds the real time between the juncture and the pause.
 #[tokio::test]
 async fn settle_waits_through_a_pace_delay() {
     const PACE: Duration = Duration::from_secs(600);
@@ -212,7 +212,7 @@ async fn settle_waits_through_a_pace_delay() {
 /// the continue ends it with the rest unspent.
 #[tokio::test(start_paused = true)]
 async fn settle_waits_through_a_retry_pause() {
-    // The transport makes four attempts before the loop sees the failure.
+    // The transport makes four attempts before the loop receives the failure.
     let upstream = ScriptedUpstream::new(|n| match n {
         0..4 => Canned::json(503, OVERLOADED),
         _ => Canned::stream(end_turn()),
@@ -304,8 +304,8 @@ async fn settle_returns_on_a_config_repair_park() {
     host.shut_down().await;
 }
 
-/// An idle triage is a request on the main prefix: it reads `requesting`, `settle` waits
-/// through it, and one that pins nothing returns to idle without a turn having ended.
+/// An idle triage is a request on the main prefix: its phase is `requesting`, `settle` waits
+/// through it, and one with nothing pinned returns to idle without a turn having ended.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_idle_triage_reads_requesting_and_settle_waits_through_it() {
     let triage = Turnstile::new();

@@ -157,7 +157,7 @@ fn ollama_flat_reasoning_and_a_whole_call() {
     );
 }
 
-/// Two parallel calls whole in one chunk; usage rides the same chunk.
+/// Two parallel calls whole in one chunk; usage is in the same chunk.
 #[test]
 fn mistral_parallel_calls_in_one_chunk() {
     let (completion, _) = assemble(include_str!("../mistral_tool.sse"));

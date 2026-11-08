@@ -123,7 +123,7 @@ impl Default for Turnstile {
 }
 
 impl Turnstile {
-    /// A turnstile holding every answer that reaches it.
+    /// A turnstile holding every answer submitted to it.
     pub(crate) fn new() -> Self {
         Self::default()
     }

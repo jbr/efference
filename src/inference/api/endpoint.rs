@@ -8,9 +8,9 @@ use super::*;
 /// credentials and cloned per session and role.
 ///
 /// `session_id` is attached by boot, per session and role, and is absent in
-/// offline verbs that have no conversation to pin. Whether it actually
-/// rides a request is the *provider's* call ([`Provider::session_header`]) — the
-/// field carries this session's key regardless, so the derivation stays in one
+/// offline verbs that have no conversation to pin. Whether it is attached to
+/// a request depends on the provider ([`Provider::session_header`]) — the
+/// field contains this session's key regardless, so the derivation stays in one
 /// place.
 #[derive(Clone)]
 pub struct Endpoint {
@@ -62,7 +62,7 @@ pub struct Endpoint {
     /// suffixes of it: trimming a path segment off a URL to rebuild them would
     /// guess at a structure the operator supplied whole.
     pub base: Option<String>,
-    /// What the connection says about its request body beyond the dialect
+    /// The connection's request-body settings beyond the dialect
     /// ([`RequestOptions`]); the default everywhere but a described Completions
     /// connection that sets `body` or `output-cap-field`.
     pub request: RequestOptions,
