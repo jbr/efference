@@ -92,7 +92,7 @@ impl Display for LoadError {
             LoadError::Io { path, error } => write!(f, "{}: {error}", path.display()),
             LoadError::Unversioned { path } => write!(
                 f,
-                "{}:1: line 1 carries no `format`: this is not a log this build reads — either a \
+                "{}:1: line 1 has no `format`: this is not a log this build reads — either a \
                  log written before the header existed, or a different file",
                 path.display()
             ),
@@ -120,7 +120,7 @@ impl Display for LoadError {
                 found,
             } => write!(
                 f,
-                "{}:{line}: entry carries seq {found} but sits at index {expected}: seq must \
+                "{}:{line}: entry has seq {found} but sits at index {expected}: seq must \
                  equal the entry's index, so a duplicated or skipped seq is a corrupt log",
                 path.display()
             ),

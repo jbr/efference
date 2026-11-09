@@ -86,7 +86,7 @@ fn render_array(items: &[Value]) -> Rendered {
     for r in rendered {
         match r {
             Rendered::Inline(s) => lines.push(format!("- {s}")),
-            // The element's first line rides the `- `; the rest indent to align
+            // The element's first line follows the `- `; the rest indent to align
             // their content past it.
             Rendered::Block(block) => {
                 for (i, line) in block.into_iter().enumerate() {

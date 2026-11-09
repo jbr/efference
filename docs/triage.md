@@ -15,7 +15,7 @@ This grouping is load-bearing, not a convenience. The triage's prefix ends with 
 assistant message, which carries one `tool_use` per call; the API rejects a request that
 leaves any of them unanswered. A triage fired *between* calls therefore builds an invalid
 request whenever a completion made more than one — the later calls have no results yet.
-Running every call before opening the triage means the tail can answer all of them with
+Running every call before opening the triage means the tail can contain answers to all of them with
 real output, so nothing is orphaned and no placeholder is needed.
 
 Each result is rendered as its own block, headed by a short **label** (`result r1 ·
@@ -40,7 +40,7 @@ land on the last `Triage` of the batch. That placement is tail-ward, keeping the
 append-only, and is identical to where they land when a completion carried one call.
 
 **The trailing user turn reads result blocks, then the ask, then the riders.** Anthropic's
-format wants `tool_result` blocks first in a user turn, so the riders stay after the
+format requires `tool_result` blocks first in a user turn, so the riders stay after the
 results; what is ordered is the ask against them. The ask follows the result blocks
 directly and names them by their header ("the block headed `═══ result` above"). The
 riders follow the ask under `═══ also pending · not the output of the call above ═══`,
@@ -67,15 +67,15 @@ A result is on the log before anything judges it. The loop appends each call's
 `ToolResult` the moment the call returns (`agent/batch.rs`), with
 `WireState::Pending`, and after the triage decides, appends a
 `Payload::ResultVerdict { for_result, wire }` naming that result's `seq`
-(`agent/landing.rs`). The raw output is written once; the verdict carries only the
+(`agent/landing.rs`). The raw output is written once; the verdict contains only the
 decision. Projection resolves each result through its verdict
 (`log::result_verdicts`: the first non-pending verdict for a pending result wins, and
-a verdict naming a result that already carries a final wire is ignored) and skips a
+a verdict naming a result that already has a final wire is ignored) and skips a
 result still pending, so the main agent never sees untriaged output and no request
 built during the triage can carry half a batch. A result logged with its final wire, as
 every result was before capture, projects as it always did.
 
-What the capture buys: clients can show a result while its triage runs (the entry is
+With capture, clients can show a result while its triage runs (the entry is
 on `/events` as soon as it exists), a triage held for minutes holds nothing that exists
 only in memory, and a session that stops mid-triage leaves its results on disk for a
 later resume to triage rather than rerun. Triage reads the result back from the log
@@ -91,7 +91,7 @@ with no verdict would project to nothing and orphan its `tool_use`.
 
 Capture adds one entry per result, so results in a batch sit at higher `seq`s than
 they did when the result and its verdict were one entry. The `[seq]` label a result's
-wire text leads with is its own address, so the label moves with it; the bytes of a
+wire text starts with is its own address, so the label moves with it; the bytes of a
 completed batch's wire are otherwise unchanged.
 
 ## Universal, with no small-result exemption
@@ -131,7 +131,7 @@ A matched result is **bypassed**:
   and coverage never requires a verdict for it.
 - Its block in the triage view is a stand-in — the call must still be answered or the
   request is invalid, but its output is not shown, since no verdict can change it.
-- Its wire form is `WireState::Raw`: the whole body reaches the model byte-for-byte.
+- Its wire form is `WireState::Raw`: the model receives the whole body byte-for-byte.
 - The `Triage` records `origin: Fallback` with a `raw_keep` breadcrumb naming the shape,
   which is what distinguishes a bypass from a failed triage in the log after the fact. Its
   lines count toward neither side of the retention ratio: nobody triaged them.
@@ -170,7 +170,7 @@ What forcing bought is re-bought harness-side:
   already dropped harness-side, so conditionality guarded nothing the filters don't.
   The **tail instruction** is under no such constraint — it is discarded with the fork —
   so what varies per triage (the ask's scope, its answer shape, the offered ids) lives
-  there, and the schema carries every shape unconditionally with nothing `required`.
+  there, and the schema includes every shape unconditionally with nothing `required`.
 - **A standing permission clause** on both descriptions — "do not call this tool
   unless asked to do so by the harness." Permission-phrased, not identity-phrased
   ("harness-invoked only"), because the same model reads the standing description and,
@@ -237,7 +237,7 @@ drops the parts of the envelope that only served the shared lineage:
 **The idle triage is not delegated.** The standalone triage an idle session runs when a
 notification arrives ([inbox.md](inbox.md)) sends the agent's client, the agent's full
 `tools[]`, and `auto` whether or not a triage model is configured
-(`Triager::idle_envelope`). That ask decides whether the session wakes at all, and a
+(`Triager::idle_envelope`). That ask determines whether the session wakes at all, and a
 wrong dismiss there is silent: nothing re-raises it until something else wakes the
 session. It runs on the agent lineage, at the agent's thinking, reading the cache the
 keepalive holds warm through idle; a separate model's reflexive answer is kept for the
@@ -287,7 +287,7 @@ processes running.
 With the text view, `--dry-run` prints the view's layout at every replayed triage —
 the digest and triaged-tail sizes, and the triages where a view cut fell — and a live
 replay prints the same line before each triage's draws, then sends the primer where the
-own client plants one, as the live batch does. Each draw's line carries its prompt and
+own client plants one, as the live batch does. Each draw's line shows its prompt and
 cached tokens.
 
 What is *not* built: the own client's retry and reservation state is not reported
@@ -334,7 +334,7 @@ reproduces every view cut and nothing is recorded; both marks are harness consta
 triaged tail is one block, so between view cuts a triage's history is the previous triage's
 history plus one block per step since. Two breakpoints mark it: one at the end of the
 digest, which a later view cut leaves in place, and one at the end of the history, which the
-next triage's request reaches by appending. A provider that matches cached prefixes only
+next triage's request includes by appending. A provider that matches cached prefixes only
 at block boundaries within a short lookback (Anthropic, 20 blocks) needs both: one
 growing block would never match, and a view cut moves the end of the history by more blocks
 than the lookback holds. On the Responses dialect the history is its own input message,
@@ -355,21 +355,21 @@ reads the main projection.
 
 ## Two answer shapes, and one scoped ask
 
-The schema is static while triage size is not, so `retain` carries both shapes and the
+The schema is static while triage size is not, so `retain` supports both shapes and the
 tail instruction (`retain_instruction` in `src/curation/triage/prompt.rs`) names which one this
-triage wants.
+triage requests.
 
-**The ask is shaped against the pull of the turn it interrupts.** It carries its own
+**The ask is shaped against the pull of the turn it interrupts.** It has its own
 banner, like every other section of the view; it opens on the imperative and
 repeats it last; it states that this is a triage turn and not a work turn; and the
 per-field asks (`keep`, `note`, and whichever of `inbox`/`background`/`surfaced` this
-triage carries) are a scannable block rather than prose appended after the fact. What
+triage includes) are a scannable block rather than prose appended after the fact. What
 shipped first was one unbroken paragraph assembled from four separately-authored
 fragments, opening on a description and closing on a tangent — the only *instruction* in
 the view formatted as a trailing note about the sections above it. A session answered 29%
 of its triages with a work tool instead of a verdict, usually the tool it went on to call
 on the next canonical turn, at a rate that climbed with session depth; every structural
-signal in the request said "ordinary tool result", including `tools[]` carrying the whole
+signal in the request suggested "ordinary tool result", including `tools[]` containing the whole
 world toolset under `tool_choice: auto`.
 
 Measured by replaying a recorded session's triages one feature at a time
@@ -382,7 +382,7 @@ thing to know before editing it.
 **The ask says it is the harness's.** The banner is `⟢ triage · the harness asks: answer,
 don't act`, on both the triage's ask and the idle `triage` view, and the preamble names a
 `⟢ triage` block as the one `⟢` line that asks for something, spelling out `retain` and
-`triage` (`assets/prompts/session.md`). The ask rides an unprefixed user turn, which the
+`triage` (`assets/prompts/session.md`). The ask is in an unprefixed user turn, which the
 preamble otherwise attributes to the operator, and the triage tools' descriptions say to call
 them only when the harness asks; without a stated provenance a model can deliberate over
 whether this is that moment and come out calling a work tool. Replayed on a session whose
@@ -404,14 +404,14 @@ is a statement of fact, not a discouragement: a non-`retain` call is answered wi
 error `tool_result` and the ask is renewed (below). `note` asks for what the output
 showed *and only that*, because a triage once turned a raw `unknown tool: ferritin` into
 "ferritin is not available as a CLI tool in this environment" — false, and since the raw
-is discarded, the invented claim was the only thing that reached the canonical wire.
+is discarded, the invented claim was the only thing projected to the canonical wire.
 Dropping the wrong lines is the failure this triage is built against; asserting past the
 output is worse, because nothing downstream can detect it.
 
 Two further clauses answer the same failure in its second observed shape, where the note
 was true of the *raw* and unsupported by the *kept lines*. A `search` for `^}` returned 19
 matches; the verdict kept one line — the second-to-last match — and the note stated a fact
-about the last one. Both halves reached the wire disagreeing, and the session re-verified
+about the last one. Both halves were projected to the wire in disagreement, and the session re-verified
 with `wc -l`/`tail` before it would use either, which is the cost: an unauditable summary
 is re-checked on every later result too. So `note` is asked to be grounded in what
 *survives* rather than in what was shown ("if the note turns on a particular line, that
@@ -419,9 +419,9 @@ line belongs in `keep`"), and `keep` is told that a partial keep of an enumerati
 match list, a listing, a candidate set — reads afterwards as the whole set, so either the
 enumeration is kept whole or the note says how many of how many survived. That is the case
 where a lean verdict changes the answer rather than shortening it. Both clauses are pinned
-in `src/curation/triage/test.rs`. Where the result header carries the call's `intent`, the note
-answers it, and when the output does not contain what the intent asked for the ask prefers
-saying so over summarizing what the output does contain.
+in `src/curation/triage/test.rs`. Where the result header contains the call's `intent`, the note
+answers it, and when the output does not contain what the intent asked for the ask directs the model to
+say so rather than summarize what the output does contain.
 
 **`intent_feedback` — the one channel back about the intent.** Optional beside `note` in
 both answer shapes, absent nearly always. The ask scopes it to the case where the intent
@@ -445,17 +445,17 @@ per session and per triage model is a reading of how often intents are degenerat
   listed in the ask.
 
 Neither field is `required`; the harness accepts either shape for either size, because
-nothing enforces the schema and a parse failure costs a withheld result. On a
+nothing enforces the schema and a parse failure causes a result to be withheld. On a
 single-result triage two id-free shapes resolve unambiguously and are adopted: a bare
 top-level `keep`, and a **lone** `results` entry whose `result` doesn't match, which is
 re-keyed onto the one offered label — with a single target there is nothing to
 mis-attribute *to*, so rejecting a decided verdict over a mistyped label withholds output
 for nothing. Neither applies once several results are in flight.
 
-**The ask states what is out of scope.** Both shapes carry a line disowning the
+**The ask states what is out of scope.** Both shapes include a line disowning the
 transcript behind them. The earlier phrasing — "every `[call id]` **above** must be
 answered" — is unbounded, and every prior `tool_result` on the canonical wire already
-carries a `[seq]` block-addressing tag (below) in the same bracket syntax the result
+has a `[seq]` block-addressing tag (below) in the same bracket syntax the result
 headers then used for call ids. Observed against a live model on a long transcript: it
 answered by re-triaging the whole conversation — twenty-odd entries keyed by `[seq]`
 tags, its own dialect's internal tool names (`functions.read`, `multi_tool_use.parallel`),
@@ -467,7 +467,7 @@ labels, and the exclusion is what bounds it.
 
 ## The `retain` verdict
 
-The fork asks for a single structured tool call — the ask rides the tail
+The fork asks for a single structured tool call — the ask is in the tail
 instruction, never a forced `tool_choice` (see the shared envelope above) — so there
 is no freeform parsing. The verdict is one of three forms:
 
@@ -518,7 +518,7 @@ agents read it as their own tool failing even when it named the harness ("That
 listing hit a harness failure. Retrying.", `.efference/still-cliff`, 2026-09-28).
 Failing a harness step is the harness's problem, so the harness waits on it rather
 than handing it to the agent. The variant stays in `WireState`, no longer written, so
-logs that carry it still load and project as they did.
+logs that contain it still load and project as they did.
 
 Why not keep-all: `WireState` is fixed once, so an uncurated result would sit in the
 cached prefix for the rest of the session with every later turn paying for it.
@@ -554,7 +554,7 @@ applied only inside the throwaway branch.
 
 Each line is rendered `{:>4} │ text`, and the result's header says that lines start with
 their number and a `│` margin, that numbers after the margin are part of the text, and that
-`keep` uses the margin's numbers. Much output carries line numbers of its own (`read`,
+`keep` uses the margin's numbers. Much output has line numbers of its own (`read`,
 `grep -n`, `cat -n`, compiler spans), and a `│` is a glyph none of those emit, so the view's
 numbers are recognizable as the view's. A `keep` range lying wholly past the shown lines is
 refused and retried in the fork (`require_in_bounds`); the corpus check for how often that
@@ -562,12 +562,12 @@ happens is in [process/corpus-checks.md](../process/corpus-checks.md).
 
 ## Images pass through triage
 
-A result's images reach the agent whatever the verdict: `keep` selects text lines only,
-and projection carries `raw.images` for every triaged verdict. The triage request does not
+The agent receives a result's images whatever the verdict: `keep` selects text lines only,
+and projection includes `raw.images` for every triaged verdict. The triage request does not
 carry them. So that its notes do not describe what the agent has wrongly (`keep: none`
 on a `read_image` result drew notes like "the screenshot was viewed, not retained"), a
 result with images has an `images: N image — not shown here; reaches the agent as it is`
-line in its header, and the ask gains an `images` row saying they are not triage's
+line in its header, and the ask includes an `images` row saying they are not triage's
 decision: triage the text and the inbox, and write no note about the image. `keep: none`
 stays valid and drops only the text.
 
@@ -597,7 +597,7 @@ therefore split:
     (`WireState::Triaged(Triaged { keep, note, intent_feedback })`), not at append — the wire
   form is re-derived from `raw` plus the verdict each turn, so the kept bytes are never
   stored twice. When a note survives, `render_hunks` prefixes it with the `⟢`
-  provenance sigil — the same marker surfaced-context lines carry (`⟢ context ·
+  provenance sigil — the same marker surfaced-context lines have (`⟢ context ·
   …`) — so the note is honestly signed as harness-curated output without invoking
   mechanism vocabulary. An `intent_feedback` follows the note under the same sigil
   with a fixed `re your intent:` lead, so the agent reads it as the curator's remark
@@ -607,7 +607,7 @@ therefore split:
 
 ## The verdict is the stored form
 
-`WireState::Triaged` carries the **verdict** as one `Triaged` struct (the `keep`
+`WireState::Triaged` contains the **verdict** as one `Triaged` struct (the `keep`
 ranges, optional `note`, and optional `intent_feedback`, the last serialized only when
 set so recorded logs are byte-unchanged by its arrival), not the rendered bytes. The
 struct is what `render_triaged` takes and what the builders construct, so a field
@@ -639,7 +639,7 @@ client surface.
 
 A failed triage is not erased — its withheld-output error is visible on the wire — but
 `origin` still classifies *what kind* of failure it was, which the rendered artifact
-cannot say. `project` reads `Triage` only as audit (it emits pinned-notification blocks
+does not show. `project` reads `Triage` only as audit (it emits pinned-notification blocks
 from `inbox`) and skips it otherwise. Every triage decision is reconstructable from
 the log — including ones only ever visible inside the throwaway branch — for
 observability and triager-quality work, with none of the fork's context touching
@@ -648,13 +648,13 @@ the wire or the cache.
 ## Retention — how much of the triage survives
 
 `Retention` (`src/record/project/retention.rs`) folds the log into cumulative
-`kept_lines` / `shown_lines`, the lines the triage cap dropped before triage saw them,
+`kept_lines` / `shown_lines`, the lines the triage cap dropped before they were shown to triage,
 and a count of results whose output a failed triage withheld. `GET /state` reports it as
 `usage.retention` and the TUI session drawer renders it as `kept  55% · 13k/24k lines`
 ([tui.md](tui.md)).
 
 Two properties make the fold the cheap kind. It counts each result once, from
-whichever entry carries its final wire — the `ToolResult` itself for a result logged
+whichever entry contains its final wire — the `ToolResult` itself for a result logged
 with its verdict, or the `ResultVerdict` naming a captured one, looked up by `seq`
 (an index) for the bytes — and resolves the verdict through the same `selection` the
 transcript renders from, rather than becoming a second definition of "kept" that can
@@ -700,7 +700,7 @@ need. Implemented in `src/curation/triage.rs` (the roster + verdict) and `src/re
 
 - **Roster.** The triage view lists the surfaceable items — every `Item::Listed`
   (those with a `path`) in the boot listing that no prior triage has surfaced — and
-  `retain` gains an optional `surfaced` field over those names. The roster is a pure
+  `retain` has an optional `surfaced` field over those names. The roster is a pure
   fold over the prefix; names double as the constrained output vocabulary, validated
   against the roster (invented names dropped). Each item renders through
   `context::render_item`, the **same** renderer the boot preamble uses, so an item met
@@ -714,7 +714,7 @@ need. Implemented in `src/curation/triage.rs` (the roster + verdict) and `src/re
   shape as the inbox's `active_shown`, `Triage`-only, no path-load tracking. It
   suppresses on *surfaced*, not *read*; closing that gap is pinning until read,
   which is the only part that would need path tracking.
-- **Verdict is the stored form.** The chosen names ride on `Triage.surfaced`
+- **Verdict is the stored form.** The chosen names are stored in `Triage.surfaced`
   (`src/record/log.rs`); `project` re-renders each as a `⟢ context · <name> …: <desc> —
   read <path>` reminder **at the Triage position**, folding name→(path,
   description) from the `Preamble`'s structured listing snapshot — tail-ward, so the
@@ -729,7 +729,7 @@ stronger stub descriptions, works on its own at boot.
 
 ## Block addressing — the visible `seq` handle
 
-Each tool result carries its `seq` as a visible handle on the wire: `tool_result`
+Each tool result has its `seq` as a visible handle on the wire: `tool_result`
 content is prefixed `[<seq>] …` (e.g. `[2] file.txt`), a render-time tag requiring
 no schema change. This is what makes "branch from 14" / "compare to block 14"
 describable across the model wire, the TUI, and the control plane.

@@ -130,7 +130,7 @@ async fn a_reply_to_a_non_question_or_a_blank_reply_is_refused() {
         refusal.message("child", None),
         format!(
             "not delivered: {seq} is a bash call, not a question; reply_to takes the seq of a \
-             question child asked, as its status gives it"
+             question child asked, as shown in its status"
         )
     );
     assert_eq!(

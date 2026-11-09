@@ -31,7 +31,7 @@ pub struct ClientExecutor {
     /// (docs/tools.md). Shared by every clone, like the fallback; never logged.
     cursors: Arc<Mutex<HashMap<String, u64>>>,
     /// The agents this mount watches and what it has shown of each, for `wait`
-    /// (docs/operating.md). Shared by every clone, so concurrent calls see one set.
+    /// (docs/operating.md). Shared by every clone, so concurrent calls use one set.
     watch: Arc<Watch>,
     /// This mount's status streams (docs/operating.md). Shared by every clone, so one
     /// server and one token per agent serve every call.
@@ -54,8 +54,8 @@ pub enum Fallback {
     None,
 }
 
-/// Whether two paths name the same directory: by canonical form when both
-/// resolve, else as spelled (a session's identity carries the cwd its creator
+/// Whether two paths refer to the same directory: by canonical form when both
+/// resolve, else as spelled (a session's identity contains the cwd its creator
 /// sent, which is `current_dir` here when it is this directory).
 fn same_dir(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
@@ -91,7 +91,7 @@ impl ClientExecutor {
     }
 
     /// An executor over `host` whose default session is `id` on it, for the verbs
-    /// that may name no agent.
+    /// that may omit the agent.
     #[cfg(test)]
     pub(crate) fn defaulting_to(host: Client, id: &str) -> Self {
         let session = Client::clone(&host).with_prefix(&format!("/sessions/{id}"));
@@ -336,7 +336,7 @@ pub(crate) async fn named(host: Option<Client>, host_socket: &Path, name: &str) 
 /// A `/state` body's status view (docs/control-api.md).
 pub(super) fn status_in(state: &Value) -> Result<StatusView> {
     serde_json::from_value(state.get("status").cloned().unwrap_or(Value::Null))
-        .map_err(|e| anyhow!("the host's state carries no readable status: {e}"))
+        .map_err(|e| anyhow!("the host's state has no readable status: {e}"))
 }
 
 /// `client`'s session's `/state`, parsed.

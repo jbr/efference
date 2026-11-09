@@ -116,7 +116,7 @@ Violating any one silently breaks caching or correctness:
    unanswered `tool_use` blocks, which the API rejects. What *is* invariant is the
    pairing — every `tool_use` gets exactly one `tool_result`, or projection orphans it
    and the API rejects the request. A forced tool choice (the spotter's `spot`) still
-   disables parallel calls, because its answer is one verdict. Requests once asked for
+   disables parallel calls, because its answer is one verdict. Requests once specified
    one call per turn; models read the restriction (and a matching preamble sentence) as
    a pace to keep, making one read per turn and ending turns on announcements, so it
    was dropped (journal/2026-09-28-upstream-failures-and-parallel-calls.md).
@@ -236,10 +236,10 @@ directory also holds the others as submodules: `config`, `inference`, `tools`, `
 `session` · `agent` · `host` · `routes` · `listeners` · `clients` · `setup`
 
 Each imports only the groups before it, and its own modules; the binary crate
-(`src/bin/efference/`) is above them all, and the library cannot name it. These rules hold:
+(`src/bin/efference/`) is above them all, and the library cannot depend on it. These rules hold:
 
 - **`record::names` imports no other module.** It holds the names a recorded entry
-  carries and its readers match on: tool and namespace names with the helpers that take
+  contains and its readers match on: tool and namespace names with the helpers that take
   them apart (`src/record/names/tools.rs`), and the labels a turn's `source` is written in
   (`src/record/names/sources.rs`).
 - **`record::log` imports no other module but `record::names`.** It holds the vocabulary a
@@ -248,8 +248,8 @@ Each imports only the groups before it, and its own modules; the binary crate
   `Arrival`, the spotter's `Axes`, and the triage model a preamble records. Behavior that
   needs another subsystem stays with it, as `impl` blocks on the type the log defines: `api`
   implements `Provider`, and `context` resolves and renders `Resolved`.
-- **`platform` imports no other group.** It holds the machine and user services that know
-  nothing of a session: the user state database, the secret store, the shared HTTP client,
+- **`platform` imports no other group.** It holds the machine and user services that do not depend
+  on a session: the user state database, the secret store, the shared HTTP client,
   OAuth and `WWW-Authenticate` parsing, push sending, the update check, the TCP bind's
   credentials, enrolled devices and sign-ins, and the helpers for spawning processes,
   watching files, terminal text and titles, home-relative paths and pretty-printing.
@@ -310,7 +310,7 @@ it: the test keys a file by its module path (`record/log/summary.rs` is
 its file's module counts as the `crate::` path it resolves to. A top-level module that is
 not a group fails the test too.
 
-No import runs against these rules. The toolbox (`tools`) reaches the session-control tools
+No import runs against these rules. The toolbox (`tools`) accesses the session-control tools
 through a trait it defines, `SessionControl`, which `control_tools` implements. The host builds
 the server a session mounts through a function the serving process installs
 ([tools.md](tools.md)).
@@ -322,7 +322,7 @@ A workspace split waits for a build target that cannot link the full dependency 
 currently exists, because rendering for thin clients is daemon-side (the human-wire render
 document) rather than a shared client library. Two roads considered and not taken: a
 browser-side wasm core (superseded by daemon-side rendering) and multiple repositories
-(the control API is unversioned and co-evolves with its clients, wire-format changes want
+(the control API is unversioned and co-evolves with its clients, wire-format changes require
 atomic commits alongside the byte-stability pin, and the records in `docs/`, `backlog/`,
 `CHANGELOG.md`, and `journal/` are repo-scoped). Client code in other languages lives
 in-tree and is embedded in the serving binary.
@@ -333,7 +333,7 @@ in-tree and is embedded in the serving binary.
   in [`../journal/`](../journal/); the shipped-feature list in [`../CHANGELOG.md`](../CHANGELOG.md).
 - **No file:line citations** — they rot. Name the governing module inline (e.g.
   "implemented in `src/record/project.rs`") so a reader knows where to look, and let the code
-  carry the line-level detail.
+  contain the line-level detail.
 - **Depth bar:** a sufficiently sophisticated peer should be able to write a rough
   approximation of the project from these docs alone. The key types, the
   control/projection flow, the invariants, and the why that protects them belong here;

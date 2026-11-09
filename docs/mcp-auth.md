@@ -20,9 +20,9 @@ would strand reusable code inside a harness.
 | OAuth 2.1 public client | `src/platform/oauth.rs` (+ `src/platform/oauth/`) | OAuth RFCs only — no MCP |
 | MCP glue | `src/tools/mcp/auth.rs` | when the dance runs, and what the resource indicator points at |
 
-The bottom two are written to be lifted out: the challenge parser wants a standalone
+The bottom two are written to be lifted out: the challenge parser could be a standalone
 crate alongside `trillium-basic-auth` (which hand-rolls the emit half of the same
-grammar), and the OAuth layer wants a `trillium-oauth-client`. Neither has moved yet,
+grammar), and the OAuth layer could be a `trillium-oauth-client`. Neither has moved yet,
 because the API shape is worth deciding with a real consumer in hand rather than
 before one. Keep MCP types out of both.
 
@@ -52,7 +52,7 @@ normative rather than a matter of taste (`src/platform/oauth/metadata.rs`):
   deployed servers do both, so an issuer with a path gets three spellings and one
   without gets two.
 
-A rung that does not answer `2xx` with parseable JSON is a rung, not an error. Only
+A rung that does not return `2xx` with parseable JSON is a rung, not an error. Only
 running out of rungs is an error.
 
 Three checks happen at fetch time rather than being left to callers, because
@@ -122,7 +122,7 @@ file needs updating, not the test.
 
 ## Who decides what
 
-`src/tools/mcp/auth.rs` runs the sequence but does not decide how to reach a human: it
+`src/tools/mcp/auth.rs` runs the sequence but leaves human presentation to the caller: it
 hands the authorization URL to a `present` callback and waits. A terminal can open a
 browser; a log-captured boot can only print a URL. Keeping that at the call site is
 what makes the sequence testable.

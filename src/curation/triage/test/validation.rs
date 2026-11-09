@@ -252,7 +252,7 @@ fn a_coverage_rejection_reports_what_was_answered() {
         panic!("an empty verdict must be rejected");
     };
     assert!(
-        why.contains("[wanted]") && why.contains("answered nothing"),
+        why.contains("[wanted]") && why.contains("it has nothing"),
         "{why}"
     );
 

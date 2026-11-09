@@ -94,7 +94,7 @@ impl Axis {
             Self::DeniedPath => "it names a path this session is denied",
             Self::Secrets => "it could expose secret material",
             Self::WatchFor => "it may match something the operator asked to watch for",
-            Self::OutsideGrants => "it reaches outside the paths this session is granted",
+            Self::OutsideGrants => "it includes paths outside this session's grants",
             Self::ScopeFit => "its reviewer is unsure this fits the session's scope",
         }
     }

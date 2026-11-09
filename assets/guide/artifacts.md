@@ -1,7 +1,7 @@
 # Artifacts: charts, diagrams and small pages in the transcript
 
 A fenced block whose info string is exactly `html-artifact` renders in the web transcript
-as a live page in a sandboxed frame. Use one when a picture says it better than prose or
+as a live page in a sandboxed frame. Use one when a picture is clearer than prose or
 a table: a chart of numbers you computed, a diagram of how parts connect, a small view the
 operator can interact with.
 
@@ -151,9 +151,9 @@ Before your content, the page receives the transcript's own stylesheet:
   transcript's prose styling. Write semantic elements and they fit in.
 - The page is transparent and edge to edge; the transcript shows through.
 - `button`, `input` and `select` use the interface font.
-- An `<svg>` that names no `fill` paints in the text colour, and every shape or group inside
-  it without a fill of its own inherits that; one that names a fill keeps it.
-- The operator's theme reaches the page live: After Dark is dark, Lilac is light, and the
+- An `<svg>` with no `fill` paints in the text colour, and every shape or group inside
+  it without a fill of its own inherits that; one with a fill keeps it.
+- The page uses the operator's theme live: After Dark is dark, Lilac is light, and the
   operator can switch while your page is open. Take every colour from the variables below,
   and never hardcode black or white text.
 

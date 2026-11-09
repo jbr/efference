@@ -379,7 +379,7 @@ impl<'a> Zoom<'a, '_> {
                 return format!("it saw: none of it ({})", flat(why));
             }
             None | Some(WireState::Pending) => {
-                return "it saw: nothing yet; no verdict has decided it".to_string();
+                return "it saw: nothing yet; no verdict for it yet".to_string();
             }
         };
         let d = selection(&raw.content, &verdict.keep);

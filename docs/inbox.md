@@ -7,13 +7,13 @@ its inbox in the same throwaway branch at no extra round-trip.
 
 ## What a notification is
 
-A `Notification` carries three fields: `source` (a label for the origin), `body`
+A `Notification` has three fields: `source` (a label for the origin), `body`
 (freeform text), and an optional `slot` (a logical channel name used for supersession).
 There is no structure beyond that — the body is prose the model reads directly.
 
 ## Ingestion — out of band
 
-`POST /notifications { source, body, slot? }` files the notification and answers
+`POST /notifications { source, body, slot? }` files the notification and returns
 `{"seq": N}`, the `seq` of its `Ambient` log entry, appended at arrival under the turn of
 the log's latest entry. A notification bound to a `slot` is the exception: a later one on
 the same slot supersedes it, so it waits in an in-memory queue in `Session` (the daemon's
@@ -42,14 +42,14 @@ which carry no `seq`.
 
 The attachment store is a **plain directory**, `.efference/<id>/attachments/`, beside
 `config.toml` (`src/session/attachments.rs`, `src/session/attachment_watch.rs`; the `Arrival` a notice or a
-turn records, and its two renderings, `src/record/log/attachment.rs`). Files reach it two ways, and
+turn records, and its two renderings, `src/record/log/attachment.rs`). Files are stored there in two ways, and
 both are described the same way — by a **notice** stating what arrived and where — but they
 are announced on different rails:
 
 - **A composer attaches it to a turn.** The TUI and the web client upload a staged file
   (`POST /attachments`, [control-api.md](control-api.md)) into `attachments/composer/`, and the
   turn that sends it names the upload (`POST /turns {attachments: [name…]}`). The daemon
-  describes each named file at submission and the `User` entry carries one
+  describes each named file at submission and the `User` entry contains one
   `ContentBlock::Attachment` per file after its text; projection renders each as its notice, in
   the turn's own user message. A name the store does not hold refuses the whole turn, so a
   message never lands claiming a file that is not there. A staged file removed before sending
@@ -61,8 +61,8 @@ are announced on different rails:
   at boot are recorded as seen and not re-announced. The watcher reads regular files only, so
   it never sees `composer/` — which is what keeps an uploaded file from being announced twice.
 
-**Nothing enters the log but the notice.** The bytes stay on disk, so a 50 KB paste never pins
-50 KB into every subsequent turn's cached prefix ([log-and-projection.md](log-and-projection.md)).
+**Nothing enters the log but the notice.** The bytes stay on disk, so a 50 KB paste does not add
+50 KB to every subsequent turn's cached prefix ([log-and-projection.md](log-and-projection.md)).
 The model pulls what it wants with the tools it already has — `read`/`search` for text,
 `read_image` for an image — and the bytes then enter as an ordinary tool result, `Elidable` like
 any other. An image attached to a turn is a notice too, not an image block: pulling it through
@@ -84,9 +84,9 @@ first line: {"model":"claude-opus-4","messages":[
 ```
 
 One line, subject first, under the harness's `⟢` — the turn's own prose is the operator's, and
-the attachment line is the harness's report of what came with it. The watcher's notices carry
-the same body as `⟢ attachment: …`. The earlier two-line form, with the path leading, read as
-boilerplate: in one dogfood session the model later claimed the dimensions had never reached it,
+the attachment line is the harness's report of what came with it. The watcher's notices have
+the same body as `⟢ attachment: …`. The earlier two-line form, with the path first, read as
+boilerplate: in one dogfood session the model later claimed it had never received the dimensions,
 and took the notice on a later turn for the operator quoting something
 (journal/2026-09-27-composer-attachments.md).
 
@@ -117,7 +117,7 @@ triage has shown it to the model is a second fact, read from the `Triage` entrie
 (below). A slot notification is appended when a triage first shows it, and one superseded
 before that never enters the log: from the log's perspective it never happened.
 
-The log is a record of every notification that reached the session, and of every
+The log is a record of every notification the session received, and of every
 disposition the agent chose, dismissed ones included: both are reconstructable from the log
 alone.
 
@@ -135,7 +135,7 @@ The live inbox is a fold over the log (`src/curation/inbox.rs`) plus the slot qu
   `Triage` without the field stands for its own `seq`, which is what a log from before the
   field recorded, since a notification was then logged just ahead of the triage that
   showed it. A triage that showed no rider records 0 (`seq` 0 is the boot `Preamble`): a
-  result triage whose every result the shape rule decided without the model
+  result triage whose every result the shape rule resolved without the model
   (docs/triage.md) shows no rider. A notification that arrives while a triage request is
   open has a `seq` above that triage's mark, so the next triage shows it as new and the
   idle wake fires for it.
@@ -182,7 +182,7 @@ triage that shows a notification and does not pin or dismiss it, the loop append
 model, made the choice. `unmentioned_past_cap` in `src/curation/inbox.rs` folds the count from the
 log: one show per idle `Triage`, and one per run of result-carrying `Triage` entries with
 no `Assistant` or `User` entry between them (a batch writes one per result, and the
-verdict rides the last). A show counts for the notifications at or below the triage's
+verdict is in the last). A show counts for the notifications at or below the triage's
 `shown_through` mark, so one that arrived mid-request and one that a rider-less triage did
 not show are not counted. The check runs after each triage's entries are written.
 
@@ -191,13 +191,13 @@ not show are not counted. The check runs after each triage's entries are written
 A notification may be enqueued **must-wake** (`wake` on the notification, surfaced
 on `GET /state` only when set). At its first show the loop pins it whatever the
 fork's verdict — a dismiss is overridden, a leave is filled in — so an idle agent
-starts a real turn on it and a running one carries it into the wire at the
+starts a real turn on it and a running one has it included in the wire at the
 next triage. Whether the agent wakes is thereby declared by the sender, not judged by
 the triage; the triage keeps everything downstream of that: the rest of the inbox, the
 background tails, its note. A triage that fails outright changes nothing here, since
 the pin is applied by the loop after the verdict returns. The idle triage is itself a
-request, so the loop phase reads `requesting` from the wake (docs/control-api.md): an
-trajectory it starts carries on from there with no submitted turn claimed, and one that
+request, so the loop phase is `requesting` from the wake (docs/control-api.md): a
+trajectory it starts continues from there with no submitted turn claimed, and one that
 pinned nothing returns to idle without counting as a turn ended. From the wake until
 the loop parks, `/settle` blocks and the status watcher reports running, the same as
 for a trajectory a turn started.
@@ -209,13 +209,13 @@ client verb sets it — `POST /notifications` files ordinary notifications — i
 harness's own channel, used today for a delegated child's status ([tools.md](tools.md),
 subscriptions). Superseding on a slot takes the replacement's own terms.
 
-**A routed gate rides this channel, and is not a subscription.** A session whose review
+**A routed gate is sent through this channel, and is not a subscription.** A session whose review
 position resolves to `supervisor` ([permissions.md](permissions.md)) sends the call it is
 holding to its supervisor (by default the session that created it), on the same `session:<id>` slot and with the same
 must-wake, whether or not that session is subscribed — and with a body that names the
-recipient as the one to resolve it. Everything else a subscriber hears is observation: the
+recipient as the one to resolve it. Everything else a subscriber receives is observation: the
 same statuses, on the subscription's own terms, which the host's `unsubscribe` drops — except a
-gate routed to the operator, which reaches a `wake` subscriber without wake, since the
+gate routed to the operator, which is sent to a `wake` subscriber without wake, since the
 operator is the one asked ([tools.md](tools.md)). Keeping
 the two apart is what lets a subscription end without the routing ending with it, and the
 routing move to the operator without the creator going blind to whether its child finished.
@@ -260,7 +260,7 @@ adds, which report and never carry the operator's instructions (`assets/prompts/
 and every harness note shares it: pinned notifications, attachments, surfaced context, the
 triager's note on a result. It is a convention, not an authentication: anything that can put
 text in front of the model (a file, a command's output, another client's turn) can spell it.
-What keeps a forged note harmless is that a genuine one carries no authority to borrow — gates
+What keeps a forged note harmless is that a genuine one has no authority to borrow — gates
 are enforced mechanically, never by what the model believes — so a forgery can plant a false
 fact but not an instruction. The one `⟢` block that asks for something, the triage ask
 (docs/triage.md), asks only for `retain` or `triage`; outside a triage either call is

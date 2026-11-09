@@ -74,7 +74,7 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
             if let Some(reference) = answers {
                 let message = format!(
                     "not delivered: {} is still starting and has asked nothing; {reference} \
-                     names no question it is waiting on",
+                     does not identify a question it is waiting on",
                     starting.id()
                 );
                 return respond(

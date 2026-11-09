@@ -44,7 +44,7 @@ AES-128-GCM record. Every derivation step takes its salt and ephemeral key as
 parameters, so the tests pin the RFC's §5 example and every Appendix A intermediate
 byte-for-byte from the text in `reference/rfc/`. The JWT (`src/platform/push/vapid.rs`) is
 hand-assembled ES256 — two fixed JSON objects and a raw `r‖s` signature — with `aud`
-the endpoint's origin and no `sub` claim: the only value `sub` could carry is a
+the endpoint's origin and no `sub` claim: the only value `sub` could contain is a
 personal contact handed to every push service.
 
 Failures are log lines, never retried: a push is a courtesy, and no retry schedule
@@ -100,14 +100,14 @@ Each moment goes to the session that answers it, or to the operator when none do
 only the operator's moments push:
 
 - **Gate** — its reviewer (`Session::gate_reviewer`, [permissions.md](permissions.md)): the
-  live supervisor under the `supervisor` dial, the session an escalation last reached while
+  live supervisor under the `supervisor` dial, the session that last received an escalation while
   it is hosted, and otherwise the operator. A supervised session whose dial the operator
   turned to `spotter_human` or `human_only` routes its gates to the operator, who is pushed
   for them.
 - **Ask and settle** — the session's live supervisor (`Session::supervisor`), whatever the
   dial; the operator when there is none.
 
-A moment a session answers reaches that session's inbox ([inbox.md](inbox.md)), is
+A moment a session answers is sent to that session's inbox ([inbox.md](inbox.md)), is
 recorded as `not_sent {to}`, and is the newest moment, so it supersedes a held push.
 "Live" is the fail-safe direction: a session whose supervisor has ended, or whose pointer
 was cleared, pushes from its next moment, and a gate it holds then is a rerouted gate
@@ -117,8 +117,8 @@ session stops pushing by having a supervisor, not by a device unsubscribing.
 ## The routes
 
 Under `/v1` with everything else ([control-api.md](control-api.md)), so the TCP gate
-and the service worker's never-cache rule cover them without learning a new prefix:
-`GET /v1/push` answers the VAPID public key (`applicationServerKey` verbatim);
+and the service worker's never-cache rule cover them without a new prefix:
+`GET /v1/push` returns the VAPID public key (`applicationServerKey` verbatim);
 `POST /v1/push/subscriptions` records a `toJSON()` subscription, upserting on the
 endpoint; `DELETE /v1/push/subscriptions` forgets one, always 200 — an unsubscribe
 names an end state.
@@ -137,14 +137,14 @@ browser is the source of truth, not a stored preference — and the permission p
 and subscribe run only from the click, which Safari requires and Chrome quiet-prompts
 without. Unchecking unsubscribes both sides, daemon first. A denied permission renders
 as "blocked in browser settings" (JS cannot re-prompt); iOS outside the
-home-screen-installed app explains itself (iOS delivers push only to the installed
+home-screen-installed app shows an explanation (iOS delivers push only to the installed
 app); a browser without `PushManager` shows nothing.
 
 ## The push record
 
 Every step of a moment's push is appended to the session's log as a
 `Payload::Push` entry (`src/record/log/push.rs`), which projects to nothing and which
-transcripts and clients skip. Each entry carries `moment` (a number unique within the
+transcripts and clients skip. Each entry contains `moment` (a number unique within the
 session), `kind` (`gate`, `ask`, `settle`), and an `event`:
 
 - `sent`: nobody was attending, so the push went out at once.
@@ -177,7 +177,7 @@ receive it. In tests, a session's `set_push_transport` stands in for the push se
 ## Self-healing subscriptions
 
 A browser holds its subscription independently of the daemon's store, so the two
-can disagree after a store loss, a pruned row, or a rotated root. On every app
+can differ after a store loss, a pruned row, or a rotated root. On every app
 open, once the worker is ready, the page reads `pushManager.getSubscription()`
 and, if one exists, POSTs it to the subscribe route (`web/src/push.ts`); the
 route is an upsert on the endpoint, so a row that exists is rewritten
@@ -251,7 +251,7 @@ focused, and has seen pointer, key, wheel, scroll, or touch input within 60 seco
 It reports at once on a change of `active` or of `session` (client-side navigation
 between sessions included), sends an inactive report on hide or blur so the host need
 not wait for the lapse, and heartbeats every 20 seconds while active. A change to
-active is throttled to one per 10 seconds. A check every 5 seconds notices the input
+active is throttled to one per 10 seconds. A check every 5 seconds detects the input
 window expiring, since idleness fires no event. Failures are logged and not shown; a
 `404` (a lone session bind) stops reporting. While the page holds no device token
 ([web-bind.md](web-bind.md)) it sends nothing, since the host would refuse the report,
@@ -263,10 +263,10 @@ per-process id as `client` and the session it is attached to as `session` (`null
 lone session bind). It is `active` while its terminal is focused (focus reporting,
 `CSI ?1004h`) and a key or mouse event, `Moved` included, arrived within 5 minutes
 (`INPUT_WINDOW`): a person reading output without touching anything for longer lapses
-to the delayed push, which costs a delay at worst. Focus starts as focused, and
+to the delayed push, with a delay at worst. Focus starts as focused, and
 starting counts as input, since the operator has just launched or attached it; a
 terminal or multiplexer that never sends focus events (tmux without `focus-events on`)
-leaves it reading focused, so input recency alone decides there. It reports on a change
+leaves it reading focused, so input recency alone determines attention there. It reports on a change
 of `active`, heartbeats every 20 seconds while active, sends an inactive report on
 focus loss and on quitting, and checks the input window on the loop's one-second tick.
 Switching sessions attaches afresh and the new attach's first report names the new

@@ -25,7 +25,7 @@ triage byte for byte, which is what lets that request resume a cached prefix.
   ([tools.md](tools.md)), and its triaged note ([triage.md](triage.md)).
   Paths are read from the per-tool key the permission classifier reads (`path_spec`),
   so a tool with no path key renders its name alone. A result that failed is marked
-  `(error)`; one with no note says so.
+  `(error)`; one with no note is marked accordingly.
 - **A `Pending` result** takes the wire state its later `ResultVerdict` gave it.
 - **An `ask`** renders as the question, and its reply as a `<who> replied` block
   attributed like a turn (`operator`, or the replying agent's source). An ask that got
@@ -36,7 +36,7 @@ triage byte for byte, which is what lets that request resume a cached prefix.
 
 - **The agent's prose** renders for every turn that has any, mid-turn narration
   included: it is where the agent says what it took from the operator and what it is
-  about to do, which the call lines do not carry. Measured 2026-10-10, it adds little:
+  about to do, which the call lines do not contain. Measured 2026-10-10, it adds little:
   ~4k tokens on a ~32k-token digest for a 250-call gpt-6.1-sol session, under 2k for
   Claude sessions of similar length.
 

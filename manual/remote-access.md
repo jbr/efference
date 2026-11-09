@@ -54,7 +54,7 @@ MagicDNS and HTTPS certificates enabled for your tailnet (the DNS page of Tailsc
 console). Enabling HTTPS publishes this machine's tailnet name in public certificate logs.
 <!-- src: Tailscale docs, "Enabling HTTPS" (kb/1153) -->
 
-Your tailnet's access rules decide which devices can reach this machine; by default that
+Your tailnet's access rules determine which devices can reach this machine; by default that
 is every device in the tailnet. If the tailnet includes other people's devices, or this
 machine is shared with another tailnet, restrict its port to your own devices in the
 tailnet policy.
@@ -134,7 +134,7 @@ shows. If the page answers 403, `public-url` does not match the name in the addr
 <!-- src: src/config/user_config/host.rs::HostConfig, expand_home; src/bin/efference/cli.rs::HostFlags; src/bin/efference/serve.rs::resolve_bind, checked_public_url, loopback_addr, BindFlags::over -->
 
 Each flag overrides its key for one launch. A standalone host ignores the table; only
-`--bind` reaches it, and it serves plain HTTP on loopback. The host reads the table when it
+`--bind` applies to it, and it serves plain HTTP on loopback. The host reads the table when it
 starts, so a change takes effect at the next start.
 <!-- src: src/bin/efference/serve.rs::host (island branch), resolve_bind; src/bin/efference/island.rs::Island::launch -->
 

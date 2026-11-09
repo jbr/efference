@@ -80,8 +80,8 @@ has been modified by something else since.
 ## Reading the result
 
 An outcome that **refused** the request is flagged as an error: a `write` that would clobber,
-an `edit` whose placement did not validate, a flag conflict. An outcome that answers the
-call on its own terms is a success even if nothing changed: a `search` with no matches, an
+an `edit` whose placement did not validate, a flag conflict. An outcome that meets the
+call's terms is a success even if nothing changed: a `search` with no matches, an
 `edit` whose exact change the file already contains. The flag reports whether the tool was
 wielded correctly, not whether the world moved.
 

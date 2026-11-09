@@ -15,22 +15,22 @@ use crate::protocol::transcript::Handle;
 use crate::record::log::ToolCall;
 use crate::session::Session;
 
-/// The in-process executor (docs/tools.md): the calling session's toolbox reaches
+/// The in-process executor (docs/tools.md): the calling session's toolbox calls
 /// the host directly — the same `Session` methods the HTTP handlers call, never a
 /// round trip over the socket. The target rules live here because this is the only
-/// executor that knows who is calling:
+/// executor with the caller's identity:
 ///
 /// 1. the target is never the caller, so a session cannot resolve its own gate;
-/// 2. a driving verb reaches only the sessions the caller drives: its descendants (via
+/// 2. a driving verb targets only the sessions the caller drives: its descendants (via
 ///    `created_by`), the sessions it supervises (via the host's supervisor pointer), and
 ///    its own predecessor (via the host's succession record), so a session cannot steer
 ///    a peer it was not given; and
-/// 3. `decide` reaches only the sessions the caller supervises, by the same pointer:
+/// 3. `decide` targets only the sessions the caller supervises, by the same pointer:
 ///    creating a session or succeeding its creator does not by itself make its gates
 ///    the caller's (docs/permissions.md). The one exception is a gate escalated to the
 ///    caller, which it may decide, and only that gate.
 ///
-/// An id reaches its session wherever on the host it is; only the overview, `status`
+/// An id identifies its session wherever on the host it is; only the overview, `status`
 /// with no agent, is bounded to the caller's project.
 #[derive(Clone)]
 pub struct HostExecutor {
@@ -113,7 +113,7 @@ impl HostExecutor {
         })
     }
 
-    /// The `source` the caller's turns, decisions and interrupts carry into `target`:
+    /// The `source` included with the caller's turns, decisions and interrupts in `target`:
     /// `session[<id>]`, naming the caller's project as well when it is not `target`'s
     /// (docs/tools.md).
     pub(super) fn source_for(&self, target: &Session) -> String {
@@ -155,7 +155,7 @@ impl HostExecutor {
         let (session, target) = self.resolve(requested)?;
         if !self.drives(&target)? {
             return Err(anyhow!(
-                "refused: you don't drive {target:?} — a driving verb reaches the sessions you \
+                "refused: you don't drive {target:?} — a driving verb targets the sessions you \
                  created, supervise, or succeed; `agents__status` and `agents__transcript` still read \
                  it, and `agents__message` leaves it a note"
             ));
@@ -164,7 +164,7 @@ impl HostExecutor {
     }
 
     /// The target for `decide` on the held call `seq`: rule 1 and rule 3.
-    /// A refusal says who decides the target's gates and which verbs still reach it.
+    /// A refusal shows who decides the target's gates and which verbs can still target it.
     pub(super) fn resolve_decided(
         &self,
         requested: Option<&str>,
@@ -214,7 +214,7 @@ impl HostExecutor {
                 .is_some_and(|(to, handle)| to == decider && names_held(handle.as_deref(), seq))
     }
 
-    /// Whether `target`'s `created_by` chain reaches `ancestor`. The tree is
+    /// Whether `target`'s `created_by` chain contains `ancestor`. The tree is
     /// acyclic by construction; the `seen` set only guards a malformed one.
     fn chain_reaches(host: &Host, ancestor: &str, target: &str) -> bool {
         let mut seen = std::collections::HashSet::new();
@@ -232,7 +232,7 @@ impl HostExecutor {
     /// Rule 2: whether `driver` drives `target` — `target` is `driver`'s descendant,
     /// `driver` is `target`'s supervisor, or `target` is `driver`'s predecessor, which
     /// handed its work to `driver` (docs/tools.md). Supervision is not transitive: it
-    /// reaches the supervised session, not the sessions that session created or
+    /// applies to the supervised session, not the sessions that session created or
     /// supervises.
     fn may_drive(host: &Host, driver: &str, target: &str) -> bool {
         Self::chain_reaches(host, driver, target)

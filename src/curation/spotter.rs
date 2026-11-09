@@ -719,7 +719,7 @@ fn declarations(definition: &ToolDefinition) -> Vec<&'static str> {
     }
     if let Some(open_world) = hints.open_world_hint {
         lines.push(match open_world {
-            true => "open-world: it reaches entities outside this machine (e.g. the network)",
+            true => "open-world: it interacts outside this machine (e.g. with the network)",
             false => "closed-world: its effects stay inside a closed domain",
         });
     }

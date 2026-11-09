@@ -30,7 +30,7 @@ pub(in crate::curation::triage) const KEEP_FIELDS: &str =
               the lines you kept, not the ones you dropped: if the note turns on a
               particular line, that line belongs in `keep`. Where the
               result header carries an `intent`, answer it from what is shown. If the
-              output does not contain what the intent asked for, say that rather than
+              output does not contain what the caller requested in the intent, say that rather than
               summarizing what it does contain; \"it didn't\" is often the answer
               worth keeping.
   intent_feedback
@@ -52,12 +52,12 @@ pub(in crate::curation::triage) const KEEP_FIELDS: &str =
 pub(in crate::curation::triage) const REPORT_FIELDS: &str =
     "keep        \"all\", \"none\", or comma-separated 1-based inclusive line ranges like
               \"40-52,310-318\". Keep what answers the intent and what the task will need
-              next; whatever you drop is gone from the working context. What the intent
-              asks to SEE (a struct, the imports, the failing case) is kept. What it asks
+              next; whatever you drop is gone from the working context. What the caller
+              asks to SEE (a struct, the imports, the failing case) is kept. What the caller asks
               as a QUESTION (did it pass? did anything move? is X here?) is answered in
               the `note` from the output, keeping only the line that proves the answer —
               a totals or summary line — not every line the answer covers. Where many
-              lines say one thing — a run of passing tests, progress and build chatter,
+              lines contain the same information — a run of passing tests, progress and build chatter,
               repeated matches of the same kind — drop them and state the fact in the
               `note`. Never drop a line the agent may need to copy, search for, or edit
               from: paths, identifiers, exact error or warning text, the code it is about
@@ -102,7 +102,7 @@ pub(in crate::curation::triage) const INBOX_FIELD_THIRD_PERSON: &str = concat!(
 /// request does not carry them, so without this row a note says the image "was not retained"
 /// (docs/triage.md).
 pub(in crate::curation::triage) const IMAGES_FIELD: &str =
-    "  images      A result header that says `images:` is a result that carries images. They reach
+    "  images      A result header with `images:` marks a result containing images. They reach
               the agent as they are, whatever you decide, and are not yours to triage: triage the
               text (for `read_image`, the header line) and the inbox, and write no note about the
               image or whether it was retained. `keep: none` on such a result drops only its text.";

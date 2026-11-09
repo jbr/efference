@@ -96,7 +96,7 @@ fn supervisor(id: &str) -> Reviewer {
 }
 
 const DECIDE: &str = "decide: agents__decide(agent: \"child\", seq: \"8.2\", decision: \"allow\" | \
-    \"deny\", message?) — allow runs it, and a message rides with its result; deny with a message \
+    \"deny\", message?) — allow runs it, and a message is sent with its result; deny with a message \
     refuses it and the session goes on under your message; a bare deny ends its turn";
 
 /// The escalate line a reviewer reads after [`DECIDE`].
@@ -272,7 +272,7 @@ fn parked_with_a_token_cost() {
     assert_eq!(
         rendered(&expired, &driver()),
         "child: paused before re-reading its context uncached (48k tokens)\n\
-         next: agents__message(agent: \"child\", text: \"\") goes ahead and pays that read, as \
+         next: agents__message(agent: \"child\", text: \"\") proceeds with that read and its cost, as \
          any message does"
     );
     let compacted = view(Condition::Parked {

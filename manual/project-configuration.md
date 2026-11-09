@@ -15,7 +15,7 @@ help revise it. The agent can read a description of every key through its `read`
 `efference://guide/config-format`.
 <!-- src: src/setup/handoff.rs::offer_project_setup; assets/guide/new-project.md; assets/guide/config-format.md; src/config/guide.rs::MOUNT; src/config/policy/paths.rs::context_granted (the guide prefix is read-granted) -->
 
-Review the changes before starting your next session: this file decides what future
+Review the changes before starting your next session: this file determines what future
 sessions can do without asking. If you’re opening someone else’s project, read its
 `efference.toml` before starting a session, too. Some settings run commands at startup,
 without a permission prompt; [the details below](#what-runs-at-startup) explain which ones.

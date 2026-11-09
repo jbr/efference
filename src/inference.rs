@@ -297,8 +297,8 @@ fn resolve_declaration(
             let provider = Provider::from_name(provider).map_err(|error| error.to_string())?;
             return Err(format!(
                 "connection {name:?}: {provider} derives its own dialect — drop the \
-                 `dialect` line, or drop `provider` to describe an endpoint this \
-                 build knows no name for"
+                 `dialect` line, or drop `provider` to describe an endpoint with no \
+                 built-in name"
             ));
         }
         (Some(provider), None) => {
@@ -316,7 +316,7 @@ fn resolve_declaration(
                 "connection {name:?}: name a `provider`, or give a `dialect` \
                  (`messages`, `responses`, `completions`, or `systemone`) and a `base-url` \
                  to describe \
-                 an endpoint this build knows no name for"
+                 an endpoint with no built-in name"
             ));
         }
     };

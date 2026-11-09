@@ -60,7 +60,7 @@ static SCHEMA: LazyLock<ToolDefinition> = LazyLock::new(|| {
          began; earlier summaries stay as they are. Called as your first action after \
          an operator message, that message and the report or question it answers stay \
          verbatim. Called mid-task, the replaced range runs through your last tool \
-         result and includes the instructions you are working under, so carry forward \
+         result and includes the instructions you are working under, so include \
          the ones that still apply. Do not reconstruct unsupported exact code or \
          identifiers."
             .into(),

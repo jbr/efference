@@ -67,7 +67,7 @@ fn anthropic_metadata_declares_thinking_and_effort() {
     // Declared, and empty: every configured level is refused at boot.
     assert_eq!(caps.supported_efforts, Some(vec![]));
     let why = caps.check_effort("high", "claude-haiku-4-5").unwrap_err();
-    assert!(why.contains("takes no effort level"), "{why}");
+    assert!(why.contains("lists no effort levels"), "{why}");
 
     // No `capabilities` object declares nothing on either axis.
     let bare = r#"{"id":"m","max_input_tokens":200000,"max_tokens":64000}"#;

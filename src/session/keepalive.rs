@@ -296,8 +296,8 @@ pub(crate) fn lop_trailing_model_turns(turns: &mut Vec<WireTurn>) {
 }
 
 /// The prompt tokens the ping read, however the endpoint accounted for them —
-/// fresh input, cache read, and cache write are all "prefix this ping paid to
-/// send", and providers split the same prefix across these three fields
+/// fresh input, cache read, and cache write are all "prefix sent with this
+/// ping", and providers split the same prefix across these three fields
 /// differently.
 pub(crate) fn prefix_tokens(usage: &Usage) -> u64 {
     usage

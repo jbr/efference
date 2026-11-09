@@ -539,7 +539,7 @@ fn parse_auth(item: &toml_edit::Item) -> Result<ExistingAuth, String> {
             name: optional_name()?,
         }),
         other => Err(format!(
-            "has an `auth` of unrecognized kind {other:?}; this build understands \
+            "has an `auth` of unrecognized kind {other:?}; supported kinds are \
              env, keychain, oauth, and codex-cache"
         )),
     }

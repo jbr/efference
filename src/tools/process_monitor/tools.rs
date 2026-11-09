@@ -150,7 +150,7 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
         "Put a question to the agent that supervises you when there is one, otherwise to the \
          operator, and wait for the reply, which comes back as this call's result. Use it when \
          you need an answer, a decision, or a go-ahead before continuing; ending your turn means \
-         the work is done. Notifications that arrive while you wait do not answer it; they are \
+         the work is done. Notifications that arrive while you wait are not replies; they are \
          shown to you beside the reply. Asks made in parallel are presented one at a time, in an \
          unspecified order, so make them independent of each other."
             .into(),

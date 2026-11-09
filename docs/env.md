@@ -27,8 +27,8 @@ which case it is set into every child environment as well
 
 Keys are exact variable names or `*` globs (`*` matches any run of characters;
 that is the whole syntax). Two spellings parse: the inline table, and a bare
-string, which names the value (`SOME_KEY = "op://Vault/Item/field"`). A bare
-*boolean* — `"*_KEY" = false` — cannot say which question it is answering, so it
+string, which is the value (`SOME_KEY = "op://Vault/Item/field"`). A bare
+*boolean* — `"*_KEY" = false` — does not specify whether to strip or mask, so it
 is a parse error rather than a guess.
 
 Implemented in `src/config/env_table.rs` (the table, precedence, the child-env policy),
@@ -70,7 +70,7 @@ outright, and one that omits it is established here.
 
 ## Launch environment
 
-The user configuration may name `env_hook`: an argv, not a shell command string.
+The user configuration may include `env_hook`: an argv, not a shell command string.
 It is invoked directly, with the chosen directory set on the subprocess, so
 nothing interpolates a `cd` or changes the host's own working directory. Shell
 syntax requires a shell in the array, and the harness neither discovers one nor
@@ -116,7 +116,7 @@ signalled, which neither an awaited timeout nor `kill_on_drop` alone covers for 
 whole tree. Signalling is separate from reaping: the direct child is collected on the
 paths that are still awaited, and a dropped launch leaves that to the runtime. A
 process group is not containment: a descendant that puts itself in a new group is
-outside what one `killpg` reaches.
+not signalled by one `killpg`.
 
 A dump must be NUL-terminated: a final record with no closing delimiter is what a
 truncated write looks like, and accepting it would seed a session with a partial
@@ -131,7 +131,7 @@ With no hook the base is the host environment read directly: no shell and no
 a login shell's exports, or whatever set a service manager hands a daemon — and it
 is not a loaded project environment.
 
-`InferenceRegistry` retains the configured argv, so the hook travels with the user
+`InferenceRegistry` retains the configured argv, so the hook is included in the user
 configuration that session creation already loads. The host retains its own
 start-time environment alongside it, which is the base an omitted `env` inherits
 and what the hook itself inherits; both are taken once, at host start, rather than
@@ -180,8 +180,8 @@ it should not). Neither subsumes the other, and neither is adversary-grade.
   re-serializes only if masking changed something — so an ordinary call keeps the
   provider's exact bytes, and a masked one replays as the logged string, which still
   parses and pairs with its result. A string that does not parse is scanned as text:
-  the turn is record-only and never dispatched, and the secret must not reach disk
-  either way. Nothing signs the argument string (only reasoning carries
+  the turn is record-only and never dispatched, and the secret must not be written to disk
+  either way. Nothing signs the argument string (only reasoning has
   `encrypted_content`), which is what makes this override safe where masking a
   signed thinking block is not.
 - **The Codex strip gotcha.** A tool whose credential was stripped dies with an
@@ -215,7 +215,7 @@ body, and frames); `ToolResult`'s
 `identity`, `body` and its resolved `[context]` listing.
 
 One string is masked *before* the append as well as at it: the boot preamble.
-It both rides the request's `system` field and is snapshotted into the log, and
+It is both included in the request's `system` field and snapshotted into the log, and
 the point of the `Preamble` entry is that those two are byte-identical
 ([context.md](context.md)) — so boot masks the resolved `[context]` listing
 and the rendered system prompt, and the choke point's re-scan is then a no-op.
@@ -247,7 +247,7 @@ same value always produces the same marker, which is what keeps the diagnostic
 pattern working: the questions a session actually asks about a credential are
 "is it set?" and "does this one match that one?", and both are answered by the
 marker's existence and equality without any value bytes crossing. A bare
-`[REDACTED]` answers neither, and a blocked diagnostic pushes a well-intentioned
+`[REDACTED]` provides neither answer, and a blocked diagnostic pushes a well-intentioned
 session into working around it (`echo ${KEY:0:8}`, `md5sum`) — each workaround a
 fresh leak. The marker should not regress to an opaque placeholder.
 
@@ -259,18 +259,18 @@ occurrence of "dev" in every tool result.
 
 ### Transforms
 
-A secret rarely reaches a tool result verbatim, so one value contributes several
+A secret rarely appears in a tool result verbatim, so one value contributes several
 needles:
 
 - **line-wise, for a multiline value** — the top real-world miss is a PEM key
-  read back through `cat -n` / `grep` / `diff`, where each line carries a prefix
+  read back through `cat -n` / `grep` / `diff`, where each line has a prefix
   and the whole blob never appears contiguously.
 - **base64 at three phase offsets** — a value embedded in a larger base64 blob
   encodes differently depending on its byte offset mod 3, so all three
   alignments are needled (the characters that mix in neighbouring bytes' bits
   are trimmed off).
 - **percent-encoded** and **JSON-escaped** — the two shapes a value takes when
-  it rides a URL or a JSON body back out of a tool.
+  it is included in a URL or a JSON body in tool output.
 
 ### Mechanics
 
@@ -278,7 +278,7 @@ Needles are scanned **longest first** (so nested secrets resolve to the longer
 one) in a deterministic total order (length descending, then lexicographic), in
 a **single left-to-right pass** over the assembled final string. The pass
 advances past each emitted marker, which is what keeps a short needle from
-matching inside one — a repeated `replace` could not promise that.
+matching inside one — a repeated `replace` would not guarantee that.
 
 Values are captured at startup; config edits reevaluate the retained base and
 resolve any newly named references. The needle set is **append-only for the session**: a variable an edit stops masking
@@ -290,7 +290,7 @@ the values are needed for the entire runtime — so the guarantee is exactly
 ## Defaults and precedence
 
 Built-in entries — `*_CREDENTIALS`, `*_KEY`, `*_PASSWORD`, `*_SECRET`,
-`*_TOKEN` — carry `mask = true`. Default-on is right for a safety feature, and
+`*_TOKEN` — have `mask = true`. Default-on is right for a safety feature, and
 being *table entries* rather than code keeps them visible and overridable.
 
 An operator entry at a built-in's key **merges** with it: an omitted field
@@ -302,7 +302,7 @@ Disabling is possible, but only by saying `mask = false`.
 **Precedence** for one variable name:
 
 1. An **exact-name** key beats every glob.
-2. Among matching globs, **more literal (non-`*`) characters wins**.
+2. Among matching globs, **the one with more literal (non-`*`) characters takes precedence**.
 3. An unresolvable tie — two globs with the same literal count — is a **startup
    config error** naming both keys and the variable. (A caller that cannot fail
    resolves the tie to the union of the two rules, so the fallback is closed
@@ -316,9 +316,9 @@ connections included) joins a hosted session's table as an exact-name entry that
 and masks (`Table::merge_with_host`, fed from `SessionInference::credential_variables`).
 Those values are the host's, not the project's: the host has already read them to reach
 its models, and a session's commands have no need of them. The client's environment
-snapshot carries them whenever the creating shell had them — an exported key, or any
+snapshot contains them whenever the creating shell had them — an exported key, or any
 launcher run under `op run` — so without this every tool a session ran inherited the
-host's model credentials. Being an exact name, the entry outranks `*_KEY`; being a
+host's model credentials. Being an exact name, the entry takes precedence over `*_KEY`; being a
 built-in, a project entry at the same name inherits what it omits, so
 `ANTHROPIC_API_KEY = { strip = false }` opts a project that genuinely calls the provider
 back in and keeps the value masked. Boot names the variables it withheld, since a tool
@@ -354,7 +354,7 @@ look like a registered reference is `{ value = "op://…" }`, which is never
 sniffed.
 
 **Masked by construction.** A value that came out of a command joins the needle
-set automatically — the harness knows it is a secret, with no `*_KEY` glob
+set automatically — the harness treats it as a secret, with no `*_KEY` glob
 involved — and `mask = false` on such an entry does not disable it: masking
 stays on and the entry is named in a startup warning. Defaults are the opposite
 corner from a plain variable: `strip = false`, because injecting it is the point.
@@ -384,7 +384,7 @@ Injection, like strip, is **fixed at boot** with the spawn sites that hold it, s
 a reference added by a config edit is resolved (and masked) immediately but
 reaches children on the next session.
 
-A session's inference credential does **not** ride this resolver: the host holds
+A session's inference credential is **not** handled by this resolver: the host holds
 it ([transport.md](transport.md)). The selected roles' secrets are registered
 with the session masker by `Masker::absorb_secret` before the first append, under a
 marker that names the connection and source (`⟦work (WORK_KEY): elided by harness⟧`)

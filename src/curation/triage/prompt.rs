@@ -311,7 +311,7 @@ pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> Stri
         let n = raw.images.len();
         let noun = if n == 1 { "image" } else { "images" };
         view.push_str(&format!(
-            "images: {n} {noun} — not shown here; reaches the agent as it is\n"
+            "images: {n} {noun} — not shown here; the agent receives it as it is\n"
         ));
     }
     view.push_str(HEADER_MARGIN);
@@ -344,7 +344,7 @@ pub(super) fn bypassed_view(call: &ToolCall, shape: &str, framing: Framing) -> S
         Framing::ThirdPerson => "the agent",
     };
     format!(
-        "═══ result · {} ═══\nnot triaged — this result carries a {shape}, a value that \
+        "═══ result · {} ═══\nnot triaged — this result contains a {shape}, a value that \
          only works reproduced exactly, so its full output goes to {to} unchanged. It is not \
          one of the results you are deciding about below.",
         call.name

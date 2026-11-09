@@ -1,5 +1,5 @@
 //! The stream server's routes (docs/operating.md): one loopback URL per agent, a 404 for
-//! any path that names no stream, and a refusal for a request to a stream that is not an
+//! any path without a matching stream, and a refusal for a request to a stream that is not an
 //! upgrade. What a stream sends is tested over a host (`host/test/host/control/`).
 
 use super::*;
@@ -78,7 +78,7 @@ async fn a_path_that_names_no_stream_is_a_404() {
     );
 }
 
-/// A stream's path answers only an upgrade: a plain request is a 426.
+/// The server accepts only an upgrade at a stream's path: a plain request is a 426.
 #[tokio::test]
 async fn a_stream_path_without_an_upgrade_is_refused() {
     let streams = Streams::default();

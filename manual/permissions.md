@@ -1,8 +1,8 @@
 # Permissions
 
 You don’t have to choose between approving every step and letting an agent do anything.
-A project can allow routine work, ask a second model to review calls outside those
-permissions, and bring held calls to you. The place to describe that balance is your
+In a project, you can allow routine work, have a second model review calls outside those
+permissions, and have held calls brought to you. The place to describe that balance is your
 project’s `efference.toml`.
 <!-- src: src/agent/step/judge.rs::judge; src/config/policy.rs::classify, Verdict; src/curation/spotter.rs -->
 
@@ -191,7 +191,7 @@ clear without the spotter:
 <!-- src: src/config/policy/commands.rs::single_and_or_list, simple_command_tokens, is_safe_fd_dup, bash_tokens_in, classify_redirect_write, redirect_write_in, literal_heredoc -->
 
 Prefixes match whole words from the start, as written: `"git diff"` matches
-`git diff HEAD~1` but not `git -C dir diff`. The longest matching prefix decides, so a
+`git diff HEAD~1` but not `git -C dir diff`. The longest matching prefix takes precedence, so a
 narrow entry can carve an exception out of a broad one.
 <!-- src: src/config/policy/commands.rs::command_stance -->
 
@@ -290,7 +290,7 @@ without changing who decides.
 
 A session started in its own worktree works in a separate git checkout and branch, under
 `.efference/worktrees/`, so its edits don't land in the checkout you're using by default. It
-is not a permission boundary. It carries the project's settings, so it can still reach your
+is not a permission boundary. It has the project's settings, so it can still access your
 checkout by path, and it shares the repository, its hooks, and everything else on the
 machine.
 <!-- src: src/host/worktree.rs; src/config/policy/directories.rs::Directories::target, judged -->

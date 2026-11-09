@@ -19,10 +19,10 @@ document — the flags, the listener shape, the credential layer, and the gate �
 than shipping a second one. The gate's only listener-dependent decision is carried as
 a `Surface`, and it is not a set of guarded prefixes: the anonymous surface is
 enumerated, so every path outside it takes a credential whatever its name. What a
-surface settles is where the paths that name a bind's shape rather than its content
+surface determines is where the paths that identify a bind's shape rather than its content
 sit — the web client's own routes, at a session bind's root and also under
 `/sessions/<id>` on a host — and that `GET /sessions` on a session bind is the probe
-that has to reach its router so its `404` says "not a host".
+that must be sent to its router so its `404` indicates "not a host".
 `Surface::Host` is the interface the in-process host mounts its session routes behind, so
 the gate's decision is the same shape on both.
 
@@ -31,7 +31,7 @@ The bind is configured by the `[host]` table of the user configuration,
 `src/config/user_config/host.rs`), with a flag beside `efference --host` overriding each key alone —
 `--bind ""` turns a configured bind off for one launch. The table describes the machine's
 host rather than a shell, which is what lets a host started by a service manager, with no
-interactive environment, carry the same bind. A leading `~/` in a certificate path
+interactive environment, use the same bind. A leading `~/` in a certificate path
 expands against the home directory. A terminal-owned island ignores the table: it takes
 its address from `--bind` alone ([operating.md](operating.md)).
 
@@ -40,7 +40,7 @@ the same credential. A port (`--bind 8080`) is the loopback address with that po
 address is read as written (`127.0.0.1:8000`, `0.0.0.0:0` for a port the kernel picks),
 and a bare port can never widen exposure past the loopback rule below because it *is*
 loopback. With `--host` it is the machine's front door; on any other invocation it
-is the island's, and the island answers in the browser on that address rather than in the
+is the island's, and the island serves the browser on that address rather than opening the
 TUI ([operating.md](operating.md)).
 
 The bind is never set by a session's `config.toml`: that file is model-proposable and
@@ -153,12 +153,12 @@ The token is derived, not stored: `efference_`, then
 base64url(`id ‖ HMAC-SHA256(K, id)`), with `K` the device-token key above
 (`auth::DeviceTokens`). The gate checks the prefix and the length, then the tag in
 constant time, and only then looks the id up, so a malformed or forged token never
-reaches sqlite; whether the row exists is the answer.
+causes a sqlite lookup; whether the row exists is the answer.
 The database holds public ids and display text, and the credential store holds the only
 secret. There is no salt or IV: an HMAC under a secret key over a fresh random id is
 unforgeable as it stands, and a salt guards a low-entropy input against precomputation,
 which a random id is not. The fixed prefix lets secret scanners and redaction recognize
-a pasted token. The add route answers a script's token once; no listing carries one.
+a pasted token. The add route answers a script's token once; no listing contains one.
 
 Revoking a device deletes its row (`efference devices revoke`), which takes effect on its
 next request at every daemon under the user: they share the table, and the gate reads the
@@ -172,12 +172,12 @@ reads rather than a write each. An island bound to port 0 is a new origin each l
 so each such launch opened in a browser enrolls another browser device.
 
 A sign-in's label comes from the page (`web/src/ui/deviceLabel.ts`: "Safari on macOS")
-and a script's from the operator. Either reaches the operator's terminal, so the store
+and a script's from the operator. Either may be printed in the operator's terminal, so the store
 turns control and bidirectional-formatting characters into spaces, collapses whitespace,
 and cuts the label to 64 characters before writing it; an empty label is the kind's
 name.
 
-**A browser keeps its token in the page.** Every request that costs a credential
+**A browser keeps its token in the page.** Every request that requires a credential
 presents a device token as `Authorization: Bearer <token>`, the web client's included.
 The sign-in view collects one at `POST /pair/claim` (below), and the
 client keeps it in IndexedDB with an in-memory copy, read once at boot, that `apiFetch`
@@ -210,7 +210,7 @@ origin. Script running in the page can make the page's requests and read their a
 whatever form the credential takes; what the token in reach adds is that such script
 can carry it away.
 
-A bind to port 0 learns its port once listening, and minted links name that port.
+For a bind to port 0, the assigned port is available once listening, and minted links name that port.
 
 **The root is not in any environment.** It is read from the store into the binding
 process and nowhere else, so no spawn site has to strip it. A tool child that wants
@@ -227,7 +227,7 @@ A browser with no token signs in one of two ways, and both end at the same claim
 records a *pending sign-in* (`src/platform/sign_ins.rs`) and answers that page alone with a
 *claim secret* — 128 bits from the OS random source — a *short code*, and the seconds
 both live. The page shows the code and the command that approves it, and polls
-`POST /pair/claim` with the claim secret every second; the secret rides the body, never
+`POST /pair/claim` with the claim secret every second; the secret is sent in the body, never
 a path, since the request logger records paths (RFC 8628 polls the same way). At the
 host the operator runs `efference devices approve` and types the code at its prompt, or
 passes it — `efference devices approve KQ7-M4X` is the form an agent session runs when
@@ -246,7 +246,7 @@ the host, and the answer to lost scrollback. It is a `dev` verb rather than a `c
 tool because it mints credentials for the HTTP surface, and `control` is the set
 `efference mcp` exposes to whatever mounts it; the re-mint is expected to move into the
 TUI. A link is a pending sign-in approved before anything asked for it: `GET /auth/link`
-records one and puts its claim secret in the URL *fragment*, which never reaches server
+records one and puts its claim secret in the URL *fragment*, which is never in server
 or proxy logs, and the page claims it at the same endpoint, enrolling a device with
 `joined: link`. Its label is the one the page sends with the claim, since a link is
 minted before any page can name itself. The web client reads the fragment at bundle
@@ -263,7 +263,7 @@ requester-supplied text bound for the operator's terminal, cleaned as a device's
 **Every value a person sees or types is inert after use.** The short code authorizes
 nothing: it names a pending sign-in, which only the socket can approve, and once that
 sign-in is claimed or expired the code names nothing, so an `approve` line in shell
-history carries no authority. A code is six characters from an alphabet without the
+history has no authority. A code is six characters from an alphabet without the
 look-alikes `0 O 1 I L` and without `U` (`23456789ABCDEFGHJKMNPQRSTVWXYZ`), shown as
 `KQ7-M4X`, read in either case with whitespace and dashes ignored, and unique among
 the live pending sign-ins: a draw that collides is drawn again. The claim secret
@@ -364,9 +364,9 @@ the machine. It is the server half of the file viewer
 - **A trailing slash names nothing.** Whether a path is a file or a directory is
   the filesystem's answer about the path, so `/files/sub` and `/files/sub/` are
   one resource served one way, and so are `/files` and `/files/`. There is no
-  canonical spelling and no redirect to it: the listing carries its own `path`
+  canonical spelling and no redirect to it: the listing has its own `path`
   for a breadcrumb and the client composes absolute URLs, so nothing is resolved
-  relative to the document URL, which is the only thing a trailing slash buys a
+  relative to the document URL, which is the only thing a trailing slash affects for a
   static file server.
 - `GET /files/<dir>?recursive=1&depth=N` → the same shape walked below the
   directory, with entry `name`s spelled as paths relative to it — the path
@@ -383,8 +383,8 @@ alike. Working-directory reads with a device token go past `[paths]` entirely,
 including the injected deny that keeps a session out of every other session's log
 ([permissions.md](permissions.md)), so that fence holds while no session holds a token.
 A session cannot derive one — the root is in no environment (above) — and the web
-client keeps its token in the browser's origin storage rather than anywhere a session's
-environment carries. What remains is script injected into the web client, which is the
+client keeps its token in the browser's origin storage rather than anywhere in a session's
+environment. What remains is script injected into the web client, which is the
 CSP's boundary (above) and which can make the page's requests and read their answers
 whatever form the credential takes, and an operator pasting a token into a turn, which
 no fence stops.
@@ -392,7 +392,7 @@ no fence stops.
 **Content-type is never the file's own.** Every body is
 `text/plain; charset=utf-8`. Serving a repository's `.html` as `text/html` would be
 same-origin script execution on a page that holds a session credential for a channel
-that runs commands; `nosniff` rides every response already, so both halves are
+that runs commands; `nosniff` is already included in every response, so both halves are
 covered.
 
 **Revalidation, not caching.** The file answers set `Cache-Control: private,
@@ -414,9 +414,9 @@ concealment — `.git` and `target` stay readable by name. Concealing a path fro
 listing while still serving it by name is the shape deliberately not built: it would
 imply a protection that is not there. What binding therefore exposes, to
 whoever holds a device token, is every text file under the working directory —
-`.env` among them. Two things frame that. A token reaches every session on the
+`.env` among them. Two things frame that. A token grants access to every session on the
 machine and lasts until its device is revoked or the root rotates, so the exposure
-window is the token's rather than the session's; and the same token already reaches
+window is the token's rather than the session's; and the same token already grants access to
 `/v1`, where approving a gate or injecting a turn can have the
 *agent* read any file into the transcript, so a stolen credential does not become
 materially worse for this route existing. The widening that is real is narrower: an
@@ -425,9 +425,9 @@ still find the whole working directory readable through the browser, because tha
 fence is the agent's and this surface is not the agent's.
 
 An operator with literal secrets in-tree is the case to know about, and `--bind` is
-the opt-in that carries it. The alternatives were weighed and left unbuilt as
+the opt-in to that exposure. The alternatives were weighed and left unbuilt as
 complexity ahead of need (jbr, 2026-08-20): a dotfile deny catches `.env` while
-missing `secrets.yaml` and `*.pem`, and buys that partial cover at the cost of
+missing `secrets.yaml` and `*.pem`, and that partial cover also excludes
 `.github/`, `.envrc`, and `.claude/`; an operator-set exclusion would have to live in
 argv or env rather than `config.toml`, since a knob widening what `/files` serves is
 exactly the kind the session must not be able to propose.
@@ -452,20 +452,20 @@ it by name would imply a protection that is not there; this is the same posture
 stated above, now with git's answer instead of a hardcoded `target` /
 `node_modules` list that is wrong for every project that is not this one.
 
-Precedence is git's: the deepest `.gitignore` that matches decides, a `!`
-whitelist at that depth wins, the root's `.git/info/exclude` and the user's
+Precedence is git's: the deepest `.gitignore` that matches takes precedence, a `!`
+whitelist at that depth takes effect, the root's `.git/info/exclude` and the user's
 global ignore file participate, and `.git` itself is ignored unconditionally. A
 `Scope` is the matcher chain from the root down to one directory, built per
 request rather than cached, so an edited `.gitignore` takes effect on the next
 listing.
 
 The accepted consequence (jbr, 2026-08-21): the set is repository-aware, so
-outside a repository — or for a file git cannot see — discovery shows nothing.
+outside a repository — or for a file inaccessible to git — discovery shows nothing.
 The known case is a `.git/info/exclude`-ed directory of planning documents; it
 stays viewable through an `open ⤢` and undiscoverable in the tree. The
-re-include knob when that bites is an efference.toml setting — which files a
-project wants visible is a property of the project, not the human — and waits
-until it does.
+re-include knob if needed is an efference.toml setting — which files should be
+visible is a property of the project, not the human — and is deferred
+until then.
 
 ### Watching for changes
 

@@ -66,7 +66,7 @@ impl ReadImage {
                             (the header reports the source dimensions to address into, and echoes \
                             the region's origin so coordinates in the crop can be offset back to \
                             the full frame). Cropped before the long_edge/budget downscale. A \
-                            region extending past the frame is clamped and the header says so.",
+                            region extending past the frame is clamped and the header shows this.",
                         "properties": {
                             "x": { "type": "integer", "description": "Left edge, in source pixels." },
                             "y": { "type": "integer", "description": "Top edge, in source pixels." },
@@ -159,7 +159,7 @@ impl ReadImage {
                 Bound::TokenBudget => format!(
                     "downscaled {scale:.2}×{from} by the visual-token budget \
                      ({HIGH_RES_MAX_TOKENS} tokens); this is the maximum resolution for \
-                     this rectangle, no long_edge beats the cap — {hint}"
+                     this rectangle, increasing long_edge cannot exceed the cap — {hint}"
                 ),
                 Bound::EdgeCeiling => format!(
                     "downscaled {scale:.2}×{from} by the {HIGH_RES_MAX_EDGE}-px long_edge \

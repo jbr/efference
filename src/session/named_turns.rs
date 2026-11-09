@@ -46,7 +46,7 @@ impl NotDelivered {
                 question,
                 handle: None,
             } => format!(
-                "not delivered: {id} is asking {question:?} — reply with reply_to naming the \
+                "not delivered: {id} is asking {question:?} — reply with reply_to containing the \
                  question's seq from its status"
             ),
             Self::Stale { handle, referenced } => {
@@ -82,7 +82,7 @@ impl NotDelivered {
                 };
                 format!(
                     "not delivered: {reference} {what}, not a question; reply_to takes the seq \
-                     of a question {id} asked, as its status gives it"
+                     of a question {id} asked, as shown in its status"
                 )
             }
             Self::Blank => {

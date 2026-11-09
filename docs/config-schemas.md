@@ -29,7 +29,7 @@ deserializer accepts (`RawContextValue`, `RawPathValue`).
   its `#[serde(default)]` produces.
 - A numeric `format` (`uint64`, `double`) is a Rust width rather than a format either editor
   checks, and is dropped.
-- A derived enum whose variants carry docs comes out as a `oneOf` of `const`s. It becomes a
+- A derived enum whose variants have docs comes out as a `oneOf` of `const`s. It becomes a
   plain `enum`, with the variant docs in `x-taplo.docs.enumValues`, matched by index. As a
   `oneOf`, a bad value reads as one failure per variant in Tombi and Taplo prints every
   variant's doc on hover.
@@ -38,7 +38,7 @@ A closed vocabulary the config holds as a string takes its `enum` from the table
 reads, through `#[schemars(schema_with)]` and `config_schemas::documented_enum`: `provider`
 from `Provider::NAMED`, `dialect` from `WireDialect::NAMED`, `builtin` from the guide's
 `DOCUMENTS`. The same tables produce the parser's "valid values are" error, so the schema, the
-parser, and its error cannot disagree. `output-cap-field`'s two spellings sit beside the
+parser, and its error remain consistent. `output-cap-field`'s two spellings sit beside the
 `match` in `RequestOptions::new`.
 
 What the schema does not express stays the parser's alone: mutually exclusive keys (`provider`
@@ -47,19 +47,19 @@ a `sort` spec's grammar.
 
 ## Hover text
 
-On a type that reaches a schema, a `///` comment is published: schemars copies it into
+On a type included in a schema, a `///` comment is published: schemars copies it into
 `description`, and it is what someone editing the file reads on hover. It says what the key
 means, its valid values, and its default, in terms of the file rather than the code. Notes for
 implementers on the same items are `//` comments (process/comments.md).
 
-Two editor behaviors decide where a description goes:
+Two editor behaviors determine where a description goes:
 
 - **Taplo ignores every keyword beside a `$ref`.** A field whose type is a struct (`[bash]`,
-  `[host]`) or a documented enum (`images`, `auth`) carries no `///`; its type's doc is the
+  `[host]`) or a documented enum (`images`, `auth`) has no `///`; its type's doc is the
   hover text, in both editors.
 - **Taplo prints the description of every `anyOf` arm, one after another.** A value spelled
-  `true` or a table (`[context]`, `[paths]`, `[env]` entries) carries its description on the
-  union, and its table arm carries none.
+  `true` or a table (`[context]`, `[paths]`, `[env]` entries) has its description on the
+  union, and its table arm has none.
 
 Tombi reads no per-value docs, so where each value's meaning matters (`[commands]` stances), the
 value's description states it in prose as well.
@@ -91,7 +91,7 @@ A session's snapshot copies the project file verbatim, line included. Both confi
 a session's config edits (`ConfigFile::apply`) and setup's render — pass their output through
 `config_schemas::keep_directives_first`: toml_edit keeps a leading comment as decor on the first
 item, so an edit that renders a new item ahead of it, such as a top-level `tools` before the
-first table, would otherwise carry the line down the file, where editors no longer read it.
+first table, would otherwise put the line lower in the file, where editors no longer read it.
 
 ## Publication
 

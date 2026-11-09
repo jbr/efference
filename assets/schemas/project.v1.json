@@ -159,7 +159,7 @@
                 "The host that holds sessions, the web interface, reaching it over Tailscale, signing browsers in, and keeping the host running as a service.",
                 "Reference for every `efference.toml` key: scope, tools, [commands], [paths], [context], [env], [bash], [transport], [mcp.servers].",
                 "Working with files: batched reads, the no-clobber write, and the anchor-based edit pipeline (edit / find_anchor / retarget_edit / undo_edit).",
-                "Read before supervising agents you create with the agents__* tools: the verbs, what each status asks of you, gates and decide, questions, reading a transcript, and what an agent sees of your decisions.",
+                "Read before supervising agents you create with the agents__* tools: the verbs, what to do for each status, gates and decide, questions, reading a transcript, and what an agent sees of your decisions.",
                 "Read before your first html-artifact fence: showing a chart, diagram or small page in the web transcript, its sandbox and sizing, and the stylesheet and variables every artifact gets."
               ]
             }

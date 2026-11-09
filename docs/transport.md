@@ -40,14 +40,14 @@ once the block closes. An empty accumulator (no fragments received) produces
 `{}`.
 
 `complete()` returns one `Completion`. The loop, projection, fork, and caching
-see no difference from a non-streaming call — the SSE complexity is fully
+are no different from a non-streaming call — the SSE complexity is fully
 contained inside `api.rs`.
 
 **Three invariants.**
 
 *Loud-on-unknown.* An unrecognized event type, block type, or delta type is a
 hard error, never a silent drop. The API surface is explicit about what the
-assembler knows how to handle; anything outside that set stops assembly
+assembler handles; anything outside that set stops assembly
 immediately and loudly rather than silently losing data — the refusal becomes
 the completion's `upstream_failure` (below), so it survives to the log rather
 than only to a transient terminal line.
@@ -65,13 +65,13 @@ projects. A **finalized** stream is marked the same way in one further case: whe
 its accumulated `input_json_delta` fragments do not parse as JSON. Such a call
 cannot be dispatched however the stream ended (a foreign model sends
 `message_stop` after fragments cut mid-string), so it becomes the same
-record-only partial, keeping the raw fragment as a string, and the caller's
-abort-retry budget decides what happens next. Returning a parse error instead
+record-only partial, keeping the raw fragment as a string, and what happens next depends on the caller's
+abort-retry budget. Returning a parse error instead
 spent none of that budget and put a serde message where the model could read it.
 The dividing line from the max-tokens case is deliberate: a
 cap-terminated response is *finalized* — it carries a `stop_reason` and usage
 and the loop rightly commits it — where an unfinalized stream carries neither.
-Finalized → commit; unfinalized → record-but-retry. One exception rides the
+Finalized → commit; unfinalized → record-but-retry. One exception depends on the
 stop reason alone: a `tool_use` block in a `max_tokens` completion was cut
 mid-arguments (a model stops at `tool_use` after a call it finished, never at
 the cap), and whether the fragments parse is the upstream's doing: a cap-cut
@@ -134,8 +134,8 @@ so a signature always returns to the model that minted it.
 
 The `thinking` **request** field rides on `tool_choice` and the model's own
 metadata (`Thinking::for_request` over `ModelCapabilities::thinking`, an
-`api::ThinkingSupport`). No model id is consulted. The metadata answers two
-questions: whether the model takes `{type: adaptive}`, and how a request says
+`api::ThinkingSupport`). No model id is consulted. The metadata specifies
+whether the model takes `{type: adaptive}` and how a request specifies
 thinking off (`ThinkingOff`):
 
 - **Anthropic** (`GET /v1/models/{id}`, `capabilities.thinking.types`):
@@ -172,8 +172,8 @@ OpenRouter, a client built `without_thinking` sends OpenRouter's own
 
 Some models refuse a forced `tool_choice` outright, whatever the thinking (Sonnet
 5.5: `type "tool" and "any" are not supported for this model`), and the metadata
-does not say which. `Client::complete` learns it by retrying: a forced request
-answered with a request rejection — any 4xx except 401, 403, 408, and 429, the
+does not indicate which. `Client::complete` determines this by retrying: a forced request
+that receives a request rejection — any 4xx except 401, 403, 408, and 429, the
 statuses about the caller rather than the content (`is_request_rejection`) — is
 sent once more as `auto`, with a final user line naming the
 tool (`forced_choice_instruction`) and thinking off, as the forced request had it.
@@ -186,11 +186,11 @@ skips the tool fails the way a malformed forced answer does. The switch writes o
 fresh cache entry, since `tool_choice` is part of the cached envelope.
 
 Image input is learned the same way (`api/client/images.rs`). Where a model's
-metadata says nothing about images, `supports_image_input` reads `true`: a model
+metadata has no information about images, `supports_image_input` reads `true`: a model
 sent an image it cannot read answers with a refusal that can be recovered from,
 while a gate left closed on a capable model gives no signal. A request rejection on
 a request whose
-tool results carry image blocks is sent once more with each result's images
+tool results contain image blocks is sent once more with each result's images
 replaced by a one-line placeholder. If that succeeds, the client and its clones
 withhold images from every later request, the agent loop closes the tool layer's
 image gate ([tools.md](tools.md)) and appends `Payload::ImagesRefused` with the
@@ -234,15 +234,15 @@ sends the bytes it always did (`request_envelope_matches_expected_wire_bytes`
 is unmoved; `with_effort_envelope_matches_expected_wire_bytes` pins the other
 side, with `output_config` sitting between `thinking` and `temperature`).
 
-**The level is a string end to end.** The flag, the config key, and the wire
-all carry the configured spelling verbatim — there is no local enum of levels.
+**The level is a string end to end.** The flag and the config key
+use the configured spelling verbatim, as does the wire — there is no local enum of levels.
 The vocabulary is the model's own metadata: OpenRouter's model entry
-(`GET /api/v1/model/{author}/{slug}`, singular) carries a `reasoning` block
+(`GET /api/v1/model/{author}/{slug}`, singular) contains a `reasoning` block
 with `supported_efforts` and `default_effort`, fetched alongside the endpoints
 listing at boot and parsed into `ModelCapabilities::supported_efforts` /
 `default_effort` (an absent block, absent field, or empty list all normalize to
-no declared levels). A level the metadata invents is validated against that
-list and sent as spelled, not rejected by a local list that cannot know it.
+no declared levels). A level declared by the metadata is validated against that
+list and sent as spelled, not rejected by a local list that cannot include every such level.
 
 **Boot validation, per source** (`ModelCapabilities::validates_efforts` →
 `ModelCapabilities::check_effort`, called from boot). A level is checked only
@@ -263,8 +263,8 @@ provider's own 400 on the first turn.
 The boot line prints `effort: {level}` for a checked level, `effort: {level} ·
 unchecked, the model's metadata does not bound it` for one sent without a check —
 the case where a provider may drop it silently, which nothing else would show — and
-`effort: unset · provider default {default}` when the metadata names a default,
-which answers what an unset knob will do without a probe.
+`effort: unset · provider default {default}` when the metadata specifies a default,
+which indicates what an unset knob will do without a probe.
 
 **The one coupling between the axes**: the levels in `EFFORTS_REQUIRING_THINKING`
 (`xhigh`, `max`) require thinking on, and the pairing with thinking off is a 400
@@ -275,7 +275,7 @@ so that combination is refused at boot (`api::check_effort_thinking`, fed by
 provider error on the first turn. A level outside those two spellings has no
 known coupling and passes through.
 
-**Which envelopes carry it.** The effort rides the agent `Client`, so every
+**Which envelopes carry it.** The effort is stored on the agent `Client`, so every
 request that client makes carries it — the main turn and the triage, which is
 the shared envelope ([triage.md](triage.md)): if one carried it
 and the other didn't, the triage would stop reading the agent lineage's cache — and
@@ -337,7 +337,7 @@ advertise `alt-svc: h3`, so HTTP/3 is not a live option. HTTP/2 is the path.
 
 ## One client per process (`src/platform/http.rs`)
 
-Every outbound request that speaks TCP draws the same `trillium_client::Client`:
+Every outbound request over TCP uses the same `trillium_client::Client`:
 the agent's turns and keepalive, the provider metadata and generation-cost GETs,
 MCP over HTTP, the OAuth dance, web push, and the dev-proxy. The two Unix-socket
 callers (the control client, the host's per-session proxy) build their own — a
@@ -367,11 +367,11 @@ could be handed a connection whose reactor is gone.
 
 The `User-Agent` is a default header on the shared client — `efference/<version>
 trillium-client/<version>`, this harness's product token first — so every host
-sees what software is calling it. Nothing else is a default.
+receives the identity of the calling software. Nothing else is a default.
 
 Everything that identifies *who* is asking is set per request by a caller that
 knows the destination: the credential, the sticky-routing key, and the
-attribution headers below. A default header would ride every clone to every host.
+attribution headers below. A default header would be sent with every clone to every host.
 
 **OpenRouter app attribution** (`Provider::attribution`). OpenRouter attributes
 usage by app rather than by `User-Agent`, keyed on `HTTP-Referer`; the other two
@@ -414,7 +414,7 @@ error guide names as retryable (429 rate limits and `slow_down`, 500, 503
 `server_is_overloaded`, each with `Retry-After` when present); the guide's
 non-retryable 429s — exhausted credit, spend and usage limits — are the body
 veto in `api/failure.rs` (below), and Codex CLI retries all 5xx the same way.
-Both Responses profiles ride the same handler: the bearer header, the account
+Both Responses profiles use the same handler: the bearer header, the account
 header, the `originator` attribution, and the absence of `anthropic-version` are
 pinned over a mock upstream in `src/inference/api/test/codex.rs`, as are a 400 open returning
 its body once, a 503 open retried and queued, and the ceiling cutting a
@@ -422,9 +422,9 @@ Responses stream mid-text.
 
 The retry handler covers failures while opening a response, before an SSE stream
 has yielded any deltas. When it gives up, `Client::complete` returns an
-`OpenError` carrying its class (`api/failure.rs`): no response at all (a refused
+`OpenError` with its class (`api/failure.rs`): no response at all (a refused
 or timed-out connection) and a retryable status are **transient**, unless the
-body names a terminal condition; any other status is a rejection of the request
+body identifies a terminal condition; any other status is a rejection of the request
 itself and is **terminal**. A transient one joins the loop's schedule below,
 exactly as an aborted stream does. A connection that has returned 200 and then dies
 mid-stream is not resumed — it may already have published live deltas — but it
@@ -444,7 +444,7 @@ condition and the alternative on exhaustion is worse than waiting: idling on a
 stall needs an operator to continue it, and an autonomous run has none. The cap
 is what lets the count be large without the tail becoming a hang — uncapped
 doubling over twelve attempts would sleep for over an hour. Because a marked entry projects to nothing, every retry re-sends
-byte-identical messages and rides the still-warm cached prefix. On exhaustion
+byte-identical messages and reuses the still-warm cached prefix. On exhaustion
 the loop returns to idle, leaving the failure in two places: the record-only log
 entries (durable) and the `stall` state topic (below), which carries the attempt
 count and the upstream's own words.
@@ -497,13 +497,13 @@ exhaustion (`insufficient_quota`, `usage_limit_reached`, `billing_error`),
 rejected requests (`invalid_request_error`, `context_length_exceeded`),
 credentials and permissions, and policy refusals are **terminal**; overload, rate
 limits, server errors, and every name the table has not met are **transient**.
-A terminal name in either field wins over a transient one in the other: z.ai's
-no-balance 429 carries `type: rate_limit_error` beside `code: "1113"`, and is
-terminal by its code. The class rides the `Completion` beside `upstream_failure`. A terminal failure
+A terminal name in either field takes precedence over a transient one in the other: z.ai's
+no-balance 429 has `type: rate_limit_error` beside `code: "1113"`, and is
+terminal by its code. The class is stored on the `Completion` beside `upstream_failure`. A terminal failure
 takes the record-only append like any abort and then stalls at once with
 `StallReason::UpstreamRefused`, carrying the provider's words — the platform quota
 error that once ran all twelve attempts is answered once. The same table gates
-the transport's own HTTP retry: a retryable status whose body names a terminal
+the transport's own HTTP retry: a retryable status whose body identifies a terminal
 condition (the Codex backend's 429 with `usage_limit_reached` and a reset time)
 is not retried, since the status handler stashes the body before the retry
 handler decides. An unknown name defaults to transient deliberately, so a code
@@ -519,11 +519,11 @@ failure, above — triage does not give the agent anything: it **holds** the
 batch's results, unappended, and stalls with `StallReason::TriageUnavailable`
 while the loop keeps running, until a continue retries it or an interrupt ends
 the turn ([triage.md](triage.md)). Withholding the
-results as a hard error instead is expensive in a way the turn path is not: a withheld result asks the agent to re-issue a call whose side effects
-already stand. In a controlled run a withheld conformance `PASS` was re-earned by
+results as a hard error instead is expensive in a way the turn path is not: an agent
+without its results re-issues a call whose side effects already stand. In a controlled run a withheld conformance `PASS` was re-earned by
 re-running the suite against a still-live server whose counters the invisible
 first run had moved, turning the pass into a spurious failure; in another the
-agent read the error as its own tool failing and said so. The asides that ride the
+agent read the error as its own tool failing and said so. The asides that use the
 same triage machinery — the idle triage and the title — keep a short budget (three
 attempts, one fork) instead, because each has a harmless fallback and the loop is
 blocked on it meanwhile.
@@ -540,8 +540,8 @@ only reports a retry already in flight.
 So the read loop in `Client::complete` carries an absolute deadline
 (`tokio::time::timeout_at` on each `events.next()`). Exceeding it stops the read
 and marks the stream through the same `Assembler::fail` a mid-stream death takes:
-the partial is kept as a record-only entry, the reason rides on the completion's
-`upstream_failure`, and the caller's abort-retry budget decides what happens next
+the partial is kept as a record-only entry, the reason is stored on the completion's
+`upstream_failure`, and what happens next depends on the caller's abort-retry budget
 — which means it is retried on the schedule above, publishes `upstream_retry`
 while it waits, and lands on `stall` if the budget runs out. It is never a silent
 kill. Because `complete` is the one read loop, **both** stream surfaces are
@@ -609,7 +609,7 @@ from, and this one path keeps evidence with the mark. The mark itself is
   than whatever the edge attached, and the values still pass the `[env]` masker
   at append like every other stored string ([env.md](env.md)).
 - **the `message_start` body as received**, kept whole rather than reduced to
-  the fields the assembler models. OpenRouter's Messages skin carries a
+  the fields the assembler models. OpenRouter's Messages skin includes a
   top-level `provider` in the `message` object naming the serving leg
   (verified live 2026-08-28: `"provider":"Google"`), so the captured body
   identifies the leg directly; keeping it whole means any other unmodeled
@@ -625,20 +625,20 @@ so the cap guards the invariant rather than bounding this path's capture.
 
 The capture reads the executed conn in `Client::complete`, not
 `UpstreamStatusHandler::after_response`: an empty stream is a 200, the handler
-takes its success early-return, and at that point nothing yet knows the stream
-will arrive empty. Delivery does use the existing flow — the marked completion is
+takes its success early-return, and at that point the stream
+has not yet been found empty. Delivery does use the existing flow — the marked completion is
 appended by the retry loop as the record-only entry it already was.
 
 A record with no diagnostics serializes as a bare string, which is what every log
 before this wrote, and either spelling deserializes — so old entries still parse
-and the ordinary failure paths write unchanged bytes. None of this reaches the
+and the ordinary failure paths write unchanged bytes. None of this is sent on the
 wire: an entry `excluded` for its upstream's failure projects to nothing
 ([log-and-projection.md](log-and-projection.md)), so the shape cannot move the
 cached prefix.
 
 An exhausted *open* failure (the retry handler gave up) is recorded before it is
-judged: the loop appends an empty record-only assistant entry carrying the error
-body — Anthropic's 4xx bodies name exactly what was malformed, and the log is
+judged: the loop appends an empty record-only assistant entry containing the error
+body — Anthropic's 4xx bodies identify exactly what was malformed, and the log is
 durable where the host's terminal output is not. A transient one then takes the schedule like an
 aborted stream. A terminal one fails the current trajectory rather than the
 daemon: it sets `stall` with `reason: "request_failed"` carrying that body as
@@ -666,7 +666,7 @@ is ephemeral, while durable assistant failure records retain the audit trail.
 While either loop is waiting out a failed attempt, that wait is its own
 level-triggered state topic, `upstream_retry` on `GET /state`
 (docs/control-api.md). It names the **surface** (`turn` or `triage`), the attempt
-that just failed, the budget it is spending, the absolute instant the next
+that just failed, the budget being used, the absolute instant the next
 attempt fires, a lead line — *attempt 2 of 12 failed upstream, retrying* — and the
 upstream's own error text as `detail`. Both retry loops publish it (`agent.rs`
 for a turn, `triage/request.rs` for a triage, on the agent's cell even when
@@ -681,10 +681,10 @@ topic that outlives the failure. Without it, a generation on its third
 attempt is indistinguishable from one that is taking a while, and an operator
 watching a live autonomous run cannot tell "the provider is flaky and the
 harness is absorbing it" from "the model is thinking hard" — which call for
-different responses. The retry cell carries its own change signal rather than
-relying on the daemon's wake-on-append fallback: a pause has no append to ride
-on and lasts up to thirty seconds, so a late topic would be wrong for the entire
-time the state is true. Rendering it is the clients' half; the API carries it
+different responses. The retry cell has its own change signal rather than
+relying on the daemon's wake-on-append fallback: a pause has no append to trigger
+that fallback and lasts up to thirty seconds, so a late topic would be wrong for the entire
+time the state is true. Rendering it is the clients' half; the API provides it
 either way.
 
 ### A transient failure's record is not transient
@@ -711,7 +711,7 @@ invalidated. `api::failure::rejects_credential` decides, for a 401 or 403, from 
 body: the provider named an expiry (`FailureClass::CredentialExpired` — the Codex
 backend's `token_expired`), named one of the terminal names about the credential
 itself (`invalid_api_key`, `authentication_error`, `permission_error`), or named
-nothing the table knows (an unrecognized code, a gateway's HTML page). A name for
+nothing in the table (an unrecognized code, a gateway's HTML page). A name for
 something else — a quota, a spend limit, a missing model — is not a refusal of the
 credential and reads nothing. A connection with no `auth` line sends no credential
 and has nothing to re-read.
@@ -726,7 +726,7 @@ through, so replacing it at the connection repairs the sessions already running.
 On such a rejection `Client::complete` re-reads the credential from its source
 and retries the attempt — the same shape as the window backstop above, and once
 per call, since a source that yields a working token yields it the first time. A
-source that still holds the dead value costs that one read, and the stall carries
+source that still holds the dead value requires that one read, and the stall contains
 the provider's words. Re-authorizing in `efference setup`, which rewrites the same
 stored item, is therefore picked up by a running host on the next rejected call.
 The caller passes the value *it* sent, so several sessions failing on one token
@@ -744,7 +744,7 @@ Not every kind has a source to re-read, and this is where the auth kinds differ
 | `env` | nothing to re-read — the value comes from the environment captured when the host started, which no outside change reaches, so a re-read returns the same bytes forever |
 
 An outcome that leaves the same value on the wire (`Unchanged`, `NoSource`, a
-failed read) joins the upstream error rather than retrying, so the stall says
+failed read) joins the upstream error rather than retrying, so the stall shows
 what was tried. A replacement is masked before it becomes reachable, in every
 session that was protected from the value it replaces (docs/secrets.md), and
 as the bare secret, without its provider's auth prefix (`Bearer `), the form the
@@ -752,7 +752,7 @@ first absorb takes; the cell is built with its `Provider` for that. The
 maskers are held weakly, since a session's masker dies with the session while the
 cell lives as long as the host.
 
-The account id is not re-read: it rides `extra_headers` and is stable across a
+The account id is not re-read: it is stored in `extra_headers` and is stable across a
 refresh of the same login.
 
 **Renewing ahead of expiry.** A source that states when its value expires gives
@@ -801,7 +801,7 @@ mapping table. A request's `Ended` stage entry records the provider's word
 the neutral reason (`Completion::hit_output_cap`). Places where the Messages shape
 is still the internal one are listed in backlog/inbox/no-native-dialect.md.
 
-The recorded log carries its dialect in every assistant entry
+The recorded log has its dialect in every assistant entry
 (`AssistantOutput::dialect`), and each encoder skips the other dialect's assistant
 turns rather than failing. That skip is harmless while a live session is pinned to one
 provider and silent loss when a recorded session is rendered or continued under the
@@ -819,7 +819,7 @@ selected for a replay is a separate rendering choice, not a live session change.
 list: the preamble as a leading developer message (a breakpoint-eligible carrier,
 which top-level `instructions` is not), user prose as `input_text` parts, each tool
 result as a `function_call_output` keyed by `call_id` (bare string, or parts when
-images ride along as `data:` URLs), and every logged Responses assistant item
+images are included as `data:` URLs), and every logged Responses assistant item
 replayed as returned — `reasoning` with its `encrypted_content`, `message` with its
 `phase`, `function_call` with its exact `arguments` string (the one exception is a
 masked secret, [env.md](env.md): the logged string is then a re-serialization
@@ -841,12 +841,12 @@ index: `output_text.delta` → prose, `reasoning_summary_text.delta` /
 `reasoning_text.delta` → thinking, `output_item.added` for a `function_call` →
 tool start (its `call_id`, the join key), `function_call_arguments.delta` → tool
 input. The committed turn is the terminal event's `response.output`
-(`response.completed` / `response.incomplete`), which carries every item whole —
+(`response.completed` / `response.incomplete`), which contains every item whole —
 an `output_item.added` reasoning item's `encrypted_content` may be partial, the
 terminal copy is complete. `output_item.done` items are held in case a terminal
 event never arrives. Every other event type is ignored under one rule: no
 semantic output depends on an intermediate event, because the terminal `output`
-carries all of it. `error` ends assembly; a stream with no terminal event is a
+contains all of it. `error` ends assembly; a stream with no terminal event is a
 record-only partial, exactly as a Messages stream with no `message_stop`.
 
 Items are lifted into the log's `ResponsesOutputItem` vocabulary
@@ -919,9 +919,9 @@ independently metered `x-<limit>-*` header families. The ordinary allowance is
 `x-codex-*`; a separately metered model such as Codex Spark has its own family,
 optional `x-<limit>-limit-name`, and may be identified by
 `x-codex-active-limit` when exhausted. `api/plan.rs` discovers every family from
-its primary-percent header and reads it off every response the status handler
-sees — a 429 included — into a cell the daemon publishes as `usage.plan`
-(control-api.md). Limit ids normalize hyphens to underscores; each limit carries
+its primary-percent header and reads it off every response processed by the status handler
+— a 429 included — into a cell the daemon publishes as `usage.plan`
+(control-api.md). Limit ids normalize hyphens to underscores; each limit has
 its primary and secondary window's used percentage, length, and reset as
 absolute millis. A response carrying none of the headers retains the previous
 snapshot; one carrying any replaces it whole. The snapshot is operational state,
@@ -945,7 +945,7 @@ replays on every request, and the agent loop clears through `Client::begin_turn`
 at each trajectory start and each queued user turn delivered mid-task. The triage shares the
 agent's client and so the token; the spotter's client is built
 `without_turn_routing`, since each of its requests is its own conversation. Every
-Codex request also names its model in `x-codex-routing-hint` (`model=<slug>`), as
+Codex request also specifies its model in `x-codex-routing-hint` (`model=<slug>`), as
 Codex CLI does. Both headers are transport-only and never enter the log. The
 rejection of `prompt_cache_breakpoint` above is observed on gpt-5.6-luna; OpenAI's
 guide lists explicit breakpoints as a GPT-5.6-family feature on the platform, so it
@@ -970,9 +970,9 @@ minimum (`Client::prime`, Responses with an implicit policy only). The triage's 
 is that message followed by the current step's, so it extends a triage-lineage request
 that ended where its history does, and reads everything before the current calls from
 cache. A primer the upstream refuses, or a lineage with no implicit cache, resolves
-unprimed and the triage goes out as before. Primer spend records under its own
-`triage_primer` usage origin, with one log line per triage carrying the send time, the
-serial residue the triage path paid, and whether a triage followed. The primer forces
+unprimed and the triage goes out as before. Primer usage is recorded under its own
+`triage_primer` usage origin, with one log line per triage containing the send time, the
+serial residue on the triage path, and whether a triage followed. The primer forces
 `retain` rather than the turn's `auto`: the backend keys the resume on
 `tool_choice`, so the plant must match the triage's head, not the main request it
 replays. It tolerates the truncated output: a 16-token budget at a call-eliciting
@@ -982,9 +982,9 @@ counts as nothing planted. The request's stage is accordingly `ended` with the
 provider's finish word (`incomplete:max_output_tokens`); `failed` is kept for a primer
 that got no response or no accounted input. The primer's request is stored for the triage
 keepalive, which re-sends it (the last section of this file). The
-spotter model must be one its connection's metadata source knows: with no
+spotter model must be one listed by its connection's metadata source: with no
 `[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
-(on Anthropic, the newest active `haiku`-line model in the held listing,
+(on Anthropic, the newest active `haiku`-line model in the held listing, [model-catalog.md](model-catalog.md); else `Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on Anthropic and its `anthropic/` slug on OpenRouter), and an explicit `--spotter-model` passes its own provider's check.
 [model-catalog.md](model-catalog.md); else `Provider::default_spotter_model`,
 gpt-5.6-luna here, claude-haiku-4-5 on Anthropic and its `anthropic/` slug on
 OpenRouter), and an explicit `--spotter-model` passes its own provider's
@@ -1016,7 +1016,7 @@ server. The encoder is `api/completions.rs`, the assembler
 `api/completions/assembler.rs`, and the stored turn `log/completions.rs`.
 
 **Reasoning is only received.** The harness never generates reasoning; it stores it,
-sends it back, and shows it. Vendors disagree on where it arrives:
+sends it back, and shows it. Vendors put it in different locations:
 `reasoning_content` (DeepSeek), `reasoning` and `reasoning_details` (OpenRouter), and
 `thinking` parts inside `content` (Mistral). So the dialect models none of them. The
 assistant message is stored as the stream assembled it, every key under its arrival
@@ -1025,7 +1025,7 @@ replayed under the same keys. Replaying verbatim keeps signature-bearing reasoni
 valid across turns: Gemini's thought signature through OpenRouter arrives as a
 `reasoning.encrypted` detail
 (journal/2026-08-28-gemini-image-thought-signature.md). Display reads the opaque keys
-by a heuristic that never reaches the wire.
+by a heuristic that is never used on the wire.
 
 **Stream assembly is one merge rule** over each chunk's `choices[0].delta`
 (`assembler::merge`):
@@ -1052,7 +1052,7 @@ Each clause was measured on 2026-10-09 against captures now kept as test fixture
   values.
 - OpenRouter/Gemini sends `reasoning.text` and then the `reasoning.encrypted`
   signature detail at the **same** `index`, so merging on `index` alone would fold
-  the signature into the text. Its later argument fragments carry `index` and no
+  the signature into the text. Its later argument fragments contain `index` and no
   `type`.
 - Mistral sends reasoning as `content` parts with no `index`
   (`{"type":"thinking","thinking":[{"type":"text","text":…}]}`, ending
@@ -1090,7 +1090,7 @@ when it is sent), `stream: true`, and `stream_options.include_usage`.
 Two connection settings cover what vendors spell differently (`api::RequestOptions`,
 `api/request_options.rs`). `output-cap-field` names the cap's key, `max_tokens` by
 default or `max_completion_tokens` (OpenAI's own endpoint); the value is still the
-boot reservation's, which a fixed table could not carry. `body` is a table of fixed
+boot reservation's, which a fixed table could not provide. `body` is a table of fixed
 fields merged into every request after every encoder-written key
 (`parallel_tool_calls`, `safe_prompt`). It may not set a key the encoder writes, so
 it cannot replace `messages` or `tools`. That includes `reasoning_effort`, because the
@@ -1125,19 +1125,19 @@ model. All derive from one declared identity: `log::Provider`, an enum
 (`anthropic`, `openrouter`, `openai`, `openai-codex`, `typesafe`, and `custom`)
 grown in code as providers are added; the log defines it because a boot records it, and
 what each variant does is `src/inference/api/provider.rs`. Identity is an input, never inferred from URL
-shape (sniffing fails for proxies and custom URLs). `api::Endpoint` carries the
+shape (sniffing fails for proxies and custom URLs). `api::Endpoint` has the
 derived `url` + `auth_header` + `auth_value` alongside the provider; its `Debug`
 redacts the credential and extra headers.
 
 ### A provider the operator declares (`Provider::Custom`)
 
 `Provider::Custom(WireDialect)` is an endpoint that speaks a dialect this crate
-already has an encoder and an assembler for, at a URL this enum does not know.
+already has an encoder and an assembler for, at a URL not specified by this enum.
 
 A connection either **names** a provider or **describes** one, and the two spellings
 are exclusive — exactly one is required. There is deliberately no third spelling
-naming the describing case: a `provider = "custom"` line would carry nothing the
-`dialect` and `base-url` beside it do not already say, and `dialect` is the
+naming the describing case: a `provider = "custom"` line would contain no information beyond what the
+`dialect` and `base-url` beside it already specify, and `dialect` is the
 discriminator on its own.
 
 ```toml
@@ -1149,8 +1149,8 @@ auth = { kind = "env", key = "META_API_KEY" }
 
 Both halves are required together, because neither has a default that would be safe
 to invent; `dialect` or `base-url` beside a named `provider` is an error, since that
-provider derives its own dialect and owns its URLs, so either key could only agree
-redundantly or disagree.
+provider derives its own dialect and owns its URLs, so either key could only be
+redundant or inconsistent.
 
 The dialect is the variant's payload because it is the one fact no default can
 supply. Everything else is either owned data on `Endpoint` — the turn URL, the auth
@@ -1178,31 +1178,31 @@ image-placement or breakpoint-placement workaround: each is a fact about one
 vendor's deployment, so copying a named provider's set onto an arbitrary endpoint
 would send it another vendor's workarounds, and an unrecognized header may be
 rejected rather than ignored. So a custom endpoint is sent `authorization: Bearer`
-and nothing else beyond the dialect's own headers; `prompt_cache_key` rides only on
+and nothing else beyond the dialect's own headers; `prompt_cache_key` is sent only on
 Responses, where it is a documented field, because an unrecognized top-level key is
 a 400 on Messages. Temperature maps to 0..1, the range both scales accept.
 
 Two consequences of not knowing the catalog. `Provider::default_spotter_model` is
-`None`, so resolution asks for `[defaults].spotter` with an issue rather than
+`None`, so resolution reports an issue requiring `[defaults].spotter` rather than
 guessing a slug that would fail at the metadata lookup. And effort levels are not
 validated (`validates_effort_levels` is false): no listing observed declares them,
 and `ModelCapabilities::check_effort` refuses every level when none are declared, so
 validating here would make `effort` unusable rather than merely unverified.
 
 `GET /state` and the boot line report the provider as `custom-messages` or
-`custom-responses` — the bare word would not say what the session speaks.
+`custom-responses` — the bare word would not indicate what the session speaks.
 
 #### Capabilities from a model listing (`src/inference/api/provider/listing.rs`)
 
-A named provider has a capability source whose shape this crate knows. A custom
+A named provider has a capability source whose shape this crate supports. A custom
 endpoint has only what `GET {base}/models` returns, and that ranges from the bare
 OpenAI object — `id`, `object`, `created`, `owned_by` — to a listing carrying the
 window, the output cap, modalities, cache pricing, and the accepted sampling
 parameters. Measured against two real endpoints, one sits at each extreme.
 
 So the parse is **opportunistic and field-by-field**: each capability is read if a
-spelling for it is present and left unknown otherwise, and a listing that answers
-nothing is a valid answer. The spellings are the ones observed on real endpoints
+spelling for it is present and left unknown otherwise, and a listing with no such
+capabilities is valid. The spellings are the ones observed on real endpoints
 rather than an invented superset, and where two endpoints spell one capability
 differently both are read — `context_length` or `max_input_tokens` for the window;
 `max_output_length`, `max_output_tokens`, `max_completion_tokens`, or `max_tokens`
@@ -1215,12 +1215,12 @@ endpoint serves turns in are independent axes. One endpoint serves a bare
 OpenAI-shaped listing in front of both dialects; another serves a capability-rich
 listing in front of a dialect this crate does not speak at all.
 
-A model the listing does not name reads as `ModelCapabilities::unknown` rather than
+A model absent from the listing reads as `ModelCapabilities::unknown` rather than
 an error. A listing can be paginated and can omit an alias the endpoint still
 serves, so it is in no case a statement about what the endpoint will accept, and
 refusing to boot over one would turn a non-authoritative document into an
 authorization check. Every unknown then takes the arm that asserts least: no image
-input (sending bytes a model cannot read spends the upload and reports success),
+input (sending bytes a model cannot read uses the upload and reports success),
 `PromptCachePolicy::None` (which disarms the keepalive), temperature accepted (the
 value passes through to the endpoint's own validation), and no reasoning
 requirement — which is why that field is three-state rather than a `bool`.
@@ -1239,8 +1239,8 @@ Across the 327 non-variant models OpenRouter reports a cap for, 61% sit at or ab
 rather than a popular floor. It is also the median and the minimum across the models
 this project runs, so in practice it is refused by none of them.
 
-Erring low is the worse direction, and only down to a cliff. A cap too low for a
-mandatory-reasoning model spends the whole budget on thinking and returns
+Erring low is the worse direction, and only down to a cliff. With a cap too low for a
+mandatory-reasoning model, the model uses the whole budget on thinking and returns
 `content: []` with `stop_reason: max_tokens` — an empty turn, not a short one,
 reading as a broken model. Above that cliff the asymmetry flattens: a cap set too
 high costs one refused request and gains nothing, since a turn wanting more than
@@ -1265,7 +1265,7 @@ once, which is what makes guessing affordable at all.
 already tolerate its absence — `Client` and `api/reservation.rs` take an `Option`,
 and `GET /state` reports a null `context.limit` — so what an unknown window costs is
 the occupancy meter and the pre-emptive output fit, not the session. The provider's
-own refusal remains, and the halving retry answers it. The boot line says
+own refusal remains, and the halving retry answers it. The boot line shows
 `window not reported` rather than omitting the field, so the assumption is visible
 instead of surprising.
 
@@ -1298,7 +1298,7 @@ Three question types: `noul` (the API's own name for yes/no, spelled as the wire
 it, answered as P(yes)), `choice` (one of named options, answered with the chosen option
 and a probability per option), and `score` (a position among ordered, described levels,
 answered with an expected level and a probability per level). A question's `instructions`
-is a string or a JSON object, which is how a question carries data of its own — the
+is a string or a JSON object, which is how a question contains data of its own — the
 spotter inlines the earlier call it is comparing against rather than pointing into the
 state. A choice's options are sent **in the order given**: a decision model leans toward
 the first option, so the spotter asks each choice in both orders, and the request type
@@ -1334,7 +1334,7 @@ Nothing on this route caches (the model's endpoint metadata reports
 `supports_implicit_caching: false` and there are no markers to send), so the
 byte-stability rule that governs the Messages prefix
 ([log-and-projection.md](log-and-projection.md)) has nothing to hold here. The
-`RequestUsage` a response reports carries **zero** cache counts — a truthful zero
+`RequestUsage` a response reports has **zero** cache counts — a truthful zero
 rather than a missing reading, which is what keeps a decisions request out of the
 cold-streak classification.
 
@@ -1355,11 +1355,11 @@ the host's startup environment, ordinarily supplied by `op run`; `auth = { kind 
 to the connection's ([secrets.md](secrets.md)); `auth = { kind = "codex-cache" }`
 reads Codex CLI's `auth.json` once, under the host's `CODEX_HOME` or `HOME`). A
 described connection (`dialect` and `base-url`) may omit `auth`, and then sends no
-credential and no auth header (`Endpoint::without_credential`), which is what a local
-server wants. A named provider may not omit it, and the load fails naming the line. A
-401 or 403 on a connection that sends nothing says so beside the provider's words.
+credential and no auth header (`Endpoint::without_credential`), as for a local
+server that needs neither. A named provider may not omit it, and the load fails naming the line. A
+401 or 403 on a connection that sends nothing is reported as such beside the provider's words.
 Credentials load once at host launch, each connection independently:
-an unavailable one carries its reason and fails only the sessions that select it.
+an unavailable one has its reason recorded and fails only the sessions that select it.
 Nothing re-reads a caller's environment, re-runs a secret command, or re-opens the
 cache per session, and the host's environment is never overlaid onto a session's
 snapshot or a tool child.
@@ -1393,7 +1393,7 @@ log-owned identity shape, so an offline reader does not have to infer the
 session's provider from current config or usage telemetry. Picks live in
 the `model_picks` table of the user state database
 ([state-store.md](state-store.md)), beside the config file that named it; the same store
-answers the recent ranks in the model catalog (`GET /inference/catalog`,
+supplies the recent ranks in the model catalog (`GET /inference/catalog`, [model-catalog.md](model-catalog.md)) and the offline `efference dev history` reader.
 [model-catalog.md](model-catalog.md)) and the offline `efference dev history`
 reader. The provider listings behind the model menus, their normalization, and
 their storage in the same database are described in
@@ -1414,8 +1414,8 @@ from a table in this build (`api/provider/codex.rs`), so a model released after
 the build resolves the same as one released before it. Both arms read the
 subscription backend's catalog, cached per connection for five minutes and shared
 by a session's main role, its spotter, and any triage. An entry reports the
-context window the backend says the model works in, its reasoning levels and
-default, and its input modalities; a model the catalog does not name passes on the
+context window the backend specifies for the model, its reasoning levels and
+default, and its input modalities; a model absent from the catalog passes on the
 arm's baseline instead of failing boot, and the first turn is the test of whether
 the provider serves it.
 
@@ -1436,7 +1436,7 @@ the provider serves it.
 The catalog reports no output cap, no temperature acceptance, and no cache
 policy, and those are read as the arm's baseline asserts: a model that rejects
 `--temperature` is refused by the provider rather than by the harness, and an
-unreported cap is an unreported cap (the boot line says so). The cache policy
+unreported cap is an unreported cap (the boot line shows that it is unreported). The cache policy
 is the one exception, because it is a property of the backend rather than of a
 model — the Codex backend rejects every explicit cache parameter on every model
 it serves, so that arm reports implicit, and the platform accepts explicit
@@ -1469,7 +1469,7 @@ carries a `minimal_client_version` the backend filters on — so which models a
 client is shown follows the version it claims, and a version below every entry's
 minimum answers 200 with an empty catalog rather than an error. This build
 claims the newest generation rather than its own version, which is the whole
-list of models any client can see; the models gated highest are the ones released
+list of models available to any client; the models gated highest are the ones released
 most recently.
 
 **Sticky routing (`x-session-id`).** OpenRouter routes a model slug to *some*
@@ -1481,7 +1481,7 @@ every entry up to `upto`, including the original first user message, and project
 a summary in its place ([consolidate.md](consolidate.md)). The first non-system
 message is therefore different on the next turn, the derived key changes, and
 OpenRouter is free to route elsewhere — reading a cache write back against an
-upstream that never saw it. Sending the key explicitly is what pins it.
+upstream that never received it. Sending the key explicitly is what pins it.
 
 The value is `<session id>-<hash of the session dir's canonical path>`, derived
 once at boot by `sticky_session_id` in `src/inference/api/endpoint.rs`. Session ids are
@@ -1497,8 +1497,8 @@ would defeat the disambiguation.
 The pin expires after five minutes of inactivity and is refreshed only by a
 *successful* request; an errored one does not refresh it (OpenRouter's "Provider
 Sticky Routing"). So a keepalive that fails also lets the pin lapse across any idle
-over five minutes, after which the next real turn may route to an upstream that
-never saw the cache — the ping keeps both the prompt cache and the routing pin
+over five minutes, after which the next real turn may route to an upstream without that
+cache — the ping keeps both the prompt cache and the routing pin
 alive, and loses both together.
 
 Which requests carry it is the **provider's** call: `Provider::session_header`
@@ -1522,7 +1522,7 @@ it, which is why the gap stayed invisible. Measured on one workload run twice,
 minutes apart: turns 30% warm and triages 40% without the header, 80% and 100% with
 it. Codex CLI's companion `thread-id` sets no key on its own and is not sent.
 
-The same value also rides the **request body** as `prompt_cache_key`, on the
+The same value is also sent in the **request body** as `prompt_cache_key`, on the
 providers that read it (`Provider::prompt_cache_key_field` — OpenRouter and the
 two OpenAI arms; Anthropic's Messages API has no such field and 400s an
 unrecognized top-level key, so this cannot be sent unconditionally the way a
@@ -1561,7 +1561,7 @@ model-conditional decision (the context ceiling first, more behind it) was
 unanswerable without knowing which metadata endpoint to ask. Those knobs
 (`EFFERENCE_ENDPOINT`, `EFFERENCE_AUTH_HEADER`, `EFFERENCE_AUTH_PREFIX`) are
 now hard errors naming the replacement — silently ignoring a set one would
-post somewhere other than where the operator's environment says.
+post somewhere other than the destination specified by the operator's environment.
 
 **The boot capability query.** Boot fetches the selected model's metadata
 from the provider before the daemon starts (`Endpoint::fetch_capabilities`,
@@ -1569,8 +1569,8 @@ from the provider before the daemon starts (`Endpoint::fetch_capabilities`,
 **aborts startup** with the URL and body in the message. The query is required
 rather than best-effort because capability conditionals hang off the result
 and "unknown" would silently disable them; there is no offline mode to
-regress (boot already requires the live messages endpoint). Anthropic asks
-one route; OpenRouter asks two, both fatal at boot — the effort-levels route
+regress (boot already requires the live messages endpoint). Anthropic's metadata fetch uses
+one route; OpenRouter's uses two, both fatal at boot — the effort-levels route
 is what the boot validation validates against, so "the entry route didn't
 answer" must not degrade into no validation. Per provider:
 
@@ -1604,7 +1604,7 @@ answer" must not degrade into no validation. Per provider:
 
   The ceilings route is the first of OpenRouter's two boot fetches. The second
   is the singular model entry, `GET /api/v1/model/{author}/{slug}`, whose
-  model-level `reasoning` block carries `supported_efforts` and
+  model-level `reasoning` block contains `supported_efforts` and
   `default_effort` — the metadata the boot validation validates against
   (the effort section above). It is a separate route because the endpoints
   listing carries no `reasoning` block at all, and its model-level fields stay
@@ -1612,7 +1612,7 @@ answer" must not degrade into no validation. Per provider:
 
 When `--upstream` pins the routing (below), the pin **narrows the endpoint set
 before anything aggregates over it**: a pinned session routes to exactly those
-endpoints, so a ceiling taken across the ones it will never reach is someone
+endpoints, so a ceiling taken across the ones it will never use is someone
 else's. A pin naming no endpoint in the listing falls back to the whole set
 rather than emptying it — that request fails loudly on its own, and an empty set
 here would abort boot with a message about `context_length` that names the wrong
@@ -1654,8 +1654,8 @@ and the request retried, once per halving down to the floor, and any other
 open failure stays terminal. The refusal can also arrive as an `error` event on a
 stream that opened 200 (DeepInfra through OpenRouter: "maximum context length is N
 tokens. However, you requested M output tokens and your prompt contains at least P
-input tokens"); a completion whose failure text matches the same phrasings is
-resent at half the reservation too, whatever class its error type earned, and the
+The refusal can also arrive as an `error` event on a stream that opened 200 (DeepInfra through OpenRouter: "maximum context length is N tokens. However, you requested M output tokens and your prompt contains at least P input tokens"); a completion whose failure text matches the same phrasings is
+resent at half the reservation too, whatever class its error type was assigned, and the
 refused attempt's partial is dropped. The interrupt and a fixed `cap` are never
 resent. Turns, triages, and triage all share the one
 client and so the one calibration; the keepalive's `max_tokens: 0` ping and
@@ -1668,7 +1668,7 @@ prompt tokens (`input_tokens` + `cache_read_input_tokens` +
 remainder; null until the first request). `limit` is deliberately not reduced
 by the output reservation: that reservation shrinks as the prompt grows, so
 subtracting it would move the reported ceiling through the session and read as
-a wall the prompt never reaches. The prompt stops fitting
+a limit the prompt never hits. The prompt stops fitting
 `MARGIN + RESERVATION_MIN` short of the window (`api/reservation.rs`), so
 occupancy approaches 100% rather than reaching it at the stall. The TUI
 header draws it as a context meter captioned `14k/200k`, and the session drawer's
@@ -1694,9 +1694,9 @@ Beside it the topic carries `usage.last_cache_miss` — the most recent miss the
 provider itself attributed, exactly as `CacheMiss` arrived, or null until it names
 one (docs/control-api.md). It is the *why* next to the streak's *how often*: a
 client stating "cache misses ×4, tools changed" has the answer no token total
-supplies. Two of the six reasons (`previous_message_not_found`, `unavailable`) say
+supplies. Two of the six reasons (`previous_message_not_found`, `unavailable`) indicate that
 no comparison was produced rather than naming a divergence, so a client that
-renders one as a cause has to say so for those; the daemon publishes them rather
+renders one as a cause has to indicate that for those; the daemon publishes them rather
 than filtering, to keep that choice at the display. The stamp is absolute for the
 same reason `last_request_at` is, and it is *not* cleared by a warm read — a
 divergence named late enough for an earlier breakpoint to still hit is a real
@@ -1793,7 +1793,7 @@ on OpenRouter: which **upstream** actually serves a given model slug. One slug
 `google-vertex/global`, each with flex and priority variants), and OpenRouter
 picks among them by price unless told otherwise.
 
-`--upstream <slug>` (repeatable) sets `api::Upstream`, which rides the agent
+`--upstream <slug>` (repeatable) sets `api::Upstream`, which is stored on the agent
 client and serializes as OpenRouter's `provider` object — an order plus
 `allow_fallbacks: false`, because a pin that silently reroutes is not a pin. The
 type is not called `Provider` because that name is taken by the dialect enum;
@@ -1805,7 +1805,7 @@ Three properties worth knowing:
   serialization entirely rather than emitting `null`, so adding this did not move
   any session's cached prefix. Pinned, it is a per-session constant like `model`,
   so it never toggles in flight.
-- **It does not reach the spotter.** Endpoint slugs are per-model and the spotter
+- **It does not apply to the spotter.** Endpoint slugs are per-model and the spotter
   runs a different (Haiku-band) model; an order naming endpoints that do not
   serve it would fail outright with fallbacks disabled.
 - **Endpoint choice is measurable, not cosmetic.** The endpoints behind one slug
@@ -1820,7 +1820,7 @@ Three properties worth knowing:
 
 Assistant prose and tool stdout are the same thing: ephemeral, pre-commit
 output that the committed log entry supersedes once the turn closes. One
-mechanism carries both.
+mechanism handles both.
 
 `Session` holds a **lossy** `broadcast::Sender<StreamDelta>`. `StreamDelta`'s
 variants: `AssistantText` and `ThinkingText` (fragments from `text_delta` /
@@ -1880,7 +1880,7 @@ The keepalive is armed off the boot capability lookup and one config knob.
 `explicit`, `implicit`, `mixed`, or `none`. Anthropic is `explicit` through
 `cache_control`. On OpenRouter it is read off the endpoint listing: an endpoint
 that reports `supports_implicit_caching` contributes implicit support, while one
-whose `pricing` carries an `input_cache_read` contributes explicit support —
+whose `pricing` contains an `input_cache_read` contributes explicit support —
 which is how the explicit-`cache_control` upstreams report having a cache (every
 Anthropic endpoint on OpenRouter reports `supports_implicit_caching: false`,
 because their caching is explicit; pricing is what distinguishes them from an
@@ -1899,16 +1899,16 @@ seconds against the five minutes Anthropic documents and the conservative readin
 providers that document nothing, 8 minutes on OpenAI's two arms. OpenAI documents 30
 minutes since the last write or reuse, but a gpt-5.6-luna ping 16 minutes after its
 last request read cold and the corpus has the 5.6 family mixed past 7 minutes
-(journal/2026-10-05-cache-lifetime-corpus.md), so those arms assume 10. A late ping pays
-the full read; an early one costs a cached read. No provider
+(journal/2026-10-05-cache-lifetime-corpus.md), so those arms use an assumed lifetime of 10. A late ping incurs
+a full read; an early one incurs a cached read. No provider
 exposes the lifetime to query, so a set value is the override. **Zero turns the
 keepalive off**, which is the honest spelling for that intent — a separate
-boolean could disagree with the interval sitting beside it. The poll period
+boolean could conflict with the interval sitting beside it. The poll period
 follows the interval (a quarter of it, capped at 20s) so the ping lands near the
 interval rather than up to a full check-period late.
 
-The affordability check below stays regardless: the gate is what the metadata says,
-and the check is what the endpoint actually does.
+The affordability check below stays regardless: the gate is based on the metadata,
+and the check is based on what the endpoint actually does.
 
 ### The provider's own cache diagnostics
 
@@ -1925,7 +1925,7 @@ turn opts in with an explicit `"previous_message_id": null`, and each turn after
 the previous turn's response id (`src/inference/api/client.rs`, the client's `cache_chain`, shared
 across clones).
 
-Three properties decide how it is sent.
+Three properties determine how it is sent.
 
 **It sits after `messages`.** It is the envelope's only per-request field — every other
 one is a per-session constant — and the prompt cache matches a prefix, so a value that
@@ -1997,7 +1997,7 @@ it: the saving is realized only when the cache would have lapsed, so the cost mu
 in half of it. On z-ai/glm-5.3-flash ($0.15/M prompt, $0.50/M completion, $0.03/M cache
 read) a 10k-token ping (~$0.005) is affordable against a 200k prefix (premium ~$0.024).
 
-The prices ride `ModelCapabilities.prices` (`TokenPrices`, per-token USD; transport-only,
+The prices are stored in `ModelCapabilities.prices` (`TokenPrices`, per-token USD; transport-only,
 never logged or projected), parsed from the endpoint listing boot already fetches for
 the ceilings: `pricing.prompt`, `pricing.completion`, `pricing.input_cache_read`. They
 differ per upstream and routing is unpinned, so the aggregation errs toward not pinging:
@@ -2024,14 +2024,14 @@ premium; `rejected`; or `exhausted`. The stderr line marks only the transition i
 skipping, not every tick. The triage lineage's keepalive publishes its own stance as
 `usage.triage_keepalive_skipped`, with the same reasons and the same transitions.
 
-A failed ping is classified by HTTP status (`api::KeepaliveError`, which carries
+A failed ping is classified by HTTP status (`api::KeepaliveError`, which stores
 the status structurally rather than in its message). An invalid-request-class 4xx
 is **terminal for the session's keepalive** (the one stance that does not end: the loop
-stops and `usage.keepalive_skipped` says `rejected`) — the upstream rejected the request
+stops and `usage.keepalive_skipped` is `rejected`) — the upstream rejected the request
 itself, so the next tick would be rejected identically, and retrying only reprints
 the same line for the life of the pause. 408 and 429 describe the moment rather
 than the request; they, 5xx, and network failures keep the print-and-retry
-behavior — except a failure whose body names a terminal condition
+behavior — except a failure whose body identifies a terminal condition
 (`api/failure.rs`, e.g. the Codex backend's 429 `usage_limit_reached`). That one
 holds until a reset hours away, so the keepalive stops pinging and publishes
 `exhausted` with the refusal and its `resets_at`, until the next real turn: that
@@ -2072,8 +2072,8 @@ and its byte-stability pins do not move.
 totals, two monotonic `Instant`s, and one wall-clock stamp. Two clocks, two
 jobs: the `Instant`s drive *interval* logic (when to ping, when the keepalive cap
 is reached), where a monotonic clock is correct because an NTP step must not move
-a deadline; the wall stamp is what clients read. Neither reaches the projection.
-`GET /state` carries a `usage` block with `last`, `cumulative`, and
+a deadline; the wall stamp is what clients read. Neither is included in the projection.
+`GET /state` includes a `usage` block with `last`, `cumulative`, and
 `last_request_at` — an **absolute** instant rather than an elapsed count, because
 a field that ticks with the clock would make the level-triggered `usage` topic
 re-emit forever (docs/control-api.md). Clients subtract from their own clock.
@@ -2083,7 +2083,7 @@ cache-touch clock depends on where it ran: a triage on the agent's own client
 (`triage = "Shared"`) reads the main prefix and refreshes it, so `record_triage` stamps the
 clock as a turn does; a triage on a separate triage client has a prefix of its own and
 does not. Turns and keepalive pings always touch the main prefix
-(`RequestOrigin::touches_main_prefix`); a shared triage's `usage.jsonl` line carries
+(`RequestOrigin::touches_main_prefix`); a shared triage's `usage.jsonl` line has
 `main_prefix: true` (omitted when false) so a restarted host and `efference dev cache`
 make the same call. Without the stamp, a cold read paid at a shared triage
 leaves the clock on the earlier turn, and the next turn's cold check parks again.
@@ -2143,7 +2143,7 @@ sent and re-sent byte for byte (`api::SentRequest`, `Session::store_triage_reque
   — so a held triage stores too (`HoldOutcome::sent`, `HoldFailure::sent`). The title
   peek is not stored.
 
-The ping is the stored request as sent, never a re-projection. `Client::complete` learns
+The ping is the stored request as sent, never a re-projection. `Client::complete` records
 when a model refuses a forced `tool_choice` and sends later forced requests as the
 fallback (`auto`, `forced_choice_instruction` appended, thinking off), while
 `Client::keepalive` sends the request it is given; a rebuilt forced ping to such a model
@@ -2157,7 +2157,7 @@ fallback's instruction rides after the breakpoint and is dropped with the curren
 - **Arming.** Armed off the triage client's prompt-cache policy (`Triager::keepalive_client`,
   `PromptCachePolicy::is_supported`), the check the main keepalive arms on: a triage
   model reporting no cache is not pinged. Not armed on a shared triage, whose requests
-  ride the main prefix that the main keepalive keeps, or at interval zero. With nothing
+  use the main prefix that the main keepalive keeps, or at interval zero. With nothing
   stored yet there is no ping.
 - **Clocks.** The triage touch clock is stamped by a primer, by a result triage on the
   own client, and by the ping (`RequestOrigin::touches_triage_prefix`,

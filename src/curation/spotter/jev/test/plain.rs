@@ -38,7 +38,7 @@ fn a_hold_reads_as_its_cause_then_its_history() {
     assert_eq!(
         plain_reason(&with_precedent(outside, 0, 2, Some(1))).as_deref(),
         Some(
-            "it reaches outside the paths this session is granted; no earlier call like it \
+            "it includes paths outside this session's grants; no earlier call like it \
              was allowed; it goes further than 2 calls allowed earlier"
         )
     );

@@ -134,7 +134,7 @@ turns each frame into a notification (`src/clients/control_tools/stream.rs`). Cl
 a notification in the driver's conversation, a multi-line frame as one notification with
 each line's leading whitespace trimmed, and the close as a line of its own. `create`'s
 answer over the mount and `status(agent, follow: true)` give the URL,
-`ws://127.0.0.1:<port>/<token>`, on a `follow:` line that says to open a `Monitor` on it.
+`ws://127.0.0.1:<port>/<token>`, on a `follow:` line with instructions to open a `Monitor` on it.
 The server binds `127.0.0.1:0` when the first URL is asked for and serves until the mount
 exits. Each agent has one token, 256 random bits in URL-safe base64, minted at the first
 request for that agent and given again on every later one; it is valid for the mount's
@@ -181,7 +181,7 @@ message lands on the child as `session[<caller id>]`, which the child reads as
 Two rules are enforced by the mount, not by config. A session is never its own target: a
 call naming the caller, or naming no `agent`, is an error. And a session *drives* only
 the sessions it created, those it supervises ([permissions.md](permissions.md)), and its
-own predecessor: `decide`, `interrupt` and `archive` reach those alone, and `message` to
+own predecessor: `decide`, `interrupt` and `archive` apply to those alone, and `message` to
 one is its next user message, while `message` to any other session is a
 note in its inbox, which it may set aside. The answer says which. An `agents__*` target
 resolves by its id in any project on the host, while `agents__status` with no agent lists
@@ -251,7 +251,7 @@ Each read is at its own grain.
   16 KiB ([control-api.md](control-api.md)); the tool's `seq` is the same read. With
   neither `since` nor `tail`, the tool reads what is new since this reader's last read,
   by a read cursor its mount holds per agent; a reader with no cursor — every command-line
-  run is one — gets the last 40 entries, and the header says so.
+  run is one — gets the last 40 entries, and the header indicates this.
 - **`efference control entries <seq>…`** — the whole entries behind transcript lines: a
   result's complete content, a call's exact arguments. The raw window (`GET /log`) is not
   a verb: at a terminal the jsonl is the same bytes, and over MCP a window of raw bodies
@@ -325,7 +325,7 @@ while the host starts the launcher shows one status line, erased before the TUI 
 screen, and the host's output goes to `host.log`. Echoed before the TUI, it was left on the normal screen when the TUI gave the
 terminal back. The log is printed only when startup fails — the host refuses to start or
 refuses the creation — where it is the explanation; by default it carries session lifecycle
-and failures. A creation refusal's detail rides the refusal itself, and a preparation that
+and failures. A creation refusal includes its detail, and a preparation that
 fails after the session is reserved shows its reason in the TUI, which opens on the
 session while it starts ([control-channel.md](control-channel.md)). A setup offer that launches the session erases
 its own questions first (`setup::terminal::Terminal::erase`, which counts the rows its
@@ -346,9 +346,9 @@ named one, which the host records once listening so its links name it
 creating the session, the launcher mints a link over the socket (`GET /auth/link`),
 points it at the session's page, and opens the browser. It is always an island, even with
 a host running: this choice never adds a web bind to a host. `--bind` on any invocation
-reaches it — a bare `efference --bind 8080` in a directory with no host running is this
+selects it — a bare `efference --bind 8080` in a directory with no host running is this
 path, the same one the setup offer's browser choice takes, and without `--bind` the same
-invocation starts the terminal island instead. The one flag picks the surface; there is
+invocation starts the terminal island instead. The one flag determines the surface; there is
 no verb to learn for it. The owner is the
 foreground launcher, never the tab — reloads and stream reconnects cannot end it — and
 the terminal holds one prompt line: `o` opens the session again, `c` copies a link, `p`
@@ -437,7 +437,7 @@ project. The prompts draw on `/dev/tty` when stdout is a pipe, which is what
 
 **An endpoint with no name in this build.** The provider menu's last entry is
 "Something else", for an endpoint speaking a dialect efference already has an
-encoder for at a URL the provider enum does not know
+encoder for at a URL not represented by the provider enum
 ([transport.md](transport.md)). It asks the dialect — Anthropic Messages, OpenAI
 Responses, Chat Completions, or System One decisions — then the base URL (for System One, the whole
 request URL, since providers spell that route differently), and refuses a URL that
@@ -464,7 +464,7 @@ the load rather than doing nothing.
 **Defaults: which model the spotter runs** (`src/setup/defaults.rs`). `[defaults]`
 has one role — `spotter` — and the editor says what it is for rather than
 leaving the key name to explain itself. The main model has no default: past
-picks answer the omitted branch, else the new-session form names the current
+picks are used when it is omitted, else the new-session form names the current
 one — and an omitted triage shares the main client, so neither is anything to
 configure. The role is set by picking a connection and then a model on it,
 which is where a listing belongs: the connection selects the endpoint to ask,
@@ -473,14 +473,14 @@ variable set in this shell, or an item the store already holds) rather than
 prompted for again. Where setup cannot read one, the model is typed and taken
 as written.
 
-A connection may also answer the role for itself: `spotter-model` under
+A connection may also specify its own model for the role: `spotter-model` under
 `[connections.<name>]` names the cheap model that connection's sessions use when
 nothing else does. It resolves below an explicit `--spotter-model` and
 `[defaults].spotter`, and above the arm's built-in default — the order is in
 [permissions.md](permissions.md), and the reason a per-connection key exists at
 all is that a cheap band is an account's property, not a provider's.
 
-The role leads with what it already is, so the cheapest answer is Enter. An
+The role prompt starts with its current value, so the cheapest answer is Enter. An
 unset spotter falls back to jev where a typesafe or OpenRouter connection
 exists, else to the provider's cheap band, so that is a working configuration
 rather than a gap. The first run asks no role at all: a new user cannot yet
@@ -496,7 +496,7 @@ on every connection. Picking Connections gives the row list below. Update check 
 update question again, preselecting the file's answer; a file with no answer is asked it
 on Done, once whatever the visit was for is finished.
 
-The subscription's two ways are asked as one question, since both spend the same
+The subscription's two ways are asked as one question, since both use the same
 Plus or Pro plan: piggyback on Codex's cached login (`kind = "codex-cache"`,
 which needs Codex run often enough to keep the token fresh), or log in here
 (`kind = "oauth"`: the browser opens, the grant is kept as `oauth:<name>`
@@ -529,7 +529,7 @@ plus adding another and finishing. A row offers:
   a variable *into* the store needs no paste, since setup already read the value
   for the readiness note — unless the variable holds a `<scheme>://…` reference
   (an `op://…` that a resolver expands at read time), which is refused, because
-  storing what the variable literally says would put the unexpanded reference in
+  storing the variable's literal value would put the unexpanded reference in
   the keychain. The reverse is never spelled as a move: the stored value is
   revealed, the config is switched to a variable, and the stored copy stays
   unless separately cleared — a provider key is shown once at creation, so the
@@ -605,8 +605,8 @@ the command that does it.
 A fourth read is offline, about spend rather than content, and a developer's instrument
 rather than an operator's: **`efference dev cache`** folds a
 session's `usage.jsonl` into a prompt-cache read rate per request origin, separating the
-cold reads that explain themselves (session boot, a cross-model replay, an idle gap past the
-cache TTL) from the ones that do not, and reporting the longest run of the latter. Where
+cold reads with known causes (session boot, a cross-model replay, an idle gap past the
+cache TTL) from the ones without, and reporting the longest run of the latter. Where
 the provider named a cause, it counts those by reason as well — `tools_changed`,
 `system_changed`, `messages_changed`, `model_changed`, held apart from the reasons that
 mean no comparison happened — which is the one thing the token columns cannot supply. With
@@ -616,11 +616,11 @@ where a rate is worth comparing against. It needs no daemon and no network.
 **`efference dev stops`** is its sibling over `log.jsonl`, about turn endings rather
 than spend. A turn ends when the model emits no tool call, which is the harness's only
 way to put a question *and* its only way to say the work is done, so the ending alone
-does not say which was meant. What the *next* turn carried does: an ending is
+does not indicate which was meant. The *next* turn's content does: an ending is
 `question` when the parting prose asked one, `answered` when the reply supplied
 something, `final` when nothing followed, and **`barren`** when neither — the model
-asked nothing and was told nothing, so the round trip bought a request and a cache
-write and no information. It takes the same session argument and `--all` sweep, and
+asked nothing and was told nothing, so the round trip incurred a request and a cache
+write without information. It takes the same session argument and `--all` sweep, and
 reports the longest run of barren endings, since a run is the shape a stalled session
 makes where a scattered few are ordinary. A record-only assistant entry
 (`excluded`: a failed request, or an empty completion the loop asked again) is not an
@@ -634,8 +634,8 @@ do you serve*, over a connection named in `~/.efference/config.toml` and resolve
 the way a session's would be — the same file, the same credential, no daemon and
 no session. It prints each listing route's status, size, and `ETag`, and the
 entries where it recognizes the shape (`data[].id`, or the Codex backend's
-`models[].slug`). For the two OpenAI arms it reads both routes, so one run says
-whether each catalog answers the other's credential; `--url` adds any route, which
+`models[].slug`). For the two OpenAI arms it reads both routes, so one run shows
+whether each catalog accepts the other's credential; `--url` adds any route, which
 is how the subscription backend's `client_version` gate is visible, and `--raw`
 prints bodies verbatim for piping. It reads the routes directly, never through the
 Codex arm's five-minute catalog cache, so its output is the provider's answer at
@@ -677,7 +677,7 @@ decisions resolve it:
 `deny --message <msg>` sends redirect. `<seq>` is the held call's transcript handle, which
 the status names. `escalate` decides nothing: the call stays held, marked with who
 escalated it and the `--message` as a note, and the operator is pushed
-([permissions.md](permissions.md)). A supervising agent's escalation reaches the operator
+([permissions.md](permissions.md)). A supervising agent's escalation is sent to the operator
 the same way once no supervisor above it is left. In the TUI, an empty composer approves and any text redirects; the
 strip's `abort` aborts.
 
@@ -695,10 +695,10 @@ trajectory; redirecting steers it.
 
 ## Granting instead of approving
 
-A `config_edit` decision carries one `ConfigChange`, writes it to the session's
+A `config_edit` decision has one `ConfigChange`; the host writes it to the session's
 `config.toml`, folds it into effective policy, and re-classifies the gated call. The call
 runs only if the new rule actually clears it — the rule changes, and the mechanism
-re-authorizes; nothing rides along.
+re-authorizes; no approval is included.
 
 The vocabulary is four shapes:
 
@@ -715,14 +715,14 @@ The vocabulary is four shapes:
   preamble is not re-rendered; the session learns about it as a notification.
 
 `path` and `scope` are **session-visible**: the session is told its perimeter moved.
-`command` and `tool` reach it only through the classifier — the next call simply does not
+`command` and `tool` affect it only through the classifier — the next call simply does not
 gate.
 
 A client commits a grant directly with
 `PUT /approvals/:call_id {"decision": "config_edit", "change": {...}}`. The TUI does not
 offer one at a gate today: its composer composes text only.
 
-**When a grant beats an approval.** Ask whether the *next* call of this shape should also
+**When to grant instead of approve.** Ask whether the *next* call of this shape should also
 stop you. If the answer is no — you are about to approve `cargo test` for the fourth time,
 or the session needs to read a directory it will keep needing — grant it. A grant is
 specific, written to a file you can read, and prunable; it is not an "always allow" mode.
@@ -796,7 +796,7 @@ its own.
 - **Drop a file into `.efference/<id>/attachments/`** — an attachment. The bytes stay on disk;
   the session is told what arrived (type, size, shape) and reads it, or not, on the terms of
   whatever you asked for ([inbox.md](inbox.md)). Prefer this to pasting a large blob into a
-  turn: pasted bytes ride in the cached prefix for the rest of the session, an attachment's
+  turn: pasted bytes remain in the cached prefix for the rest of the session, an attachment's
   do not.
 
 The asymmetry is deliberate: a user turn is canonical and cannot be dismissed by the model;
@@ -813,7 +813,7 @@ read, act* instead of polling.
 
 A session that has said nothing for two minutes is in one of a few conditions, and
 `efference control state` distinguishes them. Start from `loop_phase`, which names where
-the loop is as one value; the other topics say more about each phase.
+the loop is as one value; the other topics have more information about each phase.
 
 - **`requesting` or `executing`** — it is thinking, a triage is reading results, or a
   tool is running. `current_operations` names which request or call is open and since
@@ -825,10 +825,10 @@ the loop is as one value; the other topics say more about each phase.
   working, and a continue retries now.
 - **`gated` or `asking`** — waiting on you: `gate` holds the call, `ask` the question.
 - **`cold_parked`** — stopped before a request that would read an expired prompt cache;
-  `cold` says what the read costs. A turn, a continue, or a decision goes ahead and pays
-  it; a compaction summarizes the history instead.
+  `cold` shows what the read costs. A turn, a continue, or a decision proceeds with
+  that cost; a compaction summarizes the history instead.
 - **`blocked`** — stopped until someone acts. `triage_unavailable` or `triage_defect`:
-  a triage could not produce a verdict, `stall` says why, and a continue retries it.
+  a triage could not produce a verdict, `stall` contains the reason, and a continue retries it.
   `pace_held`: the pace dial is held; resume it or send a turn. `config_repair`: the
   config file on disk does not parse *and* could not be reverted. Effective policy in
   memory is still the last good config, but the file no longer shows it, and the file is
@@ -841,7 +841,7 @@ the loop is as one value; the other topics say more about each phase.
   recovery is a continue, or a `POST /turns` — send a turn and the session picks up.
 - **`idle`, nothing else** — the turn finished.
 
-`verbs` says what a continue and a compaction would be answered with now, and whether a
+`verbs` shows what a continue and a compaction would be answered with now, and whether a
 turn would land at once or wait in the queue.
 
 Long-poll `GET /state?wait=settled` (or `efference control settle`) blocks until the
@@ -851,15 +851,15 @@ phase is one that waits on someone — `gated`, `asking`, `cold_parked`, `blocke
 and is the shape a supervising process should loop on. It does not return mid-turn: not
 between a result and its triage, not during a timed delay.
 
-The inverse condition is a session that looks entirely healthy and is quietly paying full
+The inverse condition is a session that looks entirely healthy while incurring full
 price for every turn: `usage.cold_streak` counts consecutive main-loop requests that read
 nothing from the prompt cache with no reason to (docs/log-and-projection.md), and the TUI
-header states it as `⚠ cache misses ×N` beside the context meter. Nothing stalls, so nothing
-else says so. `efference dev cache` is the detail view.
+header states it as `⚠ cache misses ×N` beside the context meter. Nothing stalls, so there is no other
+indication. `efference dev cache` is the detail view.
 
 ## What the session was already told
 
-Operator guidance that contradicts the preamble costs the session a turn reconciling them.
+When operator guidance contradicts the preamble, the session needs a turn to reconcile them.
 The frozen system prompt tells it, in these words or close to them:
 
 - **Explore the workspace directly.** The cwd is the workspace root; it should look rather
@@ -885,10 +885,10 @@ until it is relevant), and the `watch-for` list (which the spotter holds instead
 
 ## Reading the log for audit
 
-Beyond turns, calls, and results, the log carries the decisions:
+Beyond turns, calls, and results, the log contains the decisions:
 
 - **`Spot`** — every spotter verdict, its stance, its one-line reason, the prefix it was
-  asked to vouch for, and — from the decision rung — every axis probability it answered. Audit-only; it never reaches the wire. `efference dev spotter-log`
+  asked to vouch for, and — from the decision rung — every axis probability it answered. Audit-only; it is never projected to the wire. `efference dev spotter-log`
   summarizes these across sessions.
 - **`ConfigEdit`** — every proposed, committed, or cancelled policy change, with its note.
 - **`Triage`** — what each result's triage decided to keep, and whether the verdict came from

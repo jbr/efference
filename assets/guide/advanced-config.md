@@ -13,7 +13,7 @@ directory, send it a turn, read its transcript, resolve its approvals, end it. T
 one harness supervises efference sessions or hands work to them.
 
 The server is the `efference` binary itself: `efference mcp` speaks MCP on stdin and stdout.
-For Claude Code, the project's `.mcp.json` gains one entry:
+For Claude Code, the project's `.mcp.json` has one more entry:
 
 ```json
 {
@@ -27,7 +27,7 @@ For Claude Code, the project's `.mcp.json` gains one entry:
 ```
 
 Other harnesses take the same command and arguments in their own MCP configuration. The
-mount needs no running session and no host when it starts: it reaches the host when a tool
+mount needs no running session and no host when it starts: it connects to the host when a tool
 is called, so it can sit in the configuration permanently.
 
 `.mcp.json` belongs to the other harness, and is often committed. Write it only when the

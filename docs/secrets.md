@@ -109,7 +109,7 @@ each refresh, and when a provider refuses a stored key
 
 Every host start and CLI entry calls `Secrets::configured`, whether or not
 anything there reads an item, and a session uses its host's store
-(`SessionInference` carries the one its credentials came from), so choosing
+(`SessionInference` has the one its credentials came from), so choosing
 only reads the configuration. Under `[secrets]` there is nothing to open: each
 operation runs its command. The in-process store (the Secret Service, or the
 keychain for a signed binary) is opened by the first `get`, `set` or `delete`

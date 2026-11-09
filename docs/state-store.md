@@ -3,7 +3,7 @@
 One sqlite file, `~/.efference/state.db`, holds the host's persistent state: which models
 sessions have picked, each connection's model listing, the browsers subscribed to push, the
 devices enrolled at the web bind, and the sign-ins pending there. A push subscription
-carries the material that delivers to that browser, so the file and its directory are
+contains the material that delivers to that browser, so the file and its directory are
 owner-only — see **Modes** below. The machine root, API keys, and OAuth grants stay in the
 OS credential store ([secrets.md](secrets.md)). The configuration is still a text file
 (`config.toml`, [config-format.md](../assets/guide/config-format.md)); whether it should move here is an
@@ -53,7 +53,7 @@ drops `totp_burns`, the accepted TOTP timesteps earlier builds kept, which nothi
 
 Every operation opens its own connection, passing the calling module's
 `CREATE TABLE IF NOT EXISTS` statements to `state::open`. A pooled or shared connection
-would buy nothing — each store is touched once per session creation, once per menu
+would provide no benefit — each store is touched once per session creation, once per menu
 preview, once per push — and `Connection` is `Send` but not `Sync`. Applying the schema
 on every open is the migration story: a new table lands in its own module beside the
 existing ones, and a new column lands as an `ALTER TABLE` in a follow-up change.
@@ -116,8 +116,8 @@ answering one device at once write it once.
 
 The file is ordinary sqlite, so `sqlite3 ~/.efference/state.db` is a working way to look
 at it, and deleting it discards every table. What that costs differs by table: model
-picks and catalog listings rebuild themselves within days, remembered launch locations
-rebuild as sessions are started there again, push subscriptions need one resubscribe from
-the browser's service worker, losing the pending sign-ins costs a browser that was
-waiting one new code, and losing the device table signs out every browser and script,
+picks and catalog listings are rebuilt within days, remembered launch locations
+are rebuilt as sessions are started there again, push subscriptions require one resubscribe from
+the browser's service worker, losing pending sign-ins requires a browser that was
+waiting to get a new code, and losing the device table signs out every browser and script,
 which enroll again as new devices.

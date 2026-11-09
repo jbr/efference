@@ -12,7 +12,7 @@ use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// How long a `wait` that names no `timeout_s` waits, in seconds (docs/operating.md).
+/// How long a `wait` without `timeout_s` waits, in seconds (docs/operating.md).
 const DEFAULT_TIMEOUT_S: u64 = 100;
 
 /// Wait for a status you have not seen from the agents you created or named with

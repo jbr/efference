@@ -30,7 +30,7 @@ creation reserves its id by inserting the row before it awaits the environment h
 or prepares anything; the primary key makes the reservation atomic, so two creates
 racing for one name cannot both take it. A creation that fails after reserving
 removes its row. Resume claims the id for its root: a root that already holds it
-resumes, a root the register has not seen is recorded, and a root whose directory
+resumes, a root absent from the register is recorded, and a root whose directory
 shares an id registered under another root is refused as a clash
 ([resumption.md](resumption.md)). An archived session keeps its row; only discarding a
 session that never had a turn releases one, at its archive
@@ -95,7 +95,7 @@ records nothing, so the next title check asks again. Requests are recorded under
 The ask states the length in words because a model cannot count characters —
 it generates in tokens, and words are the unit it can actually aim at — while
 the parse still holds a character ceiling for the runaway case. Six words is
-the `<title>` register the surfaces want: the sidebar, the top bar, and the
+the `<title>` register suited to the surfaces: the sidebar, the top bar, and the
 session list all truncate longer lines.
 
 ## When it runs
@@ -122,11 +122,11 @@ prefix before a person has acted.
 
 One ask is in flight per session. A title check that passes while one runs — a
 one-turn session reaches its trajectory's end before the ask from the turn's
-start has written anything, so the predicate still says yes — marks a rerun
+start has written anything, so the predicate still passes — marks a rerun
 instead of spawning a second peek, and the task re-checks the predicate when its
 ask ends. A `User` entry that landed after the ask read the log and before its
 `Title` was appended sits before that title, where the predicate counts it as
-answered though the peek never saw it; the rerun then skips the predicate and
+answered though the peek did not include it; the rerun then skips the predicate and
 asks again.
 
 The predicate is the one place to tune cadence; the expectation is that titles

@@ -47,7 +47,7 @@ fn each_set_advertises_its_verbs_in_order() {
     );
 }
 
-/// An agent surface carries no output schema — every answer is plaintext — and none
+/// An agent surface has no output schema — every answer is plaintext — and none
 /// of the retired verbs or arguments (docs/tools.md).
 #[test]
 fn the_agent_surfaces_advertise_plaintext_and_no_retired_verbs() {
@@ -193,7 +193,7 @@ fn the_verbs_are_annotated() {
 }
 
 /// Every verb but `create` and `hand_off` takes `agent`, the mount's whole addressing
-/// surface, pinned against a tool that forgets the field. The verbs that act on an
+/// surface, pinned against a tool missing the field. The verbs that act on an
 /// agent require it; `status` and `wait` read without one, and the command line's
 /// route verbs fall back to the one session live here (docs/operating.md).
 #[test]
@@ -293,7 +293,7 @@ fn a_numeric_seq_reads_as_a_handle() {
 /// The `agent` argument reads as a plain field of its verb (`args.rs`): a call that leaves
 /// out `agent` and another argument is told about `agent`, the first in declaration
 /// order, and a mistyped `agent` is told its type. A form `#[serde(flatten)]`ed in would
-/// read after the verb's own fields and tell both calls about `seq` instead. An omitted or
+/// read after the verb's own fields, so both errors would contain `seq` instead. An omitted or
 /// null optional agent reads as none.
 #[test]
 fn the_agent_argument_reads_as_a_plain_field() {
@@ -327,8 +327,8 @@ fn the_agent_argument_reads_as_a_plain_field() {
 
 /// What the three sets advertise to a model or a mounting harness names no path in this
 /// repository: the tool descriptions and schemas are read where `docs/` does not exist,
-/// and the MCP instructions travel with them. Implementer cross-references are `//`
-/// comments, which never reach the schema.
+/// and the MCP instructions are sent with them. Implementer cross-references are `//`
+/// comments, which are never included in the schema.
 #[test]
 fn advertised_tools_name_no_repository_path() {
     let paths = regex::Regex::new(r"\b(docs|backlog|journal|process|src)/[\w./-]+").unwrap();

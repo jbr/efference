@@ -115,16 +115,16 @@ stay top-level.
 A `User` entry's blocks are prose and, after it, the files its composer
 attached: `ContentBlock::Attachment` records a file's store name, path, and
 triage signals, never its bytes, and projects as a text block holding the same
-notice an ambient arrival carries ([inbox.md](inbox.md)). The notice is derived
+notice an ambient arrival contains ([inbox.md](inbox.md)). The notice is derived
 from the recorded fields at projection time, so a change to its wording moves
 the prefix only for a session that restarts on the new binary.
 
 `Tools` records the `tools[]` the session advertises (`agent::tool_definitions`): appended
 right after the boot `Preamble`, and at a resume when the array differs from the last one
 recorded (resumption.md). The array is `Value`s, whose object keys serialize sorted, so equal
-tool sets compare equal. It never reaches the wire; `dev wire` and the triage, primer and
+tool sets compare equal. It is never projected to the wire; `dev wire` and the triage, primer and
 compaction replays send the latest recorded array in place of one rebuilt from current code,
-which carries none of the session's connected servers. A log that never recorded one falls
+which contains none of the session's connected servers. A log that never recorded one falls
 back to the rebuild.
 
 `CallStarted` is appended after the permission cascade clears a call and before the
@@ -159,7 +159,7 @@ starting), and absent from every log written before the field
 existed, which read back with `None`; adding it needed no version bump. The dormant inventory reads it as the row's `archived_by`,
 and a client whose stream ended reads it to say who archived the session
 ([tui.md](tui.md)). The later of `Resumed` and
-`Archived` is the session's lifecycle, which tells a deliberate archive from a session
+`Archived` is the session's lifecycle, which distinguishes a deliberate archive from a session
 that was open when its host stopped; a host shutdown appends neither
 ([resumption.md](resumption.md)).
 
@@ -182,12 +182,12 @@ to explain what the session did; what streams per token stays on the ephemeral
 `request` is an id minted by the host when the request starts, unique within the
 session and continued past the log's highest after a restart (the provider's
 generation id arrives late or never). `origin` is the same `RequestOrigin` the
-`usage.jsonl` lines carry (`turn`, `triage`, `title`, `spot`, `keepalive`,
+`usage.jsonl` lines contain (`turn`, `triage`, `title`, `spot`, `keepalive`,
 `triage_primer`, `triage_keepalive`, `compaction`, `consolidation`, `aborted_attempt`). `stage` is `sent` (handed to the
 transport), `attempt_failed {attempt, status}` (a refused attempt the transport may
 re-send), `first_byte` (the first stream event), `ended` (the stream finalized), or
 `failed {reason}` (an open failure, a stream that died or passed its ceiling, or
-`interrupted`: an interrupt (the reason reads `generation interrupted`, and says nothing
+`interrupted`: an interrupt (the reason reads `generation interrupted`, with no information
 about who sent it), or a request future dropped before it
 finished; the reason is capped at 160 characters and passes the `[env]` masker). The
 entry's own `at` is the stage's time. Streaming sub-stages (thinking, text, a tool
@@ -200,7 +200,7 @@ under `spot`, one request id per POST (the cold question set and the relation se
 client-asserted labels as `POST /loop/interrupt` received them (`source` spelled as a
 turn's is, `control` naming the button or key). It is appended before the signal fires, so it
 precedes the `failed: interrupted` stage of the request the signal ends, and it is
-appended when nothing was running too. The loop's model request that the press reaches
+appended when nothing was running too. The loop's model request interrupted
 before it is sent is not sent and records no stage ([control-channel.md](control-channel.md)). The `[env]` masker passes both labels.
 
 `GateDecision` records a decision on a held call as `PUT /approvals/:call_id` or the
@@ -210,7 +210,7 @@ in-session approve accepted it: `{call_id, decision, source?, note_submission?}`
 a turn's is and absent for the operator; `note_submission` is the submission id of the
 user turn carrying the note an allow was sent with, which the transcript reads to show the
 note on the call's line. It is appended once the call is known to be the
-pending gate and before the decision reaches the loop, so it precedes the result or the
+pending gate and before the decision is delivered to the loop, so it precedes the result or the
 redirect's user turn it causes. A redirect the loop's own permission review writes (the
 autonomous redirect, a `[commands]` deny under `autonomous`, a config edit's outcome) is
 recorded too, under `review[<level>]` (`Session::review_redirect`); a call the loop clears
@@ -299,7 +299,7 @@ name. Assembly drops `null` values, `role` (the encoder writes it), and each too
 call's `index`. The object replays as stored. The accessors read the keys the dialect
 defines (`content`, `tool_calls`, `refusal`); `reasoning_text()` reads every other key
 by a display heuristic (a flat string value, or else the strings under `text`,
-`summary`, `content`, and `thinking`), which never reaches the wire. The secret mask
+`summary`, `content`, and `thinking`), which is never used for the wire. The secret mask
 ([env.md](env.md)) rewrites `content`, `refusal`, and call arguments, and leaves the
 opaque keys alone, as it leaves Messages thinking: they may be signed.
 
@@ -309,7 +309,7 @@ once by a throwaway script under `scripts/`, which emits the old group order
 
 `Assistant.excluded` is the assistant-side analogue of a `WireState` verdict:
 `Some(exclusion)` marks a **record-only** entry, and `project` skips the entry
-entirely. `Exclusion` (`src/record/log/exclusion.rs`) says why. `Upstream(record)`: the
+entirely. `Exclusion` (`src/record/log/exclusion.rs`) gives the reason. `Upstream(record)`: the
 stream that produced it died before finalizing, or finalized empty with no usage,
 or, with no content at all, the request itself failed. `Empty`: the model finalized
 with neither prose nor a call, and the loop asked again
@@ -348,7 +348,7 @@ frozen one repeated, with `roles` (`RecordedRoles`: the spotter's `LoggedInferen
 the header's `TriageModel` shape) set. A main switch also replaces `identity` with the
 new model's line and `inference` with its identity, and repeats `body` byte for byte, so
 the new `system` differs from the old in that line alone. The header holds the roles
-a session was created with; the latest preamble that carries `roles` overrides it at the
+a session was created with; the latest preamble that has `roles` overrides it at the
 next resume, and one without leaves the header's standing. The entry projects nothing, so
 the wire is the same with or without it ([resumption.md](resumption.md)).
 
@@ -378,7 +378,7 @@ Projection resolves a result's wire through that entry (`log::result_verdicts`) 
 skips a result still pending; the verdict entry projects nothing at its own position.
 The mechanism is in [triage.md](triage.md).
 
-`RawResult` carries `content: String`, `is_error: bool`, and `images:
+`RawResult` has `content: String`, `is_error: bool`, and `images:
 Vec<ResultImage>` — each image the tool returned as `{media_type, data, width,
 height}`, with `data` the standard base64 of the encoded bytes stored **in the
 log entry itself**, exactly as it appears on the wire. Storing the realized
@@ -408,8 +408,8 @@ portable shape, because OpenRouter's bridge drops `tool_result` images for
 some upstreams (its Anthropic skin documents images as user content only; a
 Gemini upstream 400s). On a Gemini slug through OpenRouter
 (`AfterInterposedTurn`), the `tool_result` keeps the bare-string form and the
-images leave the turn entirely: an assistant turn naming the result's `[seq]`
-handle is projected next, then the images ride a user message of their own.
+images are outside the turn entirely: an assistant turn naming the result's `[seq]`
+handle is projected next, then the images are in a user message of their own.
 Gemini rejects a replayed thought signature whenever an image sits between the
 signed `tool_use` and the next assistant turn — 400 "Corrupted thought
 signature", sometimes surfaced as "Requests ending with a model turn are not
@@ -483,7 +483,7 @@ fn project(log) -> Vec<ApiMessage>   // = encode_messages(project_semantic(log),
 ```
 
 Projection is two stages. `project_semantic` (`src/record/project/semantic.rs`) is the
-dialect-neutral fold: it decides **selection** — which entries reach the wire, the
+dialect-neutral fold: it determines **selection** — which entries are projected to the wire, the
 range replacement driven by a pre-pass over applicable `Summary` ranges, result verdicts
 (`Triaged` re-rendered from `keep` + `raw`, `Elided`, `TriageFailed`), pinned
 notifications, surfaced context, and every audit-only exclusion — and renders what
@@ -545,15 +545,15 @@ takes no `seq`, `project` never sees it, and the entries behind it are
 numbered from 0 exactly as they would be without it. Being on disk rather than
 in the projection, it cannot move the cached prefix however it is written.
 
-`format` and `version` are the only values the header type can carry —
+`format` and `version` are the only values the header type can contain —
 `format` names the file type and `version` the shape of the entries, a
 monotonically increasing integer. Readers **require** the header: a file whose
 first line is an entry is an unversioned log, not a v1 log missing a field, and
 it is refused by name rather than read on the chance that an entry happens to
-parse. A version this build does not know is refused before its entries are
+parse. An unsupported version is refused before its entries are
 read, and its metadata is held as a raw value until the version is accepted —
 so a newer file's incompatible metadata reports as the unsupported version it
-is rather than as a field this build happens not to know. There is no
+is rather than as an unsupported field. There is no
 importer for an unheadered log and no serializer kept for an old shape.
 
 The reader accepts exactly one version, the current one: 7. Version 2 nested the telemetry
@@ -652,20 +652,20 @@ checks, in the order a reader needs it:
 
 ### Load errors
 
-A failure is a `LoadError`, which carries the path and the class of what went
+A failure is a `LoadError`, which contains the path and the class of what went
 wrong, so a caller can act on the class rather than on the wording:
 
 - `Io` — the file could not be opened or read (its `io::Error` keeps its kind,
   so a missing recording and a permission failure stay distinct);
-- `Unversioned` — line 1 carries no `format`: a log written before the header
+- `Unversioned` — line 1 has no `format`: a log written before the header
   existed, or a file that is not a session log;
 - `WrongFormat { found }` — line 1 names another file type;
 - `UnsupportedVersion { version }` — this format, a version this build does not
   read, settled before the metadata is read;
 - `Corrupt { line, message }` — line `line` is not what this version puts there:
   a header that is not a JSON object, a blank line, a line that is not an entry;
-- `Sequence { line, expected, found }` — the entry on line `line` carries
-  `found` where its position says `expected`.
+- `Sequence { line, expected, found }` — the entry on line `line` has
+  `found` where its position requires `expected`.
 
 `Display` is the text these errors have always printed, `"{path}:{line}: …"`,
 which is what a person reads; the variants are for a program. `LoadError`
@@ -741,7 +741,7 @@ whose sink appends after them, and what the tail needed:
 - `Repair::PartialEntry { byte_offset, saved_to, bytes }` — the fragment is
   written to a sibling file first, named `log.jsonl.torn-<byte_offset>`, and
   the log is then truncated to `byte_offset`. The bytes are kept because they
-  are the only copy of whatever the interrupted append was carrying; the
+  are the only copy of what was written by the interrupted append; the
   truncation is what lets the entries behind them stand and the next append
   begin a fresh line. A fragment file already at that name is **not**
   overwritten — it is another repair's, and this one is about to leave the only
@@ -823,10 +823,10 @@ the expected-bytes pin deliberately.
 `place_trailing_cache_breakpoint` (`src/record/project/wire.rs`) marks exactly one block
 per request, walking back from the wire tail. **Which** block it may mark is
 `BreakpointPlacement`, derived from the session's provider (`Provider::breakpoint_placement`)
-and fixed for the live session. A recorded log carries the provider identity,
+and fixed for the live session. A recorded log contains the provider identity,
 not the derived placement, so an offline reader derives this choice at read
-time; a legacy log without that identity uses the default placement and says
-so:
+time; for a legacy log without that identity the reader uses the default placement and reports
+it:
 
 - `TrailingBlock` (**Anthropic**) — the last block, whatever its type.
   `cache_control` is legal on any block on the native API, so the marker sits at
@@ -885,7 +885,7 @@ items content for content, marks its own tail, and carries the selection rather
 than the raw output or the triage's ask. The marker is a write instruction, not
 content, so the two requests differ only in where it sits.
 
-One request shape rides this marker everywhere: agent turns, triages, and
+One request shape is used with this marker everywhere: agent turns, triages, and
 keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking policy
 ([triage.md](triage.md), the shared envelope), so a session's
 requests read and extend a **single cache lineage** rather than keying one per
@@ -900,15 +900,15 @@ a wall-clock stamp, the request's origin (`turn` / `triage` / `spot` /
 `keepalive` / `aborted_attempt`), the upstream response id (Anthropic `msg_…`; an
 OpenRouter-fronted request's generation id), the model the response named for
 itself, and the four token counts. When the response reported them, the line
-also carries `served_by` (the upstream that served the request) and `cost_usd`
+also contains `served_by` (the upstream that served the request) and `cost_usd`
 (the billed cost reported inline, docs/transport.md); both are omitted
-otherwise. When the provider named a cache-miss reason, the line carries
+otherwise. When the provider named a cache-miss reason, the line contains
 `cache_miss` — the provider's own object, in its spelling
 (`{"type":"tools_changed","cache_missed_input_tokens":41850}`) — and it is absent
 otherwise, which is most lines. The main model and provider are fixed when
 a session is created, but usage remains per request: an upstream may report a
 model alias or a response may be retried, so the per-line value is the
-accounting record. The canonical log carries the boot identity separately;
+accounting record. The canonical log contains the boot identity separately;
 `dev wire` does not read this telemetry file.
 Implemented in `src/session/metrics.rs` (`record_request` / `record_keepalive`),
 fed by `Completion::request_usage`. Transport-only and **never** the canonical
@@ -936,7 +936,7 @@ the streak while still treating it as a touch on the prefix (below).
 
 `cache_read` on those lines is the empirical end of the byte pins. A main-loop
 request that reads nothing from the cache is **cold**, and three conditions
-explain a cold read without implicating the prefix: the session's first request
+can cause a cold read without implicating the prefix: the session's first request
 (nothing was written yet), rendering or replaying under a different model (a
 different model shares no prefix), and a gap past the five-minute TTL with
 nothing touching the prefix (evicted, not moved). Anything else is one
@@ -945,9 +945,9 @@ observation of the prefix having moved.
 One observation is noise — a retry, an eviction the TTL heuristic misses — so the
 signal is the **run**. `ColdStreak` (`src/session/metrics.rs`) folds each recorded
 request into a consecutive-unexplained-cold counter: only `turn` requests move it
-(the side channels carry their own prefixes at their own lineages), `keepalive`,
+(the side channels have their own prefixes at their own lineages), `keepalive`,
 `aborted_attempt`, and a `triage` that ran on the agent's client (its usage line
-carries `main_prefix`) stamp the touch clock the idle test reads without counting,
+contains `main_prefix`) stamp the touch clock the idle test reads without counting,
 and any warm read clears it. An aborted attempt's zero
 `cache_read` is not evidence the prefix moved — counting it drove a false
 streak (two aborted attempts on one turn moved the
@@ -955,28 +955,28 @@ streak to 2). `COLD_STREAK_WARN` is 4, set
 against this repo's own corpus:
 across 1371 recorded turns, unexplained cold reads formed 28 runs — 24 of length
 1, two of length 3, and two of length 28 and 43, each a whole session that never
-read the cache once. The constant's doc comment carries the full fold.
+read the cache once. The constant's doc comment contains the full fold.
 
-A read rate is a **request**-level reading, and calls a request warm on any nonzero
-read: one that matched the preamble and then paid for the rest of a 50k context counts
+A read rate is a **request**-level reading, and treats a request as warm on any nonzero
+read: one that matched the preamble and incurred the cost of the rest of a 50k context counts
 the same as one that matched everything. The report states the uncached input tokens
 beside the rate for that reason — 81% warm turns against 2.07M uncached input is the
 shape a rate alone hides. It is a recorded fact and not a model: what a request was
 *entitled* to reuse depends on where the breakpoint landed, the model's cache policy,
 and the upstream's own behaviour, and none of those are in this record. Asking the
 provider is the better instrument where one exists — the Codex response's
-`usage.attribution` carries per-input-item cached counts, and OpenAI's platform API
+`usage.attribution` contains per-input-item cached counts, and OpenAI's platform API
 answers `prompt_cache_options.comparison_response_id` with a `prompt_cache_diagnostics`
 reason naming what diverged.
 
-Anthropic answers a top-level `diagnostics` object on the Messages dialect with its own
-naming of the first divergence, which is wired here: `src/inference/api/client.rs` carries the
-previous response id per client and `CacheMiss` rides the usage line as `cache_miss`
+Anthropic returns a top-level `diagnostics` object on the Messages dialect with its own
+naming of the first divergence, which is wired here: `src/inference/api/client.rs` stores the
+previous response id per client and the usage line contains `CacheMiss` as `cache_miss`
 (docs/transport.md, under "The provider's own cache diagnostics").
 `efference dev cache` counts those reasons across a record — the four `*_changed` ones
-apart from `previous_message_not_found` and `unavailable`, which say that no comparison
+apart from `previous_message_not_found` and `unavailable`, which indicate that no comparison
 happened rather than what moved. It is attribution beside the streak, not a replacement
-for it: the reasons explain a cold read whose cause is in the request, and a streak of
+for it: the reasons identify a cold read whose cause is in the request, and a streak of
 cold reads with no reason attached is still the signal this oracle exists for.
 
 A separate triage model has its own prefix, so its reads are counted apart:
@@ -1014,7 +1014,7 @@ this:
 
 - **Ambient notifications** never splice behind a breakpoint. They arrive
   out-of-band and are logged at arrival (a slot notification, at first show). A pinned notification projects
-  at the position of the `Triage` that pinned it — always tail-ward — so the
+  at the position of the `Triage` containing its pin verdict — always tail-ward — so the
   wire grows only at the tail, never behind a cached block. Arrival entries
   (`Payload::Ambient`) project to nothing on the canonical wire. See
   [inbox.md](inbox.md).

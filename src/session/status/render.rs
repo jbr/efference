@@ -253,7 +253,7 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
                 ));
                 if reader.drives() {
                     out.push(format!(
-                        "next: {} goes ahead and pays that read, as any message does",
+                        "next: {} proceeds with that read and its cost, as any message does",
                         (moves.resume)(&target)
                     ));
                 }

@@ -50,7 +50,7 @@ The session TOML key `consolidation-bytes` sets the threshold. The default is
 65,536 bytes (64 KiB); zero permits checking any nonempty tool-work budget.
 Dialogue growth and elapsed time do not independently qualify a check.
 
-One continuation of the session's main model both judges the opportunity and
+The session's main model, in one continuation, both judges the opportunity and
 writes the summary. It reads the full projected working context with the same
 model, system, tools, tool choice, thinking and effort policy as the main
 request. The instruction follows a breakpoint on that shared prefix. It asks
@@ -62,7 +62,7 @@ The check runs as a detached task, as the title ask does
 (`docs/session-title.md`); the loop does not wait for it. The candidate range,
 budget and projected context are read synchronously at the juncture, so the
 request is built from that frozen snapshot while the trajectory continues past
-it. One check is in flight per session: a juncture reached while one runs is not
+it. One check is in flight per session: a juncture occurring while one runs is not
 checked. The task's client does not answer to the operator's interrupt, which
 stops the trajectory, not a request outside it.
 

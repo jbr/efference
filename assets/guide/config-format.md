@@ -6,7 +6,7 @@ than being silently ignored, and so does any entry the harness cannot read sound
 A first line of `#:schema https://efference.net/schemas/project.v1.json` gives an editor
 running a TOML language server (Taplo, Tombi) the file's schema: completion, a description
 of each key on hover, and a warning on a misspelled key before efference reads the file. The
-editor fetches the schema from efference.net, so efference.net sees a request from the
+editor fetches the schema from efference.net, so efference.net receives a request from the
 operator's machine; deleting the line stops that, and nothing else reads it.
 
 `consolidation-bytes = 65536` sets the opportunistic consolidation threshold:
@@ -85,7 +85,7 @@ git = "clear"           # `true` is sugar for this
 
 Keys are command prefixes; values are one of `clear`, `watch`, `gate`, `deny` (`true` =
 `clear`, `false` = `deny`). Resolution is **longest-prefix-wins**, so a broad grant can
-carry named exceptions and nesting is unbounded. A key that is not a single simple command
+have named exceptions and nesting is unbounded. A key that is not a single simple command
 (`"git | rm"`) fails the whole file.
 
 `clear` skips both the spotter and the human. `watch` and `gate` send the move to the rung
@@ -121,7 +121,7 @@ session's own `config.toml` re-allowed read-only; a template needs no entry for 
 
 ## `[context]` — what the session boots knowing
 
-Nothing is auto-discovered; this table is the whole of it. A value's shape picks the kind:
+Nothing is auto-discovered; this table is the whole of it. A value's shape determines the kind:
 
 ```toml
 [context]
@@ -134,9 +134,9 @@ Runbooks = { path = "runbooks/", exclude = ["archive"] }
 EfferenceGuide = { builtin = "guide" }
 ```
 
-- A **bare path** (the key is the path) renders with no heading and may carry only
+- A **bare path** (the key is the path) renders with no heading and may have only
   `update`.
-- A **labeled group** (the value carries `path` or `paths`) uses its key as a heading —
+- A **labeled group** (the value contains `path` or `paths`) uses its key as a heading —
   pure presentation, with no meaning to the harness. `create`, `sort`, `exclude`, and
   `description` are group-only. A directory expands to every `.md` file beneath it,
   recursively.
@@ -172,7 +172,7 @@ OTHER      = { cmd = "…" }          # stdout of a command
 
 Keys are exact names or `*` globs, with exact beating glob. `*_KEY`, `*_SECRET`,
 `*_TOKEN`, `*_PASSWORD`, and `*_CREDENTIALS` are masked by default. A value the harness
-fetched for the session is masked whatever `mask` says.
+fetched for the session is masked whatever the value of `mask`.
 
 ## `[bash]`, `[transport]`
 
@@ -187,8 +187,8 @@ keepalive-interval = 240     # seconds the prompt cache may go untouched at idle
 effort = "high"              # e.g. low/medium/high/xhigh/max; boot-validated against the model's own list; omit for the provider default (printed at boot)
 ```
 
-The keepalive only runs at all if the model's provider metadata reports a prompt
-cache behind it; the interval says how often to touch it, and `0` turns it off.
+The keepalive only runs at all if the model's provider metadata indicates a prompt
+cache behind it; the interval determines how often to touch it, and `0` turns it off.
 
 `effort` is how much effort the model spends per turn, a separate axis from
 whether it thinks. The value is accepted as given — there is no fixed vocabulary
@@ -214,7 +214,7 @@ url = "https://mcp.sentry.dev/mcp"
 optional = true
 ```
 
-Exactly one of `command` (a stdio subprocess, which may carry `args` and `env`) or `url` (a
+Exactly one of `command` (a stdio subprocess, which may have `args` and `env`) or `url` (a
 streamable-HTTP endpoint, which may not) is required. Names must fit `[a-zA-Z0-9_-]`, be at
 most 32 characters, and contain no `__`, because a server's tools reach the wire as
 `<server>__<tool>`.

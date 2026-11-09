@@ -30,14 +30,14 @@ review works.
 
 A host reads the file when it starts. A change takes effect the next time you run
 `efference` in standalone mode, or, with `efference --host`, once you stop the host and
-start it again. The terminal interface reads `[tui]` each time it opens. A key efference
-does not know, or a value it cannot read, stops it from starting, with an error naming the
+start it again. The terminal interface reads `[tui]` each time it opens. An unknown key,
+or a value efference cannot read, stops it from starting, with an error naming the
 file: a misspelled key is never ignored.
 <!-- src: src/config/user_config.rs::InferenceConfig (deny_unknown_fields), read_user, from_toml; src/bin/efference/serve.rs::host (InferenceRegistry::load); src/bin/efference/island.rs::Island::launch (a standalone host is a new --host process); src/bin/efference/verbs.rs (TuiConfig::load) -->
 
 ## Connect the models you want to use
 
-Each `[connections.<name>]` table is one way to reach a model: a provider efference knows,
+Each `[connections.<name>]` table is one way to reach a model: a supported provider,
 or another endpoint that speaks one of the same APIs, and where its key comes from. A
 session names its model as `<connection>/<model>`, such as `anthropic/claude-sonnet-4-5`.
 `efference setup` writes these, and [Credentials](credentials.md) explains where keys can
@@ -104,7 +104,7 @@ Before choosing a hook, there are four requirements to know:
   path, such as `/opt/homebrew/bin/direnv`, or start it from a login shell (below).
 - **It must print `env -0`'s format**, one `NAME=value` record per variable, each ended by
   a NUL byte. Plain `env` ends records with a newline, which fails.
-- **A failing hook stops the session from starting.** The reason names the hook and how it
+- **A failing hook stops the session from starting.** The reason contains the hook and how it
   failed, such as ``env: env_hook `direnv` exited 1``; the hook's own error messages are
   discarded. Run the hook yourself in the project to see them.
 <!-- src: src/config/env_table/launch.rs::run_hook (Command::new(program).args(args); stderr null; host_env applied, so PATH is the host's), LaunchError (Display: Spawn, Exited, Unterminated); src/host/preparation.rs::establish_environment ("env: …"), preparation_failed -->
@@ -178,7 +178,7 @@ env_hook = ["/bin/zsh", "-l", "-c", "direnv exec . env -0"]
 ```
 <!-- src: checked 2026-10-27: exits 0 with NUL-terminated records -->
 
-The hook decides what the agent's commands see, not where model keys come from: the host
+The hook determines the environment for the agent's commands, not where model keys come from: the host
 reads keys from its own environment, when it starts.
 <!-- src: src/inference/credential.rs::load_credential (env arm reads the host's start-time environment); src/bin/efference/serve.rs::host -->
 
@@ -237,7 +237,7 @@ images = "kitty"
   lists the built-in ones when the terminal interface opens. The theme picker in the
   terminal interface changes the theme until you quit; to keep one, set it here. The
   default is `"Catppuccin Frappe"`.
-- **`images`**: how images in tool results are drawn. `"auto"`, the default, asks the
+- **`images`**: how images in tool results are drawn. With `"auto"`, the default, the terminal interface asks the
   terminal. Inside tmux, which hides the terminal from that question, `"kitty"` or
   `"iterm2"` names the terminal's image protocol. `"off"` shows each image as a one-line
   reference.
@@ -248,7 +248,7 @@ images = "kitty"
 `efference setup` starts a new file with a `#:schema` line. An editor with a TOML language
 server — Taplo, which Even Better TOML uses, or Tombi — then completes keys, describes each
 on hover, and marks a misspelled one. The editor downloads the description from
-efference.net, so efference.net sees a request from your machine when you edit the file;
+efference.net, so efference.net receives a request from your machine when you edit the file;
 deleting the line stops that, and efference itself does not read it.
 <!-- src: src/setup/render.rs::render (schema line on a fresh file); src/config/config_schemas.rs; assets/schemas/user.v1.json -->
 

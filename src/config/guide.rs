@@ -147,7 +147,7 @@ pub const DOCUMENTS: &[Document] = &[
     Document {
         slug: "supervising",
         description: "Read before supervising agents you create with the agents__* tools: \
-                      the verbs, what each status asks of you, gates and decide, questions, \
+                      the verbs, what to do for each status, gates and decide, questions, \
                       reading a transcript, and what an agent sees of your decisions.",
         body: include_str!("../../assets/guide/supervising.md"),
         tools: &[

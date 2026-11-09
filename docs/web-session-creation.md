@@ -67,8 +67,8 @@ Reduced-motion preferences disable the transition. Fine-pointer hover uses the
 raised surface and strong border tokens of the settings selectors, rather than
 changing only the path's text color; touch does not acquire that hover surface.
 
-Removal immediately forgets the index entry without confirmation; it does not
-delete files, and a subsequent launch remembers the location again. Local
+Removal immediately deletes the index entry without confirmation; it does not
+delete files, and a subsequent launch adds the location again. Local
 completion updates filter the latest index state, so overlapping requests cannot
 restore an entry another completion already removed.
 
@@ -120,7 +120,7 @@ preview values never become explicit overrides merely because they were shown.
 `ui/sessionForm.ts` converts the draft into one `SessionRequest` for both
 `QUERY /sessions` and `POST /sessions`. The browser omits `env`; the host prepares
 it through the user-wide environment hook or its own environment
-([env.md](env.md)). The form does not claim which hook is running.
+([env.md](env.md)). The form does not show which hook is running.
 
 Preview requests follow committed changes, not individual temperature
 keystrokes. A request counter associates each reply or failure with the draft
@@ -145,8 +145,8 @@ that is starting"). Its retry reopens this form on the draft that made the sessi
 
 `ui/ModelPicker.tsx` owns loading and browsing; `ui/pickerRows.ts` builds the
 rows; `ui/ModelPickerRow.tsx` separates model selection from model information.
-The heading identifies the role being chosen. Breadcrumbs name the connection
-and author scope, with a trailing `/` leading into the search input on the next
+The heading identifies the role being chosen. Breadcrumbs show the connection
+and author scope, with a trailing `/` before the search input on the next
 line. **All models** clears the path and query. Ancestor breadcrumbs truncate
 the path and clear the query. The search placeholder and accessible label name
 the current namespace, such as **Search in openrouter / deepseek**.
@@ -159,8 +159,8 @@ With an empty query:
   its status is not `unavailable`, the root lists that connection's own level
   (`levelChips` in `ui/pickerRows.ts`): the same recents, author folders and
   ungrouped models, with the section labels of a connection page and no
-  **Browse connections** heading. An author folder descends into the connection
-  and author; a model row picks that connection's model. A one-word query keeps
+  **Browse connections** heading. Selecting an author folder opens the connection
+  and author; selecting a model row picks that connection's model. A one-word query keeps
   the root's search and offers the typed-ID row for the connection. The
   breadcrumb stays **All models /**. An `unavailable` connection keeps its row,
   where its status shows.
@@ -199,7 +199,7 @@ the parameters. The host supplies provider descriptions through the catalog
 
 Search autofocus is limited to hover-capable fine pointers. On devices outside
 that media condition, search waits for intentional focus. Arrow keys activate keyboard
-highlighting and move its index; Enter chooses the indexed row. Pointer
+highlighting and move its index; Enter selects the indexed row. Pointer
 interaction or scrolling clears the highlight. Hover feedback is restricted to
 hover-capable fine pointers. A connection badge uses the panel background inside
 a highlighted row so it remains distinct. Inputs and selection-field values at the ≤700px breakpoint are at least 16px.

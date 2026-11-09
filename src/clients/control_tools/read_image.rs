@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 
 /// Fetch an image the session actually saw: the bytes stored on a logged tool
 /// result, not a re-read of the file they came from, which may since have changed.
-/// `seq` is the log entry whose result carried the image. Over
+/// `seq` is the log entry whose result contained the image. Over
 /// MCP the image comes back as an image content block; at a terminal it is written
 /// to a file.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "image")]
 pub struct Image {
-    /// The `seq` of the log entry whose result carried the image.
+    /// The `seq` of the log entry whose result contained the image.
     pub seq: u64,
     /// Which image on that result, when it carried several.
     #[serde(default)]

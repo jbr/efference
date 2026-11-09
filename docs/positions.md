@@ -64,7 +64,7 @@ the default for anything the agent produced or consumed is to render it whole â€
 no line budgets, no collapsed-by-default, no eliding. That is a starting
 assumption, not a permanent rule: some content may turn out to be reliably worth
 hiding, and folding on demand or by operator preference can be added once
-reading real sessions says *what*. What the position rules out is assuming the
+readers of real sessions identify *what*. What the position rules out is assuming the
 answer up front, which is how a generic truncation default came to hide the two
 things most worth reading â€” the command that ran and what came back. Realized
 as: a flat transcript in which recent, failed, and flagged items render whole and

@@ -40,7 +40,7 @@ the commit its `HEAD` names, with the session's child environment. The worktrees
 together under one directory rather than inside each session dir, so one path prefix
 covers all of them. A project that is not a git work tree, or whose `HEAD` does not
 resolve, is refused before anything is minted; a boot that fails after the add removes
-the worktree and its branch. The creation preview answers the same two preconditions
+the worktree and its branch. The creation preview reports the same two preconditions
 as a `worktree` boolean (`worktree::can_start`, sharing the check with `add`), and the
 new-session forms show their worktree option only where it is `true`
 (docs/control-api.md).
@@ -75,10 +75,10 @@ prefix.
 working directory. A target inside any worktree, `.efference/worktrees/<id>/<rest>`, is
 classified as `<project>/<rest>` (`session_dir::worktree::counterpart`, applied by
 `Directories::target`): every worktree, the session's own and every other session's,
-carries exactly the project's grants, narrower ones included. A grant of `.` therefore
+has exactly the project's grants, narrower ones included. A grant of `.` therefore
 covers the project checkout and every worktree, for reading and writing — a worktree is
 a convenience, not an isolation boundary, and path grants are mistake-guardrails
-([permissions.md](permissions.md)). Only classification sees the counterpart; the tool
+([permissions.md](permissions.md)). Only classification uses the counterpart; the tool
 touches the path the call named. Both spotters are shown the same view: the project as
 the working directory and each resolved path as its counterpart
 (`Directories::judged_working`), because the worktree's real path sits under the
@@ -96,7 +96,7 @@ project's `post-checkout` hook, bridge them.
 
 ## Archive and resume
 
-An archived session is resumable, so archive does not assume the session is finished
+An archived session is resumable, so archive does not treat the session as finished
 (`worktree::retire`, run from `Host::end` — archive only, including an island's exit,
 which archives each of its sessions ([resumption.md](resumption.md)); a host shutdown
 leaves worktrees in place):
@@ -108,7 +108,7 @@ leaves worktrees in place):
   contains is kept;
 - a worktree with changes is kept untouched.
 
-The archive response's `worktree` field and a `Worktree` log entry say which happened
+The archive response's `worktree` field and a `Worktree` log entry record which happened
 ([control-api.md](control-api.md)). When the session never had a turn, a worktree that is
 removed goes with a discarded session, and one that is kept makes it an ordinary archive
 ([resumption.md](resumption.md)). Resume re-adds a missing worktree the session made at
@@ -122,7 +122,7 @@ Discarding a kept worktree is git's: `git worktree remove --force` and `git bran
 ## The log entry
 
 `Payload::Worktree` (`src/record/log/worktree.rs`) records `added`, `restored` (git's base,
-exit status, and output, which carries the project hook's), `removed` (whether the branch
+exit status, and output, which includes the project hook's), `removed` (whether the branch
 went too), `kept` (why), and `remove_failed`. It projects to nothing, like `Cold`, and its
 free text is masked like any other ([log-and-projection.md](log-and-projection.md)). It
 is the audit trail for a slow, cold, or failed setup.

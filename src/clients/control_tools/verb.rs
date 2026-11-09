@@ -27,7 +27,7 @@ pub trait ControlVerb: Sized + Send {
         call: &VerbCall<'_>,
     ) -> impl Future<Output = Result<Self::Output>> + Send;
 
-    /// The call in-process: a session's own toolbox, which reaches the host it lives in
+    /// The call in-process: a session's own toolbox, which calls the host it lives in
     /// with the caller's identity. A verb the in-session set does not list is the
     /// operator's, and says so.
     fn host(
@@ -45,7 +45,7 @@ pub struct VerbCall<'a> {
     /// The name the verb is advertised under, from the verb table.
     pub verb: &'static str,
     /// The request the call came in: over MCP it carries the caller's `clientInfo`, which
-    /// names it as a sender and as a reader; the command line's is empty, and means the
+    /// identifies it as a sender and as a reader; the command line's is empty, and means the
     /// operator.
     pub context: &'a RequestContext,
     /// Whether the call came from the command line rather than from an MCP client: `image`

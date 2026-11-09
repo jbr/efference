@@ -114,13 +114,13 @@ ResultVerdict entries settle the corresponding buffers. Because log/state delive
 overtake queued output and these deltas carry no request id, a fully overtaken stream
 is omitted in favor of its durable record rather than reconstructed.
 
-The split carries a second load beyond rate of change. This layout targets the
+The split has a second purpose beyond rate of change. This layout targets the
 desktop browser, and the phone is expected to need drill-down views rather than a
 reflow of it — but it is one app meeting both, over the same screens. So fetching,
 folding, and derivation stay in `api/`, `session/`, and hooks rather than inside
 the components that arrange them, and meeting the phone stays a **layout** change
 rather than a second implementation. Wiring logic into a desktop-shaped component
-is what the split forbids; the phone breakpoint below is what the licence bought.
+is what the split forbids; the phone breakpoint below is the benefit of the licence.
 
 The binding (`useSession.ts`) owns the store in a memo but the connector in the
 effect: connecting is a side effect, and `Connector::close()` is permanent, so
@@ -149,7 +149,7 @@ silence meaningful:
 - **A deadline of 35 s on reads** (`STALL_DEADLINE_MS`) — two missed heartbeats and
   a margin. Any read, an event or a comment, moves it; it is armed when an attempt
   starts, so a request that never answers is covered too. When it passes the reader
-  aborts the attempt and reconnects the ordinary way: `onDisconnect` hears a
+  aborts the attempt and reconnects the ordinary way: `onDisconnect` receives a
   "no read" error, the backoff's first wait is one second, and the retry resumes
   from the cursor.
 - **A visibility check** — when the page becomes visible, an attempt whose last read
@@ -180,12 +180,12 @@ runs. The service worker (`public/sw.js`) sits outside `src` and calls its own
 
 **A refused bearer is decided in `apiFetch`.** A `401` to a request that carried the
 held bearer clears it, and only that one: a bearer stored since the request left is a
-newer sign-in, and a request that brought its own `Authorization` says nothing about the
+newer sign-in, and a request that brought its own `Authorization` reveals nothing about the
 held one, so a late `401` leaves a fresh sign-in alone. The bearer store announces each
 change (`subscribe`), and the top of the app follows it: while none is held `useEntry`
-answers `unauthenticated` and `App` renders the sign-in view in place of whichever view
+returns `unauthenticated` and `App` renders the sign-in view in place of whichever view
 was showing — the list, a session, the archived-sessions page, the file sidebar — so a
-`401` does not reach a view's own error text. The replaced view unmounts and closes what
+view's own error text does not show a `401`. The replaced view unmounts and closes what
 it held (the listing stream, a session's connection, its file streams), which is why
 none reconnects against the dead bearer; the attention reporter (`attention.ts`), which
 no view owns, sends nothing while none is held and checks for a due report as soon as
@@ -229,7 +229,7 @@ past unseen entries. The initial tail uses the same repair. If that repair fails
 the fetched tail and its cursor remain usable; a missing call reference is not
 classified as a missing session.
 
-Transcript item roots carry stable node keys in the DOM. Immediately before a
+Transcript item roots have stable node keys in the DOM. Immediately before a
 page merges, the surface captures the first node intersecting the viewport; its
 layout effect restores that node's previous offset after the prepend. It adjusts
 only residual movement, so browser scroll anchoring is not applied twice. The
@@ -328,7 +328,7 @@ activity (creation time when activity is unknown, then path to break ties). Thei
 age does not remove the workspace: archived sessions active within one hour appear
 as full cards (five per workspace, two on narrow screens), and those within one
 week appear as compact rows (up to five); the remaining sessions are available
-through the archive picker. Each archived card and row carries the same `⋯` menu as a
+through the archive picker. Each archived card and row has the same `⋯` menu as a
 live card, with one action: **Switch model…** opens the switch page on that session and
 resumes it on the chosen models instead of the recorded ones
 ([resumption.md](resumption.md)). The row itself stays one button that resumes it.
@@ -350,16 +350,16 @@ own hairline so the two read as one surface; the bar on this page is always that
 material. "Docked" is an `IntersectionObserver` (`useStuckHeadings`) because Safari has
 no `scroll-state` container query.
 
-**A card says where the operator's attention stands, in words.** `attention` is one of
+**A card shows where the operator's attention stands, in words.** `attention` is one of
 `blocked` (gated, stalled, parked at the cold check, or blocked: nothing moves until someone acts), `your_turn` (idle after
 a turn — waiting on a reply or an end, not "less important"), `working`, and `new`
 (never made a request and has no title). The top line is one sentence with the id as
 its subject — `amber-lattice needs approval`, `hollow-birch is waiting for you`,
 `tidal-cipher has stalled`, `amber-lattice is paused: its cache expired` (status
-`parked`; the activity line says `continuing reads 120k tokens uncached`, and after a
+`parked`; the activity line shows `continuing reads 120k tokens uncached`, and after a
 compaction `is paused: summarized, waiting for you to continue`), `quiet-fern is held` or
 `is stopped: its config file needs repair` (status `blocked`, the reason from the
-`loop_phase` topic) — and working and new say nothing, working being the
+`loop_phase` topic) — and working and new show nothing, working being the
 default. There are no status dots. Colors keep the meanings the session view gives
 them: a gate is `--accent` (and tints the card), a stall or a park `--warn`; the
 switcher dot follows.
@@ -386,7 +386,7 @@ state topics (`gate`, `ask`, `stall`, `loop_phase`, `cold`, `usage`,
 cache is still believed expired, and `loop_phase` why a blocked one is blocked. Glancing at the overview reports nothing: attention is what the
 page's own report says ([web-push.md](web-push.md)), not what it has open.
 `foldRecent` reads the latest intent and reply off the log; a user entry retires the
-reply it answers, and a record-only assistant entry says nothing. That is N
+reply it answers, and a record-only assistant entry contributes nothing. That is N
 connections and the whole log for a card that reads two fields, accepted while
 whether the intent line earns its place is learned (`backlog/inbox/host-overview-stream.md`).
 
@@ -474,7 +474,7 @@ Two details are the client's, not the form's:
 - **Which root the patch names.** The resume names the root the host serves the session
   under, which is the listing row's `cwd` (`session/listing.ts`), not the identity topic's
   — that one is the working directory the session runs in, its own worktree included. A
-  patch naming the working directory answers `409 state_mismatch` and leaves the session
+  patch naming the working directory receives `409 state_mismatch` and leaves the session
   archived, so the view of it goes 404 and the client reads that as a session that ended.
   `ui/liveSessions.ts` is the listing subscription both the switcher's tabs and a session
   view read for their own row; `api/sessions.ts` serves every reader from one stream.
@@ -482,7 +482,7 @@ Two details are the client's, not the form's:
   the id again only after that, so the view behind the page reads a 404 in between. It is
   the gap, not the end: while the page is up, and until the resumed log's `starting` topic
   arrives (`session/store.ts`), `SessionView` does not take a 404 as its cue to go home. The
-  starting session's own status line then carries the restart's progress, and the
+  starting session's own status line then shows the restart's progress, and the
   post-start reattach brings the view back from its cursor.
 
 ## The new-session form
@@ -504,7 +504,7 @@ reading) for what CSS cannot switch. Change both together.
 
 This pass scopes the layout, not the phone. The desktop browser is the target;
 mobile is supported by a reflow of it, and phone-layout defects in that reflow
-are ordinary backlog units. What remains open is whether a phone eventually wants
+are ordinary backlog units. What remains open is whether a phone eventually needs
 more than a reflow: fitting a harness's worth of information onto a phone may
 need drill-down views that depart far enough from the desktop layout to be their
 own wireframing pass, which has not run
@@ -539,7 +539,7 @@ What narrow changes:
   the screen: a floating `✎ compose` chip (accent-bordered; labelled `draft…`
   when one is held) summons the band and focuses the field, `⌄` or Escape or a
   successful send puts it away, and the draft survives collapse. The chip
-  yields to a pending gate — the float owns the above-dock slot and carries its
+  yields to a pending gate — the float owns the above-dock slot and has its
   own steering input.
 - **The composer stops advertising the keyboard**: placeholder drops the
   enter/shift-enter advice, Enter inserts a newline instead of sending (a phone
@@ -559,7 +559,7 @@ Escape, tapping the inspected call again) converges without touching history
 itself. Forward navigation onto a consumed overlay entry is re-consumed:
 which overlay it stood for is deliberately not recorded.
 
-One WebKit finding the composer carries, fixed for all widths because it only
+One WebKit finding in the composer, fixed for all widths because it only
 *manifested* narrow: the textarea's flex basis is `100%` rather than `flex: 1`'s
 `0%` (WebKit's `field-sizing: content` shrink-wraps the inline axis when the
 basis is indefinite, which collapsed the field to ~1ch).
@@ -582,7 +582,7 @@ chip above the dock, shown only while follow intent is disengaged. Tapping it
 explicitly resumes following and jumps instantly through `jumpToTail` in
 `ui/float.ts`; `useDockOffset` keeps it above the measured dock. Hidden while a
 gate is pending (the float
-owns that slot and carries its own jump) and while a current-file sheet covers the
+owns that slot and has its own jump) and while a current-file sheet covers the
 transcript below the desktop sibling breakpoint.
 
 Known nit: wire-vocabulary glyphs quoted in an *inline-code span* (a model
@@ -611,11 +611,11 @@ Two residents:
   view's `selection` field when the daemon sent one
   ([control-api.md](control-api.md)) — the local count is over whatever
   content is on hand, which for an elided result is a prefix that may hold
-  none of the kept lines; the body then says where they are instead of
+  none of the kept lines; the body then shows where they are instead of
   presenting as a verdict that kept nothing. The local count is the fallback
   for a daemon that predates the field. When nothing was dropped
   both header words go quiet (`stateWord` and `sizeLabel` null) and the head
-  is a bare `result` — the inspector's wire row still names the state.
+  is a bare `result` — the inspector's wire row still shows the state.
 
 `ui/ToolBlocks.tsx` is the display half: colored diff lines (line-level
 only), numbered gutters whose jumps show what triage dropped, `data-lang` on
@@ -645,7 +645,7 @@ session
       └─ result             carries its own keep + note
 ```
 
-An assistant entry reaches the tree through `session/assistant.ts`, which groups
+An assistant entry is added to the tree through `session/assistant.ts`, which groups
 its ordered, dialect-tagged `output` (Messages blocks or Responses items,
 [log-and-projection.md](log-and-projection.md)) into the thinking / prose / calls
 view the leaves and the call nodes render — the client-side counterpart of the
@@ -674,21 +674,21 @@ kinds that exist. (Under the previous default, an unrecognised payload drew an
 A result captured before its triage decides (`wire: "Pending"`,
 [triage.md](triage.md) "Capture, then verdict") renders its raw
 output at once, in the pinned bounded box a running command's tail uses, under a
-`result (awaiting triage)` head. The `ResultVerdict` entry that decides it is
+`result (awaiting triage)` head. The `ResultVerdict` entry that determines it is
 folded in `buildTree` onto the slot of the result it names — the slot's entry
 becomes a copy of the `ToolResult` carrying the verdict's wire and line counts,
 at the result's own seq — so the slot re-renders as the triaged result and the
 verdict is never an item of its own. The first non-Pending verdict for a Pending
-result decides it; a verdict naming a result that was not Pending is ignored. The
+result determines it; a verdict naming a result that was not Pending is ignored. The
 fold runs over the entry list, so the initial window and live frames take the
 same path; results logged directly with their final wire render as before.
 
 A result's images render below its body as buttons over `<img>` elements for
 `GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
-view carries only `{media_type, width, height}` — the attributes that hold the
+view contains only `{media_type, width, height}` — the attributes that hold the
 aspect box before the bytes land — and the bytes arrive through `useApiImage`
 (below). Capped at 420px display width; tapping one opens it full screen in the
-lightbox. The inspector's result tab carries the same images, so a
+lightbox. The inspector's result tab shows the same images, so a
 picture-returning call is not a drawer of everything but the picture.
 
 **API images are fetched, not linked.** An `<img src>` makes a request no client
@@ -714,10 +714,10 @@ element out at the `width` attribute, past the column. The lightbox calls the ho
 on the URL it was opened with, so it holds its own reference: the thumbnail that
 opened it can unmount without revoking what the viewer shows. A `blob:` URL is
 already local bytes — a staged file's own preview — and passes through unchanged. A
-result's picture asks only once its box has come within 1500px above or below the
+result's picture is requested only once its box has come within 1500px above or below the
 viewport (`useNearViewport`, an `IntersectionObserver` that stands in for
 `loading="lazy"`, which defers nothing once the bytes come through `fetch`), and
-keeps what it fetched after that; attachment thumbnails and the lightbox ask when
+the fetched image is kept after that; attachment thumbnails and the lightbox request their images when
 they mount.
 
 **The lightbox** (`ui/Lightbox.tsx`, store in `ui/lightbox.ts`) is the client's
@@ -728,7 +728,7 @@ attachment) and the viewer is a single instance. Pinch, wheel, and double-tap
 zoom (`ui/zoom.ts`: a scale about the image's center plus a translation, anchored
 so the point under the fingers stays under them, and clamped to the stage); a
 one-finger drag pans while zoomed and *dismisses* at fit, in any direction
-(`ui/swipe.ts`); the backdrop, the ✕, and Escape close it. The stage claims the
+(`ui/swipe.ts`); the backdrop, the ✕, and Escape close it. The stage disables browser handling of the
 gesture (`touch-action: none`), the transform is set inline, and the overlay sits
 above the whole z-index ladder because it is the topmost surface. It is counted
 in the overlay history, so back and edge-swipe dismiss it first. The stage's
@@ -744,7 +744,7 @@ does the dereference: in the transcript it waits for a click, since most
 truncated results are scrolled past and fetching them all would restore the
 head-of-line problem the elision removed; in the inspector it fires on open,
 because opening the inspector *is* the request for the whole thing. A failed
-fetch is a value — the prefix stays on screen and the affordance says the rest
+fetch is a value — the prefix stays on screen and the affordance shows that the rest
 did not arrive.
 
 **What is deliberately not a container.** There is no per-user-message grouping.
@@ -790,8 +790,8 @@ Dispatch duration excludes the permission cascade, so a call that waited at a
 gate does not read as a slow call.
 
 `Triage` is not rendered. Its one visible fact — how much of the output survived
-— the result header already states as `kept N of M lines`, so a `keep: all` line
-after every result said nothing the reader did not have. Its batch-scoped fields
+— the result header already shows as `kept N of M lines`, so a `keep: all` line
+after every result added nothing the reader did not have. Its batch-scoped fields
 (`inbox`, `retries`) have no surface yet; when they get one it is the batch
 node's.
 
@@ -850,7 +850,7 @@ item, note included.
 
 ## A call reads as a signature
 
-Every call renders as pseudocode. `ui/signature.ts`'s `callView` decides what the
+Every call renders as pseudocode. `ui/signature.ts`'s `callView` determines what the
 arguments are, width-free; `ui/signatureLayout.ts` lays them out at the column's
 width; `ui/CallHead.tsx` renders the rows:
 
@@ -864,7 +864,7 @@ write("src/main.rs", overwrite: true)
 ```
 
 The form is **total**: MCP servers are user-mountable and their argument shapes are
-arbitrary, so a tool this client has never heard of renders as well as a built-in.
+arbitrary, so a tool unknown to this client renders as well as a built-in.
 It replaced a per-tool table plus a pretty-printed JSON envelope for everything not in
 it — which is how `check_inbox` came to render as a code block containing `{}`.
 
@@ -904,7 +904,7 @@ is a collection that still does not fit breaks the same way inside it. A lone sc
 argument stays hugged by its parentheses — breaking around it adds two rows and the
 value wraps as text either way. The signature is set in the monospace face, so a width
 is a count of characters and fitting is arithmetic: `ui/columns.ts` measures the head's
-column count (one shared `ResizeObserver`; a canvas `measureText` per font, forgotten
+column count (one shared `ResizeObserver`; a canvas `measureText` per font, cleared
 when a web font loads), and the layout is a pure function of the view and that integer,
 memoized per call, recomputed only when the integer changes. Rows indent in `ch`, the
 unit the layout counted in. A chip's added width (the path chip's ` ⤢`, a process
@@ -938,16 +938,16 @@ parentheses there rather than after them.
 
 Tool **descriptions** stay out of the transcript. They are static per tool, so
 in a run with 55 `ferritin.*` calls the same sentence would render 55 times,
-while the call's own model-authored `intent` — already a sibling line — says
+while the call's own model-authored `intent` — already a sibling line — states
 what *this* call was for. The inspector is where a description is paid for once.
 
-The head's markup carries the wrapping rule. A flat signature is one inline flow,
+The head's markup has the wrapping rule. A flat signature is one inline flow,
 `.call-sig`, whose tokens are ordinary inline spans and wrap as text; a broken one is a
 block per row. `overflow-wrap: break-word` lives on `.call-sig`, so an overrun breaks
 between tokens and only mid-token when one token is wider than the line. The head was a
 flex row for as long as an affordance sat at the end of it, and flex items are
 blockified by the CSS Display spec — so a signature built of sibling spans wrapped as
-*whole boxes* onto their own lines. A chip rides the argument it refers to (below), so
+*whole boxes* onto their own lines. A chip is attached to the argument it refers to (below), so
 there is nothing to place at the end of the row.
 
 **A transcript item never widens the page.** On a phone, an element whose text runs
@@ -981,12 +981,12 @@ write(path: "src/api.rs" ⤢, contents: 505 lines)
 ```
 
 The rule the table is held to: **a chip adds an affordance or a fact the
-argument does not carry** — a link, a resolved handle. Never a re-wording. That
+argument does not contain** — a link, a resolved handle. Never a re-wording. That
 is what keeps the table from growing into a per-tool prose registry, whose first
-consequence is a second rendering path for every tool this client has not heard
-of, and whose second is `Searched src for "Listening"` in place of
+consequence is a second rendering path for every tool unknown to this client,
+and whose second is `Searched src for "Listening"` in place of
 `search(pattern: "Listening", path: "src")`. So `search`, `read`, and `list`
-have no entries at all: their arguments already say everything.
+have no entries at all: their arguments already contain everything.
 
 Two renderers cover the table's seven entries.
 
@@ -998,8 +998,8 @@ Two renderers cover the table's seven entries.
   (`overflow-wrap: anywhere`); the glyph and the path's last characters share one
   no-break run (`.chip-tail`), so the glyph never starts a line. The process chip is
   short by construction and stays on one line. This replaced a detached `open ⤢` in
-  a trailing slot on the head, which named the file a second time to say which one it
-  meant.
+  a trailing slot on the head, which included the file name a second time to
+  identify it.
 - **A `p#<n>` handle resolves to what it was** — `handle` on `kill_process`,
   `read_process`, `watch_process`. The handle is opaque in the transcript, and
   `GET /v1/processes/:id` answers for any handle ever minted, running or exited
@@ -1007,12 +1007,12 @@ Two renderers cover the table's seven entries.
   beside it, truncated to a recognizable head. One renderer serves three tools.
 
 `ui/processRecord.ts` is the fetch behind the handle chip: lazy (most calls
-carry no chip at all), one flight per handle however many chips name it, and
+have no chip at all), one flight per handle however many chips refer to it, and
 memoized for the page. A `404` is memoized too — an id never minted into the
 background stays never minted — while a transport failure is not, so a chip that
 missed can resolve on a later render. The one staleness this accepts: a record
 fetched while the process runs keeps its running tone after it exits; the fact
-the chip carries is the command, which does not change.
+the chip shows is the command, which does not change.
 
 **A handle with no record degrades to the plain argument**, and that is the
 normal case rather than an edge — a foreground command that never backgrounded
@@ -1023,7 +1023,7 @@ annotate with costs the reader nothing: the signature reads exactly as it did.
 ## A record-only entry is marked
 
 An assistant entry carrying `excluded` is record-only: `project` skips it
-([transport.md](transport.md)). An empty completion (`"Empty"`) that carries
+([transport.md](transport.md)). An empty completion (`"Empty"`) that contains
 thinking leads with *Empty response — recorded, not in context, asked again*. Empty failed attempts produce no transcript
 nodes; their current explanation belongs to transport chrome instead. Partial
 thinking, prose and tool calls still render, led by an *Incomplete response —
@@ -1032,7 +1032,7 @@ retain a *Generation interrupted* marker, including when empty. When preceding
 `Telemetry::Interrupt` records an origin, the marker names its client and affordance
 (for example, *from the web stop button*). The fold uses the latest interrupt and
 consumes it at the next assistant entry; user turns and new main request starts
-clear it so an idle interrupt cannot name a later generation. Side-request telemetry
+clear it so an idle interrupt cannot be associated with a later generation. Side-request telemetry
 does not clear it. Logs without an origin keep the plain marker. Origins are
 client-asserted, not authenticated identities.
 `upstreamFailureWhy` reads either the string or object serialization of the mark.
@@ -1082,7 +1082,7 @@ reversal trigger when it landed — a model whose thinking was line-structured,
 bare adjacent lines markdown would merge into one paragraph, would have flipped
 it back to preformatted. That trigger was retired 2026-08-25 as measured-inert:
 across 653 blocks in 20 sessions (including `stealth/ox-alpha`, the most verbose
-thinker seen here), 73.5% carry an explicit markdown construct — inline code 65%,
+thinker seen here), 73.5% contain an explicit markdown construct — inline code 65%,
 numbered lists 40%, bullets 28%, bold 22%, fenced code 16% — while the trigger's
 predicate, a run of adjacent plain-prose lines, appears in 7.8% and is almost
 always a colon lead-in above an `A.`/`B.` enumeration markdown does not read as a
@@ -1100,11 +1100,11 @@ The renderer must produce a **React element tree, never an HTML string**. The
 text is model-authored and the page holds a session credential, so a markup-
 emitting renderer would mean `dangerouslySetInnerHTML` over untrusted content;
 that constraint is what picks the library, not ergonomics. Two `react-markdown`
-defaults carry it and neither should be switched off without reading
+defaults maintain that constraint and neither should be switched off without reading
 [Untrusted content](#untrusted-content): raw HTML
 is escaped unless `rehype-raw` is added, and `defaultUrlTransform` passes only
 `http`/`https`/`irc`/`ircs`/`mailto`/`xmpp`, so a `javascript:` or `data:` URL in
-model output never reaches an `href`.
+model output is never used as an `href`.
 
 Prose styling is scoped under `.prose` and tightened against the browser
 defaults, which are sized for documents: a transcript is a sequence of short
@@ -1118,12 +1118,12 @@ Three decisions:
 
 - **The fine-grained bundle**, over a preset. The app embeds into the binary at
   compile time, so the full grammar set is not affordable; the languages are
-  exactly the ones `render/parse.ts`'s `langForPath` can name, loaded as dynamic
+  exactly the ones `render/parse.ts`'s `langForPath` can identify, loaded as dynamic
   imports so the grammars are their own chunks rather than main-bundle weight.
 - **The JavaScript engine over precompiled grammars**, not the Oniguruma WASM
   one — no `.wasm` to ship, and no `wasm-unsafe-eval` needed in the CSP the
   bind serves. Of the two JavaScript engines it is the *raw* one:
-  `createJavaScriptRegexEngine` carries a transpiler that converts each
+  `createJavaScriptRegexEngine` includes a transpiler that converts each
   grammar's Oniguruma patterns to JavaScript `RegExp` at load time, and it sits
   in the main chunk. `@shikijs/langs-precompiled` ships grammars whose patterns
   are already JavaScript regex literals, so `createJavaScriptRawEngine` runs
@@ -1131,7 +1131,7 @@ Three decisions:
   Vite's 500 kB warning) and startup does no transpiling. The precompiled
   grammar chunks are larger than their source-pattern equivalents, but less so
   than the transpiler weighs — every chunk gzipped, the whole app is ~11 kB
-  smaller. The literals carry the `v` (unicodeSets) flag, an ES2024 floor
+  smaller. The literals have the `v` (unicodeSets) flag, an ES2024 floor
   (Chrome 112, Safari 17, Firefox 116) the desktop browsers this targets
   clear.
 - **Except bash, which runs the full grammar on the regex engine.** The precompiled
@@ -1148,7 +1148,7 @@ Three decisions:
 - **Tokens, not HTML.** `codeToTokens` returns `{ content, color }[]` grouped by
   line, which the components render as spans. `codeToHtml` would return a markup
   string, and nothing on this page turns untrusted text into markup. The line
-  grouping is also the shape the numbered-gutter view already wanted, so a
+  grouping is also the shape the numbered-gutter view already needed, so a
   triaged `read` is highlighted *and* keeps its per-line original line numbers.
 
 Highlighting is best-effort: until the grammars load, and permanently if they
@@ -1230,7 +1230,7 @@ Each draw is copied to a 2D canvas and encoded as a blob URL for the second CSS
 background layer, beneath the gradient. Matching color/dimension/density requests
 share a URL. The page image repeats at a viewport-sized period in an absolute
 `body::before`, beneath document content in the body's isolated stacking context.
-It travels with scrolling content without per-scroll rendering or a transcript-height
+It moves with scrolling content without per-scroll rendering or a transcript-height
 allocation. The gallery is transparent over it. Other images fit their surface. Density is capped at 2,
 with a 4096-pixel dimension and roughly four-million-pixel allocation limit;
 large viewports reduce density rather than growing the backing store without
@@ -1319,7 +1319,7 @@ a Google Fonts link cannot load. The files ship whole because subsetting counts
 as modification under the OFL's reserved-name clause. The serif is the voice of
 prose — assistant text, thinking, user turns (the mock drew user turns mono;
 reversed on use, 2026-08-19), the intent line — while everything tool-shaped
-stays in the mono. The user turn's accent gutter carries no glow, dropped on
+stays in the mono. The user turn's accent gutter has no glow, dropped on
 use the same day.
 
 Vite inlines small `src/` assets as `data:` URIs, and the CSP has no `data:`
@@ -1357,8 +1357,8 @@ appends a title entry even when the peek kept the previous one. **A restart**
 processes, calls left pending, and entries skipped after an unclean end.
 **A worktree event** (`Worktree`) renders as a one-line notice in an ambient
 entry (`ui/worktree.ts`): an add or restore names the branch, with a failed
-setup stated on the line itself; a removal says whether the branch went too;
-a keep carries the reason and a failed removal the error. Git's setup output
+setup stated on the line itself; a removal shows whether the branch went too;
+a keep has the reason and a failed removal the error. Git's setup output
 sits collapsed behind a disclosure, with old progress redraws cleaned to their
 last segment per line.
 
@@ -1394,7 +1394,7 @@ when "did that land?" is otherwise unanswerable from the screen. The queue
 lives on the session (`pendingTurns`), keyed by the submission id the submit
 action mints and the daemon echoes onto the resulting `User` entry
 (docs/control-api.md), so settling is an exact lookup: the fold drops the
-pending turn whose id an arriving entry carries. Two orderings make delivery
+pending turn whose id is on an arriving entry. Two orderings make delivery
 arrive outside the fold, and both are handled: the entry's log frame can fold
 *before* the 202 body resolves (the daemon commits and broadcasts
 independently of writing the response), so the push skips itself when the
@@ -1402,14 +1402,14 @@ entry with its id already folded; and a re-seed (`seed`) settles pending
 turns against the entries it absorbs, since those never pass through
 `applyLog`. (The TUI mints and keys the same way.)
 
-**An `ask` reads as a turn ending** (`session/tree.ts`, `ui/Transcript.tsx`). A call named `ask` (docs/process-monitor.md) with a usable `question` is not a call node: `buildTree` emits a leaf carrying the question and its place among the asks of one completion (`askOfCall`, the counterpart of `process_monitor::ask_of_call`), drawn as the assistant's prose with a mark, after the step's other calls. The mark (`ui/askMark.ts`) says where the question stands: `answering` (above the prose in a softly lit current-question frame, with ` · question n of m` when `of > 1`) for the ask the live `ask` topic's `call_id` names, which is the one the composer's send answers; `next · question n of m`, dim, for an unresolved ask while the topic names a sibling; `asked` (with the position) once its result has committed (`AskQuestion.resolved`, set by `buildTree`) or when there is no topic to say more, as in a replay. While the topic is non-null the composer's placeholder reads `your reply answers question n of m`, or `your reply answers the question` for a lone ask. Its result entry becomes a second leaf at its log position: with a `submission_id` it is the reply, drawn from `raw.content` under its sender as a `User` turn is; without one — an interrupt, a malformed call — a dim `not answered`. An ask with no usable question stays an ordinary call. A call whose arguments are still streaming is not drawn until it commits. A send while the `ask` topic is non-null is the reply, and names the question it answers (`answers`, the topic's `call_id`). A send refused because it named no question while one was pending — the question arrived after the text was typed — or named one no longer pending answers `409 not_delivered`: `submitTurn` folds the refusal's `ask` topic into the store, as `resolveGate` folds a moved gate, and the composer keeps the draft and says `not sent: a question came first` (or `that question is no longer waiting`). Its echo is keyed like any other, and because the fold settles on any entry carrying the id, the reply's `ToolResult` settles it; the echo reads "Sent · answering the question" and carries no Recall, since a reply is never queued. (The daemon's refusal to continue past a question, `409 not_continuable`, reaches the composer's error line like the other continue refusals.)
+**An `ask` reads as a turn ending** (`session/tree.ts`, `ui/Transcript.tsx`). A call named `ask` (docs/process-monitor.md) with a usable `question` is not a call node: `buildTree` emits a leaf carrying the question and its place among the asks of one completion (`askOfCall`, the counterpart of `process_monitor::ask_of_call`), drawn as the assistant's prose with a mark, after the step's other calls. The mark (`ui/askMark.ts`) shows where the question stands: `answering` (above the prose in a softly lit current-question frame, with ` · question n of m` when `of > 1`) for the ask identified by the live `ask` topic's `call_id`, which is the one the composer's send answers; `next · question n of m`, dim, for an unresolved ask while the topic identifies a sibling; `asked` (with the position) once its result has committed (`AskQuestion.resolved`, set by `buildTree`) or when there is no topic with more information, as in a replay. While the topic is non-null the composer's placeholder reads `your reply answers question n of m`, or `your reply answers the question` for a lone ask. Its result entry becomes a second leaf at its log position: with a `submission_id` it is the reply, drawn from `raw.content` under its sender as a `User` turn is; without one — an interrupt, a malformed call — a dim `not answered`. An ask with no usable question stays an ordinary call. A call whose arguments are still streaming is not drawn until it commits. A send while the `ask` topic is non-null is the reply, and names the question it answers (`answers`, the topic's `call_id`). A send refused because it named no question while one was pending — the question arrived after the text was typed — or named one no longer pending receives `409 not_delivered`: `submitTurn` folds the refusal's `ask` topic into the store, as `resolveGate` folds a moved gate, and the composer keeps the draft and shows `not sent: a question came first` (or `that question is no longer waiting`). Its echo is keyed like any other, and because the fold settles on any entry with the id, the reply's `ToolResult` settles it; the echo reads "Sent · answering the question" and has no Recall, since a reply is never queued. (The daemon's refusal to continue past a question, `409 not_continuable`, appears on the composer's error line like the other continue refusals.)
 
-**An ask's recalled turns return to the composer once.** Turns queued before the question began are withdrawn by the daemon and published on the `ask` topic as `recalled`. Submission ids are recorded on the session (`minted`) **before** the POST, so a turn whose 202 has not resolved is still recognised as this client's; a restarted client has none and restores nothing. `applyFrame` on an `ask` frame with a `call_id` not yet seen (`askRestored`) drops the echoes of the minted ids among `recalled`, records them in `withdrawn` (so a late 202 does not queue an echo nothing will settle), and sets `askRecall`, which `SessionView` hands to the composer's `{text, attachments, nonce}` splice like a manual recall.
+**An ask's recalled turns return to the composer once.** Turns queued before the question began are withdrawn by the daemon and published on the `ask` topic as `recalled`. Submission ids are recorded on the session (`minted`) **before** the POST, so a turn whose 202 has not resolved is still recognised as this client's; a restarted client has none and restores nothing. `applyFrame` on an `ask` frame with a `call_id` not previously recorded (`askRestored`) drops the echoes of the minted ids among `recalled`, records them in `withdrawn` (so a late 202 does not queue an echo nothing will settle), and sets `askRecall`, which `SessionView` hands to the composer's `{text, attachments, nonce}` splice like a manual recall.
 
 **The `asking` status word** is one of the listing's statuses: the session card reads "has a question" and shows the question as its activity (the `ask` topic is one of the card's topics), the attention is `your_turn`, and archiving an `asking` session is confirmed like archiving a running one.
 
-Each echo carries a **recall** affordance: `DELETE /turns/:submission_id`
-withdraws the pending-queue suffix beginning at that turn and answers with what
+Each echo has a **recall** affordance: `DELETE /turns/:submission_id`
+withdraws the pending-queue suffix beginning at that turn and returns what
 it actually popped (docs/control-api.md). Nothing was ever logged, so there is
 nothing to retract. The action drops only the echoes the daemon reported
 popping, and hands the texts to the composer, which prepends them to the draft
@@ -1453,7 +1453,7 @@ the raw log, not to reveal anything. The `consolidate` call itself collapses to 
 header once resolved — its input is the summary the rule renders in full
 (the pair projects normally, so the log holds the summary twice), and its
 result is a constant acknowledgement. A pending, gated, or failed
-consolidate renders whole: the gate surface expects the call on screen, and
+consolidate renders whole: the gate surface requires the call on screen, and
 an error is information.
 
 ## Chrome and the content column
@@ -1465,7 +1465,7 @@ edges too: the wordmark and the app-settings link, the turn state and the
 interrupt (full width for parity across the bars, 2026-08-20). Only content
 keeps the column: the transcript and the composer input. Chrome is also invisible to text selection (`user-select: none`
 across labels, bars, tabs, and controls) — only content selects: transcript
-text, commands, results. Inside the column, entry content carries a right
+text, commands, results. Inside the column, entry content has a right
 inset balancing the label gutter's air, so text in a block does not run flush
 against the column edge.
 
@@ -1490,7 +1490,7 @@ session daemon's root and until the host's listing resolves the project director
 What the session is — models, directory — and how it runs belong to the surfaces
 that show them whole; the bar carried them on one line
 and could show none of them. The title is the one element that yields width,
-and on the phone breakpoint it is dropped: the start of a title says less than
+and on the phone breakpoint it is dropped: the start of a title conveys less than
 nothing. The **context meter** is the bar,
 with `42.7k/1M` as a small caption under it so the numbers take no width of
 their own. `ui/ContextBar.tsx` shares its fill with the switcher hover card:
@@ -1511,7 +1511,7 @@ bar left out — because the provider's running total is a sum, not an occupancy
 the provider's accounting endpoint could not price makes the total a floor, and
 the presence of any such request prefixes the number with `~` rather than
 naming a count: past the first, "inexact" is the whole of what the reader
-needs. The header names the count itself in the element's title. Cost and
+needs. The header shows the count itself in the element's title. Cost and
 context are independent readings, each drawn where its own provider supplies it,
 and not assumed present together.
 
@@ -1563,7 +1563,7 @@ open across pointer departure. Escape restores tab focus and closes the card; an
 pointer press also dismisses it.
 
 The card's navigation content and its actions are separate elements. The actions are
-one box beneath the card: **Switch model…** above a rule (it rides the session's URL as
+one box beneath the card: **Switch model…** above a rule (it uses the session's URL with
 `?switch=model`, so the view behind the page stays mounted), and **Archive session**
 below it. The archive action (`ui/ArchiveAction.tsx`) uses the overview's `archiveWarning`
 rule: active work or background processes show a specific warning with “Archive anyway”
@@ -1579,7 +1579,7 @@ unvisited sessions following in the host's id order. Established slots persist a
 session navigation. Tabs are measured against the row (`ui/useSwitcherFit.ts`); when they
 overflow, the selected tab's measured width is reserved first, and other visible tabs
 retain their relative order. Those that do not fit are listed in a `+N` menu whose button
-carries an accent dot when a session in it is waiting on the operator; attention does not
+has an accent dot when a session in it is waiting on the operator; attention does not
 reorder tabs. Entering a session from a tab is a client-side navigation, as from a card.
 
 In the installed app, `ui/tabShortcuts.ts` recognizes Cmd+Shift+`[` / `]`,
@@ -1598,7 +1598,7 @@ clock logic. `ui/upstreamMessage.ts` extracts `error.message` from provider JSON
 (with string-error and top-level-message fallbacks), bounds the explanation, and
 keeps unrecognized JSON and echoed SSE response data out of the notice. HTTP
 status supplies a category; status-less failures describe interrupted generation.
-Retry progress names the attempt and budget separately, with triage retries marked.
+Retry progress shows the attempt and budget separately, with triage retries marked.
 Counts remain diagnostic data but are not rendered as accumulated errors.
 
 HTTP 2xx clears the failure. Retry progress may remain until finalization or
@@ -1642,8 +1642,8 @@ interruption reason, not a resumable upload. A failed chip states its reason in
 its detail line, not only in its title, which a touch screen cannot hover to
 read: the daemon's error message when it answered, or the browser's when the
 request itself failed (Safari's `Load failed`). The daemon logs an upload's
-failure at `warn` with its stage (no store, reading the body, storing), so a
-failure that leaves no daemon line never reached the handler. Malformed saved data is ignored;
+failure at `warn` with its stage (no store, reading the body, storing), so an upload whose
+failure leaves no daemon line never reached the handler. Malformed saved data is ignored;
 denied or full storage leaves the live draft usable without reload persistence.
 Image blob previews are revoked on upload completion or chip removal, not on
 view unmount.
@@ -1670,7 +1670,7 @@ pace delay, counted down on the client's clock; while a request or tool is open,
 leading operation with its elapsed time on the client's clock — `waiting on
 <model> · 2m 10s` before the first byte, `<model> streaming` after it, `triage
 · waiting 40s`, `spotter judging · 3s`, `bash: <command> · 45s`, `retrying upstream ·
-attempt 2 (429) · 8s`; the turn's own request leads, then a running tool, then the
+attempt 2 (429) · The turn state reads the `loop_phase` topic: "your turn" in the serif when the loop is idle, a dim `running…` while it moves (`retrying the upstream · send to retry now` while an `upstream_retry` pause runs; `pacing · next step in 5s` during a pace delay, counted down on the client's clock; while a request or tool is open, the `current_operations` topic's leading operation with its elapsed time on the client's clock — `waiting on <model> · 2m 10s` before the first byte, `<model> streaming` after it, `triage · waiting 40s`, `spotter judging · 3s`, `bash: <command> · 45s`, `retrying upstream · attempt 2 (429) · 8s`; the turn's own request leads, then a running tool, then the
 side requests, in `ui/operations.ts`; a `bash` call is labelled by its `command`, cut
 at 48 characters with an ellipsis, and its `intent` is the hover title, while other
 tools are labelled by the intent), `waiting for your approval` or `waiting for
@@ -1681,15 +1681,15 @@ park still come first), `held · resume or send to continue` for a held pace and
 phase), and the daemon's own sentence plus `· send to retry` in the warn
 color when the `stall` topic is set — a trajectory that stopped short, or a
 triage held with the loop `blocked` ([transport.md](transport.md)),
-which the phase alone cannot say; the upstream's words ride along as the hover
+which the phase alone cannot distinguish; the upstream's words are the hover
 title. An empty send is the continue, which retries either wait. The choice is
 `ui/turnState.ts`, a pure function of the phase, `stall`, `cold`, whether a retry
 is waiting, and the operations view (the topic, the model, and the clock), so the component holds no branching of its own. The span between state and controls is
 reserved for the key-hint strip (binds are deferred to interactive
 suggestions; see "The design source" above). The input
-carries no hint about mid-trajectory injection
+has no hint about mid-trajectory injection
 ([control-channel.md](control-channel.md)): the turn-state indicator beside
-it already says whose turn it is, and riding along is what sending out of
+it already shows whose turn it is, and riding along is what sending out of
 turn does, so naming the mechanism cost prime UI space without adding
 anything the operator acts on (a hint shipped here and was removed
 2026-08-26).
@@ -1699,7 +1699,7 @@ readout, interrupt/resume, and send. At the 700px phone breakpoint the readout
 occupies a full-width line above the buttons rather than wrapping between them.
 The waiting readout has no dot or glow; its words state the pending action.
 
-**Attachments.** A file reaches the composer three ways — pasted (a
+**Attachments.** A file can be added to the composer three ways — pasted (a
 clipboard image or file), dropped anywhere on the page (the window listens
 for file drags, so the composer is the one drop target, and the input takes a
 dashed accent border while one is over the page), or picked with the `attach`
@@ -1729,7 +1729,7 @@ lightbox.
 (and Enter, where Enter sends) issues `POST /v1/loop/continue`
 ([control-api.md](control-api.md)) — control handed back with no input, no
 turn submitted, nothing appended — instead of the earlier silent no-op. Where the
-`verbs` topic says the route refuses, its `message` renders in the composer's error
+`verbs` topic indicates the route refuses, its `message` renders in the composer's error
 slot without a request; a `409 not_continuable` from a route that moved on since is
 the same normal answer, so the daemon's `message` renders there on its own rather
 than as a thrown-error string.
@@ -1737,7 +1737,7 @@ than as a thrown-error string.
 **A newer release follows the turn readout** (`ui/newerVersion.ts`, `NewerVersionLine` in
 `ui/ComposerToolbar.tsx`). While the `newer_version` topic names a release
 ([update-check.md](update-check.md)), the readout row — the toolbar under the input, and the
-status bar of a collapsed phone composer — says `efference 0.2.0 is available` in faint UI
+status bar of a collapsed phone composer — shows `efference 0.2.0 is available` in faint UI
 type after the turn state, with the topic's `update_command` (the install command) as its
 hover title. In a phone's expanded composer the line takes a row of its own under the
 controls. The placement is a first one.
@@ -1749,7 +1749,7 @@ alternative — *summarize instead*. The send goes through on the first press: t
 takes a turn or continue on a cold session like any other
 ([control-api.md](control-api.md)), and the notice is information. A pending gate or
 `ask` carries its own line, so the composer's notice yields to it. The gate's controls
-and the composer of a pending `ask` carry one line in the warn colour: `cache expired —
+and the composer of a pending `ask` show one line in the warn colour: `cache expired —
 approving or redirecting reads ~120k tokens uncached` at a gate (the decision that
 lets the turn go on, a redirect included, because its message is read against the same
 cache), `cache expired — your answer reads ~120k tokens uncached` at an `ask`
@@ -1759,10 +1759,10 @@ host records it as the person action that releases a parked loop
 ([control-api.md](control-api.md)).
 
 A loop parked mid-turn at its cold check (the `cold_parked` phase) reads ahead of the
-operations, so `turnState` says `paused: cache expired · send to continue (reads 120k
+operations, so `turnState` shows `paused: cache expired · send to continue (reads 120k
 tokens uncached)` in the warn colour; the composer shows the cold notice with the same
 *summarize instead* button. After a compaction the park stays and `cold` is null; the
-readout says `paused: summarized · send to continue`, with no notice.
+readout shows `paused: summarized · send to continue`, with no notice.
 
 **Side-model previews** (`ui/SideStreams.tsx`, `session/summaryPreviews.ts`) are
 transient, not additional transcript entries. A live compaction or detached
@@ -1787,7 +1787,7 @@ the route's own reason shown, where the entry refuses — a gate or question pen
 loop doing something, nothing to compact — and ready otherwise, a loop parked at its
 cold check or held at a triage included. The popup prevents duplicate clicks while its
 request is pending. Progress is the compaction in `current_operations`: the turn-state
-readout and popup say `summarizing the history…`; a failure is the
+readout and popup show `summarizing the history…`; a failure is the
 `compaction_failure` topic and stays visible for retry; and the summary lands in the
 transcript. The hover
 panel closes on outside interaction or Escape and stays inside the viewport.
@@ -1866,11 +1866,11 @@ a second implementation.
 The **args tab renders the call's whole input**, unconditionally — a separate
 computation (`render/parse.ts`'s `callArgs`) from the header's
 `callView`'s bodies. Serving both surfaces from one value is what made the tab
-say "no body — the header says it all" on every edit, which was false: the
+show "no body — the header says it all" on every edit, which was false: the
 header shows `file_path · operation`, while `anchor` and `content` — the
 substance, a median 752 bytes of input across the corpus — went unshown.
 `callView`'s bodies stay empty for the diff family because the diff below the
-header *is* the representation there; the args tab asks a different question,
+header *is* the representation there; the args tab serves a different purpose,
 which is what was asked for. Multi-line values render as highlighted code
 blocks — by the call's own `language` when it names one, else the extension
 of the path it operates on — because a pretty-printed JSON scalar puts source
@@ -1908,8 +1908,8 @@ passed" on nearly every call and gloss a line the tab already renders above the
 list.
 
 Server prose is third-party: a description is rendered as **plain text, never
-markdown** (it never reaches `Markdown.tsx`), and a definition from a mounted
-server carries a dim `described by <server>` line covering the tool's own prose
+markdown** (it is never passed to `Markdown.tsx`), and a definition from a mounted
+server has a dim `described by <server>` line covering the tool's own prose
 and its arguments' — the untrusted-server line the built-ins' annotations
 already draw, surviving to the pixel. A built-in (`server: null`) needs no
 attribution. With no definition at all the tab renders exactly what it rendered
@@ -1940,19 +1940,19 @@ three places holds it ([process-monitor.md](process-monitor.md)):
   capture. Whether a result is a handoff is read off the result — the
   telemetry's `background`, the call's own `background: true`, or the handoff
   prose naming the handle — never off the existence of a process id. The drawer
-  reaches the capture through the call↔process mapping: the daemon carries the
+  accesses the capture through the call↔process mapping: the daemon stores the
   spawning `call_id` on each process, and `store.ts` folds every pair it has
-  seen into `session.processCalls` — kept after the process leaves the
+  recorded into `session.processCalls` — kept after the process leaves the
   level-triggered `processes` topic, since the capture outlives the exit and the
   id is how it is read. While the process is live the store's own
   `processOutput` buffer is used; once it has exited the drawer reads
   `GET /processes/:id/output` directly, and the status line reads
-  `GET /processes/:id`. A client that connected after the exit never saw the row
+  `GET /processes/:id`. A client that connected after the exit never received the row
   and falls back to the handle on the call's telemetry.
 
-A capture that hit the retention cap says so — "output incomplete; N bytes
-dropped at the retention cap", from the route's `lost` — rather than presenting a
-truncated capture as the whole output. Under Details, the raw tool result is
+A capture that hit the retention cap is marked as such — "output incomplete; N bytes
+dropped at the retention cap", from the route's `lost` — rather than presented
+as the whole output. Under Details, the raw tool result is
 offered only where it is not already the body: a handoff, or a file operation.
 
 Below the tabs,
@@ -1986,7 +1986,7 @@ Call path chips still open current-file context directly. File-operation bodies 
 `..`-leading path yields no affordance and is never followed; the call's own
 log diff is its surface. That is a scope position (no arbitrary reads from
 elsewhere on the system), not a resolution gap. The `session_identity` topic
-([control-api.md](control-api.md)) now names the cwd, so it is the mapping
+([control-api.md](control-api.md)) now contains the cwd, so it is the mapping
 available if the scope ever widens.
 
 **Highlight sources do not mix.** With a selected edit anchor, an exact location highlights its surviving added lines; approximate/unlocated matches show a qualification and no confidently located-line tint. Refreshes keep resolving that selected anchor. Without an anchor, `session/lineDiff.ts` compares fetched content with the last content shown for the same session/path, marking observed changes and deletion points. This is changes since viewing, not the selected operation's historical diff. Source mode tints numbered lines; rendered Markdown uses block-level highlights.
@@ -2022,12 +2022,12 @@ reformat around an edit, and a re-indented block is the same block):
   always is, since the edit that just landed is the newest change;
 - an ambiguous match, or one found only through the surrounding context — the
   historical case, where later edits moved or removed those lines — is
-  **approximate**: the viewer jumps and says *position approximate — the file
+  **approximate**: the viewer jumps and shows *position approximate — the file
   has changed since this edit*, rather than highlighting confidently in the
   wrong place;
-- nothing found at all says so and does not jump.
+- nothing found at all is reported and does not cause a jump.
 
-`App` carries an open request (path, the call that asked, and a key that
+`App` holds an open request (path, the call that asked, and a key that
 changes per request) so a second call's path chip on the file already shown
 re-runs with *its* anchor; `anchorForCall` reads that call's result.
 Anchor-driven loads are unconditional — a `304` would carry no bytes to locate
@@ -2053,7 +2053,7 @@ thrown errors, because the viewer renders them).
 
 ## Navigating the working directory
 
-Without this the viewer reaches only files a call already named, which is the
+Without this the viewer can open only files a call already named, which is the
 set the reader already knows about. The motivating case is the opposite one:
 the agent is working, a file you have not seen probably holds the answer, and
 you want to look before steering it wrong — including from away from the
@@ -2081,7 +2081,7 @@ server-side scan with its own cost, ranking, and result-rendering questions.
 
 The **annotations are derived client-side** from the transcript the store
 already holds (`fileActivity`, `session/touchedFiles.ts`); the endpoint
-contributes nothing and knows nothing about the session. Files the session has
+contributes nothing and has no session information. Files the session has
 read are the agent's working set and read bold; files it has changed take the
 accent. This is where a read registers at all, since reads deliberately do not
 move the viewer.
@@ -2145,7 +2145,7 @@ not hash (the manifest and every icon) are precached by name, and
 bumping `CACHE` in `sw.js`, or installed copies keep the old ones. Registration
 (`src/pwa.ts`) is `/sw.js` in production and `/sw.js?dev=1` under Vite. In dev
 mode the worker installs no cache, answers no `fetch`, and deletes every
-`efference-shell-*` cache on activation, so a cached asset never reaches HMR and
+`efference-shell-*` cache on activation, so HMR never receives a cached asset and
 a production worker left on the same origin is replaced (its script URL differs)
 and leaves nothing behind; the push handlers are the only live part, which is
 what lets a dev-proxy host hold a push subscription. The daemon routes by path,
@@ -2171,26 +2171,26 @@ Nothing is stamped into the build for this, which is what lets the first release
 carrying the check be told apart by a tab running an older one. Under Vite both
 documents name the same dev module, so the check is quiet there.
 
-The `modulepreload` links are not read, though a shell document may carry them:
+The `modulepreload` links are not read, though a shell document may contain them:
 Vite's built runtime appends one to the head for every chunk a dynamic import
 pulls in, so a used page's head names chunks the shell never did and reading them
 would report every page stale as soon as it opened a code-split view. The
 preloads a shell does declare are covered anyway — the entry script embeds the
 hashed names of the chunks it imports.
 
-It runs where a tab can learn that the host changed: on every stream's connect,
+It runs where a tab can detect that the host changed: on every stream's connect,
 which `readEventStream` does for every reader in one place (`api/sse.ts`) —
 because a host restart is a reconnect — and when the page returns to view. A host
-restart reconnects every stream at once and the burst asks once (`CHECK_GAP_MS`).
+restart reconnects every stream at once and the burst produces one request (`CHECK_GAP_MS`).
 
 The verdict is stated, never acted on. `ui/BundleNotice.tsx` renders "efference
 was updated" with a **Reload** button in the shared header
-(`ui/AppHeader.tsx`), so every view of the app carries it, and then waits. A
-reload costs the page what it holds — the reading position, the focused field, a
+(`ui/AppHeader.tsx`), so every view of the app has it, and then waits. A
+reload discards what the page holds — the reading position, the focused field, a
 long transcript's scroll — and an installed app has no browser chrome to reload
 with, so the button is the whole affordance. Composer drafts survive a reload
 (`ui/drafts.ts`); an upload in flight is the one thing it interrupts, and the
-chip says so. `stale` is final for the page: a later check cannot make an old
+chip shows that it was interrupted. `stale` is final for the page: a later check cannot make an old
 page new, so a page that reloads into the same skew states it again rather than
 reloading in a loop.
 
@@ -2246,7 +2246,7 @@ and layout growth pin the tail. A navigation to an earlier transcript position
 must instead disengage follow intent rather than relying on a programmatic
 scroll event to identify a reader departure.
 
-The decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/decision.ts`):
+The decisions are sent with `PUT /v1/approvals/:call_id` (`Decision` in `api/decision.ts`):
 approve, abort, and redirect with steering text. The route also takes a
 `config_edit` grant, which the web client does not offer: a grant guessed from
 the call's input was a command prefix whatever the call gated on. The host now
@@ -2255,7 +2255,7 @@ which the client does not yet render.
 A `409 gate_moved` is handled in
 `session/actions.ts` by folding the response's corrective `detail` into the
 store as a synthetic state frame — no second round-trip; `resolveGate` returns
-`"moved"` rather than `"applied"` so the surface can say the decision did not
+`"moved"` rather than `"applied"` so the surface can show that the decision did not
 land.
 
 When the pending call changes under the surface, the inputs always reset — a
@@ -2288,7 +2288,7 @@ chosen against this constraint rather than for ergonomics.
 Code's payload-derived `data-lang` attribute comes from `langForPath`'s closed set
 or the Markdown code-fence language capture. Links come from `react-markdown`'s
 `defaultUrlTransform`, which passes only `http`/`https`/`irc`/`ircs`/`mailto`/
-`xmpp` — so a `javascript:` or `data:` URL in model output never reaches an
+`xmpp` — so a `javascript:` or `data:` URL in model output is never used as an
 `href`.
 
 **A `Content-Security-Policy` on every response any listener produces**
@@ -2323,13 +2323,13 @@ it carries the same `img-src`. A test asserts the shipped policy contains no
 `unsafe-`, another pins `img-src 'self' blob:` and the absence of `data:`, and a
 third that it names no source but `'self'`, `'none'`, and `blob:`.
 
-CSRF is a different threat, and the credential's form answers it: the bearer rides
+CSRF is a different threat, and the credential's form addresses it: the bearer is sent in
 an `Authorization` header that only this page's script sets, so a request another
 site makes the browser send carries nothing that authenticates
 ([web-bind.md](web-bind.md)). Script running in this origin can read the bearer, as
 it could read a CSRF token out of the DOM, so the bearer's boundary is this policy
 and the no-markup rule above: no script but the build's runs here. The policy also
-names no other origin for script to connect to or load from; a navigation is outside
+permits no other origin for script to connect to or load from; a navigation is outside
 what it governs.
 
 ## A session that is starting
@@ -2337,7 +2337,7 @@ what it governs.
 Creation and resume answer once the host has reserved the session, so the view opens
 while it is prepared ([control-api.md](control-api.md), "A starting session"). While the
 `starting` topic is set, the composer status takes the connection readout's place and
-says what preparation is doing (`ui/startingLine.ts`): running the env hook, loading the
+shows what preparation is doing (`ui/startingLine.ts`): running the env hook, loading the
 config and mounting MCP servers, or waiting for a named MCP server to be authorized in a
 browser on the host. The composer works: a turn sent now is queued and is the first the
 session runs. When the topic clears the session has started, and the view reconnects the
@@ -2359,7 +2359,7 @@ with the reason (`resume_failure`).
 A session that hands off (docs/tools.md) names its successor in `session_identity`, and
 `SessionView` replaces the page's location with the successor's (`ui/identity.ts`
 `successorHref`) — `replace`, so Back does not return to the archived predecessor. The
-successor's transcript opens on the predecessor's brief, whose `User` entry carries the
+successor's transcript opens on the predecessor's brief, whose `User` entry has the
 reserved `handoff[<id>]` source (`api/source.ts` `handoffPredecessor`): drawn as a harness
 note ("handed off from `<id>` — its brief:") rather than as the operator's turn.
 
@@ -2369,16 +2369,16 @@ The gate enumerates its anonymous surface rather than deriving it from guarded
 prefixes ([web-bind.md](web-bind.md)): the app shell, the hashed assets, and the launch
 images under `/splash` serve without a credential, as do `POST /pair` and
 `POST /pair/claim`, and everything else, `/v1` and `/files` included, takes a device
-token. The sign-in view (`web/src/ui/Login.tsx`) carries the sign-in
+token. The sign-in view (`web/src/ui/Login.tsx`) handles sign-in
 ([web-bind.md](web-bind.md)). A sign-in link's `#claim=` fragment is read and scrubbed
 at bundle load (`ui/bootClaim.ts`), and on a later hashchange, so `efference dev open`
 landing in an open tab works; the view claims it at `POST /pair/claim` with a label
-naming the browser (`ui/deviceLabel.ts`). On a bare visit, or a link that names
-nothing, it asks `POST /pair` under that label and shows the short code with
+naming the browser (`ui/deviceLabel.ts`). On a bare visit, or a link with no
+claim, it asks `POST /pair` under that label and shows the short code with
 `efference devices approve`, the command that approves it, and a countdown, then
 claims every second until the host answers with this browser's device token, which it
 keeps (`api/bearer.ts`); the app takes it from there (*A refused bearer is decided in
-`apiFetch`*, under *Layering*). A code that expires says so and offers a new one. The
+`apiFetch`*, under *Layering*). When a code expires, the view shows that it expired and offers a new one. The
 SPA index answers the client's
 named routes and nothing else (`SPA_ROUTES`, `src/listeners/tcp/gate.rs`) — a broader index
 fallback would answer scanner probes `200`. On a host those routes are also answered
@@ -2487,7 +2487,7 @@ copies when a stylesheet changes, so under HMR the pinned states follow the edit
 
 A dev build interposes a recorder between the stream reader and the fold.
 `connect` takes an optional `FrameTap`; the recorder retains the latest 20,000
-frames in arrival order and decides when the store consumes them. `session/frameTape.ts`
+frames in arrival order and controls when the store consumes them. `session/frameTape.ts`
 uses a ring buffer; each evicted frame folds into the tape's base snapshot, so
 seeking within the retained window reconstructs the exact state. Eviction does
 not stop live folding. A held store snapshot remains independent of the tape;

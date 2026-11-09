@@ -230,5 +230,5 @@ pub(in crate::inference::api) fn parse_generation_cost(body: &str) -> Result<f64
     serde_json::from_str::<Body>(body)?
         .data
         .total_cost
-        .ok_or_else(|| "generation record carried no total_cost".into())
+        .ok_or_else(|| "generation record has no total_cost".into())
 }

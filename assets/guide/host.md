@@ -42,7 +42,7 @@ as secure for `localhost`.
 ## From a phone or another computer: Tailscale
 
 Reaching the host from another device needs two things: a network path to it, and HTTPS
-with a certificate the device trusts — the web client's sign-in token rides every request
+with a certificate the device trusts — the web client's sign-in token is sent with every request
 and must not cross the network in clear text, and offline support and notifications
 require a secure origin. Tailscale provides both: a private network
 between the operator's devices, and `tailscale cert`, which issues a trusted certificate
@@ -100,7 +100,7 @@ A plain-HTTP bind on anything but loopback is refused, in either arrangement.
 ## Keeping the host running
 
 A host started in a terminal ends with it. To have it start at login and restart if it
-exits, run it under the system's service manager. Either way the service does not see the
+exits, run it under the system's service manager. Either way the service does not have the
 operator's shell environment, so model credentials in environment variables will not be
 there: use keychain credentials (`efference setup` can move a connection to the keychain)
 before making the host a service. A Linux server usually has no Secret Service a service

@@ -96,7 +96,7 @@ pub(super) fn capabilities(body: &str) -> Result<ModelCapabilities, Error> {
     }
     let model: Model = serde_json::from_str(body)?;
     let context_length = model.max_input_tokens.ok_or_else(|| -> Error {
-        "Anthropic model metadata carried no max_input_tokens".into()
+        "Anthropic model metadata has no max_input_tokens field".into()
     })?;
     let capabilities = model.capabilities;
     let thinking = capabilities

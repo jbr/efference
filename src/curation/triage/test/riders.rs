@@ -175,12 +175,12 @@ fn image_results_are_marked_and_the_ask_says_they_pass_through() {
     assert!(
         results[0]
             .content
-            .starts_with("═══ result r1 · read_image ═══\nimages: 1 image — not shown here; reaches the agent as it is\n"),
+            .starts_with("═══ result r1 · read_image ═══\nimages: 1 image — not shown here; the agent receives it as it is\n"),
         "{}",
         results[0].content
     );
     assert!(
-        ask.contains("  images      A result header that says `images:` is a result that carries images. They reach\n              the agent as they are, whatever you decide, and are not yours to triage:"),
+        ask.contains("  images      A result header with `images:` marks a result containing images. They reach\n              the agent as they are, whatever you decide, and are not yours to triage:"),
         "{ask}"
     );
     assert!(

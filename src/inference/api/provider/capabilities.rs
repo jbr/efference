@@ -492,7 +492,7 @@ impl ModelCapabilities {
         match &self.supported_efforts {
             Some(levels) if levels.iter().any(|level| level == effort) => Ok(()),
             Some(levels) if levels.is_empty() => Err(format!(
-                "effort `{effort}`: {model}'s metadata says it takes no effort level. \
+                "effort `{effort}`: {model}'s metadata lists no effort levels. \
                  Leave effort unset."
             )),
             Some(levels) => Err(format!(

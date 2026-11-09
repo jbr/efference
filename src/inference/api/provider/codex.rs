@@ -376,7 +376,7 @@ pub(super) async fn catalog(endpoint: &Endpoint) -> Result<Listing, Error> {
         Err(_elapsed) => stale(
             cached.as_ref(),
             endpoint,
-            format!("model catalog at {url} did not answer in time").into(),
+            format!("model catalog request to {url} timed out").into(),
         ),
     }
 }

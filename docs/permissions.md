@@ -24,7 +24,7 @@ obfuscates, and obfuscation is out of scope.
 ### The axis: scope first, reversibility as the silent default
 
 "Is this command dangerous?" is undecidable from a bash string and is the wrong question.
-The question the policy decides on is **"is this move inside the mission?"** — the **scope**
+The question the policy addresses is **"is this move inside the mission?"** — the **scope**
 is the authority, *including over how much permanence is sanctioned* (a teardown scope
 clears `terraform destroy`). **Reversibility/containment** ("can the harness undo this; is
 it confined?") is the **default heuristic when the scope is silent**, not the law. The
@@ -112,7 +112,7 @@ the config holds:
 - **`[commands]`** — the bash prefix policy, a **map** from command-prefix key to stance (below).
 - **`[tools]`** and **`[paths]`** — which tools the session mounts and which it may call
   without review, and the filesystem-grant map the fast-path reads (below).
-- **`[env]`** — per-variable `strip` (does a spawned child see it?) and `mask` (does the
+- **`[env]`** — per-variable `strip` (does a spawned child receive it?) and `mask` (does the
   log ever store its value?). Its own subsystem: [env.md](env.md). It sits beside the
   cascade rather than inside it — the gates guard the *action* direction of an accident,
   masking the *disclosure* direction.
@@ -135,7 +135,7 @@ A triage tool (`retain`/`triage`) called when nothing was asked of it is paired 
 nudge result ([triage.md](triage.md)). And a call naming **no tool this
 turn advertised** is answered with `tools::unknown_tool_message` — the mounted names, plus
 a pointer at `bash` for a name that is a program — as a `Direct` payload, so the correction
-reaches the wire verbatim rather than through the triage.
+is projected to the wire verbatim rather than through the triage.
 
 The membership test reads the names off `agent::tool_definitions` itself, minus the triage
 tools, so what the check accepts and what the request advertised cannot drift.
@@ -193,7 +193,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   satisfies it. Anything else fails closed: an ungranted or expanded target, a second `cd`, a
   different operator (`;`, `||`, `|`), more than one operator, or a remainder that is not
   itself a simple command. Same reason as the fd-dup tolerance — models emit `cd <abs> &&` on
-  nearly every bash call (45.6% of a 742-call local corpus), and without this each one pays a
+  nearly every bash call (45.6% of a 742-call local corpus), and without this each one requires a
   spotter round-trip whatever `[commands]` granted. The tolerance is in the bash-call lexer
   only; the `[commands]`-key lexer stays single-simple-command, so a `cd …` compound can never
   be stored as a grant.
@@ -211,7 +211,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
 
   **Two authorities govern and the more restrictive one wins.** The command must still clear
   stage 2 on its own — `cat` needs a `clear` stance — *and* the target must be write-granted.
-  A `[commands]` `deny` refuses whatever the path says; a `clear` command writing outside a
+  A `[commands]` `deny` refuses regardless of the path grant; a `clear` command writing outside a
   write grant gates. The `[tools]` table is not consulted: it names structured tools, and the tool
   being called is `bash`, whose name grant is its `[commands]` stance. Composed with the `cd`
   tolerance, the target resolves against the **`cd`'s** directory, since that is where the
@@ -283,7 +283,7 @@ write-back writes the `true` sugar, so a promoted grant round-trips through the 
 and leaves neighbouring stances untouched. And a promotion is dropped when *any* key already
 governs its prefix — under a governing `clear` it would be a no-op, and under a `watch`/`gate`/
 `deny` it would punch a hole in a carve-out the operator wrote. A non-clear stance is written
-in the file and read at load; because `ConfigChange::Command` cannot carry one, a carve-out
+in the file and read at load; because `ConfigChange::Command` cannot contain one, a carve-out
 *added* by an external file edit takes effect on the next boot (which reloads the file as the
 base) rather than live — the same frontier of the additive fold that a deleted key sits behind.
 
@@ -352,7 +352,7 @@ Each entry sets either field, and a tool's entry overrides its namespace's **fie
 field** (`ToolsTable::granted`, `Config::tool_enabled`):
 
 - **`enabled`** — whether the session mounts the tool (docs/tools.md). efference's own
-  namespaces default to **off**, so a built-in reaches only sessions whose config names it;
+  namespaces default to **off**, so a built-in is mounted only in sessions whose config names it;
   a declared server's tools default to on, the declaration being the request. Read once at
   boot, when the toolbox is mounted: `tools[]` is fixed for the session
   (docs/log-and-projection.md), so a live edit to `enabled` takes effect at the next boot. The
@@ -375,12 +375,12 @@ to the mount-time table, because a grant that needed that constraint is a grant 
 shouldn't have been written. It is never the default on mount — a grant is an explicit config
 act, and defaulting it would move the perimeter every time a server is added. The same
 reasoning is why `enabled` defaults off for efference's own namespaces: a built-in added
-later in a namespace of its own reaches no session that did not ask for it.
+later in a namespace of its own is not mounted in a session that did not ask for it.
 
 **Where a namespace grant sits relative to `[paths]`.** It is a *name* grant, so the second
 check is untouched: a path-bearing built-in under a granted `efference` still clears only
 inside a `[paths]` grant, which is why a whole-namespace grant over the built-ins has a
-bounded blast radius. A connected tool's does not — the fast path knows nothing about what a
+bounded blast radius. A connected tool's does not — the fast path has no information about what a
 remote tool touches, so `ferritin = { granted = true }` is bounded by the grant alone.
 
 **Multi-path clearance is per-path, unioned across sources.** A tool naming several paths
@@ -416,14 +416,14 @@ too. Path matching is lexical (`..`/`.` collapsed without touching the filesyste
 for not-yet-existing write targets), which means a symlink inside a grant pointing outside is
 treated as inside — acceptable under the error-not-deception model. For the same reason a path
 carve-out is a **mistake-guardrail, not access control**: a symlink or a `cat ./sec*` through
-bash reaches around it, so a deny here keeps a well-intentioned session out of a directory and
-claims nothing more.
+bash bypasses it, so a deny here keeps a well-intentioned session out of a directory and
+provides no further protection.
 
 **Two anchors.** Grant keys are written in the project's `efference.toml` and resolve
 against the project; the paths a call names resolve against the session's working
 directory (`policy::Directories`). The two differ only for a session in a git
 worktree, and a target inside any worktree is judged as the same path in the project,
-so every worktree carries exactly the project's grants ([worktrees.md](worktrees.md)).
+so every worktree has exactly the project's grants ([worktrees.md](worktrees.md)).
 
 **No privileged client, enforced by reachability.** A session must never hand-roll
 control-channel HTTP from bash; every legitimate control interaction is a tool. The deny
@@ -435,17 +435,17 @@ topologies without a second mechanism (see
 Boot injects one more grant alongside the self-surface stack: the per-session **scratch
 dir** ([tools.md](tools.md)) is always granted rw. It lives outside `.` and outside the
 session dir, so it interacts with neither the operator's grants nor the deny; structured-tool
-paths reach it via `$TMPDIR` expansion (resolved *before* classify/spot, so the grant check
+paths refer to it via `$TMPDIR` expansion (resolved *before* classify/spot, so the grant check
 runs on the expanded literal), bash via the child env, and the spotter's scope block renders
 the `$TMPDIR` → path alias.
 
 **Mapping a tool to its path field is a deliberate wart.** The classifier reaches into
 each built-in's JSON input by known key (`read`→`paths`, `write`→`path`,
 `edit`→`file_path`, …); the string literals are centralized in `policy.rs`. The
-sharp case: `undo_edit` writes to disk but carries *no* path (the target was named by an
+sharp case: `undo_edit` writes to disk but has *no* path (the target was named by an
 earlier `edit`), so write permission is enforced at `edit` — the only
 edit-pipeline call that names the file — and `undo_edit` clears on the name grant. The
-cohesive fix (an MCP-superset that carries permission/notification metadata alongside the
+cohesive fix (an MCP-superset that includes permission/notification metadata alongside the
 schema) is later architectural work, and the coupling is marked rather than hidden.
 
 ### the `[context]` rung: a listing is a grant
@@ -455,7 +455,7 @@ per-path with the name-grant rule (above): listing a path **is** a read grant �
 stub invites the model to `Read {path}`, so that read fast-path clears with no `[tools]` or
 `[paths]` config at all. The same lexical subtree rule applies, and the caveat is stated loudly: a
 location entry (dir, and later glob) read-grants everything under it, so operators must
-list deliberately. The entry's write grants ride the same check: `update` clears a write
+list deliberately. The entry's write grants use the same check: `update` clears a write
 to an **existing** file under the entry, `create` a write to a **new** one — `create`
 without `update` is an append-only store. Telling create from update is the classifier's
 one filesystem touch (an existence probe) — sound here because a verdict is derived state,
@@ -463,9 +463,9 @@ never on the wire. The context rung covers only the structured path-bearing tool
 never clears through it. A write to the session's own config file still bypasses
 everything to the human gate.
 
-The guide overlay's reserved prefix ([context.md](context.md)) rides this rung as a
+The guide overlay's reserved prefix ([context.md](context.md)) applies at this rung as a
 standing grant: an `efference://` target is **read**-granted with no config entry at all —
-the documents are the recovery path for a session whose config knows nothing else — and is
+the documents are the recovery path for a session whose config has nothing else — and is
 never write-granted, since there is nothing on disk to write and a harness authorizing
 itself over its own documents would be the self-authorization the config design forbids. It
 is also excluded from `[paths]` resolution outright, because joined onto the cwd it would
@@ -494,7 +494,7 @@ the hand-off's completion does (`Toolbox::authorizes_nothing` beside
 `Toolbox::completes_hand_off` in `judge`). The verb still enforces its target rules when
 it runs.
 
-The parent's ladder then decides an allow on the leaf:
+The parent's ladder then determines whether to allow the leaf:
 
 - If the parent's `[tools]` table grants `agents__decide`, the call clears blind. That
   grant is the config's statement of trust in the coordinator, and the child's move is
@@ -507,14 +507,14 @@ The parent's ladder then decides an allow on the leaf:
 - The human gate shows the child and its held move (`acting_on`, docs/control-api.md)
   instead of the id.
 
-The prefix-promotion probe does not ride a bound approval: the leaf's command belongs to
+A bound approval does not include the prefix-promotion probe: the leaf's command belongs to
 the child's own probe ledger. The logged `ToolCall` is untouched throughout — the wire
 carries what the model wrote, and the binding lives only in flight and in the ephemeral
 gate view.
 
 ## The spotter (`src/curation/spotter.rs`)
 
-What the fast-path can't `Clear` falls to the **spotter** before it reaches the human — a
+What the fast-path can't `Clear` is sent to the **spotter** before the human — a
 one-shot, **fresh-context** model call (the provider's cheap band by default, on its own
 `Client`, model-independent of the acting session) that re-decides the residual. Independence is the point: the
 acting session can't check its own folly because it shares its own trajectory; the spotter
@@ -522,7 +522,7 @@ can, precisely because its context is built from scratch — *not* `project(log)
 
 Which model that is resolves in order: an explicit `--spotter-model`, then
 `[defaults].spotter`, then the main connection's own `spotter-model`, then **jev on any
-connection that reaches it** — the first `typesafe` connection by name (`jev-latest`), else
+connection that provides it** — the first `typesafe` connection by name (`jev-latest`), else
 the first OpenRouter one (`~typesafe/jev-latest`) — then the main arm's built-in default
 (`Provider::default_spotter_model`). The per-connection key sits below `[defaults]`
 because it answers about *one* account's cheap band, which an account-wide default cannot;
@@ -571,7 +571,7 @@ fixed questions with probabilities, so the stance is a fold in code
 - **Cold** — the state above, asked `sketch` (a Score: how concerning the move is, five
   described levels from routine to severe) and the axes `in_scope`, `path_outside`,
   `path_denied`, `exposes_secrets`, plus `watch_for_hit` when the config names one and
-  `prefix_safe` when a promotion probe rides along.
+  `prefix_safe` when a promotion probe is included.
 - **Relation** — the move alone, as plaintext, with one Choice per **precedent
   candidate**: an earlier call in this session of the same family (the same tool, or for
   bash the same program) that ran with the operator's consent, inlined into the question
@@ -582,7 +582,7 @@ fixed questions with probabilities, so the stance is a fold in code
   are averaged (`src/curation/spotter/jev/relation.rs`).
 
 **Consent** is read off the log (`src/curation/spotter/precedent.rs`): a call that ran and either
-reached no spotter — the fast path, a granted tool, the human under `human_only` — or was
+was not sent to the spotter — the fast path, a granted tool, the human under `human_only` — or was
 held by the spotter and then approved. A call the spotter cleared is not consent, so a
 clear never becomes the evidence for the next one. A bound leaf (`agents__decide`) has
 none: the child's history is not in this log.
@@ -600,7 +600,7 @@ Gate   otherwise
 
 where a precedent is a candidate read as `same` at 0.5 or more. `ClearAlways` is a clear
 with a probe and `prefix_safe ≥ 0.8`. The rung never emits `Watch`: a move has the
-precedent its level asks for or it does not. A shipping axis that trips raises the level
+precedent its level requires or it does not. A shipping axis that trips raises the level
 instead of gating outright, so an operator who has approved a read outside the grants
 once has said what they mean, and the next read like it clears.
 
@@ -629,7 +629,7 @@ addressed to the acting session and the operator's gate, in the rung's own terms
 docs/tools.md — reads a second phrasing, `jev::plain_reason`, composed beside `decide` from
 the same recorded answers (the axes and the precedent reading on `Spot::axes`), never by
 rewriting the string: the clause for what put the move at its level (the tripped axis, or
-the sketch level by its description), then what the precedent reading said, with no level
+the sketch level by its description), then the precedent reading's result, with no level
 numbers or figures:
 
 ```
@@ -644,12 +644,12 @@ could not judge it" (`held_because`, `src/session/status/view.rs`). A `Spot` who
 request failed has no precedent reading, and its phrasing names the cause alone. `Spot::reason`
 is unchanged by any of this.
 
-**Every reading is recorded.** `Spot::axes` carries the cold answers (the sketch
+**Every reading is recorded.** `Spot::axes` contains the cold answers (the sketch
 distribution among them) and the precedent reading — candidates asked, how many read
 `same` and `wider`, how many were required, and each candidate's call id with its two
 figures, so a clear can be traced to the approved call it matched and a different cut
 replayed — so a live session's verdicts join the
-calibration corpus as they happen (`eval/spotter/extract.py` carries them as
+calibration corpus as they happen (`eval/spotter/extract.py` records them as
 `recorded.axes`). The stance is no longer a function of one spot's numbers: precedent
 depends on what the operator did before it, so re-scoring a policy means replaying
 sessions in order. `eval/spotter/battery.py` asks the questions over recorded spots and
@@ -660,7 +660,7 @@ What the corpus showed, and how each piece of this was chosen, is in
 `journal/2026-10-08-precedent-spotter.md`: over 211 recorded spots in the families
 examined, the band fold this replaced held 134 and this fold holds about 40, while missing
 1 of 33 authored must-hold cases against the band fold's 1. The same fold and thresholds
-carry to the other decision models OpenRouter lists, within a few cases of jev.
+apply to the other decision models OpenRouter lists, within a few cases of jev.
 
 Fail-closed is unchanged on both rungs. A transport error, a missing answer for a question
 that *was* asked, or an unparseable verdict all return `Origin::Fallback` + `Stance::Gate`.
@@ -673,7 +673,7 @@ container-shaped tail the threat model already leaves to virtualization.
 **The frame is collaborative on purpose.** The spotter is the climber's *spotter*, not a
 tribunal: it exists to let the session move fast and commit hard, intervening only on the
 handful of moves it would otherwise regret. The persona (`assets/prompts/spotter.md`,
-`include_str!`d as the spotter client's byte-stable system prompt) carries that frame, and
+`include_str!`d as the spotter client's byte-stable system prompt) contains that frame, and
 the frame leaks into every verdict. The axis is **scope, not danger**: *is this move inside
 the mission?* The scope is the authority — including over how much permanence is sanctioned
 (a teardown scope clears `terraform destroy`). Reversibility/containment is only the default
@@ -702,20 +702,20 @@ approval surface exists to prevent.
 The cost even where it works: once the session learns the spotter reads the field, the
 field changes. It stops being a cheap honest note about *why* and becomes partly a plea
 to a gate that can punish it now — an immediate gradient, unlike "a human may read this
-later" — which spends the honesty the condensed-transcript use depends on. So the order
+later" — which undermines the honesty the condensed-transcript use depends on. So the order
 is red team first: take commands the spotter blocks, have a model write intents designed
 to get them through, read the flip rate. Withheld is the reversible default until then.
 
-**A structured move carries a brief.** A bash command describes itself; `{"path": "x"}`
+**A structured move has a brief.** A bash command describes itself; `{"path": "x"}`
 does not, so a call to a connected server's tool reaches the spotter as a name and a
-JSON blob. The move block leads with what the mounted table knows about that tool —
+JSON blob. The move block starts with what the mounted table contains about that tool —
 which server advertised it, its description, its input schema, and the server's own
 behavior hints — and only then shows the arguments (`tools::ToolBrief`,
 `spotter::render_brief`). The brief is read from the `ToolDefinition` the mount
 snapshotted, not from the wire `tools[]` entry, because `anthropic_def` keeps only the
 three fields the Anthropic tool shape has: `annotations` and `title` are dropped there.
 Description and schema are clipped to a fixed budget, so a verbose server can't crowd the
-tail on every gated call. It rides the **fresh** block, so nothing about the cached prefix
+tail on every gated call. It is in the **fresh** block, so nothing about the cached prefix
 moves.
 
 The lookup covers everything a turn advertises, not just the toolbox providers:
@@ -723,8 +723,8 @@ The lookup covers everything a turn advertises, not just the toolbox providers:
 loop-owned tools (`consolidate`, the process-monitor/inbox family), whose definitions are held
 in the same `ToolDefinition` shape a mount snapshots. That family once joined `tools[]`
 outside the toolbox with no brief path, so the spotter judged `check_inbox` and
-`list_processes` as bare names and called them opaque — the descriptions existed and never
-reached the rung.
+`list_processes` as bare names and called them opaque — the descriptions existed and
+were never supplied to the rung.
 
 The hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are the
 judged party's claims about itself, and the MCP spec warns clients not to make trust
@@ -732,7 +732,7 @@ decisions on them for untrusted servers. They are rendered anyway, labelled as
 self-reported, because the threat model here is **error, not deception**: a well-meaning
 server's hints are true, and a lying one is already out of scope (virtualization's tail).
 A harness-owned tool's hints render without the caveat ("What the harness declares about
-it") — its claims about itself carry no server distance.
+it") — its claims about itself have no server distance.
 The asymmetry that holds under either model is stated in the prompt — a hint is grounds to
 *gate*, never sufficient on its own to *clear*. An absent hint renders as nothing rather
 than as its negation: "the server said no" and "the server filled nothing in" are
@@ -768,7 +768,7 @@ waits instead: a triage without a verdict holds its results until one arrives �
 **Each verdict is logged** as a `Payload::Spot` audit entry (the audit answer to "why did
 this get through — or stop?", and the corpus for any future triaged approval model). It
 projects to nothing — audit-only, never on the canonical wire. This is the *first* permission
-decision that earns a log line: fast-path clears stay deliberately unlogged. `efference
+decision that is logged: fast-path clears stay deliberately unlogged. `efference
 spotter --scope … --watch-for … --path … "<cmd>"` runs the exact `assess` path on one move,
 for iterating on the persona and config against real cases (`--watch-for` repeats; `--path`
 takes `<path>:rw` / `<path>:r`). `--tool <name> --input <json>` judges a **structured** move
@@ -797,7 +797,7 @@ runs, is the command as written; only the reviewer's copy is shortened.
 rungs are given the words of a shell command that read as paths — a redirection target (marked
 written), or an argument that is `.`/`..`, dot- or tilde-prefixed, or contains a `/` — resolved
 lexically against the working directory or the literal `cd` before them, each with the grant
-that decides it. The prose rung reads a list under the command (``- `.git/info/exclude`,
+that applies to it. The prose rung reads a list under the command (``- `.git/info/exclude`,
 written → `/…/proj/.git/info/exclude`: under the grant `/…/proj` (read, write)``); jev reads
 `move.paths`, one object per word with `as_written`, `resolved`, and `under_grant`, and its
 three path-facing questions point at that field; its `in_scope` criteria also count ordinary
@@ -817,7 +817,7 @@ cleared a read outside every grant on jev. So:
   variable; listed unresolved, it decided 89 of 162 re-scored `cd … && … "$TMPDIR/x"` gates on
   jev as "outside the grants";
 - a pathname pattern (`src/*.rs`) resolves to its fixed prefix's grant, unless a more specific
-  grant sits below that prefix where the pattern could match it — `.e*/x` can reach a denied
+  grant sits below that prefix where the pattern could match it — `.e*/x` can match a denied
   `.efference`, `*.md` cannot, since a glob matches a dot-name only when it starts with `.` —
   and then it is reported as possibly spanning grants (`grant_undetermined`);
 - when words go unread (a compound command, a function, past twelve entries, an unparseable
@@ -834,7 +834,7 @@ path is in-tree and whose harm is what the binary does.
 ## The config-edit loop (`src/config/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/session/config_edits.rs`)
 
 A deny is not a dead-end: the orchestrator can **edit the config** at a gate. A
-`Payload::ConfigEdit` carries one `ConfigChange` (`command` / `path` / `tool` / `scope`).
+`Payload::ConfigEdit` contains one `ConfigChange` (`command` / `path` / `tool` / `scope`).
 The **effective config** the cascade consults is
 `base config + fold(config-edits)` — `policy::effective_config` is the batch fold (startup /
 resumed log); the daemon then maintains it **incrementally** (`policy::apply_config_change` on
@@ -860,9 +860,9 @@ records. The write therefore precedes the append, and its failure aborts the com
 naming the file) rather than degrading to something weaker that still logs success. A session
 running on the built-in default role has no file, and there the grant lives in the log fold alone. It runs only if the changed rule now clears it; otherwise it stays
 gated (a redirect). The orchestrator changes the *rule*; the mechanism authorizes the *call* —
-nothing rides along unchecked.
+no call is included unchecked.
 
-A `ConfigEdit` projects to nothing on the wire (audit-only, like `Spot`). Its effect reaches
+A `ConfigEdit` projects to nothing on the wire (audit-only, like `Spot`). Its effect is visible to
 the model **by key**: a `commands`/`[tools]` edit only through the classifier, but a
 **session-visible** edit (`scope`, `paths`) *also* surfaces as an `Ambient` notification.
 `Session::append` is the one choke point — it already folds each `ConfigEdit` into the effective config, so
@@ -872,7 +872,7 @@ inbox/triage machinery: the session learns its perimeter moved without the boot 
 being re-rendered (live truth = `preamble + fold(notifications)`). The
 spotter, fresh-context each call, just reads the effective scope directly.
 
-**The edit lifecycle.** A `ConfigEdit` carries a `state` (`Proposed` / `Committed` / `Cancelled`)
+**The edit lifecycle.** A `ConfigEdit` has a `state` (`Proposed` / `Committed` / `Cancelled`)
 and a `resolves: Option<Seq>`. Only a **committed** edit folds into the effective config; a
 `Proposed` entry is inert and parks in the daemon's pending-proposals queue until an orchestrator
 commits or cancels it (referencing the proposal's `seq` via `resolves`) — over `PATCH
@@ -884,13 +884,13 @@ asynchronous proposers go `Proposed → commit/cancel`.
 
 A gate offers at most **one** grant beside approve and abort: the `ConfigChange` that would
 clear the held call and calls like it, with a label naming what it allows ("always allow
-reading /Users/jbr/code/codex"). It rides `/state`'s `gate` topic as `grant: { change, label }`
+reading /Users/jbr/code/codex"). It is in `/state`'s `gate` topic as `grant: { change, label }`
 ([control-api.md](control-api.md)), and a client commits it by sending `change` unchanged as the
 `config_edit` decision; who may commit is the same as for any decision. The label is the whole
 rationale — there is no separate one — and nothing about the offer is logged until it is
 committed, when the decision and the `ConfigEdit` record it as any grant.
 
-The grant follows from **why the call held**, and the rung that held it decides whether one
+The grant follows from **why the call held**, and the rung that held it determines whether one
 applies (`agent::step::judge`), so it is never re-derived from the spotter's prose:
 
 - **A structured call missing only its tool grant** offers that tool.
@@ -947,7 +947,7 @@ a write that doesn't parse comes back to the model as an error naming the parse 
 file restored — rather than as the success the tool truthfully reported for bytes that changed
 nothing. That third outcome is the defect this deletes: an approved write that reported success and
 did nothing cost one session ~20 turns against a wall it believed it had cleared. The one state the
-invariant can't reach — the file is invalid *and* the restore failed — is reported as itself
+invariant doesn't cover — the file is invalid *and* the restore failed — is reported as itself
 (`Refreshed::RevertFailed`) rather than claiming a revert that didn't happen.
 
 **And it is terminal until a human repairs it.** Effective policy in memory is still the last
@@ -975,7 +975,7 @@ always has an owner.
 `Session` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`,
 `efference control review-level`) and reported on `GET /state`, orthogonal to pace
 ([operator participation](control-channel.md#operator-participation--the-intervention-points)). Four
-positions, ordered by how much the position costs a human — which a supervising agent reduces
+positions, ordered by how much human effort each requires — which a supervising agent reduces
 without eliminating:
 
 - **`Autonomous`** — no synchronous human. The spotter still runs and can `Clear`; what changes is
@@ -994,7 +994,7 @@ without eliminating:
   trading a reviewable diff for a whole-file rewrite. A model that thinks the tool is broken
   has no reason to fix its config; one that knows it lacks a grant does. So when the fast path
   can decompose the refusal (`policy::missing_grants`), the redirect
-  (`agent::missing_grant_message`) leads with "the call did not run — this is not about the
+  (`agent::missing_grant_message`) starts with "the call did not run — this is not about the
   tool's behavior", names what is missing in the config's own vocabulary (`[tools]` does not
   grant `efference.edit`; no `[paths]` entry grants `write` for `src/lib.rs`), points at the config-edit
   remedy, and — for a write — says that the bash form lands on the same grant and gates the
@@ -1021,7 +1021,7 @@ without eliminating:
   - *Authority.* The new supervisor decides the session's gates, wherever the dial routes
     them, and drives it — `message`, `interrupt`, and `archive` ([tools.md](tools.md)). The
     previous supervisor's `decide` is refused from then on, naming the new one; a creator
-    keeps driving the session it created. Supervision is not transitive: it reaches the
+    keeps driving the session it created. Supervision is not transitive: it applies to the
     supervised session, not the sessions that one created or supervises.
   - *Status.* The new supervisor is subscribed to the session's status with `wake`, as `create`
     subscribes a creator, and is told in its inbox (a must-wake notification) that it now
@@ -1030,13 +1030,13 @@ without eliminating:
   - *Push.* While the pointer names a live supervisor, the session's `ask`s and settles go
     to the supervisor alone: none of them pushes the operator's devices. Its gates push only
     when routed to the operator — the dial turned to `spotter_human` or `human_only`, or an
-    escalation that reached the operator. Clearing the pointer, or the supervisor ending,
+    escalation routed to the operator. Clearing the pointer, or the supervisor ending,
     resumes pushes from the session's next moment, and a gate held at that point is pushed
     then ([web-push.md](web-push.md)).
 
   The setting is refused when the new supervisor is not hosted or would make the chain cycle — the
   pointer chain is walked at set time and the refusal names the cycle (`c → a → b → c`). A
-  supervisor in another project is accepted: it reaches the session by its id
+  supervisor in another project is accepted: it addresses the session by its id
   ([tools.md](tools.md)). Chains
   therefore terminate at the operator, since each session's own position is asked in turn. Every
   surface today is an operator surface: there is no in-session verb for setting it, so a
@@ -1050,15 +1050,15 @@ without eliminating:
   ended — reviews as `SpotterHuman` from that moment, in the same fail-safe direction as
   `ReviewLevel::from_u8`: an unresolvable position moves toward the operator, never toward
   autonomous. Resolving once at creation is the failure this avoids — a child whose creator died
-  would otherwise hold a call nobody was routed. `GET /state` therefore carries three fields:
+  would otherwise hold a call nobody was routed. `GET /state` therefore returns three fields:
   `review_level`, the dial's own value; `resolved_review_level`, the position in force; and
   `supervisor`, the id of the session that would answer (`null` for a root, a cleared pointer, or
   once the supervisor has ended), so "who answers this gate" is answerable while one is pending.
   All three are state topics and republish when the pointer moves or the supervisor ends.
 
-  **Routing is the dial's, observation is the subscription's.** A session's status reaches its
+  **Routing is the dial's, observation is the subscription's.** A session's status is sent to its
   subscribers as an inbox notification either way ([inbox.md](inbox.md), `host/subscriptions.rs`);
-  what `Supervisor` adds is that a *gate* also reaches the live supervisor with a must-wake and
+  what `Supervisor` adds is that a *gate* is also sent to the live supervisor with a must-wake and
   the reviewer's rendering of the status — the held call, why it was held, and the calls that
   decide it ([tools.md](tools.md)) — subscribed or not. The status view names the same
   reviewer (`reviewer`: the operator, or the supervisor's id), read from the same resolution. That is the distinction the position exists
@@ -1067,14 +1067,14 @@ without eliminating:
   waking it when a child goes idle so it can continue is a separate use.
 
   **Authority is the pointer's.** Who may decide a gate is a separate rule from whom it is
-  routed to. The operator's surfaces — the TUI, the web client, `efference control`, and for
-  now the MCP mount — and the session's supervisor decide it, wherever the dial sends it,
-  as does the session an escalation passed it to, for that gate alone (below).
+  routed to. The operator may decide it through the TUI, the web client, `efference control`, and for
+  now the MCP mount, as may the session's supervisor, wherever the dial sends it,
+  and the session an escalation passed it to, for that gate alone (below).
   Creating a session or succeeding its creator does not by itself confer `decide`;
   `message`, `interrupt` and `archive` keep the drive relation ([tools.md](tools.md)). When
   the operator turns a child's dial to `spotter_human` while its creator is still its
   supervisor, the gate is routed to the operator and the creator may still decide it: the
-  gate reaches the creator's subscription without wake (the operator is the one asked), and
+  gate is sent to the creator's subscription without wake (the operator is the one asked), and
   the creator's rendering reads `waiting for a decision from the operator or you`, with the
   `decide` call (`Relation::MayDecide`, `session/status/render.rs`).
 
@@ -1083,7 +1083,7 @@ without eliminating:
   stays held and is routed to that session's own supervisor, the next one up the pointer
   chain, while it is hosted; with none, to the operator. A session the call reaches may
   escalate it again, so it climbs one supervisor per escalation and ends at the operator.
-  The message rides with it as a note to whoever decides next. Only the reviewer
+  The message is included as a note to whoever decides next. Only the reviewer
   escalates in-session: a supervisor reading a gate routed elsewhere is refused, naming
   whom it is routed to. An operator client (`efference mcp`, `efference control`) is on
   the operator's side already, so its escalation goes to the operator, which asks the
@@ -1137,11 +1137,11 @@ The allowlist grows by *probing*, so the spotter-call rate decays as a session's
 saturates. The cognitive load on the spotter stays a single extra yes/no, and the "learning" is
 deterministic, exact, and auditable — a vote ledger, not a fuzzy model.
 
-When a bash move reaches the spotter, the loop runs a **descent** (`policy::ProbeLedger`): it bumps a
+When a bash move is sent to the spotter, the loop runs a **descent** (`policy::ProbeLedger`): it bumps a
 `seen_count` for each of the command's token-prefixes — of the **bare** command, with any tolerated
 leading `cd <dir> &&` stripped, so a promoted prefix generalizes across run directories rather than
 pinning one target — then picks the **shortest** prefix that is
-uncovered, seen at least `MIN_SIGHTINGS_TO_PROBE` times, and not yet resolved. That prefix rides the
+uncovered, seen at least `MIN_SIGHTINGS_TO_PROBE` times, and not yet resolved. That prefix is included in the
 *same* spot call — the move prompt names it, and the answer **is the stance**: `clear_always` =
 clear the move *and* vote the prefix blanket-safe; any other stance is a not-safe vote. Folding the
 answer into the stance (rather than a separate flag) makes the contradictions — `watch`/`gate` +
@@ -1152,7 +1152,7 @@ safe-votes reach `PROMOTE_AFTER_SAFE_VOTES` (`K`), the loop files a non-blocking
 — inert until an orchestrator-above commits it, exactly the existing proposal sink.
 
 The descent self-terminates: `git`→not-safe, then `git log`→safe promotes `git log`, whose subtree
-then fast-path clears and never reaches the spotter again. `K`/`N` are the dials toward evidence-only,
+then fast-path clears and is never sent to the spotter again. `K`/`N` are the dials toward evidence-only,
 human-out-of-the-loop promotion (each probe is a *fresh* spotter, so probing a prefix across its
 recurrences is independent-judge consensus accruing in the ledger). `efference dev spotter --probe
 <prefix> …` exercises one probe. See

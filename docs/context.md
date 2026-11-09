@@ -19,7 +19,7 @@ You are {model}. This session is `{id}` on this host; that is the id other agent
 ```
 
 The configured model verbatim, then the session's id — its session dir's name,
-the same string the control channel addresses it by. The line leads the prompt so
+the same string the control channel addresses it by. The line is first in the prompt so
 the model knows what it is before reading anything else: the harness
 instructions, the `[context]` block, and the role all follow. An untold model
 answers "which model are you" from its training priors, usually wrongly, and a
@@ -113,8 +113,8 @@ Skills   = { paths = ["skills/a.md", "skills/b.md"] }          # labeled group, 
 EfferenceGuide = { builtin = "guide" }                         # documents compiled into the binary
 ```
 
-A **bare path** (the key is the path) renders with no heading and may carry only
-`update`. A **labeled group** (the value carries `path`/`paths`) points at a location; its
+A **bare path** (the key is the path) renders with no heading and may have only
+`update`. A **labeled group** (the value has `path`/`paths`) points at a location; its
 key is a heading — *pure presentation*, zero meaning to the harness. "Memories" and
 "Skills" are never tool concepts, just rows an operator wrote. `create`, `sort`,
 `exclude`, and `description` are group-only (they are about a location of many files); a
@@ -135,7 +135,7 @@ tool owns — a Claude-Code memory store, say, whose index file duplicates the p
 frontmatter this renderer already extracts and whose `archive/` is deliberately retired —
 where the fix must not require restructuring a directory the harness doesn't own.
 
-`description` carries a prose hint for the model about how to use the group's files —
+`description` contains a prose hint for the model about how to use the group's files —
 e.g. for a memory store whose files are read by path with the `read` tool. It renders as a
 `<description>` child element inside the group wrapper, before the file listing. It has no
 meaning to the harness; the model decides what to do with it.
@@ -145,11 +145,11 @@ meaning to the harness; the model decides what to do with it.
 `sort = "<field> [asc|desc]"`, comma-separated, reorders a labeled group's files
 (`src/config/context/sort.rs`). Each file is a **row**; its columns are its top-level frontmatter
 keys plus two built-ins, `name` (the file's frontmatter `name`, else its basename) and
-`modified` (its mtime). A frontmatter key of the same name wins over the built-in.
+`modified` (its mtime). A frontmatter key of the same name takes precedence over the built-in.
 
 - **Typing is per column, over the whole group.** If every row that has a value for the
   column parses as a number, the column compares numerically; one non-numeric value makes
-  the whole column lexical. Nothing is declared — the data decides.
+  the whole column lexical. Nothing is declared — the type depends on the data.
 - **Missing sorts last, in both directions** (NULLS LAST): direction reorders the rows that
   have a value; it does not promote the ones that don't.
 - **An implicit final `name asc`** breaks ties, then the display path, so the order is total
@@ -162,9 +162,9 @@ once at boot and the resolved order is frozen into the `Payload::Preamble` snaps
 changing a `sort` can only affect the next session's prefix.
 
 The frontmatter parser stays the minimal one (`src/config/context/frontmatter.rs`) and keeps
-every top-level scalar key verbatim as a string column. A full YAML engine would buy typed
-values these semantics don't ask for — the numeric/lexical call is made from the strings,
-per column — so the dependency waits for a need that nested keys or real YAML types create.
+every top-level scalar key verbatim as a string column. A full YAML engine would provide typed
+values these semantics don't require — the numeric/lexical call is made from the strings,
+per column — so the dependency is deferred until nested keys or real YAML types are needed.
 
 ## Mode is the file's call; grants are the operator's
 
@@ -198,10 +198,10 @@ label (when a labeled entry resolves to one file), else the frontmatter `name`, 
 **full basename**, extension included (`<CLAUDE.md>`, not `<CLAUDE>`: the tag then names a
 file the model can `read`) — and wraps a multi-file group in a verbatim `<Heading>` tag.
 When the group
-carries a `description`, it renders as a `<description>…</description>` child element
-before the file listing. Inlined bodies ride verbatim inside their tag, so a body's own
+has a `description`, it renders as a `<description>…</description>` child element
+before the file listing. Inlined bodies are verbatim inside their tag, so a body's own
 `#`/`---`/``` cannot blur a boundary. The
-format is byte-pinned and deliberately cheap to flip: whether tags actually beat markdown
+format is byte-pinned and deliberately cheap to flip: whether tags are actually better than markdown
 here is an unverified assumption, recorded for A/B in
 `backlog/inbox/preamble-format-experiment.md`. The block splices into the system prompt after
 the curation preamble and before the role scope (*what it may do*) — knowledge before
@@ -258,8 +258,8 @@ without re-deciding what a leading `/` would have meant.
 
 - **Interception is at tool dispatch, before the real `read`**
   (`src/tools/resources.rs`, called by `src/agent/step/execute.rs`): a `read` naming a guide path is answered with the embedded bytes as an ordinary `RawResult`.
-  Because the served body is a normal tool result, `project` and byte-stability never learn
-  it is special — the log and projection core is untouched, which is what makes the whole
+  Because the served body is a normal tool result, no special handling is needed in `project`
+  or for byte-stability — the log and projection core is untouched, which is what makes the whole
   mechanism cheap.
 - **The prefix is read-granted, never write-granted** (`src/config/policy/paths.rs`). Read clears
   with no config at all, which is the point: a session that knows nothing else still knows
@@ -273,7 +273,7 @@ without re-deciding what a leading `/` would have meant.
 - **A batch mixing documents and files is refused whole**, naming the file. The two halves
   come from different places and answering half of one silently would be worse than one
   corrective turn.
-- **Snapshot.** The stubs ride the `Payload::Preamble` snapshot like any group; the bodies
+- **Snapshot.** The stubs are in the `Payload::Preamble` snapshot like any group; the bodies
   are served later and stored on their `ToolResult`. Across a mid-session binary upgrade
   those can diverge, and the log honestly records what was served each time.
 
@@ -293,7 +293,7 @@ file.
 
 **Listing is opt-in when a config exists, and the mount exists regardless.** An operator's
 config renders the group only if it names the entry. The scaffold written for a session
-with no project config *does* name it (`src/host/boot.rs`) — a visible, deletable
+with no project config *does* include it (`src/host/boot.rs`) — a visible, deletable
 line in the session's own file, the same way orientation is — because a config-less session
 whose only recovery path is "read how to write a config" needs that path listed. Deleting
 the line stops the listing; the documents stay readable at their paths either way.
@@ -323,7 +323,7 @@ turn with that source is not drawn, it is reserved: `POST /turns` refuses a clie
 `source: efference`, which would otherwise be a way to put a turn in front of the model that
 the operator never sees.
 
-The scaffold written for a session with no project config carries a `first-turn` line, so
+The scaffold written for a session with no project config has a `first-turn` line, so
 such a session is the setup profile: the agent greets the operator and offers to set the
 project up. The line is visible and deletable in the session's own config, like the
 orientation `exec` entry.
@@ -339,10 +339,10 @@ orientation `exec` entry.
   ([log-and-projection.md](log-and-projection.md)). The log stays the complete record; `efference dev wire`
   reads the snapshot back instead of re-resolving; and once order is baked into the
   snapshot, sort order is a pure semantic choice, never a stability constraint. The entry
-  also carries the **structured** `Resolved` listing (the `Section`/`Item` tree) beside the
+  also contains the **structured** `Resolved` listing (the `Section`/`Item` tree) beside the
   flat string — additive, so the byte-exact string stays the wire truth while the structure
   survives as a fold for the surfacing rider ([triage.md](triage.md)).
-  The same boot entry carries the session's fixed connection/provider/native-model
+  The same boot entry contains the session's fixed connection/provider/native-model
   identity as unprojected metadata; offline readers derive wire placement from it
   rather than from the current config.
 - **Fail closed, loudly.** A named file that can't be read, or an unterminated

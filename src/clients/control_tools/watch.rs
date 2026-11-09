@@ -8,7 +8,7 @@
 //! listing has ended. The set is the mount's control state: shared by every clone of its
 //! executor, never logged, and gone when the mount is.
 //!
-//! The follower ([`follow`]) and the key that tells one decision point from the next
+//! The follower ([`follow`]) and the key that distinguishes one decision point from the next
 //! ([`mark`]) are shared with the mount's status streams (`stream.rs`), which keep their
 //! own record of what they sent.
 
@@ -43,7 +43,7 @@ pub(super) enum Mark {
         handle: Option<String>,
         question: String,
     },
-    /// An idle, by its closing message's seq: an idle after another turn names another
+    /// An idle, by its closing message's seq: an idle after another turn has another
     /// entry.
     Idle {
         closing: Option<u64>,
@@ -190,7 +190,7 @@ impl Watch {
         self.moved.notify_waiters();
     }
 
-    /// `id` left the host. A status that already says it ended, or why, is kept.
+    /// `id` left the host. An ended, failed, or failed-to-start status is kept.
     fn ended(&self, id: &str) {
         if let Some(watched) = self.agents().get_mut(id)
             && watched.latest.as_ref().and_then(mark) != Some(Mark::Ended)

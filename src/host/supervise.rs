@@ -148,7 +148,7 @@ fn supervising_body(id: &str) -> String {
     format!(
         "You now supervise {id}: its gates come to you to resolve with agents__decide, \
          you drive it with agents__message and agents__interrupt, and its status \
-         reaches your inbox at each decision point. agents__status shows where it is now."
+         is delivered to your inbox at each decision point. agents__status shows where it is now."
     )
 }
 

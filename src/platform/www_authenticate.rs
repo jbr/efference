@@ -64,7 +64,7 @@ impl Challenge {
         self.scheme.eq_ignore_ascii_case(name)
     }
 
-    /// The `token68` blob, for schemes that carry one instead of parameters.
+    /// The `token68` blob, for schemes that have one instead of parameters.
     pub fn token68(&self) -> Option<&str> {
         self.token68.as_deref()
     }

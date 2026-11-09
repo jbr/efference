@@ -2,7 +2,7 @@
 
 The human-facing user manual, published at efference.net. The site (Docusaurus, in the
 sibling `efference-net` repository) reads these files from here, so this repository
-carries no Node site dependencies and a user-visible change can update its page in the
+has no Node site dependencies and a user-visible change can update its page in the
 same commit.
 
 ## Scope
@@ -45,7 +45,7 @@ agent-facing guide overlay.
 ## Sourcing
 
 Every factual sentence is checkable against the code. Each paragraph, list item, or table
-row carries the modules its claims were checked against in an HTML comment after it:
+row has the modules its claims were checked against in an HTML comment after it:
 `<!-- src: src/listeners/tcp/gate.rs::gate -->`.
 These comments are for reviewers and are stripped from the built site. Claims are
 checked against the code, not against `../docs/`, which can lag it.

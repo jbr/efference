@@ -1,10 +1,10 @@
 //! The bytes each agent surface advertises its control tools in (docs/tools.md), pinned
-//! whole: the `agents__*` definitions a hosted session's `tools[]` carries, the in-session
+//! whole: the `agents__*` definitions a hosted session's `tools[]` contains, the in-session
 //! set's tool table (titles and annotations included, which the wire form drops), and the
-//! `tools` of `efference mcp`'s `tools/list` answer. Each reaches a model in its cached
+//! `tools` of `efference mcp`'s `tools/list` answer. A model receives each in its cached
 //! prompt prefix, so a byte moved here moves the cache of every session that mounts the
-//! verbs (docs/log-and-projection.md). It fails here first; a deliberate change updates the
-//! pin with `EFFERENCE_WRITE_PINS=1 cargo test tool_bytes`, and says so in its commit.
+//! verbs (docs/log-and-projection.md). It fails here first; for a deliberate change, update the
+//! pin with `EFFERENCE_WRITE_PINS=1 cargo test tool_bytes`, and say so in the commit.
 //!
 //! A pin file holds one tool per line, each line exactly the bytes that tool takes in the
 //! array, in advertised order: the array is the lines joined with commas inside brackets.

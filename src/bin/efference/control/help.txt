@@ -23,7 +23,7 @@ Commands:
   supervisor    Set which session supervises a session, or clear it. A session's supervisor answers its gates when its review level is `supervisor` (a session at `spotter_human` moves there when given one), drives it with `message`, `decide`, and `interrupt`, and is woken by its status. By default it is the session that created it; a session the operator created has none. Clearing hands its gates to the operator, and a gate already held is re-routed rather than dropped
   notify        File an ambient message in a session's inbox under a label of your choosing. It does not interrupt: it waits for the session's next triage point and is delivered there — a build result, a review comment, a change upstream. The operator's verb for scripts; an agent's note is `message` from a session that does not drive its target
   entries       Fetch whole log entries by `seq` — the full record behind a `transcript` line: a result's complete body, a call's exact arguments, a verdict's every field. Each entry can be large; ask for the ones you need, not a range. An image on a result is referenced, not inlined; `image` fetches its bytes
-  image         Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result carried the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
+  image         Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result contained the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
   help          Print this message or the help of the given subcommand(s)
 
 Options:
@@ -755,13 +755,13 @@ Options:
   -h, --help                Print help (see more with '--help')
 
 $ efference control image --help
-Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result carried the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
+Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result contained the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
 
 Usage: efference control image [OPTIONS] <SEQ> [IDX]
 
 Arguments:
   <SEQ>
-          The `seq` of the log entry whose result carried the image
+          The `seq` of the log entry whose result contained the image
 
   [IDX]
           Which image on that result, when it carried several
@@ -787,12 +787,12 @@ Options:
           Print help (see a summary with '-h')
 
 $ efference control image -h
-Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result carried the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
+Fetch an image the session actually saw: the bytes stored on a logged tool result, not a re-read of the file they came from, which may since have changed. `seq` is the log entry whose result contained the image. Over MCP the image comes back as an image content block; at a terminal it is written to a file
 
 Usage: efference control image [OPTIONS] <SEQ> [IDX]
 
 Arguments:
-  <SEQ>  The `seq` of the log entry whose result carried the image
+  <SEQ>  The `seq` of the log entry whose result contained the image
   [IDX]  Which image on that result, when it carried several [default: 0]
 
 Options:

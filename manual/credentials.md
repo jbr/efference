@@ -33,11 +33,11 @@ environment-variable key into the keychain, or take a key out of the keychain.
 
 Choose "Paste it now, kept in the OS keychain" in `efference setup`. Setup checks the key
 with the provider where it can, stores it, and records `auth = { kind = "keychain" }` in the
-config. A host running as a login service does not see your shell's environment, so a
+config. A host running as a login service does not have your shell's environment, so a
 keychain key is the one that works there.
 <!-- src: src/setup/flow.rs::keychain_source, check_key; src/setup/render.rs::auth_inline_table -->
 
-A key replaced in `efference setup` reaches a host that is already running: the next time
+A key replaced in `efference setup` is available to a host that is already running: the next time
 the provider refuses the old key, the host reads the keychain again and retries with what
 it finds. A refusal for another reason, such as a spending limit, reads nothing.
 <!-- src: src/inference/api/failure.rs::rejects_credential; src/inference/api/auth_value.rs; src/inference/credential.rs::load_credential (keychain arm re-reads; env arm has no reloader) -->
@@ -214,7 +214,7 @@ record they reload is masked.
 <!-- src: src/config/env_table/mask.rs::needles_for; src/agent/batch.rs (triage reads the entry back from the log); src/routes/frames.rs (Class::Output stream deltas, pre-append) -->
 
 Masking is a guard against accidents, not against an agent trying to get a secret out. A
-secret efference does not know about reaches the log as the agent saw it: a key in a file
+secret not recognized by efference is stored in the log as the agent saw it: a key in a file
 the agent reads, a variable named outside the patterns above (`DATABASE_URL`), or a secret
 transformed in a way the encodings above do not cover. Signed reasoning blocks from the
 model and image data are stored as received. Files you attach to a message are stored in
@@ -251,7 +251,7 @@ with `absent_status` counts as success: the secret is already gone.
 Many tools give the same exit status for "not found" as for other failures: `op` exits 1
 for any error, `pass` exits 1 for several of its own errors as well, and `aws` exits 254
 for any error the service returns, such as a refused permission. For a sign-in, that
-costs at most a sign-in: a failed read taken for a missing one asks you to sign in again.
+means at most another sign-in: if a failed read is taken for a missing one, you are asked to sign in again.
 For the web address's secret, creating a new one over a read that failed would sign out
 every browser, so a host never does; only `efference auth rotate` writes it, and it
 writes rather than deletes, so it needs no `delete` command.
@@ -296,7 +296,7 @@ Two edge cases are worth knowing when you’re checking where keys might end up:
 
 - A provider can quote a key back in an error. In standalone mode, the host’s error
   output goes to `~/.efference/standalone/<pid>/host.log`, so that file could contain it.
-- Setup’s “Variable name” prompt expects a name, not a key. It accepts letters, digits,
+- Setup’s “Variable name” prompt requires a name, not a key. It accepts letters, digits,
   and `_`, with no leading digit. If you paste something that looks like a key there,
   setup refuses it without repeating it or writing it to `config.toml`.
 <!-- src: src/setup/flow/variable.rs::ask_variable_name; src/inference/api/client/send.rs::open_error; src/bin/efference/island.rs::Island::launch (stderr to host.log) -->

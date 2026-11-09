@@ -226,7 +226,7 @@ impl Catalog {
             Ok(Ok(rows)) => Ok(rows),
             Ok(Err(error)) => Err(error.to_string()),
             Err(_) => Err(format!(
-                "the {provider} model listing did not answer within {}s",
+                "the {provider} model listing did not complete within {}s",
                 REFRESH_TIMEOUT.as_secs()
             )),
         };

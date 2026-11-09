@@ -117,7 +117,7 @@ pub(super) fn config_write_outcome(shared: &Session, result: RawResult) -> RawRe
             "Your config edit was not adopted: the file did not parse, so it has been restored \
              to the last valid config and your effective permissions are unchanged. Nothing \
              else about the write failed — the tool wrote the bytes you gave it, they just \
-             aren't a valid config. Re-read the file (its header comment carries the schema) \
+             aren't a valid config. Re-read the file (its header comment contains the schema URL) \
              and write a version that parses.\n\nParse error: {error}"
         )),
         Some(Refreshed::RevertFailed { error, io }) => RawResult::error(format!(

@@ -36,7 +36,7 @@ verbatim`. If it does, write your account of everything before that line. Everyt
 after it will sit directly below your account, in full, so the reader sees it as it
 happened: do not retell it, but make sure your account covers anything it refers back
 to — a file, a test, a decision, something the operator said. "Where things stand" then
-describes the state at the cut; the record below it carries the state forward.
+describes the state at the cut; the record below it contains what followed.
 
 ## Voice
 

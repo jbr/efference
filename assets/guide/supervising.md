@@ -8,7 +8,7 @@ its statuses send you.
 ## The verbs
 
 - `agents__create` starts an agent (below).
-- `agents__status(agent)` says where it stands and names the call that answers it; a read
+- `agents__status(agent)` shows where it stands and the call to make; a read
   ends with its model, context fill, cost, background processes and queued messages. With
   no `agent`: one line per agent in your project, `(yours)` after the ones you drive.
 - `agents__transcript(agent)` reads what it said and did.
@@ -20,7 +20,7 @@ its statuses send you.
 - `agents__archive(agent)` ends it.
 
 (`agents__hand_off` gives your own work to a successor; it is not a supervising verb.)
-Every answer is plain text whose first line says what happened; an error says what would
+Every answer is plain text whose first line describes what happened; an error includes what would
 work instead.
 
 ## Hearing from your agents
@@ -47,7 +47,7 @@ names have the id and seq filled in.
   escalation, with the note its escalator sent.
 - `waiting for a decision from the operator or you on <call>` — a gate of an agent you
   supervise that went to the operator, or to the session you escalated it to (named in
-  place of the operator). `decide:` says who is asked and names the call, which you may
+  place of the operator). `decide:` shows who is asked and the call, which you may
   make as well.
 - `waiting for a decision from the operator on <call>` (or from another id) — routed to
   someone else, and not yours to decide; it names no call for you.
@@ -58,7 +58,7 @@ names have the id and seq filled in.
   that starts its next turn and the archive that ends it.
 - `stopped: <reason>` — its last turn gave up. An empty message retries.
 - `paused before re-reading its context uncached (48k tokens)` — its prompt cache expired
-  mid-turn. An empty message goes ahead and pays that read.
+  mid-turn. Send an empty message to proceed and incur the cost of that read.
 - `held by its operator`, `blocked: its config file needs the operator` — the operator's
   to clear.
 - `ended; its log stays on disk`, `ended with an error: …`.
@@ -87,19 +87,19 @@ escalated to, for that call alone; for any other agent `decide` is refused, nami
 decides. `agents__decide` names the held call by the seq its status
 gives (`8`, or `8.2` when one turn made several calls):
 
-- `allow` runs it. A `message` with it reaches the agent as your message, after the result.
+- `allow` runs it. A `message` with it is delivered to the agent as your message, after the result.
 - `deny` with a `message` refuses it, and the agent goes on under your message.
 - `deny` alone refuses it and ends the agent's turn.
 - `escalate` leaves it held and passes it to whoever supervises you — the operator, when no
   agent does — with your `message` as a note to them. It escalates only a gate routed to
-  you, and the answer names who decides it now.
+  you, and the answer shows who decides it now.
 
 A seq that is no longer the held call is refused with what the agent holds now
 (`gate moved: …`). Only an allow is reviewed as the action it authorizes: your own rules
 and reviewer judge the agent's call as if you were making it, so your allow can itself be
 held for whoever reviews you. A deny authorizes nothing and is not reviewed.
 
-When you cannot judge a call — it reaches past what you were asked to oversee, or you
+When you cannot judge a call — it is outside what you were asked to oversee, or you
 cannot tell what it would touch — escalate it, saying in the message what you could not
 judge. It goes up one supervisor at a time, each of whom may decide it or escalate it in
 turn, and the agent waits until someone decides. You still supervise the agent, so you may
@@ -107,7 +107,7 @@ decide the call later yourself.
 
 ## Questions
 
-An agent's `ask` reaches you as its `asking` status, and the operator sees it too; the
+An agent's `ask` is shown to you as its `asking` status, and the operator sees it too; the
 first answer resolves it. Reply with `agents__message(agent, text, reply_to: "<seq>")`.
 While it asks, a message naming no question is refused with the question, and a `reply_to`
 naming one no longer pending is refused with who answered it. Several questions from one
@@ -131,7 +131,7 @@ With no other argument, it is what is new since your last read; a first read is 
 is printed under one seq: a message, a call with its outcome, a question with its reply;
 log entries that say nothing (telemetry, titles) are not lines. A read never opens on a
 result without its call, so it can run a few lines past what you asked for, and the header
-says how many lines come before it. `seq: "14"` reads one entry in full: the exact input, the
+shows how many lines come before it. `seq: "14"` reads one entry in full: the exact input, the
 reviewer's verdict and reason, who decided it, the raw result (up to 16 KiB), and which
 lines the agent saw.
 
@@ -182,7 +182,7 @@ scope. There are no subscriptions; read again to see refreshed listings.
 
 Its gates come to you and its statuses wake you. The operator can take its gates back —
 they then go to the operator without waking you, and you may still decide them — or give
-it another supervisor, which then decides them instead of you. Its gate statuses name who
+it another supervisor, which then decides them instead of you. Its gate statuses show who
 decides.
 
 `agents__archive(agent)` ends an agent you drive and every agent it created that was not
@@ -205,15 +205,15 @@ branch kept unless merged. Agents you create end when you do, unless created `de
   the agent saw, and the decision trail: the reviewer's verdict and reason, and who decided.
 - **Hearing is not deciding.** You hear every status of an agent you created, a gate
   routed elsewhere included. Who decides a gate is on its status's first line, and it is
-  yours when the status names a `decide:` call: `waiting for your decision` when it was
+  yours when the status shows a `decide:` call: `waiting for your decision` when it was
   routed or escalated to you — for an escalated call, even of an agent you do not
   supervise — and `waiting for a decision from <the operator, or an id> or you` when
   someone else was asked and you supervise the agent. `waiting for a decision from <…>`
   with no `or you` is not yours.
 - **It knows who you are.** Its identity line names you as its creator. Its first message,
   your messages and an allow's note open `<your id> (agent):`. A note to an agent you do
-  not drive reaches it, if its triage keeps it, as `⟢ <your id>: …`.
-- **An id reaches its agent anywhere on this host.** Status, transcript and message reach
+  not drive is shown to it, if its triage keeps it, as `⟢ <your id>: …`.
+- **An id identifies its agent anywhere on this host.** Status, transcript and message address
   any agent by its id, in your project or another; interrupt and archive only the agents
   you drive, and decide only the agents you supervise and the calls escalated to you. You
   cannot address yourself. `agents__status` with no agent lists your project's agents

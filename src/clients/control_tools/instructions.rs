@@ -14,7 +14,7 @@ connection/model slugs, known capabilities and prices. Its resource template sup
 combined connection, q, role, limit and offset filters; main and triage have identical \
 compatibility. Rankings use system-wide decayed past picks, not task recommendations.
 
-`status` says where an agent stands; with no agent, one line per agent. A status that \
+`status` shows where an agent stands; with no agent, one line per agent. A status that \
 waits on you ends with the exact call that answers it, its seq filled in.
 
 You drive every agent on this host, so a `message` is its next user message: delivered \
@@ -22,14 +22,14 @@ at once when it is idle, otherwise queued behind its current step or a held call
 the answer says which. An empty message continues an agent that stopped or paused.
 
 A gate is an agent holding a tool call its permission rungs did not clear: nothing runs \
-until `decide` names the call's seq with allow (a message rides with its result) or deny \
+until `decide` names the call's seq with allow (a message is sent with its result) or deny \
 (with a message the agent goes on under it; without one its turn ends). Escalate leaves \
 it held and asks the operator, the person at efference's own clients, with your message \
 as a note to them. The agent \
 never sees an approval, only a denial and its message, so feedback names the visible tool \
 choice, not the gate.
 
-A question (its status says asking) is answered by `message` with `reply_to` set to the \
+A question (its status shows asking) is answered by `message` with `reply_to` set to the \
 question's seq; a message without it is refused while a question is pending.
 
 `transcript` is what an agent said and did, new since your last read by default; `seq` \

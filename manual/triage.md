@@ -79,7 +79,7 @@ sentence saying what the agent wants from the call. The triage model reads it an
 answers it. When the intent gave it nothing to decide against, it can say so to the agent.
 <!-- src: src/record/names/tools.rs::INTENT; src/tools.rs::with_intent; src/agent/surface.rs::tool_definitions; src/record/project/render.rs::INTENT_FEEDBACK_LEAD -->
 
-The same request also sees pending notifications and the output of the session's
+In the same request, the triage model also reads pending notifications and the output of the session's
 background processes, and decides which deserve the agent's attention.
 <!-- src: src/curation/triage/schema.rs (inbox, background fields); src/agent/landing.rs::land (open_rider) -->
 
@@ -87,7 +87,7 @@ background processes, and decides which deserve the agent's attention.
 
 The kept lines appear verbatim, each range headed by its line numbers, followed by the
 total line count when the end was cut, then the note. When every line is kept the agent
-sees the output exactly as it was. Triage judges only text: images in a result reach the
+sees the output exactly as it was. Triage judges only text: images in a result are sent to the
 agent with whatever text is kept. Triage reads the output after secret values are masked
 ([Credentials](credentials.md)).
 <!-- src: src/record/project/render.rs::render_hunks, NOTHING_KEPT; src/curation/triage/prompt.rs::result_view (images not shown to triage); src/record/project/semantic.rs::render_result; src/agent/batch.rs::run_calls (reads the masked entry back) -->
@@ -100,8 +100,8 @@ agent with whatever text is kept. Triage reads the output after secret values ar
   carrying its first kilobyte and telling the agent to narrow the call.
 - The terminal interface shows the first 16 KiB of a result; the web client can load the
   rest.
-- Some results reach the agent without triage: a reply to a question the agent asked, and a
-  file-editing tool's refusal that carries a retry token. A call that never ran — refused,
+- Some results are sent to the agent without triage: a reply to a question the agent asked, and a
+  file-editing tool's refusal that contains a retry token. A call that never ran — refused,
   or an unknown tool — has nothing to triage. A call you interrupt while it runs is
   recorded, and the agent is told it was interrupted instead of seeing its output.
 - A separate triage model's answers are capped at 16,384 tokens.

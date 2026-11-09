@@ -35,7 +35,7 @@ control one. Both are
 unchanged on it.
 
 **Body size.** The transport caps a request body at 10 MiB (trillium-http's default
-`received_body_max_len`); a larger body reaches the route as an empty string, whose
+`received_body_max_len`); a larger body is received by the route as an empty string, whose
 decoder answers `400` with a parse error rather than `413`. No `/v1` route
 legitimately reads a body that size — the one exception, `POST /attachments`, raises
 its own read cap to 64 MiB — so an over-cap body failing as malformed input is the
@@ -101,7 +101,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   entries opens that session's `/v1/events` beside this
   (backlog/inbox/host-process.md).
 - `GET /sessions?state=archived&cwd=<abs root>` — the dormant sessions: the same
-  collection filtered by the lifecycle word `PATCH /sessions/:id` carries. `state`
+  collection filtered by the lifecycle word used by `PATCH /sessions/:id`. `state`
   absent or `active` is the listing above; any other value is `400`. The answer is a
   JSON array, most recently active first, of
   `{"id", "cwd", "state": "archived", "title"?, "created_at"?, "last_active_at"?, "interrupted"?, "problem"?, "resume_failure"?}`
@@ -133,7 +133,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `{"connections":[{"connection", "provider", "status", "age"?, "error"?, "models":[…]}]}`,
   sorted by connection name. `status` is `fresh`, `stale`, `missing`, `failed`, or
   `unavailable` (no usable credential, or disabled: no read is attempted and `error`
-  says why). `age` is seconds since the stored copy was fetched. Never waits on a
+  contains the reason). `age` is seconds since the stored copy was fetched. Never waits on a
   provider: a `missing` or `stale` connection starts a background refresh and is
   served as stored; a `failed` one keeps its old copy in `models`. `cwd` (+ optional
   `config`) names the project scope whose recent picks fold in as `recent`; without
@@ -151,7 +151,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   A row is `{"connection", "model", "group"?, "name"?, "created"?, "context"?,
   "price"?: {"input","output"}, "reasoning"?, "images"?, "kind"?, "recent"?}`. `kind` is
   `"decisions"` for a decision model and absent for a text one. `model` is the
-  provider-native id a draft carries; `created` is unix seconds; `context` is
+  provider-native id a draft has; `created` is unix seconds; `context` is
   tokens; `price` is USD per million tokens; `recent` is the rank (1 first) of the
   matching recent pick, counted across connections. A field the source did not
   declare is absent.
@@ -159,7 +159,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   starting runtime preparation. The body carries an absolute `cwd`, an optional
   `config`, and the same editable selections creation takes: `connection`, `model`,
   `spotter_connection`, `spotter_model`, tagged `triage`, `temperature`, `effort`.
-  A role names its connection and its provider-native model separately, or gives
+  A role has its connection and its provider-native model specified separately, or has
   the `connection/model` slug as `model` alone — naming the connection is what
   makes a native id that itself contains a slash unambiguous. The response is
 
@@ -191,7 +191,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `invalid_selection`, `unavailable_connection`, `invalid_config` — and a config
   that will not load reports that it did not, never its contents.
 
-  **`worktree` says whether the `cwd` can start a worktree**: it is inside a git work
+  **`worktree` indicates whether the `cwd` can start a worktree**: it is inside a git work
   tree whose `HEAD` resolves, the two preconditions creation checks
   ([worktrees.md](worktrees.md)). It is `false` for a `cwd` that did not decode, and a
   form offers the worktree option only when it is `true`. Creation keeps its own
@@ -229,7 +229,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the authorization dance (below). `201 {"id": …}` as soon as the id is reserved: the
   session is in the listing as `starting` and its preparation — the environment,
   then `boot::prepare` with the MCP mounts — runs after the answer (*A starting
-  session*, below). `400` with the reason when what the request alone decides is
+  session*, below). `400` with the reason when what the request alone specifies is
   unusable — the body, the name, the cwd, a supplied environment, a role
   selection — in which case nothing was reserved. A failure during preparation is
   the starting session's, read from its `starting` topic.
@@ -272,16 +272,16 @@ sessions from one process. Its own routes are the listener's, not a session's:
   *source* configuration the boot consumed (never the per-session copy under
   `.efference/<id>/`, whose path is per session). A relaunch refreshes the entry's
   timestamp rather than adding one, so the list reads most-recently-used first. A
-  directory holds at most one entry whose launch named no configuration: that entry
-  asks creation to probe again, so when the directory gains or loses an
+  directory holds at most one entry whose launch named no configuration: for that entry,
+  creation probes again, so when the directory gains or loses an
   `efference.toml` between two such launches — a different source configuration, so a
   different key — the later launch's entry replaces the earlier one.
   There is no registration and no nickname: the `label` is the directory's own
   name, falling back to the full path at a filesystem root.
   `200 {"projects":[{"label", "cwd", "config", "config_key", "last_used_at"}, …]}`,
   at most 50 entries, where `cwd` and `config` are exactly what `POST /sessions`
-  takes back (`config` `null` asks creation to probe, which is what a launch that
-  named none did) and `config_key` is the identity the entry is stored under.
+  takes back (with `config` `null`, creation probes, as it did for a launch that
+  named none) and `config_key` is the identity the entry is stored under.
   The index **filters against the filesystem and writes nothing**: an entry whose
   `cwd` is not a directory, or whose *named* configuration is not a file, is left
   out — creation would refuse either ([permissions.md](permissions.md)) — while an
@@ -296,22 +296,22 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `400 bad_request` when either parameter is absent. It deletes the remembered
   entry alone: no file, no directory, no session that ran there. The identity is
   taken as stored rather than recomputed from `cwd` and `config`, because
-  recomputing re-probes the filesystem and a directory that gained an
+  recomputing re-probes the filesystem and a directory with a new
   `efference.toml` since its launch resolves to a different key.
-- `GET /sessions/:id` — one session's row. A hosted or starting session answers its
+- `GET /sessions/:id` — one session's row. For a hosted or starting session the response is its
   row of the listing above; otherwise the dormant row for the id (the shape above, with
   `state: "archived"` and a `problem` when the directory is unreadable), looked up
   under `cwd` when the query names one and under the remembered roots when it does
   not, the most recently active when several hold the id. `404` when neither does,
-  `400` for a relative `cwd`. The dormant row adds two fields the listing does not
-  carry, each left out when the session's files cannot answer it: `selections`, the
+  `400` for a relative `cwd`. The dormant row has two fields the listing does not
+  have, each left out when the session's files lack the value: `selections`, the
   main, spotter and triage selections a resume without a switch reopens on, in the
   shapes `PATCH` below takes (`{"connection", "model", "spotter_connection",
   "spotter_model", "triage": {"mode": "shared"} | {"mode": "separate", "connection",
   "model", "thinking", "auto_choice", "effort"}}`), and `context_tokens`, the prompt
   tokens of the session's last main-loop request in its `usage.jsonl` — what the
   `cold` topic reports for a hosted session, and what a main switch reads uncached
-  ([resumption.md](resumption.md)). A hosted row carries neither: a hosted session
+  ([resumption.md](resumption.md)). A hosted row has neither: a hosted session
   takes no switch.
 - `PATCH /sessions/:id` — change one session's state, the session resource
   carrying the change: `{"state": "active"}` reopens a dormant session under its
@@ -396,20 +396,20 @@ sessions from one process. Its own routes are the listener's, not a session's:
 #### A starting session
 
 Creation and an `active` patch put the session's id in the host's map as a
-**starting** entry before anything is prepared, and answer then; preparation runs
+**starting** entry before anything is prepared, and the host answers then; preparation runs
 in the background (`src/host/starting.rs`, `src/host/preparation.rs`).
 Starting is a lifecycle state beside active and dormant, not a loop phase: no loop
 exists yet. While starting, the session is listed with `status: "starting"` and
-`GET /sessions/:id` answers its row, and its routes are:
+`GET /sessions/:id` returns its row, and its routes are:
 
 - `GET /state` — a smaller snapshot: `last_seq` (`null`) and the topics a starting
   session publishes, `verbs`, `queued`, `starting`, and `status` (its condition
   `starting`, or `failed_to_start` with the reason, below). `?wait=settled`
   waits through the start and then for the session to settle, under the one cap; a
-  failure ends the wait with the starting snapshot carrying it.
+  failure ends the wait with the starting snapshot containing it.
 - `GET /events` — those topics as `state` frames as they move. Once the
   session starts, the same connection continues into the session's own stream from
-  the request's `since`, whose connect snapshot carries every topic, `starting:
+  the request's `since`, whose connect snapshot contains every topic, `starting:
   null` among them. A failure ends the stream after the frame that carries it.
 - `POST /turns` — the turn is queued (`verbs.turn.delivery` is `queued`) and handed
   to the session in submission order when it starts, so a turn sent while starting
@@ -475,7 +475,7 @@ sits outside the fold.
 
 Every topic, the composite snapshot, and the loop resource are serialized
 through `protocol::channel_value`, a `serde_json::Value` round trip that
-sorts object keys at every depth, so a struct's field order never reaches the
+sorts object keys at every depth, so a struct's field order is not preserved in the
 bytes. Each topic's bytes are pinned by `src/host/test/topic_bytes.rs`: a
 change to a carried type fails there first.
 
@@ -570,7 +570,7 @@ question is pending, from every client (below).
   with attachments and blank text is still a turn. A name the store does not
   hold is a `400` and nothing is queued.
 - **A turn on a cold session is accepted like any other.** While the `cold` topic
-  (below) is set, the next request pays for the whole context uncached; the host
+  (below) is set, the next request incurs the cost of the whole context uncached; the host
   does not ask first. Showing that is the client's job (the cold line,
   [web-client.md](web-client.md), [tui.md](tui.md)). The turn is a person's action:
   while the session is believed cold it is recorded as a `released` step of the
@@ -599,7 +599,7 @@ question is pending, from every client (below).
   topic's turn says), `queued` (it waits for the loop's next juncture), `held` (an
   agent's turn, queued behind the operator's pace hold until it is released), or
   `answered` (it was the pending ask's reply).
-- **The operator's pace hold outranks an agent.** A turn from one of the operator's
+- **The operator's pace hold takes precedence over an agent's turn.** A turn from one of the operator's
   clients (no `source`, or `web`) releases a hold; a turn whose `source` is an agent's
   (`session[…]`, `mcp[…]`) waits behind it, queued and shown in `queued` but not sent to
   the loop, and an agent's answer to an `ask` is delivered but leaves the hold in place.
@@ -609,9 +609,9 @@ question is pending, from every client (below).
   phase that waits on someone, or idle — `GET /state?wait=settled`, below), then return
   the `/state` snapshot (`200`) instead of `202`.
 - `409 not_delivered` — a turn held to naming its question was not delivered. `message`
-  says why in the sender's register, with the question and its handle (`not delivered:
+  contains the reason in the sender's register, with the question and its handle (`not delivered:
   child is asking (3.1) "Delete the old migrations?" — reply with reply_to: "3.1"`), or
-  who answered a stale one and how; `detail` carries the pending `ask` (`null` when none
+  who answered a stale one and how; `detail` contains the pending `ask` (`null` when none
   is). Nothing is queued.
 - `400 bad_request` — unparseable body, or a `submission_id` outside 1–128 bytes
 
@@ -671,7 +671,7 @@ only if that call is still the pending gate.
     the new policy. A failed write fails the grant.
   - While the session is believed cold (the `cold` topic), a decision that lets
     the turn go on — `approve`, `redirect`, `config_edit` — is a person's action,
-    noted when the id is the pending gate and before the decision reaches the loop
+    noted when the id is the pending gate and before the decision is delivered to the loop
     (recorded as `released`, `by: approval`; one request's worth), so the cold
     check that follows does not park. `abort` makes no further request and is not
     one. A `redirect` counts because its message becomes the next user message and
@@ -688,7 +688,7 @@ only if that call is still the pending gate.
 - The host appends each decision it accepts as a `Telemetry::GateDecision` entry —
   the call id, the decision as the loop receives it, `source`, and for an allow sent with a
   note the `note_submission` — once the id is known
-  to be the pending gate and before the decision reaches the loop, so the entry precedes
+  to be the pending gate and before the decision is delivered to the loop, so the entry precedes
   the result or the redirect it causes ([log-and-projection.md](log-and-projection.md)).
   A `409` records nothing. A call the loop decides without a gate — a fast-path or
   spotter clear, an autonomous redirect — has no such entry. The conversation transcript
@@ -696,7 +696,7 @@ only if that call is still the pending gate.
 - `200 {"status":"resolved"}`
 - `?wait` — hold until the turn's *next* gate or completion, then return `/state`.
 - `409 gate_moved` — that id is not the pending gate (already resolved, or the
-  loop moved on). `detail` carries the **current** gate (`null` = none pending),
+  loop moved on). `detail` contains the **current** gate (`null` = none pending),
   so the client re-renders without a second round-trip. This closes the
   "approved a gate that already moved on" race.
 - `400 bad_request` — bad body, or `config_edit` without a `change`
@@ -720,7 +720,7 @@ made by the host directly. The id is a precondition, as above.
   ([web-push.md](web-push.md)). The conversation transcript prints the escalation on the
   call's line.
 - `200 {"status":"escalated"}`
-- `409 gate_moved` — that id is not the pending gate; `detail` carries the current gate.
+- `409 gate_moved` — that id is not the pending gate; `detail` contains the current gate.
 - `400 bad_request` — bad body.
 
 #### `GET /loop` · `PATCH /loop`
@@ -764,7 +764,7 @@ the turn it triggers. A verb-route on the loop resource for the same reason as
 `/loop/interrupt`: it signals the loop rather than creating or editing a resource.
 The body is optional, `{"source": "<string>"}`: who is continuing, spelled as a turn's
 `source` is and absent for the operator. An accepted continue is recorded as
-`telemetry.continue` with that source, before the loop is signalled, so the log says
+`telemetry.continue` with that source, before the loop is signalled, so the log records
 who asked for the turn; it projects to nothing, and the conversation transcript reads
 it as `<sender> continued it`. A declined one writes nothing. On a cold session it is a
 person's action like a turn (`released`, `by: continue`); a loop parked at its cold
@@ -846,7 +846,7 @@ cannot throw a live cache away by accident.
   `compaction_thinking_delta`; the summary's `log` frame is its only durable form.
 - `?wait` — hold until the compaction lands or fails, then return `/state`; unlike
   `?wait=settled`, this waits on the compaction rather than the loop phase.
-- `409 not_compactable` — the cache is not believed expired and the body did not say
+- `409 not_compactable` — the cache is not believed expired and the body did not contain
   `warm`, a gate or question is pending, the loop is in any phase but idle, a cold
   park, or a held triage, or everything since the last compaction fits in the tail.
   The `verbs` topic publishes this answer (below).
@@ -904,10 +904,10 @@ only *file* a proposal, never resolve its own.
   `400 invalid_decision` (a `state` that is neither) · `500 internal` (append failed)
 
 #### `GET /push` · `POST /push/subscriptions` · `DELETE /push/subscriptions`
-Web push ([web-push.md](web-push.md)). The GET answers the machine's VAPID public key
+Web push ([web-push.md](web-push.md)). The GET returns the machine's VAPID public key
 (`{"key": "<base64url uncompressed P-256 point>"}` — `applicationServerKey` verbatim);
 the POST records a browser subscription in its `PushSubscription.toJSON()` shape,
-upserting on the endpoint (`201`); the DELETE forgets one by `{"endpoint": ...}`,
+upserting on the endpoint (`201`); the DELETE removes one by `{"endpoint": ...}`,
 always `200` — an unsubscribe names an end state. The store the writes land in is
 machine-scoped, not per-session. All three answer `500 internal` when no root secret
 is injected, a state unreachable through a bind that requires one.
@@ -938,7 +938,7 @@ The running processes, as a JSON array of the same representation the
 
 `call_id` is the call↔process mapping ([process-monitor.md](process-monitor.md)): a client
 holding a transcript entry finds the process that answers it, and a client holding
-a process row finds the entry to jump to. The listing carries only *running*
+a process row finds the entry to jump to. The listing contains only *running*
 processes — a process leaving it is how an exit is represented, which is what
 keeps it bounded over a long session — so a client asking about an exited one
 addresses it directly, below.
@@ -965,11 +965,11 @@ The body is the listing's representation plus the two fields it has no need for:
   by the handoff is recorded later than it started.
 - A log-derived answer reads `running: false` and `muted: false`: the process is
   not in *this* daemon's registry, and mute is live-view state that was never
-  durable. `exit: null` beside `running: false` says the end was never observed
+  durable. `exit: null` beside `running: false` indicates the end was never observed
   (the daemon died first).
 - `404 not_found` — no process with that id was ever minted into the background
-  this session. A log with no lifecycle records at all (one written before they
-  existed) answers this way for every id.
+  this session. For a log with no lifecycle records at all (one written before they
+  existed) the response is the same for every id.
 
 #### `GET /processes/:id/output`
 A cursor read of the process's retained output. With no cursor it returns
@@ -995,7 +995,7 @@ Set a process's properties.
   foreground→background handoff ([process-monitor.md](process-monitor.md)): `202` with
   the representation, because the flip lands only when the detach wake reaches
   the running tool's race. On an already-background process it is an idempotent
-  `200` no-op. An optional `note` rides the handoff and is delivered to the
+  `200` no-op. An optional `note` is included in the handoff and is delivered to the
   model as a user message right after the handoff result — a turn-injection
   concern beside the property change, not a process attribute.
 - `400 bad_request` — `background: false` (no transition to name), or a `note`
@@ -1327,16 +1327,16 @@ its precondition through one function — `Session::continue_verdict` for
 topic publishes that function's answer: `{"accepted": true, …}`, or
 `{"accepted": false, "message"}` with the message the route's `409` would carry. The
 table and the routes therefore cannot disagree; an answer can be stale by the time a
-request arrives, and the route checks again. `compact` says `"warm": true` where it
-accepts only a body saying `warm: true` (the cache is believed live). A turn is always
-accepted, so `turn` says whether it would be delivered now — to an idle loop with nothing
+request arrives, and the route checks again. `compact` contains `"warm": true` where it
+accepts only a body containing `warm: true` (the cache is believed live). A turn is always
+accepted, so `turn` indicates whether it would be delivered now — to an idle loop with nothing
 queued, as the answer to an `ask`, at a cold park, a held pace, or a pace delay it ends —
 or queued until the loop's next juncture. A client renders a refused verb disabled with
 its message (the TUI's `⏎` and `C-o`, the web composer's empty send and summary action,
 [tui.md](tui.md), [web-client.md](web-client.md)).
 
 **`current_operations` names what is in flight.** The `requesting` phase alone
-cannot tell a slow first byte from a slow triage, nor `executing` one long tool from
+does not distinguish a slow first byte from a slow triage, nor `executing` one long tool from
 another. The topic lists the upstream requests open now and the tools executing,
 each with the instant its stage began, so a client subtracts on its own clock and
 the topic is not re-emitted per tick; it changes only at a transition. It is folded
@@ -1400,7 +1400,7 @@ loop phase and the state each condition needs (`src/session/status/view.rs`), pu
 it as the `status` topic through `src/session/topic_values.rs`, and registers the topic beside
 every other one in `src/protocol/state/topic.rs`; the same view is what subscription
 notifications render ([tools.md](tools.md)), so the topic and
-the inbox say the same thing. Per condition it carries:
+the inbox show the same information. Per condition it carries:
 
 | `kind` | fields |
 | --- | --- |
@@ -1458,8 +1458,8 @@ session — with three bounded forms:
 tail read is its own parameter rather than a negative `since`: a parser cannot
 tell a deliberate `since=-300` from a client's off-by-one `-1`.
 
-- **`since` and `tail` together are a `400 bad_request`** — one asks to resume
-  from a position, the other to open at the end, so the request has no single
+- **`since` and `tail` together are a `400 bad_request`** — one specifies resumption
+  from a position, the other opening at the end, so the request has no single
   reading and the daemon does not pick one for you.
 - A malformed bound (`?tail=abc`) is likewise a `400`, not ignored: dropping it
   would silently answer with the whole log.
@@ -1477,7 +1477,7 @@ A window may be cut anywhere because references that dangle across the cut are
 #### `GET /transcript`
 The same window as `GET /log` — same `since`/`before`/`tail` query, same `400`s —
 rendered as `text/plain` (`session/transcript.rs`) at one of two grains, or one entry
-zoomed. A window never carries a result's body; the zoom and the routes below do. At the
+zoomed. A window never contains a result's body; the zoom and the routes below do. At the
 audit grain `tail` counts log entries, as `GET /log` does. At the conversation grain it
 counts the lines that grain prints (below), so the last `n` lines are the same lines
 whatever mechanism entries lie between them.
@@ -1494,7 +1494,7 @@ whatever mechanism entries lie between them.
 
 **The conversation grain** (`session/transcript/conversation.rs`) opens with a header
 naming the session and the seqs the window covers — `transcript of child, seq 2–40`, or
-`transcript of child (no entries)` — and a window holding only mechanism says `(nothing
+`transcript of child (no entries)` — and a window holding only mechanism shows `(nothing
 said or done in this range)`. Every later line opens with the handle it is addressed by, an
 entry's `seq` or a call's `seq.n` when it shared its entry, then two spaces. A *line* is
 one of these: a message, a note, a summary, a call with everything that became of it, an
@@ -1504,7 +1504,7 @@ A `tail` of `n` takes the last `n` lines of the range, whole entry by entry, and
 extends the start back until no entry in the window is the outcome of a call before it —
 a result, a verdict, a gate decision, an ask's reply, a redirect's message, an allow's
 note — so the window can run past `n` lines and never opens on an outcome without its
-call. When it cut lines off, the header says how many it kept and how many came before:
+call. When it cut lines off, the header shows how many it kept and how many came before:
 `transcript of child, seq 60–99: the last 43 lines; 57 lines before — since: 0 reads from
 the start`. A reader's first read (`ReadPlan` in `session/transcript/cursor.rs`) is a tail
 of 40 and ends its header with `(your first read)`; a session of fewer lines is shown
@@ -1525,7 +1525,7 @@ whole.
   carried nothing), and what the session saw of it: `it saw all of it`, `it saw none of
   it` (a dropped result, or a verdict that kept nothing), `it saw k` for the lines a
   verdict kept, each followed by the verdict's note after a colon, or `it has not seen it
-  yet` while no verdict has decided it. A denied call's line ends at its decision.
+  yet` while it has no verdict. A denied call's line ends at its decision.
 - An `ask` is `asked: <question>`, or `asked (n of m): …` when its turn put more than
   one, with its reply on the next line under the reply's seq and its replier's name. An
   ask an interrupt or a malformed call ended reads `→ not answered`.
@@ -1563,13 +1563,13 @@ how many images it carries — never its content. Calls that shared one assistan
 are labelled `seq.1`, `seq.2`, … in place of the bare seq, and each of their results
 opens with `for seq.n:`, so the pairing survives the spot and config entries that
 interleave them; a call alone in its entry keeps the bare seq. An `ask` call is not a
-`call` line: it is an `asked` line carrying the question, with ` (question n of m)` when
+`call` line: it is an `asked` line containing the question, with ` (question n of m)` when
 its completion put more than one, and its result is a `user` line with the reply's text
 (opening with the `source: ` address when the reply was sourced) when the result entry
-carries a `submission_id`, or `result  not answered` when it does not (an interrupt, a
+has a `submission_id`, or `result  not answered` when it does not (an interrupt, a
 malformed call). `notify`, `spot`, `config`, `process`, `summary`, `preamble` and `title`
-are one line each; a `triage` line appears only when the verdict pinned or dismissed a
-notification or the triage retried; telemetry renders to nothing.
+are one line each; a `triage` line appears only when a notification was pinned or dismissed by the verdict
+or the triage retried; telemetry renders to nothing.
 
 **The zoom** (`seq=…`, `session/transcript/zoom.rs`) is one entry in full, under the
 header `transcript of child, seq 8.2`. A call shows its tool, its intent, its exact input
@@ -1585,7 +1585,7 @@ one; the raw body, cut at the same 16 KiB as a window's `content_elided` with a 
 line saying how much was cut; and each image by its media type and size. A reader that
 names no `me` (the command line, a plain HTTP client) is also told that `GET /log/:seq`
 serves the whole result and each image's `GET /log/:seq/images/:idx` address; a named
-reader, an in-session agent or an MCP driver, has neither route, so its lines carry only
+reader, an in-session agent or an MCP driver, has neither route, so its lines contain only
 the size and the image. A multi-call turn lists its calls by handle and says to read each
 in full by its handle. The word "zoom" is the code's; the `transcript` tool tells agents
 "reads one entry in full". An `ask` shows its question and its
@@ -1646,8 +1646,8 @@ boundary, so it is a valid string rather than a split code point). A client
 holding one renders the prefix, says what it is, and fetches `/log/:seq` when it
 wants the rest.
 
-**A triaged result's view carries the verdict's line arithmetic.** On every
-route, a `ToolResult` whose `wire` is `Triaged` gains one field beside it:
+**A triaged result's view contains the verdict's line arithmetic.** On every
+route, a `ToolResult` whose `wire` is `Triaged` has one field beside it:
 
 ```jsonc
 "selection": { "total_lines": 937, "kept_lines": 364 }
@@ -1664,9 +1664,9 @@ the selection — which rows survived, numbered — is not served yet; the web
 client still resolves that from the content it holds
 ([web-client.md](web-client.md) "The cordon").
 
-**A committed assistant entry's view carries its artifacts' links.** On every
+**A committed assistant entry's view contains its artifacts' links.** On every
 route, an `Assistant` entry whose text holds `html-artifact` or `mermaid` fences
-gains `artifacts` beside `output`:
+has `artifacts` beside `output`:
 
 ```jsonc
 "artifacts": [
@@ -1697,7 +1697,7 @@ incrementally rather than whole.
 
 #### `GET /log/:seq/images/:idx`
 The decoded bytes of one logged result image — the dereference target for the
-image references entry views carry. `:seq` addresses the `ToolResult` entry,
+image references in entry views. `:seq` addresses the `ToolResult` entry,
 `:idx` the image's position in its `images` array. The response is the stored
 bytes under the stored media type (`Content-Type: image/webp` etc.), so the web
 client shows them from an object URL over the fetched bytes
@@ -1716,7 +1716,7 @@ The tool call with that id, and the `seq` of the entry carrying it:
 A call is **not** its own log entry — it is embedded in an `Assistant` payload —
 so it needs its own address, and `call_id` is the one already in the log, in
 `tool_output` frames, in `/state`'s `gate`, and in the hand of any client holding
-an orphaned `tool_result`. `404 not_found` if no entry carries it. Validated by
+an orphaned `tool_result`. `404 not_found` if no entry contains it. Validated by
 `ETag` like `/log/:seq`.
 
 The scale of the orphan problem is bounded by the batch: a completion's calls
@@ -1725,11 +1725,11 @@ triage ([README.md](README.md)), so a cut orphans **at most one batch of results
 at the boundary itself**.
 
 #### `GET /proposals`
-JSON array of pending proposals — the same array `/state` carries, for a client
+JSON array of pending proposals — the same array `/state` contains, for a client
 that wants to poll only this.
 
 #### `GET /tools/:name`
-One tool's full definition, for **any** name the turn's `tools[]` can carry —
+One tool's full definition, for **any** name the turn's `tools[]` can contain —
 description, `input_schema` (with per-property descriptions and `required`),
 `annotations`, `title`, and `server` (the mounting server's name, `null` for
 one of the harness's own tools: `bash`, `read_image`, the fs/semantic-edit MCP
@@ -1747,12 +1747,12 @@ through unchanged.
 `input_schema` is served exactly as the model was sent it, not a
 pre-injection schema, so a consumer comparing a call's arguments against
 `required` sees the schema the call was actually judged against. That
-distinction cuts one way: a `Toolbox`-mounted tool's schema carries the
+distinction cuts one way: a `Toolbox`-mounted tool's schema has the
 injected [`intent`] property ([tools.md](tools.md) "The `intent` property"),
 because `with_intent` runs over every entry `Toolbox::definitions` advertises
 — but the harness's own loop-owned family (`consolidate`, the process-monitor/inbox
 tools, the two triage tools) is pushed onto the wire array *after* that, with no
-injection, so their served schemas carry no `intent` property either.
+injection, so their served schemas have no `intent` property either.
 
 This covers everything a session's `tools[]` can name — not just the
 `Toolbox`'s mounted providers. A catalog built from the toolbox alone once
@@ -1840,7 +1840,7 @@ supplement it.
 total order per connection, and a `state` frame follows every `log` frame it
 reflects. So a client never sees the gate before the `spot` entry whose text the
 gate quotes, and never sees an idle `loop_phase` before the entries that finished the
-turn — that second one answers "is it done?" wrong, in the direction a human acts
+turn — that second ordering would give the wrong answer to "is it done?", in the direction a human acts
 on. Mechanically: each state value is stamped with the log position it reflects,
 and is held until the connection has delivered through it. A client subscribed to
 `state` without `log` is not gated, having no log frames to be coherent with.
@@ -1920,7 +1920,7 @@ the oldest. The committed entry on the `log` class is the authoritative copy.
   does not drop it. A triage that retries streams each attempt's fragments in turn.
 - `triage_thinking_delta` — same shape — the triage request's extended thinking. Both end
   with the triage: its `Triage` and `ResultVerdict` log frames supersede them, and they
-  are logged nowhere themselves. The title peek, which also rides the triage's request
+  are logged nowhere themselves. The title peek, which also uses the triage's request
   path, streams nothing.
 - `tool_output` — `{ "call_id": "…", "chunk": "…" }`
 - `process_output` — `{ "id": <n>, "chunk": "…" }` — a background process's output,
@@ -1941,7 +1941,7 @@ loop issues one request at a time, so it is unambiguous without further qualific
 committed entry on the `log` class supersedes the whole live set for that response.
 
 The three middle kinds exist so a client can show *which output kind* a turn is streaming. Without them
-only prose reaches the stream, and a turn spent thinking or emitting a large tool input
+only prose is sent on the stream, and a turn spent thinking or emitting a large tool input
 publishes nothing at all — indistinguishable from a hung harness.
 
 > `GET /stream`, which carried this class on its own socket, is retired: a delta
@@ -1957,7 +1957,7 @@ publishes nothing at all — indistinguishable from a hung harness.
   `Ambient` / `Spot` / `ConfigEdit` (see
   [log-and-projection.md](log-and-projection.md)). `submission_id` names the
   `POST /turns` that produced the entry; `source` names its submitter when not
-  the operator and is the one entry field that reaches the wire.
+  the operator and is the one entry field projected to the wire.
 - **`ConfigChange`** — one of `command` / `path` / `tool` / `scope` (see
   [permissions.md](permissions.md)).
 - **`BgView`** — a background-process view (see [process-monitor.md](process-monitor.md)).

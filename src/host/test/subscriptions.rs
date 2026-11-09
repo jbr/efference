@@ -236,7 +236,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
          {issued})\nintent: fetch only the response headers\nheld because: its reviewer is \
          unsure this fits the session's scope; no earlier call like it was allowed\ndecide: \
          agents__decide(agent: \"child\", seq: \"{issued}\", decision: \"allow\" | \"deny\", \
-         message?) — allow runs it, and a message rides with its result; deny with a message \
+         message?) — allow runs it, and a message is sent with its result; deny with a message \
          refuses it and the session goes on under your message; a bare deny ends its \
          turn\nescalate: agents__decide(agent: \"child\", seq: \"{issued}\", decision: \
          \"escalate\", message?) — leaves it held and passes it to whoever decides above you, \

@@ -4,7 +4,7 @@
 
 efference's own primitives run in-process behind a `Provider` enum aggregated
 by a `Toolbox`, not as MCP subprocesses. The reason is iteration velocity: an
-in-process call pays neither JSON-RPC round-trip overhead nor process
+in-process call incurs neither JSON-RPC round-trip overhead nor process
 lifecycle management. A new backend is a single enum variant; dispatch stays
 static with no `async-trait` boxing.
 
@@ -16,7 +16,7 @@ access to the result structs.
 
 ## The `Tool` trait and progressive reveal
 
-The `Tool` trait (realized as the `Provider` enum in `src/tools.rs`) carries
+The `Tool` trait (realized as the `Provider` enum in `src/tools.rs`) has
 the metadata progressive reveal needs: name, input schema, and when-relevant
 hints. Whether a tool definition appears in the preamble (hot, always present)
 or surfaces later in the session (cold, behind a discovery hint) is a property
@@ -60,8 +60,8 @@ lifting it out would move the pinned projection bytes for no gain
 
 **Collision.** A tool whose own schema already declares `intent` is skipped — not
 injected, and not stripped, since the field is the tool's own. The check reads the
-mounted table, which is fixed for the session, so a name answers the same way at
-definition time and at dispatch time; injection and strip cannot disagree. The
+mounted table, which is fixed for the session, so a name has the same result at
+definition time and at dispatch time; the injection and strip checks cannot differ. The
 preamble says this happens, so a session meeting such a tool reads its description
 rather than assuming the harness meaning.
 
@@ -75,7 +75,7 @@ see [log-and-projection.md](log-and-projection.md).
 A consequence: the schema cannot put `intent` first, because key order is not the
 schema's to choose (it falls after `command` for bash, before `paths` for `read`).
 Whether the model *emits* it before the other arguments is the difference between a
-reasoning slot and a label on a call already decided, and the levers for that are the
+reasoning slot and a label on a call the model already decided on, and the levers for that are the
 preamble instruction — the one being relied on — and prepending `intent` to `required`,
 which is free but not a known mechanism, since `required` is semantically a set. Which
 of these does anything is a reading to take off real calls, and the split sort position
@@ -83,15 +83,15 @@ across tools is a natural A/B.
 
 **What the guidance asks for.** The preamble states the indirection as a fact about
 how tools work here — the agent does not read tool output directly; a reader between
-it and the tool keeps the part that answers this line — and frames `intent` as the
+it and the tool keeps the part that resolves this line's question — and frames `intent` as the
 prompt to that reader: a question, plus what in the output would settle it. Every
 prior a model carries says "I run the call and read the output", under which the
 field reads as a caption, and a caption is what gets written for a reader that is
 invisible; naming the reader is the lever, not asking for better captions. When what
-is wanted is already obvious from the arguments, the guidance asks for the *why*
+is wanted is already obvious from the arguments, the guidance requires the *why*
 instead, since the reason is the part nobody can reconstruct from the record; for a
 call that produces rather than reads — a write, an edit — the why is the whole field,
-and the guidance says that is expected rather than a shortfall. So the field is never
+and the guidance describes that as expected rather than a shortfall. So the field is never
 legitimately empty, which is consistent with it staying required. The preamble also
 tells the agent that triage may answer with a request for a better question
 (`intent_feedback`, [triage.md](triage.md)) and that this is about
@@ -99,12 +99,12 @@ the intent, not the task. Collision is stated in one sentence: a tool that decla
 its own `intent` keeps it.
 
 **Readers.** The TUI leads a call entry's body with it. The triage's `result_view`
-puts it in the result header so the triage `note` answers it rather than restating
+puts it in the result header so the triage `note` addresses it rather than restating
 what the tool did ([triage.md](triage.md)); the two halves are written
-at different times by different requests, so they can disagree, and a `note` that does
-not answer its `intent` is the signal that the call went sideways. When triage runs on
+at different times by different requests, so they can be inconsistent, and a `note` that does
+not address its `intent` is the signal that the call went sideways. When triage runs on
 a separate model, the intent is the only place the agent's reasoning for a call
-reaches it: the triage model reads the transcript but not the agent's thinking
+is available to it: the triage model reads the transcript but not the agent's thinking
 blocks. Showing it to triage creates no persuasion incentive, because triage runs
 after the call and cannot change whether it ran; what it can do is ask for a better
 intent next time, through `intent_feedback`. The spotter is the case where the
@@ -113,7 +113,7 @@ persuasion concern does hold, and it does not see the field —
 
 ## Which tools a session mounts
 
-The config's `[tools]` table decides, by `enabled` ([permissions.md](permissions.md) for
+The config's `[tools]` table determines this by `enabled` ([permissions.md](permissions.md) for
 the table's shape and its `granted` half). Boot builds the whole toolbox — bash, the
 embedded crates, the `agents` provider on a host, each declared server — and then
 `Toolbox::retain_enabled` drops every tool `Config::tool_enabled` refuses, before the first
@@ -123,7 +123,7 @@ it would unfiltered; a provider left with no tools is dropped.
 
 The defaults are where the opt-in lives. efference's own namespaces (`efference`, `agents`,
 `lsp`) are off unless an entry enables them, so a built-in that ships later in a namespace of its
-own reaches no session that did not ask for it. A declared server is on, since declaring it
+own is mounted in no session that did not request it. A declared server is on, since declaring it
 is the request; an entry can turn a namespace or one tool off. The scaffolded config and the
 setup guide enable `efference` (granted) and `agents` (reviewed).
 
@@ -142,8 +142,8 @@ Not everything belongs behind the in-process trait.
 
 **Built-in (in-process):** the generic, language-agnostic primitives — `fs`
 (read / list / search / write), structured edit (`edit` /
-`retarget_edit` / `undo_edit`), and `read_image`. These earn the typed hook:
-gating, staleness checks, and line-numbered rendering for the fork all want
+`retarget_edit` / `undo_edit`), and `read_image`. These justify the typed hook:
+gating, staleness checks, and line-numbered rendering for the fork all require
 direct access to the result structure.
 
 ### `read_image`
@@ -164,7 +164,7 @@ because only one of them leaves a re-read worth trying. `long_edge` (default
 1568, ceiling 2576) is the request's own cap; the visual-token budget (4784
 patches on the high-resolution tier) is the provider's, and it binds first on
 any frame past roughly 1930×1930 — a 2400×2400 source asked for at 2576
-realizes 1932×1932 no matter what edge was requested. `read_image` derives which
+is realized at 1932×1932 no matter what edge was requested. `read_image` derives which
 by re-running `resized_size` with one limit relaxed at a time: if the size at
 the maximum `long_edge` differs from the realized size, the request's
 `long_edge` bound (advise a larger one); if it does not, dropping the token cap
@@ -188,7 +188,7 @@ request was malformed. A rectangle that *overlaps* the frame but runs off its
 far edge is **clamped**, and the header appends `clamped to the frame`: the
 model is addressing from coordinates it remembers against a frame that may have
 changed size, so the overlap is the answer to the question it asked, and the
-echoed rectangle tells it exactly what it got. Erroring there would spend a
+echoed rectangle identifies exactly what it got. Erroring there would spend a
 round trip to deliver information the header already carries.
 
 Encoding policy: fitting API-native bytes pass through
@@ -203,7 +203,7 @@ provider downscales further server-side, costing bytes, never correctness.
 shelled out via `bash` or mounted over MCP rather than baked into the harness.
 This takes cargo-mcp off the critical path — it becomes a later optional MCP
 mount, not a blocker. Held as the current resolution, not settled doctrine: the
-longer-term position is that language support ("adding python support") wants a
+longer-term position is that language support ("adding python support") needs a
 deeper extension contract than MCP tool calls or LSP
 (see [positions.md](positions.md)); nothing built so far commits against that.
 
@@ -257,7 +257,7 @@ id positionally, and `settle`, `wait`, `supervisor` and the command line's `stat
 whose descriptions or shapes differ, declare their own.
 
 The bytes each set advertises are pinned whole (`src/clients/control_tools/test/tool_bytes.rs`):
-the in-session set as a session's `tools[]` carries it and as its tool table holds it,
+the in-session set as a session's `tools[]` contains it and as its tool table holds it,
 and `efference mcp`'s `tools/list`; the command line's `--help` for each verb is pinned
 in `src/bin/efference/control/help.txt`. The tool definitions sit in the cached prefix
 of every session that mounts them ([log-and-projection.md](log-and-projection.md)), so a
@@ -272,7 +272,7 @@ the pins with `EFFERENCE_WRITE_PINS=1`.
 
 Other sessions are named to a model as agents: the in-session namespace is `agents__`,
 and every verb's target parameter is `agent`. "Session" stays the word for the record —
-the log, resume, archive — and each agent is a session on its host, its id naming both.
+the log, resume, archive — and each agent is a session on its host, with one id for both.
 The agent verbs answer in plain text with no output schema; `state`, `settle`, and
 `entries` print JSON for scripts. `wait` is the MCP set's alone: it answers from the
 mount's watched set, which only a mount that outlives its calls can hold, while the
@@ -305,24 +305,24 @@ round trip over the socket. The calling identity is what makes three rules
 enforceable, and they are enforced by the executor rather than by config:
 
 - **The caller is never its own target.** A call naming the caller, or naming no
-  agent (which defaults to it), is refused on every verb. The refusal says to name
+  agent (which defaults to it), is refused on every verb. The refusal includes an instruction to name
   another agent, as `agents__status` lists them.
-- **A driving verb reaches the sessions the caller drives.** A session *drives* another
-  when the other is its descendant (its `created_by` chain reaches the caller), when the
-  host's supervisor pointer names the caller ([permissions.md](permissions.md)), or when
+- **A driving verb targets the sessions the caller drives.** A session *drives* another
+  when the other is its descendant (its `created_by` chain includes the caller), when the
+  host's supervisor pointer identifies the caller ([permissions.md](permissions.md)), or when
   the other is the caller's own predecessor, which handed its work to the caller.
   `interrupt` and `archive` require it; supervision is not transitive, so a session given
   another to supervise does not reach that one's descendants through it. `status`,
-  `transcript`, and `message` from a session that does not drive its target reach any
+  `transcript`, and `message` from a session that does not drive its target can target any
   session on the host, by its id.
-- **`decide` reaches the sessions the caller supervises.** In-session, only the session the
+- **`decide` targets the sessions the caller supervises.** In-session, only the session the
   host's supervisor pointer names ([permissions.md](permissions.md)) — its creator, until
   the operator sets another — decides a session's gates, wherever the review dial routes
-  them; the operator's surfaces decide any. A session a held call was escalated to decides
+  them; the operator can decide any through their surfaces. A session a held call was escalated to decides
   that call, and no other gate of its holder. Creating a session or succeeding its creator
   does not by itself confer it: a session driving a grandchild through the creation chain,
   a creator whose child the operator gave to another supervisor, and a successor driving
-  its predecessor are refused. The refusal names who decides and what still reaches the
+  its predecessor are refused. The refusal identifies who decides and what the caller can still do to the
   target: `refused: you don't supervise "c", so its gates are not yours to decide — its
   supervisor, "q", and the operator decide them; agents__message and agents__interrupt
   still reach it` (`it has no supervisor, so the operator decides them` for a session with
@@ -332,12 +332,12 @@ enforceable, and they are enforced by the executor rather than by config:
   and `agents__message` leaves it a note, and none cites a doc, since the reading agent
   may not have this repository.
 
-`message` does what the relation says. From a driver it is the target's next user
+`message` behaves according to the relation. From a driver it is the target's next user
 message, carrying `source: session[<caller id>]`, which the projection opens as
 `<caller id> (agent):` ([log-and-projection.md](log-and-projection.md)) — or, when the
 caller works in another project than the target, `session[<caller id> in <place>]`, opening
 as `<caller id> (agent in <place>):`, `<place>` the caller's project directory with the
-home directory written as `~`. Decisions, interrupts and archives carry the same
+home directory written as `~`. Decisions, interrupts and archives have the same
 label. An empty one is
 a continue, with the continue route's own precondition (`Session::continue_verdict`)
 and its refusal as the answer where it refuses. From any other session it is a note in
@@ -359,7 +359,7 @@ message "…" was returned undelivered; answer first, then resend it if it still
 
 While the target is asking a question (docs/process-monitor.md), a driver's message
 must name it with `reply_to` — the asking call's transcript handle — and one that does
-answers it. A message naming no question is refused with the question and its handle; a
+is its answer. A message naming no question is refused with the question and its handle; a
 `reply_to` naming a question that is no longer pending is refused, saying who answered
 it and how, and is never delivered as a new message, since a stale "yes, delete them"
 read as a new turn reads as consent. Only a driver answers, and a blank reply is
@@ -376,12 +376,12 @@ the transcript prints the note on the call's line; `deny` with a message rejects
 (`Approval::Redirect`); a bare `deny` aborts it. The decider is recorded on the
 `GateDecision` as `session[<caller id>]`.
 
-`escalate` decides nothing: the call stays held and goes to whoever decides above the
+With `escalate` no decision is made: the call stays held and goes to whoever decides above the
 caller, with the message as a note to them ([permissions.md](permissions.md)). In-session
 that is the caller's own supervisor while it is hosted, else the operator, and only the
 session the gate is routed to may escalate it; a supervisor reading a gate routed elsewhere
 is refused, naming whom it is routed to. Over `efference mcp` and the command line it is
-the operator (`POST /approvals/:call_id/escalate`, docs/control-api.md). The answer names
+the operator (`POST /approvals/:call_id/escalate`, docs/control-api.md). The answer identifies
 who decides now: ``escalated to g: c still holds bash `curl -sI https://example.com` until
 g decides it and reads your note``.
 
@@ -393,13 +393,13 @@ project — each status's first line — the sessions the caller drives marked `
 is what is new since this reader's last read. The host holds that read cursor per reader
 and target as control state on the target's hosted entry, never logged
 (`src/host/agents.rs`); a reader with no cursor — a first read, or any read
-after a host restart — gets the last 40 conversation lines, and the header says so.
+after a host restart — gets the last 40 conversation lines, as the header shows.
 `tail` counts conversation lines as the transcript prints them, not log entries
 (docs/control-api.md). `since`/`tail`
 reads move the cursor to the end of what they returned; a `seq` read does not
-(`src/protocol/transcript.rs`). `interrupt` answers with what it stopped, read from
+(`src/protocol/transcript.rs`). `interrupt` returns what it stopped, read from
 the status just before it signals, and signals nothing at an idle session. `archive`
-answers with the sessions that ended with it, its non-detached descendants
+returns the sessions that ended with it, its non-detached descendants
 (`Host::ending_with`).
 
 While the target's state shows the `cold` topic, a message or an allow is
@@ -416,9 +416,9 @@ working directory — the caller's worktree, when it has one — unless `worktre
 gives the child its own checkout and branch ([worktrees.md](worktrees.md)); it takes the
 caller's child environment as the new session's base, records the caller as the
 child's `created_by` — and so as its supervisor, until the operator sets another
-([permissions.md](permissions.md)) — subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `decide`. It waits out the child's preparation, and an optional `message` is the child's first turn. The answer names the id, the resolved `<connection>/<model>`, the working directory and its own worktree and branch when it has one, where its gates go, and its status. A model the host cannot run is refused with what the host offers: its connections and the first ids of each one's held listing ([model-catalog.md](model-catalog.md)). An id reaches its session in any project on the host; only
+([permissions.md](permissions.md)) — subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `decide`. It waits out the child's preparation, and an optional `message` is the child's first turn. The answer names the id, the resolved `<connection>/<model>`, the working directory and its own worktree and branch when it has one, where its gates go, and its status. A model the host cannot run is refused with what the host offers: its connections and the first ids of each one's held listing ([model-catalog.md](model-catalog.md)). A caller can address a session by id in any project on the host; only
 the overview is bounded, to the sessions whose `.efference/` storage base is the
-caller's, so a session in another project is reached by an id the caller was given
+caller's, so a session in another project is addressed by an id the caller was given
 rather than one it listed. `create` stays inside the project: a `cwd` whose
 `.efference/` base is not the caller's is refused before anything is minted, since a
 child runs under its own project's `efference.toml`, and a child minted elsewhere would
@@ -443,19 +443,19 @@ with `follow: true` the answer is the agent's status and a last line,
 mount, the same URL on every request for that agent. `follow` names one agent: on a mount
 with no default session, a call without `agent` is refused. `create`'s answer over MCP
 carries the same line for the new agent. The in-session and command-line `status` take
-no `follow`, and nothing the in-session set advertises or answers names the stream
+no `follow`, and nothing the in-session set advertises or returns identifies the stream
 ([operating.md](operating.md), `src/clients/control_tools/stream.rs`).
 
 ##### Subscriptions: a session's status in another's inbox
 
 Waiting on another session is a subscription, not a blocking call. A session's
-**status** — what it is doing at a decision point — reaches each subscriber's inbox
+**status** — what it is doing at a decision point — is delivered to each subscriber's inbox
 as a notification (docs/inbox.md) with the session's id as `source` and the slot
 `session:<id>`, so a subscriber's pending inbox holds the latest condition rather
 than a pile. The statuses posted are the decision points: **gated**, **asking**,
 **idle** after a turn completed, **stalled** (docs/transport.md), **parked** (the loop
-stopped at its cold check mid-turn: the cache is believed expired, so continuing pays
-the context uncached; docs/control-api.md), **blocked** (a held pace, or a config file a
+stopped at its cold check mid-turn: the cache is believed expired, so continuing incurs
+the cost of the context uncached; docs/control-api.md), **blocked** (a held pace, or a config file a
 human must repair), and **ended** or **failed** once the runtime has returned. The
 status is read off the loop phase. `running` is observed to detect the transitions and
 never posted; the boot idle is not posted either, nor the return to idle of an idle
@@ -493,20 +493,20 @@ its arguments filled in. The verbs' own answers are rendered beside it
 - **Driver** — a `wake` subscriber, which is the creator or the supervisor, and any
   session or client reading a status it drives: every status with the moves that answer
   it. A gate it is not routed reads as waiting for a decision from the operator or the
-  named supervisor. A question names its place (`question 2 of 3`) and the `message`
-  call with `reply_to` that answers it. An idle carries the whole closing message up to
-  about 4 KB, and names `message` for the next message and `archive`; past the cap, a
-  `cut:` line says how much was left out and which `transcript` read has it. A stop or
+  named supervisor. A question includes its place (`question 2 of 3`) and the `message`
+  call with `reply_to` that answers it. An idle includes the whole closing message up to
+  about 4 KB, and lists `message` for the next message and `archive`; past the cap, a
+  `cut:` line shows how much was left out and which `transcript` read has it. A stop or
   a pause names the empty message, which continues it.
 - **Observer** — a subscriber without wake, or a session reading one it does not drive:
   the same conditions without moves, and an idle's closing message cut to its first
-  line, with a `cut:` line saying how many lines remain.
+  line, with a `cut:` line showing how many lines remain.
 
 A notification opens without the session's id, which is its `source` and which the
 pinned block (`⟢ <source>: <body>`) shows first; the status's first line names the id in
-a read (`post_status`, `src/host/subscriptions.rs`). A notification leaves out the footer a read of the status carries (the model, context
+a read (`post_status`, `src/host/subscriptions.rs`). A notification leaves out the footer a read of the status contains (the model, context
 fill, cost, background processes, and queued turns by sender), and a config repair's
-parse error, which the notification names the `status` read for.
+parse error, for which the notification lists the `status` read.
 
 Two kinds of subscription, differing only in whether the notification must wake the
 subscriber (docs/inbox.md — must-wake):
@@ -517,7 +517,7 @@ subscriber (docs/inbox.md — must-wake):
   nothing needs doing. In particular a child's turn ending — a report, a question,
   a refusal — hands control back to the parent without the child sending anything.
   The exceptions are a gate the review dial routes to the operator, and an escalated
-  gate: someone else is the one asked, so it reaches a `wake` subscriber without wake,
+  gate: someone else is the one asked, so it is delivered to a `wake` subscriber without wake,
   and the supervisor reads it in the may-decide form above.
 - **Any other, without wake.** Observation may not: the subscriber's triage may dismiss
   or leave a peer's status. The host's `subscribe` and `unsubscribe` keep both kinds;
@@ -567,7 +567,7 @@ child is inverted:
   a question the brief leaves open is answered rather than set aside by an idle
   predecessor's triage, and its `archive` of the predecessor is the one way the
   predecessor is ended by a session that did not create it. The successor's identity
-  line says so ([context.md](context.md)). That archive is the hand-off's completion and
+  line includes this ([context.md](context.md)). That archive is the hand-off's completion and
   clears on the fast path, with no spotter request, because the host's succession record
   names the predecessor ([permissions.md](permissions.md)); the record is not restored
   after a host restart.
@@ -580,7 +580,7 @@ An allowing `agents__decide` is bound before it is classified (docs/permissions.
 loop asks the provider for the target's pending gate and gets the child's held action —
 tool, input, intent, cwd, and the chain of sessions down to the leaf. The parent's
 fast-path, spotter brief, and human gate read that action rather than the handle, and the
-gate view carries it as `acting_on` (docs/control-api.md). A held call that is itself an
+gate view includes it as `acting_on` (docs/control-api.md). A held call that is itself an
 allowing `agents__decide` is followed through the host to the leaf; a stale seq refuses
 with "gate moved" before any rung is consulted. A denying or escalating `agents__decide`
 authorizes nothing, so it is not bound and clears on the fast path.
@@ -593,7 +593,7 @@ spans an `.await`, and the loop it runs in is `Send`
 the name and arguments as `{"name", "arguments"}`, deserializes to the typed
 `ToolEnum` via `serde_json::from_value`, and calls `Dispatch::call` against the
 shared state with a `RequestContext` naming efference and declaring no client
-capabilities (no wire, so the context that would ride in a request's `_meta` is
+capabilities (no wire, so the context that would be in a request's `_meta` is
 handed over directly). The resulting `CallToolResult` is folded by the same
 renderer the connected providers use (`render_result` in `src/tools/mcp.rs`): text
 blocks land verbatim; image blocks are realized through the `src/tools/vision.rs`
@@ -610,22 +610,22 @@ gets exactly one paired `tool_result` — the API rejects orphans.
 
 `tools::unknown_tool_message` is what a call naming no tool gets back: the names
 that do exist, and — since `bash` is always mounted — a pointer at it for a name
-that is a program rather than a tool. `unknown tool: <name>` alone says what
+that is a program rather than a tool. `unknown tool: <name>` alone identifies what
 failed, not what would work; in the incident behind this, the name was an allowed
 bash prefix the session had met as a listed skill, and the triage then wrote a false
-lesson the raw never claimed ("not available in this environment") onto the
+lesson absent from the raw ("not available in this environment") onto the
 canonical wire. A correction the result text states outright is one a summary can
 compress but not invent past. The loop applies it ahead of the permission cascade
 over the whole advertised set ([permissions.md](permissions.md)); the `Toolbox`
-keeps its own copy for a name that reaches dispatch under no provider.
+keeps its own copy for a name dispatched under no provider.
 
 #### Which outcomes are errors
 
 The first-party tools return a **refused or rejected** outcome as an error — a
 `write` that would clobber an existing file, a flag conflict, an `edit` whose
 placement did not validate, a failed `retarget_edit`. The refusal text is the
-error's body, unchanged: fs-mcp's write-retry token still rides in it, and an
-edit rejection still carries its diff and syntax errors. What changes is only the
+error's body, unchanged: fs-mcp's write-retry token is still in it, and an
+edit rejection still includes its diff and syntax errors. What changes is only the
 flag, and the flag is what a reader sees first — a refusal shaped like a success
 was read as a success, and the triage fork keeping the first line or two of the
 body sharpened that (see `triage.md`).
@@ -653,25 +653,25 @@ closes the gate mid-session (`Toolbox::refuse_images`, from the client's refusal
 recovery in transport.md). It is applied at `Toolbox::run` — the one function
 every call passes through — rather than inside the image-producing tools,
 because two unrelated backends produce images (`read_image`, and any MCP server
-whose result carries an image block) and the gate must answer alike for both.
+whose result contains an image block) and the gate must answer alike for both.
 
 The two halves read differently on purpose:
 
 - **`read_image` refuses before the read.** The tool exists only to produce an
   image, so it has no useful degraded form, and decoding a file to throw the
-  pixels away spends the work to arrive at the same answer. The refusal is an
+  pixels away requires work to arrive at the same answer. The refusal is an
   error and names what would work instead — the sentence a model reads after a
   refusal is what decides whether it retries the same call.
 - **A result that merely *carries* images keeps its text.** An MCP tool call is
   not *about* its image the way `read_image` is — a screenshot tool's text half
   is often the useful part — so the call still succeeds, `is_error` stays false,
-  and only the bytes are dropped, with a line saying how many and why. What this
-  buys is that the log and the wire stop carrying bytes nothing will look at, and
+  and only the bytes are dropped, with a line saying how many and why. The result
+  is that the log and the wire no longer contain bytes nothing will look at, and
   the model is told rather than left to infer it from silence.
 
-Without the gate, an image tool against a text-only model spends the upload on
-either a 400 or on content the model cannot read, while its own success message
-says it worked.
+Without the gate, uploading an image tool's result to a text-only model results in
+either a 400 or content the model cannot read, while the tool's success message
+shows it worked.
 
 ### Per-call telemetry
 
@@ -679,7 +679,7 @@ Every completed tool call appends a `Payload::ToolTelemetry` entry beside its
 result (`src/agent/telemetry.rs`, derived at the dispatch point in
 `src/agent/step/execute.rs`). It **projects to nothing** — log metadata in the same sense
 timestamps are — which is what lets it be written unconditionally; the pin that
-says so is `project::test::tool_telemetry_projects_to_identical_bytes`, the same
+checks this is `project::test::tool_telemetry_projects_to_identical_bytes`, the same
 shape as the `Triage.thinking` pin.
 
 It is a separate entry rather than a field on `ToolResult`, following the shape
@@ -706,7 +706,7 @@ What it records:
   writer that emits the marker — it never left that module in structured form,
   and widening `Outcome` to carry it would touch every backend for a field only
   telemetry reads. Also the `p#<n>` **handle** the process monitor minted for the
-  command, when it reached a spawn ([process-monitor.md](process-monitor.md)) — the join
+  command, when it was spawned ([process-monitor.md](process-monitor.md)) — the join
   from a call to the process namespace, and for a foreground command (whose
   registry entry is dropped when the call completes) the only typed place its
   ordinal survives.
@@ -758,9 +758,9 @@ generic validator's.
 
 The cost of passing a malformed call through is one wasted permission cascade:
 the spotter rung runs before dispatch, so a call that was going to fail on its
-arguments may pay for a verdict first. Observed rate across the recorded run
-corpus is one malformed call in 319 tool results — and that one reached the
-harness despite provider-side constrained decoding, so that mechanism is a
+arguments may first require a verdict. Observed rate across the recorded run
+corpus is one malformed call in 319 tool results — and the harness received that one
+despite provider-side constrained decoding, so that mechanism is a
 strong filter rather than a guarantee. `ToolTelemetry`'s outcome class makes the
 rate readable per model, which is what a decision to add validation would rest
 on.
@@ -810,9 +810,9 @@ project root, with its own servers, as it has its own build directory.
   the servers are forced, failing a call still waiting rather than answering it partly.
 - **Calls.** A tool body is synchronous and waits on its servers for as long as they
   need, which on a first index is minutes, so it runs on a blocking pool and races the
-  loop's `abort`: a kill answers the call as cancelled, while the body finishes in the
+  loop's `abort`: a kill results in a cancelled response to the call, while the body finishes in the
   background holding its workspace. structural's progress reports go nowhere yet:
-  efference's in-process request context carries no progress token.
+  efference's in-process request context has no progress token.
 - **Permissions.** The tools are not in the policy's path table (`policy::paths::path_spec`),
   so a `[tools]` grant clears a call by name: `[paths]` does not narrow where a query reads,
   a `workspace` argument can name any directory, and a granted `rename` writes every file
@@ -833,13 +833,13 @@ implementation is `src/tools/mcp.rs` (+ `src/tools/mcp/stdio.rs`, `src/tools/mcp
 names describe wire direction only and stay inside that module; efference's
 vocabulary is *host mounts provider*.
 
-The stanza's shape picks the transport — `command`/`args`/`env` spawns a stdio
+The stanza's shape determines the transport — `command`/`args`/`env` spawns a stdio
 subprocess (own process group, killed on drop, stderr drained to the daemon
 log), `url` connects over streamable HTTP (`trillium-client`; the server may
 answer a POST as JSON or as a per-request SSE stream, and `Mcp-Session-Id` /
-`MCP-Protocol-Version` ride as headers once learned). Declaring a server is the
+`MCP-Protocol-Version` are sent as headers once obtained). Declaring a server is the
 human's authority via the reviewed config file; an agent write to that table is
-gated like any other config edit, and *calling* a connected tool rides the same
+gated like any other config edit, and *calling* a connected tool goes through the same
 spotter/gate cascade as every tool. A connected server's results are untrusted
 content — same trust class as attachments; human-in-the-loop is the mitigation.
 
@@ -848,7 +848,7 @@ content — same trust class as attachments; human-in-the-loop is the mitigation
 A streamable-HTTP POST carries two headers derived from its own body:
 `Mcp-Method` (the JSON-RPC `method`, on every request) and `Mcp-Name`
 (`params.name` for `tools/call`/`prompts/get`, `params.uri` for
-`resources/read`). Both are required for compliance; a value that cannot ride
+`resources/read`). Both are required for compliance; a value that cannot be sent
 raw in a header — non-ASCII, control characters, leading or trailing
 whitespace, or one that would be mistaken for an encoding marker — is carried
 as `=?base64?<standard base64 of the UTF-8 bytes>?=`.
@@ -872,7 +872,7 @@ this class of bug.
 fails the session boot, naming the server and the reason. Declaring a server is
 the operator's statement that this session should have it, so starting without
 it produces a session missing a capability nobody knows is missing — and an
-agent that answers "I can't do that" to a request the config says it can.
+agent that answers "I can't do that" to a request the config provides for.
 Boot is also the moment a human is present to fix it.
 
 The flag is one boolean rather than a taxonomy of failure kinds: an uninstalled
@@ -944,7 +944,7 @@ creates a cache hazard the embedded path never had (the server can change its
 list between — or during — sessions). The discipline: the table is a
 **snapshot at mount**, sorted by tool name (a server may reorder), folded
 through the same `anthropic_def` normalization, and frozen for the session; a
-mid-session `tools/list_changed` does not reach the wire. Every failure — a
+mid-session `tools/list_changed` does not change the wire. Every failure — a
 server that won't start is skipped with a warning at boot; a call that fails,
 times out, or hits a dead server — lands as an `is_error` result, so a
 `tool_use` is never orphaned. A `tools/call` result is decoded as
@@ -959,7 +959,7 @@ mounted statelessly (no handshake, no `notifications/initialized`), and one
 that does not gets the handshake. Loopback tests in `src/tools/mcp/test.rs` cover
 each path.
 
-Tool names reach the wire namespaced `<server>__<tool>`. Two underscores are
+Tool names on the wire are namespaced `<server>__<tool>`. Two underscores are
 legal in the API's tool-name alphabet, absent from every embedded tool name,
 and the config validates server names against the same alphabet — so
 collisions across N user-provided servers are structurally impossible rather
@@ -974,7 +974,7 @@ prefix counts against the ceiling. So the frozen toolbox is checked against the
 session's dialect at boot (`Toolbox::illegal_names`, `WireDialect::tool_name_problem`):
 one alphabet, `[a-zA-Z0-9_-]`, and a ceiling of 128 characters on Messages or 64 on
 Responses. An offending name fails the boot, reported in its display form with the
-reason, rather than the first turn failing with a 400 that names nothing. Names are
+reason, rather than the first turn failing with a 400 that identifies nothing. Names are
 not rewritten: a mapping would have to hold across the advertised definition, the
 returned call, dispatch, the log, and replay, and the operator can rename the server
 or turn the tool off instead (`"server.tool" = { enabled = false }`; the check runs on the
@@ -983,7 +983,7 @@ toolbox after `[tools]` has filtered it).
 The alphabet has no separator that reads as one to a human, so the TUI renders
 the boundary as a dot — `ferritin__get` displays as `ferritin.get`
 (`names::tools::display_name`, applied at the two transcript sites that print a tool
-name). The dotted form never reaches the wire or the log. It *is* the config's
+name). The dotted form is never on the wire or in the log. It *is* the config's
 spelling, since an operator types what the TUI shows them: a `[tools]` key is
 resolved to the wire name at validate (`config::tools::validate_tools`), so a grant
 is still stored and matched as exactly one name. Only the first dot is the
@@ -1039,7 +1039,7 @@ three ways — the env var, the path grant, and the expansion value are all view
   the child env; `read`/`write`/`edit`/… don't go through a shell, so the loop expands
   `$NAME`/`${NAME}` in their *path fields only* (per the same `path_spec` key map the
   classifier uses — file content is never rewritten) at one choke point upstream of
-  classify/spot/exec, so the fast-path, the spotter, and the executor all see the same
+  classify/spot/exec, so the fast-path, the spotter, and the executor all receive the same
   expanded literal. Expansion is against a frozen boot-time map whose exposed set
   starts at exactly `{TMPDIR}`; an unlisted or undefined name is a hard error paired
   to the call as an error result — never expand-to-empty, never leave-verbatim

@@ -50,7 +50,7 @@ The id has two faces:
 - **Machine-facing** — the `processes` state topic, `process_output` frames, and
   the `/processes` routes ([control-api](control-api.md)) — it is the bare
   integer. The route path is already the namespace there, and `#` is the URL
-  fragment delimiter, so the rendered form must never reach a path.
+  fragment delimiter, so the rendered form must never be used in a path.
 
 ## The call↔process mapping
 
@@ -61,7 +61,7 @@ foreground→background flip like every other property: the entry that says
 "backgrounded as p#3" is the same entry a client resolves the process from after
 the flip.
 
-The mapping is read in both directions, and each direction answers a question the
+The mapping is read in both directions, and each direction provides information the
 other cannot:
 
 - **call → process.** A backgrounded command's `ToolResult` is the *handoff*
@@ -91,7 +91,7 @@ so no boot ever starts from a prior session's entries; the seeding is what would
 keep a resumed daemon from re-minting an id the durable record already refers to.
 Handles land in prose (tool results, notification sources), not in a typed field,
 so the scan is textual and deliberately over-matches — a false hit skips an
-ordinal, which costs nothing, while an under-match would collide.
+ordinal, which has no consequence, while an under-match would collide.
 
 ## Process-group ownership
 
@@ -170,7 +170,7 @@ live state = ephemeral registry.
 
 ## The durable record — what `p#<n>` was
 
-The three places above are what the *model* sees, and all three say the handle in
+The three places above are what the *model* sees, and all three include the handle in
 prose. That prose outlives the registry, so a reader of a recorded session meets
 `p#3` with nothing to resolve it against — and recovering the mapping from
 `moved to the background as p#3` is the result-text parsing `ToolTelemetry`
@@ -193,7 +193,7 @@ Metadata and output are **different promises**:
   log-derived answer carries the metadata and says nothing about output rather
   than promising a buffer it does not have.
 
-Both halves carry their own wall stamp instead of leaning on the entry's `at`.
+Both halves have their own wall stamp instead of relying on the entry's `at`.
 The mint has to: a command adopted by the handoff is recorded when it is
 *adopted*, which is later than when it spawned, and the record must not backdate
 the process. The exit follows the mint so the two read the same way.
@@ -206,7 +206,7 @@ ordinal survives on that call's `ToolTelemetry` (`bash.handle`,
 [tools.md](tools.md)) rather than in a lifecycle entry of its own.
 
 The read side is `GET /processes/:id` ([control-api.md](control-api.md)), which
-answers from the live registry when it has the process and from a fold over these
+reads from the live registry when it has the process and from a fold over these
 entries (`process_monitor::from_log`) when it does not — one URL for a handle whether
 its daemon is running, restarted, or gone.
 
@@ -216,7 +216,7 @@ A command is foreground-or-background at spawn time (the model's `background:
 true`), but the operator can also move a **running foreground** command into the
 process monitor mid-flight, instead of the only mid-run lever being kill.
 
-The interrupt that races a running tool carries an **intent**
+The interrupt that races a running tool has an **intent**
 (`tools::Interrupt`): `Kill` — `POST /loop/interrupt`, `killpg` the group —
 or `Detach` — `PATCH /processes/:id {background: true}`, addressed at the
 foreground entry the spawn already registered (the client resolves the id from
@@ -232,7 +232,7 @@ indistinguishable: tail in the triage, cursor reads, exit notification.
 
 The handoff loses nothing and duplicates nothing: the drain select only completes a
 read after its bytes are delivered to the sink, so everything read before the
-detach won the race is already in the capture, and the surrendered pipes resume
+detach completed the race is already in the capture, and the surrendered pipes resume
 from exactly that byte boundary.
 
 The detached call's `tool_use` is paired with a **handoff result** (`is_error:
@@ -240,7 +240,7 @@ false`, unlike a kill): the model is told the user moved the command to the
 background as `p#<n>`, which it can `read_process`/`kill_process` like any
 other. `PATCH /processes/:id {background: true}` optionally carries a `note`, appended as a user
 message right after the handoff result — direction, not tool output. A detach
-request with no tool mid-run is a no-op: the wake reaches only a
+request with no tool mid-run is a no-op: the wake affects only a
 currently-awaited race, and a stashed note is dropped when the next foreground
 bash starts, so it can't mislabel a later handoff.
 
@@ -249,7 +249,7 @@ bash starts, so it can't mislabel a later handoff.
 A foreground call also detaches **on its own** once it outruns a deadline. The
 timer resolves the same `Interrupt::Detach` into the same cancel slot as the
 operator's, so a timer detach and an operator detach are one path; only the
-handoff wording differs (`DetachedBash::auto_after` carries which it was).
+handoff wording differs (`DetachedBash::auto_after` records which it was).
 Nothing is killed and no output is lost — the no-loss, no-duplicate property above is what makes
 that true.
 
@@ -296,7 +296,7 @@ There is also a structural constraint: output arriving after the spawn's `tool_u
 has already been answered has no `tool_use` to pair with, so it *cannot* be a
 `ToolResult`. Late output is structurally a live view or a notification — never a
 triaged result. The same argument applies to exit events, which is why the exit
-reaches the model through the Ambient inbox. The `ProcessEvent` record above is
+is delivered to the model through the Ambient inbox. The `ProcessEvent` record above is
 not a second route to the model: it projects to nothing, and exists for readers
 that arrive after the session.
 
@@ -312,7 +312,7 @@ un-muted process: `[p#<id>]` with a fresh tail, running time, and idle time
 loop). This is awareness that arrives *while the model is doing something else*.
 
 **Directed** — `list_processes` and `read_process(handle, cursor)` are normal read
-tools whose results ride the normal triage: the model reaching for a process on
+tools whose results undergo the normal triage: the model reaching for a process on
 purpose. The directed `list_processes` view includes muted processes (annotated),
 because the model asked explicitly — the ambient auto-show hides muted processes.
 This retires the `bash(echo "")` antipattern (issuing a no-op to trip a triage just
@@ -330,7 +330,7 @@ diverges from `BgView` on both fields for the mirror-image reason
 ([control-api](control-api.md)). It has **no tail and no last-chunk stamp**: both
 change with every output chunk, and that topic is level-triggered, so carrying
 them would emit a whole-topic replacement per chunk — worse than the poll it
-replaces. That content rides the ephemeral `output` class as `process_output`
+replaces. That content is sent on the ephemeral `output` class as `process_output`
 deltas, where high-rate and lossy is the contract, and a client opening cold
 seeds itself from `GET /processes/:id/output` rather than from the topic. Times
 are absolute so a client computes elapsed without the daemon re-emitting as the
@@ -366,10 +366,10 @@ running, and its *exit still notifies*. Killing is separate and explicit
 
 A triage fires on a tool result, so without an explicit mechanism an idle agent cannot
 perceive an arriving event without manufacturing a spurious tool call. The fix: when
-the loop is parked, an arriving event wakes a **triage that rides no tool
+the loop is parked, an arriving event wakes a **triage without a tool
 result** — the inbox/background section plus an ask for the triage-only tool (`keep`
 absent; nothing to retain), appended as a plain user message; like every triage the
-ask rides the tail instruction, never a forced `tool_choice`
+ask is in the tail instruction, never a forced `tool_choice`
 ([triage.md](triage.md), the shared envelope). It is a throwaway
 fork: it logs `Ambient` + `Triage` (audit grows) but **projects to nothing unless
 it pins** — the prefix stays byte-identical and cache-hot.
@@ -394,7 +394,7 @@ open until one arrives.
 
 ## Tool surface
 
-`bash` gains `background: true` as an optional boolean input. The command is the
+`bash` has `background: true` as an optional boolean input. The command is the
 same, the approval gate is the same; the loop registers the child in the `ProcessMonitor`
 instead of awaiting it and returns the `p#<id>` handle immediately.
 
@@ -411,7 +411,7 @@ why this matters for prefix caching).
 
 `ask(question)` puts a question to the agent that supervises the session when there is
 one, otherwise to the operator, and blocks until the reply, which returns as the call's
-result. The question reaches the supervisor as the session's `asking` status, with the
+result. The supervisor receives the question as the session's `asking` status, with the
 `message` call that answers it ([tools.md](tools.md)); the operator's clients show it
 either way. It exists so that ending a turn has one meaning — the work
 is done — and a question has its own spelling (`agent/ask.rs`, `session/ask.rs`). It is
@@ -424,7 +424,7 @@ permission to ask would gate a question behind a question.
   with the question, from every client; the TUI and the web client name the question
   they show, and a send refused because a question arrived first returns to the
   composer. The turn becomes the call's
-  `ToolResult` and is never queued or logged as a `User` entry. The result entry carries
+  `ToolResult` and is never queued or logged as a `User` entry. The result entry has
   the submission's `submission_id` and `source`, and a sourced reply projects as `[seq]
   source: text`, as a sourced user turn does. A notification does not resolve it. The
   operator's reply releases a hold; an agent's leaves it in place, and the loop waits at
@@ -432,7 +432,7 @@ permission to ask would gate a question behind a question.
 - **Turns queued before it are recalled.** They were written before the question
   existed, so `begin_ask` withdraws them from the queue as `DELETE /turns/:id` would and
   publishes them on the `ask` state topic as `recalled`; the submitting client puts them
-  back in its composer. An agent that sent one is told instead: the asking status carries
+  back in its composer. An agent that sent one is told instead: the asking status contains
   the returned messages (`Condition::Asking::returned`), and its rendering for the
   reader who sent one adds `returned: your message "…" was returned undelivered; answer
   first, then resend it if it still applies`. A subscribed session reads it in the status
@@ -466,8 +466,8 @@ question, the session's status is `asking` (waking a subscribed parent as a gate
 
 `watch_process(handle, pattern)` registers a pattern against a running process and
 returns immediately. Nothing blocks: the drain scan matches the process's output as
-it arrives and posts a hit to the [inbox](inbox.md), where it reaches the model the
-same way an exit does — at the next triage, or by waking an idle agent. It is the
+it arrives and posts a hit to the [inbox](inbox.md), where it is delivered to the model the
+same way an exit is — at the next triage, or by waking an idle agent. It is the
 pattern half of wake-on-notification; the exit half needs no tool at all.
 
 Four decisions define what a watch is:

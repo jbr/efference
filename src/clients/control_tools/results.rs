@@ -31,7 +31,7 @@ impl StateResult {
         })
     }
 
-    /// A snapshot a wait answered with: `settled` says whether it stopped there.
+    /// A snapshot a wait answered with: `settled` indicates whether it stopped there.
     pub(super) fn waited(body: &str, settled: bool) -> anyhow::Result<Self> {
         Ok(Self {
             settled: Some(settled),

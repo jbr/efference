@@ -30,7 +30,7 @@ is not retried within a minute of a failure. One read is bounded at 30 seconds.
 
 ## The row
 
-`connection`, `model` (the provider-native id a draft carries), and whichever of these
+`connection`, `model` (the provider-native id a draft has), and whichever of these
 the source declares: `group` (OpenRouter's author, the id prefix before `/`, a leading `~`
 folded), `name`, `description` (provider prose), `created` (unix seconds), `context`
 (tokens), `price` (`input`/`output`, USD per million tokens), `reasoning`, `images`
@@ -51,7 +51,7 @@ absent. `recent` is added at read time, not stored.
 - **Filtering:** an OpenRouter entry whose `supported_parameters` does not name `tools` is
   dropped, as is an id ending `:batch`; `:free` stays. The Codex catalog drops the
   entries it hides from menus (`visibility: hide`, `supported_in_api: false`). The
-  `openai` platform listing (`GET /v1/models`) carries only `id`, `object`, `created`,
+  `openai` platform listing (`GET /v1/models`) contains only `id`, `object`, `created`,
   `owned_by` and an optional `shutdown_date`, with no modality or capability field, so
   its menu is the Codex catalog's suggested entries (the same set `openai-codex` offers)
   whose id the listing also names, in the catalog's order and with the catalog's fields.
@@ -83,7 +83,7 @@ first (`Provider::newest_spotter_model`, through `InferenceRegistry::with_catalo
 on Anthropic, the newest row by `created` whose `line` is `haiku` and whose
 `lifecycle` is `active`. Anthropic's docs say not to infer the line from the id, so
 nothing here parses one. Resolution reads only what is held: a listing not yet
-fetched, a copy stored before rows carried `line`, or a provider whose listing names
+fetched, a copy stored before rows had `line`, or a provider whose listing names
 no lines falls back to the compiled-in `Provider::default_spotter_model`. The
 offline verbs' registry (`src/bin/efference/inference.rs`) opens the same stored
 catalog, so `dev spotter` and `dev spotter-eval` default to what a host session
@@ -97,7 +97,7 @@ A row has a `kind`: `text` (absent on the wire) or `decisions`, a model that ans
 questions about a state and produces no turn — only the spotter can use one
 ([permissions.md](permissions.md)). A row inherits it from where it was listed: every row of
 a provider that serves no turns is `decisions`, and an OpenRouter entry declares it in
-`architecture.output_modalities`. OpenRouter's catalog read asks for
+`architecture.output_modalities`. OpenRouter's catalog read includes
 `output_modalities=text,decisions`, because its default listing holds text models only, and
 an entry with the `decisions` modality skips the `tools` filter (it declares no supported
 parameters at all).
@@ -116,7 +116,7 @@ menu.
 history store keys on (`cwd`, optional `config`) and fold the ranked picks of
 `recent_all` (up to 20, counted across connections, project picks first) onto the
 matching (connection, model) row as `recent`. Without `cwd`, ranks use system-wide
-decayed pick frequencies without promoting any project. A pick the listing does not name — a typed
+decayed pick frequencies without promoting any project. A pick absent from the listing — a typed
 id — becomes a row with only `connection`, `model`, the OpenRouter `group` derived from
 the id, `recent`, and a `kind` taken from the connection. The catalog routes are the only source of recents: the terminal
 picker ([tui.md](tui.md)) ranks its root and connection views from them.
@@ -159,7 +159,7 @@ input/output prices in USD per million tokens. Missing prices are explicitly
 unknown, not zero. Provider names are labeled as facts, not editorial advice.
 Filtered reads and subsequent pages omit the full query help; the initial
 unfiltered page includes it. Description-only search matches include an excerpt
-identifying the match. The connection summary carries lowercase status,
+identifying the match. The connection summary contains lowercase status,
 human-readable age, and errors. Reads serve cached copies
 and start missing/stale refreshes without waiting on providers. The resource uses
 the working directory's project and its default config to scope recent picks;

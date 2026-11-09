@@ -50,7 +50,7 @@ async fn session_over(log: Log) -> (Arc<crate::session::Session>, Client) {
 }
 
 /// Tools over `host` — [`session_over`]'s client, standing in for a host — with
-/// `child` as their default session: `cli` picks the command line's presentation.
+/// `child` as their default session: `cli` determines the command line's presentation.
 fn mounted(host: Client, cli: bool) -> Control {
     Control::new(
         Executor::Client(ClientExecutor::defaulting_to(host, "child")),
@@ -133,7 +133,7 @@ async fn mcp_call(method: &str, params: Value) -> JsonRpcResponse {
         .expect("nothing here cancels")
 }
 
-/// The MCP mount names its agent on every call but `create`, `status` and `wait`: a
+/// The MCP mount includes its agent on every call but `create`, `status` and `wait`: a
 /// call without it is refused before any tool runs (docs/operating.md). The schema
 /// that says so is pinned in `surfaces`.
 #[tokio::test]

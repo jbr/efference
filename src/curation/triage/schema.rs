@@ -106,7 +106,7 @@ pub fn retain_tool() -> Value {
                         "properties": {
                             "result": {
                                 "type": "string",
-                                "description": "The label of the result this entry decides, from the header the harness showed it under, e.g. \"r1\"."
+                                "description": "The label of the result this entry's verdict applies to, from the header the harness showed it under, e.g. \"r1\"."
                             },
                             "keep": {
                                 "type": "string",

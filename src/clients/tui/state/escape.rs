@@ -93,7 +93,7 @@ impl<'a> InteractiveState<'a> {
             Some(call) if crate::tools::bash::is_foreground_call(&call) => {
                 "interrupting — killing the running command · type to steer".into()
             }
-            Some(_) => "interrupting — its output won't reach the model · type to steer".into(),
+            Some(_) => "interrupting — output withheld from model · type to steer".into(),
             None => "interrupting — ending this generation · type to steer".into(),
         };
         self.dirty = true;

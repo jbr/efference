@@ -8,7 +8,7 @@
 //! flattens the form in as `--agent` (docs/tools.md). So a description, or what an
 //! omitted agent means, is written once for every verb that shares the form.
 //!
-//! None of the forms carries a `///` doc of its own: a newtype's doc would replace the
+//! None of the forms has a `///` doc of its own: a newtype's doc would replace the
 //! argument's description in the schema, and an `Args` struct's doc becomes the `about`
 //! of the command it is flattened into.
 
@@ -154,7 +154,7 @@ pub(crate) fn turn_source(context: &RequestContext) -> Option<String> {
 }
 
 /// The reader a call over MCP is, for a status or a transcript that names it "you":
-/// the client's name, as its turns' `source` carries it.
+/// the client's name, as contained in its turns' `source`.
 pub(crate) fn reader_name(context: &RequestContext) -> Option<String> {
     context.client_info().map(|info| info.name.to_string())
 }

@@ -12,7 +12,7 @@ use efference::platform::update_check::{INSTALL_COMMAND, Release, UpdateCheck};
 pub(crate) async fn run(check: bool) -> CliResult {
     if !check {
         return Err(format!(
-            "efference cannot replace its own binary yet. `efference update --check` says \
+            "efference cannot replace its own binary yet. `efference update --check` shows \
              whether a newer version is out, and running the install command again \
              installs it:\n  {INSTALL_COMMAND}"
         )

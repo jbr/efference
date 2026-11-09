@@ -1,7 +1,7 @@
 # Summaries and compaction
 
 A **summary** is text that replaces a range of the transcript, and the log entry that
-carries it (`Payload::Summary`, `src/record/log/summary.rs`). Two operations write one:
+contains it (`Payload::Summary`, `src/record/log/summary.rs`). Two operations write one:
 
 - **Consolidation** — the agent replaces a region of its own transcript with a summary,
   having seen that region in full ([consolidate.md](consolidate.md)). The `consolidate`
@@ -28,7 +28,7 @@ struct Summary {
 ```
 
 On disk the fields serialize in that order, and `made_by` and `audience` are omitted at
-their defaults (`Consolidation`, `All`). A log written before version 4 carried this as a
+their defaults (`Consolidation`, `All`). A log written before version 4 contained this as a
 `Mark` with a `kind` of `Boundary { upto }` (`from` 0) or `Span { from, upto }`, a `note`,
 and a `writer` of `agent` or `narrator`; `scripts/migrate-log-v4.py` converted it
 ([log-and-projection.md](log-and-projection.md), "The header").
@@ -50,7 +50,7 @@ pair of overlapping summaries (the later `upto` subsumes the earlier range).
 
 `project` takes the reader as an argument beside the image placement; the digest takes it
 as an option, so a digest read for the main model does not render a triage-only summary.
-The separate triage's text view ([triage.md](triage.md)) leads with the text of every head
+The separate triage's text view ([triage.md](triage.md)) begins with the text of every head
 summary that applies to the triage reader and leaves out the entries they cover; the
 title peek on the own model reads the same view, and the idle triage, sent on the agent's
 client, reads the main projection.
@@ -115,8 +115,8 @@ or an unsummarized read: whether to retry, edit or accept the cost of a cold rea
 operator's, and whatever asks for a compaction asks the operator (the cold session's
 compaction is the intended caller; backlog/inbox/cold-session.md).
 
-The compaction worker (`session/compact.rs`) starts with every session, whatever the
-connection's capabilities say about a prompt cache. Only the cache-expiry machinery — the
+The compaction worker (`session/compact.rs`) starts with every session, regardless of the
+connection's prompt cache capabilities. Only the cache-expiry machinery — the
 cache lifetime the cold belief reads, its watcher, the keepalive — is conditional on a known
 prompt cache. A route that accepts `warm: true` needs no cold belief, so an accepted
 request must always have a worker; a connection whose cache support is unknown can be

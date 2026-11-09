@@ -34,7 +34,7 @@ pub(super) fn require_coverage(
         ),
     };
     Err(format!(
-        "verdict answered no result for [{}] — it answered {answered}",
+        "verdict has no result for [{}] — it has {answered}",
         unanswered.join("], [")
     ))
 }

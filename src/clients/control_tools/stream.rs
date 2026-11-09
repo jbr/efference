@@ -101,7 +101,7 @@ impl Server {
             streams: Mutex::default(),
         });
         let swansong = Swansong::new();
-        // The token is the credential: a page that cannot know it gains nothing from
+        // The token is the credential: a page without it gains nothing from
         // opening the socket, so the handshake's origin is not what admits it.
         let upgrade = WebSocket::new(stream)
             .allow_any_origin()
@@ -180,8 +180,8 @@ struct Following {
     route: Route,
 }
 
-/// The handler in front of the upgrade: a path that names no stream is a 404, and a
-/// stream's path carries what it follows on to the upgrade.
+/// The handler in front of the upgrade: a path without a matching stream is a 404, and a
+/// matching stream's route is passed on to the upgrade.
 fn route(routes: Arc<Routes>) -> impl trillium::Handler {
     move |conn: Conn| {
         let routes = Arc::clone(&routes);

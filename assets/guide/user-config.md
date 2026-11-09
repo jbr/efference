@@ -12,7 +12,7 @@ before you write it: the spotter clearing a write is not the operator's agreemen
 
 It never holds a credential, and has no key that could: each connection names *where* its
 key comes from. Never write a key, token, or password into it, and do not ask the operator
-to paste one into the conversation. A key reaches efference through `efference setup`,
+to paste one into the conversation. efference receives a key through `efference setup`,
 which the operator runs in their own terminal, or through an environment variable or
 secret store the operator fills.
 
@@ -60,7 +60,7 @@ provider = "openai-codex"
 auth = { kind = "codex-cache" }     # the sign-in the Codex CLI keeps
 ```
 
-- **`provider`** — one efference knows by name: `anthropic`, `openrouter`, `openai` (the
+- **`provider`** — one supported by name: `anthropic`, `openrouter`, `openai` (the
   platform API), `openai-codex` (the Codex backend, billed to a ChatGPT subscription;
   `codex` is another name for it), or `typesafe` (decision models that can serve as the
   spotter only, never the main model).
@@ -68,8 +68,8 @@ auth = { kind = "codex-cache" }     # the sign-in the Codex CLI keeps
   - `env` with `key`: an environment variable, read from the host's environment once, when
     it starts. A host run as a service does not have the operator's shell variables.
   - `keychain`: the OS keychain (or the `[secrets]` commands, below). `efference setup`
-    stores the key when the operator pastes it. A key replaced there reaches a running
-    host the next time the provider refuses the old one.
+    stores the key when the operator pastes it. A running host reads a key replaced there
+    the next time the provider refuses the old one.
   - `oauth`: a ChatGPT sign-in made in setup, kept in the keychain and refreshed by the
     host.
   - `codex-cache`: the Codex CLI's own sign-in, in `~/.codex/auth.json`, which the Codex
@@ -118,7 +118,7 @@ output-cap-field = "max_completion_tokens"    # the default is "max_tokens"
 body = { parallel_tool_calls = false }        # merged into every request
 ```
 
-- **`output-cap-field`** — the request field that carries the output limit:
+- **`output-cap-field`** — the request field that contains the output limit:
   `max_tokens` (the default, which most servers read) or `max_completion_tokens` (OpenAI's
   own Chat Completions).
 - **`body`** — fields merged into every request, for a vendor parameter with a fixed value.
@@ -145,13 +145,13 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
   connection's `spotter-model`, a decision model built for the job when a `typesafe` or
   `openrouter` connection exists, and the main provider's small model. `[defaults] spotter`
   must name a connection that exists and is not disabled, or the host refuses to start;
-  `efference setup`'s "Default spotter" entry sets it and follows a renamed connection.
+  `efference setup`'s "Default spotter" entry sets it, and setup updates it when a connection is renamed.
 - **Triage**: shares the main model unless the session names another.
 
 ## `env_hook` — the environment sessions start with
 
 A session created from a terminal (the TUI's form, `efference control create`) starts with
-that terminal's environment, and one created by another session carries its creator's.
+that terminal's environment, and one created by another session has its creator's.
 A session that starts with no client environment takes the host's instead: one created in
 the web interface, one resumed (from `efference`'s menu or the web interface), and one a
 host reopens when it starts. With no hook, that is the environment the host process started
@@ -218,7 +218,7 @@ What a hook must do, and what goes wrong:
   the session. The `>&3` form above avoids it.
 - **A failure stops the session from starting**, with nothing falling back: a nonzero exit,
   a missing program, output that is not an environment, more than 30 seconds, or more than
-  1 MiB. The reason names the hook (``env: env_hook `direnv` exited 1``); the hook's error
+  1 MiB. The reason contains the hook's name (``env: env_hook `direnv` exited 1``); the hook's error
   output is discarded. The common nonzero exits are a `.envrc` the operator has not allowed
   (`direnv allow` in the project) and an untrusted mise config (`mise trust`). Building a
   Nix environment the first time can pass 30 seconds; nix-direnv caches it, so enter the
@@ -265,7 +265,7 @@ absent_status = 254
 - **`set`** (required) stores it, replacing any previous value; the value arrives on stdin
   with no newline added.
 - **`delete`** (optional) removes it. Without it, the few operations that remove an item
-  (an MCP server's `--reauth`, a connection renamed or moved in setup) fail and name the
+  (an MCP server's `--reauth`, a connection renamed or moved in setup) fail with the name of the
   item for the operator to remove by hand.
 - **`{name}`** in an argument becomes the item's name (`inference:<connection>`,
   `oauth:<connection>`, `mcp:<server>`, `root`). Each of `get`, `set`, and `delete` must
@@ -313,7 +313,7 @@ check = true
   (`curl -fsSL https://efference.net/install.sh | sh`) updates. Absent or `false`, a host
   never checks. `efference setup` asks the operator and writes the answer, and its "Update
   check" entry changes it; the choice is the operator's, so do not set it on their behalf.
-  `efference update --check` asks once whenever it is run, whatever this key says.
+  `efference update --check` asks once whenever it is run, whatever this key's value.
 
 ## `[tui]` — how the terminal UI draws
 
@@ -327,7 +327,7 @@ images = "kitty"
   `"gruvbox-dark"`; others) or a path to a `.tmTheme` file; `~/` is the home directory. An
   unknown name lists the built-in ones when the TUI opens. The TUI's theme picker changes
   the theme only until it quits; this key is what keeps one.
-- **`images`** — how images in tool results are drawn: `"auto"` (the default) asks the
+- **`images`** — how images in tool results are drawn: with `"auto"` (the default), the TUI asks the
   terminal and falls back to half-block characters; `"kitty"` and `"iterm2"` name a
   protocol for a terminal detection missed, as under tmux; `"off"` shows each image as a
   one-line reference.

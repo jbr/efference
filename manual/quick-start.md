@@ -81,7 +81,7 @@ For a first task, try asking the agent to help you get oriented:
 > anything yet.
 
 From there, you can ask it to investigate a bug, make a change, or run checks. Your
-project’s permissions decide which tool calls run without asking; calls held for review
+project’s permissions determine which tool calls run without asking; calls held for review
 wait for your decision. [Permissions](permissions.md) explains how to choose that balance.
 <!-- src: src/agent/step.rs::run_call; src/agent/step/judge.rs::judge; src/config/policy.rs::classify -->
 

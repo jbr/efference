@@ -80,7 +80,7 @@ started call is a **pending batch**: the session resumes at it, with nothing rol
 and the `Resumed` entry records the calls still to come back in `pending_calls`. A
 completion with any started call rolls back: the resume continues from just before that
 completion's assistant entry, `resumes_after` is the seq of the last entry before it, and
-the same check runs on the log up to there, walking back until it reaches one of the first
+the same check runs on the log up to there, walking back until it finds one of the first
 two. Nothing in the skipped batch is kept, rerun or re-triaged, and the entries stay on
 disk. A log with nothing before the unfinished completion can't be resumed. The skipped
 completion was only ever in triage requests, so the main wire's cached prefix does not
@@ -103,7 +103,7 @@ projection (`project_semantic`, which both wire dialects, the triage and title a
 `Summary` entry inside the range replaces nothing. A log may hold several `Resumed`
 entries, each with its own range; a completion inside an earlier range is not the
 "last completion" at the next resume, so resuming twice does not roll back twice. The
-rest of what the log carries is read whole, so numbering stays monotonic: the turn
+rest of what the log contains is read whole, so numbering stays monotonic: the turn
 counter continues from the log's last entry, `p#` handles are minted above every
 mention, the title is the latest `Title`, and grants, probes and triage retention fold
 entries that happened whether or not they are on the wire. The TUI transcript, the
@@ -112,7 +112,7 @@ only the notice marks the range.
 
 **A pending batch on the wire.** While the batch is unanswered, projection yields what a
 live gate does: the completion's `tool_use` blocks with their results absent, and the
-notice not yet projected. A user turn leads with the `tool_result` blocks that answer a
+notice not yet projected. A user turn begins with the `tool_result` blocks paired with a
 `tool_use`, so a notice naming `pending_calls` projects into the user turn right after the
 last of those results, wherever the `Resumed` entry sits in the log; if the batch never
 completes, it is never projected. A `Resumed` entry with no `pending_calls` projects at its
@@ -130,7 +130,7 @@ the loader restores the unshown ones with the rest of the log (`inbox::unshown`,
 whatever their age. The idle wake does not count them: it looks only at a notification
 that arrived after the session was built (a seq at or past the log's length when the
 session was constructed) and at the in-memory slot queue, which a resume starts empty. So
-no idle triage runs over what was restored, no title ask follows it, and no status reaches
+no idle triage runs over what was restored, no title ask follows it, and no status is sent to
 a subscriber (a status is posted when a trajectory ends into idle, and none has run). A
 notification arriving after the resume wakes the idle loop as it would any session, subject
 to the cold hold, and the triage it starts offers the restored ones with it; a restored
@@ -150,7 +150,7 @@ policy), the captured-undecided results are rebuilt as steps from the log's mask
 and one triage covers them all, as at the end of any batch. The next pass then projects and
 requests as usual. The spotter and triage are model requests, so the gate
 reappears on this first action, not when the session opens. `POST /loop/continue` accepts
-a pending batch even though the wire ends in a `tool_use`, since the replay answers it.
+a pending batch even though the wire ends in a `tool_use`, since the replay supplies its results.
 A turn submitted first is held and delivered after the batch, as one submitted
 during a live gate is; a `User` entry ahead of the unanswered `tool_use` blocks would
 break the wire. While the batch is pending, an inbox wake does not run the idle triage
@@ -179,11 +179,11 @@ one that never had a turn is discarded (below). A non-detached child is left to 
 cascade its creator's end runs, so each session is archived once; a session that
 arrives while the archive runs is taken in another round. The shutdown starts only when
 every session has left the host's map, because `Host::end` archives only while the host
-is running: a session it reached after the shutdown began would be stopped without
+is running: a session it processed after the shutdown began would be stopped without
 `Archived`, as a host shutdown stops it. The entry's `source` is `standalone exit`, so
-the log tells the standalone closing from an operator's archive, and a client whose
+the log distinguishes the standalone closing from an operator's archive, and a client whose
 stream ended says "archived by standalone exit" ([tui.md](tui.md)); a child archived by
-its creator's cascade carries none, as any child ending with its creator does. A crash, a
+its creator's cascade has none, as any child ending with its creator does. A crash, a
 signal, or `kill -9` takes none of this, and the island's sessions are left interrupted.
 
 ## Sessions that never had a turn
@@ -223,7 +223,7 @@ a live session is doing. `DELETE /sessions/:id` is the same transition as
 dormant session's directory, plus the inputs a revival needs (`env`, `reauth`),
 and no option for effort or temperature: a resume reads them from the header. It may carry
 a **model switch**, below. The header also holds
-`detached`, which decides whether the resumed session ends with its creator when
+`detached`, which determines whether the resumed session ends with its creator when
 the header's `created_by` names a session this host still runs; a creator that is
 gone is dropped.
 
@@ -244,7 +244,7 @@ them (`boot::recorded_selections`: the latest preamble's `inference` and `roles`
 the header's), and its `context_tokens` is the prompt size of the last `turn` line in
 the session's `usage.jsonl` (`last_turn_usage`), the number the `cold` topic reports for a
 hosted session and the size of the uncached read a main switch begins with. The archived
-listing carries neither, so a scan over every root reads no log whole and no usage
+listing contains neither, so a scan over every root reads no log whole and no usage
 record.
 
 **Where a client offers it.** The switch is a page reached from a session's details —
@@ -252,7 +252,7 @@ in the web client, the tab hover card and the overview card's menu — where it 
 beside archiving. A running session is archived and resumed on the chosen models in one
 action. The same page opens from an archived row's menu, and there it only resumes,
 reading that session's `GET /sessions/:id` first for the roles and the context size. A
-resume spends nothing by itself, so neither verb is gated on a cost warning: the page
+resume incurs no cost by itself, so neither verb is gated on a cost warning: the page
 states the first send's size once, and the composer's cold notice states it again in the
 session, where the send is made ([web-client.md](web-client.md)).
 
@@ -290,7 +290,7 @@ The PATCH answers once the session is reserved as **starting**
 `boot::resume` run after the answer, the session is listed as `starting` meanwhile, and a
 turn sent then is the first it runs. A resume that fails there leaves the session
 dormant: the starting entry leaves the host's map, its stream ends with the reason, and
-the dormant listing carries the reason as the row's `resume_failure` until a resume starts
+the dormant listing contains the reason as the row's `resume_failure` until a resume starts
 the session. That is not a `problem`: the session reads fine and stays resumable, and a
 retry is the same PATCH. Archiving a session while it is starting cancels the resume and
 ends its log in `Archived` unless that is already its last lifecycle entry, so it reads as
@@ -322,18 +322,18 @@ upgrade, and the island's exit would archive any it reopened. An interrupted ses
 resumed from a client's resume list (below), or by the next start of a host that is not
 an island.
 
-The PATCH is idempotent. On a live or starting session it answers `200` with
-`resumed: false`; the revival itself answers `resumed: true`. The same id live under a different root is `409`
+The PATCH is idempotent. On a live or starting session it returns `200` with
+`resumed: false`; the revival itself returns `resumed: true`. The same id live under a different root is `409`
 (`state_mismatch`), and so is a dormant directory whose id the `session_ids` register holds
-under another root ([session-title.md](session-title.md)); a root the register has not seen
-claims the id.
+under another root ([session-title.md](session-title.md)); an id the register does not hold yet
+is registered under this root.
 
 `GET /sessions?state=archived` lists the dormant sessions under a root, or under every
 remembered root, from a scan of each log's header, first and last entries and last title
 (`src/host/inventory.rs`; [log-and-projection.md](log-and-projection.md), "Inventory of dormant
 sessions"). A directory that can't be resumed is listed with a `problem`; a session
 whose last resume on this host failed is listed with its `resume_failure`.
-`GET /sessions/:id` answers one session's row, the hosted listing's for a hosted session
+`GET /sessions/:id` returns one session's row, the hosted listing's for a hosted session
 and this listing's for a dormant one, so a dormant session is addressable by id.
 
 ## Clients
@@ -348,7 +348,7 @@ and this listing's for a dormant one, so a dormant session is addressable by id.
   active cards, recently archived cards (< 1h, capped), compact listed rows (< 1w),
   and a full-screen filterable picker (`?resume=picker&cwd=...`). A top-bar `Resume…`
   action opens workspace selection (`?resume=location`) before landing on the picker
-  ([web-client.md](web-client.md)). Every card and row carries a `⋯` menu whose
+  ([web-client.md](web-client.md)). Every card and row has a `⋯` menu whose
   **Switch model…** opens the switch page, so a session can resume on other models
   without being resumed as it is first.
 - **Scripts** send the PATCH over HTTP. There is no `resume` control tool: the control

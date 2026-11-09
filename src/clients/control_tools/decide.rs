@@ -80,8 +80,8 @@ impl Decide {
         self.decision == Decision::Allow
     }
 
-    /// The submission id of the turn that will carry an allow's note, minted before
-    /// the decision so the decision's record can name it.
+    /// The submission id of the turn that will contain an allow's note, minted before
+    /// the decision so the decision's record can include it.
     fn note_submission(&self) -> Option<String> {
         (self.allow() && self.note().is_some()).then(mint_submission_id)
     }
@@ -114,8 +114,8 @@ impl ControlVerb for Decide {
         // over MCP, nobody (the operator) from the command line.
         let source = turn_source(call.context);
         let Some(approval) = self.approval() else {
-            // An operator client is on the operator's side, so its escalation asks the
-            // person: it goes to the operator (docs/permissions.md).
+            // An operator client is on the operator's side, so its escalation is sent to the
+            // operator (docs/permissions.md).
             if !client
                 .escalate(&held.call_id, source.as_deref(), self.note())
                 .await?

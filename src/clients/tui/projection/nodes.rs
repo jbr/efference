@@ -67,8 +67,8 @@ fn attachment_spans(attachments: &[crate::record::log::attachment::Arrival]) -> 
 pub(in crate::clients::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> {
     let entry = calling_tool_entry(&call.name, &call.input).unwrap_or_else(|| {
         // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a `code_block`:
-        // raw characters claim nothing, which is what makes showing them safe, and a box
-        // would claim this is a finished thing to read rather than bytes still arriving.
+        // raw characters imply nothing, which is what makes showing them safe, and a box
+        // would imply this is a finished thing to read rather than bytes still arriving.
         let mut lines = vec![dim_span(&format!(
             "› {}…",
             crate::record::names::tools::display_name(&call.name)
@@ -93,7 +93,7 @@ pub(in crate::clients::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<
 /// The settled half goes through [`call_blocks`], the same function a *committed*
 /// call renders through, so the call fills in as bytes land rather than changing
 /// shape at commit: the intent is the title, then the signature, then the bodies.
-/// The in-flight value never reaches the signature: it produces an identity claim
+/// The in-flight value never appears in the signature: it produces an identity claim
 /// (`write("src/api.rs")`), and only a value whose closing quote has arrived may back
 /// one (`projection/partial.rs`) — except the intent, which claims nothing about what
 /// the call touches and fills in as the title while it streams.

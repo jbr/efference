@@ -96,7 +96,7 @@ mod calls {
             .map_or_default(|handle| format!(", seq: {}", quoted(handle)));
         format!(
             "{prefix}decide({}{seq}, decision: \"allow\" | \"deny\", message?) — allow runs it, \
-             and a message rides with its result; deny with a message refuses it and the session \
+             and a message is sent with its result; deny with a message refuses it and the session \
              goes on under your message; a bare deny ends its turn",
             agent(target)
         )

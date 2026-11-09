@@ -80,8 +80,8 @@ from the new config whenever they are ready.
 
 ## How efference decides what a session may do
 
-This is what to tell a first-time user, in your own words and briefly; it is also why the
-interview asks what it asks.
+This is what to tell a first-time user, in your own words and briefly; it is also why
+you ask these questions in the interview.
 
 - **A session** is one agent working in one directory, with its own conversation and its own
   copy of the project's config. Several can run at once; each keeps running if the window
@@ -90,8 +90,8 @@ interview asks what it asks.
   command in `[commands]`, a file tool on a path in `[paths]` — runs with no one asked.
 - **Anything else goes to the permission spotter**: a second, smaller model that reads the
   call against the config's `scope`, a sentence saying what sessions here are for, and
-  either lets it run or holds it for the operator to approve. So grants decide what never
-  needs a second look, and the scope decides how the second look judges everything else.
+  either lets it run or holds it for the operator to approve. So grants determine what never
+  needs a second look, and the scope determines how the spotter judges everything else.
   A narrow grant with a clear scope is a working configuration; the spotter covers the gap.
 - **Triage** — name it and say what it does, since the transcript shows it at work. Every
   tool result is read before it enters the agent's context, and only the lines that
@@ -99,7 +99,7 @@ interview asks what it asks.
   session's log. By default the agent's own model does this reading. With an expensive
   main model a smaller one can take it over, chosen per session by the new-session form's
   triage model. It is not a config setting,
-  so the interview asks nothing about it; a sentence is enough for the transcript to make
+  so do not ask about it in the interview; a sentence is enough for the transcript to make
   sense.
 - **The preamble** is what a session knows when it starts, before anyone says anything: the
   scope, and the files and command output the config lists under `[context]`.
@@ -162,19 +162,19 @@ someone new to all this; their call either way.
    already in this list.
 3. **What should every session know when it starts?** The project's guide for agents is
    the default: its existing `CLAUDE.md` or `AGENTS.md` if it has one, a new `AGENTS.md`
-   if not (below). Beyond that: files that should always ride along, and *dynamic* facts a
+   if not (below). Beyond that: files that should always be included, and *dynamic* facts a
    command can print fresh at each start — the current branch, a tool's version, what is
    running. These become `[context]` entries.
 4. **Are there MCP servers or other external tools sessions should have?** A documentation
    server, an issue tracker, a browser, a search tool. Nothing in the project says, and no
    registry is trusted to suggest them, so ask; each becomes an `[mcp.servers]` stanza.
 
-**Whose project it is.** When your context says `git: not a repository`, skip this: there
+**Whose project it is.** When your context contains `git: not a repository`, skip this: there
 is no version control to keep efference's files out of, so write no `.gitignore` and no
 `.git/info/exclude`. In a repository, ask alongside the four, with what the survey showed —
 a `git remote` naming someone else's repository is a hint, not an answer, since forks and
 organization repositories blur it: "this looks like a clone of `org/name` — is it yours, or
-are you contributing to it?" The answer decides what the setup may leave in git's view:
+are you contributing to it?" The answer determines what the setup may leave in git's view:
 
 - **Theirs:** offer to add `.efference/` (each session's working state) to `.gitignore`;
   `efference.toml` and a new `AGENTS.md` are ordinary files they may commit.
@@ -189,7 +189,7 @@ are you contributing to it?" The answer decides what the setup may leave in git'
 **The editor schema line.** Ask alongside the four, in a sentence or two: `efference.toml` can
 open with a `#:schema` line that lets their editor complete its keys, describe each one, and
 flag a misspelled key, and to do that the editor fetches the schema from efference.net — so
-efference.net sees a request from their machine when they edit the file. Write the line if
+efference.net receives a request from their machine when they edit the file. Write the line if
 they agree and leave it out if they decline; nothing else reads it. If they leave it to you,
 write it, and say so in your report.
 
@@ -317,7 +317,7 @@ ProjectGuide = { path = "CLAUDE.md" }
 
 — and if it is missing something a session needs, say so and offer to add it there. With
 neither, draft an `AGENTS.md` and list it the same way (`"AGENTS.md" = true`): a file
-`[context]` does not name is never read at session start, so an unlisted guide is one no
+not listed in `[context]` is never read at session start, so an unlisted guide is one no
 session sees. A README is written for a person deciding whether to install
 the thing; a session needs what a new contributor is told on day one, in the order a session meets it: what the project is in two sentences,
 how to build and test, the layout of the source and what each part owns, the conventions
@@ -329,8 +329,8 @@ text re-sent on every request.
 
 List the files every session should have:
 
-- A bare path (`"CLAUDE.md" = true`) rides in the preamble **in full** — unless the file's
-  own YAML frontmatter carries a `description`, in which case only a one-line stub rides
+- A bare path (`"CLAUDE.md" = true`) is included in the preamble **in full** — unless the file's
+  own YAML frontmatter has a `description`, in which case only a one-line stub is included
   and the body is read on demand through `read`. Any readable file may be listed, not
   only Markdown.
 - A directory expands to every `.md` file beneath it, recursively, one listing per file.
