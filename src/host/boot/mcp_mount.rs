@@ -20,6 +20,8 @@
 use std::io::IsTerminal;
 use std::sync::Arc;
 
+use anyhow::Context;
+
 use crate::tools::Toolbox;
 use crate::tools::mcp::Unmounted;
 use crate::tools::mcp::auth::store::TokenStore;
@@ -105,7 +107,9 @@ async fn mount_one(
     // its environment. So a stdio mount reads nothing from the secret store, and
     // mounts on a machine that has no usable one (docs/mcp-auth.md).
     let credentials = match &entry.transport {
-        crate::config::McpTransport::Http { .. } => auth::stored_credentials(store, name).await?,
+        crate::config::McpTransport::Http { .. } => auth::stored_credentials(store, name)
+            .await
+            .context("loading stored credentials")?,
         crate::config::McpTransport::Stdio { .. } => None,
     };
     let first = toolbox

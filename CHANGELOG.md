@@ -20,6 +20,7 @@ one line per feature.
 
 ### Fixed
 
+- Mounting an HTTP MCP server intermittently failed with `connection aborted`: the HTTP/2 client closed its shared connection when a late frame arrived for an SSE response it had already canceled (fixed in trillium-http 1.8.2). A mount error now names the JSON-RPC method that was pending.
 - Removed false-positive truncation errors caused by providers' token accounting; local-server setup now explains how to configure Ollama's context window.
 - A session created under another spelling of its directory (`/users/…` for `/Users/…` on macOS, or through a symlink) refused to resume from the directory's usual spelling; the host now canonicalizes every working directory a client names.
 - The recent-locations list showed a directory twice when it gained an `efference.toml` between two launches with no configuration specified.

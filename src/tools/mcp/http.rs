@@ -190,7 +190,7 @@ impl HttpTransport {
                 }
                 Ok(Posted::Answered(HttpExchange::Events(Box::new(events))))
             }
-            Err(e) => match &e.kind {
+            Err(e) => match e.kind {
                 // The JSON arm: a non-event-stream 2xx is the response itself.
                 SseErrorKind::UnexpectedContentType(_) => {
                     let mut conn: Conn = e.into();
@@ -201,7 +201,6 @@ impl HttpTransport {
                     Ok(Posted::Answered(HttpExchange::Once(Some(message))))
                 }
                 SseErrorKind::Status(status) => {
-                    let status = *status;
                     let mut conn: Conn = e.into();
                     let body = conn.response_body().read_string().await.unwrap_or_default();
                     if u16::from(status) == 401 {
@@ -209,7 +208,7 @@ impl HttpTransport {
                     }
                     anyhow::bail!("server returned {status}: {body}")
                 }
-                other => Err(anyhow::anyhow!("POST {}: {other}", self.url)),
+                other => Err(anyhow::Error::new(other).context(format!("POST {}", self.url))),
             },
         }
     }

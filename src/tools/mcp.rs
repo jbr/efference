@@ -162,20 +162,29 @@ impl ConnectedProvider {
         Self::mount_transport(name, transport).await
     }
 
-    /// Negotiation + discovery over an already-open transport (the interface the
-    /// loopback tests use).
+    /// Negotiation + discovery over a constructed transport (also used by the
+    /// loopback tests). HTTP connection establishment is lazy, inside the budget.
     async fn mount_transport(name: &str, transport: Transport) -> anyhow::Result<Self> {
         let mut session = Session::new(transport);
-        let tools = tokio::time::timeout(MOUNT_TIMEOUT, async {
+        let result = tokio::time::timeout(MOUNT_TIMEOUT, async {
             session.negotiate().await?;
             session.list_tools().await
         })
-        .await
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "server did not finish negotiation + discovery within {MOUNT_TIMEOUT:?}"
-            )
-        })??;
+        .await;
+        // The borrow of `session` ends with the timed-out future, so the timeout
+        // error can include the method that was pending.
+        let method = session
+            .last_method
+            .as_deref()
+            .unwrap_or("the first request");
+        let tools = match result {
+            Ok(Ok(tools)) => tools,
+            Ok(Err(error)) => return Err(error.context(format!("during {method}"))),
+            Err(_) => anyhow::bail!(
+                "server did not finish negotiation + discovery within {MOUNT_TIMEOUT:?} \
+                 (waiting on {method})"
+            ),
+        };
 
         // Sort by tool name: the snapshot must yield byte-identical
         // definitions across sessions even if the server reorders its list.
@@ -361,6 +370,9 @@ impl ConnectedProvider {
 struct Session {
     protocol: ClientProtocol,
     transport: Transport,
+    /// The method of the latest request or notification sent, included in a
+    /// failed mount's error (docs/tools.md).
+    last_method: Option<String>,
 }
 
 impl Session {
@@ -374,6 +386,7 @@ impl Session {
                 env!("CARGO_PKG_VERSION"),
             )),
             transport,
+            last_method: None,
         }
     }
 
@@ -389,6 +402,7 @@ impl Session {
         request: JsonRpcRequest,
         mut on_event: impl FnMut(ServerEvent) + Send,
     ) -> anyhow::Result<Result<Value, JsonRpcError>> {
+        self.last_method = Some(request.method.clone());
         let id = request.id.clone();
         let mut exchange = self
             .transport
@@ -463,6 +477,7 @@ impl Session {
         self.transport
             .set_protocol_version(&negotiated.protocol_version);
         if let Some(confirm) = negotiated.initialized_notification() {
+            self.last_method = Some(confirm.method.clone());
             self.transport
                 .notify(&JsonRpcMessage::Notification(confirm))
                 .await?;

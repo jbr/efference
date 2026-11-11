@@ -92,15 +92,7 @@ impl Query {
             .collect())
     }
 
-    pub fn render(&self, connections: &[ConnectionCatalog]) -> String {
-        let mut out = String::from(
-            "Model catalog — exact connection/model slugs; USD/1M input/output, unknown is not free.\n",
-        );
-        if self.connection.is_none() && self.q.is_none() && self.offset == 0 {
-            out.push_str("Unlisted typed IDs may still work; capabilities are provider facts, not task ratings.\n");
-            out.push_str(HELP);
-            out.push('\n');
-        }
+    fn render_connections(&self, out: &mut String, connections: &[ConnectionCatalog]) {
         out.push_str(&format!("\nConnections (role={}):\n", self.role.name()));
         for c in connections {
             out.push_str(&format!(
@@ -126,6 +118,18 @@ impl Query {
         out.push_str(
             "Missing/stale listings refresh in the background; read again for updated results.\n",
         );
+    }
+
+    pub fn render(&self, connections: &[ConnectionCatalog]) -> String {
+        let mut out = String::from(
+            "Model catalog — exact connection/model slugs; USD/1M input/output, unknown is not free.\n",
+        );
+        if self.connection.is_none() && self.q.is_none() && self.offset == 0 {
+            out.push_str("Unlisted typed IDs may still work; capabilities are provider facts, not task ratings.\n");
+            out.push_str(HELP);
+            out.push('\n');
+        }
+        self.render_connections(&mut out, connections);
         let mut models: Vec<&CatalogModel> = connections
             .iter()
             .flat_map(|c| &c.models)

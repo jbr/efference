@@ -1,3 +1,5 @@
+mod mount;
+
 use std::sync::{Arc, Mutex};
 
 use mcplease::types::{
@@ -346,7 +348,7 @@ async fn an_unsupported_negotiated_version_fails_the_mount() {
     let Err(error) = ConnectedProvider::mount_transport("fake", transport).await else {
         panic!("expected the mount to fail");
     };
-    assert!(error.to_string().contains("1999-12-31"));
+    assert!(format!("{error:#}").contains("1999-12-31"));
 }
 
 #[tokio::test]

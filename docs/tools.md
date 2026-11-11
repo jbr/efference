@@ -866,6 +866,25 @@ built on the same mcplease whose server half does not validate them. Sentry
 rejects them. A server built from the same library as the client will not catch
 this class of bug.
 
+### Mount budget and errors
+
+Each provider has a 30-second budget for negotiation, the initialized notification
+when needed, and every page of tool discovery. HTTP connections are lazy, so this
+budget includes DNS, TCP/TLS establishment and credential renewal during a request.
+Stdio process creation and boot's initial stored-credential loading/refresh precede
+the budget; the child process's startup after spawn counts against it. Browser authorization
+also runs outside the budget, followed by a new mount attempt. Boot mounts providers
+sequentially, with a separate budget per provider.
+
+A mount error begins with the JSON-RPC method that was pending (`during initialize:
+…`), followed by the transport's error chain; a timeout's error includes the pending
+method.
+
+The HTTP client and its connection pool are process-wide; MCP protocol/session state
+and the tool-table snapshot remain per mounted provider. A stateless server still
+receives discovery and tool-list requests for each mount; there is no shared tool-table
+cache.
+
 ### A declared server that does not mount stops the boot
 
 `optional = true` on a stanza opts out; the default is that a mount failure
