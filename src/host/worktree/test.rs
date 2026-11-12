@@ -145,7 +145,9 @@ fn restore_re_adds_from_the_kept_branch() {
     retire(&project, "quiet-fox", &env);
     assert!(!added.path.exists());
 
-    let restored = restore(&project, "quiet-fox", &env).unwrap();
+    let restored = restore(&project, "quiet-fox", &env)
+        .unwrap()
+        .expect("restored");
     assert_eq!(restored.path, added.path);
     assert_eq!(restored.branch, "efference/quiet-fox");
     assert_eq!(restored.base, tip);
@@ -165,7 +167,9 @@ fn restore_starts_a_fresh_branch_when_the_branch_is_gone() {
     retire(&project, "quiet-fox", &env);
     assert!(!branches(&project).contains("efference/quiet-fox"));
 
-    let restored = restore(&project, "quiet-fox", &env).unwrap();
+    let restored = restore(&project, "quiet-fox", &env)
+        .unwrap()
+        .expect("restored");
     assert_eq!(restored.path, added.path);
     assert_eq!(restored.base, head);
     assert_eq!(
@@ -181,7 +185,9 @@ fn restore_recovers_a_directory_deleted_by_hand() {
     let env = crate::config::env_table::ChildEnv::default();
     std::fs::remove_dir_all(&added.path).unwrap();
 
-    let restored = restore(&project, "quiet-fox", &env).unwrap();
+    let restored = restore(&project, "quiet-fox", &env)
+        .unwrap()
+        .expect("restored");
     assert!(restored.path.is_dir());
     std::fs::remove_dir_all(&project).unwrap();
 }
@@ -248,4 +254,150 @@ fn a_retired_worktree_answers_with_the_key_that_names_it() {
             retired
         );
     }
+}
+
+/// A directory left at the checkout path is routed around, never adopted: the call
+/// refuses before git runs and leaves what it found alone (docs/worktrees.md).
+#[test]
+fn add_refuses_a_directory_left_at_the_checkout_path() {
+    let project = temp_dir("stale-dir");
+    git(&project, &["init", "-q"]);
+    std::fs::write(project.join("f.txt"), "hi").unwrap();
+    git(&project, &["add", "f.txt"]);
+    commit(&project, "one");
+    let env = crate::config::env_table::ChildEnv::default();
+    let path = crate::record::session_dir::worktree::path(&project, "quiet-fox");
+    std::fs::create_dir_all(path.join("tmp")).unwrap();
+    std::fs::write(path.join("tmp/checklist.md"), "mine").unwrap();
+
+    let error = add(&project, "quiet-fox", &project, &env).unwrap_err();
+    assert!(error.contains("already exists"), "{error}");
+    assert!(path.join("tmp/checklist.md").is_file(), "left as it was");
+    assert!(
+        !branch_exists(&project, "quiet-fox", &env),
+        "no branch made"
+    );
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+/// A branch left by an earlier checkout takes the name out of allocation and refuses
+/// the add with it (docs/worktrees.md).
+#[test]
+fn add_refuses_a_branch_left_by_an_earlier_checkout() {
+    let project = temp_dir("stale-branch");
+    repository(&project);
+    let env = crate::config::env_table::ChildEnv::default();
+    git(&project, &["branch", "efference/quiet-fox"]);
+
+    let error = add(&project, "quiet-fox", &project, &env).unwrap_err();
+    assert!(
+        error.contains("efference/quiet-fox already exists"),
+        "{error}"
+    );
+    assert!(!crate::record::session_dir::worktree::path(&project, "quiet-fox").exists());
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+/// A registration left behind by a directory deleted by hand still refuses the add:
+/// the path is registered, so it is not this creation's (docs/worktrees.md).
+#[test]
+fn add_refuses_a_path_registered_without_its_directory() {
+    let (project, added) = project_with_worktree();
+    let env = crate::config::env_table::ChildEnv::default();
+    std::fs::remove_dir_all(&added.path).unwrap();
+
+    let error = add(&project, "quiet-fox", &project, &env).unwrap_err();
+    assert!(error.contains("registered worktree"), "{error}");
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+/// A `post-checkout` hook that fails makes git exit nonzero with a coherent checkout
+/// in place: the outcome is recorded, not refused (docs/worktrees.md).
+#[test]
+fn a_failed_hook_keeps_the_checkout_with_its_status() {
+    let project = temp_dir("hook-fail");
+    git(&project, &["init", "-q"]);
+    std::fs::write(project.join("f.txt"), "hi").unwrap();
+    git(&project, &["add", "f.txt"]);
+    commit(&project, "one");
+    let hook = project.join(".git/hooks/post-checkout");
+    std::fs::write(&hook, "#!/bin/sh\nexit 3\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let env = crate::config::env_table::ChildEnv::default();
+
+    let added = add(&project, "quiet-fox", &project, &env).unwrap();
+    assert_eq!(added.exit_code, Some(3), "the hook's status is its own");
+    assert!(added.path.is_dir());
+    assert_eq!(
+        git(&added.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "efference/quiet-fox"
+    );
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+/// A checkout someone moved off the tree's branch is not the tree's to remove: retire
+/// keeps it, with its branch (docs/worktrees.md).
+#[test]
+fn retire_keeps_a_checkout_moved_off_the_tree_branch() {
+    let (project, added) = project_with_worktree();
+    let env = crate::config::env_table::ChildEnv::default();
+    git(&added.path, &["checkout", "-q", "-b", "repurposed"]);
+
+    let Retired::Kept { reason } = retire(&project, "quiet-fox", &env) else {
+        panic!("the checkout is kept");
+    };
+    assert!(reason.contains("repurposed"), "{reason}");
+    assert!(added.path.is_dir(), "kept");
+    assert!(branch_exists(&project, "quiet-fox", &env), "branch kept");
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+/// The rollback's removal passes the same gate: a checkout that is no longer this
+/// mint's is left, with its branch (docs/worktrees.md).
+#[test]
+fn remove_leaves_a_checkout_that_is_no_longer_its_own() {
+    let (project, added) = project_with_worktree();
+    let env = crate::config::env_table::ChildEnv::default();
+    git(&added.path, &["checkout", "-q", "-b", "repurposed"]);
+
+    remove(&project, &added.path, &added.branch, &env);
+    assert!(added.path.is_dir(), "kept");
+    assert!(branch_exists(&project, "quiet-fox", &env), "branch kept");
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+/// A restore that finds the tree's own checkout in place appends nothing and does
+/// nothing: the second resume of one removed tree (docs/worktrees.md).
+#[test]
+fn restore_finds_a_checkout_already_in_place() {
+    let (project, added) = project_with_worktree();
+    let env = crate::config::env_table::ChildEnv::default();
+
+    let restored = restore(&project, "quiet-fox", &env).unwrap();
+    assert!(restored.is_none(), "nothing to re-create");
+    assert!(added.path.is_dir());
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+/// A restore that finds a directory that is not the tree's checkout refuses it and
+/// leaves it alone (docs/worktrees.md).
+#[test]
+fn restore_refuses_a_directory_that_is_not_the_trees_checkout() {
+    let project = temp_dir("restore-foreign");
+    git(&project, &["init", "-q"]);
+    std::fs::write(project.join("f.txt"), "hi").unwrap();
+    git(&project, &["add", "f.txt"]);
+    commit(&project, "one");
+    let env = crate::config::env_table::ChildEnv::default();
+    let path = crate::record::session_dir::worktree::path(&project, "quiet-fox");
+    std::fs::create_dir_all(&path).unwrap();
+
+    let error = restore(&project, "quiet-fox", &env).unwrap_err();
+    assert!(
+        error.contains("is not a checkout of efference/quiet-fox"),
+        "{error}"
+    );
+    assert!(path.is_dir(), "left as it was");
+    std::fs::remove_dir_all(&project).unwrap();
 }

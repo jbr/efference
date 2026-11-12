@@ -38,6 +38,50 @@ pub(super) struct MintedWorktree {
     pub(super) path: PathBuf,
     pub(super) branch: String,
     pub(super) env: crate::config::env_table::ChildEnv,
+    /// The managed root's lock (`crate::host::locks`, docs/worktrees.md): the
+    /// rollback takes it before removing, serialized against every other lifecycle
+    /// operation on this root. The root is this attempt's own new one, which no other
+    /// operation names until the session is hosted, so the dropping thread does not
+    /// wait on it.
+    pub(super) lock: std::sync::Arc<std::sync::Mutex<()>>,
+}
+
+impl MintedWorktree {
+    /// Remove the checkout and its branch under the root's lock
+    /// ([`crate::host::worktree::remove`]).
+    fn roll_back(self) {
+        let _guard = self
+            .lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::host::worktree::remove(&self.project, &self.path, &self.branch, &self.env);
+    }
+}
+
+/// A worktree the add's blocking closure checked out, on its way to the boot future
+/// that records it in [`Minted`] ([`Handover::take`]). One dropped untaken is rolled
+/// back: the closure's send found no receiver because the boot was cancelled while git
+/// ran, or the boot was cancelled after the send and before it ran again
+/// (docs/worktrees.md).
+pub(super) struct Handover(Option<MintedWorktree>);
+
+impl Handover {
+    pub(super) fn new(worktree: MintedWorktree) -> Self {
+        Self(Some(worktree))
+    }
+
+    /// The worktree, now the receiver's to roll back or keep.
+    pub(super) fn take(mut self) -> MintedWorktree {
+        self.0.take().expect("a handover is taken once")
+    }
+}
+
+impl Drop for Handover {
+    fn drop(&mut self) {
+        if let Some(worktree) = self.0.take() {
+            worktree.roll_back();
+        }
+    }
 }
 
 impl Minted {
@@ -52,8 +96,8 @@ impl Minted {
     /// (`warn`). A failed removal is not raised further: the
     /// preparation error the caller is already returning is the one that matters.
     fn roll_back(&mut self) {
-        if let Some(w) = self.worktree.take() {
-            crate::host::worktree::remove(&w.project, &w.path, &w.branch, &w.env);
+        if let Some(worktree) = self.worktree.take() {
+            worktree.roll_back();
         }
         if let Some(dir) = self.session_dir.take()
             && let Err(e) = std::fs::remove_dir_all(&dir)

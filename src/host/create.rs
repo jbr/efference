@@ -49,37 +49,43 @@ impl Host {
             None => None,
         };
         let plan = self.plan_creation(&body, &project)?;
-        // The session base is what an unnamed id must be free in, on disk and in
-        // the live map — a dead session's directory still holds its name
-        // (docs/session-title.md).
+        // The session base is what an id must be free in, on disk and in the live
+        // map — a dead session's directory still holds its name
+        // (docs/session-title.md). A candidate is also taken when the creation mints
+        // a worktree and the checkout path or the branch at it is already there:
+        // leftovers of an earlier session are routed around, never adopted or
+        // removed (docs/worktrees.md). The register's reservation is what claims a
+        // free candidate for this creation, before anything is awaited.
         let base = project.join(SESSION_BASE);
-        // The id is reserved in the host-wide register before anything is awaited,
-        // so two creates racing for one name cannot both get it: a minted id is
-        // reserved by the draw that found it free, and an explicit one is refused
-        // when any root holds it.
+        let mints_worktree = body.worktree;
+        let taken = |id: &str| -> bool {
+            self.entry(id).is_some()
+                || base.join(id).exists()
+                || (mints_worktree
+                    && (crate::record::session_dir::worktree::path(&project, id).exists()
+                        || worktree::branch_exists(
+                            &project,
+                            id,
+                            &crate::config::env_table::ChildEnv::default(),
+                        )))
+                || self.session_ids.reserve(id, &project).is_err()
+        };
+        // A supplied name is a preferred base: `foo` when it is free, else the first
+        // free `foo-1`, `foo-2`, … — the id assigned is what every response and
+        // listing shows. An unnamed id is minted as before.
         let id = match body.name.clone() {
-            Some(id) => {
-                if !plain_id(&id) {
+            Some(name) => {
+                if !plain_id(&name) {
                     return Err(format!(
-                        "session name {id:?} is not a single plain path segment"
+                        "session name {name:?} is not a single plain path segment"
                     ));
                 }
-                if self.entry(&id).is_some() {
-                    return Err(format!("session {id:?} is already hosted"));
-                }
-                if let Err(held) = self.session_ids.reserve(&id, &project) {
-                    return Err(format!(
-                        "session name {id:?} is taken by a session under {}",
-                        held.root.display()
-                    ));
-                }
-                id
+                std::iter::once(name.clone())
+                    .chain((1..).map(|n| format!("{name}-{n}")))
+                    .find(|candidate| !taken(candidate))
+                    .expect("an unbounded suffix range finds a free id")
             }
-            None => slug::mint(|id| {
-                self.entry(id).is_some()
-                    || base.join(id).exists()
-                    || self.session_ids.reserve(id, &project).is_err()
-            }),
+            None => slug::mint(taken),
         };
         let starting = Starting::new(StartingParts {
             id: id.clone(),
@@ -88,6 +94,17 @@ impl Host {
             created_by: lineage.created_by.clone(),
             detached: body.detached,
         });
+        // A session working at or inside a managed worktree that is gone is refused
+        // with nothing minted. One being removed as this runs is waited out by the
+        // preparation, once the session is on the map (`Host::wait_out_removal`).
+        if crate::record::session_dir::worktree::root_of(&body.cwd).is_some() && !body.cwd.is_dir()
+        {
+            self.session_ids.release(&id, &project);
+            return Err(format!(
+                "cwd {} is gone: the managed worktree it works in was removed",
+                body.cwd.display()
+            ));
+        }
         if !self.sessions.lock().unwrap().insert_starting(&starting) {
             self.session_ids.release(&id, &project);
             return Err(format!("session {id:?} is already hosted"));
@@ -198,6 +215,7 @@ impl Host {
     ) -> Result<(), String> {
         let id = starting.id().to_string();
         let project = directories.project().to_path_buf();
+        self.wait_out_removal(directories.working()).await?;
         // An omitted environment is established here, for the session's project,
         // from the user-wide `env_hook` or the host environment (docs/env.md). The
         // project, not the working directory: resume establishes it there too, before
@@ -232,7 +250,7 @@ impl Host {
             // control state.
             lineage: lineage.clone(),
         };
-        let boot = boot::prepare(request)
+        let boot = boot::prepare(request, &self.locks)
             .await
             .map_err(|e| format!("could not prepare session: {e}"))?;
         let runtime = SessionRuntime::start(boot, self.swansong());

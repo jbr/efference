@@ -43,6 +43,8 @@ pub mod boot;
 pub mod discard;
 pub mod inventory;
 pub mod island;
+pub mod locks;
+pub(crate) mod occupancy;
 pub(crate) mod permissions;
 pub mod remembered;
 pub mod runtime;
@@ -107,6 +109,17 @@ pub struct Host {
     session_ids: session_ids::SessionIds,
     /// Every session on this host, starting or hosted (`entries.rs`).
     sessions: Mutex<Sessions>,
+    /// The per-root locks of the managed-worktree lifecycle (`locks.rs`,
+    /// docs/worktrees.md).
+    pub(crate) locks: Arc<locks::Locks>,
+    /// One-shot test hooks at the managed-worktree lifecycle seams, where a race
+    /// would otherwise depend on scheduling (process/testing.md): the point between
+    /// a retirement's occupancy recount and its removal, and the point before a
+    /// resume restores a removed tree (`occupancy.rs`, `boot::resume`).
+    #[cfg(test)]
+    pub(crate) before_worktree_removal: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    #[cfg(test)]
+    pub(crate) before_worktree_restore: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     /// Starting sessions whose preparation failed, kept for `FAILURE_KEPT` after
     /// they left the map so a client that attaches after the failure still reads it
     /// (`preparation.rs`). Served on `/state` and `/events` only; neither listed nor
@@ -230,6 +243,11 @@ impl Host {
             session_ids,
             inference,
             sessions: Mutex::new(Sessions::default()),
+            locks: Arc::default(),
+            #[cfg(test)]
+            before_worktree_removal: Mutex::new(None),
+            #[cfg(test)]
+            before_worktree_restore: Mutex::new(None),
             failed: Mutex::new(BTreeMap::new()),
             resume_failures: Mutex::new(BTreeMap::new()),
             inventory: inventory::Inventory::new(),

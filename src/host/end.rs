@@ -1,7 +1,9 @@
 //! Archiving a session (docs/control-api.md, docs/resumption.md): [`Host::end`] shuts a
-//! hosted session down and retires its own worktree, and a session that never had a turn
-//! is discarded instead of archived. The session leaves the host's map once its end has
-//! recorded it, and the end resolves once it has left ([`Departure`]).
+//! hosted session down and considers the managed worktree it works in for retirement —
+//! removing it when this session was the last occupant (docs/worktrees.md) — and a
+//! session that never had a turn is discarded instead of archived. The session leaves
+//! the host's map once its end has recorded it, and the end resolves once it has left
+//! ([`Departure`]).
 
 use super::*;
 use crate::session::Session;
@@ -35,10 +37,12 @@ impl Ended {
 }
 
 impl Host {
-    /// Archive one session: shut it down, retire its own worktree when it made one,
-    /// and record the archive (docs/control-api.md). Resolves once the session has left
-    /// the map, with what became of the worktree (`None` when the session had none, or
-    /// its directory was already gone). `None` when no session has that id.
+    /// Archive one session: shut it down, retire the managed worktree it works in
+    /// when it is the tree's last occupant (docs/worktrees.md), and record the
+    /// archive (docs/control-api.md). Resolves once the session has left the map,
+    /// with what became of the worktree (`None` when the session works in no managed
+    /// worktree, others still work in it, or its directory was already gone). `None`
+    /// when no session has that id.
     ///
     /// The order (docs/control-channel.md): the end appends `Archived` and closes the
     /// log; the watcher [`adopt`](Self::adopt) spawned removes the map entry after that,
@@ -84,22 +88,23 @@ impl Host {
     /// entry's watcher then either sees this end under way, or had already removed the
     /// entry and nothing found it to end ([`Departure`]).
     pub(super) fn end_hosted(
-        &self,
+        self: &Arc<Self>,
         hosted: &Hosted,
         id: String,
         archived_by: Option<String>,
     ) -> impl Future<Output = Ended> + use<> {
         let under_way = hosted.departure.begin_end();
         let departure = hosted.departure.clone();
-        let record = record_end(
-            hosted.clone(),
-            id,
-            archived_by,
-            self.swansong.state().is_running(),
-            self.session_ids.clone(),
-        );
+        let archiving = self.swansong.state().is_running();
+        let record = record_end(Arc::clone(self), hosted.clone(), id, archived_by, archiving);
         async move {
             let ended = record.await;
+            // An archive has taken the session out of every worktree's occupancy
+            // before the entry leaves the map (`occupancy.rs`); a host shutdown has
+            // not, and its session counts as dormant once it has left.
+            if archiving {
+                departure.mark_archived();
+            }
             // Recorded: the watcher may remove the entry now.
             drop(under_way);
             departure.has_left().await;
@@ -140,6 +145,10 @@ pub(super) struct Departure(watch::Sender<DepartureState>);
 struct DepartureState {
     /// Ends under way on the session that have not yet recorded it.
     ends: usize,
+    /// Whether an end archived or discarded the session: from then on it occupies no
+    /// managed worktree, though its entry stays on the map until the watcher removes
+    /// it (docs/worktrees.md).
+    archived: bool,
     /// Whether the entry has left the map.
     left: bool,
 }
@@ -155,6 +164,19 @@ impl Departure {
     /// Whether an end under way holds the removal back. Read under the map lock.
     pub(super) fn held(&self) -> bool {
         self.0.borrow().ends > 0
+    }
+
+    /// Whether the session is leaving: an end is under way on it, or one has archived
+    /// it and the entry waits only for its removal. What the occupancy recount reads
+    /// (`occupancy.rs`), under the map lock.
+    pub(super) fn leaving(&self) -> bool {
+        let state = self.0.borrow();
+        state.ends > 0 || state.archived
+    }
+
+    /// An end has archived or discarded the session.
+    pub(super) fn mark_archived(&self) {
+        self.0.send_modify(|state| state.archived = true);
     }
 
     /// Resolve once no end under way holds the removal back.
@@ -187,15 +209,15 @@ impl Drop for EndUnderWay {
 /// worktree when `archiving`, then discard it or record the archive, and close its log.
 /// `archiving` is false while the host shuts down, which records nothing.
 async fn record_end(
+    host: Arc<Host>,
     hosted: Hosted,
     id: String,
     archived_by: Option<String>,
     archiving: bool,
-    ids: session_ids::SessionIds,
 ) -> Ended {
     hosted.swansong.shut_down().await;
     let retired = if archiving {
-        retire_worktree(&hosted.session, &id).await
+        retire_worktree(&host, &hosted.session, &id).await
     } else {
         None
     };
@@ -208,7 +230,7 @@ async fn record_end(
     );
     if archiving && worktree_gone && hosted.session.log_is_empty() {
         let directories = hosted.session.directories();
-        match discard::remove(directories.project(), &id, &ids) {
+        match discard::remove(directories.project(), &id, &host.session_ids) {
             Ok(()) => {
                 hosted.session.close_log();
                 log::info!("session {id}: discarded, it never had a turn");
@@ -251,24 +273,26 @@ async fn record_end(
     }
 }
 
-/// Retire the worktree `session` made for itself (docs/worktrees.md), if it did:
-/// its working directory is the one [`crate::record::session_dir::worktree::path`] names for its id. A
-/// session that inherited a worktree works inside one it did not make and leaves it.
-/// Git runs on a blocking thread; the outcome is appended to the session's log, which
-/// outlives the runtime's shutdown because the `Session` owns it.
-async fn retire_worktree(session: &Arc<Session>, id: &str) -> Option<worktree::Retired> {
+/// Retire the managed worktree `session` works at or inside (docs/worktrees.md),
+/// when this session is the tree's last occupant leaving it. Any occupant's archive
+/// considers the tree — creator and inheritor alike — and the tree's own identity,
+/// its `efference/<id>` branch, names what is retired, not the session's.
+/// `None` when the session works in no managed worktree, or when other sessions
+/// still work in the tree: it stays, with no outcome to record. The outcome is
+/// appended to the session's log, which outlives the runtime's shutdown because the
+/// `Session` owns it.
+async fn retire_worktree(
+    host: &Arc<Host>,
+    session: &Arc<Session>,
+    id: &str,
+) -> Option<worktree::Retired> {
     let directories = session.directories();
     let project = directories.project().to_path_buf();
-    if directories.working() != crate::record::session_dir::worktree::path(&project, id) {
-        return None;
-    }
-    let env = session.child_env();
-    let (git_project, git_id) = (project.clone(), id.to_string());
-    let retired =
-        tokio::task::spawn_blocking(move || worktree::retire(&git_project, &git_id, &env))
-            .await
-            .unwrap_or_else(|e| worktree::Retired::Failed(format!("worktree task: {e}")));
-    if let Some(event) = retired.clone().into_event(&project, id)
+    let (root, tree_id) = crate::record::session_dir::worktree::root_of(directories.working())?;
+    let retired = host
+        .retire_unoccupied(&project, &root, &tree_id, session.child_env())
+        .await?;
+    if let Some(event) = retired.clone().into_event(&project, &tree_id)
         && let Err(e) = session.append(0, Payload::Worktree(event))
     {
         log::warn!("session {id}: could not log the worktree outcome: {e}");

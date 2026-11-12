@@ -1,9 +1,9 @@
 //! Owner-only modes on a project's `.efference/` and what a session writes into it
 //! (docs/state-store.md).
 
-use super::{Root, base_env, codex_registry, drop_boot, request};
+use super::{Root, base_env, codex_registry, drop_boot, prepare, request, resume};
 use crate::host::boot::ResumeRequest;
-use crate::host::boot::{CONFIG_NAME, mint_session_dir, prepare, resume};
+use crate::host::boot::{CONFIG_NAME, mint_session_dir};
 use crate::record::session_dir::{LOG_NAME, SESSION_BASE};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;

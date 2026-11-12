@@ -335,8 +335,9 @@ sessions from one process. Its own routes are the listener's, not a session's:
   The host makes this same patch for each session left open when the last host stopped,
   with `refuse_authorization`, as it starts (the boot resume, [resumption.md](resumption.md)).
   An `archived` patch answers as `DELETE` does, including the `worktree` field
-  below; resuming a session that made its own worktree re-creates the worktree at
-  its original path, from the kept branch when there is one.
+  below; resuming a session whose working directory sits in a managed worktree
+  re-creates the tree at its original path, keyed by the tree's own identity, from
+  the kept branch when there is one ([worktrees.md](worktrees.md)).
 
   `{"supervisor": "<id>"}` sets a running session's supervisor, and
   `{"supervisor": null}` clears it ([permissions.md](permissions.md)): the session

@@ -17,9 +17,12 @@ one line per feature.
 - Fixed the TUI linking artifact fences to loopback pages that loaded broken outside the web client; it now says the fence renders in the web client, and the host no longer binds the extra listener.
 - `efference --version` names the git revision and cargo profile the binary was built from.
 - A web page left open across a host upgrade now notices that the host serves a newer build and offers a reload, instead of going on rendering with the old one.
+- A supplied session name is a preferred base: `POST /sessions {"name": "foo"}` takes `foo`, or the first free `foo-1`, `foo-2`, … when the name is held by a live session, a session directory, or a worktree checkout an earlier session left behind — instead of being refused.
 
 ### Fixed
 
+- Archiving a session removed a managed worktree other sessions still worked in (the hand-off case): a worktree is now shared occupancy — any session whose working directory sits in it holds it, it is retired at the last occupant leaving, and any former occupant restores it at its original path on resume.
+- A create retried after a failed one could start in the broken checkout the failure left behind: a creation now refuses an existing checkout path or `efference/<id>` branch instead of adopting it, and archiving a session while its worktree is still being checked out no longer leaves the checkout behind.
 - Mounting an HTTP MCP server intermittently failed with `connection aborted`: the HTTP/2 client closed its shared connection when a late frame arrived for an SSE response it had already canceled (fixed in trillium-http 1.8.2). A mount error now names the JSON-RPC method that was pending.
 - Removed false-positive truncation errors caused by providers' token accounting; local-server setup now explains how to configure Ollama's context window.
 - A session created under another spelling of its directory (`/users/…` for `/Users/…` on macOS, or through a symlink) refused to resume from the directory's usual spelling; the host now canonicalizes every working directory a client names.

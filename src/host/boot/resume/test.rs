@@ -1,7 +1,21 @@
 use super::super::test::{Root, codex_registry, drop_boot, minting, request};
 use super::*;
-use crate::host::boot::prepare;
 use crate::record::log::Telemetry;
+
+/// [`crate::host::boot::prepare`] with the lock registry a host passes
+/// (`crate::host::locks`, docs/worktrees.md): these tests drive one boot at a time.
+async fn prepare(
+    request: crate::host::boot::SessionRequest,
+) -> Result<SessionBoot<MountedSpotter>, Error> {
+    crate::host::boot::prepare(request, &crate::host::locks::Locks::default()).await
+}
+
+/// [`crate::host::boot::resume`] with the same registry.
+async fn resume(
+    request: ResumeRequest<'_>,
+) -> Result<(SessionBoot<MountedSpotter>, SessionOptions), Error> {
+    crate::host::boot::resume(request, &crate::host::locks::Locks::default()).await
+}
 use crate::record::log::{
     AssistantOutput, CallId, ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit,
     ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,

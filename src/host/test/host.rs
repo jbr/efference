@@ -28,6 +28,7 @@ mod supervise;
 mod terminal_title;
 mod update_check;
 mod worktree;
+mod worktree_races;
 
 /// A scratch root holding the working directories `one` and `two`, each with its
 /// `scratch`: the canonical path, and the guard that removes it all when the roots drop

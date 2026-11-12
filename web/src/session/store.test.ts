@@ -524,8 +524,8 @@ describe("coalescing the fold", () => {
     for (let i = 0; i < 4000; i++)
       store.update((s) => applyFrame(s, delta(0, "some prose ")));
     // The fold is synchronous — everything is already in the snapshot — but
-    // nothing has re-rendered yet: 4000 folds owe one notification, so the
-    // render runs once at the final length instead of once per delta.
+    // nothing has re-rendered yet: the store schedules one notification for all
+    // 4000 folds, so the render runs once at the final length, not once per delta.
     expect(store.snapshot().streaming.blocks[0].text).toHaveLength(44000);
     expect(notified).toBe(0);
     expect(clock.scheduled).toBe(1);

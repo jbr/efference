@@ -250,6 +250,56 @@ fn scan_log(log: &Path, id: &str, root: &Path) -> io::Result<(InventoryRow, u64)
     Ok((row, len))
 }
 
+/// The dormant sessions under `base` (`<project>/.efference`) whose log does not end
+/// in an archive: their ids, and the working directory each works in — the recorded
+/// one, or the project when the header records none. This is the durable half of a
+/// managed worktree's occupancy count (docs/worktrees.md): a directory whose log
+/// holds no readable header is left out, since no resume could open it either
+/// (docs/resumption.md).
+pub(crate) fn sitting(base: &Path) -> Vec<(String, PathBuf)> {
+    session_dirs(base)
+        .into_iter()
+        .filter_map(|id| {
+            let log = base.join(&id).join(crate::record::session_dir::LOG_NAME);
+            let (working, archived) = dormant_state(&log)?;
+            (!archived).then_some((id, working))
+        })
+        .collect()
+}
+
+/// What one log says about a dormant session: where it works — the header's working
+/// directory, or its project when none is recorded — and whether its last lifecycle
+/// entry is an archive. `None` when the log holds no readable header. One backwards
+/// pass, like [`scan_log`]'s lifecycle read.
+fn dormant_state(log: &Path) -> Option<(PathBuf, bool)> {
+    let file = File::open(log).ok()?;
+    let mut line = Vec::new();
+    BufReader::new(&file).read_until(b'\n', &mut line).ok()?;
+    let header = read_header(log, trim_newline(&line)).ok()?;
+    let metadata = header.metadata()?;
+    let working = metadata
+        .working
+        .clone()
+        .unwrap_or_else(|| metadata.cwd.clone());
+    let len = file.metadata().ok()?.len();
+    let mut archived = false;
+    let mut tail = Tail::new(&file, line.len() as u64, len);
+    while let Some(line) = tail.next_line().ok().flatten() {
+        if !contains(&line, b"{\"Archived\"") && !contains(&line, b"{\"Resumed\"") {
+            continue;
+        }
+        match parse_entry(&line).map(|entry| entry.payload) {
+            Ok(Payload::Archived { .. }) => {
+                archived = true;
+                break;
+            }
+            Ok(Payload::Resumed(_)) => break,
+            _ => {}
+        }
+    }
+    Some((working, archived))
+}
+
 fn header_problem(log: &Path, error: &crate::record::persist::LoadError) -> String {
     let text = error.to_string();
     let prefix = format!("{}:", log.display());

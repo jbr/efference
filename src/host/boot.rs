@@ -78,12 +78,15 @@ pub struct SessionRequest {
 ///
 /// Spawned resources need no entry in [`Minted`]: an stdio MCP server's child is
 /// killed when the toolbox holding it drops, which the error return does.
-pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<MountedSpotter>, Error> {
+pub async fn prepare(
+    request: SessionRequest,
+    locks: &crate::host::locks::Locks,
+) -> Result<SessionBoot<MountedSpotter>, Error> {
     let mut minted = Minted::default();
     minted.keep_scratch = request.create.keep_scratch;
     // On an error, and when this future is dropped mid-await, `minted` rolls back as
     // it drops.
-    let boot = prepare_minting(request, &mut minted).await?;
+    let boot = prepare_minting(request, &mut minted, locks).await?;
     minted.keep();
     Ok(boot)
 }
@@ -105,6 +108,7 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<MountedSpott
 async fn prepare_minting(
     request: SessionRequest,
     minted: &mut Minted,
+    locks: &crate::host::locks::Locks,
 ) -> Result<SessionBoot<MountedSpotter>, Error> {
     let mut metadata = metadata::metadata(&request);
     let SessionRequest {
@@ -226,17 +230,42 @@ async fn prepare_minting(
             env_policy.child_env(),
         );
         let add_project = project.clone();
-        let added = tokio::task::spawn_blocking(move || {
-            crate::host::worktree::add(&add_project, &id, &from, &child_env)
+        // Under the managed root's lock (`crate::host::locks`, docs/worktrees.md):
+        // the add and the retirement recount serialize, and the guard the rollback
+        // needs is the same one. Taken inside the blocking closure, so a cancelled
+        // await cannot release it while the checkout is still running.
+        let lock = locks.for_root(&crate::record::session_dir::worktree::path(&project, &id));
+        // The checkout travels to this future as a `Handover`, which rolls it back
+        // if nothing takes it: a boot cancelled at any point before the take leaves
+        // nothing minted behind (docs/worktrees.md).
+        let (handed_over, receive) = tokio::sync::oneshot::channel();
+        let (minted_project, minted_env) = (project.clone(), env_policy.child_env());
+        tokio::task::spawn_blocking(move || {
+            let added = {
+                let _guard = lock
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                crate::host::worktree::add(&add_project, &id, &from, &child_env)
+            };
+            let handover = added.map(|added| {
+                let worktree = mint::MintedWorktree {
+                    project: minted_project,
+                    path: added.path.clone(),
+                    branch: added.branch.clone(),
+                    env: minted_env,
+                    lock,
+                };
+                (mint::Handover::new(worktree), added)
+            });
+            // A send with no receiver returns the handover, which rolls back as it drops.
+            drop(handed_over.send(handover));
         })
         .await
-        .map_err(|e| format!("worktree creation task failed: {e}"))??;
-        minted.worktree = Some(mint::MintedWorktree {
-            project: project.clone(),
-            path: added.path.clone(),
-            branch: added.branch.clone(),
-            env: env_policy.child_env(),
-        });
+        .map_err(|e| format!("worktree creation task failed: {e}"))?;
+        let (handover, added) = receive
+            .await
+            .map_err(|_| "worktree creation task produced no result".to_string())??;
+        minted.worktree = Some(handover.take());
         directories = crate::config::policy::Directories::new(project, added.path.clone());
         metadata.working = Some(added.path.clone());
         worktree_added = Some(added);

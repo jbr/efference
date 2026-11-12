@@ -174,8 +174,9 @@ listing marks its row `interrupted` (`src/host/inventory.rs`).
 is bound to the client that launched it by an owner watch ([operating.md](operating.md)).
 When the owner goes, the island archives every session it hosts, starting or hosted,
 then shuts down. Each session takes `Host::end`, the path `DELETE` takes: one mid-turn is
-stopped as `DELETE` stops it, its worktree is retired ([worktrees.md](worktrees.md)), and
-one that never had a turn is discarded (below). A non-detached child is left to the
+stopped as `DELETE` stops it, the managed worktree it works in is retired when it was the
+tree's last occupant ([worktrees.md](worktrees.md)), and one that never had a turn is
+discarded (below). A non-detached child is left to the
 cascade its creator's end runs, so each session is archived once; a session that
 arrives while the archive runs is taken in another round. The shutdown starts only when
 every session has left the host's map, because `Host::end` archives only while the host
@@ -201,10 +202,11 @@ discarded (`src/host/discard.rs`), not archived:
   Removal refuses anything that is not a real directory directly under the project's
   `.efference`; if it fails, the session is archived as usual. A host shutdown discards
   nothing.
-- **Worktree.** A worktree the session made is retired first
-  ([worktrees.md](worktrees.md)). A clean one is removed and the discard goes on, the
-  response carrying `worktree: {"removed": true, ...}`. One that is kept or whose removal
-  failed makes the session an ordinary archive.
+- **Worktree.** The managed worktree the session works in is considered first
+  ([worktrees.md](worktrees.md)): when this session was the tree's last occupant, a
+  clean one is removed and the discard goes on, the response carrying
+  `worktree: {"removed": true, ...}`. One that is kept or whose removal failed makes the
+  session an ordinary archive.
 - **Not at host start.** A host removes no log when it starts, so it cannot take the
   directory of a session another host is running. An empty session a crashed or stopped
   host left reads as interrupted: a host that is not an island reopens it at its next

@@ -18,8 +18,16 @@ session's directory still holds its name — and in the host-wide register
 described below; a taken pair is redrawn: a random
 name carries nothing worth keeping through a collision. Only when a bounded run
 of draws all collide does the last pair take a numeric suffix (`amber-heron-2`),
-so minting terminates in a directory that has used up most of the space. An explicit `name` is subject to the
-same single-path-segment rule and to the register: it is refused when any root holds it.
+so minting terminates in a directory that has used up most of the space.
+
+A supplied `name` is subject to the same single-path-segment rule and the same
+free-in checks, but it is a preferred base rather than a fixed request: `foo` when
+free, else the first free `foo-1`, `foo-2`, … The id assigned is what the response and
+every listing show, so a repeated create never adopts an earlier one's leftovers and
+no caller is refused over a name. For a creation that mints a worktree, free-in also
+covers the checkout path and the branch `efference/<id>` an earlier session left
+behind: a leftover takes its name out of allocation and is never deleted
+([worktrees.md](worktrees.md)).
 
 ### One id, one host
 

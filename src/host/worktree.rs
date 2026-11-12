@@ -194,9 +194,14 @@ pub fn can_start(from: &Path) -> bool {
 /// environment, on the commit `from`'s `HEAD` names (docs/worktrees.md). The
 /// checkout is plain, so the project's `post-checkout` hook runs.
 ///
-/// The directory existing afterward is the success criterion. A hook that fails makes
-/// git exit nonzero with the tree in place; that returns `Ok` with the status and
-/// output recorded.
+/// A path that exists, a worktree `project`'s git already registers there, or a
+/// branch `efference/<id>` already present refuses the call before git runs:
+/// leftovers of an earlier session are routed around, never adopted. Afterward the
+/// result must be this tree's checkout — registered at exactly `path`, `HEAD` on
+/// the requested branch, git dir usable — or the call fails and leaves whatever it
+/// found untouched (docs/worktrees.md). A hook that fails makes git exit nonzero
+/// with a coherent checkout in place; that returns `Ok` with the status and output
+/// recorded.
 pub fn add(
     project: &Path,
     id: &str,
@@ -206,6 +211,24 @@ pub fn add(
     let base = head(from, env)?;
     let path = crate::record::session_dir::worktree::path(project, id);
     let branch = branch(id);
+    if path.symlink_metadata().is_ok() {
+        return Err(format!(
+            "{} already exists, so it is not this creation's to check out into",
+            path.display()
+        ));
+    }
+    if registered(project, &path, env)? {
+        return Err(format!(
+            "{} is already a registered worktree of {}",
+            path.display(),
+            project.display()
+        ));
+    }
+    if branch_exists(project, id, env) {
+        return Err(format!(
+            "the branch {branch} already exists, left by an earlier checkout"
+        ));
+    }
     let added = git(
         from,
         env,
@@ -218,22 +241,31 @@ pub fn add(
             &base,
         ],
     )?;
-    let output = combined(&added);
-    if !path.is_dir() {
-        return Err(format!("git worktree add failed: {}", output.trim()));
-    }
-    Ok(Added {
-        path,
-        branch,
-        base,
-        exit_code: added.status.code(),
-        output,
-    })
+    checked(project, path, branch, base, &added, env)
 }
 
-/// Undo [`add`] after a failed boot: remove the worktree, then its branch. Best effort;
-/// a failure is named on the log (`warn`).
+/// Undo [`add`] after a failed boot: remove the worktree, then its branch. Only a
+/// checkout this tree's identity still stands behind — [`owned_checkout`] — is
+/// removed; a path an external actor repurposed is left and named on the log
+/// (docs/worktrees.md). Best effort; a failure is named on the log (`warn`).
 pub fn remove(project: &Path, path: &Path, branch: &str, env: &crate::config::env_table::ChildEnv) {
+    match owned_checkout(project, path, branch, env) {
+        Ok(true) => {}
+        Ok(false) => {
+            log::warn!(
+                "worktree: leaving {} and branch {branch}: the checkout there is not this one's",
+                path.display()
+            );
+            return;
+        }
+        Err(reading) => {
+            log::warn!(
+                "worktree: leaving {} and branch {branch}: the checkout cannot be read: {reading}",
+                path.display()
+            );
+            return;
+        }
+    }
     let path = path.to_string_lossy();
     for args in [
         vec!["worktree", "remove", "--force", &path],
@@ -294,6 +326,27 @@ fn retire_in(
     branch: &str,
     env: &crate::config::env_table::ChildEnv,
 ) -> Result<Retired, String> {
+    // Before any removal: only a checkout this tree's identity stands behind may be
+    // removed — a path another repository registered, or a checkout someone moved
+    // off the tree's branch, is left untouched with its branch
+    // (docs/worktrees.md). A detached `HEAD` passes this gate and is judged by the
+    // containment check below, as it has been.
+    if !registered(project, path, env)? {
+        return Ok(Retired::Kept {
+            reason: format!(
+                "{} is not a registered worktree of {}",
+                path.display(),
+                project.display()
+            ),
+        });
+    }
+    if let Some(on) = head_branch(path, env)?
+        && on != branch
+    {
+        return Ok(Retired::Kept {
+            reason: format!("HEAD is on {on}, not {branch}"),
+        });
+    }
     let status = git_ok(path, env, &["status", "--porcelain"])?;
     let lines: Vec<&str> = status.lines().filter(|l| !l.trim().is_empty()).collect();
     if !lines.is_empty() {
@@ -370,18 +423,35 @@ fn git_ok(
     }
 }
 
-/// Re-create a session's own worktree at its original path, for a resumed session whose
-/// directory [`retire`] removed: from the kept branch when it exists (`git worktree add
-/// <path> <branch>`), else a fresh branch at the project's `HEAD`. Run in `project` with
-/// the session's child environment and a plain checkout, so `post-checkout` fires as it
-/// did at creation. Path and branch are unchanged, so the preamble stays accurate.
+/// Re-create a managed worktree at its original path, for a resumed session whose
+/// working directory sits at or inside it and whose tree [`retire`] removed: from the
+/// kept branch when it exists (`git worktree add <path> <branch>`), else a fresh
+/// branch at the project's `HEAD`. Run in `project` with the session's child
+/// environment and a plain checkout, so `post-checkout` fires as it did at creation.
+/// Path and branch are unchanged, so the preamble stays accurate. The tree's own
+/// identity names both, not the resuming session's (docs/worktrees.md).
+///
+/// Callers serialize on the managed root's lock, so a second restore finds the first
+/// one's checkout in place: that returns `Ok(None)`, nothing appended. A directory
+/// that exists and is not this tree's checkout refuses the call and is left alone
+/// (docs/worktrees.md).
 pub fn restore(
     project: &Path,
     id: &str,
     env: &crate::config::env_table::ChildEnv,
-) -> Result<Added, String> {
+) -> Result<Option<Added>, String> {
     let path = crate::record::session_dir::worktree::path(project, id);
     let branch = branch(id);
+    if path.symlink_metadata().is_ok() {
+        return if checkout_is(project, &path, &branch, env).unwrap_or(false) {
+            Ok(None)
+        } else {
+            Err(format!(
+                "{} already exists and is not a checkout of {branch}",
+                path.display()
+            ))
+        };
+    }
     // A directory removed by hand leaves its registration behind, which `add` refuses.
     git_ok(project, env, &["worktree", "prune"])?;
     let kept = git(
@@ -410,18 +480,12 @@ pub fn restore(
         )?;
         (head, added)
     };
-    let output = combined(&added);
-    if !path.is_dir() {
-        return Err(format!("git worktree add failed: {}", output.trim()));
-    }
-    Ok(Added {
-        path,
-        branch,
-        base,
-        exit_code: added.status.code(),
-        output,
-    })
+    checked(project, path, branch, base, &added, env).map(Some)
 }
+
+mod checkout;
+pub use checkout::branch_exists;
+use checkout::{checked, checkout_is, head_branch, owned_checkout, registered};
 
 #[cfg(test)]
 mod test;

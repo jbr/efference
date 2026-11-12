@@ -63,11 +63,12 @@ pub struct ResumeRequest<'a> {
 /// work off needs to hand over the model it is actually running on.
 pub async fn resume(
     request: ResumeRequest<'_>,
+    locks: &crate::host::locks::Locks,
 ) -> Result<(SessionBoot<MountedSpotter>, SessionOptions), Error> {
     let mut minted = Minted::default();
     // On an error, and when this future is dropped mid-await, `minted` rolls back as
     // it drops.
-    let boot = resume_minting(request, &mut minted).await?;
+    let boot = resume_minting(request, &mut minted, locks).await?;
     minted.keep();
     Ok(boot)
 }
@@ -81,6 +82,7 @@ pub async fn resume(
 async fn resume_minting(
     request: ResumeRequest<'_>,
     minted: &mut Minted,
+    locks: &crate::host::locks::Locks,
 ) -> Result<(SessionBoot<MountedSpotter>, SessionOptions), Error> {
     let ResumeRequest {
         session_dir,
@@ -119,24 +121,36 @@ async fn resume_minting(
     let session_id = session_dir
         .file_name()
         .map_or_default(|name| name.to_string_lossy().into_owned());
-    // A session's own worktree that archiving removed is re-created below, once the
-    // child environment exists; any other missing directory refuses here. A working
-    // directory inside another session's worktree is not this session's to re-create.
-    let restores_worktree = !directories.working().is_dir()
-        && directories.working()
-            == crate::record::session_dir::worktree::path(directories.project(), &session_id);
-    for (what, dir) in [
-        ("project directory", directories.project()),
-        ("working directory", directories.working()),
-    ] {
-        if !dir.is_dir() && !(restores_worktree && what == "working directory") {
-            return Err(format!(
-                "cannot resume {}: its {what} {} is gone",
+    // The managed worktree this session works at or inside — its own, or one it
+    // inherited. When archiving removed it, the tree is re-created below, keyed by
+    // its own identity, not this session's (docs/worktrees.md). Every other missing
+    // directory refuses here, and a working directory inside a tree that is present
+    // is the user's to re-create, never this code's: a restore brings back the
+    // tree's tracked files and not untracked ones.
+    let managed = crate::record::session_dir::worktree::root_of(directories.working());
+    let restores_worktree = managed.as_ref().is_some_and(|(root, _)| !root.is_dir());
+    if !directories.project().is_dir() {
+        return Err(format!(
+            "cannot resume {}: its project directory {} is gone",
+            session_dir.display(),
+            directories.project().display()
+        )
+        .into());
+    }
+    if !directories.working().is_dir() && !restores_worktree {
+        return Err(match managed {
+            Some(_) => format!(
+                "cannot resume {}: its working directory {} is gone inside the managed worktree — create it before resuming again",
                 session_dir.display(),
-                dir.display()
-            )
-            .into());
+                directories.working().display()
+            ),
+            None => format!(
+                "cannot resume {}: its working directory {} is gone",
+                session_dir.display(),
+                directories.working().display()
+            ),
         }
+        .into());
     }
 
     let mut loaded = scaffold::load_session_config(&session_config, &session_dir)?;
@@ -193,18 +207,38 @@ async fn resume_minting(
     let env_policy = env::build_env_policy(&resolver, &loaded.role.env, &inference, base_env)?;
     inference.absorb_secrets(&env_policy.masker());
 
-    // Before the toolbox mounts on the working directory. The path and branch are the
-    // ones the frozen preamble names. Git runs the project's `post-checkout` hook, so
-    // this is on a blocking thread. A later refusal leaves the worktree in place: it
-    // is the directory this session was already entitled to.
-    let restored = if restores_worktree {
-        let (project, id, child_env) = (
-            directories.project().to_path_buf(),
-            session_id.clone(),
-            env_policy.child_env(),
-        );
+    // Before the toolbox mounts on the working directory, a session working in a
+    // managed worktree takes the root's lock (`crate::host::locks`) on a blocking
+    // thread and reads the root there. The session is on the map by now, so no
+    // removal can begin, and one that began before it was has finished: a root found
+    // gone is re-created, and resumes of one removed tree serialize, the later ones
+    // finding it in place and appending nothing (docs/worktrees.md). The path and
+    // branch are the ones the frozen preamble names — the tree's own identity. Git
+    // runs the project's `post-checkout` hook. A later refusal leaves the worktree in
+    // place: it is the directory this session was already entitled to.
+    let restored = if let Some((root, tree_id)) = managed {
+        // Where a race test runs its competing writer: before this resume takes the
+        // root's lock (process/testing.md).
+        #[cfg(test)]
+        if let Some(host) = &host
+            && let Some(interleaved) = host
+                .before_worktree_restore
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take()
+        {
+            interleaved();
+        }
+        let lock = locks.for_root(&root);
+        let (project, child_env) = (directories.project().to_path_buf(), env_policy.child_env());
         let added = tokio::task::spawn_blocking(move || {
-            crate::host::worktree::restore(&project, &id, &child_env)
+            let _guard = lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if root.is_dir() {
+                return Ok(None);
+            }
+            crate::host::worktree::restore(&project, &tree_id, &child_env)
         })
         .await
         .map_err(|e| format!("worktree restore task failed: {e}"))?
@@ -214,7 +248,15 @@ async fn resume_minting(
                 session_dir.display()
             )
         })?;
-        Some(added)
+        if !directories.working().is_dir() {
+            return Err(format!(
+                "cannot resume {}: its working directory {} is gone inside the managed worktree — create it before resuming again",
+                session_dir.display(),
+                directories.working().display()
+            )
+            .into());
+        }
+        added
     } else {
         None
     };

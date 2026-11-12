@@ -8,6 +8,19 @@ use std::path::Path;
 
 mod modes;
 
+/// [`crate::host::boot::prepare`] with the lock registry a host passes
+/// (`crate::host::locks`, docs/worktrees.md): these tests drive one boot at a time.
+async fn prepare(request: SessionRequest) -> Result<SessionBoot<MountedSpotter>, Error> {
+    crate::host::boot::prepare(request, &crate::host::locks::Locks::default()).await
+}
+
+/// [`crate::host::boot::resume`] with the same registry.
+async fn resume(
+    request: ResumeRequest<'_>,
+) -> Result<(SessionBoot<MountedSpotter>, SessionOptions), Error> {
+    crate::host::boot::resume(request, &crate::host::locks::Locks::default()).await
+}
+
 /// The re-serve guard (docs/control-channel.md): a fresh name mints its dir, and a name whose
 /// dir already exists is refused rather than opening a second seq space into the same log. The
 /// error names the dir and the log inside it, so the operator can find the prior session.

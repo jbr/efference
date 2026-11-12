@@ -20,7 +20,9 @@ async fn left(
 ) {
     let mut asked = request(root.path(), id, None);
     asked.lineage.created_by = created_by.map(String::from);
-    let mut boot = boot::prepare(asked).await.expect("the session mints");
+    let mut boot = boot::prepare(asked, &locks::Locks::default())
+        .await
+        .expect("the session mints");
     boot.log.append(1, Payload::user("hi")).unwrap();
     extra(&mut boot.log);
     if archived {
@@ -201,7 +203,7 @@ async fn an_island_leaves_an_interrupted_session_dormant_and_another_host_resume
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_empty_session_a_host_left_is_reopened_and_discarded_at_archive() {
     let root = Root::new("boot-resume-empty");
-    let boot = boot::prepare(request(root.path(), "stub", None))
+    let boot = boot::prepare(request(root.path(), "stub", None), &locks::Locks::default())
         .await
         .expect("the session mints");
     drop_boot(boot);

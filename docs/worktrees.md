@@ -45,6 +45,14 @@ as a `worktree` boolean (`worktree::can_start`, sharing the check with `add`), a
 new-session forms show their worktree option only where it is `true`
 (docs/control-api.md).
 
+A creation never adopts a directory it did not mint: a path that exists, a worktree
+git already registers there, or a branch `efference/<id>` left behind by an earlier
+checkout refuses the add before git runs (`worktree::add`), and the name allocation
+routes around such leftovers ([session-title.md](session-title.md)). What counts as
+success is the checkout's coherence — registered at exactly the path, `HEAD` on the
+requested branch, git dir usable — not the directory's presence, so a hook failure is
+a recorded outcome below and an incoherent result is a refusal that touches nothing.
+
 The checkout is a plain one, so the project's `post-checkout` hook runs. Warming a new
 worktree — cloning build output, initializing submodules — is the project's concern,
 expressed in that hook, not the harness's: what a warm tree needs is language- and
@@ -94,12 +102,23 @@ are what the model uses instead. Manifest paths that leave the repository (a Car
 dependency on `../sibling`) break the same way inside a worktree; absolute paths, or the
 project's `post-checkout` hook, bridge them.
 
-## Archive and resume
+## Occupancy, archive, and resume
 
-An archived session is resumable, so archive does not treat the session as finished
-(`worktree::retire`, run from `Host::end` — archive only, including an island's exit,
-which archives each of its sessions ([resumption.md](resumption.md)); a host shutdown
-leaves worktrees in place):
+A managed worktree is shared: every session whose working directory is at or beneath
+its root works in it, whether the session made it or inherited it at creation, at a
+hand-off, or by resuming with a working directory inside it. The tree is occupied while
+any such session exists — starting, hosted, or dormant with a log that does not end in
+an archive (`occupancy::remains`, with `inventory::sitting` reading the dormant
+directories). A session being archived counts as leaving from the moment its end runs
+until its entry has left the map (`end.rs`, `Departure`), so simultaneous archives see
+each other as gone.
+
+An archived session is resumable, so archive does not treat the session as finished.
+Archiving any occupant considers the tree for retirement — archive only, including an
+island's exit, which archives each of its sessions ([resumption.md](resumption.md)); a
+host shutdown leaves worktrees in place — and a start that leaves the map without
+adopting is a leaving too (`preparation.rs`). The tree goes at the last occupant
+leaving (`worktree::retire`):
 
 - a worktree with no uncommitted or untracked changes (`git status --porcelain` empty;
   ignored files such as `target/` do not count) is removed; its branch is deleted only
@@ -108,14 +127,49 @@ leaves worktrees in place):
   contains is kept;
 - a worktree with changes is kept untouched.
 
+Before any removal, the checkout must be the tree's own: registered at the root by
+`project`'s git, its git dir usable, and its `HEAD` on `efference/<id>` (or detached at
+a commit that branch contains, the case above). A path another repository registered,
+or a checkout someone moved to another branch, is kept untouched with its branch
+(`src/host/worktree/checkout.rs`) — leftovers are routed around, never deleted. The same
+gate guards the rollback of a failed creation (`worktree::remove`).
+
 The archive response's `worktree` field and a `Worktree` log entry record which happened
-([control-api.md](control-api.md)). When the session never had a turn, a worktree that is
-removed goes with a discarded session, and one that is kept makes it an ordinary archive
-([resumption.md](resumption.md)). Resume re-adds a missing worktree the session made at
-the same path — from its kept branch, or a fresh `efference/<id>` at the project's
-`HEAD` — so the identity line is byte-identical and `post-checkout` warms it again
-(`worktree::restore`). A session whose working directory was inside another session's
-worktree, and finds it gone, is refused like any session whose working directory is gone.
+([control-api.md](control-api.md)); an occupant whose archive leaves the tree to the
+sessions still working in it answers without the field and records nothing. When the
+session never had a turn, a worktree that is removed goes with a discarded session, and
+one that is kept makes it an ordinary archive ([resumption.md](resumption.md)).
+
+Resume re-adds a missing tree at its original path — from its kept branch, or a fresh
+`efference/<id>` at the project's `HEAD` — for any session working at or beneath it
+(`worktree::restore`). The tree's own identity names the path and branch, derived from
+the working directory the header recorded (`session_dir::worktree::root_of`), not the
+resuming session's id, so a successor re-creates its predecessor's tree and the
+identity line is byte-identical. A nested working directory keeps its place inside the
+restored tree; one that was never tracked is still gone, and creating it is the user's
+to do — a restore never makes directories inside the tree. A working directory inside
+no managed worktree that is gone refuses the resume, like any missing working
+directory.
+
+### Synchronization
+
+Every check of who occupies a root, and every git operation that creates, restores, or
+removes one, runs under that root's lock (`src/host/locks.rs`), taken before the
+sessions map lock and never the reverse. The recount and the removal are one critical
+section (`occupancy::retire_unoccupied`); the map lock covers only the recount. A
+session admitted after the recount is on the map, so no later removal can begin, and
+before it uses the tree it takes the root's lock itself, which orders it after a
+removal already under way: a creation then refuses the directory that is gone
+(`Host::wait_out_removal`), and a resume re-creates the tree (`boot::resume`). Two
+restores of one removed tree serialize the same way — the second finds the first's
+checkout in place and records nothing.
+
+Every section takes its guard on a blocking thread, inside the closure that does the
+work, so a cancelled await cannot release it mid-removal and no async thread waits
+while a hook or a removal runs. A boot cancelled before it has taken over its new
+checkout rolls it back, whether git was still running or had just finished
+(`boot::prepare`, `boot::mint`). A lock is per root, so a slow `post-checkout` hook
+delays only the operations on that one tree.
 
 Discarding a kept worktree is git's: `git worktree remove --force` and `git branch -D`.
 

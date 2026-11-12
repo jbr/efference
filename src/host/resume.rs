@@ -148,15 +148,18 @@ impl Host {
             }
         };
         starting.set_stage(Stage::Preparing);
-        let (boot, options) = boot::resume(boot::ResumeRequest {
-            session_dir,
-            base_env,
-            inference: &self.inference,
-            reauth: body.reauth,
-            authorization: authorization_for(starting, body.refuse_authorization),
-            switch: body.switch,
-            host: Some(Arc::clone(self)),
-        })
+        let (boot, options) = boot::resume(
+            boot::ResumeRequest {
+                session_dir,
+                base_env,
+                inference: &self.inference,
+                reauth: body.reauth,
+                authorization: authorization_for(starting, body.refuse_authorization),
+                switch: body.switch,
+                host: Some(Arc::clone(self)),
+            },
+            &self.locks,
+        )
         .await
         .map_err(|e| format!("could not resume the session: {e}"))?;
         let runtime = SessionRuntime::start(boot, self.swansong());

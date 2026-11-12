@@ -83,7 +83,7 @@ impl Host {
     /// resume records why on the dormant session, and the entry records the failure
     /// last, which ends its streams and wakes whoever waits on it to a host that
     /// already reflects it.
-    fn preparation_failed(&self, starting: &Arc<Starting>, reason: String) {
+    fn preparation_failed(self: &Arc<Self>, starting: &Arc<Starting>, reason: String) {
         let id = starting.id().to_string();
         log::warn!("session {id}: did not start: {reason}");
         if starting.resume() {
@@ -106,7 +106,7 @@ impl Host {
     /// Preparation was cancelled: archived while starting, or the host is shutting
     /// down. A creation leaves nothing; a resume archived on purpose ends its log in
     /// `Archived`, as any archive does (docs/resumption.md).
-    fn preparation_cancelled(&self, starting: &Arc<Starting>) {
+    fn preparation_cancelled(self: &Arc<Self>, starting: &Arc<Starting>) {
         let id = starting.id();
         let archiving = self.swansong.state().is_running();
         if starting.resume() && archiving {
@@ -128,12 +128,17 @@ impl Host {
         }
     }
 
-    /// Take `starting` out of the map; a creation gives its id back.
-    fn leave_map(&self, starting: &Arc<Starting>) {
+    /// Take `starting` out of the map; a creation gives its id back. A start that
+    /// works at or inside a managed worktree releases its occupancy here: the tree
+    /// is retired when nothing else occupies it (docs/worktrees.md). A failed resume
+    /// keeps its dormant directory, which the recount still counts
+    /// (docs/resumption.md).
+    fn leave_map(self: &Arc<Self>, starting: &Arc<Starting>) {
         if self.sessions.lock().unwrap().remove_starting(starting) && !starting.resume() {
             self.session_ids.release(starting.id(), starting.project());
         }
         self.touch_listing();
+        self.consider_retirement(starting.working());
     }
 
     /// A starting session whose preparation failed within [`FAILURE_KEPT`].

@@ -305,7 +305,6 @@ async fn creation_validates_its_body_on_every_listener() {
         (base("fresh", Path::new("relative")), "cwd must be absolute"),
         // `~` is the host's home; another user's is not expanded, so it is relative.
         (base("fresh", Path::new("~other/x")), "cwd must be absolute"),
-        (base("one", &roots.0), "already hosted"),
     ];
     for (body, reason) in &cases {
         server
@@ -369,11 +368,12 @@ fn host_with_register(roots: &Roots) -> Arc<Host> {
     )
 }
 
-/// An explicit name is reserved host-wide: another root holding it refuses the
-/// creation before anything is prepared, and a creation that fails after
-/// reserving gives the name back (docs/session-title.md).
+/// A supplied name is a preferred base (docs/session-title.md): a name another
+/// root holds routes the creation to the first free suffix — the response names the
+/// id assigned, and the other root's hold is left as it is. A creation that fails
+/// after reserving gives its name back.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_explicit_name_held_under_another_root_is_refused() {
+async fn an_explicit_name_held_under_another_root_takes_the_next_suffix() {
     let roots = Roots::new();
     let host = host_with_register(&roots);
     let server = host_server(&host).await;
@@ -382,12 +382,31 @@ async fn an_explicit_name_held_under_another_root_is_refused() {
         .reserve("fresh", &roots.0.join("two"))
         .expect("the name is free");
 
-    server
+    let created = server
         .post("/sessions")
         .with_json_body(&stops_at_boot(&roots.0.join("one")))
-        .await
-        .assert_status(400)
-        .assert_body_contains("is taken by a session under");
+        .await;
+    created.assert_status(201);
+    assert_eq!(
+        json(created.body())["id"],
+        "fresh-1",
+        "the hold is routed around"
+    );
+    let state = settled_state(&server, "fresh-1").await;
+    assert!(
+        failure_reason(&state).contains("could not prepare session"),
+        "{state}"
+    );
+    assert_eq!(
+        register.holder("fresh"),
+        Some(roots.0.join("two")),
+        "the other root's hold is left as it is"
+    );
+    assert_eq!(
+        register.holder("fresh-1"),
+        None,
+        "a creation that failed released the name it reserved"
+    );
 
     register.release("fresh", &roots.0.join("two"));
     let state = created_state(&server, &stops_at_boot(&roots.0.join("one"))).await;
@@ -398,6 +417,6 @@ async fn an_explicit_name_held_under_another_root_is_refused() {
     assert_eq!(
         register.holder("fresh"),
         None,
-        "a creation that failed released the name it reserved"
+        "the freed name is claimed and released again"
     );
 }
