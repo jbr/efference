@@ -235,8 +235,8 @@ async fn prepare_minting(
         // needs is the same one. Taken inside the blocking closure, so a cancelled
         // await cannot release it while the checkout is still running.
         let lock = locks.for_root(&crate::record::session_dir::worktree::path(&project, &id));
-        // The checkout travels to this future as a `Handover`, which rolls it back
-        // if nothing takes it: a boot cancelled at any point before the take leaves
+        // The closure sends the checkout to this future as a `Handover`, which rolls
+        // it back if nothing takes it: a boot cancelled at any point before the take leaves
         // nothing minted behind (docs/worktrees.md).
         let (handed_over, receive) = tokio::sync::oneshot::channel();
         let (minted_project, minted_env) = (project.clone(), env_policy.child_env());

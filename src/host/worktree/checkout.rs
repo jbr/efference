@@ -60,7 +60,7 @@ pub(super) fn registered(project: &Path, path: &Path, env: &ChildEnv) -> Result<
         .any(|registered| same_path(Path::new(registered), path)))
 }
 
-/// Whether two paths name the same directory: equal as given, or equal after
+/// Whether two paths are the same directory: equal as given, or equal after
 /// canonicalization when both resolve (git prints resolved paths).
 fn same_path(a: &Path, b: &Path) -> bool {
     if a == b {

@@ -57,10 +57,10 @@ pub fn project_of(dir: &Path) -> Option<PathBuf> {
 }
 
 /// The managed worktree a directory sits at or inside: the root directory
-/// `<project>/.efference/worktrees/<id>`, and the tree id `<id>` that names its
-/// branch. `None` for a directory at or inside no managed worktree. Lexical; the
-/// innermost match wins, so a worktree minted inside another session's worktree
-/// resolves to the one it is (docs/worktrees.md).
+/// `<project>/.efference/worktrees/<id>`, and the tree id `<id>`, which is in its
+/// branch's name (`efference/<id>`). `None` for a directory at or inside no managed
+/// worktree. Lexical; the innermost match is the result, so a worktree minted inside
+/// another session's worktree resolves to the one it is (docs/worktrees.md).
 pub fn root_of(dir: &Path) -> Option<(PathBuf, String)> {
     let components: Vec<Component> = dir.components().collect();
     (0..components.len().saturating_sub(2)).rev().find_map(|i| {

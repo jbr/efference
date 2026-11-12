@@ -110,8 +110,8 @@ hand-off, or by resuming with a working directory inside it. The tree is occupie
 any such session exists — starting, hosted, or dormant with a log that does not end in
 an archive (`occupancy::remains`, with `inventory::sitting` reading the dormant
 directories). A session being archived counts as leaving from the moment its end runs
-until its entry has left the map (`end.rs`, `Departure`), so simultaneous archives see
-each other as gone.
+until its entry has left the map (`end.rs`, `Departure`), so when two occupants are
+archived at once, each recount treats the other as gone.
 
 An archived session is resumable, so archive does not treat the session as finished.
 Archiving any occupant considers the tree for retirement — archive only, including an

@@ -29,7 +29,7 @@ pub(super) async fn hosting_at(roots: &Roots, host: &Arc<Host>, id: &str, workin
 }
 
 /// A session on disk as an end leaves it: a turn said, and `archived` when it was
-/// archived on purpose (docs/resumption.md). Its log carries the boot preamble a
+/// archived on purpose (docs/resumption.md). Its log has the boot preamble a
 /// resume reads.
 pub(super) async fn dormant(roots: &Roots, id: &str, working: &Path, archived: bool) {
     let mut asked = boot::test::request(&roots.0, id, None);
@@ -280,8 +280,8 @@ async fn an_inheritor_restores_a_removed_worktree_at_its_root() {
     let nested = added.path.join("src");
     std::fs::create_dir_all(&nested).unwrap();
     std::fs::write(nested.join("lib.rs"), "pub fn f() {}").unwrap();
-    // The nested working directory is tracked, so the branch the restore re-creates
-    // carries it back.
+    // The nested working directory is tracked, so it is in the branch the restore
+    // checks out again.
     crate::host::worktree::testing::git(&added.path, &["add", "src"]);
     crate::host::worktree::testing::commit(&added.path, "src");
     dormant(&roots, "tidy-moss", &nested, true).await;

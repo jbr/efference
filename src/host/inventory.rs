@@ -267,7 +267,7 @@ pub(crate) fn sitting(base: &Path) -> Vec<(String, PathBuf)> {
         .collect()
 }
 
-/// What one log says about a dormant session: where it works — the header's working
+/// What one log records about a dormant session: where it works — the header's working
 /// directory, or its project when none is recorded — and whether its last lifecycle
 /// entry is an archive. `None` when the log holds no readable header. One backwards
 /// pass, like [`scan_log`]'s lifecycle read.

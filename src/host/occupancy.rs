@@ -19,9 +19,10 @@ use crate::record::session_dir::SESSION_BASE;
 /// A session being archived is counted out by both halves at once: its entry is
 /// leaving (`end.rs`, `Departure::leaving`) from the moment its end begins until it
 /// has left the map, and while it is on the map its directory is not dormant; once
-/// it has left, its log ends in the archive. Simultaneous archives therefore see
-/// each other as gone and race for the removal, which the root's lock (`locks.rs`)
-/// resolves to one.
+/// it has left, its log ends in the archive. So when two occupants are archived at
+/// once, each recount treats the other session as gone, and both may attempt the
+/// removal: the root's lock (`locks.rs`) serializes them, and the second finds the
+/// tree `Absent`.
 pub(crate) fn remains(sessions: &Sessions, project: &Path, root: &Path) -> bool {
     let in_root = |working: &Path| working == root || working.starts_with(root);
     if sessions

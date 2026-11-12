@@ -98,8 +98,9 @@ fn a_directory_in_no_worktree_sits_at_no_root() {
 
 #[test]
 fn a_worktree_inside_a_worktree_resolves_to_its_own_root() {
-    // The innermost match wins: the tree `/p/.efference/worktrees/quiet-fox`
-    // mints inside itself names itself, not the tree around it.
+    // The innermost match is the result: a tree minted inside
+    // `/p/.efference/worktrees/quiet-fox` resolves to its own root and id, not
+    // to the tree around it.
     assert_eq!(
         root_of(Path::new(
             "/p/.efference/worktrees/quiet-fox/.efference/worktrees/tidy-moss"
