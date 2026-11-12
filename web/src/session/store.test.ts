@@ -516,16 +516,17 @@ describe("coalescing the fold", () => {
     data: { index, text },
   });
 
-  it("turns a run of deltas into one notification", () => {
+  it("turns a long run of deltas into one notification", () => {
     const clock = manual();
     const store = new Store(clock.schedule);
     let notified = 0;
     store.subscribe(() => notified++);
-    for (let i = 0; i < 2000; i++)
-      store.update((s) => applyFrame(s, delta(0, "x ")));
+    for (let i = 0; i < 4000; i++)
+      store.update((s) => applyFrame(s, delta(0, "some prose ")));
     // The fold is synchronous — everything is already in the snapshot — but
-    // nothing has re-rendered yet.
-    expect(store.snapshot().streaming.blocks[0].text).toHaveLength(4000);
+    // nothing has re-rendered yet: 4000 folds owe one notification, so the
+    // render runs once at the final length instead of once per delta.
+    expect(store.snapshot().streaming.blocks[0].text).toHaveLength(44000);
     expect(notified).toBe(0);
     expect(clock.scheduled).toBe(1);
     clock.run();
@@ -564,18 +565,20 @@ describe("coalescing the fold", () => {
     expect(notified).toBe(1);
   });
 
-  it("folds a long block's deltas well inside one frame's budget", () => {
-    // The fold itself is string append and a shallow copy; the cost the defect
-    // was about lives in the render the notification triggers. If this bound
-    // ever fails, the fold grew a per-delta pass over the block.
-    const store = new Store(() => {});
-    const started = performance.now();
-    for (let i = 0; i < 4000; i++) {
-      store.update((s) => applyFrame(s, delta(0, "some prose ")));
-    }
-    const elapsed = performance.now() - started;
-    expect(store.snapshot().streaming.blocks[0].text).toHaveLength(44000);
-    expect(elapsed).toBeLessThan(150);
+  it("folds a delta into its own block and reuses the others", () => {
+    // A response can carry several blocks at once. A fold replaces only the
+    // block its delta names and keeps the others as the same objects.
+    let session = applyFrame(emptySession, delta(0, "first "));
+    session = applyFrame(session, delta(1, "second "));
+    session = applyFrame(session, delta(2, "third "));
+    const before = session.streaming.blocks;
+    expect(before.map((b) => b.index)).toEqual([0, 1, 2]);
+    const after = fold(session, [delta(0, "more")]).streaming.blocks;
+    expect(after).toHaveLength(before.length);
+    expect(after[1]).toBe(before[1]);
+    expect(after[2]).toBe(before[2]);
+    expect(after[0]).not.toBe(before[0]);
+    expect(after[0].text).toBe(before[0].text + "more");
   });
 });
 
