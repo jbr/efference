@@ -42,9 +42,9 @@ use std::time::Duration;
 
 use mcplease::client::{ClientProtocol, Negotiation, Reaction, Step};
 use mcplease::types::{
-    CallToolResult, ContentBlock, Implementation, InputRequiredResult, JsonRpcError,
-    JsonRpcMessage, JsonRpcRequest, ListToolsResult, ResourceContents, Tool as ToolDefinition,
-    ToolCallOutcome,
+    BlobResourceContents, CallToolResult, ContentBlock, Implementation, InputRequiredResult,
+    JsonRpcError, JsonRpcMessage, JsonRpcRequest, ListToolsResult, ResourceContents,
+    Tool as ToolDefinition, ToolCallOutcome,
 };
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -686,11 +686,15 @@ fn render_block(block: &ContentBlock, images: &mut Vec<crate::record::log::Resul
             None => format!("[resource: {uri}]"),
         },
         ContentBlock::EmbeddedResource { resource, .. } => match resource {
-            ResourceContents::Text { uri, text, .. } => format!("{uri}:\n{text}"),
-            ResourceContents::Blob { uri, mime_type, .. } => match mime_type {
-                Some(mime_type) => format!("[binary resource {uri} ({mime_type}) — not rendered]"),
-                None => format!("[binary resource {uri} — not rendered]"),
-            },
+            ResourceContents::Text(text) => format!("{}:\n{}", text.uri, text.text),
+            ResourceContents::Blob(BlobResourceContents { uri, mime_type, .. }) => {
+                match mime_type {
+                    Some(mime_type) => {
+                        format!("[binary resource {uri} ({mime_type}) — not rendered]")
+                    }
+                    None => format!("[binary resource {uri} — not rendered]"),
+                }
+            }
         },
     }
 }

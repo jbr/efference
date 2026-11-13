@@ -41,9 +41,7 @@ async fn a_host_catalog_is_readable_without_any_agent_tools() {
 
 #[tokio::test]
 async fn mcp_model_resource_reads_through_the_host_http_catalog() {
-    use crate::clients::control_tools::{
-        ClientExecutor, Control, Executor, mcp, resources::ModelResources,
-    };
+    use crate::clients::control_tools::{ClientExecutor, Control, Executor, mcp, server_config};
     use mcplease::types::{JsonRpcRequest, RequestContext};
     let roots = Roots::new();
     let history = crate::config::history::History::at(roots.0.join("history.db"));
@@ -74,21 +72,17 @@ async fn mcp_model_resource_reads_through_the_host_http_catalog() {
         .await;
     let client = host_client(&host, "unused").await;
     let state = Control::new(Executor::Client(ClientExecutor::over(client)), false);
-    let config = mcplease::ServerConfig::new(mcplease::server_info!());
+    let config = server_config();
     let uri = "efference://models?connection=test&q=Friendly+Model&limit=1&offset=0";
     let request: JsonRpcRequest = serde_json::from_value(serde_json::json!({
         "jsonrpc":"2.0", "id":1, "method":"resources/read", "params":{"uri":uri}
     }))
     .unwrap();
     let context = RequestContext::from_request(&request);
-    let response = mcplease::handle_request_with_resources::<mcp::Tools, ModelResources, _>(
-        request,
-        state.clone(),
-        context,
-        &config,
-    )
-    .await
-    .unwrap();
+    let response =
+        mcplease::handle_request::<mcp::Tools, _>(request, state.clone(), context, &config)
+            .await
+            .unwrap();
     assert!(response.error.is_none(), "{:?}", response.error);
     let result = response.result.unwrap();
     assert_eq!(result["contents"][0]["uri"], uri);
@@ -106,11 +100,9 @@ async fn mcp_model_resource_reads_through_the_host_http_catalog() {
     }))
     .unwrap();
     let context = RequestContext::from_request(&request);
-    let response = mcplease::handle_request_with_resources::<mcp::Tools, ModelResources, _>(
-        request, state, context, &config,
-    )
-    .await
-    .unwrap();
+    let response = mcplease::handle_request::<mcp::Tools, _>(request, state, context, &config)
+        .await
+        .unwrap();
     assert!(response.error.is_none(), "{:?}", response.error);
     let result = response.result.unwrap();
     assert_eq!(result["contents"][0]["uri"], uri);

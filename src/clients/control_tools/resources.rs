@@ -20,6 +20,7 @@ fn discovery_params(params: &PaginatedRequestParams) -> Result<(), JsonRpcError>
 
 impl Resources<Control> for ModelResources {
     async fn list(
+        &self,
         _state: Control,
         params: PaginatedRequestParams,
         _context: RequestContext,
@@ -39,6 +40,7 @@ impl Resources<Control> for ModelResources {
     }
 
     async fn list_templates(
+        &self,
         _state: Control,
         params: PaginatedRequestParams,
         _context: RequestContext,
@@ -58,6 +60,7 @@ impl Resources<Control> for ModelResources {
     }
 
     async fn read(
+        &self,
         state: Control,
         params: ReadResourceRequestParams,
         _context: RequestContext,
@@ -106,11 +109,7 @@ impl Resources<Control> for ModelResources {
 
 fn text_result(uri: String, text: String) -> ReadResourceResult {
     ReadResourceResult {
-        contents: vec![ResourceContents::Text {
-            uri,
-            mime_type: Some("text/plain".into()),
-            text,
-        }],
+        contents: vec![ResourceContents::text(uri, text).with_mime_type("text/plain")],
         ..ReadResourceResult::default()
     }
 }

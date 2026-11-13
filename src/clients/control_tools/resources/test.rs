@@ -1,4 +1,4 @@
-use super::super::{Fallback, mcp};
+use super::super::{Fallback, mcp, server_config};
 use super::*;
 use serde_json::{Value, json};
 
@@ -11,14 +11,10 @@ async fn request(method: &str, params: Value) -> JsonRpcResponse {
         Executor::client("/nonexistent/host.sock".into(), Fallback::None),
         false,
     );
-    let config = mcplease::ServerConfig::new(mcplease::server_info!())
-        .with_instructions(super::super::MCP_INSTRUCTIONS);
     let context = RequestContext::from_request(&request);
-    mcplease::handle_request_with_resources::<mcp::Tools, ModelResources, _>(
-        request, state, context, &config,
-    )
-    .await
-    .unwrap()
+    mcplease::handle_request::<mcp::Tools, _>(request, state, context, &server_config())
+        .await
+        .unwrap()
 }
 
 #[tokio::test]

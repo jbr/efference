@@ -1,6 +1,17 @@
 //! What a harness mounting `efference mcp` is told about the server (docs/operating.md),
 //! in its `initialize` answer.
 
+use super::resources::ModelResources;
+use mcplease::ServerConfig;
+
+/// The configuration `efference mcp` serves (docs/operating.md): its identity, these
+/// instructions, and the model catalogue's resources (docs/model-catalog.md).
+pub fn server_config() -> ServerConfig<ModelResources> {
+    ServerConfig::new(mcplease::server_info!())
+        .with_instructions(MCP_INSTRUCTIONS)
+        .with_resources(ModelResources)
+}
+
 /// What a mounting harness is told about this server (docs/operating.md): what the
 /// tools drive, what driving means, and which call answers each thing an agent can be
 /// waiting on.

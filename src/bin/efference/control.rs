@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use efference::clients::control_tools::{Control, Executor, Fallback, MCP_INSTRUCTIONS, cli, mcp};
+use efference::clients::control_tools::{Control, Executor, Fallback, cli, mcp, server_config};
 
 use super::CliResult;
 
@@ -33,15 +33,10 @@ pub(crate) async fn run_cli(tools: cli::Tools, host: PathBuf) -> CliResult {
 /// call has been answered.
 pub(crate) async fn run_stdio(host: PathBuf) -> CliResult {
     let state = Control::new(Executor::client(host, Fallback::None), false);
-    let config =
-        mcplease::ServerConfig::new(mcplease::server_info!()).with_instructions(MCP_INSTRUCTIONS);
+    let config = server_config();
     let stdin = async_compat::Compat::new(tokio::io::stdin());
     let stdout = async_compat::Compat::new(tokio::io::stdout());
-    let mut calls = mcplease::calls_with_resources::<
-        mcp::Tools,
-        efference::clients::control_tools::resources::ModelResources,
-        _,
-    >(stdin, stdout, state, &config);
+    let mut calls = mcplease::calls::<mcp::Tools, _>(stdin, stdout, state, &config);
     while let Some(call) = calls.next().await {
         tokio::spawn(call?);
     }

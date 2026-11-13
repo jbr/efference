@@ -75,7 +75,7 @@ pub use executor::{ClientExecutor, Fallback};
 pub(crate) use follow::follow_status;
 pub use hand_off::HandOff;
 pub use host_executor::HostExecutor;
-pub use instructions::MCP_INSTRUCTIONS;
+pub use instructions::{MCP_INSTRUCTIONS, server_config};
 pub use interrupt::Interrupt;
 pub use message::Message;
 pub use notify::Notify;
