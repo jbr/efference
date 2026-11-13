@@ -216,7 +216,7 @@ fn a_server_named_for_a_builtin_namespace_fails_the_file() {
 
 /// A server's resource tool is on with the server, like its tools — declaring the server is
 /// the request for what it serves — but authorized apart from them: a grant on the server's
-/// namespace does not reach it (docs/tools.md "Resources").
+/// namespace does not cover it (docs/tools.md "Resources").
 #[test]
 fn a_servers_resource_tool_follows_the_server_and_is_granted_apart() {
     let declared = r#"

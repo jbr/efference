@@ -1048,7 +1048,7 @@ namespace can, because no declared server may take one of efference's
 declaring a server is the request for what it serves, resources included, as for its
 tools — and authorized apart from the server's tools: `"resources.<server>"` for one
 server, `resources` for every server, while a grant on the server's own namespace does
-not reach it. Either key turns it off with `enabled = false`. A `"resources.<name>"`
+not cover it. Either key turns it off with `enabled = false`. A `"resources.<name>"`
 key naming no declared server fails the file and lists the declared ones
 (`ValidationError::ToolResourcesServer`): it would match nothing, and the likely
 cause is a server renamed in one place and not the other. The spotter's brief still

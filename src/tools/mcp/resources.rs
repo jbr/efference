@@ -208,7 +208,7 @@ where
     }
 }
 
-/// Whether a failed read says the resource does not exist: invalid params on this revision,
+/// Whether a failed read's error code is a not-found code: invalid params on this revision,
 /// or the code earlier revisions used, which the spec asks clients to accept too.
 fn is_not_found(error: &anyhow::Error) -> bool {
     error.downcast_ref::<JsonRpcError>().is_some_and(|e| {
