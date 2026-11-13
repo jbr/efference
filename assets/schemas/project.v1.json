@@ -61,7 +61,7 @@
       "type": "string"
     },
     "tools": {
-      "description": "Which tools sessions here have, and which of those run without review. A bare key\nnames a namespace: `efference` for efference's own tools, `agents` for the tools that\nreach other sessions, `lsp` for the language-server tools (definition, references,\nrename), or a server declared under `[mcp.servers]`. A quoted dotted key\nnames one tool and overrides its namespace, as in `\"agents.message\" = { granted =\ntrue }` or `\"efference.bash\" = { enabled = false }`. The tools a session's own loop\nrelies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always\npresent.",
+      "description": "Which tools sessions here have, and which of those run without review. A bare key\nnames a namespace: `efference` for efference's own tools, `agents` for the tools that\nreach other sessions, `lsp` for the language-server tools (definition, references,\nrename), `resources` for reading the resources declared servers offer, or a server\ndeclared under `[mcp.servers]`. A quoted dotted key\nnames one tool and overrides its namespace, as in `\"agents.message\" = { granted =\ntrue }` or `\"efference.bash\" = { enabled = false }`. The tools a session's own loop\nrelies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always\npresent.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/ToolEntry"
@@ -336,7 +336,7 @@
       "type": "object",
       "properties": {
         "enabled": {
-          "description": "Put this tool, or every tool in this namespace, in the session's tool list. efference's\nown tools are left out unless enabled; a server declared under `[mcp.servers]` is in.\nRead when the session starts.",
+          "description": "Put this tool, or every tool in this namespace, in the session's tool list. efference's\nown tools are left out unless enabled; a server declared under `[mcp.servers]` is in,\nand so is its `resources` tool when it offers resources.\nRead when the session starts.",
           "type": "boolean"
         },
         "granted": {

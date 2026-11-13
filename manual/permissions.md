@@ -164,10 +164,13 @@ recorded in the session's log.
 
 - **`[tools]`**: efference's own tools and MCP tools with `granted = true`. A bare key is a
   namespace: `efference` is every tool efference provides, `agents` the tools that reach
-  other sessions, `lsp` the language-server tools, and a server's name all of its tools. A quoted key is one tool
+  other sessions, `lsp` the language-server tools, `resources` the tools that read what each
+  MCP server offers as resources (`"resources.<server>"` for one server's), and a server's
+  name all of its tools. A quoted key is one tool
   (`"agents.message"`), and overrides its namespace. The same table says which tools a
   session has at all: efference's own need `enabled = true`, so a tool efference adds later
-  in a namespace of its own reaches no session that did not enable it.
+  in a namespace of its own reaches no session that did not enable it. A declared server's
+  tools are in, and so is its `resources` tool when the server offers resources.
 - **`[paths]`**: for efference's file tools, read or write access by directory. A file tool
   needs both a grant in `[tools]` and access to every path it names.
 - **`[context]`**: files listed there for the session to start with are readable by the file

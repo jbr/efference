@@ -9,15 +9,22 @@
 use super::*;
 use crate::record::names::tools::{
     AGENTS_NAMESPACE, ASK, BUILTIN_NAMESPACE, CHECK_INBOX, CONSOLIDATE, KILL_PROCESS,
-    LIST_PROCESSES, LSP_NAMESPACE, NAMESPACE_SEPARATOR, READ_PROCESS, WAIT, WATCH_PROCESS,
-    display_name, is_namespace_glob, is_triage_tool, namespace_glob, namespace_of,
+    LIST_PROCESSES, LSP_NAMESPACE, NAMESPACE_SEPARATOR, READ_PROCESS, RESOURCES_NAMESPACE, WAIT,
+    WATCH_PROCESS, display_name, is_namespace_glob, is_triage_tool, namespace_glob, namespace_of,
 };
 
 /// The namespaces efference serves itself: [`BUILTIN_NAMESPACE`] for the
 /// unprefixed built-ins (`read`, `bash`, …), the session-control verbs (`agents__<verb>`),
-/// and the language-server tools (`lsp__<tool>`). Off unless a `[tools]` entry enables them,
-/// and no declared server may take their names.
-pub const BUILTIN_NAMESPACES: [&str; 3] = [BUILTIN_NAMESPACE, AGENTS_NAMESPACE, LSP_NAMESPACE];
+/// the language-server tools (`lsp__<tool>`), and the connected providers' resource tools
+/// (`resources__<server>`). No declared server may take their names. All but `resources` are
+/// off unless a `[tools]` entry enables them; a resource tool is on with its server
+/// ([`tool_enabled_by_default`]).
+pub const BUILTIN_NAMESPACES: [&str; 4] = [
+    BUILTIN_NAMESPACE,
+    AGENTS_NAMESPACE,
+    LSP_NAMESPACE,
+    RESOURCES_NAMESPACE,
+];
 
 /// One `[tools]` entry as written. A field left `None` comes from the namespace's entry, then
 /// the default ([`Config::tool_enabled`], [`ToolsTable::granted`]). Serialized as the `role`
@@ -148,12 +155,27 @@ pub fn always_present(wire_name: &str) -> bool {
 }
 
 /// Whether a namespace's tools are mounted when no entry says: a declared server's are (the
-/// declaration is the opt-in), efference's own are not.
+/// declaration is the opt-in), and so are the resource tools, one per declared server;
+/// efference's other namespaces are not.
 pub(super) fn enabled_by_default(
     namespace: &str,
     mcp_servers: &BTreeMap<String, McpServerEntry>,
 ) -> bool {
-    !BUILTIN_NAMESPACES.contains(&namespace) && mcp_servers.contains_key(namespace)
+    namespace == RESOURCES_NAMESPACE
+        || (!BUILTIN_NAMESPACES.contains(&namespace) && mcp_servers.contains_key(namespace))
+}
+
+/// Whether one tool is mounted when no entry says: its namespace's default, except that a
+/// resource tool follows its server — declaring the server is the request for what it serves,
+/// resources included, as it is for its tools (docs/tools.md "Resources").
+pub(super) fn tool_enabled_by_default(
+    wire_name: &str,
+    mcp_servers: &BTreeMap<String, McpServerEntry>,
+) -> bool {
+    match wire_name.split_once(NAMESPACE_SEPARATOR) {
+        Some((RESOURCES_NAMESPACE, server)) => mcp_servers.contains_key(server),
+        _ => enabled_by_default(namespace_of(wire_name), mcp_servers),
+    }
 }
 
 impl Config {
@@ -163,7 +185,7 @@ impl Config {
         always_present(wire_name)
             || self.tools.enabled(
                 wire_name,
-                enabled_by_default(namespace_of(wire_name), &self.mcp_servers),
+                tool_enabled_by_default(wire_name, &self.mcp_servers),
             )
     }
 }
@@ -191,6 +213,12 @@ pub(super) fn validate_tools(
             None if known(&key) => {
                 table.namespaces.insert(key, settings);
             }
+            Some((RESOURCES_NAMESPACE, server)) if !mcp_servers.contains_key(server) => {
+                return Err(ValidationError::ToolResourcesServer(
+                    key,
+                    mcp_servers.keys().cloned().collect(),
+                ));
+            }
             Some((namespace, tool)) if !tool.is_empty() && known(namespace) => {
                 let wire = if namespace == BUILTIN_NAMESPACE {
                     tool.to_string()
@@ -214,8 +242,8 @@ pub(super) fn validate_tools(
         }
     }
     for (wire, settings) in &table.tools {
-        let enabled = always_present(wire)
-            || table.enabled(wire, enabled_by_default(namespace_of(wire), mcp_servers));
+        let enabled =
+            always_present(wire) || table.enabled(wire, tool_enabled_by_default(wire, mcp_servers));
         if settings.granted == Some(true) && !enabled {
             return Err(ValidationError::ToolGrantedNotEnabled(table_key(wire)));
         }
@@ -233,7 +261,8 @@ pub(super) fn validate_tools(
 #[schemars(rename = "ToolEntry")]
 pub(super) struct RawToolSettings {
     /// Put this tool, or every tool in this namespace, in the session's tool list. efference's
-    /// own tools are left out unless enabled; a server declared under `[mcp.servers]` is in.
+    /// own tools are left out unless enabled; a server declared under `[mcp.servers]` is in,
+    /// and so is its `resources` tool when it offers resources.
     /// Read when the session starts.
     enabled: Option<bool>,
     /// Let calls run without review. A tool that takes a path also needs that path granted in

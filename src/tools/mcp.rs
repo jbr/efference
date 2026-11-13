@@ -38,9 +38,10 @@
 
 use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::time::Duration;
 
-use mcplease::client::{ClientProtocol, Negotiation, Reaction, Step};
+use mcplease::client::{ClientProtocol, Negotiated, Negotiation, Reaction, Step};
 use mcplease::types::{
     BlobResourceContents, CallToolResult, ContentBlock, Implementation, InputRequiredResult,
     JsonRpcError, JsonRpcMessage, JsonRpcRequest, ListToolsResult, ResourceContents,
@@ -59,6 +60,7 @@ use crate::tools::bash::Outcome;
 pub mod auth;
 mod events;
 mod http;
+mod resources;
 mod stdio;
 
 use events::{ServerEvent, route_event, token_matches};
@@ -167,8 +169,9 @@ impl ConnectedProvider {
     async fn mount_transport(name: &str, transport: Transport) -> anyhow::Result<Self> {
         let mut session = Session::new(transport);
         let result = tokio::time::timeout(MOUNT_TIMEOUT, async {
-            session.negotiate().await?;
-            session.list_tools().await
+            let negotiated = session.negotiate().await?;
+            let tools = session.list_tools().await?;
+            anyhow::Ok((negotiated.capabilities.resources.is_some(), tools))
         })
         .await;
         // The borrow of `session` ends with the timed-out future, so the timeout
@@ -177,8 +180,8 @@ impl ConnectedProvider {
             .last_method
             .as_deref()
             .unwrap_or("the first request");
-        let tools = match result {
-            Ok(Ok(tools)) => tools,
+        let (offers_resources, tools) = match result {
+            Ok(Ok(found)) => found,
             Ok(Err(error)) => return Err(error.context(format!("during {method}"))),
             Err(_) => anyhow::bail!(
                 "server did not finish negotiation + discovery within {MOUNT_TIMEOUT:?} \
@@ -194,13 +197,18 @@ impl ConnectedProvider {
         // Namespace in place, once: the snapshot and the wire definitions are then
         // two views of the same entries, and `handles` / `brief` / `tools[]` can
         // never disagree about a name.
-        let tools: Vec<ToolDefinition> = tools
+        let mut tools: Vec<ToolDefinition> = tools
             .into_iter()
             .map(|mut tool| {
                 tool.name = format!("{name}{NAMESPACE_SEPARATOR}{}", tool.name);
                 tool
             })
             .collect();
+        // Last, after the sort, and in efference's own namespace rather than the server's:
+        // `resources__<server>` (docs/tools.md "Resources").
+        if offers_resources {
+            tools.push(resources::definition(name));
+        }
         let definitions = tools.iter().map(anthropic_def).collect();
 
         Ok(Self {
@@ -263,9 +271,26 @@ impl ConnectedProvider {
         on_output: impl FnMut(&[u8]) + Send,
         on_notify: impl FnMut(Notification) + Send,
     ) -> Outcome {
+        if call.name == resources::wire_name(&self.name) {
+            return self
+                .resources(&call.input, abort, on_output, on_notify)
+                .await
+                .into();
+        }
         self.call(&call.name, &call.input, abort, on_output, on_notify)
             .await
             .into()
+    }
+
+    /// Where server traffic during a call goes (docs/tools.md "the client protocol"):
+    /// progress ticks to the call's live output, `notifications/message` lines to the inbox.
+    fn event_sink(
+        &self,
+        mut on_output: impl FnMut(&[u8]) + Send,
+        mut on_notify: impl FnMut(Notification) + Send,
+    ) -> impl FnMut(ServerEvent) + Send {
+        let name = self.name.clone();
+        move |event| route_event(&name, event, &mut on_output, &mut on_notify)
     }
 
     /// `tools/call` over the transport. Any failure — transport, protocol
@@ -284,56 +309,11 @@ impl ConnectedProvider {
         let tool = wire_name.strip_prefix(&prefix).unwrap_or(wire_name);
         let mut session = self.session.lock().await;
         let request = session.protocol.tools_call_with_progress(tool, input);
-        let request_id = request.id.clone();
-        let name = self.name.clone();
-        let mut on_output = on_output;
-        let mut on_notify = on_notify;
-        let mut on_event = move |event: ServerEvent| {
-            route_event(&name, event, &mut on_output, &mut on_notify);
-        };
-        // The abort race lives here rather than in `run` because the Kill
-        // path has to speak to the server over this same session: the inner
-        // scope drops the in-flight future — releasing its borrow of the
-        // session — before the cancellation is sent.
-        let outcome = {
-            let mut trip = std::pin::pin!(session.round_trip(request, &mut on_event));
-            tokio::select! {
-                result = &mut trip => Some(result),
-                interrupt = abort => match interrupt {
-                    // Abandoned; the error result below pairs the `tool_use`.
-                    Interrupt::Kill => None,
-                    // Detach is bash-only and keeps waiting.
-                    Interrupt::Detach => Some(trip.await),
-                },
-            }
-        };
-        let Some(result) = outcome else {
-            // Tell the server to stop work on the abandoned call. On a
-            // single-channel transport this is the only way it can tell
-            // an abandoned call from a slow one; over streamable HTTP the
-            // dropped response stream is itself the signal (mcplease's
-            // `cancel` documents the split).
-            if session.transport.cancellation_is_notification() {
-                let cancellation = session
-                    .protocol
-                    .cancel(&request_id, Some("cancelled by the operator"));
-                if let Err(e) = session
-                    .transport
-                    .notify(&JsonRpcMessage::Notification(cancellation))
-                    .await
-                {
-                    log::debug!("could not send cancellation: {e}");
-                }
-            }
+        let abort = std::pin::pin!(abort);
+        let mut abort = Abort::new(abort);
+        let mut on_event = self.event_sink(on_output, on_notify);
+        let Some(result) = session.exchange(request, &mut abort, &mut on_event).await else {
             return RawResult::error(format!("`{wire_name}` call cancelled by the operator"));
-        };
-        // Two failure layers flatten to one: the connection or framing giving
-        // out, and the server answering with a protocol error. Both are the
-        // call failing, and both must land as a paired result.
-        let result = match result {
-            Ok(Ok(result)) => Ok(result),
-            Ok(Err(protocol)) => Err(anyhow::Error::new(protocol)),
-            Err(transport) => Err(transport),
         };
         match result {
             Ok(result) => match serde_json::from_value::<ToolCallOutcome>(result) {
@@ -357,6 +337,20 @@ impl ConnectedProvider {
             },
             Err(e) => RawResult::error(format!("`{}` call failed: {e}", self.name)),
         }
+    }
+}
+
+/// The operator's interrupt for one call, raced against each request the call makes — a
+/// resource listing makes one per page. Polled until it fires and never after: `Detach`
+/// keeps the call waiting, and a fired future has nothing more to say.
+struct Abort<'a, A> {
+    future: Pin<&'a mut A>,
+    live: bool,
+}
+
+impl<'a, A> Abort<'a, A> {
+    fn new(future: Pin<&'a mut A>) -> Self {
+        Self { future, live: true }
     }
 }
 
@@ -460,10 +454,71 @@ impl Session {
         }
     }
 
+    /// One request of a call, raced against the operator's interrupt. `None` when the
+    /// operator abandoned it, after telling the server to stop; otherwise the response.
+    ///
+    /// Two failure layers flatten to one: the connection or framing giving out, and the
+    /// server answering with a protocol error. Both are the call failing, and both must land
+    /// as a paired result; the protocol error stays a [`JsonRpcError`] beneath the `anyhow`
+    /// for a caller that tells codes apart.
+    async fn exchange<A: Future<Output = Interrupt> + Send>(
+        &mut self,
+        request: JsonRpcRequest,
+        abort: &mut Abort<'_, A>,
+        on_event: &mut (impl FnMut(ServerEvent) + Send),
+    ) -> Option<anyhow::Result<Value>> {
+        let request_id = request.id.clone();
+        // The abort race lives here rather than in `run` because the Kill
+        // path has to speak to the server over this same session: the inner
+        // scope drops the in-flight future — releasing its borrow of the
+        // session — before the cancellation is sent.
+        let outcome = {
+            let mut trip = std::pin::pin!(self.round_trip(request, &mut *on_event));
+            tokio::select! {
+                result = &mut trip => Some(result),
+                interrupt = abort.future.as_mut(), if abort.live => {
+                    abort.live = false;
+                    match interrupt {
+                        // Abandoned; the caller's error result pairs the `tool_use`.
+                        Interrupt::Kill => None,
+                        // Detach is bash-only and keeps waiting.
+                        Interrupt::Detach => Some(trip.await),
+                    }
+                }
+            }
+        };
+        let Some(result) = outcome else {
+            // Tell the server to stop work on the abandoned call. On a
+            // single-channel transport this is the only way it can tell
+            // an abandoned call from a slow one; over streamable HTTP the
+            // dropped response stream is itself the signal (mcplease's
+            // `cancel` documents the split).
+            if self.transport.cancellation_is_notification() {
+                let cancellation = self
+                    .protocol
+                    .cancel(&request_id, Some("cancelled by the operator"));
+                if let Err(e) = self
+                    .transport
+                    .notify(&JsonRpcMessage::Notification(cancellation))
+                    .await
+                {
+                    log::debug!("could not send cancellation: {e}");
+                }
+            }
+            return None;
+        };
+        Some(match result {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(protocol)) => Err(anyhow::Error::new(protocol)),
+            Err(transport) => Err(transport),
+        })
+    }
+
     /// Settle the protocol revision: the `server/discover` probe, falling back
     /// to the `initialize` handshake when the server does not have it, and
-    /// confirming a handshake with `notifications/initialized`.
-    async fn negotiate(&mut self) -> anyhow::Result<()> {
+    /// confirming a handshake with `notifications/initialized`. What it learned
+    /// includes whether the server offers resources.
+    async fn negotiate(&mut self) -> anyhow::Result<Negotiated> {
         let (mut negotiation, mut request) = Negotiation::start(&mut self.protocol);
         let negotiated = loop {
             let result = self.round_trip(request, |_| {}).await?;
@@ -491,7 +546,7 @@ impl Session {
                 "stateless"
             }
         );
-        Ok(())
+        Ok(negotiated)
     }
 
     /// Drain the server's full `tools/list`, following pagination cursors.

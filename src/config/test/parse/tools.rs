@@ -12,7 +12,14 @@ fn parse_err(text: &str) -> LoadError {
 #[test]
 fn an_empty_table_mounts_none_of_efferences_own_tools() {
     let role = parse_str("");
-    for name in ["read", "bash", "edit", "agents__message", "lsp__definition"] {
+    for name in [
+        "read",
+        "bash",
+        "edit",
+        "agents__message",
+        "lsp__definition",
+        "resources__ferritin",
+    ] {
         assert!(!role.tool_enabled(name), "{name}");
         assert!(!role.tools.granted(name), "{name}");
     }
@@ -195,7 +202,7 @@ fn the_list_form_fails_the_file() {
 /// share.
 #[test]
 fn a_server_named_for_a_builtin_namespace_fails_the_file() {
-    for name in ["efference", "agents", "lsp"] {
+    for name in ["efference", "agents", "lsp", "resources"] {
         let err = parse_err(&format!("[mcp.servers.{name}]\ncommand = \"x\"\n"));
         assert!(
             matches!(
@@ -205,4 +212,62 @@ fn a_server_named_for_a_builtin_namespace_fails_the_file() {
             "{name}: {err}"
         );
     }
+}
+
+/// A server's resource tool is on with the server, like its tools — declaring the server is
+/// the request for what it serves — but authorized apart from them: a grant on the server's
+/// namespace does not reach it (docs/tools.md "Resources").
+#[test]
+fn a_servers_resource_tool_follows_the_server_and_is_granted_apart() {
+    let declared = r#"
+        [mcp.servers.ferritin]
+        command = "ferritin"
+    "#;
+    let role = parse_str(&format!(
+        "{declared}\n[tools]\nferritin = {{ granted = true }}\n"
+    ));
+    assert!(role.tool_enabled("ferritin__get") && role.tools.granted("ferritin__get"));
+    assert!(role.tool_enabled("resources__ferritin"));
+    assert!(!role.tools.granted("resources__ferritin"));
+    // No resource tool for a server that is not declared.
+    assert!(!role.tool_enabled("resources__exa"));
+
+    let role = parse_str(&format!(
+        "{declared}\n[tools]\n\"resources.ferritin\" = {{ granted = true }}\n"
+    ));
+    assert!(role.tool_enabled("resources__ferritin") && role.tools.granted("resources__ferritin"));
+    let role = parse_str(&format!(
+        "{declared}\n[tools]\nresources = {{ granted = true }}\n"
+    ));
+    assert!(role.tools.granted("resources__ferritin"));
+
+    for off in [
+        "\"resources.ferritin\" = { enabled = false }",
+        "resources = { enabled = false }",
+    ] {
+        let role = parse_str(&format!("{declared}\n[tools]\n{off}\n"));
+        assert!(!role.tool_enabled("resources__ferritin"), "{off}");
+        assert!(role.tool_enabled("ferritin__get"), "{off}");
+    }
+}
+
+/// A resource key for a server that is not declared matches nothing, so it fails the file and
+/// names the servers that are — the slip is a server renamed in one place and not the other.
+#[test]
+fn a_resource_key_for_an_undeclared_server_fails_the_file() {
+    let err = parse_err(
+        r#"
+            [mcp.servers.mcp-test]
+            command = "npx"
+
+            [tools]
+            "resources.everything" = { enabled = true }
+        "#,
+    );
+    let LoadError::Validate(_, error @ ValidationError::ToolResourcesServer(..)) = &err else {
+        panic!("{err}");
+    };
+    let message = error.to_string();
+    assert!(message.contains("`resources.everything`"), "{message}");
+    assert!(message.ends_with("declared: mcp-test"), "{message}");
 }

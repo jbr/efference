@@ -341,7 +341,8 @@ first dot (a server's own tool name may contain dots; server names may not). The
 the `<server>` half of the wire name, resolved at the **first** `__`; the harness's own
 embedded tools have no prefix, so they sit in the `efference` namespace and are written
 `efference.<tool>` here (the key `bash` alone would name a namespace, and fails the file with
-a message naming `"efference.bash"`). The session-control verbs sit in `agents`, and the language-server tools in `lsp`
+a message naming `"efference.bash"`). The session-control verbs sit in `agents`, the language-server tools in `lsp`, and each
+declared server's resource tool in `resources` (`"resources.<server>"`)
 ([tools.md](tools.md)). A key is not
 a pattern: a `*` fails the file. `config::tools::validate_tools` resolves each key to a
 wire name, so the table the fast path reads holds one key per tool however the file spelled

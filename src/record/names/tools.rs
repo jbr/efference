@@ -79,6 +79,13 @@ pub const AGENTS_NAMESPACE: &str = "agents";
 /// own, so it is off unless a `[tools]` entry enables it (`config::BUILTIN_NAMESPACES`).
 pub const LSP_NAMESPACE: &str = "lsp";
 
+/// The wire namespace of the connected providers' resource tools: `resources__<server>` reads
+/// the resources a declared server offers (docs/tools.md "Resources"). One of efference's own,
+/// so no declared server can take the name — which is what keeps a server's own tools,
+/// `resources` included, from colliding with it (`config::BUILTIN_NAMESPACES`). Unlike the
+/// other built-in namespaces it is on by default: each tool follows its server.
+pub const RESOURCES_NAMESPACE: &str = "resources";
+
 /// A namespaced wire name rendered for a human: `ferritin__get` → `ferritin.get`.
 ///
 /// The wire alphabet (`[a-zA-Z0-9_-]`) has no separator that reads as one, so

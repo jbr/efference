@@ -48,7 +48,8 @@ pub(crate) struct RawConfig {
     /// Which tools sessions here have, and which of those run without review. A bare key
     /// names a namespace: `efference` for efference's own tools, `agents` for the tools that
     /// reach other sessions, `lsp` for the language-server tools (definition, references,
-    /// rename), or a server declared under `[mcp.servers]`. A quoted dotted key
+    /// rename), `resources` for reading the resources declared servers offer, or a server
+    /// declared under `[mcp.servers]`. A quoted dotted key
     /// names one tool and overrides its namespace, as in `"agents.message" = { granted =
     /// true }` or `"efference.bash" = { enabled = false }`. The tools a session's own loop
     /// relies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always
@@ -405,6 +406,11 @@ pub enum ValidationError {
     /// nothing after the dot. Most often one of efference's own tools written bare (`bash`),
     /// which reads as a namespace.
     ToolNamespace(String),
+    /// A `"resources.<server>"` key naming no server declared under `[mcp.servers]`, with the
+    /// names that are declared. The `resources` namespace holds one tool per declared server,
+    /// so a key for any other name would match nothing — the likely cause is a server renamed
+    /// in one place and not the other.
+    ToolResourcesServer(String, Vec<String>),
     /// `enabled` on a tool the turn loop always mounts ([`super::tools::always_present`]):
     /// turning it off would leave the loop asking for a tool the session does not have.
     ToolAlwaysPresent(String),
@@ -480,21 +486,9 @@ impl std::fmt::Display for ValidationError {
                  (`{}`), and a key matches no pattern",
                 key.trim_end_matches(".*")
             ),
-            ValidationError::ToolNamespace(key) => {
-                let namespace = key.split_once('.').map_or(key.as_str(), |(n, _)| n);
-                write!(
-                    f,
-                    "`[tools]` key `{key}` names no namespace `{namespace}` — a namespace is \
-                     `efference` (efference's own tools), `agents`, or a server declared under \
-                     `[mcp.servers]`, and one tool is a quoted dotted key after it"
-                )?;
-                if !key.contains('.') {
-                    write!(
-                        f,
-                        "; if `{key}` is one of efference's own tools, write `\"efference.{key}\"`"
-                    )?;
-                }
-                Ok(())
+            ValidationError::ToolNamespace(key) => tool_namespace(f, key),
+            ValidationError::ToolResourcesServer(key, declared) => {
+                tool_resources_server(f, key, declared)
             }
             ValidationError::ToolAlwaysPresent(key) => write!(
                 f,
@@ -518,6 +512,41 @@ impl std::fmt::Display for ValidationError {
                  — a name containing one would move the namespace boundary)"
             ),
         }
+    }
+}
+
+/// [`ValidationError::ToolNamespace`]'s message, with the likely fix for a bare built-in.
+fn tool_namespace(f: &mut std::fmt::Formatter<'_>, key: &str) -> std::fmt::Result {
+    let namespace = key.split_once('.').map_or(key, |(n, _)| n);
+    write!(
+        f,
+        "`[tools]` key `{key}` names no namespace `{namespace}` — a namespace is `efference` \
+         (efference's own tools), `agents`, `lsp`, `resources`, or a server declared under \
+         `[mcp.servers]`, and one tool is a quoted dotted key after it"
+    )?;
+    if !key.contains('.') {
+        write!(
+            f,
+            "; if `{key}` is one of efference's own tools, write `\"efference.{key}\"`"
+        )?;
+    }
+    Ok(())
+}
+
+/// [`ValidationError::ToolResourcesServer`]'s message, naming the servers that are declared.
+fn tool_resources_server(
+    f: &mut std::fmt::Formatter<'_>,
+    key: &str,
+    declared: &[String],
+) -> std::fmt::Result {
+    write!(
+        f,
+        "`[tools]` key `{key}` names no server declared under `[mcp.servers]` — a `resources` \
+         key is `\"resources.<server>\"` for a declared server"
+    )?;
+    match declared {
+        [] => write!(f, ", and none is declared"),
+        names => write!(f, "; declared: {}", names.join(", ")),
     }
 }
 

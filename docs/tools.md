@@ -124,7 +124,8 @@ it would unfiltered; a provider left with no tools is dropped.
 The defaults are where the opt-in lives. efference's own namespaces (`efference`, `agents`,
 `lsp`) are off unless an entry enables them, so a built-in that ships later in a namespace of its
 own is mounted in no session that did not request it. A declared server is on, since declaring it
-is the request; an entry can turn a namespace or one tool off. The scaffolded config and the
+is the request, and so is its resource tool (`resources__<server>`, below); an entry can turn a
+namespace or one tool off. The scaffolded config and the
 setup guide enable `efference` (granted) and `agents` (reviewed).
 
 The loop-owned tools — `consolidate`, the process-monitor/inbox family, `ask`, and the two
@@ -937,11 +938,11 @@ transports, and leaves the transports themselves as framing alone
 (`src/tools/mcp/stdio.rs` reads and writes lines; `src/tools/mcp/http.rs` POSTs and exposes
 whatever the server answered with, one JSON body or a stream of SSE events, as
 a source of frames). Requests are strictly serialized — the loop issues one
-tool call at a time — so there is no demux task. Mounting is negotiation, then
-a paginated `tools/list`.
+tool call at a time — so there is no demux task. Mounting is negotiation, which
+also records whether the server offers resources, then a paginated `tools/list`.
 
-The scope is every valid server-side interaction around a tool call (resources
-aside). A `tools/call` opts in to progress (`_meta.progressToken`, the
+The scope is every valid server-side interaction around a tool call; reading
+resources is its own tool (below). A `tools/call` opts in to progress (`_meta.progressToken`, the
 request's own id) and each `notifications/progress` tick renders one line on
 the call's live-output sink — pre-commit, never projected: progress is
 liveness about a call running now, and the only reader it can serve is a
@@ -1026,6 +1027,38 @@ built-ins, whose unprefixed wire names sit in the `efference` namespace
 One known gap: the offline `wire` dev view does not mount connected providers
 (mounting spawns processes), so a session with `[mcp.servers.*]` sends more
 `tools[]` than that view shows.
+
+### Resources: one tool per server, in efference's namespace
+
+A server that negotiates the `resources` capability gets one more tool,
+`resources__<server>` (`src/tools/mcp/resources.rs`), appended after its own sorted
+tools. Called without `uri` it lists every page of `resources/list` and
+`resources/templates/list`, each entry's URI first because that is what the model
+passes back. Called with a `uri` it sends `resources/read` with the URI exactly as
+given — expanding a template is the model's — and renders the contents the way an
+embedded resource in a tool result renders (`render_result`), so a resource reads
+the same whichever way it arrived. Reads opt in to progress, and the operator's
+interrupt cancels them like a tool call.
+
+The name sits in efference's own `resources` namespace, not the server's. A server
+chooses its own tool names, `resources` included, and the MCP name alphabet is a
+superset of the API's, so no character could mark a name as efference's; a
+namespace can, because no declared server may take one of efference's
+(`config::BUILTIN_NAMESPACES`). In the `[tools]` table it is on with its server —
+declaring a server is the request for what it serves, resources included, as for its
+tools — and authorized apart from the server's tools: `"resources.<server>"` for one
+server, `resources` for every server, while a grant on the server's own namespace does
+not reach it. Either key turns it off with `enabled = false`. A `"resources.<name>"`
+key naming no declared server fails the file and lists the declared ones
+(`ValidationError::ToolResourcesServer`): it would match nothing, and the likely
+cause is a server renamed in one place and not the other. The spotter's brief still
+names the server the read goes to.
+
+A missing resource is an error result pointing back at the listing, on either the
+current `-32602` or the `-32002` earlier revisions used. Every other failure — a
+protocol error, an interim `input_required` result (efference supplies no input), a
+listing whose cursor repeats — is an error result too, so the `tool_use` always
+gets its pair.
 
 ### Duplicate tool name rejection: filter and guard
 

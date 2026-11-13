@@ -1,4 +1,5 @@
 mod mount;
+mod resources;
 
 use std::sync::{Arc, Mutex};
 
