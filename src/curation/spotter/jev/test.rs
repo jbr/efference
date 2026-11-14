@@ -6,6 +6,7 @@ use serde_json::json;
 
 mod plain;
 mod stages;
+mod worktrees;
 
 /// A sketch distribution putting 0.8 on `level` and the rest spread evenly.
 fn sketch_at(level: usize) -> Vec<f64> {

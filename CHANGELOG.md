@@ -24,6 +24,8 @@ one line per feature.
 
 ### Fixed
 
+- Both permission spotters receive an explicit explanation of managed worktree path mapping, distinguishing project grants from the session-storage deny.
+
 - Archiving a session removed a managed worktree other sessions still worked in (the hand-off case): a worktree is now shared occupancy — any session whose working directory sits in it holds it, it is retired at the last occupant leaving, and any former occupant restores it at its original path on resume.
 - A create retried after a failed one could start in the broken checkout the failure left behind: a creation now refuses an existing checkout path or `efference/<id>` branch instead of adopting it, and archiving a session while its worktree is still being checked out no longer leaves the checkout behind.
 - Mounting an HTTP MCP server intermittently failed with `connection aborted`: the HTTP/2 client closed its shared connection when a late frame arrived for an SSE response it had already canceled (fixed in trillium-http 1.8.2). A mount error now names the JSON-RPC method that was pending.

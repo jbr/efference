@@ -4,6 +4,8 @@ use crate::config::testing::ConfigFixture;
 use crate::inference::api::Completion;
 use std::path::Path;
 
+mod worktrees;
+
 fn spot_completion(name: &str, input: Value) -> Completion {
     Completion::new(crate::record::log::AssistantOutput::from_legacy_messages(
         vec![],

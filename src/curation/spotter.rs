@@ -365,6 +365,9 @@ fn render_context(
         "- a relative path in a proposed move resolves against the working directory, by \
          shell rules: `sub/file` means `{cwd_display}/sub/file`\n"
     ));
+    if let Some(dirs) = dirs {
+        s.push_str(&format!("- {}\n", worktree_context(dirs)));
+    }
     if role.paths.is_empty() {
         s.push_str("- allowed paths: none configured\n");
     } else {
@@ -417,6 +420,26 @@ fn render_context(
         }
     }
     s
+}
+
+/// Explain the worktree exception beside both spotters' mapped path facts
+/// (docs/worktrees.md). The raw command still contains the actual checkout path.
+fn worktree_context(dirs: &crate::config::policy::Directories) -> String {
+    let project = dirs.project().display();
+    let checkout = crate::record::session_dir::worktree::path(dirs.project(), "<id>");
+    format!(
+        "Managed git worktrees: `{checkout}` is another checkout of `{project}`, not \
+         session storage. For permission checks, `{checkout}/<rest>` is judged as \
+         `{project}/<rest>`, and the checkout root as `{project}`. This applies to \
+         every managed worktree, including another session's, and to absolute paths \
+         in commands such as `git -C`. Apply the project counterpart's grants and \
+         narrower carveouts; the enclosing session-storage deny does not itself deny \
+         worktree files. Resolved path facts already use these counterparts; tools \
+         still access the original paths. Other paths under `{project}/.efference`, \
+         including session logs/configs/attachments and the worktrees parent itself, \
+         are not mapped and retain their own grants.",
+        checkout = checkout.display(),
+    )
 }
 
 /// How a grant's perms read in the scope block and the path facts.

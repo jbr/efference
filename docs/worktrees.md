@@ -91,8 +91,12 @@ touches the path the call named. Both spotters are shown the same view: the proj
 the working directory and each resolved path as its counterpart
 (`Directories::judged_working`), because the worktree's real path sits under the
 denied `.efference/` and a reviewer comparing strings read every in-tree move as a
-denied path. `.efference/` itself is never mapped: it exists only at
-the project, where the injected self-surface stack anchors.
+denied path. Both spotters also receive an explicit explanation of the mapping,
+including absolute paths in commands such as `git -C`, grants for narrower subtrees,
+and the distinction between managed checkouts and session storage. The prose spotter
+has it in the scope block; the decision spotter has the same text in the state's
+`worktrees` field. `.efference/` itself and session-storage paths are not mapped;
+they retain their own grants.
 
 A grant key that leaves the project (`../sibling`) resolves from the project, as its
 author wrote it. A path the *model* types is resolved from its working directory and is

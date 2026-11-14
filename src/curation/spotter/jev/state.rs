@@ -43,6 +43,13 @@ pub(super) fn state(
         "move": proposed_move(role, call, brief, dirs, scratch),
     });
     let object = state.as_object_mut().expect("state is built as an object");
+    if let Some(dirs) = dirs {
+        object.insert(
+            "worktrees".into(),
+            json!(super::super::worktree_context(dirs)),
+        );
+    }
+
     if let Some(holder) = chain.last() {
         // The leaf of an approval chain (docs/permissions.md): the move is the
         // child's, and the chain names who approved on the way here. Present only
