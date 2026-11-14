@@ -182,12 +182,13 @@ export function Composer({
     const before = store.snapshot();
     const current = before.text;
     const previous = before.held;
-    // What the composer keeps of its own text travels with its document: a
-    // held document only as the exact spelling it was spliced as, and an
-    // editable draft as plain text. An edit to a held spelling is put back,
-    // because a document carries its references only as that spelling; the
-    // notice says so. The held document is kept whether or not its spelling
-    // is empty: an attachment-only hold has no readable text of its own.
+    // A held document is kept only with the exact spelling it was spliced as;
+    // a plain draft is kept as text. An edit to a held spelling is put back,
+    // because the structured send submits the document rather than the
+    // buffer, so text that differed from the document's readable form would
+    // send something the operator cannot see; the notice says so. The held
+    // document is kept whether or not its spelling is empty: an
+    // attachment-only hold has no readable text of its own.
     const reverted = previous !== null && previous.spliced !== current;
     const retained =
       previous !== null
@@ -208,10 +209,10 @@ export function Composer({
     // A recalled turn with references holds a document for an unedited
     // resubmission — the only form that carries the references. The hold
     // covers the whole buffer: the recalled document already includes every
-    // withdrawn turn (plain ones as text), and the retained piece follows
-    // after a newline when it has readable text of its own — an
-    // attachment-only hold contributes its definitions with no separator,
-    // because it spells nothing. A recall with no references and no previous
+    // withdrawn turn (plain ones as text), and a retained piece with readable
+    // text of its own is appended after a newline — an attachment-only hold
+    // contributes its definitions with no separator, because it spells
+    // nothing. A recall with no references and no previous
     // hold is plain text and stays editable.
     const document =
       recalled.document !== null || previous !== null

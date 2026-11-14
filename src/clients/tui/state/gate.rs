@@ -191,11 +191,12 @@ impl<'a> InteractiveState<'a> {
         let draft = self.composer.text().to_string();
         // What the composer keeps of its own text: a held document with the
         // exact spelling it was spliced as, or the draft as plain text. An
-        // edit to a held spelling is put back — a document carries its
-        // references only as the text they were spliced as, so the held
-        // spelling wins and the operator is told. The held document is kept
-        // whether or not its spelling is empty: an attachment-only hold has no
-        // readable text of its own.
+        // edit to a held spelling is put back: the structured send submits
+        // the document, not the buffer, so a buffer that differed from the
+        // document's readable form would send text the operator cannot see.
+        // The held spelling wins and the operator is told. The held document
+        // is kept whether or not its spelling is empty: an attachment-only
+        // hold has no readable text of its own.
         let (retained, retained_text, reverted) = match existing {
             Some((document, spliced)) => {
                 let reverted = draft != spliced;
@@ -217,8 +218,8 @@ impl<'a> InteractiveState<'a> {
         }
         // A hold covers the whole buffer whenever any withdrawn turn carried
         // references, or the composer was already holding one: each withdrawn
-        // turn contributes its document or its text, and the retained piece
-        // follows after a newline when it has readable text of its own — an
+        // turn contributes its document or its text, and a retained piece
+        // with readable text of its own is appended after a newline — an
         // attachment-only hold contributes its definitions with no separator,
         // because it spells nothing. The merged document's readable form is
         // exactly `buffer`. A recall with no references at all is plain text

@@ -1659,8 +1659,9 @@ A recalled turn that carried references puts the composer in a **held** state
 (`ui/drafts.ts`, `Held`): the draft keeps the merged document beside the exact
 text it spliced (`held.document`, `held.spliced`); an edited draft is refused
 with the spliced text put back and the hold left in place. A second recall puts
-a held spelling back before splicing — the document travels only with that
-spelling — and merges the recalled document with the held one, an empty
+a held spelling back before splicing — the structured send submits the
+document rather than the buffer, so the two must spell the same text — and
+merges the recalled document with the held one, an empty
 readable form (an attachment-only hold) contributing its definitions with no
 separator, so neither turn's references are dropped. Clearing the composer
 clears the hold; a chip whose upload the document references is detached from
