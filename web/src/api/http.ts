@@ -7,6 +7,7 @@
 
 import { apiBase, join } from "./base.ts";
 import { bearer } from "./bearer.ts";
+import { withAttachments } from "./document.ts";
 import type {
   ArchivedSession,
   Arrival,
@@ -30,6 +31,7 @@ import type {
   StatusBody,
   ToolEntry,
   TurnAccepted,
+  UserContent,
   WithdrawnTurns,
 } from "./types.ts";
 import type { Decision } from "./decision.ts";
@@ -188,9 +190,9 @@ export const submitTurn = (
   submissionId: string,
   attachments: Arrival[] = [],
   answers: CallId | null = null,
-) =>
-  post<TurnAccepted>("/v1/turns", {
-    text,
+  document: UserContent | null = null,
+) => {
+  const common = {
     submission_id: submissionId,
     // The web client is not the operator at a terminal; name where the turn
     // came from so the model can attribute it (docs/control-api.md).
@@ -199,7 +201,24 @@ export const submitTurn = (
       ? { attachments: attachments.map((a) => a.name) }
       : {}),
     ...(answers !== null ? { answers } : {}),
-  });
+  };
+  // The structured spelling carries the turn's document — the only form that
+  // preserves references; the legacy `text` spelling is the flat fallback
+  // (docs/control-api.md). Never both, and a structured turn names its uploads
+  // as references rather than a separate `attachments` list, which the gate
+  // refuses: a staged upload is folded in by store name first.
+  if (document !== null) {
+    const merged = withAttachments(document, attachments);
+    return post<TurnAccepted>("/v1/turns", {
+      submission_id: submissionId,
+      source: "web",
+      content: merged.content,
+      references: merged.references,
+      ...(answers !== null ? { answers } : {}),
+    });
+  }
+  return post<TurnAccepted>("/v1/turns", { ...common, text });
+};
 // Withdraw the pending-queue suffix beginning at this submission (docs/control-api.md —
 // recall). The answer is authoritative: the loop may have dequeued the turn already, so
 // `withdrawn` can be shorter than the queue showed, or empty. A caller splices only this.

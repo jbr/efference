@@ -233,12 +233,21 @@ impl Serialize for RawResultView<'_> {
         // below the threshold (frames.rs): under it, all three views agree field
         // for field.
         let elided = matches!(content, ContentView::Elided(..));
-        let fields = 2 + usize::from(elided) + usize::from(!raw.images.is_empty());
+        // A structured ask answer rides only a whole view: a truncated view
+        // carries neither the full content nor the document, so an elided
+        // prefix never sits beside the full structured text it was cut from
+        // (docs/control-api.md).
+        let document = !elided && raw.document.is_some();
+        let fields =
+            2 + usize::from(elided) + usize::from(!raw.images.is_empty()) + usize::from(document);
         let mut s = serializer.serialize_struct("RawResult", fields)?;
         match content {
             ContentView::Whole(text) => {
                 s.serialize_field("content", text)?;
                 s.serialize_field("is_error", &raw.is_error)?;
+                if let Some(document) = &raw.document {
+                    s.serialize_field("document", document)?;
+                }
             }
             ContentView::Elided(prefix, total) => {
                 s.serialize_field("content", prefix)?;

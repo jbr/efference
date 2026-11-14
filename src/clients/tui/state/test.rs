@@ -120,7 +120,7 @@ fn submit_without_gate_is_a_normal_turn() {
     let mut s = InteractiveState::new(erx, senders, rc, theme);
     s.submit_composer("hello".into());
     assert_eq!(
-        srx.try_recv().unwrap().turn.text,
+        srx.try_recv().unwrap().turn.readable(),
         "hello",
         "went to the turn channel"
     );
@@ -171,7 +171,7 @@ fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
     s.upload_landed(key, Ok(arrival.clone()));
     s.submit_composer("look".into());
     let sent = srx.try_recv().unwrap();
-    assert_eq!(sent.turn.attachments, vec![arrival]);
+    assert_eq!(sent.turn.attachment_arrivals(), vec![arrival]);
     assert!(s.staged.is_empty(), "sent chips leave the row");
 }
 
@@ -242,5 +242,192 @@ fn a_pending_gate_or_ask_leads_the_operation_text() {
     assert_eq!(
         s.status_operation_text().as_deref(),
         Some("writing a title · 0s")
+    );
+}
+
+/// A state whose submission receiver is kept, for asserting what a send
+/// carried.
+fn sendable_state() -> (
+    InteractiveState<'static>,
+    UnboundedReceiver<crate::clients::tui::senders::Submission>,
+) {
+    let rc = RenderContext::new();
+    let theme = InteractiveTheme::from_render_context(&rc);
+    let (_etx, erx) = crossbeam_channel::unbounded();
+    let (senders, receivers) = crate::clients::tui::senders::Senders::channels();
+    let s = InteractiveState::new(erx, senders, rc, theme);
+    (s, receivers.submit)
+}
+
+use crate::protocol::turns::QueuedTurn;
+use crate::record::log::{ReferenceDefinition, UserSegment};
+use std::collections::BTreeMap;
+
+/// A document of one prose piece and one agent occurrence.
+fn review_document(prose: &str) -> UserContent {
+    UserContent {
+        content: vec![
+            UserSegment::Text(prose.into()),
+            UserSegment::Reference("a".into()),
+        ],
+        references: BTreeMap::from([(
+            "a".into(),
+            ReferenceDefinition::agent("reviewer", "castback"),
+        )]),
+    }
+}
+
+/// A withdrawn turn in the shape a recall carries.
+fn queued(document: UserContent, id: &str) -> QueuedTurn {
+    QueuedTurn::from(&SubmittedTurn::structured(document, id))
+}
+
+fn attachment(name: &str) -> crate::record::log::attachment::Arrival {
+    crate::record::log::attachment::Arrival {
+        name: name.into(),
+        path: format!("att/composer/{name}"),
+        kind: crate::record::log::attachment::Kind::Binary { bytes: 3 },
+    }
+}
+
+/// A recall of a documented turn plus a plain one, with a draft underneath:
+/// every turn contributes its document or text as the readable form, and the
+/// merged document equals the buffer.
+#[test]
+fn a_mixed_recall_over_a_draft_holds_the_whole_buffer() {
+    let (mut s, _srx) = sendable_state();
+    s.composer.set_text("my draft");
+    let documented = queued(review_document("review "), "s1");
+    let plain = QueuedTurn::from(&SubmittedTurn::new("second", "s2"));
+    s.apply_recall(&[documented, plain]);
+    let expected = "review @castback\nsecond\nmy draft";
+    assert_eq!(s.composer.text(), expected);
+    let (document, spliced) = s.recalled_document.as_ref().expect("held");
+    assert_eq!(spliced, expected);
+    assert_eq!(document.readable(), expected);
+    assert!(document.references.contains_key("a"));
+}
+
+/// A second recall while the held text has been edited preserves the
+/// references the edit did not reach — the edited hold is applied to its own
+/// readable form, not flattened to text.
+#[test]
+fn a_second_recall_keeps_the_references_of_an_edited_hold() {
+    let (mut s, _srx) = sendable_state();
+    s.apply_recall(&[queued(review_document("review "), "s1")]);
+    assert_eq!(s.composer.text(), "review @castback");
+    s.composer.set_text("review @castback thoroughly");
+    s.apply_recall(&[QueuedTurn::from(&SubmittedTurn::new("more", "s2"))]);
+    let expected = "more\nreview @castback thoroughly";
+    assert_eq!(s.composer.text(), expected);
+    let (document, _) = s.recalled_document.as_ref().expect("held");
+    assert!(
+        document.references.contains_key("a"),
+        "the edit did not reach the occurrence"
+    );
+    assert_eq!(document.readable(), expected);
+}
+
+/// Editing a held draft is refused once, keeps the hold, and the unedited
+/// resend still goes out structured.
+#[test]
+fn an_edit_is_refused_and_the_unedited_resend_keeps_structure() {
+    let (mut s, mut srx) = sendable_state();
+    s.apply_recall(&[queued(review_document("review "), "s1")]);
+    s.composer.set_text("review @castback edited");
+    s.submit_composer("review @castback edited".into());
+    assert_eq!(
+        s.composer.text(),
+        "review @castback",
+        "recalled text restored"
+    );
+    assert!(
+        s.recalled_document.is_some(),
+        "the hold survives the refusal"
+    );
+    assert!(srx.try_recv().is_err(), "nothing was sent");
+    s.submit_composer("review @castback".into());
+    let sent = srx.try_recv().expect("sent after the refusal");
+    let document = sent.turn.document().expect("structured");
+    assert_eq!(document.readable(), "review @castback");
+    assert!(document.references.contains_key("a"));
+    assert!(matches!(
+        sent.turn.payload(),
+        Payload::User(blocks)
+            if blocks.len() == 1
+                && matches!(blocks[0], crate::record::log::ContentBlock::Document(_))
+    ));
+}
+
+/// Removing a recalled attachment detaches it from the held document; other
+/// definitions keep the hold alive.
+#[test]
+fn removing_one_attachment_keeps_the_rest_of_the_hold() {
+    let (mut s, _srx) = sendable_state();
+    let mut document = review_document("look ");
+    document.content.push(UserSegment::Reference("r1".into()));
+    document.references.insert(
+        "r1".into(),
+        ReferenceDefinition::attachment(attachment("shot.png")),
+    );
+    s.apply_recall(&[queued(document, "s1")]);
+    assert_eq!(s.staged.items().len(), 1);
+    s.remove_staged(s.staged.items()[0].key);
+    let (held, _) = s
+        .recalled_document
+        .as_ref()
+        .expect("the agent reference remains");
+    assert!(!held.references.contains_key("r1"));
+    assert!(held.references.contains_key("a"));
+    assert_eq!(held.readable(), "look @castback");
+}
+
+/// An attachment-only hold has no readable form of its own; removing its chip
+/// leaves no definition, so the hold goes and the text becomes editable.
+#[test]
+fn removing_the_last_attachment_drops_the_hold() {
+    let (mut s, _srx) = sendable_state();
+    let document = UserContent {
+        content: vec![UserSegment::Reference("r1".into())],
+        references: BTreeMap::from([(
+            "r1".into(),
+            ReferenceDefinition::attachment(attachment("shot.png")),
+        )]),
+    };
+    s.apply_recall(&[queued(document, "s1")]);
+    assert_eq!(s.composer.text(), "");
+    assert!(
+        s.recalled_document.is_some(),
+        "an attachment-only hold starts empty"
+    );
+    s.remove_staged(s.staged.items()[0].key);
+    assert!(s.recalled_document.is_none());
+}
+
+/// Clearing the composer is the explicit way out: an edit that empties a
+/// non-empty buffer drops the hold, while an attachment-only splice that
+/// starts empty does not clear itself.
+#[test]
+fn clearing_the_composer_drops_an_attachment_only_hold() {
+    use crate::clients::tui::harness::Screenplay;
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let mut play = Screenplay::new(80, 24);
+    let document = UserContent {
+        content: vec![UserSegment::Reference("r1".into())],
+        references: BTreeMap::from([(
+            "r1".into(),
+            ReferenceDefinition::attachment(attachment("shot.png")),
+        )]),
+    };
+    play.state.apply_recall(&[queued(document, "s1")]);
+    assert_eq!(play.state.composer.text(), "");
+    assert!(play.state.recalled_document.is_some(), "held while empty");
+    play.route_key(KeyCode::Char('x'), KeyModifiers::NONE);
+    assert!(play.state.recalled_document.is_some(), "typing keeps it");
+    play.route_key(KeyCode::Backspace, KeyModifiers::NONE);
+    assert_eq!(play.state.composer.text(), "");
+    assert!(
+        play.state.recalled_document.is_none(),
+        "empty is the way out"
     );
 }

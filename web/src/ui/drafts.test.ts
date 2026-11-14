@@ -157,7 +157,7 @@ test("successful send clears the sent draft but does not delete its uploaded fil
   store.setText("send this");
   store.restore([attachment]);
   store.sent(store.snapshot());
-  expect(store.snapshot()).toEqual({ text: "", staged: [] });
+  expect(store.snapshot()).toEqual({ text: "", staged: [], held: null });
   expect(localStorage.length).toBe(0);
   expect(remove).not.toHaveBeenCalled();
 });
@@ -219,7 +219,11 @@ test("default upload and a late removal remain bound to the original API base", 
 
 test("malformed stored data is ignored without breaking the composer", () => {
   localStorage.setItem("efference.composer.v1:/sessions/a", "{");
-  expect(setup().store.snapshot()).toEqual({ text: "", staged: [] });
+  expect(setup().store.snapshot()).toEqual({
+    text: "",
+    staged: [],
+    held: null,
+  });
   localStorage.setItem(
     "efference.composer.v1:/sessions/a",
     JSON.stringify({
@@ -265,5 +269,70 @@ test("denied or full storage does not break editing and staging", () => {
   expect(store.snapshot().text).toBe("still works");
   expect(store.snapshot().staged).toHaveLength(1);
   store.sent(store.snapshot());
-  expect(store.snapshot()).toEqual({ text: "", staged: [] });
+  expect(store.snapshot()).toEqual({ text: "", staged: [], held: null });
+});
+
+test("clearing the composer drops a recalled hold", () => {
+  const { store } = setup();
+  store.setText("recalled");
+  store.setHeld({
+    document: {
+      content: [{ Reference: "r1" }],
+      references: {
+        r1: {
+          label: "note.txt",
+          target: { type: "attachment", ...attachment },
+        },
+      },
+    },
+    spliced: "recalled",
+  });
+  expect(store.snapshot().held).not.toBeNull();
+  store.setText("");
+  expect(store.snapshot().held).toBeNull();
+});
+
+test("removing the last recalled attachment drops the hold", () => {
+  const { store } = setup();
+  store.restore([attachment]);
+  store.setHeld({
+    document: {
+      content: [{ Reference: "r1" }],
+      references: {
+        r1: {
+          label: "note.txt",
+          target: { type: "attachment", ...attachment },
+        },
+      },
+    },
+    spliced: "",
+  });
+  store.remove(store.snapshot().staged[0].key);
+  expect(store.snapshot().held).toBeNull();
+});
+
+test("removing one recalled attachment keeps a hold with another reference", () => {
+  const { store } = setup();
+  store.restore([attachment]);
+  store.setHeld({
+    document: {
+      content: [{ Text: "look " }, { Reference: "a" }, { Reference: "r1" }],
+      references: {
+        a: {
+          label: "reviewer",
+          target: { type: "agent", session: "castback" },
+        },
+        r1: {
+          label: "note.txt",
+          target: { type: "attachment", ...attachment },
+        },
+      },
+    },
+    spliced: "look @castback",
+  });
+  store.remove(store.snapshot().staged[0].key);
+  const held = store.snapshot().held;
+  expect(held).not.toBeNull();
+  expect(held!.document.references.r1).toBeUndefined();
+  expect(held!.document.references.a).toBeDefined();
 });

@@ -125,6 +125,58 @@ fn text_result(content: String) -> Payload {
     Payload::tool_result("toolu_big", RawResult::text(content), WireState::Raw)
 }
 
+/// A structured `ask` answer carries its document beside the readable text;
+/// only a whole view may serialize it. A truncated view is a prefix cut from
+/// `content`, so it omits the document rather than pairing a prefix with the
+/// full structured text it was cut from (docs/control-api.md).
+#[test]
+fn a_documented_result_carries_its_document_only_unelided() {
+    use crate::record::log::{ReferenceDefinition, UserContent, UserSegment};
+    use std::collections::BTreeMap;
+    let document = UserContent {
+        content: vec![
+            UserSegment::Text("the ".into()),
+            UserSegment::Reference("a".into()),
+        ],
+        references: BTreeMap::from([(
+            "a".into(),
+            ReferenceDefinition::agent("reviewer", "castback"),
+        )]),
+    };
+    let payload = |content: String| {
+        Payload::tool_result(
+            "toolu_ask",
+            RawResult::text(content).with_document(Some(document.clone())),
+            WireState::Raw,
+        )
+    };
+
+    let small = entry(8, None, payload("the @castback".into()));
+    let view = serde_json::to_string(&EntryView::new(&small)).unwrap();
+    assert_eq!(
+        view,
+        serde_json::to_string(&EntryView::full(&small)).unwrap(),
+        "under the threshold the view and the derived bytes agree"
+    );
+    let parsed: Value = serde_json::from_str(&view).unwrap();
+    assert_eq!(
+        parsed["payload"]["ToolResult"]["raw"]["document"],
+        serde_json::to_value(&document).unwrap()
+    );
+
+    let big = entry(9, None, payload("x".repeat(MAX_INLINE_RESULT_BYTES + 1)));
+    let parsed: Value =
+        serde_json::from_str(&serde_json::to_string(&EntryView::new(&big)).unwrap()).unwrap();
+    assert!(
+        parsed["payload"]["ToolResult"]["raw"]["document"].is_null(),
+        "an elided view omits the document"
+    );
+    assert_eq!(
+        parsed["payload"]["ToolResult"]["raw"]["content_elided"]["total_bytes"],
+        serde_json::json!(MAX_INLINE_RESULT_BYTES + 1)
+    );
+}
+
 /// The threshold's two sides. A small result is byte-identical through the windowed
 /// view, the dereference view, and the derived path — the shape the frame ≡ window
 /// pin depends on (frames.rs). An oversized one diverges exactly once: the windowed

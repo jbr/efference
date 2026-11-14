@@ -28,6 +28,7 @@ use crate::clients::tui::{
 };
 use crate::inference::api::{RetrySurface, UpstreamFailure, UpstreamRetry};
 use crate::protocol::state::{PaceView, Stall};
+use crate::record::log::UserContent;
 use crate::record::log::{Approval, LogEntry, Payload};
 use crate::session::submitted::SubmittedTurn;
 use crate::tools::Interrupt;
@@ -544,6 +545,11 @@ pub(super) struct InteractiveState<'a> {
     /// The `call_id` of the last `ask` whose recalled turns were taken back into the
     /// composer, so a re-delivered topic frame restores them once (docs/tui.md).
     pub ask_restored: Option<String>,
+    /// The document a recall spliced into the composer, held with the exact
+    /// text it was spliced as: an untouched composer resubmits the structured
+    /// form — the only one that carries its references — and an edit refuses
+    /// once and puts the recalled text back (docs/tui.md).
+    pub recalled_document: Option<(UserContent, String)>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `PUT /approvals/:call_id`.
     pub approve_tx: UnboundedSender<(String, Approval)>,

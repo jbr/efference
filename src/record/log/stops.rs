@@ -151,10 +151,25 @@ fn asks(text: &[&str]) -> bool {
 /// justify changing the preamble.
 fn informative(blocks: &[super::ContentBlock]) -> bool {
     for block in blocks {
-        if let super::ContentBlock::Text(text) = block
-            && informative_text(text)
-        {
-            return true;
+        match block {
+            super::ContentBlock::Text(text) if informative_text(text) => return true,
+            // A document delivers its prose and its references together: a
+            // definition with an occurrence is content even with no prose, and
+            // its prose is graded the way a flat text block's is.
+            super::ContentBlock::Document(document) => {
+                if !document.references.is_empty() {
+                    return true;
+                }
+                if document.content.iter().any(|segment| {
+                    matches!(
+                        segment,
+                        super::UserSegment::Text(text) if informative_text(text)
+                    )
+                }) {
+                    return true;
+                }
+            }
+            _ => {}
         }
     }
     false

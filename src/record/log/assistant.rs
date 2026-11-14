@@ -43,6 +43,11 @@ impl AssistantOutput {
                 ContentBlock::Attachment(arrival) => {
                     MessagesOutputBlock::Text(attachment::turn_line(&arrival))
                 }
+                // A document is user-submission output, never assistant legacy
+                // blocks; reaching one here is an assembler bug.
+                ContentBlock::Document(_) => {
+                    unreachable!("a structured user document is not assistant output")
+                }
             })
             .chain(calls.into_iter().map(MessagesOutputBlock::ToolUse))
             .collect();

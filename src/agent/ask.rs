@@ -59,7 +59,11 @@ pub(super) async fn ask_result(
     tokio::select! {
         reply = wait.reply() => match reply {
             Some(turn) => {
-                let result = RawResult::text(turn.reply_text());
+                // The readable form is the result's content; a structured
+                // answer keeps its document beside it, which projection renders
+                // under Raw as the authoritative body (docs/process-monitor.md).
+                let result =
+                    RawResult::text(turn.reply_text()).with_document(turn.document());
                 let reply = Box::new(Reply { submission_id: turn.submission_id, source: turn.source });
                 (result, Some(reply))
             }

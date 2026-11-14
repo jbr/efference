@@ -15,9 +15,12 @@ import type {
 } from "../api/types.ts";
 import type { Payload } from "../api/entry.ts";
 
-/** A block of thinking or prose: a `ContentBlock` without the composer's
- * attachment, which only a user turn carries. */
-export type ProseBlock = Exclude<ContentBlock, { Attachment: unknown }>;
+/** A block of thinking or prose: a `ContentBlock` without the user-only
+ * attachment and document blocks, which an assistant payload never carries. */
+export type ProseBlock = Exclude<
+  ContentBlock,
+  { Attachment: unknown } | { Document: unknown }
+>;
 
 export interface AssistantView {
   thinking: ProseBlock[];

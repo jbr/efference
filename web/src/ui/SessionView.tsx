@@ -10,6 +10,7 @@ import { useHistoricalCall } from "./inspector/useHistoricalCall.ts";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiBase, clientRoute, sessionHref, sessionId } from "../api/base.ts";
+import { recallDocuments } from "../api/document.ts";
 import type { CallId } from "../api/types.ts";
 import { resumeSession } from "../api/http.ts";
 import { acquireDraft } from "./drafts.ts";
@@ -191,6 +192,7 @@ export function SessionView() {
         setRecalled((prev) => ({
           text: turns.map((t) => t.text).join("\n"),
           attachments: turns.flatMap((t) => t.attachments ?? []),
+          document: recallDocuments(turns),
           nonce: (prev?.nonce ?? 0) + 1,
         }));
       });
@@ -210,6 +212,7 @@ export function SessionView() {
       setRecalled((prev) => ({
         text: askRecall.turns.map((t) => t.text).join("\n"),
         attachments: askRecall.turns.flatMap((t) => t.attachments ?? []),
+        document: recallDocuments(askRecall.turns),
         nonce: (prev?.nonce ?? 0) + 1,
       }));
     }
@@ -226,7 +229,8 @@ export function SessionView() {
     if (failure !== null && failure.withdrawn.length > 0) {
       setRecalled((prev) => ({
         text: failure.withdrawn.map((t) => t.text).join("\n"),
-        attachments: [],
+        attachments: failure.withdrawn.flatMap((t) => t.attachments ?? []),
+        document: recallDocuments(failure.withdrawn),
         nonce: (prev?.nonce ?? 0) + 1,
       }));
     }

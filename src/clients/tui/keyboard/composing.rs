@@ -127,7 +127,17 @@ impl<'a> InteractiveState<'a> {
             self.remove_staged(key);
             return false;
         }
-        match self.handle_composer_key(key) {
+        // An edit that leaves the composer empty is the explicit way out of a
+        // recalled structured turn's hold: nothing is left to resubmit, and
+        // the next `⏎` is an ordinary continue. A recall that spliced an
+        // empty readable form (an attachment-only turn) starts empty with the
+        // hold already set, so only a transition from non-empty counts.
+        let was_empty = self.composer.is_empty();
+        let action = self.handle_composer_key(key);
+        if !was_empty && self.composer.is_empty() {
+            self.recalled_document = None;
+        }
+        match action {
             ComposerAction::Submit(text) => self.submit_composer(text),
             ComposerAction::Consumed => {}
             // The `↑`-spill at the 0,0 detent lands on the control strip —

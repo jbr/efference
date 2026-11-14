@@ -191,7 +191,7 @@ async fn questions_are_answered_by_naming_them() {
         )
     );
     let reply = wait.reply().await.expect("the reply");
-    assert_eq!(reply.text, "no, keep them");
+    assert_eq!(reply.readable(), "no, keep them");
     drop(wait);
     // The loop logs the reply as the ask's result, under its sender.
     child

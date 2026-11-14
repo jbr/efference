@@ -243,12 +243,15 @@ pub(crate) fn code_span(text: &str) -> String {
     }
 }
 
-/// A user entry's text blocks, joined; its attachments are lines of their own.
+/// A user entry's text blocks, joined; a structured document renders as the
+/// one authoritative body (prose, occurrences and the definitions block, so an
+/// attachment's identity is visible); flat attachments are lines of their own.
 fn text_of(blocks: &[ContentBlock]) -> String {
     blocks
         .iter()
         .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.trim_end()),
+            ContentBlock::Text(text) => Some(text.trim_end().to_string()),
+            ContentBlock::Document(document) => Some(document.render(None)),
             _ => None,
         })
         .filter(|text| !text.is_empty())

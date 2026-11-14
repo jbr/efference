@@ -2,8 +2,10 @@
 //! approval gate (docs/control-api.md, docs/permissions.md).
 
 use super::*;
+use crate::host::Host;
 use crate::protocol::answers::{StatusBody, StatusWord};
 use crate::protocol::turns::{Landing, QueuedTurn, TurnAccepted, WithdrawnTurns};
+use crate::routes::host_http::host_of;
 use crate::session::Decider;
 use crate::session::Session;
 
@@ -24,25 +26,34 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
     let wait = wants_wait(conn.querystring());
     let body = conn.request_body_string().await.unwrap_or_default();
     let parsed = match parse_turn(&body) {
-        Ok(turn) => turn,
+        Ok(parsed) => parsed,
         Err(message) => return fail(conn, ErrorCode::BadRequest, message),
     };
-    let TurnBody {
-        text,
+    let ParsedTurn {
+        form,
         submission_id,
         source,
         attachments,
         answers,
     } = parsed;
     let submission_id = submission_id.unwrap_or_else(mint_submission_id);
-    let turn = SubmittedTurn::new(text, submission_id.clone()).sourced(source.clone());
     let landing = match (shared, starting) {
         (Some(shared), _) => {
-            let attachments = match resolve_attachments(&shared, &attachments) {
-                Ok(attachments) => attachments,
+            // Both spellings normalize here, into one submitted document: the
+            // legacy form resolves its uploads and attaches them after the
+            // prose; the structured form validates in full before anything
+            // queues (docs/control-api.md).
+            let turn = match submitted_turn(
+                Some(&shared),
+                host_of(&conn).as_deref(),
+                form,
+                &attachments,
+                &submission_id,
+                source.as_deref(),
+            ) {
+                Ok(turn) => turn,
                 Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
-            let turn = turn.with_attachments(attachments);
             let landing = match shared.submit_named_turn(turn, answers.as_deref()) {
                 Ok(landing) => landing,
                 Err(refusal) => {
@@ -65,8 +76,9 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
             landing
         }
         (None, Some(starting)) => {
-            // The attachment store is the session's, and exists once it has started.
-            if !attachments.is_empty() {
+            // The attachment store is the session's, and exists once it has started;
+            // both spellings refuse to attach before that.
+            if names_an_upload(&form, &attachments) {
                 let refusal = starting.refusal();
                 return fail(conn, ErrorCode::Starting, refusal);
             }
@@ -82,6 +94,17 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                     &ErrorBody::new(ErrorCode::NotDelivered, message).with_detail(Value::Null),
                 );
             }
+            let turn = match submitted_turn(
+                None,
+                host_of(&conn).as_deref(),
+                form,
+                &attachments,
+                &submission_id,
+                source.as_deref(),
+            ) {
+                Ok(turn) => turn,
+                Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+            };
             if let Err(refusal) = starting.submit(turn) {
                 return fail(conn, ErrorCode::Starting, refusal);
             }
@@ -106,12 +129,72 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
     )
 }
 
-/// Parse a `POST /turns` body and check what a body alone can be refused for.
-fn parse_turn(body: &str) -> Result<TurnBody, String> {
+/// The body's spelling, normalized at the gate: the legacy prose form, or the
+/// structured document form (docs/control-api.md). `parse_turn` guarantees one
+/// of the two and nothing else.
+enum TurnForm {
+    Legacy {
+        text: String,
+    },
+    Structured {
+        content: Vec<UserSegment>,
+        references: BTreeMap<String, SubmittedReference>,
+    },
+}
+
+/// A parsed `POST /turns` body: the spelling it normalized to, plus the
+/// metadata every spelling carries (docs/control-api.md). Gate-internal —
+/// [`TurnBody`] is the wire shape, this is what the gate works with.
+struct ParsedTurn {
+    form: TurnForm,
+    submission_id: Option<String>,
+    source: Option<String>,
+    attachments: Vec<String>,
+    answers: Option<String>,
+}
+
+/// Parse a `POST /turns` body and check what a body alone can be refused for —
+/// including which spelling it is: the legacy `text` (with optional
+/// `attachments`), or the structured `content` with `references` — never both,
+/// never neither — and a structured turn may not also carry `attachments`
+/// (docs/control-api.md).
+fn parse_turn(body: &str) -> Result<ParsedTurn, String> {
     let turn =
         serde_json::from_str::<TurnBody>(body).map_err(|e| format!("bad /turns body: {e}"))?;
-    if turn
-        .submission_id
+    let TurnBody {
+        text,
+        content,
+        references,
+        submission_id,
+        source,
+        attachments,
+        answers,
+    } = turn;
+    let form =
+        match (text, content, references) {
+            (Some(text), None, None) => TurnForm::Legacy { text },
+            (None, Some(content), Some(references)) => TurnForm::Structured {
+                content,
+                references,
+            },
+            (None, None, None) => return Err("the turn carries no text".to_string()),
+            _ => return Err(
+                "submit either `text` (with optional `attachments`) or `content` together with \
+                 `references`, not both"
+                    .to_string(),
+            ),
+        };
+    // A structured turn names its uploads as `references`; a separate list
+    // would be a second, unchecked spelling of the same thing, so it is
+    // refused rather than ignored.
+    if matches!(&form, TurnForm::Structured { .. }) && !attachments.is_empty() {
+        return Err(
+            "a structured turn carries its attachments as `content` occurrences with \
+             `references` definitions, not a separate `attachments` list"
+                .to_string(),
+        );
+    }
+    if submission_id
         .as_ref()
         .is_some_and(|id| id.len() > SUBMISSION_ID_MAX || id.is_empty())
     {
@@ -120,7 +203,7 @@ fn parse_turn(body: &str) -> Result<TurnBody, String> {
     // The kickoff's source is the harness's alone: the clients leave a turn carrying
     // it out of the transcript, so a client claiming it would be submitting a turn the
     // operator never sees (docs/context.md).
-    if turn.source.as_deref() == Some(crate::record::names::sources::KICKOFF_SOURCE) {
+    if source.as_deref() == Some(crate::record::names::sources::KICKOFF_SOURCE) {
         return Err(format!(
             "source `{}` is reserved for the harness's first turn",
             crate::record::names::sources::KICKOFF_SOURCE
@@ -128,15 +211,20 @@ fn parse_turn(body: &str) -> Result<TurnBody, String> {
     }
     // Likewise a hand-off brief's: the clients render it as the predecessor's brief,
     // which only `hand_off` writes (docs/tools.md).
-    if turn
-        .source
+    if source
         .as_deref()
         .and_then(crate::record::names::sources::handoff_predecessor)
         .is_some()
     {
         return Err("a `handoff[…]` source is reserved for a hand-off brief".to_string());
     }
-    Ok(turn)
+    Ok(ParsedTurn {
+        form,
+        submission_id,
+        source,
+        attachments,
+        answers,
+    })
 }
 
 /// Describe each named upload as the turn will carry it. Described at submission rather than when
@@ -159,6 +247,150 @@ fn resolve_attachments(
                 .map_err(|e| format!("attachment `{name}`: {e}"))
         })
         .collect()
+}
+
+/// Normalize either body spelling into the turn it submits (docs/control-api.md):
+/// the legacy form resolves its uploads against the session, the structured form
+/// validates in full. `session` is `None` for a session still starting, which has
+/// no store to resolve against — and cannot reach here with attachments, since
+/// that route refuses them first.
+fn submitted_turn(
+    session: Option<&Session>,
+    host: Option<&Host>,
+    form: TurnForm,
+    attachments: &[String],
+    submission_id: &str,
+    source: Option<&str>,
+) -> Result<SubmittedTurn, String> {
+    match form {
+        TurnForm::Legacy { text } => {
+            let arrivals = match session {
+                Some(session) => resolve_attachments(session, attachments)?,
+                None if attachments.is_empty() => Vec::new(),
+                None => return Err("attachments need a started session".to_string()),
+            };
+            Ok(SubmittedTurn::new(text, submission_id)
+                .sourced(source.map(str::to_string))
+                .with_attachments(arrivals))
+        }
+        TurnForm::Structured {
+            content,
+            references,
+        } => {
+            let document = validate_document(session, host, content, references)?;
+            Ok(SubmittedTurn::structured(document, submission_id)
+                .sourced(source.map(str::to_string)))
+        }
+    }
+}
+
+/// Whether either spelling names an upload: the legacy `attachments` list, or a
+/// structured reference whose target is an attachment.
+fn names_an_upload(form: &TurnForm, attachments: &[String]) -> bool {
+    match form {
+        TurnForm::Legacy { .. } => !attachments.is_empty(),
+        TurnForm::Structured { references, .. } => references
+            .values()
+            .any(|reference| matches!(reference.target, SubmittedTarget::Attachment { .. })),
+    }
+}
+
+/// Validate a structured submission and resolve it into the stored document
+/// (docs/control-api.md): ids checked and preserved verbatim — never renamed —
+/// every occurrence resolved to a definition, no unused definitions (a
+/// definition with no occurrence still names a target the model would not
+/// read), attachment definitions used exactly once
+/// and resolved against the session's store, agent identities confirmed
+/// against the host's live registry, and filesystem targets refused.
+fn validate_document(
+    session: Option<&Session>,
+    host: Option<&Host>,
+    content: Vec<UserSegment>,
+    references: BTreeMap<String, SubmittedReference>,
+) -> Result<UserContent, String> {
+    for id in references.keys() {
+        if id.is_empty()
+            || id.len() > REFERENCE_ID_MAX
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+        {
+            return Err(format!(
+                "reference id `{id}` must be 1–{REFERENCE_ID_MAX} bytes of ASCII letters, \
+                 digits, `.`, `-` or `_`"
+            ));
+        }
+        if references[id].label.is_empty() || references[id].label.len() > REFERENCE_LABEL_MAX {
+            return Err(format!(
+                "reference `{id}` label must be 1–{REFERENCE_LABEL_MAX} bytes"
+            ));
+        }
+    }
+    // Every occurrence resolves, and the count per id feeds the exactly-once
+    // rule for attachments.
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for segment in &content {
+        if let UserSegment::Reference(id) = segment {
+            if !references.contains_key(id) {
+                return Err(format!("reference `{id}` is used but not defined"));
+            }
+            *counts.entry(id.as_str()).or_default() += 1;
+        }
+    }
+    let mut stored = BTreeMap::new();
+    // The same store name under two ids would post the upload twice, so the
+    // exactly-once rule spans definitions, not just one id's occurrences.
+    let mut attachment_names: BTreeMap<String, String> = BTreeMap::new();
+    for (id, reference) in references {
+        let count = counts.get(id.as_str()).copied().unwrap_or(0);
+        if count == 0 {
+            return Err(format!("reference `{id}` is defined but never used"));
+        }
+        let definition = match reference.target {
+            SubmittedTarget::Filesystem { .. } => {
+                return Err("filesystem references are not accepted yet".to_string());
+            }
+            SubmittedTarget::Attachment { name } => {
+                if count > 1 {
+                    return Err(format!(
+                        "attachment `{name}` is referenced {count} times; each upload is \
+                         referenced exactly once"
+                    ));
+                }
+                if let Some(first) = attachment_names.get(name.as_str()) {
+                    return Err(format!(
+                        "attachment `{name}` is defined as both `{first}` and `{id}`; each \
+                         upload is referenced exactly once"
+                    ));
+                }
+                attachment_names.insert(name.clone(), id.clone());
+                let store = session
+                    .and_then(Session::composer_store)
+                    .ok_or("this session has no attachment store")?;
+                let arrival = store
+                    .arrival(&name)
+                    .map_err(|e| format!("attachment `{name}`: {e}"))?;
+                ReferenceDefinition::attachment(arrival)
+            }
+            SubmittedTarget::Agent { session: agent } => {
+                let known = host.is_some_and(|host| host.listed(&agent).is_some());
+                if !known {
+                    return Err(match host {
+                        Some(_) => format!("unknown agent session `{agent}` on this host"),
+                        None => "agent references need the host registry; submit through the host \
+                             channel"
+                            .to_string(),
+                    });
+                }
+                ReferenceDefinition::agent(reference.label, agent)
+            }
+        };
+        stored.insert(id, definition);
+    }
+    Ok(UserContent {
+        content,
+        references: stored,
+    })
 }
 
 /// Withdraw the pending-queue suffix beginning at this submission id — recall

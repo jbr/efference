@@ -125,7 +125,7 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
                     self.turn += 1;
                     self.shared.append_submission(
                         self.turn,
-                        Payload::User(submitted.blocks()),
+                        submitted.payload(),
                         submitted.submission_id,
                         submitted.source,
                     )?;
@@ -294,7 +294,7 @@ impl<'a, F: Frontend, S: Spotter> AgentLoop<'a, F, S> {
             self.triager.begin_turn();
             self.shared.append_submission(
                 self.turn,
-                Payload::User(submitted.blocks()),
+                submitted.payload(),
                 submitted.submission_id,
                 submitted.source,
             )?;

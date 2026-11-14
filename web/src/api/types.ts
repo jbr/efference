@@ -168,6 +168,55 @@ export type AttachmentShape = "Json" | "Diff" | "Stacktrace" | "Log" | "Prose";
  */
 export type ArtifactKind = "html" | "mermaid";
 /**
+ * One ordered element of the document's content sequence: prose, or a
+ * reference occurrence pointing at a definition id. The only two shapes a
+ * user document carries — the thinking-block and tool shapes are
+ * structurally absent.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "UserSegment".
+ */
+export type UserSegment =
+  | {
+      Text: string;
+    }
+  | {
+      Reference: string;
+    };
+/**
+ * Where a stored reference points. A client's submission names an upload or
+ * a session; the server resolves the first against its store and validates
+ * the second against the host registry. A filesystem target carries what the
+ * submitter asserted — the text typed, the absolute path, the kind and the
+ * requested access — and the gate refuses it today (docs/control-api.md).
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ReferenceTarget".
+ */
+export type ReferenceTarget =
+  | {
+      access: ReferenceAccess;
+      original: string;
+      path: string;
+      target: ReferenceTargetKind;
+      type: "filesystem";
+    }
+  | (Arrival & {
+      type: "attachment";
+    })
+  | {
+      session: string;
+      type: "agent";
+    };
+/**
+ * What a filesystem reference points at, as the server resolved it at
+ * submission — never re-resolved against a changed working directory.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ReferenceTargetKind".
+ */
+export type ReferenceTargetKind = "file" | "directory";
+/**
  * The ordered assistant-output vocabulary of the session's wire dialect.
  *
  * The dialect is outside the item vector so one turn cannot mix replay credentials
@@ -595,6 +644,9 @@ export type ContentBlock =
     }
   | {
       Attachment: Arrival;
+    }
+  | {
+      Document: UserContent;
     };
 /**
  * A single resolved context item — an inlined file (body in full) or a listed stub (read on demand).
@@ -1654,6 +1706,40 @@ export type StreamDelta =
       };
       kind: "triage_thinking_delta";
     };
+/**
+ * What a client points a reference at. An attachment names a store upload,
+ * which the server resolves against that store, so a client-supplied arrival
+ * is not trusted. A filesystem target carries the text the submitter typed,
+ * the absolute path it means, and the requested access; the gate validates
+ * its form and then refuses the target today. An agent target names a session
+ * the host registry must know.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SubmittedTarget".
+ */
+export type SubmittedTarget =
+  | {
+      access: ReferenceAccess;
+      original: string;
+      /**
+       * The absolute path the submitter means, supplied by the client. The
+       * gate validates it and never re-derives it from `original` against a
+       * working directory that has since changed, so a recalled target
+       * keeps its identity (docs/control-api.md). The target is refused
+       * today.
+       */
+      path: string;
+      target: ReferenceTargetKind;
+      type: "filesystem";
+    }
+  | {
+      name: string;
+      type: "attachment";
+    }
+  | {
+      session: string;
+      type: "agent";
+    };
 
 /**
  * The control channel's types. The root carries no value; the definitions are the schema.
@@ -1789,10 +1875,70 @@ export interface QueuedTurn {
    */
   attachments?: Arrival[];
   /**
+   * The turn's structured document, present whenever the turn carries
+   * references — attachment-only included, so inline order survives a
+   * recall (docs/control-api.md). `text` is that document's readable flat
+   * form, derived for display. A client with reference support holds this
+   * document beside the recalled text and submits it unchanged; an edit is
+   * refused and the held text restored, because splicing `text` alone would
+   * submit without the references.
+   */
+  document?: UserContent | null;
+  /**
    * The id the turn was submitted under, which a recall addresses.
    */
   submission_id: string;
   text: string;
+}
+/**
+ * A structured user document: prose and reference occurrences in one ordered
+ * sequence, plus the definitions the occurrences point at.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "UserContent".
+ */
+export interface UserContent {
+  /**
+   * Rendered by verbatim concatenation — no separator is inserted between
+   * segments, so text on either side of an occurrence survives exactly.
+   */
+  content: UserSegment[];
+  /**
+   * Definitions keyed by id. A `BTreeMap`, so JSON keys serialize sorted
+   * and the rendered block lists definitions in this order.
+   */
+  references: {
+    [k: string]: ReferenceDefinition;
+  };
+}
+/**
+ * One chip definition: what the submitter labeled, and where it points.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ReferenceDefinition".
+ */
+export interface ReferenceDefinition {
+  /**
+   * The submitter's display label. Presentation only — never authorization,
+   * never identity.
+   */
+  label: string;
+  target: ReferenceTarget;
+}
+/**
+ * Requested access on a filesystem reference (docs/control-api.md): the
+ * default is read with no write, write implies read, and an explicit
+ * `read: false` without write is refused when the access is normalized — a
+ * reference the submitter cannot read is not a reference. The booleans record
+ * what the submission asked for; `write: false` means "no write requested",
+ * never "deny write".
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ReferenceAccess".
+ */
+export interface ReferenceAccess {
+  read: boolean;
+  write: boolean;
 }
 /**
  * A tool invocation emitted by the model. `input` is a [`serde_json::Value`],
@@ -3239,6 +3385,16 @@ export interface RawResult {
    * absent from every logged line.
    */
   content_elided?: ContentElision | null;
+  /**
+   * The structured body of an `ask` reply, when the answer carried
+   * references (docs/process-monitor.md, docs/control-api.md). The
+   * authoritative form for projection — under `WireState::Raw` the wire
+   * renders this, not `content` — while `content` stays the readable form
+   * the transcript and every triaged view show. `None` for every plain
+   * answer, so logged bytes are unchanged. Truncated control views
+   * (`routes/entry_view.rs`) omit it beside elided content.
+   */
+  document?: UserContent | null;
   /**
    * Images the tool returned alongside `content` (docs/log-and-projection.md).
    * The realized bytes live here, in the log entry itself, so projection is a
@@ -4919,6 +5075,19 @@ export interface VerbAnswer {
   warm?: boolean | null;
 }
 /**
+ * A reference definition as a client submits it: the label it shows, and a
+ * target that names things without supplying resolved facts. The submission
+ * gate turns each one into a stored [`ReferenceDefinition`] or refuses the
+ * turn (docs/control-api.md).
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "SubmittedReference".
+ */
+export interface SubmittedReference {
+  label: string;
+  target: SubmittedTarget;
+}
+/**
  * One tool's full definition, addressed by wire name — the payload for
  * `GET /v1/tools/:name` (docs/control-api.md). A consumer fetches these
  * lazily, one at a time, rather than holding a table pushed at session
@@ -4980,6 +5149,63 @@ export interface TurnAccepted {
    * The id the client sent, or the one the host minted.
    */
   submission_id: string;
+}
+/**
+ * A `POST /turns` body, in one of two spellings that normalize into the same
+ * submitted document (docs/control-api.md): the legacy `text` (with optional
+ * `attachments`) that every client speaks, or the structured
+ * `content`+`references` the reference-aware editors speak. Both present is a
+ * 400; the gate validates the structured form before anything queues.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "TurnBody".
+ */
+export interface TurnBody {
+  /**
+   * The question this turn answers: the `ask`'s transcript handle (`3.1`) or its
+   * call id (docs/control-api.md). A turn naming one answers only that question,
+   * and is refused when it is not the one pending.
+   */
+  answers: string | null;
+  /**
+   * Names of files this client uploaded (`POST /attachments`) to send with the
+   * turn (docs/inbox.md). Each must still be in the store; the turn is refused
+   * otherwise, so a message never lands claiming a file that is not there.
+   */
+  attachments: string[];
+  /**
+   * The structured spelling's ordered content sequence — prose and
+   * reference occurrences, ids preserved verbatim through the gate.
+   */
+  content: UserSegment[] | null;
+  /**
+   * The structured spelling's definitions, keyed by id. Attachment targets
+   * name store uploads, which the server resolves. Agent targets are
+   * validated against the host's live registry. Filesystem targets are
+   * refused. A structured turn may not also carry `attachments`.
+   */
+  references: {
+    [k: string]: SubmittedReference;
+  } | null;
+  /**
+   * The client's self-chosen label for who is submitting (docs/control-api.md):
+   * `web`, `mcp[<name>]`, or `session[<id>]`. Client-asserted, like a
+   * notification's source. Absent = the operator, whose turns carry no prefix.
+   * Recorded on the resulting `User` entry as `source` and projected onto its
+   * wire block when present.
+   */
+  source: string | null;
+  /**
+   * The client's identifier for this submission (docs/control-api.md),
+   * adopted when present and daemon-minted otherwise — the conn-id
+   * adopt-or-mint rule at submission granularity. Echoed in the 202 body
+   * and recorded on the resulting `User` entry as `submission_id`.
+   */
+  submission_id: string | null;
+  /**
+   * The legacy spelling's prose. Absent on a structured submission.
+   */
+  text: string | null;
 }
 /**
  * The answer to `DELETE /turns/:submission_id`: the turns the recall popped, in the order they

@@ -372,7 +372,7 @@ async fn an_answer_to_an_ask_is_recorded_as_an_answer() {
         .with_body(r#"{"text":"yes","answers":"ask_1"}"#)
         .await
         .assert_status(202);
-    assert_eq!(wait.reply().await.unwrap().text, "yes");
+    assert_eq!(wait.reply().await.unwrap().readable(), "yes");
     assert!(shared.person_acted_for_test().load(Ordering::SeqCst));
     assert_eq!(
         cold_records(&shared),

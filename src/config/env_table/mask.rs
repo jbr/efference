@@ -18,7 +18,8 @@ use serde_json::Value;
 
 use crate::record::log::{
     AssistantOutput, ConfigChange, ContentBlock, Exclusion, MessagesOutputBlock, Payload,
-    ResponsesMessageContent, ResponsesOutputItem, UpstreamFailureRecord,
+    ReferenceTarget, ResponsesMessageContent, ResponsesOutputItem, UpstreamFailureRecord,
+    UserContent, UserSegment,
 };
 
 /// Values shorter than this are not masked (GitLab's "maskability" precedent):
@@ -199,8 +200,39 @@ impl Masker {
             // provider mints a signature over the block and rejects a modified
             // one on replay, so masking there would break the session rather
             // than protect it (docs/env.md names this gap).
-            if let ContentBlock::Text(text) = block {
+            match block {
+                ContentBlock::Text(text) => self.mask_in_place(text),
+                ContentBlock::Document(content) => self.mask_user_content(content),
+                // An attachment block's name and path are store-minted, not
+                // text from the environment.
+                _ => {}
+            }
+        }
+    }
+
+    /// A document's prose segments and its reference definitions' text-bearing
+    /// fields — the label, what the submitter typed, the absolute path it
+    /// named, an attachment's store name and path. The agent session id is
+    /// deliberately untouched: the host mints it, and it is not text from the
+    /// environment (docs/env.md).
+    fn mask_user_content(&self, content: &mut UserContent) {
+        for segment in &mut content.content {
+            if let UserSegment::Text(text) = segment {
                 self.mask_in_place(text);
+            }
+        }
+        for definition in content.references.values_mut() {
+            self.mask_in_place(&mut definition.label);
+            match &mut definition.target {
+                ReferenceTarget::Filesystem { original, path, .. } => {
+                    self.mask_in_place(original);
+                    self.mask_in_place(path);
+                }
+                ReferenceTarget::Attachment(arrival) => {
+                    self.mask_in_place(&mut arrival.name);
+                    self.mask_in_place(&mut arrival.path);
+                }
+                ReferenceTarget::Agent { .. } => {}
             }
         }
     }
@@ -235,9 +267,10 @@ impl Masker {
     }
 
     /// Filter every text-bearing field of a payload about to be appended. The
-    /// paths, exhaustively: `User` text blocks; `Assistant` text blocks, tool-call
+    /// paths, exhaustively: `User` text blocks and documents (prose segments and
+    /// reference definitions); `Assistant` text blocks, tool-call
     /// `input` strings, and an upstream `excluded` mark (its `why` and, when present, its
-    /// captured stream diagnostics); `ToolResult`'s `raw.content`;
+    /// captured stream diagnostics); `ToolResult`'s `raw.content` and `document`;
     /// `Summary.text`; `Triage`'s `raw_keep`, `surfaced`, `retries`, and `thinking`;
     /// `Ambient`'s `source`/`body`/`slot`; `Spot`'s `reason` and `probed_prefix`;
     /// `ConfigEdit`'s `note` and its change payload; `Preamble`'s `system` and
@@ -350,7 +383,12 @@ impl Masker {
                     self.mask_failure(failure);
                 }
             }
-            Payload::ToolResult { raw, .. } => self.mask_in_place(&mut raw.content),
+            Payload::ToolResult { raw, .. } => {
+                self.mask_in_place(&mut raw.content);
+                if let Some(document) = &mut raw.document {
+                    self.mask_user_content(document);
+                }
+            }
             Payload::ResultVerdict { wire, .. } => match wire {
                 crate::record::log::WireState::Triaged(verdict) => {
                     self.mask_opt(&mut verdict.note);

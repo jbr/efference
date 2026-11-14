@@ -121,7 +121,7 @@ fn the_ask_topic_keeps_its_bytes() {
     let _ask = shared.begin_ask("toolu_ask", "Which branch?".into(), 2, 3);
     assert_eq!(
         bytes(&shared, Topic::Ask),
-        r#"{"call_id":"toolu_ask","n":2,"of":3,"question":"Which branch?","recalled":[{"submission_id":"sub-1","text":"first"},{"attachments":[{"kind":{"Text":{"bytes":12,"first_line":"hello there","lines":1,"shape":"Prose"}},"name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt"}],"submission_id":"sub-2","text":"second"}]}"#
+        r#"{"call_id":"toolu_ask","n":2,"of":3,"question":"Which branch?","recalled":[{"submission_id":"sub-1","text":"first"},{"attachments":[{"kind":{"Text":{"bytes":12,"first_line":"hello there","lines":1,"shape":"Prose"}},"name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt"}],"document":{"content":[{"Text":"second"},{"Reference":"r1"}],"references":{"r1":{"label":"notes.txt","target":{"kind":{"Text":{"bytes":12,"first_line":"hello there","lines":1,"shape":"Prose"}},"name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt","type":"attachment"}}}},"submission_id":"sub-2","text":"second"}]}"#
     );
     assert_eq!(bytes(&shared, Topic::Queued), "[]");
     assert_eq!(
@@ -137,7 +137,7 @@ fn the_queued_topic_keeps_its_bytes() {
     queue_two(&shared);
     assert_eq!(
         bytes(&shared, Topic::Queued),
-        r#"[{"submission_id":"sub-1","text":"first"},{"attachments":[{"kind":{"Text":{"bytes":12,"first_line":"hello there","lines":1,"shape":"Prose"}},"name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt"}],"submission_id":"sub-2","text":"second"}]"#
+        r#"[{"submission_id":"sub-1","text":"first"},{"attachments":[{"kind":{"Text":{"bytes":12,"first_line":"hello there","lines":1,"shape":"Prose"}},"name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt"}],"document":{"content":[{"Text":"second"},{"Reference":"r1"}],"references":{"r1":{"label":"notes.txt","target":{"kind":{"Text":{"bytes":12,"first_line":"hello there","lines":1,"shape":"Prose"}},"name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt","type":"attachment"}}}},"submission_id":"sub-2","text":"second"}]"#
     );
 }
 

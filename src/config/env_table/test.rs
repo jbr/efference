@@ -444,6 +444,9 @@ fn a_config_edit_reports_a_reference_it_could_not_resolve() {
 
 // ------------------------------------------------------------ payload coverage
 
+// One table of every payload path the policy masks: splitting it would hide a
+// path that stopped being covered.
+#[allow(clippy::too_many_lines)]
 #[test]
 fn every_text_bearing_payload_path_is_masked() {
     let policy =
@@ -467,6 +470,68 @@ fn every_text_bearing_payload_path_is_masked() {
         unreachable!()
     };
     assert!(!raw.content.contains("leaked-secret-value"));
+
+    // A document's prose and its reference definitions' text-bearing fields mask
+    // like the text blocks they generalize.
+    let document = crate::record::log::UserContent {
+        content: vec![
+            crate::record::log::UserSegment::Text(leak()),
+            crate::record::log::UserSegment::Reference("r1".into()),
+        ],
+        references: BTreeMap::from([(
+            "r1".into(),
+            crate::record::log::ReferenceDefinition {
+                label: leak(),
+                target: crate::record::log::ReferenceTarget::Filesystem {
+                    original: leak(),
+                    path: leak(),
+                    target: crate::record::log::ReferenceTargetKind::File,
+                    access: crate::record::log::ReferenceAccess::default(),
+                },
+            },
+        )]),
+    };
+    let mut user_document = Payload::User(vec![ContentBlock::Document(document.clone())]);
+    masker.mask_payload(&mut user_document);
+    let Payload::User(blocks) = &user_document else {
+        unreachable!()
+    };
+    let ContentBlock::Document(document) = &blocks[0] else {
+        unreachable!()
+    };
+    let crate::record::log::UserSegment::Text(prose) = &document.content[0] else {
+        unreachable!()
+    };
+    assert!(!prose.contains("leaked-secret-value"));
+    let definition = &document.references["r1"];
+    assert!(!definition.label.contains("leaked-secret-value"));
+    let crate::record::log::ReferenceTarget::Filesystem { original, path, .. } = &definition.target
+    else {
+        unreachable!()
+    };
+    assert!(!original.contains("leaked-secret-value"));
+    assert!(!path.contains("leaked-secret-value"));
+
+    // An ask reply's document rides the tool result and masks the same way.
+    let mut answered = Payload::tool_result(
+        "toolu_1",
+        RawResult::text("clean reply").with_document(Some(document.clone())),
+        WireState::Raw,
+    );
+    masker.mask_payload(&mut answered);
+    let Payload::ToolResult { raw, .. } = &answered else {
+        unreachable!()
+    };
+    let document = raw.document.as_ref().unwrap();
+    let crate::record::log::UserSegment::Text(prose) = &document.content[0] else {
+        unreachable!()
+    };
+    assert!(!prose.contains("leaked-secret-value"));
+    let definition = &document.references["r1"];
+    let crate::record::log::ReferenceTarget::Filesystem { path, .. } = &definition.target else {
+        unreachable!()
+    };
+    assert!(!path.contains("leaked-secret-value"));
 
     let mut assistant = Payload::record_only(
         crate::record::log::AssistantOutput::from_legacy_messages(

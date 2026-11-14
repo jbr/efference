@@ -54,13 +54,13 @@ async fn turn_submission_ids_adopt_or_mint() {
         .unwrap()
         .unwrap();
     let queued = turns_rx.recv().await.unwrap();
-    assert_eq!(queued.text, "hello");
+    assert_eq!(queued.readable(), "hello");
     assert_eq!(queued.submission_id, "sub-mine");
 
     // Absent: daemon-minted, so every submitted turn is identified.
     client.turn("bare").await.unwrap();
     let queued = turns_rx.recv().await.unwrap();
-    assert_eq!(queued.text, "bare");
+    assert_eq!(queued.readable(), "bare");
     assert!(!queued.submission_id.is_empty(), "minted when absent");
 
     // Oversized: rejected in the typed envelope, nothing enqueued.
@@ -384,13 +384,24 @@ async fn a_turn_carries_the_attachments_it_names() {
     let turn = SubmittedTurn::new("look", "s1").with_attachments(vec![arrival.clone()]);
     client.submit(&turn, None).await.unwrap().unwrap();
     let queued = turns_rx.recv().await.unwrap();
-    assert_eq!(queued.attachments, vec![arrival.clone()]);
+    assert_eq!(queued.attachment_arrivals(), vec![arrival.clone()]);
+    // A submission lands as one document: the prose, then the attachment
+    // reference under the minted id (docs/log-and-projection.md). Compared as
+    // the wire would carry it — Payload has no PartialEq.
     assert_eq!(
-        queued.blocks(),
-        vec![
-            ContentBlock::Text("look".into()),
-            ContentBlock::Attachment(arrival.clone())
-        ]
+        serde_json::to_value(queued.payload()).unwrap(),
+        serde_json::json!({ "User": [ { "Document": {
+            "content": [
+                { "Text": "look" },
+                { "Reference": "r1" }
+            ],
+            "references": {
+                "r1": { "label": "notes one.txt", "target": {
+                    "type": "attachment", "name": "notes one.txt",
+                    "path": arrival.path, "kind": arrival.kind
+                } }
+            }
+        } } ] })
     );
     let popped = client.withdraw_turns("s1").await.unwrap();
     assert_eq!(popped[0].attachments, vec![arrival.clone()]);
@@ -414,4 +425,93 @@ async fn a_turn_carries_the_attachments_it_names() {
     client.remove_attachment("notes one.txt").await.unwrap();
     assert!(!dir.join("composer/notes one.txt").exists());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The structured spelling is the whole body (docs/control-api.md): it is
+/// `content` with `references`, never alongside `text` or a separate
+/// `attachments` list, and never half of itself. Refused before anything
+/// queues.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_turn_with_two_spellings_is_refused() {
+    let (shared, mut turns_rx) = Session::in_memory();
+    let app = test_server(&shared).await;
+    for body in [
+        serde_json::json!({
+            "text": "hello",
+            "content": [{ "Text": "hello" }],
+            "references": {},
+        }),
+        serde_json::json!({
+            "content": [{ "Text": "look" }],
+            "references": {},
+            "attachments": [{ "name": "n.txt", "path": "att/composer/n.txt",
+                              "kind": { "Binary": { "bytes": 1 } } }],
+        }),
+        serde_json::json!({ "content": [{ "Text": "hello" }] }),
+        serde_json::json!({ "references": {} }),
+        serde_json::json!({}),
+    ] {
+        app.post("/v1/turns")
+            .with_body(body.to_string())
+            .await
+            .assert_status(400);
+    }
+    assert!(turns_rx.try_recv().is_err(), "nothing was queued");
+}
+
+/// Every structured definition is validated against the session and the host
+/// before it queues: an occurrence needs a definition, a definition needs an
+/// occurrence, ids stay in the readable charset, and the targets the gate
+/// cannot resolve yet are refused (docs/control-api.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_structured_turn_validates_its_references_before_queueing() {
+    let (shared, mut turns_rx) = Session::in_memory();
+    let app = test_server(&shared).await;
+    let agent = serde_json::json!({
+        "label": "reviewer",
+        "target": { "type": "agent", "session": "castback" }
+    });
+    let filesystem = serde_json::json!({
+        "label": "notes",
+        "target": { "type": "filesystem", "original": "notes.md",
+                    "path": "/tmp/notes.md", "target": "file",
+                    "access": { "read": true, "write": false } }
+    });
+    let attachment = serde_json::json!({
+        "label": "n.txt",
+        "target": { "type": "attachment", "name": "n.txt" }
+    });
+    let cases = [
+        // Used but not defined.
+        serde_json::json!({ "content": [{ "Reference": "a" }], "references": {} }),
+        // Defined but never used.
+        serde_json::json!({ "content": [{ "Text": "hi" }], "references": { "a": agent } }),
+        // An id that would not read inline.
+        serde_json::json!({
+            "content": [{ "Reference": "a b" }],
+            "references": { "a b": agent },
+        }),
+        // Filesystem targets are not accepted yet.
+        serde_json::json!({
+            "content": [{ "Reference": "a" }],
+            "references": { "a": filesystem },
+        }),
+        // An attachment the store does not hold.
+        serde_json::json!({
+            "content": [{ "Reference": "a" }],
+            "references": { "a": attachment },
+        }),
+        // An agent the host does not know, through a session-only route.
+        serde_json::json!({
+            "content": [{ "Reference": "a" }],
+            "references": { "a": agent },
+        }),
+    ];
+    for body in cases {
+        app.post("/v1/turns")
+            .with_body(body.to_string())
+            .await
+            .assert_status(400);
+    }
+    assert!(turns_rx.try_recv().is_err(), "nothing was queued");
 }

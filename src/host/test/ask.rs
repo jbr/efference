@@ -31,7 +31,7 @@ async fn a_reply_resumes_a_held_session() {
         .await
         .expect("the reply woke the held juncture")
         .unwrap();
-    assert_eq!(wait.reply().await.unwrap().text, "yes");
+    assert_eq!(wait.reply().await.unwrap().readable(), "yes");
 }
 
 /// The ask topic is `null` until an ask is pending, then carries the question, its place

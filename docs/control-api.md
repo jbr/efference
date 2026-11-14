@@ -548,8 +548,7 @@ never a `User` entry, and never appears in `queued`
 ([process-monitor.md](process-monitor.md)). A turn naming none is refused while a
 question is pending, from every client (below).
 
-- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …], "answers": "<string, optional>" }` —
-  `submission_id` identifies this submission: adopted when the client minted
+- Body: the legacy spelling `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …], "answers": "<string, optional>" }`, or the structured one with `content` and `references` in place of `text` and `attachments`. `submission_id` identifies this submission: adopted when the client minted
   one (1–128 bytes), daemon-minted otherwise, and recorded on the resulting
   `User` entry as its `submission_id` (log metadata, never projected). A
   client that minted the id can settle its own delivery echo by exact key,
@@ -570,6 +569,32 @@ question is pending, from every client (below).
   entry as an `Attachment` block after the text ([inbox.md](inbox.md)); a turn
   with attachments and blank text is still a turn. A name the store does not
   hold is a `400` and nothing is queued.
+- **The structured spelling** carries references instead of flat prose:
+
+  ```json
+  {
+    "content": [{"Text": "look at "}, {"Reference": "a"}, {"Text": " please"}],
+    "references": {
+      "a": {"label": "reviewer", "target": {"type": "agent", "session": "castback"}}
+    }
+  }
+  ```
+
+  `content` is the ordered prose-and-occurrence sequence; `references` defines
+  every id it names. The id is the token rendered inline as `[id]` (1–128 bytes
+  of ASCII letters, digits, `.`, `-`, `_`); the label is 1–256 bytes of
+  presentation text, never authorization. A body carrying both spellings,
+  `content` without `references` (or the reverse), or a structured body with a
+  separate `attachments` list is a `400`. Before anything queues, the gate
+  refuses an occurrence with no definition, a definition with no occurrence, an
+  attachment named twice (including one store upload under two ids), an upload
+  the session's store does not hold, and a filesystem target — the request
+  supplies the absolute `path`, which the gate validates but does not yet
+  admit. An agent target must name a session the host lists; a session without
+  the host registry cannot take one. Both spellings normalize into one submitted
+  document, and every `User` entry lands as `[Document(document)]`
+  ([log-and-projection.md](log-and-projection.md)).
+
 - **A turn on a cold session is accepted like any other.** While the `cold` topic
   (below) is set, the next request incurs the cost of the whole context uncached; the host
   does not ask first. Showing that is the client's job (the cold line,
@@ -626,10 +651,12 @@ A suffix rather than an arbitrary delete: recalling an older queued turn means
 "pop up to and including that one", which is identical to popping repeatedly, so
 queue order is preserved for free and there is exactly one operation.
 
-- `200 {"withdrawn":[{"submission_id":"…","text":"…","attachments":[…]?}, …]}` — in
+- `200 {"withdrawn":[{"submission_id":"…","text":"…","attachments":[…]?,"document":{…}?}, …]}` — in
   submission order; `attachments` (present only when the turn carried any) are the
   arrivals as described at submission, still in the store for the client to stage
-  again. The response is **authoritative**: the loop may have dequeued the turn
+  again; `document` (present whenever the turn carried references) is the
+  structured body, so a client can hold it beside the readable `text` and
+  resubmit it unchanged. The response is **authoritative**: the loop may have dequeued the turn
   between the read and this call, in which case fewer turns come back — possibly
   none, which is an ordinary race outcome and not an error. A client splicing the
   text back into a composer splices exactly this list, so a turn already on its
@@ -1149,7 +1176,10 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   "queued": [                      // turns submitted but not yet dequeued, in submission order
     { "submission_id": "…",        //   `[]` when nothing is pending. Ephemeral — a pending
       "text": "…",                 //   turn is never logged, so this is the only place it is
-      "attachments": [ … ] }       //   (only when it carries any)
+      "attachments": [ … ],        //   (only when it carries any)
+      "document": { … } }          //   (only when it carries references): the
+                                   //   structured body, held by a reference-aware
+                                   //   client for an unedited resubmission
   ],                               //   readable, and what `DELETE /turns/:id` addresses,
   "resolved_review_level": "spotter_human",  // the review position in force,
   "review_level": "spotter_human",  // the review dial as set,
@@ -1646,6 +1676,14 @@ signal, and its `kept_bytes` is the prefix actually carried (cut back to a UTF-8
 boundary, so it is a valid string rather than a split code point). A client
 holding one renders the prefix, says what it is, and fetches `/log/:seq` when it
 wants the rest.
+**A structured `ask` reply carries its document beside `content`.** The result's
+`raw.document` is the reply's `UserContent` (the same shape a `queued` or
+`withdrawn` turn carries), present whenever the reply referenced anything.
+`content` holds the readable flat form and `document` the authoritative body;
+projection renders the document under `WireState::Raw` in place of the flat
+content. The field rides only a **whole** view: an elided view is a prefix cut
+from `content`, so it omits `document` rather than pairing that prefix with the
+full structured text it was cut from.
 
 **A triaged result's view contains the verdict's line arithmetic.** On every
 route, a `ToolResult` whose `wire` is `Triaged` has one field beside it:

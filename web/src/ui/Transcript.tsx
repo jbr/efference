@@ -31,6 +31,8 @@ import { interruptFrom } from "./interrupt.ts";
 import { resumedLine } from "./resumed.ts";
 import { cleanWorktreeOutput, setupNote } from "./worktree.ts";
 import { SentAttachments } from "./Attachments.tsx";
+import { documentReadable } from "../api/document.ts";
+import type { ReferenceDefinition, UserContent } from "../api/types.ts";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 import { useViewSettings } from "./viewSettings.ts";
@@ -53,6 +55,40 @@ const text = (blocks: ContentBlock[]) =>
 
 const attachmentsOf = (blocks: ContentBlock[]): Arrival[] =>
   blocks.flatMap((b) => ("Attachment" in b ? [b.Attachment] : []));
+
+/** A definition's line in a structured turn's definitions list: the same
+ * facts the model's rendered form states, in the web client's own phrasing
+ * (docs/control-api.md). */
+const describeReference = (d: ReferenceDefinition): string => {
+  const target = d.target;
+  if (target.type === "filesystem") {
+    const access =
+      target.access.read && target.access.write
+        ? "read+write"
+        : target.access.read
+          ? "read"
+          : "none";
+    return `${d.label} — ${target.target} ${target.original} → ${target.path} (requested: ${access})`;
+  }
+  if (target.type === "agent") return `${d.label} — @${target.session}`;
+  return `${d.label} — attached ${target.name}`;
+};
+
+/** A structured turn's definitions, listed under its prose the way the
+ * rendered form lists them — one line per id, in id order. */
+function SentReferences({ content }: { content: UserContent }) {
+  const entries = Object.entries(content.references);
+  if (entries.length === 0) return null;
+  return (
+    <div className="sent-references">
+      {entries.map(([id, d]) => (
+        <div key={id} className="sent-reference">
+          <span className="reference-id">[{id}]</span> {describeReference(d)}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** One transcript row: the label gutter and the content column. `label` is
  * `null` for the two voices marked structurally instead — a user turn carries
@@ -275,9 +311,13 @@ function Leaf({
         </Entry>
       );
     }
+    const document = p.User.find((b) => "Document" in b)?.Document ?? null;
     return (
       <UserEntry source={entry.source}>
-        <Markdown>{text(p.User)}</Markdown>
+        <Markdown>
+          {document !== null ? documentReadable(document) : text(p.User)}
+        </Markdown>
+        {document !== null && <SentReferences content={document} />}
         <SentAttachments attachments={attachmentsOf(p.User)} />
       </UserEntry>
     );

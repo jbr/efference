@@ -7,12 +7,14 @@ import {
   submitTurn as postTurn,
   withdrawTurns,
 } from "../api/http.ts";
+import { documentReadable } from "../api/document.ts";
 import type {
   AskView,
   Arrival,
   CallId,
   Gate,
   QueuedTurn,
+  UserContent,
 } from "../api/types.ts";
 import type { Decision } from "../api/decision.ts";
 import {
@@ -44,6 +46,7 @@ export async function submitTurn(
   store: Store,
   text: string,
   attachments: Arrival[] = [],
+  document: UserContent | null = null,
 ): Promise<void> {
   const id = crypto.randomUUID();
   const answers = store.snapshot().topics.ask?.call_id ?? null;
@@ -51,7 +54,7 @@ export async function submitTurn(
   // is still in flight (session/store.ts).
   store.update((s) => mintTurn(s, id));
   try {
-    await postTurn(text, id, attachments, answers);
+    await postTurn(text, id, attachments, answers, document);
   } catch (error) {
     store.update((s) => unmintTurn(s, id));
     if (error instanceof ApiError && error.code === "not_delivered") {
@@ -68,7 +71,14 @@ export async function submitTurn(
     }
     throw error;
   }
-  store.update((s) => pushPendingTurn(s, id, text, attachments));
+  store.update((s) =>
+    pushPendingTurn(
+      s,
+      id,
+      document === null ? text : documentReadable(document),
+      attachments,
+    ),
+  );
 }
 
 /**

@@ -7,6 +7,8 @@ one line per feature.
 
 ### Added
 
+- A composer turn can carry inline references: a user message is one structured document of prose and reference occurrences, submitted as `content`+`references` and rendered to the model with a `references:` block. The TUI and web clients recall such a turn with its references held, refuse an edit once rather than silently flattening them, and show attachments by name beside the readable form.
+
 - Hosted agents and external MCP clients can read `efference://models` to discover exact model slugs, known prices and capabilities, with combined filters and pagination.
 - A declared MCP server that offers resources gets a `resources__<server>` tool that lists its resources and templates, or reads one by URI. It is on with the server; `"resources.<server>"` in `[tools]` grants it or turns it off.
 

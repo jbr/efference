@@ -26,6 +26,7 @@ mod preamble;
 mod process;
 mod provider;
 mod push;
+mod reference;
 mod request;
 mod result;
 mod spot;
@@ -36,6 +37,7 @@ mod tool_telemetry;
 mod tools;
 mod triage;
 mod upstream;
+mod user;
 mod wire_state;
 mod worktree;
 
@@ -58,6 +60,10 @@ pub use provider::{Provider, WireDialect};
 pub use push::{
     AttentiveClient, DeliveryOutcome, DeviceDelivery, MomentKind, PushCancel, PushEvent, PushRecord,
 };
+pub use reference::{
+    ReferenceAccess, ReferenceDefinition, ReferenceTarget, ReferenceTargetKind, SubmittedReference,
+    SubmittedTarget,
+};
 pub use request::{RequestOrigin, RequestStage, RequestStageKind};
 pub use result::{ContentElision, RawResult, ResultImage};
 pub use spot::{Axes, Compared, Precedent, Spot, Stance};
@@ -71,6 +77,7 @@ pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
     is_captured_header,
 };
+pub use user::{UserContent, UserSegment};
 pub use wire_state::{Interruption, Keep, Triaged, WireState};
 pub use worktree::{Checkout, WorktreeEvent, WorktreeEventKind};
 
@@ -422,9 +429,19 @@ pub fn is_empty(entries: &[LogEntry]) -> bool {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub enum ContentBlock {
     Text(String),
-    Thinking { text: String, signature: String },
-    RedactedThinking { data: String },
+    Thinking {
+        text: String,
+        signature: String,
+    },
+    RedactedThinking {
+        data: String,
+    },
     Attachment(attachment::Arrival),
+    /// A structured user document — prose and reference occurrences plus their
+    /// definitions ([`user::UserContent`]). The sole block of a `User` entry
+    /// that carries references (docs/log-and-projection.md); flat entries keep
+    /// their `Text`/`Attachment` blocks and their rendering exactly.
+    Document(UserContent),
 }
 
 /// A tool invocation emitted by the model. `input` is a [`serde_json::Value`],

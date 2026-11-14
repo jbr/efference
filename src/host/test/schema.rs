@@ -119,6 +119,7 @@ fn generate() -> Value {
         turns::QueuedTurn,
         turns::TurnAccepted,
         turns::WithdrawnTurns,
+        crate::routes::http::TurnBody,
         StreamDelta,
         ProcessRecord,
         ToolEntry,

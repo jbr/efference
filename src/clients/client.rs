@@ -141,20 +141,24 @@ impl Client {
         turn: &SubmittedTurn,
         answers: Option<&str>,
     ) -> Result<std::result::Result<Landing, String>> {
-        let options = TurnOptions {
-            source: turn.source.as_deref(),
-        };
-        let mut body: serde_json::Value = serde_json::from_str(&Self::turn_body(
-            &turn.text,
-            Some(&turn.submission_id),
-            options,
-        ))?;
-        if !turn.attachments.is_empty() {
-            body["attachments"] = turn
-                .attachments
-                .iter()
-                .map(|arrival| serde_json::Value::from(arrival.name.as_str()))
-                .collect();
+        // The structured spelling, always: the client holds the document it
+        // means to send, and the gate resolves uploads, validates agent
+        // identities and refuses filesystem targets (docs/control-api.md).
+        let references: serde_json::Map<String, serde_json::Value> = turn
+            .content
+            .references
+            .iter()
+            .map(|(id, definition)| {
+                serde_json::to_value(definition.submitted()).map(|value| (id.clone(), value))
+            })
+            .collect::<serde_json::Result<_>>()?;
+        let mut body = serde_json::json!({
+            "content": turn.content.content,
+            "references": serde_json::Value::Object(references),
+            "submission_id": turn.submission_id,
+        });
+        if let Some(source) = turn.source.as_deref() {
+            body["source"] = serde_json::Value::from(source);
         }
         if let Some(answers) = answers {
             body["answers"] = answers.into();

@@ -62,7 +62,7 @@ async fn a_turn_naming_the_pending_question_answers_it() {
         .unwrap();
     assert_eq!(landing, Landing::Answered);
     let reply = wait.reply().await.expect("the reply");
-    assert_eq!(reply.text, "go ahead");
+    assert_eq!(reply.readable(), "go ahead");
     assert_eq!(reply.source.as_deref(), Some("session[parent]"));
 
     // The call id names it as well as the handle does.

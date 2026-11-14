@@ -16,6 +16,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { apiBase } from "../api/base.ts";
+import { applyTextEdit, mergeDocuments } from "../api/document.ts";
 import { acquireDraft } from "./drafts.ts";
 import {
   ApiError,
@@ -34,6 +35,7 @@ import type {
   NewerVersion,
   PaceView,
   Stall,
+  UserContent,
   Verbs,
 } from "../api/types.ts";
 import {
@@ -64,6 +66,10 @@ import { useDragToDismiss } from "./useDragToDismiss.ts";
 export interface Recalled {
   text: string;
   attachments: Arrival[];
+  /** The withdrawn turns' documents merged into one (plain turns as text),
+   * or null when none carried references — the hold needs the composer to
+   * hold the recalled turns plus the draft exactly. */
+  document: UserContent | null;
   nonce: number;
 }
 
@@ -89,7 +95,11 @@ export function Composer({
   triage = [],
   newerVersion = null,
 }: {
-  submit: (text: string, attachments: Arrival[]) => Promise<void>;
+  submit: (
+    text: string,
+    attachments: Arrival[],
+    document?: UserContent | null,
+  ) => Promise<void>;
   /** A turn a recall pulled back out of the daemon's queue, to prepend to the
    * draft (docs/web-client.md). */
   recalled: Recalled | null;
@@ -129,6 +139,7 @@ export function Composer({
 }) {
   const store = useMemo(() => acquireDraft(apiBase()), []);
   const snapshot = useSyncExternalStore(store.subscribe, store.snapshot);
+  const setHeld = store.setHeld;
   const draft = snapshot.text;
   const running = phase !== null && phase.phase !== "idle";
   const setDraft = store.setText;
@@ -168,13 +179,44 @@ export function Composer({
   useEffect(() => {
     if (!recalled || spliced.current === recalled.nonce) return;
     spliced.current = recalled.nonce;
-    setDraft((current) =>
-      current ? `${recalled.text}\n${current}` : recalled.text,
-    );
+    const before = store.snapshot();
+    const current = before.text;
+    const previous = before.held;
+    const buffer = current ? `${recalled.text}\n${current}` : recalled.text;
+    setDraft(buffer);
+    // A recalled turn with references holds a document for an unedited
+    // resubmission — the only form that carries the references. The hold
+    // covers the whole buffer: the recalled document already includes every
+    // withdrawn turn (plain ones as text), and a draft underneath is merged in
+    // as a final piece. A draft that is still exactly a previous hold's splice
+    // contributes that hold's document unchanged; an edited one contributes
+    // the document with the edit applied to its readable form, which keeps
+    // the references the edit did not reach. Either way a second recall does
+    // not flatten the first turn's references. A recall with no references
+    // and no previous hold is plain text and stays editable.
+    const untouched = previous !== null && previous.spliced === current;
+    const pieces: (UserContent | null | undefined)[] = [recalled.document];
+    if (current) {
+      pieces.push(
+        previous === null
+          ? { content: [{ Text: current }], references: {} }
+          : untouched
+            ? previous.document
+            : applyTextEdit(previous.document, previous.spliced, current),
+      );
+    }
+    const document =
+      recalled.document !== null || previous !== null
+        ? (mergeDocuments(pieces) ??
+          recalled.document ??
+          previous?.document ??
+          null)
+        : null;
+    setHeld(document !== null ? { document, spliced: buffer } : null);
     restore(recalled.attachments);
     setExpanded(true);
     field.current?.focus();
-  }, [recalled, restore, setDraft]);
+  }, [recalled, restore, setDraft, setHeld, store]);
   useEffect(() => {
     // `dragleave` fires on every child boundary crossed, so presence is tracked
     // as a depth rather than a flag.
@@ -264,6 +306,33 @@ export function Composer({
     // A send waits for its files: a chip still uploading has no name to send.
     if (attachments.uploading) {
       setError("an attachment is still uploading");
+      return;
+    }
+    // A held recalled document: an untouched composer resubmits the
+    // structured form — the only one that carries its references. An edit
+    // would splice the references out, so it is refused and the recalled text
+    // put back; the hold survives the refusal, because the next unedited send
+    // must still carry them. Clearing the composer is the way out
+    // (docs/web-client.md). It decides before the empty-send check: a held
+    // attachment-only document's readable form can be empty, and that send is
+    // a turn, not a continue.
+    const held = snapshot.held;
+    if (held !== null) {
+      if (draft === held.spliced) {
+        try {
+          await send(draft, attachments.ready, held.document);
+          store.sent(snapshot);
+          setError(null);
+          setExpanded(false);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : `${e}`);
+        }
+        return;
+      }
+      setDraft(held.spliced);
+      setError(
+        "that turn carries references — it is back as recalled; send it unedited, or clear the composer to start over",
+      );
       return;
     }
     // An empty send hands control back with no input (docs/web-client.md): the

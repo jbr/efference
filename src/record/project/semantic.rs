@@ -171,7 +171,17 @@ pub fn render_result(
 /// recent results this way too.
 pub fn result_content(raw: &RawResult, wire: &WireState) -> (String, bool) {
     match wire {
-        WireState::Raw => (raw.content.clone(), raw.is_error),
+        // A structured ask answer renders from its document — the authoritative
+        // body — wherever the raw content itself reaches the wire whole. Any
+        // triaged view keeps rendering the readable form through its verdict,
+        // so no structured body bypasses the cap or a verdict's spans
+        // (docs/log-and-projection.md).
+        WireState::Raw => (
+            raw.document
+                .as_ref()
+                .map_or_else(|| raw.content.clone(), |document| document.render(None)),
+            raw.is_error,
+        ),
         WireState::Pending => ("[awaiting triage]".to_string(), false),
         WireState::Triaged(verdict) => (render_triaged(&raw.content, verdict), raw.is_error),
         WireState::Elided => ("[elided]".to_string(), false),
@@ -275,6 +285,13 @@ fn user_parts<'a>(
             ContentBlock::Text(text) => (text.clone(), " "),
             ContentBlock::Attachment(arrival) => {
                 (crate::record::log::attachment::turn_line(arrival), "\n")
+            }
+            // One part for the whole rendered document — prose, `[id]` tokens
+            // and the definitions block in a single string — so no provider
+            // encoder interposes separators between its pieces. The source
+            // prefix is the render's own (docs/log-and-projection.md).
+            ContentBlock::Document(document) => {
+                return Some(UserPart::Text(document.render(source.take())));
             }
             ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {
                 return None;

@@ -118,6 +118,21 @@ triage signals, never its bytes, and projects as a text block holding the same
 notice an ambient arrival contains ([inbox.md](inbox.md)). The notice is derived
 from the recorded fields at projection time, so a change to its wording moves
 the prefix only for a session that restarts on the new binary.
+A `User` entry written by a reference-aware client carries one
+`ContentBlock::Document` instead of flat blocks (`record/log/user.rs`): an
+ordered sequence of prose and reference occurrences plus `ReferenceDefinition`s
+keyed by id (`record/log/reference.rs`). A definition's target is a filesystem
+path the submitter supplied and the access it asked for, an attachment naming a
+store upload, or an agent naming a session on the host. The block projects to
+**one** text part, its `render`: prose with `[id]` tokens, then a `references:`
+block listing each definition in id order, so no encoder can interpose a
+separator between the pieces. An attachment definition spells nothing in the
+readable form — the definition line carries the upload's name and path — because
+an upload is not prose, and a reader that shows a draft or recalled turn shows
+the upload's notice or staged chip beside it. The block is additive: the flat
+`Text`/`Attachment` blocks remain what entries written before it carry, and
+`SubmittedTurn::document` is `None` for a document with no references, so a plain
+turn's logged bytes are those of a legacy turn.
 
 `Tools` records the `tools[]` the session advertises (`agent::tool_definitions`): appended
 right after the boot `Preamble`, and at a resume when the array differs from the last one

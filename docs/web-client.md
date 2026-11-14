@@ -1413,11 +1413,13 @@ withdraws the pending-queue suffix beginning at that turn and returns what
 it actually popped (docs/control-api.md). Nothing was ever logged, so there is
 nothing to retract. The action drops only the echoes the daemon reported
 popping, and hands the texts to the composer, which prepends them to the draft
-already there joined with a newline — via a `{text, attachments, nonce}` prop,
-because recalling the same text twice is two
+already there joined with a newline — via a `{text, attachments, document, nonce}`
+prop, because recalling the same text twice is two
 events rather than one value. The turns' attachments come back with them, still
-stored, and are staged again. An empty answer is the lost race — the loop dequeued the turn
-first — and the draft is left alone.
+stored, and are staged again. `document` is the withdrawn turns' documents
+merged (plain turns as text), or null when none carried references. An empty
+answer is the lost race — the loop dequeued the turn first — and the draft is
+left alone, and so is the hold.
 
 **A running tool's output streams into its call's result slot** — where the
 triaged result will land — under a `running · N lines` header, in the pinned
@@ -1653,6 +1655,16 @@ text only if it has not changed while the request was pending, and removes only
 the submitted ready chips; newer edits, newer attachments, and failed chips
 remain. Sent files are not deleted. Empty drafts remove their localStorage entry.
 The server has no draft store; these drafts remain browser-local.
+A recalled turn that carried references puts the composer in a **held** state
+(`ui/drafts.ts`, `Held`): the draft keeps the merged document beside the exact
+text it spliced (`held.document`, `held.spliced`); an edited draft is refused
+with the spliced text put back and the hold left in place. A second recall applies the edit to the held
+document's readable form rather than flattening its references. Clearing the
+composer clears the hold; a chip whose upload the document references is
+detached from it on removal, and a hold left with no references drops.
+`submitTurn` sends the structured spelling when a hold exists, folding any
+separately staged uploads into the document's `references` so one upload is
+named once; a plain draft keeps the legacy `text`+`attachments` body.
 
 The status bar (`ui/Composer.tsx`) is the dock's **outermost row, below the
 composer at the window edge**, full-bleed — chrome frames content, as in a
@@ -1716,7 +1728,8 @@ bytes, resolved through `useApiImage`, once ready — the local picture stays up
 those bytes arrive.
 Removing one deletes the upload; one removed mid-upload is deleted when the
 upload lands. Send waits for uploads to finish, carries every ready chip's
-name, and removes the submitted ready chips only once the turn is accepted,
+name — or, on a structured send, folds them into the document's references —
+and removes the submitted ready chips only once the turn is accepted,
 so a refused send keeps them. A draft of attachments alone is a turn, not the continue. The
 paste and description rules are `ui/staging.ts`; draft and upload ownership are
 `ui/drafts.ts`; the chips, staged and sent, are

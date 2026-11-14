@@ -175,6 +175,9 @@ impl<'a> Zoom<'a, '_> {
                 ContentBlock::Attachment(arrival) => {
                     self.lines.push(format!("attached {}", arrival.path));
                 }
+                // One body: prose, occurrences and the definitions block, so
+                // an attachment's name and path are not dropped.
+                ContentBlock::Document(document) => self.lines.push(document.render(None)),
                 _ => {}
             }
         }

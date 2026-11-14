@@ -99,7 +99,7 @@ fn an_answer_to_an_ask_on_a_cold_session_shows_the_cost() {
     play.type_str("yes");
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     let sent = play.took_submission().expect("the answer was sent");
-    assert_eq!(sent.turn.text, "yes");
+    assert_eq!(sent.turn.readable(), "yes");
     assert_eq!(sent.answers.as_deref(), Some("toolu_ask"));
 }
 
@@ -118,6 +118,6 @@ fn the_composer_on_a_cold_session_shows_the_cost_and_sends() {
     play.type_str("hello");
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     let sent = play.took_submission().unwrap();
-    assert_eq!(sent.turn.text, "hello");
+    assert_eq!(sent.turn.readable(), "hello");
     assert_eq!(sent.answers, None, "no question was showing");
 }

@@ -51,7 +51,7 @@ async fn a_turn_and_its_recall_keep_their_bytes() {
         recalled.body(),
         concat!(
             r#"{"withdrawn":[{"attachments":[{"kind":{"Text":{"bytes":12,"first_line":"hello there","lines":1,"shape":"Prose"}},"#,
-            r#""name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt"}],"submission_id":"sub-2","text":"second"}]}"#
+            r#""name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt"}],"document":{"content":[{"Text":"second"},{"Reference":"r1"}],"references":{"r1":{"label":"notes.txt","target":{"kind":{"Text":{"bytes":12,"first_line":"hello there","lines":1,"shape":"Prose"}},"name":"notes.txt","path":"/work/.efference/a/attachments/notes.txt","type":"attachment"}}}},"submission_id":"sub-2","text":"second"}]}"#
         )
     );
     let nothing = app.delete("/v1/turns/sub-2").await;

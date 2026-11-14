@@ -192,7 +192,7 @@ pub(in crate::clients::tui) fn thinking_entry(
             ContentBlock::RedactedThinking { .. } => {
                 body.push(dim_line("(encrypted by the provider — not readable)"));
             }
-            ContentBlock::Text(_) | ContentBlock::Attachment(_) => {}
+            ContentBlock::Text(_) | ContentBlock::Attachment(_) | ContentBlock::Document(_) => {}
         }
     }
     (!body.is_empty()).then(|| thinking_block(body))
@@ -666,7 +666,10 @@ pub(crate) fn join_text(blocks: &[ContentBlock]) -> String {
     blocks
         .iter()
         .filter_map(|b| match b {
-            ContentBlock::Text(t) => Some(t.as_str()),
+            ContentBlock::Text(t) => Some(t.to_string()),
+            // The readable flat form, so a committed document entry matches its
+            // optimistic pending echo under the same extraction (docs/tui.md).
+            ContentBlock::Document(document) => Some(document.readable()),
             ContentBlock::Thinking { .. }
             | ContentBlock::RedactedThinking { .. }
             | ContentBlock::Attachment(_) => None,

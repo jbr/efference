@@ -117,6 +117,9 @@ impl<'a> Fold<'a> {
                             ContentBlock::Attachment(arrival) => {
                                 text.push(format!("(attached {})", arrival.path));
                             }
+                            ContentBlock::Document(document) => {
+                                text.push(document.render(None));
+                            }
                             _ => {}
                         }
                     }

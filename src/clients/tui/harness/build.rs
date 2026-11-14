@@ -57,7 +57,7 @@ impl Screenplay<'_> {
         let seq = self.next_seq;
         self.next_seq += 1;
         self.event(TuiEvent::Entry(
-            LogEntry::new(seq, Payload::user(pending.text))
+            LogEntry::new(seq, pending.payload())
                 .with_turn(1)
                 .with_submission_id(Some(pending.submission_id))
                 .with_source(pending.source),
@@ -79,7 +79,11 @@ impl Screenplay<'_> {
         self.event(TuiEvent::Entry(
             LogEntry::new(
                 seq,
-                Payload::tool_result(call_id, RawResult::text(pending.text), WireState::Raw),
+                Payload::tool_result(
+                    call_id,
+                    RawResult::text(pending.reply_text()).with_document(pending.document()),
+                    WireState::Raw,
+                ),
             )
             .with_turn(1)
             .with_submission_id(Some(pending.submission_id))

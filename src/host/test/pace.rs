@@ -94,7 +94,10 @@ fn drain_queued_turns_delivers_queued_turns_and_balances_settle() {
 
     let drained = frontend.drain_queued_turns();
     assert_eq!(
-        drained.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+        drained
+            .iter()
+            .map(SubmittedTurn::readable)
+            .collect::<Vec<_>>(),
         vec!["first", "second"],
         "non-blank turns in submission order; the blank one is dropped"
     );
@@ -270,7 +273,7 @@ async fn an_agents_answer_leaves_the_hold() {
         shared.submit_named_turn(answer, Some("toolu_q")),
         Ok(Landing::Answered)
     );
-    assert_eq!(wait.reply().await.unwrap().text, "yes");
+    assert_eq!(wait.reply().await.unwrap().readable(), "yes");
     assert!(shared.pace_snapshot().1, "the hold stands");
 }
 
@@ -327,14 +330,17 @@ fn withdraw_pops_the_suffix_from_the_named_turn() {
     }
     let popped = shared.withdraw_turns("s2");
     assert_eq!(
-        popped.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+        popped
+            .iter()
+            .map(SubmittedTurn::readable)
+            .collect::<Vec<_>>(),
         ["two", "three"]
     );
     assert_eq!(
         shared
             .queued_turns()
             .iter()
-            .map(|t| t.text.as_str())
+            .map(SubmittedTurn::readable)
             .collect::<Vec<_>>(),
         ["one"]
     );
@@ -377,7 +383,7 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
     shared.submit_turn(SubmittedTurn::new("fresh", "s3"));
     let delivered = frontend.drain_queued_turns();
     assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].text, "fresh");
+    assert_eq!(delivered[0].readable(), "fresh");
 }
 
 /// A turn ending with another already queued is not a settle: the queued turn runs at once,

@@ -217,20 +217,21 @@ fn endpoint(entries: &[crate::record::log::LogEntry], seq: crate::record::log::S
     };
     match &entry.payload {
         Payload::ToolResult { .. } => format!("tool result [{seq}]"),
-        Payload::User(blocks) => format!(
-            "user instruction beginning {:?}",
-            blocks
+        Payload::User(blocks) => {
+            let text = blocks
                 .iter()
                 .filter_map(|b| match b {
-                    ContentBlock::Text(t) => Some(t.as_str()),
+                    ContentBlock::Text(t) => Some(t.clone()),
+                    ContentBlock::Document(document) => Some(document.render(None)),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
-                .join("\n")
-                .chars()
-                .take(400)
-                .collect::<String>()
-        ),
+                .join("\n");
+            format!(
+                "user instruction beginning {:?}",
+                text.chars().take(400).collect::<String>()
+            )
+        }
         Payload::Assistant { output, .. } => format!(
             "assistant output beginning {:?}",
             output

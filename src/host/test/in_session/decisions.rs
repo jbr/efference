@@ -88,7 +88,7 @@ async fn allow_with_a_note_sends_the_note_after_the_result() {
     let noted = || {
         child.queued_turns().iter().any(|turn| {
             turn.submission_id == named
-                && turn.text == "use read for this next time"
+                && turn.readable() == "use read for this next time"
                 && turn.source.as_deref() == Some("session[parent]")
         }) || child.snapshot().iter().any(|e| {
             e.submission_id.as_deref() == Some(named.as_str())

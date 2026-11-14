@@ -9,6 +9,11 @@ use crate::record::log::Approval;
 use crate::record::log::CallId;
 use crate::record::log::EditState;
 use crate::record::log::Notification;
+use crate::record::log::ReferenceDefinition;
+use crate::record::log::SubmittedReference;
+use crate::record::log::SubmittedTarget;
+use crate::record::log::UserContent;
+use crate::record::log::UserSegment;
 use crate::routes::errors::ErrorBody;
 use crate::routes::errors::ErrorCode;
 use crate::routes::errors::fail;
@@ -21,6 +26,7 @@ use crate::session::submitted::SubmittedTurn;
 use crate::session::transcript;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 use trillium::Conn;
@@ -28,9 +34,27 @@ use trillium_router::Router;
 use trillium_router::RouterConnExt;
 use trillium_sse::sse;
 
+/// A `POST /turns` body, in one of two spellings that normalize into the same
+/// submitted document (docs/control-api.md): the legacy `text` (with optional
+/// `attachments`) that every client speaks, or the structured
+/// `content`+`references` the reference-aware editors speak. Both present is a
+/// 400; the gate validates the structured form before anything queues.
 #[derive(Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(crate) struct TurnBody {
-    pub(crate) text: String,
+    /// The legacy spelling's prose. Absent on a structured submission.
+    #[serde(default)]
+    pub(crate) text: Option<String>,
+    /// The structured spelling's ordered content sequence — prose and
+    /// reference occurrences, ids preserved verbatim through the gate.
+    #[serde(default)]
+    pub(crate) content: Option<Vec<UserSegment>>,
+    /// The structured spelling's definitions, keyed by id. Attachment targets
+    /// name store uploads, which the server resolves. Agent targets are
+    /// validated against the host's live registry. Filesystem targets are
+    /// refused. A structured turn may not also carry `attachments`.
+    #[serde(default)]
+    pub(crate) references: Option<BTreeMap<String, SubmittedReference>>,
     /// The client's identifier for this submission (docs/control-api.md),
     /// adopted when present and daemon-minted otherwise — the conn-id
     /// adopt-or-mint rule at submission granularity. Echoed in the 202 body
@@ -68,6 +92,15 @@ pub(crate) struct CompactBody {
 /// Cap on a client-minted submission id: long enough for any uuid-ish scheme,
 /// short enough that the log can't be bloated through the field.
 const SUBMISSION_ID_MAX: usize = 128;
+
+/// Cap on a reference definition id (docs/control-api.md): a short readable
+/// token — it renders inline as `[id]` — in the same spirit as
+/// `SUBMISSION_ID_MAX`.
+const REFERENCE_ID_MAX: usize = 128;
+
+/// Cap on a reference definition's display label: presentation text, never
+/// authorization (docs/control-api.md).
+const REFERENCE_LABEL_MAX: usize = 256;
 
 /// Body of `PATCH /processes/:id` (docs/process-monitor.md, docs/control-api.md): the
 /// settable properties of a process resource. `background: true` on the foreground

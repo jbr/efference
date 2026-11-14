@@ -97,6 +97,16 @@ pub(super) fn lines(
                     ContentBlock::Attachment(arrival) => {
                         Some(line("user", format!("attached {}", arrival.path)))
                     }
+                    ContentBlock::Document(document) => {
+                        let body = document.render(None);
+                        Some(line(
+                            "user",
+                            match source.take() {
+                                Some(source) => format!("{source}: {body}"),
+                                None => body,
+                            },
+                        ))
+                    }
                     _ => None,
                 })
                 .collect()

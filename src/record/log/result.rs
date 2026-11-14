@@ -27,6 +27,15 @@ pub struct RawResult {
     /// so text-only results are unaffected.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ResultImage>,
+    /// The structured body of an `ask` reply, when the answer carried
+    /// references (docs/process-monitor.md, docs/control-api.md). The
+    /// authoritative form for projection — under `WireState::Raw` the wire
+    /// renders this, not `content` — while `content` stays the readable form
+    /// the transcript and every triaged view show. `None` for every plain
+    /// answer, so logged bytes are unchanged. Truncated control views
+    /// (`routes/entry_view.rs`) omit it beside elided content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<Box<UserContent>>,
 }
 
 impl RawResult {
@@ -38,6 +47,7 @@ impl RawResult {
             is_error,
             content_elided: None,
             images: Vec::new(),
+            document: None,
         }
     }
 
@@ -55,6 +65,14 @@ impl RawResult {
     /// result is never amended.
     pub fn with_images(mut self, images: Vec<ResultImage>) -> Self {
         self.images = images;
+        self
+    }
+
+    /// Attach the structured body of an `ask` reply — `None` for a plain
+    /// answer, which keeps the logged bytes unchanged. Builds; a recorded
+    /// result is never amended.
+    pub fn with_document(mut self, document: Option<UserContent>) -> Self {
+        self.document = document.map(Box::new);
         self
     }
 }

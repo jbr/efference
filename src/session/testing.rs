@@ -92,7 +92,7 @@ impl Session {
             .lock()
             .unwrap()
             .iter()
-            .map(|turn| turn.text.clone())
+            .map(SubmittedTurn::readable)
             .collect();
         let gate = self.pending.lock().unwrap().as_ref().map(|pending| {
             let gate = &pending.gate;

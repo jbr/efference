@@ -131,6 +131,7 @@ impl<'a> InteractiveState<'a> {
             compaction_tx,
             pending_turns: Vec::new(),
             ask_restored: None,
+            recalled_document: None,
             approve_tx,
             pace_tx,
             interrupt_tx,

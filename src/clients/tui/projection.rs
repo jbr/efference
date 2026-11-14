@@ -246,6 +246,26 @@ pub(crate) fn entry_nodes(
                 body.extend(markdown(&join_text(blocks)));
                 nodes.push(DocumentNode::entry(EntryKind::Annotation, body));
             }
+            Payload::User(blocks)
+                if let Some(document) = blocks.iter().find_map(|block| match block {
+                    ContentBlock::Document(document) => Some(document),
+                    _ => None,
+                }) =>
+            {
+                // A structured turn's authoritative body is its document:
+                // prose and definitions rendered as one markdown form, whose
+                // own source rules do the attribution (docs/control-api.md).
+                let mut body = markdown(&document.render(entry.source.as_deref()));
+                let attachments: Vec<_> = blocks
+                    .iter()
+                    .filter_map(|block| match block {
+                        ContentBlock::Attachment(arrival) => Some(arrival.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                body.extend(attachment_lines(&attachments));
+                nodes.push(DocumentNode::entry(EntryKind::UserMessage, body));
+            }
             Payload::User(blocks) => {
                 // A sourced turn is attributed with the same `source:` address it
                 // carries on the wire (docs/control-api.md); the operator's turns
@@ -394,7 +414,7 @@ pub(crate) fn tail_nodes(
 
     // Optimistic echoes of just-submitted turns, last of all (docs/tui.md).
     for turn in pending_turns {
-        nodes.push(pending_turn(&turn.text, &turn.attachments));
+        nodes.push(pending_turn(&turn.readable(), &turn.attachment_arrivals()));
     }
 
     nodes

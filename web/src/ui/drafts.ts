@@ -1,17 +1,29 @@
 // Per-session composer drafts (docs/web-client.md). The store outlives the
 // view, including its uploads; localStorage keeps text and attachment metadata,
 // not file bytes. A reload cannot resume an upload.
+import { detachAttachment } from "../api/document.ts";
 import {
   attachmentUrl,
   removeAttachment,
   uploadAttachment,
 } from "../api/http.ts";
-import type { Arrival } from "../api/types.ts";
+import type { Arrival, UserContent } from "../api/types.ts";
 import { isImage, pastedName, type Staged } from "./staging.ts";
+
+/** A recalled document held with the exact text it was spliced as: an
+ * untouched composer resubmits the structured form — the only one that
+ * carries its references — while an edit is refused and the text restored.
+ * The hold lasts until the send succeeds or the composer is cleared
+ * (docs/web-client.md). */
+export interface Held {
+  document: UserContent;
+  spliced: string;
+}
 
 export interface Draft {
   text: string;
   staged: Staged[];
+  held: Held | null;
 }
 
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -76,11 +88,11 @@ function isAttachment(value: unknown): value is Arrival {
 function load(storage: DraftStorage | null, base: string): Draft {
   try {
     const raw = storage?.getItem(storageKey(base));
-    if (!raw) return { text: "", staged: [] };
+    if (!raw) return { text: "", staged: [], held: null };
     const saved: unknown = JSON.parse(raw);
     if (typeof saved !== "object" || saved === null)
-      return { text: "", staged: [] };
-    const draft = saved as { text?: unknown; staged?: unknown };
+      return { text: "", staged: [], held: null };
+    const draft = saved as { text?: unknown; staged?: unknown; held?: unknown };
     const staged: Staged[] = [];
     if (Array.isArray(draft.staged)) {
       for (const value of draft.staged as unknown[]) {
@@ -118,10 +130,30 @@ function load(storage: DraftStorage | null, base: string): Draft {
         });
       }
     }
-    return { text: typeof draft.text === "string" ? draft.text : "", staged };
+    return {
+      text: typeof draft.text === "string" ? draft.text : "",
+      staged,
+      held: isHeld(draft.held) ? draft.held : null,
+    };
   } catch {
-    return { text: "", staged: [] };
+    return { text: "", staged: [], held: null };
   }
+}
+
+/** Light shape check for a persisted hold: a corrupt one drops the hold, and
+ * the spliced text simply sends as a plain turn. */
+function isHeld(value: unknown): value is Held {
+  if (typeof value !== "object" || value === null) return false;
+  const h = value as Partial<Held>;
+  if (typeof h.spliced !== "string") return false;
+  const d = h.document;
+  return (
+    typeof d === "object" &&
+    d !== null &&
+    Array.isArray(d.content) &&
+    typeof d.references === "object" &&
+    d.references !== null
+  );
 }
 
 export class DraftStore {
@@ -151,7 +183,11 @@ export class DraftStore {
   private update(value: Draft) {
     this.value = value;
     try {
-      if (value.text === "" && value.staged.length === 0) {
+      if (
+        value.text === "" &&
+        value.staged.length === 0 &&
+        value.held === null
+      ) {
         this.deps.storage?.removeItem(storageKey(this.base));
       } else {
         this.deps.storage?.setItem(
@@ -167,6 +203,7 @@ export class DraftStore {
                 pastedText,
               }),
             ),
+            held: value.held,
           }),
         );
       }
@@ -177,10 +214,22 @@ export class DraftStore {
   }
 
   setText = (text: string | ((current: string) => string)) => {
+    const next = typeof text === "function" ? text(this.value.text) : text;
     this.update({
       ...this.value,
-      text: typeof text === "function" ? text(this.value.text) : text,
+      text: next,
+      // Clearing the composer is the explicit way out of a recalled
+      // structured turn's hold: nothing is left to resubmit, and the next
+      // send is an ordinary continue. A recall that splices an empty readable
+      // form sets the hold after this call, so it is not cleared here.
+      held: next === "" ? null : this.value.held,
     });
+  };
+
+  /** Put a recalled document on hold, or drop the current one. Setting does
+   * not touch the text: the splice that carries the document writes it. */
+  setHeld = (held: Held | null) => {
+    this.update({ ...this.value, held });
   };
 
   stage = (file: File, pastedText?: string) => {
@@ -258,9 +307,22 @@ export class DraftStore {
     if (gone.attachment)
       void this.deps.remove(gone.attachment.name).catch(() => {});
     revoke(gone);
+    // A chip restored by a recall of a documented turn is referenced by the
+    // held document too: removing it detaches that definition and its
+    // occurrences, and a document left with no references stops being held
+    // (an edit may then send its text).
+    let held = this.value.held;
+    if (held !== null && gone.attachment) {
+      const document = detachAttachment(held.document, gone.attachment.name);
+      held =
+        Object.keys(document.references).length > 0
+          ? { ...held, document }
+          : null;
+    }
     this.update({
       ...this.value,
       staged: this.value.staged.filter((s) => s.key !== key),
+      held,
     });
   };
 
@@ -274,6 +336,8 @@ export class DraftStore {
     this.update({
       text: this.value.text === submitted.text ? "" : this.value.text,
       staged: this.value.staged.filter((s) => !keys.has(s.key)),
+      // The hold's send went out structured, so it is spent.
+      held: submitted.held !== null ? null : this.value.held,
     });
   };
 }

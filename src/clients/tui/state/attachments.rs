@@ -145,11 +145,33 @@ impl<'a> InteractiveState<'a> {
         self.dirty = true;
     }
 
-    /// Take a staged chip back (its `×`, or `⌫` on an empty composer).
+    /// Take a staged chip back (its `×`, or `⌫` on an empty composer). A chip
+    /// restored by a recall of a documented turn is also referenced by the
+    /// held document: removing it detaches that definition and its
+    /// occurrences, and a document left with no references stops being held
+    /// (an edit may then send its text).
     pub(in crate::clients::tui) fn remove_staged(&mut self, key: u64) {
+        let name = self
+            .staged
+            .items()
+            .iter()
+            .find(|staged| staged.key == key)
+            .map(|staged| staged.name().to_string());
         self.staged_images.remove((key, 0));
         if let Some(cmd) = self.staged.remove(key) {
             self.send_attach(cmd);
+        }
+        if let Some(name) = name
+            && let Some((document, _)) = self.recalled_document.as_mut()
+        {
+            document.detach_attachment(&name);
+        }
+        if self
+            .recalled_document
+            .as_ref()
+            .is_some_and(|(document, _)| document.is_plain())
+        {
+            self.recalled_document = None;
         }
         self.set_debug_message("attachment removed");
         self.dirty = true;

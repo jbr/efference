@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::protocol::answers::StatusWord;
+use crate::record::log::UserContent;
 use crate::record::log::attachment::Arrival;
 
 /// Mint a submission id for a `POST /v1/turns` whose body didn't carry one, so
@@ -62,6 +63,15 @@ pub struct QueuedTurn {
     /// reads as it always has.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<Arrival>,
+    /// The turn's structured document, present whenever the turn carries
+    /// references — attachment-only included, so inline order survives a
+    /// recall (docs/control-api.md). `text` is that document's readable flat
+    /// form, derived for display. A client with reference support holds this
+    /// document beside the recalled text and submits it unchanged; an edit is
+    /// refused and the held text restored, because splicing `text` alone would
+    /// submit without the references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<UserContent>,
 }
 
 /// The answer to `POST /turns`: the turn is enqueued, under the id it will be addressed by.

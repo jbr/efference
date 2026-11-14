@@ -110,7 +110,9 @@ impl Session {
                 .iter()
                 .map(|turn| Returned {
                     source: turn.source.clone(),
-                    text: turn.text.clone(),
+                    // Descriptive status text: the readable flat form, which
+                    // re-typing as text grants nothing by (docs/control-api.md).
+                    text: turn.readable(),
                 })
                 .collect()
         })

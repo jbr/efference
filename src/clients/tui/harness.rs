@@ -230,7 +230,7 @@ impl Screenplay<'_> {
             .submit
             .try_recv()
             .ok()
-            .map(|sent| sent.turn.text)
+            .map(|sent| sent.turn.readable())
     }
 
     /// The attachment command a staging gesture dispatched since the last check, if
