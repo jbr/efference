@@ -379,3 +379,44 @@ test("an edited attachment-only hold is refused and survives until the unedited 
     view.close();
   }
 });
+
+test("a successful send clears the hold, so the next text is an ordinary send", async () => {
+  const id = `draft-${crypto.randomUUID()}`;
+  const store = acquireDraft(`/sessions/${id}`);
+  const send = vi.fn(() => Promise.resolve());
+  const view = mount(send);
+  try {
+    view.render(id, {
+      text: "",
+      attachments: [recallArrival("shot.png")],
+      document: attachmentOnly(),
+      nonce: 1,
+    });
+    expect(store.snapshot().held).not.toBeNull();
+    await act(async () =>
+      view.host
+        .querySelector("form")
+        ?.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    const first = send.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      NonNullable<Recalled["document"]>,
+    ];
+    expect(Object.keys(first[2].references)).toHaveLength(1);
+    expect(store.snapshot().held).toBeNull();
+    act(() => store.setText("plain"));
+    await act(async () =>
+      view.host
+        .querySelector("form")
+        ?.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    expect(send.mock.calls[1]).toEqual(["plain", []]);
+  } finally {
+    view.close();
+  }
+});

@@ -538,3 +538,165 @@ fn clearing_the_composer_drops_an_attachment_only_hold() {
         "empty is the way out"
     );
 }
+
+/// A successful structured send clears the hold, as it clears the staged
+/// chips: the next text is an ordinary turn, not a resubmission refused
+/// against the spelling the document it sent had.
+#[test]
+fn a_successful_send_clears_the_hold_and_the_next_text_is_an_ordinary_turn() {
+    let (mut s, mut srx) = sendable_state();
+    s.apply_recall(&[queued(review_document("review "), "s1")]);
+    s.submit_composer("review @castback".into());
+    let sent = srx.try_recv().expect("the recalled turn goes out");
+    assert_eq!(
+        sent.turn.document().map(|document| document.readable()),
+        Some("review @castback".to_string())
+    );
+    assert!(s.recalled_document.is_none(), "the send clears the hold");
+    s.composer.set_text("next");
+    s.submit_composer("next".into());
+    let sent = srx.try_recv().expect("the ordinary turn goes out");
+    assert_eq!(sent.turn.readable(), "next");
+    assert!(
+        sent.turn.document().is_none(),
+        "plain text, no document and no references"
+    );
+    // Every submission lands as one `Document` block; a plain turn's document
+    // has no references.
+    assert!(matches!(
+        sent.turn.payload(),
+        Payload::User(blocks)
+            if blocks.len() == 1
+                && matches!(
+                    &blocks[0],
+                    crate::record::log::ContentBlock::Document(content) if content.is_plain()
+                )
+    ));
+}
+
+/// A send that never left keeps its hold and its text: nothing was submitted,
+/// so the next attempt must still be the structured one.
+#[test]
+fn a_failed_send_keeps_the_hold() {
+    let rc = RenderContext::new();
+    let theme = InteractiveTheme::from_render_context(&rc);
+    let (_etx, erx) = crossbeam_channel::unbounded();
+    let (senders, receivers) = crate::clients::tui::senders::Senders::channels();
+    // No receiver: the send reports the daemon as gone.
+    drop(receivers);
+    let mut s = InteractiveState::new(erx, senders, rc, theme);
+    s.apply_recall(&[queued(review_document("review "), "s1")]);
+    s.submit_composer("review @castback".into());
+    assert!(
+        s.recalled_document.is_some(),
+        "nothing went out, so the hold stays"
+    );
+    assert_eq!(
+        s.composer.text(),
+        "review @castback",
+        "the text stays for a retry"
+    );
+    assert!(
+        s.ui.debug_message.contains("could not send"),
+        "the failure is stated: {}",
+        s.ui.debug_message
+    );
+}
+
+/// The same for an attachment-only hold, whose readable form is empty: left
+/// in place, it would make the next send carry an upload no chip shows.
+#[test]
+fn an_attachment_only_send_clears_its_hold() {
+    let (mut s, mut srx) = sendable_state();
+    let document = UserContent {
+        content: vec![UserSegment::Reference("r1".into())],
+        references: BTreeMap::from([(
+            "r1".into(),
+            ReferenceDefinition::attachment(attachment("shot.png")),
+        )]),
+    };
+    s.apply_recall(&[queued(document, "s1")]);
+    s.submit_composer(String::new());
+    let sent = srx.try_recv().expect("the attachment-only turn goes out");
+    assert_eq!(
+        sent.turn
+            .document()
+            .map(|document| document.attachment_arrivals().len()),
+        Some(1)
+    );
+    assert!(s.recalled_document.is_none(), "the send clears the hold");
+    s.composer.set_text("plain");
+    s.submit_composer("plain".into());
+    let sent = srx.try_recv().expect("the ordinary turn goes out");
+    assert_eq!(sent.turn.readable(), "plain");
+    assert!(sent.turn.document().is_none(), "no stale attachment");
+    assert!(sent.turn.attachment_arrivals().is_empty());
+}
+
+/// A gate resolves with text, which has no place for a reference definition:
+/// a held document is refused rather than flattened into a redirect with its
+/// references dropped without a trace. Approving or aborting from the strip
+/// does not touch the composer or its hold, so the turn stays ready to send.
+#[test]
+fn a_gate_does_not_take_a_held_document_as_its_answer() {
+    let rc = RenderContext::new();
+    let theme = InteractiveTheme::from_render_context(&rc);
+    let (_etx, erx) = crossbeam_channel::unbounded();
+    let (senders, receivers) = crate::clients::tui::senders::Senders::channels();
+    let (mut srx, mut arx) = (receivers.submit, receivers.approve);
+    let mut s = InteractiveState::new(erx, senders, rc, theme);
+    s.topics.gate = Some(gate(
+        "toolu_1",
+        "bash",
+        serde_json::json!({ "command": "ls" }),
+    ));
+    s.apply_recall(&[queued(review_document("review "), "s1")]);
+    let held = s.composer.text().to_string();
+    s.submit_composer("use rg instead".into());
+    assert!(arx.try_recv().is_err(), "nothing resolved the gate");
+    assert!(s.topics.gate.is_some(), "the gate is still pending");
+    assert!(s.recalled_document.is_some(), "the hold is intact");
+    assert_eq!(s.composer.text(), held, "the spelling is untouched");
+    assert!(
+        s.ui.debug_message.contains("strip"),
+        "the operator is pointed at the strip verbs: {}",
+        s.ui.debug_message
+    );
+    s.approve_gate();
+    assert!(matches!(arx.try_recv().unwrap().1, Approval::Approve));
+    assert!(s.topics.gate.is_none(), "the strip resolved the gate");
+    assert!(s.recalled_document.is_some(), "approving keeps the hold");
+    assert_eq!(s.composer.text(), held);
+    s.submit_composer(held);
+    let sent = srx.try_recv().expect("the held turn goes out afterwards");
+    assert_eq!(
+        sent.turn.document().map(|document| document.readable()),
+        Some("review @castback".to_string())
+    );
+}
+
+/// An attachment-only hold's readable form is empty, and an empty composer at
+/// a gate is an approve: that spelling must not quietly resolve the gate and
+/// lose the upload either.
+#[test]
+fn an_attachment_only_hold_does_not_approve_a_gate() {
+    let (mut s, mut arx) = state_with_gate();
+    let document = UserContent {
+        content: vec![UserSegment::Reference("r1".into())],
+        references: BTreeMap::from([(
+            "r1".into(),
+            ReferenceDefinition::attachment(attachment("shot.png")),
+        )]),
+    };
+    s.apply_recall(&[queued(document, "s1")]);
+    assert_eq!(s.composer.text(), "");
+    s.submit_composer(String::new());
+    assert!(arx.try_recv().is_err(), "nothing approved the gate");
+    assert!(s.topics.gate.is_some(), "the gate is still pending");
+    assert!(s.recalled_document.is_some(), "the upload is still held");
+    assert!(
+        s.ui.debug_message.contains("strip"),
+        "the operator is pointed at the strip verbs: {}",
+        s.ui.debug_message
+    );
+}

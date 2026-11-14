@@ -292,6 +292,29 @@ test("clearing the composer drops a recalled hold", () => {
   expect(store.snapshot().held).toBeNull();
 });
 
+test("a successful send clears the recalled hold", () => {
+  const { store } = setup();
+  store.setHeld({
+    document: {
+      content: [{ Reference: "r1" }],
+      references: {
+        r1: {
+          label: "note.txt",
+          target: { type: "attachment", ...attachment },
+        },
+      },
+    },
+    spliced: "",
+  });
+  const submitted = store.snapshot();
+  expect(submitted.held).not.toBeNull();
+  store.setText("plain");
+  expect(store.snapshot().held).not.toBeNull();
+  store.sent(submitted);
+  expect(store.snapshot().held).toBeNull();
+  expect(store.snapshot().text).toBe("plain");
+});
+
 test("removing the last recalled attachment drops the hold", () => {
   const { store } = setup();
   store.restore([attachment]);

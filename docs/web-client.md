@@ -1668,7 +1668,10 @@ clears the hold; a chip whose upload the document references is detached from
 it on removal, and a hold left with no references drops.
 `submitTurn` sends the structured spelling when a hold exists, folding any
 separately staged uploads into the document's `references` so one upload is
-named once; a plain draft keeps the legacy `text`+`attachments` body.
+named once; a plain draft keeps the legacy `text`+`attachments` body. A
+successful send clears the submitted hold along with the chips
+(`DraftStore.sent`), so the next text is an ordinary draft rather than a
+spelling the sent document no longer compares with.
 
 The status bar (`ui/Composer.tsx`) is the dock's **outermost row, below the
 composer at the window edge**, full-bleed — chrome frames content, as in a

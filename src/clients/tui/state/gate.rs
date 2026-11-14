@@ -33,6 +33,19 @@ impl<'a> InteractiveState<'a> {
     /// the composer composes text only; abort is the strip's verb). Otherwise it's a
     /// normal user turn (`POST /turns`).
     pub(in crate::clients::tui) fn submit_composer(&mut self, text: String) {
+        // A gate's resolution is text, and a reference definition has no
+        // place in it: taking the composer's spelling as an approve or a
+        // redirect here would drop the held document's references with no
+        // sign it happened. Approving or aborting from the strip does not
+        // touch the composer or its hold, so that is the way through a gate
+        // while a recalled structured turn is in the composer (docs/tui.md).
+        if self.topics.gate.is_some() && self.recalled_document.is_some() {
+            self.ui.debug_message =
+                "your recalled turn has references — approve or abort from the strip to keep it"
+                    .into();
+            self.dirty = true;
+            return;
+        }
         if let Some(gate) = self.topics.gate.take() {
             let trimmed = text.trim();
             let (decision, label) = if trimmed.is_empty() {
@@ -42,9 +55,6 @@ impl<'a> InteractiveState<'a> {
             };
             let _ = self.approve_tx.send((gate.call_id, decision));
             self.composer.clear();
-            // The recalled turn is gone — the composer's text resolved the
-            // gate instead — so the held document goes with it.
-            self.recalled_document = None;
             self.ui.debug_message = label.into();
             self.viewport.stuck_to_bottom = true;
             return;
@@ -71,7 +81,7 @@ impl<'a> InteractiveState<'a> {
             if text != *spliced {
                 self.composer.set_text(spliced);
                 self.ui.debug_message =
-                    "that turn carries references — it is back as recalled; send it unedited, \
+                    "that turn has references — it is back as recalled; send it unedited, \
                      or clear the composer to start over"
                         .into();
                 self.dirty = true;
@@ -95,6 +105,12 @@ impl<'a> InteractiveState<'a> {
         };
         if self.submit_tx.send(submission).is_ok() {
             self.clear_staged();
+            // The hold was this submission's document; a successful send
+            // clears it, as it clears the staged chips. Keeping it would make the
+            // next ordinary text compare against a spelling that has already
+            // gone, and an attachment-only hold would survive with no visible
+            // sign of it.
+            self.recalled_document = None;
             // Echo the message immediately as a pending transcript unit
             // (docs/tui.md): it's handed to the daemon but not yet a
             // committed `User` entry, so it renders dimmed until its log entry streams back
@@ -247,7 +263,7 @@ impl<'a> InteractiveState<'a> {
         };
         self.composer.set_text(&buffer);
         self.ui.debug_message = if reverted {
-            "that turn carries references — its text is back as recalled; clear the composer to \
+            "that turn has references — its text is back as recalled; clear the composer to \
              start over"
                 .into()
         } else if withdrawn.len() == 1 {
