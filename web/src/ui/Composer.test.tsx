@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { Composer } from "./Composer.tsx";
+import { Composer, type Recalled } from "./Composer.tsx";
 import { acquireDraft } from "./drafts.ts";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -34,9 +34,13 @@ function mount(send = vi.fn(() => Promise.resolve())) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  const render = (id: string) => {
+  const render = (id: string, recalled: Recalled | null = null) => {
     history.replaceState(null, "", `/sessions/${id}/`);
-    act(() => root.render(<Composer key={id} {...defaults} submit={send} />));
+    act(() =>
+      root.render(
+        <Composer key={id} {...defaults} recalled={recalled} submit={send} />,
+      ),
+    );
   };
   const close = () => {
     act(() => root.unmount());
@@ -223,5 +227,155 @@ test("an empty send the verbs topic refuses states the reason without a request"
   } finally {
     act(() => root.unmount());
     host.remove();
+  }
+});
+
+const recallArrival = (name: string) => ({
+  name,
+  path: `att/composer/${name}`,
+  kind: { Binary: { bytes: 3 } },
+});
+
+const agentDocument = (): NonNullable<Recalled["document"]> => ({
+  content: [
+    { Text: "look at " },
+    { Reference: "a" },
+    { Text: " please" },
+    { Reference: "b" },
+  ],
+  references: {
+    a: { label: "reviewer", target: { type: "agent", session: "castback" } },
+    b: {
+      label: "shot.png",
+      target: { type: "attachment", ...recallArrival("shot.png") },
+    },
+  },
+});
+
+const attachmentOnly = (): NonNullable<Recalled["document"]> => ({
+  content: [{ Reference: "r1" }],
+  references: {
+    r1: {
+      label: "shot.png",
+      target: { type: "attachment", ...recallArrival("shot.png") },
+    },
+  },
+});
+
+test("a second recall keeps an attachment-only hold", () => {
+  const id = `draft-${crypto.randomUUID()}`;
+  const store = acquireDraft(`/sessions/${id}`);
+  const view = mount();
+  try {
+    view.render(id, {
+      text: "",
+      attachments: [recallArrival("shot.png")],
+      document: attachmentOnly(),
+      nonce: 1,
+    });
+    expect(store.snapshot().text).toBe("");
+    expect(store.snapshot().held).not.toBeNull();
+    view.render(id, {
+      text: "more",
+      attachments: [],
+      document: null,
+      nonce: 2,
+    });
+    expect(store.snapshot().text).toBe("more");
+    const held = store.snapshot().held!;
+    expect(Object.keys(held.document.references)).toHaveLength(1);
+  } finally {
+    view.close();
+  }
+});
+
+test("a second recall reverts an edited hold and its resend keeps the document", async () => {
+  const id = `draft-${crypto.randomUUID()}`;
+  const store = acquireDraft(`/sessions/${id}`);
+  const send = vi.fn(() => Promise.resolve());
+  const view = mount(send);
+  try {
+    view.render(id, {
+      text: "look at @castback please",
+      attachments: [recallArrival("shot.png")],
+      document: agentDocument(),
+      nonce: 1,
+    });
+    expect(store.snapshot().held).not.toBeNull();
+    act(() => store.setText("look at @castback please edited"));
+    view.render(id, {
+      text: "more",
+      attachments: [],
+      document: null,
+      nonce: 2,
+    });
+    expect(store.snapshot().text).toBe("more\nlook at @castback please");
+    expect(view.host.querySelector("[role=alert]")?.textContent).toContain(
+      "back as recalled",
+    );
+    expect(
+      Object.keys(store.snapshot().held!.document.references).sort(),
+    ).toEqual(["a", "b"]);
+    await act(async () =>
+      view.host
+        .querySelector("form")
+        ?.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    const sent = send.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      NonNullable<Recalled["document"]>,
+    ];
+    expect(sent[0]).toBe("more\nlook at @castback please");
+    expect(Object.keys(sent[2].references).sort()).toEqual(["a", "b"]);
+  } finally {
+    view.close();
+  }
+});
+
+test("an edited attachment-only hold is refused and survives until the unedited send", async () => {
+  const id = `draft-${crypto.randomUUID()}`;
+  const store = acquireDraft(`/sessions/${id}`);
+  const send = vi.fn(() => Promise.resolve());
+  const view = mount(send);
+  try {
+    view.render(id, {
+      text: "",
+      attachments: [recallArrival("shot.png")],
+      document: attachmentOnly(),
+      nonce: 1,
+    });
+    act(() => store.setText("typed over the hold"));
+    await act(async () =>
+      view.host
+        .querySelector("form")
+        ?.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(store.snapshot().text).toBe("");
+    expect(store.snapshot().held).not.toBeNull();
+    expect(view.host.querySelector("[role=alert]")?.textContent).toContain(
+      "send it unedited",
+    );
+    await act(async () =>
+      view.host
+        .querySelector("form")
+        ?.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    const sent = send.mock.calls[0] as unknown as [
+      string,
+      unknown,
+      NonNullable<Recalled["document"]>,
+    ];
+    expect(sent[0]).toBe("");
+    expect(Object.keys(sent[2].references)).toHaveLength(1);
+  } finally {
+    view.close();
   }
 });

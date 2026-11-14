@@ -16,7 +16,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { apiBase } from "../api/base.ts";
-import { applyTextEdit, mergeDocuments } from "../api/document.ts";
+import { appendDocument } from "../api/document.ts";
 import { acquireDraft } from "./drafts.ts";
 import {
   ApiError,
@@ -182,41 +182,59 @@ export function Composer({
     const before = store.snapshot();
     const current = before.text;
     const previous = before.held;
-    const buffer = current ? `${recalled.text}\n${current}` : recalled.text;
+    // What the composer keeps of its own text travels with its document: a
+    // held document only as the exact spelling it was spliced as, and an
+    // editable draft as plain text. An edit to a held spelling is put back,
+    // because a document carries its references only as that spelling; the
+    // notice says so. The held document is kept whether or not its spelling
+    // is empty: an attachment-only hold has no readable text of its own.
+    const reverted = previous !== null && previous.spliced !== current;
+    const retained =
+      previous !== null
+        ? previous
+        : current !== ""
+          ? {
+              document: {
+                content: [{ Text: current }],
+                references: {},
+              } as UserContent,
+              spliced: current,
+            }
+          : null;
+    const retainedText = retained?.spliced ?? "";
+    const buffer =
+      retainedText !== "" ? `${recalled.text}\n${retainedText}` : recalled.text;
     setDraft(buffer);
     // A recalled turn with references holds a document for an unedited
     // resubmission — the only form that carries the references. The hold
     // covers the whole buffer: the recalled document already includes every
-    // withdrawn turn (plain ones as text), and a draft underneath is merged in
-    // as a final piece. A draft that is still exactly a previous hold's splice
-    // contributes that hold's document unchanged; an edited one contributes
-    // the document with the edit applied to its readable form, which keeps
-    // the references the edit did not reach. Either way a second recall does
-    // not flatten the first turn's references. A recall with no references
-    // and no previous hold is plain text and stays editable.
-    const untouched = previous !== null && previous.spliced === current;
-    const pieces: (UserContent | null | undefined)[] = [recalled.document];
-    if (current) {
-      pieces.push(
-        previous === null
-          ? { content: [{ Text: current }], references: {} }
-          : untouched
-            ? previous.document
-            : applyTextEdit(previous.document, previous.spliced, current),
-      );
-    }
+    // withdrawn turn (plain ones as text), and the retained piece follows
+    // after a newline when it has readable text of its own — an
+    // attachment-only hold contributes its definitions with no separator,
+    // because it spells nothing. A recall with no references and no previous
+    // hold is plain text and stays editable.
     const document =
       recalled.document !== null || previous !== null
-        ? (mergeDocuments(pieces) ??
-          recalled.document ??
-          previous?.document ??
-          null)
+        ? appendDocument(
+            recalled.document ?? { content: [], references: {} },
+            retained?.document ?? null,
+            retainedText !== "" ? "\n" : "",
+          )
         : null;
     setHeld(document !== null ? { document, spliced: buffer } : null);
+    if (reverted) {
+      // One notice per recall event — the nonce guard above makes this a
+      // one-shot notification, not a value derived from a render loop — and a
+      // deferral would show the text snapping back before saying why.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-shot event from the recall value, not derived state.
+      setError(
+        "that turn carries references — its text is back as recalled; clear the composer to start over",
+      );
+    }
     restore(recalled.attachments);
     setExpanded(true);
     field.current?.focus();
-  }, [recalled, restore, setDraft, setHeld, store]);
+  }, [recalled, restore, setDraft, setHeld, setError, store]);
   useEffect(() => {
     // `dragleave` fires on every child boundary crossed, so presence is tracked
     // as a depth rather than a flag.
@@ -330,6 +348,11 @@ export function Composer({
         return;
       }
       setDraft(held.spliced);
+      // `setText` treats an empty buffer as the operator's way out of the
+      // hold, but this revert is the refusal putting the text back, not a
+      // clear — an attachment-only hold must survive it so the next unedited
+      // send still carries the document.
+      setHeld(held);
       setError(
         "that turn carries references — it is back as recalled; send it unedited, or clear the composer to start over",
       );

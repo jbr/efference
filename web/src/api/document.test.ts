@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyTextEdit,
+  appendDocument,
   detachAttachment,
   documentReadable,
-  mergeDocuments,
   recallDocuments,
   withAttachments,
 } from "./document.ts";
@@ -20,9 +19,9 @@ const agent = (session: string) => ({
   target: { type: "agent" as const, session },
 });
 
-/** The shape the TUI's editable_document builds: prose, an agent occurrence,
- * more prose, then a zero-width attachment occurrence. */
-const editableDocument = (): UserContent => ({
+/** Prose, an agent occurrence, more prose, then a zero-width attachment
+ * occurrence — a recalled turn that carries both kinds of reference. */
+const reviewDocument = (): UserContent => ({
   content: [
     { Text: "look at " },
     { Reference: "a" },
@@ -44,50 +43,21 @@ const queued = (document: UserContent, id: string): QueuedTurn => ({
   document,
 });
 
-describe("applyTextEdit", () => {
-  it("keeps an occurrence the edit does not reach", () => {
-    const document = editableDocument();
-    const edited = applyTextEdit(
-      document,
-      documentReadable(document),
-      "look at @castback now",
-    );
-    expect(documentReadable(edited)).toBe("look at @castback now");
-    expect(edited.references.a).toBeDefined();
-    expect(edited.references.b).toBeDefined();
-  });
-
-  it("replaces an occurrence the edit reaches with its kept spelling", () => {
-    const document = editableDocument();
-    const edited = applyTextEdit(
-      document,
-      documentReadable(document),
-      "look at @other please",
-    );
-    expect(documentReadable(edited)).toBe("look at @other please");
-    expect(edited.references.a).toBeUndefined();
-    expect(edited.references.b).toBeDefined();
-  });
-
-  it("keeps an attachment-only document when text is typed into it", () => {
-    const document: UserContent = {
-      content: [{ Reference: "b" }],
-      references: {
-        b: {
-          label: "shot.png",
-          target: { type: "attachment", ...arrival("shot.png") },
-        },
-      },
-    };
-    const edited = applyTextEdit(document, "", "describe this");
-    expect(documentReadable(edited)).toBe("describe this");
-    expect(edited.references.b).toBeDefined();
-  });
+/** An attachment-only document: its readable form is empty, so a hold of it
+ * has no text to splice and must still carry its definitions. */
+const attachmentOnly = (name: string): UserContent => ({
+  content: [{ Reference: "r1" }],
+  references: {
+    r1: {
+      label: name,
+      target: { type: "attachment", ...arrival(name) },
+    },
+  },
 });
 
 describe("recallDocuments", () => {
   it("merges a documented turn and a plain one over the draft text", () => {
-    const document = editableDocument();
+    const document = reviewDocument();
     const merged = recallDocuments([
       queued(document, "s1"),
       {
@@ -100,19 +70,25 @@ describe("recallDocuments", () => {
     expect(merged!.references.a).toBeDefined();
   });
 
-  it("keeps an edited hold's references through a second recall", () => {
-    const document = editableDocument();
-    const spliced = documentReadable(document);
-    const edited = applyTextEdit(
-      document,
-      spliced,
-      "look at @castback thoroughly",
-    );
-    const merged = mergeDocuments([document, edited]);
-    expect(documentReadable(merged!)).toBe(
-      "look at @castback please\nlook at @castback thoroughly",
-    );
-    expect(merged!.references.a).toBeDefined();
+  it("keeps an attachment-only hold through a second recall", () => {
+    const held = attachmentOnly("shot.png");
+    expect(documentReadable(held)).toBe("");
+    // The recall has no document of its own (a plain turn), so the composer
+    // starts from an empty document and appends the hold with no separator.
+    const merged = appendDocument({ content: [], references: {} }, held, "");
+    expect(documentReadable(merged)).toBe("");
+    expect(Object.keys(merged.references)).toHaveLength(1);
+  });
+
+  it("references an upload once when two recalled turns carry it", () => {
+    const merged = recallDocuments([
+      queued(attachmentOnly("shot.png"), "s1"),
+      queued(attachmentOnly("shot.png"), "s2"),
+    ]);
+    expect(Object.keys(merged!.references)).toHaveLength(1);
+    expect(
+      merged!.content.filter((segment) => "Reference" in segment),
+    ).toHaveLength(1);
   });
 });
 

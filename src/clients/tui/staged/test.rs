@@ -42,6 +42,23 @@ fn a_chip_removed_mid_upload_removes_its_upload() {
     assert!(staged.is_empty());
 }
 
+/// A store upload is one file: two recalled turns carrying the same arrival
+/// stage one chip, so removing it takes the upload back once.
+#[test]
+fn restoring_the_same_upload_twice_stages_one_chip() {
+    let mut staged = StagedAttachments::default();
+    staged.restore(vec![arrival("r.txt"), arrival("r.txt")]);
+    assert_eq!(staged.items().len(), 1);
+    let key = staged.last_key().unwrap();
+    assert_eq!(
+        staged.remove(key),
+        Some(AttachCmd::Remove {
+            name: "r.txt".into()
+        })
+    );
+    assert!(staged.items().is_empty());
+}
+
 /// A ready chip's removal names the stored file.
 #[test]
 fn removing_a_ready_chip_removes_the_stored_file() {

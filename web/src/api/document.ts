@@ -52,169 +52,85 @@ export const recallDocuments = (turns: QueuedTurn[]): UserContent | null => {
   );
 };
 
+/** Append one document to a merge, ahead of it with `joiner` when the merge
+ * already has content and some text separates the two pieces: definitions
+ * union by id and occurrences follow their definition. Two submissions mint
+ * ids independently, so an id both documents use with different definitions
+ * renames in the later document, occurrences included. A later document's
+ * attachment definition for an upload the merge already names is dropped with
+ * its occurrences — the gate admits one definition per upload, and an
+ * attachment spells nothing, so the readable form is unchanged. */
+export const appendDocument = (
+  merged: UserContent,
+  document: UserContent | null | undefined,
+  joiner = "\n",
+): UserContent => {
+  if (document == null) return merged;
+  if (merged.content.length > 0 && joiner !== "") {
+    merged.content.push({ Text: joiner });
+  }
+  const uploads = new Set(
+    Object.values(merged.references).flatMap((definition) =>
+      definition.target.type === "attachment" ? [definition.target.name] : [],
+    ),
+  );
+  const dropped = new Set<string>();
+  for (const [id, definition] of Object.entries(document.references)) {
+    if (definition.target.type === "attachment") {
+      if (uploads.has(definition.target.name)) dropped.add(id);
+      else uploads.add(definition.target.name);
+    }
+  }
+  const renames = new Map<string, string>();
+  for (const [id, definition] of Object.entries(document.references)) {
+    if (dropped.has(id)) continue;
+    const existing = merged.references[id];
+    let target = id;
+    if (
+      existing !== undefined &&
+      JSON.stringify(existing) !== JSON.stringify(definition)
+    ) {
+      let suffix = 2;
+      while (
+        merged.references[`${id}-${suffix}`] !== undefined ||
+        document.references[`${id}-${suffix}`] !== undefined
+      ) {
+        suffix += 1;
+      }
+      target = `${id}-${suffix}`;
+    }
+    renames.set(id, target);
+    merged.references[target] = definition;
+  }
+  for (const segment of document.content) {
+    if ("Text" in segment) {
+      merged.content.push({ Text: segment.Text });
+    } else if (!dropped.has(segment.Reference)) {
+      merged.content.push({
+        Reference: renames.get(segment.Reference) ?? segment.Reference,
+      });
+    }
+  }
+  return merged;
+};
+
 /** Merge recalled documents into one, or `null` when nothing was recalled in
  * document form. Segments concatenate in order with a `Text` joiner between
- * documents; definitions union by id — two submissions mint ids
- * independently, so an id both documents use with different definitions
- * renames in the later document, occurrences included. */
-export const mergeDocuments = (
+ * documents. */
+const mergeDocuments = (
   documents: (UserContent | null | undefined)[],
   joiner = "\n",
 ): UserContent | null => {
   const present = documents.filter((d): d is UserContent => d != null);
   if (present.length === 0) return null;
-  const merged: UserContent = { content: [], references: {} };
-  present.forEach((document, index) => {
-    if (index > 0) merged.content.push({ Text: joiner });
-    const renames = new Map<string, string>();
-    for (const [id, definition] of Object.entries(document.references)) {
-      const existing = merged.references[id];
-      let target = id;
-      if (
-        existing !== undefined &&
-        JSON.stringify(existing) !== JSON.stringify(definition)
-      ) {
-        let suffix = 2;
-        while (
-          merged.references[`${id}-${suffix}`] !== undefined ||
-          document.references[`${id}-${suffix}`] !== undefined
-        ) {
-          suffix += 1;
-        }
-        target = `${id}-${suffix}`;
-      }
-      renames.set(id, target);
-      merged.references[target] = definition;
-    }
-    for (const segment of document.content) {
-      if ("Text" in segment) {
-        merged.content.push({ Text: segment.Text });
-      } else {
-        merged.content.push({
-          Reference: renames.get(segment.Reference) ?? segment.Reference,
-        });
-      }
-    }
-  });
+  let merged: UserContent = { content: [], references: {} };
+  for (const document of present) {
+    merged = appendDocument(merged, document, joiner);
+  }
   const carries =
     merged.content.some((s) => "Reference" in s || s.Text.trim() !== "") ||
     Object.keys(merged.references).length > 0;
   return carries ? merged : null;
-};
-
-/** `n` floored to a code-unit boundary of `text`, so a slice never splits a
- * surrogate pair. */
-const floorBoundary = (text: string, n: number): number => {
-  let cut = Math.min(n, text.length);
-  while (cut > 0) {
-    const code = text.charCodeAt(cut - 1);
-    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
-    else break;
-  }
-  return cut;
-};
-
-const commonPrefix = (a: string, b: string): number => {
-  let n = 0;
-  while (n < a.length && n < b.length && a[n] === b[n]) n += 1;
-  return floorBoundary(a, n);
-};
-
-const commonSuffix = (a: string, b: string): number => {
-  let n = 0;
-  while (
-    n < a.length &&
-    n < b.length &&
-    a[a.length - 1 - n] === b[b.length - 1 - n]
-  )
-    n += 1;
-  while (n > 0) {
-    const cut = a.length - n;
-    const code = a.charCodeAt(cut);
-    if (code >= 0xdc00 && code <= 0xdfff) n -= 1;
-    else break;
-  }
-  return n;
-};
-
-/** The document with the change from `oldText` to `newText` applied to its
- * readable form: prose around the edit survives, and an occurrence the edit
- * reaches is replaced by the typed text, its definition dropped when no
- * occurrence remains. `oldText` is the readable form the client last held; a
- * held recall whose draft moved uses this so a second recall keeps the
- * references the edit did not touch instead of flattening the document. */
-export const applyTextEdit = (
-  content: UserContent,
-  oldText: string,
-  newText: string,
-): UserContent => {
-  const prefix = commonPrefix(oldText, newText);
-  const suffix = commonSuffix(oldText.slice(prefix), newText.slice(prefix));
-  const oldEnd = oldText.length - suffix;
-  const inserted = newText.slice(prefix, newText.length - suffix);
-  const pieces: UserSegment[] = [];
-  const references: Record<string, ReferenceDefinition> = {};
-  let insertedDone = false;
-  let pos = 0;
-  const pushText = (text: string) => {
-    if (text !== "") pieces.push({ Text: text });
-  };
-  for (const segment of content.content) {
-    if ("Text" in segment) {
-      const text = segment.Text;
-      const end = pos + text.length;
-      if (end <= prefix || (pos >= oldEnd && insertedDone)) {
-        pushText(text);
-      } else if (pos >= oldEnd) {
-        pushText(inserted);
-        insertedDone = true;
-        pushText(text);
-      } else {
-        pushText(text.slice(0, floorBoundary(text, Math.max(0, prefix - pos))));
-        if (!insertedDone) {
-          pushText(inserted);
-          insertedDone = true;
-        }
-        pushText(text.slice(floorBoundary(text, Math.max(0, oldEnd - pos))));
-      }
-      pos = end;
-      continue;
-    }
-    const id = segment.Reference;
-    const definition = content.references[id];
-    if (definition === undefined) continue;
-    const length = readableReference(content, id).length;
-    const end = pos + length;
-    // A zero-width occurrence (an attachment spells nothing) is untouched by
-    // an edit that merely starts at it.
-    const zeroWidthAtStart = length === 0 && pos === prefix;
-    if (end <= prefix || pos >= oldEnd || zeroWidthAtStart) {
-      if (pos >= oldEnd && !insertedDone) {
-        pushText(inserted);
-        insertedDone = true;
-      }
-      pieces.push({ Reference: id });
-      references[id] = definition;
-    } else {
-      // The edit reaches this occurrence, so it is typed text now: the
-      // spelling before and after the edit stays as prose and the occurrence
-      // goes.
-      const readable = readableReference(content, id);
-      pushText(
-        readable.slice(0, floorBoundary(readable, Math.max(0, prefix - pos))),
-      );
-      if (!insertedDone) {
-        pushText(inserted);
-        insertedDone = true;
-      }
-      pushText(
-        readable.slice(floorBoundary(readable, Math.max(0, oldEnd - pos))),
-      );
-    }
-    pos = end;
-  }
-  if (!insertedDone) pushText(inserted);
-  return { content: pieces, references };
 };
 
 /** Append resolved uploads as attachment references after the prose, minting

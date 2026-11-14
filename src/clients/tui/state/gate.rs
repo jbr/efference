@@ -1,11 +1,11 @@
 //! Approval-gate handling: the composer's submit at a gate and the strip's gate verbs (docs/tui.md).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
 use crate::protocol::state::AskView;
 use crate::protocol::turns::QueuedTurn;
-use crate::record::log::{UserContent, UserSegment};
+use crate::record::log::{ReferenceTarget, UserContent, UserSegment};
 
 impl<'a> InteractiveState<'a> {
     /// The cold line while the session is believed cold (docs/tui.md): what the next
@@ -186,54 +186,70 @@ impl<'a> InteractiveState<'a> {
                 .flat_map(|t| t.attachments.iter().cloned())
                 .collect(),
         );
+        let had_hold = self.recalled_document.is_some();
         let existing = self.recalled_document.take();
         let draft = self.composer.text().to_string();
+        // What the composer keeps of its own text: a held document with the
+        // exact spelling it was spliced as, or the draft as plain text. An
+        // edit to a held spelling is put back — a document carries its
+        // references only as the text they were spliced as, so the held
+        // spelling wins and the operator is told. The held document is kept
+        // whether or not its spelling is empty: an attachment-only hold has no
+        // readable text of its own.
+        let (retained, retained_text, reverted) = match existing {
+            Some((document, spliced)) => {
+                let reverted = draft != spliced;
+                (Some(document), spliced, reverted)
+            }
+            None if !draft.is_empty() => {
+                (Some(UserContent::text(draft.clone())), draft.clone(), false)
+            }
+            None => (None, String::new(), false),
+        };
         let mut buffer = withdrawn
             .iter()
             .map(|t| t.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        if !draft.is_empty() {
+        if !retained_text.is_empty() {
             buffer.push('\n');
-            buffer.push_str(&draft);
+            buffer.push_str(&retained_text);
         }
         // A hold covers the whole buffer whenever any withdrawn turn carried
-        // references, or the composer was already holding one: each documented
-        // turn contributes its document, every other turn contributes its
-        // text, and the draft underneath contributes its text — or its
-        // previous hold's document. An untouched draft contributes that
-        // document unchanged; an edited draft contributes the document with
-        // the edit applied to its readable form, which keeps the references
-        // the edit did not reach. The merged document's readable form is
+        // references, or the composer was already holding one: each withdrawn
+        // turn contributes its document or its text, and the retained piece
+        // follows after a newline when it has readable text of its own — an
+        // attachment-only hold contributes its definitions with no separator,
+        // because it spells nothing. The merged document's readable form is
         // exactly `buffer`. A recall with no references at all is plain text
         // and stays editable.
-        let untouched = existing
-            .as_ref()
-            .is_some_and(|(_, spliced)| *spliced == draft);
-        let carries_references =
-            withdrawn.iter().any(|t| t.document.is_some()) || existing.is_some();
+        let carries_references = withdrawn.iter().any(|t| t.document.is_some()) || had_hold;
         self.recalled_document = if carries_references {
-            let mut documents: Vec<UserContent> = withdrawn
-                .iter()
-                .map(|turn| {
-                    turn.document
-                        .clone()
-                        .unwrap_or_else(|| UserContent::text(turn.text.clone()))
-                })
-                .collect();
-            if !draft.is_empty() {
-                documents.push(match (&existing, untouched) {
-                    (Some((document, _)), true) => document.clone(),
-                    (Some((document, spliced)), false) => document.apply_text_edit(spliced, &draft),
-                    _ => UserContent::text(draft.clone()),
-                });
+            let mut merged = UserContent::default();
+            for (index, turn) in withdrawn.iter().enumerate() {
+                let document = turn
+                    .document
+                    .clone()
+                    .unwrap_or_else(|| UserContent::text(turn.text.clone()));
+                append_document(&mut merged, &document, (index > 0).then_some("\n"));
             }
-            merge_documents(&documents, "\n").map(|document| (document, buffer.clone()))
+            if let Some(document) = retained {
+                append_document(
+                    &mut merged,
+                    &document,
+                    (!retained_text.is_empty()).then_some("\n"),
+                );
+            }
+            (!merged.is_blank()).then(|| (merged, buffer.clone()))
         } else {
             None
         };
         self.composer.set_text(&buffer);
-        self.ui.debug_message = if withdrawn.len() == 1 {
+        self.ui.debug_message = if reverted {
+            "that turn carries references — its text is back as recalled; clear the composer to \
+             start over"
+                .into()
+        } else if withdrawn.len() == 1 {
             "recalled".into()
         } else {
             format!("recalled {}", withdrawn.len()).into()
@@ -313,51 +329,73 @@ impl<'a> InteractiveState<'a> {
     }
 }
 
-/// Merge recalled documents into one: segments concatenated in order with a
-/// `Text` joiner between documents, definitions unioned by id. Two submissions
-/// mint ids independently, so an id both documents use with **different**
-/// definitions renames in the later document — occurrences included — while the
-/// same id naming the same definition in both is one definition. `None` when
-/// the merge would carry nothing.
-fn merge_documents(documents: &[UserContent], joiner: &str) -> Option<UserContent> {
-    let mut merged = UserContent::default();
-    for (index, document) in documents.iter().enumerate() {
-        if index > 0 {
-            merged.content.push(UserSegment::Text(joiner.to_string()));
+/// Append one recalled document to a merge, ahead of it with `joiner` when
+/// some text separates the two pieces: definitions union by id and occurrences
+/// follow their definition. Two submissions mint ids independently, so an id
+/// both documents use with **different** definitions renames in the later
+/// document — occurrences included — while the same id naming the same
+/// definition in both is one definition. A later document's attachment
+/// definition for an upload the merge already names is dropped with its
+/// occurrences: the gate admits one definition per upload, and an attachment
+/// spells nothing, so the readable form is unchanged.
+fn append_document(merged: &mut UserContent, document: &UserContent, joiner: Option<&str>) {
+    if let Some(joiner) = joiner
+        && !joiner.is_empty()
+        && !merged.content.is_empty()
+    {
+        merged.content.push(UserSegment::Text(joiner.to_string()));
+    }
+    let mut uploads: BTreeSet<String> = merged
+        .references
+        .values()
+        .filter_map(|definition| match &definition.target {
+            ReferenceTarget::Attachment(arrival) => Some(arrival.name.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut dropped: BTreeSet<String> = BTreeSet::new();
+    for (id, definition) in &document.references {
+        if let ReferenceTarget::Attachment(arrival) = &definition.target
+            && !uploads.insert(arrival.name.clone())
+        {
+            dropped.insert(id.clone());
         }
-        // Map this document's ids onto the merged set: unchanged when the id
-        // is free or already names the same definition, renamed when another
-        // definition holds it.
-        let mut renames: BTreeMap<String, String> = BTreeMap::new();
-        for (id, definition) in &document.references {
-            let target = match merged.references.get(id) {
-                Some(existing) if existing == definition => id.clone(),
-                Some(_) => {
-                    let mut suffix = 2;
-                    loop {
-                        let candidate = format!("{id}-{suffix}");
-                        if !merged.references.contains_key(&candidate)
-                            && !document.references.contains_key(&candidate)
-                        {
-                            break candidate;
-                        }
-                        suffix += 1;
+    }
+    // Map this document's ids onto the merged set: unchanged when the id is
+    // free or already names the same definition, renamed when another
+    // definition holds it.
+    let mut renames: BTreeMap<String, String> = BTreeMap::new();
+    for (id, definition) in &document.references {
+        if dropped.contains(id) {
+            continue;
+        }
+        let target = match merged.references.get(id) {
+            Some(existing) if existing == definition => id.clone(),
+            Some(_) => {
+                let mut suffix = 2;
+                loop {
+                    let candidate = format!("{id}-{suffix}");
+                    if !merged.references.contains_key(&candidate)
+                        && !document.references.contains_key(&candidate)
+                    {
+                        break candidate;
                     }
+                    suffix += 1;
                 }
-                None => id.clone(),
-            };
-            renames.insert(id.clone(), target.clone());
-            merged.references.insert(target, definition.clone());
-        }
-        for segment in &document.content {
-            match segment {
-                UserSegment::Text(text) => merged.content.push(UserSegment::Text(text.clone())),
-                UserSegment::Reference(id) => {
-                    let target = renames.get(id).cloned().unwrap_or_else(|| id.clone());
-                    merged.content.push(UserSegment::Reference(target));
-                }
+            }
+            None => id.clone(),
+        };
+        renames.insert(id.clone(), target.clone());
+        merged.references.insert(target, definition.clone());
+    }
+    for segment in &document.content {
+        match segment {
+            UserSegment::Text(text) => merged.content.push(UserSegment::Text(text.clone())),
+            UserSegment::Reference(id) if dropped.contains(id) => {}
+            UserSegment::Reference(id) => {
+                let target = renames.get(id).cloned().unwrap_or_else(|| id.clone());
+                merged.content.push(UserSegment::Reference(target));
             }
         }
     }
-    (!merged.is_blank()).then_some(merged)
 }

@@ -84,8 +84,15 @@ impl StagedAttachments {
     }
 
     /// Stage attachments a recall handed back: already stored, so ready at once.
+    /// A store upload is one file, so an arrival whose name is already staged
+    /// (a second recalled turn carrying the same upload) adds no second chip —
+    /// the held document references the upload once, and removing the one chip
+    /// takes it back.
     pub fn restore(&mut self, arrivals: Vec<Arrival>) {
         for arrival in arrivals {
+            if self.items.iter().any(|staged| staged.label == arrival.name) {
+                continue;
+            }
             self.next_key += 1;
             self.items.push(Staged {
                 key: self.next_key,

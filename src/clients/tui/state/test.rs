@@ -308,24 +308,100 @@ fn a_mixed_recall_over_a_draft_holds_the_whole_buffer() {
     assert!(document.references.contains_key("a"));
 }
 
-/// A second recall while the held text has been edited preserves the
-/// references the edit did not reach — the edited hold is applied to its own
-/// readable form, not flattened to text.
+/// A second recall while the held text has been edited puts the held spelling
+/// back — references travel only with it — and keeps the first turn's
+/// references in the merged document. The notice says so; the recalled text
+/// stays in the composer, so no turn is lost.
 #[test]
-fn a_second_recall_keeps_the_references_of_an_edited_hold() {
-    let (mut s, _srx) = sendable_state();
+fn a_second_recall_reverts_an_edited_hold_and_keeps_its_references() {
+    let (mut s, mut srx) = sendable_state();
     s.apply_recall(&[queued(review_document("review "), "s1")]);
     assert_eq!(s.composer.text(), "review @castback");
     s.composer.set_text("review @castback thoroughly");
     s.apply_recall(&[QueuedTurn::from(&SubmittedTurn::new("more", "s2"))]);
-    let expected = "more\nreview @castback thoroughly";
-    assert_eq!(s.composer.text(), expected);
-    let (document, _) = s.recalled_document.as_ref().expect("held");
+    let expected = "more\nreview @castback";
+    assert_eq!(s.composer.text(), expected, "the held spelling is back");
     assert!(
-        document.references.contains_key("a"),
-        "the edit did not reach the occurrence"
+        s.ui.debug_message.contains("back as recalled"),
+        "the operator is told the edit was put back: {}",
+        s.ui.debug_message
     );
+    let (document, spliced) = s.recalled_document.as_ref().expect("held");
+    assert_eq!(spliced, expected);
+    assert!(document.references.contains_key("a"));
     assert_eq!(document.readable(), expected);
+    s.submit_composer(expected.into());
+    let sent = srx.try_recv().expect("the reverted send goes out");
+    let document = sent.turn.document().expect("structured");
+    assert!(document.references.contains_key("a"));
+    assert_eq!(document.readable(), expected);
+}
+
+/// An attachment-only hold has no readable form of its own, and a second
+/// recall must still carry its document: the buffer is the new text alone,
+/// with no separator, and the attachment is still in the merged document.
+#[test]
+fn a_second_recall_keeps_an_attachment_only_hold() {
+    let (mut s, mut srx) = sendable_state();
+    let documented = UserContent {
+        content: vec![UserSegment::Reference("r1".into())],
+        references: BTreeMap::from([(
+            "r1".into(),
+            ReferenceDefinition::attachment(attachment("shot.png")),
+        )]),
+    };
+    s.apply_recall(&[queued(documented, "s1")]);
+    assert_eq!(s.composer.text(), "");
+    assert!(s.recalled_document.is_some(), "held while empty");
+    s.apply_recall(&[QueuedTurn::from(&SubmittedTurn::new("more", "s2"))]);
+    assert_eq!(
+        s.composer.text(),
+        "more",
+        "the empty hold adds no separator"
+    );
+    let (document, spliced) = s.recalled_document.as_ref().expect("held");
+    assert_eq!(spliced, "more");
+    assert_eq!(document.attachment_arrivals().len(), 1);
+    assert_eq!(document.readable(), "more");
+    s.submit_composer("more".into());
+    let sent = srx.try_recv().expect("sent");
+    let document = sent.turn.document().expect("structured");
+    assert_eq!(document.attachment_arrivals().len(), 1);
+    assert_eq!(document.readable(), "more");
+}
+
+/// Two withdrawn turns can carry the same upload — a refusal and a resend both
+/// recalled, for instance. The merge keeps one definition and one occurrence:
+/// the gate admits one definition per upload, and an attachment spells
+/// nothing, so the readable form does not change.
+#[test]
+fn a_recall_of_two_turns_with_the_same_upload_references_it_once() {
+    let (mut s, mut srx) = sendable_state();
+    let same_upload = || UserContent {
+        content: vec![UserSegment::Reference("r1".into())],
+        references: BTreeMap::from([(
+            "r1".into(),
+            ReferenceDefinition::attachment(attachment("shot.png")),
+        )]),
+    };
+    s.apply_recall(&[queued(same_upload(), "s1"), queued(same_upload(), "s2")]);
+    let (document, spliced) = s.recalled_document.as_ref().expect("held");
+    assert_eq!(spliced, "\n", "two zero-width turns joined as two blocks");
+    assert_eq!(document.references.len(), 1, "one upload, one definition");
+    assert_eq!(
+        document
+            .content
+            .iter()
+            .filter(|segment| matches!(segment, UserSegment::Reference(_)))
+            .count(),
+        1,
+        "one occurrence"
+    );
+    assert_eq!(document.readable(), *spliced);
+    s.submit_composer(spliced.clone());
+    let sent = srx.try_recv().expect("sent");
+    let document = sent.turn.document().expect("structured");
+    assert_eq!(document.references.len(), 1);
 }
 
 /// Editing a held draft is refused once, keeps the hold, and the unedited
@@ -357,6 +433,37 @@ fn an_edit_is_refused_and_the_unedited_resend_keeps_structure() {
             if blocks.len() == 1
                 && matches!(blocks[0], crate::record::log::ContentBlock::Document(_))
     ));
+}
+
+/// Sending an edited attachment-only hold is refused, its empty spelling goes
+/// back, and the hold survives so the next send still carries the upload.
+#[test]
+fn an_edited_attachment_only_hold_survives_its_refusal() {
+    let (mut s, mut srx) = sendable_state();
+    let document = UserContent {
+        content: vec![UserSegment::Reference("r1".into())],
+        references: BTreeMap::from([(
+            "r1".into(),
+            ReferenceDefinition::attachment(attachment("shot.png")),
+        )]),
+    };
+    s.apply_recall(&[queued(document, "s1")]);
+    s.submit_composer("typed over the hold".into());
+    assert!(srx.try_recv().is_err(), "nothing was sent");
+    assert_eq!(s.composer.text(), "", "the empty spelling is back");
+    assert!(
+        s.recalled_document.is_some(),
+        "the hold survives the refusal"
+    );
+    assert!(
+        s.ui.debug_message.contains("send it unedited"),
+        "the operator is told: {}",
+        s.ui.debug_message
+    );
+    s.submit_composer(String::new());
+    let sent = srx.try_recv().expect("the unedited send goes out");
+    let document = sent.turn.document().expect("structured");
+    assert_eq!(document.attachment_arrivals().len(), 1);
 }
 
 /// Removing a recalled attachment detaches it from the held document; other
