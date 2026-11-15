@@ -19,11 +19,18 @@ use super::governing_grant;
 use super::paths::context_granted;
 use super::{Directories, Perm, apply_config_change};
 
-/// One grant an admission needs: the `[paths]` key it is written at, the spelling the
-/// submitter used (for a notice naming what was refused), and the change itself.
+/// One grant an admission needs: the `[paths]` key it is written at, the judged target that
+/// key resolves to, the spelling the submitter used (for a notice naming what was refused), and
+/// the change itself.
+///
+/// `target` is kept beside `key` because the key can be a shortened spelling of it — the
+/// project-relative form — while the turn's document stores the absolute path. A masker needle
+/// can match the absolute path without matching the key, so admission needs the identity the
+/// grant is founded on to check that the log keeps it (docs/permissions.md).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReferenceGrant {
     pub key: String,
+    pub target: PathBuf,
     pub original: String,
     pub change: ConfigChange,
 }
@@ -95,6 +102,7 @@ pub(crate) fn filesystem_grants(
         grants.push(ReferenceGrant {
             change,
             key,
+            target,
             original,
         });
     }

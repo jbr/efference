@@ -454,6 +454,73 @@ fn a_grant_whose_path_the_masker_rewrites_is_refused() {
     assert!(body.contains("`[env]` mask"), "{body}");
     assert!(body.contains("was not added"), "{body}");
 }
+/// The same refusal when only the **target identity** is rewritten. A secret-bearing directory
+/// is registered as a masker needle in its absolute spelling; the grant's key is the shortened
+/// project-relative form (`secret/notes.md`), which the needle does not match, while the stored
+/// definition's absolute `path` does. Probing the key alone would write and fold a grant at a
+/// target the log no longer names, so admission checks the masked document too. The message is
+/// still admitted — masked, not rejected (docs/permissions.md).
+#[test]
+fn a_grant_whose_absolute_target_the_masker_rewrites_is_refused() {
+    let (session, config, _scratch) = session_with("# the perimeter\n");
+    let before = std::fs::read_to_string(&config).unwrap();
+    let secret = root().join("secret");
+    let masker = crate::config::env_table::Masker::default();
+    masker.absorb(&[(
+        "SECRET_DIR".to_string(),
+        secret.to_string_lossy().into_owned(),
+    )]);
+    session.log.lock().unwrap().set_masker(Arc::new(masker));
+    let path = secret.join("notes.md");
+
+    admit(
+        &session,
+        document(&[("secret/notes.md", &path, ReferenceTargetKind::File, READ)]),
+        "sub-absolute-masked",
+    );
+
+    // The key contains nothing of the absolute needle, so only the target check can refuse.
+    assert!(
+        session.effective_config().paths.is_empty(),
+        "nothing was folded: {:?}",
+        session.effective_config().paths
+    );
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        before,
+        "the file is untouched"
+    );
+    assert!(config_edits(&session).is_empty(), "no edit was appended");
+    let body = notice_body(&session, "config:grant-refused").expect("one refusal notice");
+    assert!(body.contains("`secret/notes.md`"), "{body}");
+    assert!(body.contains("`[env]` mask"), "{body}");
+
+    // The turn itself is in the log, and the path it stores is the masker's.
+    let stored = session
+        .with_entries(|entries| {
+            entries.iter().rev().find_map(|entry| match &entry.payload {
+                Payload::User(blocks) => blocks.iter().find_map(|block| match block {
+                    ContentBlock::Document(document) => {
+                        document.references.get("r1").and_then(|definition| {
+                            match &definition.target {
+                                ReferenceTarget::Filesystem { path, .. } => Some(path.clone()),
+                                _ => None,
+                            }
+                        })
+                    }
+                    _ => None,
+                }),
+                _ => None,
+            })
+        })
+        .expect("the message is admitted");
+    let needle = secret.to_string_lossy().into_owned();
+    assert_ne!(stored, needle, "the stored path is what the masker wrote");
+    assert!(
+        !stored.contains(&needle),
+        "the needle is not in the log: {stored}"
+    );
+}
 
 /// Write access on `.efference` is granted live, and the log entry is what carries it across a
 /// resume: boot loads the config file and then injects the session-surface deny at `.efference`
@@ -516,11 +583,11 @@ fn the_efference_grant_holds_live_and_survives_a_resume_through_the_log() {
         .insert(".efference".into(), Perms::default());
     // The same bytes from a file of their own. Reopening the original path is intermittently
     // refused as held under the full suite: it failed three times in five runs, never when this
-    // module ran alone, with the session's own log closed and no descriptor in this process
-    // naming the path. One possible holder is a child forked by a test running alongside this
-    // one, which inherits the descriptor between fork and exec, so closing the parent's copy
-    // would not release the lock; nothing here establishes that. A copy is a file that no other
-    // descriptor refers to, so the policy fold is what the test measures.
+    // module ran alone, with the session's own log closed and `lsof -p` listing no descriptor
+    // for the path in this process. One possible holder is a child forked by a test running
+    // alongside this one, which inherits the descriptor between fork and exec, so closing the
+    // parent's copy would not release the lock; nothing here establishes that. A copy is a file
+    // that no other descriptor refers to, so the policy fold is what the test measures.
     let resumed_log = scratch.path().join("resumed.jsonl");
     std::fs::copy(&log_path, &resumed_log).expect("the log bytes are copied");
     let opened = Log::open(&resumed_log).expect("the log reopens");

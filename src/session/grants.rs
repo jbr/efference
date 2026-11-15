@@ -11,10 +11,13 @@
 //! ([`Session::policy_section`]), so its grants reach the log and the effective policy in one
 //! order, and no other committed edit can interleave with them.
 
+use std::collections::BTreeSet;
+use std::path::Path;
+
 use super::watch::{raise_pass, refresh_locked};
 use super::*;
 use crate::config::policy::{filesystem_grants, has_filesystem_references};
-use crate::record::log::{ConfigChange, ConfigEdit, ContentBlock, UserContent};
+use crate::record::log::{ConfigChange, ConfigEdit, ContentBlock, ReferenceTarget, UserContent};
 
 /// The turn's structured document, when it carries a filesystem reference — the admission
 /// transaction's trigger. `None` for every other payload, so a plain turn takes exactly the
@@ -50,7 +53,8 @@ impl Session {
     ///    force — the committed edits fs-watch would append — so the grant is computed against
     ///    the current perimeter and cannot narrow a grant an operator just wrote.
     /// 2. Compute the additive grant union ([`filesystem_grants`]).
-    /// 3. Mask-probe each computed change; a path the `[env]` masker would rewrite is refused
+    /// 3. Mask-probe each computed grant — both its key and the absolute target the document
+    ///    stores, which can differ. Either one the `[env]` masker would rewrite is refused
     ///    rather than written as a placeholder, before anything is touched.
     /// 4. Append the message. The turn is durable before any grant exists, so no grant can ever
     ///    authorize a turn whose append failed.
@@ -104,11 +108,18 @@ impl Session {
                 refused.push("the config file is invalid and could not be restored".to_string());
             }
 
-            // 3. The mask probe: what the log would store is what the file gets.
+            // 3. The mask probe: what the log would store is what the file gets. Two strings
+            //    decide a grant: the key the file is written at, and the absolute target the
+            //    document keeps. The key can be the shortened project-relative form, so a
+            //    needle that matches only the absolute path leaves it untouched; probing the
+            //    key alone would then grant access at a target the log no longer names.
+            let masked = self.masked_targets(document, &dirs);
             let mut changes = Vec::new();
             let mut originals = Vec::new();
             for grant in grants {
-                if self.mask_change(&grant.change) == grant.change {
+                if self.mask_change(&grant.change) == grant.change
+                    && !masked.contains(&grant.target)
+                {
                     originals.push(grant.original);
                     changes.push(grant.change);
                 } else {
@@ -199,6 +210,40 @@ impl Session {
             Payload::ConfigEdit(edit) => edit.change,
             _ => change.clone(),
         }
+    }
+    /// The judged targets whose stored spelling the masker rewrites — the identity the log
+    /// keeps for them, and the one a grant is founded on. The masking is the one the append
+    /// will apply, run on a copy of the document, so a definition whose absolute `path` becomes
+    /// a placeholder is found here rather than after the fact. A grant whose key is
+    /// project-relative can leave this string unreached by [`Self::mask_change`], which is why
+    /// the two are checked separately (docs/permissions.md).
+    fn masked_targets(
+        &self,
+        document: &UserContent,
+        dirs: &crate::config::policy::Directories,
+    ) -> BTreeSet<PathBuf> {
+        let mut probe = Payload::User(vec![ContentBlock::Document(document.clone())]);
+        self.mask_payload(&mut probe);
+        let Payload::User(blocks) = &probe else {
+            return BTreeSet::new();
+        };
+        let Some(ContentBlock::Document(masked)) = blocks.first() else {
+            return BTreeSet::new();
+        };
+        document
+            .references
+            .iter()
+            .filter_map(|(id, definition)| {
+                let ReferenceTarget::Filesystem { path, .. } = &definition.target else {
+                    return None;
+                };
+                let after = masked.references.get(id).map(|masked| &masked.target);
+                let Some(ReferenceTarget::Filesystem { path: after, .. }) = after else {
+                    return None;
+                };
+                (after != path).then(|| dirs.judged(Path::new(path)))
+            })
+            .collect()
     }
 }
 

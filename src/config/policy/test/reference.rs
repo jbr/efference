@@ -425,3 +425,25 @@ fn a_target_without_a_utf8_spelling_is_refused() {
             .ends_with('\u{fffd}')
     );
 }
+/// A grant is founded on the absolute target, and its key is a shortened spelling of it when the
+/// target is inside the project. Both are kept: admission's mask probe checks the key and the
+/// target separately, because an `[env]` needle can match the absolute path while the relative
+/// key is untouched (`session/grants.rs`).
+#[test]
+fn a_grant_keeps_the_target_its_key_shortens() {
+    let doc = document(&[(
+        "a",
+        "secret/notes.md",
+        "/work/secret/notes.md",
+        ReferenceTargetKind::File,
+        READ,
+    )]);
+    let (grants, _) = filesystem_grants(&doc, &Config::default(), &dirs());
+    assert_eq!(grants.len(), 1);
+    assert_eq!(grants[0].key, "secret/notes.md");
+    assert_eq!(
+        grants[0].target,
+        PathBuf::from("/work/secret/notes.md"),
+        "the target keeps the absolute spelling the key shortens"
+    );
+}

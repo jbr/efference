@@ -914,10 +914,12 @@ proposal decision, fs-watch. Lock order is the section, then `config_file`, then
 the effective policy, then proposals; nothing takes them the other way. Holding it across an
 admission's append and fold is what makes the fold order equal the log order, which the gate's
 reads depend on. Inside the section, admission reconciles the file first (the deltas fs-watch
-would append), computes the grant against the policy in force, probes each change through the
-`[env]` masker — refusing a path the masker would rewrite rather than storing a placeholder —
-appends the message, replaces the file once for the batch, then appends and folds one committed
-edit per grant.
+would append), computes the grant against the policy in force, probes each grant through the
+`[env]` masker, appends the message, replaces the file once for the batch, then appends and folds
+one committed edit per grant. The probe covers both strings that decide a grant: the key the file
+is written at, and the absolute target the turn's document keeps. They can differ — the key is the
+project-relative form — so a needle can match the absolute path while the key is untouched; a
+grant that either string would rewrite is refused rather than stored as a placeholder.
 
 **The message is admitted first, and a failure after it does not undo it.** A config-file write
 that fails adds no grant: the file keeps its bytes, nothing is folded, and one notice says the
