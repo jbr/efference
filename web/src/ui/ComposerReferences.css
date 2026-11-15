@@ -1,0 +1,203 @@
+.reference-chip {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.16rem 0.25rem 0.16rem 0.45rem;
+  border: 1px solid var(--border-control);
+  border-radius: 7px;
+  background: var(--bg-raised);
+  color: var(--fg-bright);
+  font: 0.8rem var(--font-ui);
+  line-height: 1.5;
+}
+
+.reference-kind {
+  flex: 0 0 1rem;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  text-align: center;
+}
+
+.reference-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-chip .reference-chip-access,
+.reference-chip .reference-chip-remove {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fg-dim);
+  padding: 0.05rem 0.25rem;
+  font-size: 0.7rem;
+}
+
+.reference-chip .reference-chip-access {
+  border-left-color: var(--border-control);
+  white-space: nowrap;
+}
+
+.reference-chip .reference-chip-access[aria-pressed="true"] {
+  color: var(--neon-ink-dim);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-raised));
+}
+
+.reference-chip .reference-chip-remove {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.reference-chip button:hover {
+  border-color: var(--selection-border);
+  color: var(--fg-bright);
+  box-shadow: var(--control-halo);
+}
+
+.reference-chip button:active {
+  background: var(--bg-chip);
+  color: var(--neon-ink);
+}
+
+.reference-chip button:focus-visible {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.reference-completion {
+  overflow: hidden;
+  border: 1px solid var(--border-control);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.2);
+  font-family: var(--font-ui);
+}
+
+.reference-completion-heading,
+.reference-completion-help {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  padding: 0.6rem 0.8rem;
+  color: var(--fg-dim);
+  font-size: 0.7rem;
+}
+
+.reference-completion-heading > span {
+  color: var(--fg-dim);
+}
+
+.reference-completion .reference-completion-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: calc(100% - 0.7rem);
+  margin: 0.1rem 0.35rem;
+  padding: 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fg);
+  text-align: left;
+}
+
+.reference-completion-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.reference-completion-label {
+  color: var(--fg-bright);
+  font-size: 0.85rem;
+}
+
+.reference-completion-detail {
+  overflow: hidden;
+  color: var(--fg-dim);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-completion-action {
+  color: var(--fg-dim);
+  font-size: 0.65rem;
+}
+
+.reference-completion .reference-completion-row[aria-selected="true"] {
+  border-color: var(--selection-border);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-raised));
+  box-shadow:
+    inset 2px 0 var(--neon-ink-dim),
+    var(--control-halo);
+}
+
+.reference-completion .reference-completion-row:hover {
+  border-color: var(--selection-border);
+  background: var(--bg-inset);
+}
+
+.reference-completion .reference-completion-row:active {
+  background: var(--bg-chip);
+}
+
+.reference-completion .reference-completion-row:focus-visible {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.reference-completion-help {
+  justify-content: flex-start;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.65rem;
+}
+
+.reference-completion-help span {
+  white-space: nowrap;
+}
+
+.reference-completion-help kbd {
+  margin-right: 0.2rem;
+  color: var(--fg-muted);
+  font: inherit;
+  font-family: var(--font-mono);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .reference-completion-help {
+    display: none;
+  }
+}
+
+.reference-completion-note {
+  margin: 0;
+  padding: 1rem 0.8rem;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+:root[data-theme="lilac"] .reference-chip {
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="lilac"] .reference-completion {
+  box-shadow: 0 6px 24px rgb(76 52 120 / 0.08);
+}
+
+:root[data-theme="lilac"]
+  .reference-completion
+  .reference-completion-row[aria-selected="true"] {
+  background: color-mix(in srgb, var(--lilac) 15%, white);
+  box-shadow: inset 2px 0 var(--lilac-strong);
+}

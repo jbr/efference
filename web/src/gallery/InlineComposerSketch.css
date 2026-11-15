@@ -1,0 +1,49 @@
+.inline-composer-sketch {
+  width: 100%;
+  max-width: 38rem;
+}
+.inline-composer-editor {
+  min-height: 7rem;
+  padding: 0.1rem 0.5rem 0.1rem 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-prose);
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--fg);
+  caret-color: var(--accent);
+}
+.inline-composer-editor:focus {
+  outline: none;
+  box-shadow: none;
+}
+.inline-composer-editor p {
+  margin: 0;
+}
+.inline-composer-editor p + p {
+  margin-top: 0;
+}
+.inline-reference-node {
+  display: inline;
+}
+.inline-reference-node .reference-chip {
+  vertical-align: baseline;
+  margin-inline: 0.1rem;
+}
+.inline-reference-node.ProseMirror-selectednode .reference-chip {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.inline-composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+}
+.inline-composer-output {
+  max-height: 18rem;
+  overflow: auto;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

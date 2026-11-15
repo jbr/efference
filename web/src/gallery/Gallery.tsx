@@ -45,6 +45,7 @@ import { AmbientSpecimens } from "./AmbientSpecimens.tsx";
 import { ContextMeterSpecimens } from "./ContextMeterSpecimens.tsx";
 import { PlanMeterSpecimens } from "./PlanMeterSpecimens.tsx";
 import { SessionChromeSpecimens } from "./SessionChromeSpecimens.tsx";
+import { ComposerReferenceSpecimens } from "./ComposerReferenceSpecimens.tsx";
 
 import { Specimen, States } from "./Specimens.tsx";
 import { PaletteSpecimens } from "./PaletteSpecimens.tsx";
@@ -247,6 +248,9 @@ export function Gallery() {
       </Section>
       <Section title="Composer">
         <ComposerSpecimens />
+      </Section>
+      <Section title="Composer references">
+        <ComposerReferenceSpecimens />
       </Section>
 
       <Section title="Code and results">
