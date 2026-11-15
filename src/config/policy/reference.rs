@@ -20,7 +20,7 @@ use super::paths::context_granted;
 use super::{Directories, Perm, apply_config_change};
 
 /// One grant an admission needs: the `[paths]` key it is written at, the judged target that
-/// key resolves to, the spelling the submitter used (for a notice naming what was refused), and
+/// key resolves to, the spelling the submitter used (so a refusal notice can show it), and
 /// the change itself.
 ///
 /// `target` is kept beside `key` because the key can be a shortened spelling of it — the

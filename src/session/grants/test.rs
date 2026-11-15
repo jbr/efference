@@ -458,7 +458,7 @@ fn a_grant_whose_path_the_masker_rewrites_is_refused() {
 /// is registered as a masker needle in its absolute spelling; the grant's key is the shortened
 /// project-relative form (`secret/notes.md`), which the needle does not match, while the stored
 /// definition's absolute `path` does. Probing the key alone would write and fold a grant at a
-/// target the log no longer names, so admission checks the masked document too. The message is
+/// target the log does not hold, so admission checks the masked document too. The message is
 /// still admitted — masked, not rejected (docs/permissions.md).
 #[test]
 fn a_grant_whose_absolute_target_the_masker_rewrites_is_refused() {

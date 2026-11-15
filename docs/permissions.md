@@ -916,7 +916,7 @@ admission's append and fold is what makes the fold order equal the log order, wh
 reads depend on. Inside the section, admission reconciles the file first (the deltas fs-watch
 would append), computes the grant against the policy in force, probes each grant through the
 `[env]` masker, appends the message, replaces the file once for the batch, then appends and folds
-one committed edit per grant. The probe covers both strings that decide a grant: the key the file
+one committed edit per grant. The probe covers both strings that determine a grant: the key the file
 is written at, and the absolute target the turn's document keeps. They can differ — the key is the
 project-relative form — so a needle can match the absolute path while the key is untouched; a
 grant that either string would rewrite is refused rather than stored as a placeholder.

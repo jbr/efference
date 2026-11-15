@@ -109,10 +109,10 @@ impl Session {
             }
 
             // 3. The mask probe: what the log would store is what the file gets. Two strings
-            //    decide a grant: the key the file is written at, and the absolute target the
+            //    determine a grant: the key the file is written at, and the absolute target the
             //    document keeps. The key can be the shortened project-relative form, so a
             //    needle that matches only the absolute path leaves it untouched; probing the
-            //    key alone would then grant access at a target the log no longer names.
+            //    key alone would then grant access at a target the log does not hold.
             let masked = self.masked_targets(document, &dirs);
             let mut changes = Vec::new();
             let mut originals = Vec::new();
