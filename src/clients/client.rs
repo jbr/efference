@@ -21,6 +21,7 @@ pub use crate::inference::catalog::{
     CatalogModel, ConnectionCatalog, ModelRole, Status as CatalogStatus,
 };
 use crate::inference::{ConnectionInventory, ResolvedOptions};
+use crate::protocol::discovery::{AgentCandidates, PathCandidates};
 use crate::protocol::sessions::{
     ArchivedSession, CreateSession, ListedSession, PatchSession, SessionOptionsRequest,
     SessionState,
@@ -498,6 +499,33 @@ impl Client {
         self.get("/proposals").await
     }
 
+    /// Candidate filesystem paths for the composer's inline reference
+    /// (`GET /discovery/paths`, docs/control-api.md): the entries of one directory whose
+    /// names start with `prefix`'s final fragment. `limit` is the daemon's when absent.
+    /// Each candidate's `target` and `path` are what a submission stores.
+    pub async fn discover_paths(
+        &self,
+        prefix: &str,
+        limit: Option<usize>,
+    ) -> Result<PathCandidates> {
+        let body = self.get(&discovery_path("paths", prefix, limit)).await?;
+        serde_json::from_str(&body)
+            .with_context(|| format!("parsing the discovery response: {body}"))
+    }
+
+    /// Candidate agents for the composer's inline reference (`GET /discovery/agents`,
+    /// docs/control-api.md): the host's session rows whose ids start with `prefix`, the
+    /// leading `@` ignored. `limit` is the daemon's when absent.
+    pub async fn discover_agents(
+        &self,
+        prefix: &str,
+        limit: Option<usize>,
+    ) -> Result<AgentCandidates> {
+        let body = self.get(&discovery_path("agents", prefix, limit)).await?;
+        serde_json::from_str(&body)
+            .with_context(|| format!("parsing the discovery response: {body}"))
+    }
+
     /// Commit a pending proposal by its `seq` (`PATCH /proposals/:seq
     /// {state:"committed"}`), folding its change into the effective config. `note` is
     /// the rationale for the audit record.
@@ -571,6 +599,16 @@ impl Client {
     pub async fn log_image(&self, seq: u64, idx: usize) -> Result<Vec<u8>> {
         self.get_bytes(&format!("/log/{seq}/images/{idx}")).await
     }
+}
+
+/// The `GET /discovery/<resource>` path for `prefix` and `limit`, percent-encoded.
+fn discovery_path(resource: &str, prefix: &str, limit: Option<usize>) -> String {
+    let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
+    query.append_pair("prefix", prefix);
+    if let Some(limit) = limit {
+        query.append_pair("limit", &limit.to_string());
+    }
+    format!("/discovery/{resource}?{}", query.finish())
 }
 
 #[derive(serde::Deserialize)]

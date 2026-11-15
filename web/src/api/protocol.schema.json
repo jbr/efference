@@ -148,6 +148,39 @@
         }
       ]
     },
+    "AgentCandidates": {
+      "description": "The answer to `GET /discovery/agents`: the host's sessions whose ids start with\nthe composer's prefix (docs/control-api.md).",
+      "properties": {
+        "agents": {
+          "description": "The rows `GET /sessions` returns, in id order.",
+          "items": {
+            "$ref": "#/definitions/ListedSession"
+          },
+          "type": "array"
+        },
+        "prefix": {
+          "description": "The prefix as sent, `@` included, echoed like [`PathCandidates::prefix`].",
+          "type": "string"
+        },
+        "problem": {
+          "description": "Why there are no candidates — a listener that serves one session has no host\nregistry to list. Absent on a host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "truncated": {
+          "description": "The prefix matched more sessions than the limit.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prefix",
+        "truncated",
+        "agents"
+      ],
+      "type": "object"
+    },
     "Approval": {
       "description": "The decision returned by\n[`Frontend::approve`](crate::agent::frontend::Frontend::approve) (docs/README.md). A typed\nline is a *redirect* — the call is rejected and the human's text is fed to the model\nas the next user turn, steering it without ending the turn. Every un-run\n`tool_use` still gets a paired `is_error` `tool_result` so the wire never\norphans a call (the API rejects that); the loop owns that pairing.\n\nSerialized into the log as a gate decision's record (`Telemetry::GateDecision`,\ndocs/log-and-projection.md), so a rename here changes what new entries say.",
       "oneOf": [
@@ -4482,6 +4515,85 @@
       "required": [
         "reauth",
         "refuse_authorization"
+      ],
+      "type": "object"
+    },
+    "PathCandidate": {
+      "description": "One entry a composer can offer. `path` is what a submission stores; `original` is\nthe spelling to keep beside it, so the reference reads the way the composer wrote\nit.",
+      "properties": {
+        "name": {
+          "description": "The entry's own name: one path component, no separator.",
+          "type": "string"
+        },
+        "original": {
+          "description": "The directory spelling as typed with `name` joined onto it — the value a\n`SubmittedTarget::Filesystem` keeps as its `original`.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Absolute and lexically normalized, with no symbolic link resolved and no\nworktree path mapped to its project counterpart. An entry is offered only when\nits path round-trips; one that would need a rewritten spelling is omitted.",
+          "type": "string"
+        },
+        "symlink": {
+          "description": "The entry itself is a symbolic link; `target` follows it.",
+          "type": "boolean"
+        },
+        "target": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ReferenceTargetKind"
+            }
+          ],
+          "description": "What the entry is now, following a symbolic link for the kind."
+        }
+      },
+      "required": [
+        "name",
+        "original",
+        "path",
+        "target",
+        "symlink"
+      ],
+      "type": "object"
+    },
+    "PathCandidates": {
+      "description": "The answer to `GET /discovery/paths`: what one directory holds under the\ncomposer's prefix (docs/control-api.md).",
+      "properties": {
+        "directory": {
+          "description": "The directory the prefix resolved to, absolute and lexically normalized: the\nparent every `entries[].path` sits under. It is not necessarily the spelling\nthe composer typed. Empty when that path has no UTF-8 spelling; `problem` is\nthen set, and no entry is offered under a rewritten path.",
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/definitions/PathCandidate"
+          },
+          "type": "array"
+        },
+        "filter": {
+          "description": "The fragment after the last `/`, matched against each entry name.",
+          "type": "string"
+        },
+        "prefix": {
+          "description": "The prefix as sent, echoed so a client can drop an answer that arrived after\nthe composer moved on.",
+          "type": "string"
+        },
+        "problem": {
+          "description": "Why there are no entries — a missing or unreadable directory, a `~` prefix\nwith no home directory, or a directory whose own path has no UTF-8 spelling.\nAbsent when the directory was read.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "truncated": {
+          "description": "More candidates exist than the limit returned. The limit bounds the answer and\nthe stats that build it, not the directory read: every entry name is examined\nand the matching names are sorted in full, then candidates are statted in name\norder only until one past the limit exists.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prefix",
+        "directory",
+        "filter",
+        "truncated",
+        "entries"
       ],
       "type": "object"
     },

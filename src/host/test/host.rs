@@ -15,6 +15,7 @@ mod control;
 mod creation;
 mod departure;
 mod discard;
+mod discovery;
 mod files;
 mod island;
 mod model_resource;

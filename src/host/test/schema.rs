@@ -27,7 +27,7 @@ use crate::inference::catalog::{ConnectionCatalog, ModelRole};
 use crate::platform::devices::Enrolled;
 use crate::protocol::stream::StreamDelta;
 use crate::protocol::{
-    answers, attention, files, projects, sessions, sign_in, state, status, turns,
+    answers, attention, discovery, files, projects, sessions, sign_in, state, status, turns,
 };
 use crate::record::log::LogEntry;
 use crate::tools::ToolEntry;
@@ -100,6 +100,8 @@ fn generate() -> Value {
         projects::ProjectList,
         projects::ForgottenProject,
         files::DirListing,
+        discovery::PathCandidates,
+        discovery::AgentCandidates,
         sign_in::SignInRequest,
         sign_in::SignInClaim,
         sign_in::SignInLink,

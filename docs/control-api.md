@@ -418,6 +418,9 @@ exists yet. While starting, the session is listed with `status: "starting"` and
   [context.md](context.md)). A turn naming attachments is refused, since the
   attachment store is the session's. `DELETE /turns/:submission_id` withdraws from
   that queue.
+- `GET /discovery/paths` and `GET /discovery/agents` — composer candidates: path
+  entries from the starting entry's working directory, agent rows from the host's
+  listing. Both are described under *Reads (one-shot)*.
 - Every other route answers `409 starting` with a message saying the session is
   starting, and `verbs` refuses `continue` and `compact` with the same message.
 
@@ -1829,6 +1832,72 @@ prose** — written by whoever wrote the server, not by efference
 (`src/tools/process_monitor.rs` draws the same line for the built-ins' own annotations).
 A client renders them as plain text, never markdown, and attributes them to
 `server`.
+
+#### `GET /discovery/paths?prefix=<text>&limit=<n>`
+
+Candidates for a composer's inline path reference: the entries of one directory whose
+names start with the final fragment of `prefix`. A conversation client calls it while
+the operator types; the answer is ephemeral and no log entry is written.
+
+The server reads the prefix permissively, and a client decides when to ask. The prefix
+is split at its last `/`: the text through that `/` is the directory spelling and the
+rest is the fragment matched against entry names. With no `/`, the working directory
+is read and the whole prefix is the fragment; an empty prefix therefore returns the
+working directory's entries. `~` and `~/…` are the host process's `$HOME` (a bare `~`
+reads the home directory), `.` and `..` are their own directories, and any other
+spelling is resolved against the session's working directory. A `~` followed by
+anything but `/` is not a home spelling: `~bob/` reads a directory literally named
+`~bob` under the working directory, and `~bob` is a fragment. The resolved directory
+is absolute and **lexically** normalized: no symbolic link is resolved, no worktree
+path is mapped to its project counterpart, and a leading `..` never escapes the root.
+
+One directory level is read, from names and metadata only: entry names and the kind
+(a directory or a file; a symbolic link is followed for the kind and reported by
+`symlink`), never file contents. Dotfiles are listed. A device, socket, fifo, or
+dangling link is not a candidate, and a non-UTF-8 name is omitted: no reference
+spelling would resolve back to it. Neither an ignore set nor name masking applies:
+`/files` has its own ignore set and this route does not share it, so the *name* of a
+`.env` or a key file is listed. This is operator metadata, not model context: the
+answer is not logged, and file content is sent to the model through turns and the
+permission gate, not through this route.
+
+The body is `PathCandidates`: `prefix` echoed, the resolved `directory` and `filter`,
+`truncated`, an optional `problem`, and `entries` sorted by name. Each entry has
+the bare `name`, the `original` spelling (the typed directory spelling with the name
+joined on) for the reference's original, the absolute lexically normalized `path` for
+its target, and `target` (`file` or `directory`).
+
+**`limit`** caps the returned entries: default 50, clamped to 200. `limit=0` is legal
+and returns no entries; a value that is not a non-negative integer (an empty value
+included) is a `400`. `truncated` is true when more candidates exist than the limit
+returned. The read is one directory level: every entry name is examined and the
+matching names are sorted in full, then entries are statted in name order only until
+one past the limit exists. `limit` therefore bounds the answer and the stats, not the
+read or the sort, and the answer is the name-first `limit` of everything the directory
+holds. A missing or unreadable directory, or a file addressed as one, is a `200` with
+no entries, a `problem` (`no such directory`, `not a directory`, `permission denied`,
+or `the directory could not be read`), and no `4xx`: the operator is mid-word. A
+directory whose own path has no UTF-8 spelling is also a `200` with no entries and the
+`problem` `the directory path is not valid UTF-8`: a candidate path must resolve back
+byte for byte, so none is offered under a rewritten spelling, and `directory` is empty.
+A `prefix` longer than 4096 bytes is a `400`.
+
+A starting session serves the route from its entry's working directory (above), so
+completion works while the environment and MCP mounts are prepared.
+
+#### `GET /discovery/agents?prefix=<text>&limit=<n>`
+
+Candidates for a composer's `@` reference: the host's session rows whose ids start
+with `prefix`, one leading `@` ignored. The universe is `Host::listing()` — exactly
+the sessions a submission's agent target is checked against — sorted by id, and
+`limit` behaves as it does for paths. Each row is the `ListedSession` shape
+`GET /sessions` returns, so a client has the title, directories, creator and status
+without a second request. `truncated` is true when the row set was capped.
+
+On a listener that serves one session there is no host registry: the answer is a
+`200` with an empty `agents` and a `problem` for the missing registry, rather than a
+`4xx`, so the composer can keep typing. An agent candidate has no authority of its
+own: it refers to a session the submission gate checks again.
 
 ### Reads (streamed, SSE)
 

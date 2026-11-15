@@ -442,15 +442,20 @@ prefix-only validation together, which is a different design.
 
 ### The discovery ignore set
 
-`files_view::ignores`, over the `ignore` crate: what git hides here is what discovery
-hides. One set governs all three **discovery** surfaces — the flat listing, the
-recursive listing, and the directory-scope change streams — while the read route
-and single-file streams consult it not at all: **naming a path is the
+`files_view::ignores`, over the `ignore` crate: what git hides here is what the
+`/files` surfaces hide. One set governs its three **discovery** surfaces — the flat
+listing, the recursive listing, and the directory-scope change streams — while the
+read route and single-file streams consult it not at all: **naming a path is the
 permission**, so an ignored file stays readable, watchable and followable, and is
 only absent from listings. Concealing a path from a listing while still serving
 it by name would imply a protection that is not there; this is the same posture
 stated above, now with git's answer instead of a hardcoded `target` /
 `node_modules` list that is wrong for every project that is not this one.
+
+Composer discovery (`GET /discovery/paths`, [control-api.md](control-api.md)) does
+not use the set: it reads one directory's names and metadata and hides nothing for
+being ignored. Applying the set there would mean reading `.gitignore` files, which
+is the content read that route avoids.
 
 Precedence is git's: the deepest `.gitignore` that matches takes precedence, a `!`
 whitelist at that depth takes effect, the root's `.git/info/exclude` and the user's

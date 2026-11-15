@@ -39,6 +39,23 @@ export type Activity =
       until: number;
     };
 /**
+ * What a listed session is doing, in one word: `starting` while its environment and MCP
+ * servers are prepared, then the loop's phase as a list surface can show it without one
+ * state read per row.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ListedStatus".
+ */
+export type ListedStatus =
+  | "starting"
+  | "running"
+  | "idle"
+  | "gated"
+  | "asking"
+  | "stalled"
+  | "parked"
+  | "blocked";
+/**
  * The decision returned by
  * [`Frontend::approve`](crate::agent::frontend::Frontend::approve) (docs/README.md). A typed
  * line is a *redirect* — the call is rejected and the human's text is fed to the model
@@ -1042,23 +1059,6 @@ export type KeepaliveSkip1 =
  */
 export type Landing = "answered" | "now" | "queued" | "held";
 /**
- * What a listed session is doing, in one word: `starting` while its environment and MCP
- * servers are prepared, then the loop's phase as a list surface can show it without one
- * state read per row.
- *
- * This interface was referenced by `ControlChannel`'s JSON-Schema
- * via the `definition` "ListedStatus".
- */
-export type ListedStatus =
-  | "starting"
-  | "running"
-  | "idle"
-  | "gated"
-  | "asking"
-  | "stalled"
-  | "parked"
-  | "blocked";
-/**
  * The content of a log entry. Immutable once appended; curation never mutates
  * a payload's `raw`, only flips a [`WireState`] (docs/README.md).
  *
@@ -1745,6 +1745,67 @@ export type SubmittedTarget =
  * The control channel's types. The root carries no value; the definitions are the schema.
  */
 export interface ControlChannel {}
+/**
+ * The answer to `GET /discovery/agents`: the host's sessions whose ids start with
+ * the composer's prefix (docs/control-api.md).
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "AgentCandidates".
+ */
+export interface AgentCandidates {
+  /**
+   * The rows `GET /sessions` returns, in id order.
+   */
+  agents: ListedSession[];
+  /**
+   * The prefix as sent, `@` included, echoed like [`PathCandidates::prefix`].
+   */
+  prefix: string;
+  /**
+   * Why there are no candidates — a listener that serves one session has no host
+   * registry to list. Absent on a host.
+   */
+  problem?: string | null;
+  /**
+   * The prefix matched more sessions than the limit.
+   */
+  truncated: boolean;
+}
+/**
+ * One row of `GET /sessions` (docs/control-api.md).
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "ListedSession".
+ */
+export interface ListedSession {
+  /**
+   * The session that commissioned this one, when a session did
+   * (docs/tools.md). Absent for a human root.
+   */
+  created_by?: string | null;
+  /**
+   * The session's project directory, so a client can keep to its own
+   * project's sessions on a host that serves several
+   * (docs/control-channel.md).
+   */
+  cwd?: string | null;
+  id: string;
+  /**
+   * Live background processes the session holds (docs/process-monitor.md). Ending
+   * it reaps them, which is why a listing carries the count.
+   */
+  processes: number;
+  /**
+   * What the session is doing, as a single word.
+   */
+  status: ListedStatus;
+  title?: string | null;
+  /**
+   * The session's working directory, when it is not the project: a session in
+   * a git worktree (docs/worktrees.md).
+   */
+  working?: string | null;
+}
 /**
  * One archived session as `GET /sessions?state=archived` lists it: the
  * inventory's row, with `state` saying which collection it is from.
@@ -3286,41 +3347,6 @@ export interface LastCacheMiss {
   reason: CacheMissReason;
 }
 /**
- * One row of `GET /sessions` (docs/control-api.md).
- *
- * This interface was referenced by `ControlChannel`'s JSON-Schema
- * via the `definition` "ListedSession".
- */
-export interface ListedSession {
-  /**
-   * The session that commissioned this one, when a session did
-   * (docs/tools.md). Absent for a human root.
-   */
-  created_by?: string | null;
-  /**
-   * The session's project directory, so a client can keep to its own
-   * project's sessions on a host that serves several
-   * (docs/control-channel.md).
-   */
-  cwd?: string | null;
-  id: string;
-  /**
-   * Live background processes the session holds (docs/process-monitor.md). Ending
-   * it reaps them, which is why a listing carries the count.
-   */
-  processes: number;
-  /**
-   * What the session is doing, as a single word.
-   */
-  status: ListedStatus;
-  title?: string | null;
-  /**
-   * The session's working directory, when it is not the project: a session in
-   * a git worktree (docs/worktrees.md).
-   */
-  working?: string | null;
-}
-/**
  * A tool call and the entry that carries it, from `GET /tool_calls/:call_id`. A call is
  * embedded in an `Assistant` entry rather than being one, so this is its address.
  *
@@ -4026,6 +4052,78 @@ export interface PatchSession {
    */
   supervisor?: string | null;
   triage?: TriageChoice | null;
+}
+/**
+ * One entry a composer can offer. `path` is what a submission stores; `original` is
+ * the spelling to keep beside it, so the reference reads the way the composer wrote
+ * it.
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "PathCandidate".
+ */
+export interface PathCandidate {
+  /**
+   * The entry's own name: one path component, no separator.
+   */
+  name: string;
+  /**
+   * The directory spelling as typed with `name` joined onto it — the value a
+   * `SubmittedTarget::Filesystem` keeps as its `original`.
+   */
+  original: string;
+  /**
+   * Absolute and lexically normalized, with no symbolic link resolved and no
+   * worktree path mapped to its project counterpart. An entry is offered only when
+   * its path round-trips; one that would need a rewritten spelling is omitted.
+   */
+  path: string;
+  /**
+   * The entry itself is a symbolic link; `target` follows it.
+   */
+  symlink: boolean;
+  /**
+   * What the entry is now, following a symbolic link for the kind.
+   */
+  target: ReferenceTargetKind;
+}
+/**
+ * The answer to `GET /discovery/paths`: what one directory holds under the
+ * composer's prefix (docs/control-api.md).
+ *
+ * This interface was referenced by `ControlChannel`'s JSON-Schema
+ * via the `definition` "PathCandidates".
+ */
+export interface PathCandidates {
+  /**
+   * The directory the prefix resolved to, absolute and lexically normalized: the
+   * parent every `entries[].path` sits under. It is not necessarily the spelling
+   * the composer typed. Empty when that path has no UTF-8 spelling; `problem` is
+   * then set, and no entry is offered under a rewritten path.
+   */
+  directory: string;
+  entries: PathCandidate[];
+  /**
+   * The fragment after the last `/`, matched against each entry name.
+   */
+  filter: string;
+  /**
+   * The prefix as sent, echoed so a client can drop an answer that arrived after
+   * the composer moved on.
+   */
+  prefix: string;
+  /**
+   * Why there are no entries — a missing or unreadable directory, a `~` prefix
+   * with no home directory, or a directory whose own path has no UTF-8 spelling.
+   * Absent when the directory was read.
+   */
+  problem?: string | null;
+  /**
+   * More candidates exist than the limit returned. The limit bounds the answer and
+   * the stats that build it, not the directory read: every entry name is examined
+   * and the matching names are sorted in full, then candidates are statted in name
+   * order only until one past the limit exists.
+   */
+  truncated: boolean;
 }
 /**
  * One pending ambient notification, as the `notifications` topic lists it (docs/inbox.md):

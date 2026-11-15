@@ -19,6 +19,7 @@ use serde_json::Value;
 pub mod agents;
 pub mod answers;
 pub mod attention;
+pub mod discovery;
 pub mod files;
 pub mod inventory;
 pub mod projects;

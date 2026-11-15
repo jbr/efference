@@ -247,6 +247,7 @@ fn missing_state(conn: Conn) -> Conn {
 pub(crate) const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
 
 mod attachments;
+mod discovery;
 mod events;
 mod log_reads;
 mod loop_control;
@@ -297,6 +298,8 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .get("/v1/log/:seq/images/:idx", log_reads::read_result_image)
         .get("/v1/tool_calls/:call_id", log_reads::read_tool_call)
         .get("/v1/tools/:name", log_reads::read_tool_definition)
+        .get("/v1/discovery/paths", discovery::discover_paths)
+        .get("/v1/discovery/agents", discovery::discover_agents)
         .get("/v1/push", web_push::read_push_key)
         .post("/v1/push/subscriptions", web_push::subscribe)
         .delete("/v1/push/subscriptions", web_push::unsubscribe)

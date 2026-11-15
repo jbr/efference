@@ -55,6 +55,19 @@ fn stub_router() -> Router {
             let q = conn.querystring().to_string();
             conn.with_status(200).with_body(format!("q={q}"))
         })
+        .get("/v1/discovery/paths", |conn: Conn| async move {
+            // The echo rides in the typed `prefix` field, so the answer still parses.
+            let q = conn.querystring().to_string();
+            conn.with_status(200).with_body(format!(
+                r#"{{"prefix":"{q}","directory":"/w","filter":"","truncated":false,"entries":[]}}"#
+            ))
+        })
+        .get("/v1/discovery/agents", |conn: Conn| async move {
+            let q = conn.querystring().to_string();
+            conn.with_status(200).with_body(format!(
+                r#"{{"prefix":"{q}","truncated":false,"agents":[{{"id":"one","status":"idle"}}]}}"#
+            ))
+        })
         // A host's surface: creation at the root, one session's routes under its prefix,
         // and the credential routes at the root under either base.
         .post("/sessions", |mut conn: Conn| async move {
@@ -138,6 +151,31 @@ async fn verbs_round_trip_over_the_unix_connector() {
     assert!(approvals[0].1.contains("try the other file"));
     assert!(approvals[0].1.contains(r#""source":"mcp[claude-code]""#));
     assert_eq!(*rec.interrupts.lock().unwrap(), 1);
+
+    let _ = std::fs::remove_file(&socket);
+}
+
+/// The two discovery reads (docs/control-api.md) over the Unix connector: the query
+/// carries `prefix` and an optional `limit`, and each answer parses into its protocol
+/// type rather than a raw string.
+#[tokio::test]
+async fn discovery_round_trips_its_typed_answers() {
+    let rec = Recorder::default();
+    let socket = spawn_stub(rec);
+    let client = Client::new(&socket);
+
+    let paths = client
+        .discover_paths("./src/main.rs", Some(7))
+        .await
+        .unwrap();
+    assert_eq!(paths.directory, "/w");
+    assert_eq!(paths.prefix, "prefix=.%2Fsrc%2Fmain.rs&limit=7");
+
+    let agents = client.discover_agents("@one", None).await.unwrap();
+    assert!(agents.problem.is_none());
+    assert_eq!(agents.agents.len(), 1);
+    assert_eq!(agents.agents[0].id, "one");
+    assert_eq!(agents.prefix, "prefix=%40one");
 
     let _ = std::fs::remove_file(&socket);
 }

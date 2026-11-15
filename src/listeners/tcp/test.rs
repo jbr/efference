@@ -378,3 +378,22 @@ async fn an_unreadable_table_refuses_without_discarding_the_token() {
     // The shell stays free: an anonymous path never reaches the table.
     server.get("/").await.assert_status(200);
 }
+
+/// Composer discovery is a `/v1` route on a session bind too, so the gate guards it
+/// before the handler runs (docs/web-bind.md): no credential is a 401, and the
+/// enrolled script's token is accepted. The prefix matches no directory, so the
+/// answer is a cheap 200 rather than a read of the session's working directory.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn discovery_asks_for_a_token_on_a_session_bind() {
+    let (auth, _state) = armed("discovery-session");
+    let (server, _guard) = tcp_server(&auth).await;
+    let bearer = enrolled(&auth);
+    let path = "/v1/discovery/paths?prefix=zzz-no-such-directory/";
+
+    server.get(path).await.assert_status(401);
+    server
+        .get(path)
+        .with_request_header(KnownHeaderName::Authorization, bearer)
+        .await
+        .assert_status(200);
+}
