@@ -866,7 +866,9 @@ no call is included unchecked.
 
 Every write of the file is an atomic replacement — a same-directory temporary, synced, renamed
 over the target with the target's mode preserved — so a failed write leaves the prior bytes in
-place. A symlinked config resolves to its target, and the link is kept.
+place. A symlinked config resolves to its target, and the link is kept; a link whose target does
+not resolve is refused rather than replaced by a regular file, because the link is the operator's
+file too. A temporary this write did not create is never removed.
 
 A `ConfigEdit` projects to nothing on the wire (audit-only, like `Spot`). Its effect is visible to
 the model **by key**: a `commands`/`[tools]` edit only through the classifier, but a
@@ -929,10 +931,11 @@ left for the next refresh to reconcile, as a file behind it is. Both outcomes ar
 The failure notices state what happened and that some access may follow; they do not describe
 boot precedence. That belongs here: boot loads the session's config file first and then injects
 the `.efference` deny with its read-only re-allows, and the effective policy folds the log on top
-of that result. A committed edit therefore outranks the injected deny on resume, while a key that
-exists only in the file at the same specificity does not. This is why a grant is logged as well as
-written, and it is what makes the file-ahead-of-log window above consequence-free for ordinary
-keys but not for a grant on the `.efference` surface.
+of that result. So a committed edit outranks the injected deny on resume, while a key that exists
+only in the file at the same specificity does not. A grant is logged as well as written for that
+reason: after the file-ahead-of-log window above, an ordinary key is present from the file at the
+next load, and a key on the `.efference` surface is in force only if its committed edit is in the
+log.
 
 ### The grant a gate offers (`src/config/policy/gate_grant.rs`)
 

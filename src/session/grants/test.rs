@@ -520,22 +520,27 @@ fn the_efference_grant_holds_live_and_survives_a_resume_through_the_log() {
     );
 }
 
-/// The fold order equals the log order even when a competing committed writer (the fs-watch,
-/// reconciling an operator's hand-edit) is ready to run at the admission's append-to-fold
-/// boundary: the policy section holds it back until the admission's edits are folded, and what
-/// the session reports is the fold of its own log (docs/permissions.md).
+/// A competing committed writer (the fs-watch, reconciling an operator's hand-edit) that reaches
+/// the policy section at the admission's append-to-fold boundary finds it held, and once both
+/// settle the session reports the fold of its own log (docs/permissions.md). The witness is the
+/// failed `try_lock` at that instant; the ordering is asserted on the settled state, not on which
+/// thread reached the section first.
 #[test]
 fn a_competing_refresh_cannot_fold_between_an_admission_and_its_fold() {
     let (session, config, _scratch) = session_with("# the perimeter\n");
     let docs = root().join("docs");
 
-    // The hook runs between the admission's message-append and its fold. It wakes a writer that
-    // adds a second grant to the file the admission just wrote and asks the watch to reconcile
-    // it — which must wait for the section.
+    // The hook runs between the admission's message-append and its fold, with the policy section
+    // held. It wakes a writer and returns only once that writer has *tried* the section and found
+    // it held, so the writer cannot miss the boundary by starting late: the attempt is what the
+    // two threads meet on, and the section cannot be released until it has happened.
     let (at_boundary, boundary) = std::sync::mpsc::channel();
+    let (attempted, attempt) = std::sync::mpsc::channel();
     *session.between_append_and_fold.lock().unwrap() = Some(Box::new(move |_shared: &Session| {
         at_boundary.send(()).unwrap();
-        std::thread::sleep(Duration::from_millis(200));
+        attempt
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the writer reached the policy section");
     }));
     let writer = {
         let session = Arc::clone(&session);
@@ -544,6 +549,13 @@ fn a_competing_refresh_cannot_fold_between_an_admission_and_its_fold() {
             boundary
                 .recv_timeout(Duration::from_secs(10))
                 .expect("the admission reached its boundary");
+            // A lock attempt, not a wait: this is false only because admission holds the section
+            // right now, which is the interleaving the test is about.
+            let held = session.policy_section_held();
+            // Release the hook before asserting, so a missing interleaving fails the test here
+            // instead of stalling it on the rendezvous.
+            attempted.send(()).unwrap();
+            assert!(held, "the writer tried the section while admission held it");
             // Additive by hand: the grant the admission wrote, plus a second one beside it.
             std::fs::write(
                 &config,

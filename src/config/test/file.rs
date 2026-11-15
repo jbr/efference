@@ -503,6 +503,54 @@ fn an_atomic_write_follows_a_symlinked_config() {
     );
 }
 
+/// A symlink whose target does not resolve is the operator's file, not a place to put a regular
+/// one: the write fails, the link stays a link, and the held document is the one that was read.
+#[test]
+fn a_dangling_symlinked_config_is_not_replaced_by_a_regular_file() {
+    let scratch = crate::platform::testing::temp_dir("atomic-dangling");
+    let real = scratch.path().join("real.toml");
+    let link = scratch.path().join("config.toml");
+    std::fs::write(&real, "[paths]\n\"docs\" = { read = true }\n").unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let mut file = ConfigFile::load(&link).unwrap();
+    std::fs::remove_file(&real).unwrap();
+
+    let err = file
+        .apply(&ConfigChange::Path {
+            path: "src".into(),
+            read: true,
+            write: false,
+        })
+        .expect_err("a dangling link is not written through");
+    assert!(
+        err.to_string().contains("symlink"),
+        "the error names the link: {err}"
+    );
+
+    let metadata = std::fs::symlink_metadata(&link).unwrap();
+    assert!(metadata.file_type().is_symlink(), "the link is preserved");
+    assert!(!real.exists(), "nothing was created at the link's target");
+    assert!(
+        !file.config().paths.contains_key("src"),
+        "the held config is the one that parsed: {:?}",
+        file.config().paths
+    );
+    assert!(
+        file.config().paths.contains_key("docs"),
+        "and keeps what it already had: {:?}",
+        file.config().paths
+    );
+    let names: Vec<String> = std::fs::read_dir(scratch.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names.iter().filter(|name| name.contains(".tmp-")).count(),
+        0,
+        "no temp remains: {names:?}"
+    );
+}
+
 /// A write that fails adopts nothing: the held document and the state this struct reports are the
 /// ones that were on disk, and the temporary is removed. A target that `rename` cannot replace
 /// (here a directory standing where the file was) is the deterministic failure.

@@ -44,29 +44,19 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
             // legacy form resolves its uploads and attaches them after the
             // prose; the structured form validates in full before anything
             // queues (docs/control-api.md).
-            let turn = match submitted_turn(
-                Some(&shared),
+            let landing = match submit_to_session(
+                &shared,
                 host_of(&conn).as_deref(),
                 form,
                 &attachments,
                 &submission_id,
                 source.as_deref(),
-            ) {
-                Ok(turn) => turn,
-                Err(message) => return fail(conn, ErrorCode::BadRequest, message),
-            };
-            let landing = match shared.submit_named_turn(turn, answers.as_deref()) {
+                answers.as_deref(),
+            )
+            .await
+            {
                 Ok(landing) => landing,
-                Err(refusal) => {
-                    let id = shared.identity().map(|identity| identity.id);
-                    let message =
-                        refusal.message(id.as_deref().unwrap_or("the session"), source.as_deref());
-                    return respond(
-                        conn,
-                        &ErrorBody::new(ErrorCode::NotDelivered, message)
-                            .with_detail(shared.topic_json(Topic::Ask)),
-                    );
-                }
+                Err(body) => return respond(conn, &body),
             };
             // `?wait`: hold the connection until the turn reaches a gate or completes,
             // then answer with the resulting state — "act → read state" in one
@@ -102,7 +92,9 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                 &attachments,
                 &submission_id,
                 source.as_deref(),
-            ) {
+            )
+            .await
+            {
                 Ok(turn) => turn,
                 Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
@@ -255,7 +247,7 @@ fn resolve_attachments(
 /// validates in full. `session` is `None` for a session still starting, which has
 /// no store to resolve against — and cannot reach here with attachments, since
 /// that route refuses them first.
-fn submitted_turn(
+async fn submitted_turn(
     session: Option<&Session>,
     host: Option<&Host>,
     form: TurnForm,
@@ -278,11 +270,44 @@ fn submitted_turn(
             content,
             references,
         } => {
-            let document = validate_document(session, host, content, references)?;
+            let document = validate_document(session, host, content, references).await?;
             Ok(SubmittedTurn::structured(document, submission_id)
                 .sourced(source.map(str::to_string)))
         }
     }
+}
+
+/// Submit to a session that has started: the document validates in full before
+/// anything queues (docs/control-api.md), then the turn is queued by name
+/// (`named_turns.rs`). An error is the body that answers the client, so the caller
+/// keeps the connection.
+async fn submit_to_session(
+    session: &Session,
+    host: Option<&Host>,
+    form: TurnForm,
+    attachments: &[String],
+    submission_id: &str,
+    source: Option<&str>,
+    answers: Option<&str>,
+) -> Result<Landing, ErrorBody> {
+    let turn = match submitted_turn(
+        Some(session),
+        host,
+        form,
+        attachments,
+        submission_id,
+        source,
+    )
+    .await
+    {
+        Ok(turn) => turn,
+        Err(message) => return Err(ErrorBody::new(ErrorCode::BadRequest, message)),
+    };
+    session.submit_named_turn(turn, answers).map_err(|refusal| {
+        let id = session.identity().map(|identity| identity.id);
+        let message = refusal.message(id.as_deref().unwrap_or("the session"), source);
+        ErrorBody::new(ErrorCode::NotDelivered, message).with_detail(session.topic_json(Topic::Ask))
+    })
 }
 
 /// Whether either spelling names an upload: the legacy `attachments` list, or a
@@ -296,11 +321,13 @@ fn names_an_upload(form: &TurnForm, attachments: &[String]) -> bool {
     }
 }
 
-/// A filesystem definition's structural checks (docs/control-api.md): an access the policy can
-/// act on, an absolute path in normal form, and an existing target of the claimed kind. No
-/// session is needed, so a turn submitted to a starting session validates here too; nothing is
-/// authorized here — that is decided when the turn is admitted (docs/permissions.md).
-fn validate_filesystem(
+/// A filesystem definition's structural checks (docs/control-api.md): an access that requests
+/// read or write, an absolute path in normal form, and a target the filesystem reports as an
+/// existing entry of the claimed kind. No session is needed, so a turn submitted to a starting
+/// session validates here too; nothing is authorized here — that is decided when the turn is
+/// admitted (docs/permissions.md). The access stored is the one submitted; normalization (write
+/// implies read) happens when the grant is computed.
+async fn validate_filesystem(
     label: String,
     original: String,
     path: String,
@@ -329,10 +356,22 @@ fn validate_filesystem(
              path with no `.` or `..` segments"
         ));
     }
-    // A missing or unreadable target is a submission error, not something to grant and discover
-    // later. Metadata follows symlinks, matching the spelling kept.
-    let metadata = std::fs::metadata(target)
-        .map_err(|e| format!("filesystem reference `{original}`: `{path}` cannot be read: {e}"))?;
+    // A target with no filesystem entry is a submission error, not something to grant and
+    // discover later. Metadata follows symlinks, matching the spelling kept, and reports
+    // existence and kind only — whether the session can read the contents is the grant's
+    // question, not the gate's. The call is a filesystem round trip, so it runs on the blocking
+    // pool rather than on a runtime thread.
+    let stat = std::path::PathBuf::from(&path);
+    let metadata = tokio::task::spawn_blocking(move || std::fs::metadata(&stat))
+        .await
+        .map_err(|e| {
+            format!(
+                "filesystem reference `{original}`: the check on `{path}` did not complete: {e}"
+            )
+        })?
+        .map_err(|e| {
+            format!("filesystem reference `{original}`: `{path}` cannot be inspected: {e}")
+        })?;
     match kind {
         ReferenceTargetKind::File if !metadata.is_file() => {
             return Err(format!(
@@ -358,10 +397,10 @@ fn validate_filesystem(
 /// read), attachment definitions used exactly once
 /// and resolved against the session's store, agent identities confirmed
 /// against the host's live registry, and a filesystem target checked for form — absolute,
-/// in normal form, an existing path of the claimed kind — with its access normalized. A
-/// filesystem reference grants nothing here: it authorizes at admission
-/// (docs/permissions.md).
-fn validate_document(
+/// in normal form, an entry the filesystem reports of the claimed kind — with its access
+/// checked to request read or write. A filesystem reference grants nothing here: it
+/// authorizes at admission, and that is where the access is normalized (docs/permissions.md).
+async fn validate_document(
     session: Option<&Session>,
     host: Option<&Host>,
     content: Vec<UserSegment>,
@@ -411,7 +450,7 @@ fn validate_document(
                 path,
                 target,
                 access,
-            } => validate_filesystem(reference.label, original, path, target, access)?,
+            } => validate_filesystem(reference.label, original, path, target, access).await?,
             SubmittedTarget::Attachment { name } => {
                 if count > 1 {
                     return Err(format!(

@@ -123,10 +123,10 @@ impl ReferenceDefinition {
         }
     }
 
-    /// A filesystem reference the submission gate has validated: `path` absolute and
-    /// lexically normalized, the target present and of the claimed `kind`, and `access`
-    /// one the policy can act on. What it authorizes is decided at admission
-    /// (docs/permissions.md), not here.
+    /// A filesystem reference built from what the submitter typed. This constructor
+    /// validates nothing: the submission gate checks the path's form and the target's
+    /// presence before building one (docs/control-api.md). What the reference
+    /// authorizes is decided at admission (docs/permissions.md), not here.
     pub fn filesystem(
         label: impl Into<String>,
         original: impl Into<String>,

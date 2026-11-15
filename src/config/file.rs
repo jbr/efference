@@ -173,22 +173,24 @@ static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 /// sees either the previous bytes or these, never a truncated file.
 ///
 /// The text goes to a temp file beside the target, is flushed with `sync_all`, and is renamed
-/// into place; a failure at any step removes the temp file and leaves the target untouched, so a
-/// caller that gets an error still has the file it had before. The temp file is in the same
-/// directory as the target, so the rename cannot cross a filesystem.
+/// into place; a failure after the temp is created removes it and leaves the target untouched, so
+/// a caller that gets an error still has the file it had before. A temp this call did not create —
+/// `create_new` found the name taken — is left alone. The temp file is in the same directory as
+/// the target, so the rename cannot cross a filesystem.
 ///
 /// A `path` that is a symlink is resolved first and its **target** is replaced: renaming over the
 /// link would swap the operator's symlink — a config kept in a dotfiles checkout, say — for a
-/// regular file. The target's permission bits are preserved, which a plain create does not do
-/// (the umask would apply). A hardlinked config keeps its other links on the old bytes, because
-/// the rename replaces one directory entry; a config reached through a hardlink is not a shape
-/// the session supports.
+/// regular file. A link whose target does not resolve is an error rather than a licence to write
+/// over the link, which would destroy it the same way ([`replace_target`]). The target's
+/// permission bits are preserved, which a plain create does not do (the umask would apply). A
+/// hardlinked config keeps its other links on the old bytes, because the rename replaces one
+/// directory entry; a config reached through a hardlink is not a shape the session supports.
 fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write as _;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
     let invalid = |message: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, message);
-    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let target = replace_target(path)?;
     let dir = match target.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
@@ -205,12 +207,14 @@ fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
     let mode = std::fs::metadata(&target)
         .map(|m| m.permissions().mode())
         .ok();
+    // Open before the cleanup is in scope: a failed `create_new` means the name belongs to
+    // another file, and removing it would delete that file.
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode.unwrap_or(crate::record::session_dir::FILE_MODE))
+        .open(&temp)?;
     let written = (|| {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(mode.unwrap_or(crate::record::session_dir::FILE_MODE))
-            .open(&temp)?;
         file.write_all(text.as_bytes())?;
         if let Some(mode) = mode {
             // `open`'s mode is filtered through the umask; the target's own mode is not.
@@ -223,4 +227,46 @@ fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
         let _ = std::fs::remove_file(&temp);
     }
     placed
+}
+
+/// The path [`write_atomically`] replaces.
+///
+/// A symlink is followed to its target, because renaming over the link would replace the
+/// operator's symlink with a regular file. A link whose target does not resolve is an error, for
+/// the same reason: the link is the operator's file, and writing a regular file where it stood
+/// destroys it. A leaf that does not exist yet is created where it would be, with any symlinked
+/// directory on the way resolved; anything else that will not resolve is refused rather than
+/// guessed at.
+fn replace_target(path: &Path) -> std::io::Result<PathBuf> {
+    let invalid = |message: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, message);
+    match std::fs::canonicalize(path) {
+        Ok(target) => Ok(target),
+        Err(error) => match std::fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => Err(std::io::Error::new(
+                error.kind(),
+                format!(
+                    "config path {} is a symlink whose target does not resolve: {error}",
+                    path.display()
+                ),
+            )),
+            // Present but unresolvable for another reason: a component is not searchable, or the
+            // path loops. Refuse rather than write somewhere the caller did not name.
+            Ok(_) => Err(error),
+            Err(leaf) if leaf.kind() == std::io::ErrorKind::NotFound => {
+                let Some(name) = path.file_name() else {
+                    return Err(invalid(format!(
+                        "config path {} has no file name",
+                        path.display()
+                    )));
+                };
+                let dir = match path.parent() {
+                    Some(dir) if !dir.as_os_str().is_empty() => dir,
+                    _ => Path::new("."),
+                };
+                let dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+                Ok(dir.join(name))
+            }
+            Err(other) => Err(other),
+        },
+    }
 }
