@@ -559,10 +559,9 @@ Escape, tapping the inspected call again) converges without touching history
 itself. Forward navigation onto a consumed overlay entry is re-consumed:
 which overlay it stood for is deliberately not recorded.
 
-One WebKit finding in the composer, fixed for all widths because it only
-*manifested* narrow: the textarea's flex basis is `100%` rather than `flex: 1`'s
-`0%` (WebKit's `field-sizing: content` shrink-wraps the inline axis when the
-basis is indefinite, which collapsed the field to ~1ch).
+One WebKit finding shaped the composer at all widths: the editable surface uses
+`flex: 1 1 100%` rather than `flex: 1`'s `0%` basis, so its inline axis cannot
+collapse to ~1ch.
 
 **Nothing in the transcript may set a minimum width wider than the column.** Two
 failures of this shape were found together at narrow widths and fixed the same
@@ -1257,8 +1256,8 @@ accent halo in After Dark and a lilac-tinted shadow in Lilac. Keyboard focus
 adds a separate outline to buttons; fields use their existing border and the
 shared halo through `--field-focus-*`. The composer uses the same halo through
 `--composer-focus-*`; its send button remains secondary because Enter sends
-from the textarea. `button.quiet` keeps its borderless text treatment on hover
-and has padding for its focus outline, with a negative margin returning it.
+from the composer input. `button.quiet` keeps its borderless text treatment on
+hover and has padding for its focus outline, with a negative margin returning it.
 `button.linkish` uses brighter text and an underline on hover and press, without
 button shadows; keyboard focus retains the shared visible outline and halo.
 `ui/InteractionLight.css` calculates the boundary core and halo from a local
@@ -1404,7 +1403,7 @@ turns against the entries it absorbs, since those never pass through
 
 **An `ask` reads as a turn ending** (`session/tree.ts`, `ui/Transcript.tsx`). A call named `ask` (docs/process-monitor.md) with a usable `question` is not a call node: `buildTree` emits a leaf carrying the question and its place among the asks of one completion (`askOfCall`, the counterpart of `process_monitor::ask_of_call`), drawn as the assistant's prose with a mark, after the step's other calls. The mark (`ui/askMark.ts`) shows where the question stands: `answering` (above the prose in a softly lit current-question frame, with ` · question n of m` when `of > 1`) for the ask identified by the live `ask` topic's `call_id`, which is the one the composer's send answers; `next · question n of m`, dim, for an unresolved ask while the topic identifies a sibling; `asked` (with the position) once its result has committed (`AskQuestion.resolved`, set by `buildTree`) or when there is no topic with more information, as in a replay. While the topic is non-null the composer's placeholder reads `your reply answers question n of m`, or `your reply answers the question` for a lone ask. Its result entry becomes a second leaf at its log position: with a `submission_id` it is the reply, drawn from `raw.content` under its sender as a `User` turn is; without one — an interrupt, a malformed call — a dim `not answered`. An ask with no usable question stays an ordinary call. A call whose arguments are still streaming is not drawn until it commits. A send while the `ask` topic is non-null is the reply, and names the question it answers (`answers`, the topic's `call_id`). A send refused because it named no question while one was pending — the question arrived after the text was typed — or named one no longer pending receives `409 not_delivered`: `submitTurn` folds the refusal's `ask` topic into the store, as `resolveGate` folds a moved gate, and the composer keeps the draft and shows `not sent: a question came first` (or `that question is no longer waiting`). Its echo is keyed like any other, and because the fold settles on any entry with the id, the reply's `ToolResult` settles it; the echo reads "Sent · answering the question" and has no Recall, since a reply is never queued. (The daemon's refusal to continue past a question, `409 not_continuable`, appears on the composer's error line like the other continue refusals.)
 
-**An ask's recalled turns return to the composer once.** Turns queued before the question began are withdrawn by the daemon and published on the `ask` topic as `recalled`. Submission ids are recorded on the session (`minted`) **before** the POST, so a turn whose 202 has not resolved is still recognised as this client's; a restarted client has none and restores nothing. `applyFrame` on an `ask` frame with a `call_id` not previously recorded (`askRestored`) drops the echoes of the minted ids among `recalled`, records them in `withdrawn` (so a late 202 does not queue an echo nothing will settle), and sets `askRecall`, which `SessionView` hands to the composer's `{text, attachments, nonce}` splice like a manual recall.
+**An ask's recalled turns return to the composer once.** Turns queued before the question began are withdrawn by the daemon and published on the `ask` topic as `recalled`. Submission ids are recorded on the session (`minted`) **before** the POST, so a turn whose 202 has not resolved is still recognised as this client's; a restarted client has none and restores nothing. `applyFrame` on an `ask` frame with a `call_id` not previously recorded (`askRestored`) drops the echoes of the minted ids among `recalled`, records them in `withdrawn` (so a late 202 does not queue an echo nothing will settle), and sets `askRecall`, which `SessionView` hands to the composer's `{text, attachments, document, nonce}` splice like a manual recall.
 
 **The `asking` status word** is one of the listing's statuses: the session card reads "has a question" and shows the question as its activity (the `ask` topic is one of the card's topics), the attention is `your_turn`, and archiving an `asking` session is confirmed like archiving a running one.
 
@@ -1416,10 +1415,10 @@ popping, and hands the texts to the composer, which prepends them to the draft
 already there joined with a newline — via a `{text, attachments, document, nonce}`
 prop, because recalling the same text twice is two
 events rather than one value. The turns' attachments come back with them, still
-stored, and are staged again. `document` is the withdrawn turns' documents
-merged (plain turns as text), or null when none carried references. An empty
-answer is the lost race — the loop dequeued the turn first — and the draft is
-left alone, and so is the hold.
+stored, and are staged again unless the merged document already carries them
+inline. `document` is the withdrawn turns' documents merged (plain turns as
+text), or null when none carried references. An empty answer is the lost race —
+the loop dequeued the turn first — and the draft is left alone.
 
 **A running tool's output streams into its call's result slot** — where the
 triaged result will land — under a `running · N lines` header, in the pinned
@@ -1629,13 +1628,15 @@ banner is rendered above the transcript.
 
 **Drafts belong to the session, not the mounted composer.** `ui/drafts.ts`
 keeps a `DraftStore` per session API base; `ui/Composer.tsx` subscribes to its
-text and staged attachments. Client-side switching unmounts the view, not the
-draft or its uploads. Upload requests, late removal requests, and image URLs
-are bound to the originating base, even after the page changes sessions. This
-store opens no session stream, so retaining a draft does not count as watching
-that session or suppress its push notifications.
+text, structured document, and staged attachments. The document is
+authoritative and its readable projection is the stored text; a draft with no
+references stores `null` and plain text alone. Client-side switching unmounts
+the view, not the draft or its uploads. Upload requests, late removal requests,
+and image URLs are bound to the originating base, even after the page changes
+sessions. This store opens no session stream, so retaining a draft does not
+count as watching that session or suppress its push notifications.
 
-Each edit and attachment transition saves text and chip metadata to
+Each edit and attachment transition saves text, document, and chip metadata to
 origin-scoped localStorage under the session base. Completed attachments restore
 from their stored server references; pasted text remains available for the
 chip's inline action. File bytes and blob preview URLs are not persisted. A
@@ -1647,31 +1648,49 @@ request itself failed (Safari's `Load failed`). The daemon logs an upload's
 failure at `warn` with its stage (no store, reading the body, storing), so an upload whose
 failure leaves no daemon line never reached the handler. Malformed saved data is ignored;
 denied or full storage leaves the live draft usable without reload persistence.
-Image blob previews are revoked on upload completion or chip removal, not on
-view unmount.
+Image blob previews are revoked on upload completion or staged-chip removal,
+not on view unmount.
 
 A failed send leaves the draft alone. A successful send clears its submitted
-text only if it has not changed while the request was pending, and removes only
-the submitted ready chips; newer edits, newer attachments, and failed chips
-remain. Sent files are not deleted. Empty drafts remove their localStorage entry.
-The server has no draft store; these drafts remain browser-local.
-A recalled turn that carried references puts the composer in a **held** state
-(`ui/drafts.ts`, `Held`): the draft keeps the merged document beside the exact
-text it spliced (`held.document`, `held.spliced`); an edited draft is refused
-with the spliced text put back and the hold left in place. A second recall puts
-a held spelling back before splicing — the structured send submits the
-document rather than the buffer, so the two must spell the same text — and
-merges the recalled document with the held one, an empty
-readable form (an attachment-only hold) contributing its definitions with no
-separator, so neither turn's references are dropped. Clearing the composer
-clears the hold; a chip whose upload the document references is detached from
-it on removal, and a hold left with no references drops.
-`submitTurn` sends the structured spelling when a hold exists, folding any
-separately staged uploads into the document's `references` so one upload is
-named once; a plain draft keeps the legacy `text`+`attachments` body. A
-successful send clears the submitted hold along with the chips
-(`DraftStore.sent`), so the next text is an ordinary draft rather than a
-spelling the sent document no longer compares with.
+content only if `revision` has not changed while the request was pending, and
+removes only the submitted ready chips; newer edits, newer attachments, failed
+chips, and a same-label access change remain. `revision` is live-only: after a
+reload nothing is in flight to compare against. A send that outlives a session
+switch clears only the store it came from; the editor and expanded state on
+screen belong to the session now displayed, so the completion leaves them alone.
+Sent files are not deleted.
+Empty drafts remove their localStorage entry. The server has no draft store;
+these drafts remain browser-local.
+
+A recalled turn that carried references **merges into the draft's editable
+document** (`ui/Composer.tsx`, `appendDocument`), ahead of what was already
+there; there is no held spelling that refuses edits. A plain recalled turn
+becomes a text document before the merge, so its text cannot fall out of a
+structured draft; a second recall merges the same way, with an attachment-only
+document contributing its definitions and no separator. The editor is
+authoritative after the merge: typing, access toggles, and chip removals update
+the document directly. Removing a chip detaches its definition and occurrences
+but leaves stored upload bytes alone, because an inline attachment may belong
+to a sent turn and undo must restore the chip; the staged row is the deletion
+surface for uploads. A document left with no references becomes null.
+`submitTurn` sends the structured spelling when a document exists, folding any
+separately staged uploads into its `references` so one upload is named once; a
+plain draft keeps the legacy `text`+`attachments` body. A successful send clears
+the submitted document along with the chips (`DraftStore.sent`), so the next
+text is an ordinary draft rather than a document the sent turn no longer
+compares with.
+
+**Copying a reference keeps its identity only inside this page.**
+`ui/referenceClipboard.ts` writes readable `text/plain`, token-bearing
+`text/html`, and an internal `application/x-efference-references+json` payload.
+A token names a definition held in a page-memory registry bounded at 256
+entries and scoped to the session's API base; definitions never travel in the
+clipboard. Paste and drop HTML pass through one sanitizer that discards every
+incoming `data-efference-*` attribute and resolves only registry tokens, minting
+fresh ids for inserted nodes. An unknown or stale token, another session, or a
+reload falls back to the readable label. Attachments copy as their name rather
+than a second reference, preserving one occurrence per upload. The reference
+node's HTML export is its readable label, never its id or definition.
 
 The status bar (`ui/Composer.tsx`) is the dock's **outermost row, below the
 composer at the window edge**, full-bleed — chrome frames content, as in a
@@ -1729,12 +1748,15 @@ the draft instead. Each staged file uploads at once as raw bytes
 (`POST /attachments`, [control-api.md](control-api.md)) —
 `application/octet-stream` being the one other type the TCP bind's CSRF gate
 admits — so its chip shows what the daemon made of it (`PNG · 1280×800 ·
-240 KB`, `40 lines · 2 KB`) while it can still be removed. Chips sit above the
-input; an image's chip shows a local object URL while uploading and the stored
-bytes, resolved through `useApiImage`, once ready — the local picture stays up until
-those bytes arrive.
-Removing one deletes the upload; one removed mid-upload is deleted when the
-upload lands. Send waits for uploads to finish, carries every ready chip's
+240 KB`, `40 lines · 2 KB`) while it can still be removed. Staged chips sit
+above the input; an image's chip shows a local object URL while uploading and
+the stored bytes, resolved through `useApiImage`, once ready — the local picture
+stays up until those bytes arrive.
+Removing a staged chip deletes the upload; one removed mid-upload is deleted
+when the upload lands. An upload the document already carries inline is not
+shown in the staged row a second time — the inline chip is its one occurrence —
+and removing that inline chip only detaches the occurrence (see the drafts
+paragraph above). Send waits for uploads to finish, carries every ready chip's
 name — or, on a structured send, folds them into the document's references —
 and removes the submitted ready chips only once the turn is accepted,
 so a refused send keeps them. A draft of attachments alone is a turn, not the continue. The
@@ -1814,13 +1836,17 @@ panel closes on outside interaction or Escape and stays inside the viewport.
 
 The input is inset into the dock rather than floating on it: the composer
 band shares the dock's surface color, and the box is near-square (2px) in
-the chrome's flat language. The field auto-grows with the draft
-(`field-sizing: content`, 3–10 lines), replacing the manual resize grip; a
-`1ch` right padding gives the block caret its cell at the wrap column, where
-zero padding clipped it to a sliver. A `contenteditable` composer (live
-markdown styling) is an anticipated replacement for the textarea; the
-attachment handling above listens on the textarea's paste and the window's
-drag events, neither of which depends on the field being a textarea.
+the chrome's flat language. The editor grows with the draft up to ten lines
+(`min-height: 3lh`, `max-height: 10lh`, `overflow-y: auto`), replacing the
+manual resize grip; a `1ch` right padding gives the block caret its cell at the
+wrap column, where zero padding clipped it to a sliver. The input is the Tiptap
+`contenteditable` (`ui/ComposerEditor.tsx`) over the schema and document walkers
+in `ui/composerCore.tsx`; the chip's node view is `ui/ComposerChip.tsx` and its
+presentation `ui/ComposerReferences.tsx`. Text is its paragraphs, blank lines
+are empty paragraphs, and Markdown stays literal. Paste, drop, and the staged
+row are wired around the editor rather than on a textarea. The editor is keyed by the
+session base, so switching sessions does not carry the previous draft's
+selection or undo history.
 
 The controls strip is gone; its last resident, the usage line, lives in the
 top bar. A non-`live` connection replaces the turn readout in the composer footer.

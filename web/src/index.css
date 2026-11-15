@@ -319,7 +319,8 @@ input[type="checkbox"]:disabled {
 @media (pointer: coarse) {
   input,
   textarea,
-  select {
+  select,
+  .composer-editor {
     font-size: max(16px, 1em);
   }
 }
@@ -1120,7 +1121,15 @@ pre {
   width: 100%;
 }
 
-.composer-text-row textarea {
+.composer-text-row > div {
+  display: flex;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.composer-text-row textarea,
+.composer-text-row .composer-editor {
+  width: 100%;
   font-family: var(--font-prose);
   font-size: 1.125rem;
   line-height: 1.55;
@@ -1130,16 +1139,44 @@ pre {
   background: none;
   color: var(--fg);
   padding: 0.1rem 0.5rem 0.1rem 0;
-  resize: none;
-  field-sizing: content;
   min-height: 3lh;
   max-height: 10lh;
   caret-color: var(--accent);
 }
 
-.composer-text-row textarea:focus {
+/* The gallery fixtures keep a textarea; production and the inline sketch use
+   the editor. Only these two declarations depend on which element it is. */
+.composer-text-row textarea {
+  resize: none;
+  field-sizing: content;
+}
+
+.composer-text-row .composer-editor {
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.composer-text-row textarea:focus,
+.composer-text-row .composer-editor:focus {
   outline: none;
   box-shadow: none;
+}
+
+.composer-text-row .composer-editor p {
+  margin: 0;
+}
+
+.composer-text-row .composer-editor p + p {
+  margin-top: 0;
+}
+
+.composer-text-row .composer-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--fg-faint);
+  pointer-events: none;
 }
 
 .composer-dismiss {
@@ -1159,10 +1196,6 @@ pre {
   background: var(--composer-focus-bg);
   border-color: var(--composer-focus-border);
   box-shadow: var(--composer-focus-shadow);
-}
-
-.composer-text-row textarea::placeholder {
-  color: var(--fg-faint);
 }
 
 /* Dedicated toolbar row underneath the text entry */

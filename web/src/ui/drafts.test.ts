@@ -1,13 +1,25 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ApiError } from "../api/http.ts";
-import type { Arrival } from "../api/types.ts";
+import type {
+  Arrival,
+  ReferenceDefinition,
+  UserContent,
+} from "../api/types.ts";
 import { DraftStore } from "./drafts.ts";
 
 const attachment: Arrival = {
   name: "note.txt",
   path: "/stored/note.txt",
   kind: { Binary: { bytes: 5 } },
+};
+const attachmentDefinition: ReferenceDefinition = {
+  label: "note.txt",
+  target: { type: "attachment", ...attachment },
+};
+const attachmentDocument: UserContent = {
+  content: [{ Reference: "r1" }],
+  references: { r1: attachmentDefinition },
 };
 const image: Arrival = {
   name: "image.png",
@@ -157,7 +169,11 @@ test("successful send clears the sent draft but does not delete its uploaded fil
   store.setText("send this");
   store.restore([attachment]);
   store.sent(store.snapshot());
-  expect(store.snapshot()).toEqual({ text: "", staged: [], held: null });
+  expect(store.snapshot()).toMatchObject({
+    text: "",
+    staged: [],
+    document: null,
+  });
   expect(localStorage.length).toBe(0);
   expect(remove).not.toHaveBeenCalled();
 });
@@ -219,10 +235,10 @@ test("default upload and a late removal remain bound to the original API base", 
 
 test("malformed stored data is ignored without breaking the composer", () => {
   localStorage.setItem("efference.composer.v1:/sessions/a", "{");
-  expect(setup().store.snapshot()).toEqual({
+  expect(setup().store.snapshot()).toMatchObject({
     text: "",
     staged: [],
-    held: null,
+    document: null,
   });
   localStorage.setItem(
     "efference.composer.v1:/sessions/a",
@@ -269,93 +285,85 @@ test("denied or full storage does not break editing and staging", () => {
   expect(store.snapshot().text).toBe("still works");
   expect(store.snapshot().staged).toHaveLength(1);
   store.sent(store.snapshot());
-  expect(store.snapshot()).toEqual({ text: "", staged: [], held: null });
+  expect(store.snapshot()).toMatchObject({
+    text: "",
+    staged: [],
+    document: null,
+  });
 });
 
-test("clearing the composer drops a recalled hold", () => {
+test("structured content persists and clearing the composer removes the document", () => {
   const { store } = setup();
-  store.setText("recalled");
-  store.setHeld({
-    document: {
-      content: [{ Reference: "r1" }],
-      references: {
-        r1: {
-          label: "note.txt",
-          target: { type: "attachment", ...attachment },
-        },
-      },
-    },
-    spliced: "recalled",
-  });
-  expect(store.snapshot().held).not.toBeNull();
-  store.setText("");
-  expect(store.snapshot().held).toBeNull();
+  store.setContent({ text: "", document: attachmentDocument });
+  expect(store.snapshot().document).toEqual(attachmentDocument);
+  const restored = setup().store;
+  expect(restored.snapshot().document).toEqual(attachmentDocument);
+  expect(restored.snapshot().text).toBe("");
+  restored.setText("");
+  expect(restored.snapshot().document).toBeNull();
 });
 
-test("a successful send clears the recalled hold", () => {
+test("exact multiline text persists without normalization", () => {
   const { store } = setup();
-  store.setHeld({
-    document: {
-      content: [{ Reference: "r1" }],
-      references: {
-        r1: {
-          label: "note.txt",
-          target: { type: "attachment", ...attachment },
-        },
-      },
-    },
-    spliced: "",
-  });
+  store.setText("a\n\n  b  \n");
+  expect(setup().store.snapshot().text).toBe("a\n\n  b  \n");
+});
+
+test("a successful send clears an unchanged structured draft", () => {
+  const { store } = setup();
+  store.setContent({ text: "", document: attachmentDocument });
   const submitted = store.snapshot();
-  expect(submitted.held).not.toBeNull();
-  store.setText("plain");
-  expect(store.snapshot().held).not.toBeNull();
   store.sent(submitted);
-  expect(store.snapshot().held).toBeNull();
-  expect(store.snapshot().text).toBe("plain");
+  expect(store.snapshot().document).toBeNull();
 });
 
-test("removing the last recalled attachment drops the hold", () => {
+test("a same-label access edit during a pending send survives", () => {
   const { store } = setup();
-  store.restore([attachment]);
-  store.setHeld({
-    document: {
-      content: [{ Reference: "r1" }],
-      references: {
-        r1: {
-          label: "note.txt",
-          target: { type: "attachment", ...attachment },
-        },
+  const target = {
+    type: "filesystem" as const,
+    original: "./main.tsx",
+    path: "/w/main.tsx",
+    target: "file" as const,
+    access: { read: true, write: false },
+  };
+  const definition: ReferenceDefinition = { label: "main.tsx", target };
+  const document: UserContent = {
+    content: [{ Text: "look " }, { Reference: "r1" }],
+    references: { r1: definition },
+  };
+  store.setContent({ text: "look ./main.tsx", document });
+  const submitted = store.snapshot();
+  const edited: UserContent = {
+    content: document.content,
+    references: {
+      r1: {
+        ...definition,
+        target: { ...target, access: { read: true, write: true } },
       },
     },
-    spliced: "",
-  });
-  store.remove(store.snapshot().staged[0].key);
-  expect(store.snapshot().held).toBeNull();
+  };
+  // The readable spelling is identical; only the structure changed.
+  store.setContent({ text: "look ./main.tsx", document: edited });
+  store.sent(submitted);
+  expect(store.snapshot().text).toBe("look ./main.tsx");
+  expect(store.snapshot().document).toEqual(edited);
 });
 
-test("removing one recalled attachment keeps a hold with another reference", () => {
+test("restore skips arrivals the document already carries", () => {
   const { store } = setup();
+  store.setContent({ text: "", document: attachmentDocument });
   store.restore([attachment]);
-  store.setHeld({
-    document: {
-      content: [{ Text: "look " }, { Reference: "a" }, { Reference: "r1" }],
-      references: {
-        a: {
-          label: "reviewer",
-          target: { type: "agent", session: "castback" },
-        },
-        r1: {
-          label: "note.txt",
-          target: { type: "attachment", ...attachment },
-        },
-      },
-    },
-    spliced: "look @castback",
-  });
-  store.remove(store.snapshot().staged[0].key);
-  const held = store.snapshot().held;
-  expect(held).not.toBeNull();
-  expect(held!.document.references.r1).toBeUndefined();
-  expect(held!.document.references.a).toBeDefined();
+  expect(store.snapshot().staged).toEqual([]);
+});
+
+test("removing a staged chip deletes its upload and detaches a same-name inline attachment", async () => {
+  const { store, remove, pending } = setup();
+  store.setContent({ text: "", document: attachmentDocument });
+  store.stage(new File(["bytes"], "note.txt"));
+  pending.resolve(attachment);
+  await pending.promise;
+  const key = store.snapshot().staged[0].key;
+  store.remove(key);
+  expect(remove).toHaveBeenCalledExactlyOnceWith("note.txt");
+  expect(store.snapshot().document).toBeNull();
 });

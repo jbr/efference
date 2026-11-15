@@ -186,6 +186,20 @@
   font-size: 0.8rem;
 }
 
+.inline-reference-node {
+  display: inline;
+}
+
+.inline-reference-node .reference-chip {
+  vertical-align: baseline;
+  margin-inline: 0.1rem;
+}
+
+.inline-reference-node.ProseMirror-selectednode .reference-chip {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 :root[data-theme="lilac"] .reference-chip {
   background: var(--bg-inset);
   border-color: var(--border-strong);

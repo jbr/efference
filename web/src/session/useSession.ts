@@ -10,7 +10,7 @@
 // Everything below this hook is framework-free.
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import type { Arrival, CallId, QueuedTurn } from "../api/types.ts";
+import type { Arrival, CallId, QueuedTurn, UserContent } from "../api/types.ts";
 import type { Decision } from "../api/decision.ts";
 import { apiBase } from "../api/base.ts";
 import { recallTurn, resolveGate, submitTurn } from "./actions.ts";
@@ -22,7 +22,11 @@ import type { Session } from "./store.ts";
 
 export interface SessionActions {
   resolveGate(callId: CallId, decision: Decision): Promise<"applied" | "moved">;
-  submitTurn(text: string, attachments?: Arrival[]): Promise<void>;
+  submitTurn(
+    text: string,
+    attachments?: Arrival[],
+    document?: UserContent | null,
+  ): Promise<void>;
   /** Withdraw the pending suffix from this submission; resolves with the turns
    * actually popped, for the composer to splice and re-stage. */
   recallTurn(id: string): Promise<QueuedTurn[]>;
@@ -96,7 +100,8 @@ export function useSession(): {
   const actions = useMemo<SessionActions>(
     () => ({
       resolveGate: (callId, decision) => resolveGate(store, callId, decision),
-      submitTurn: (text, attachments) => submitTurn(store, text, attachments),
+      submitTurn: (text, attachments, document) =>
+        submitTurn(store, text, attachments, document),
       recallTurn: (id) => recallTurn(store, id),
     }),
     [store],

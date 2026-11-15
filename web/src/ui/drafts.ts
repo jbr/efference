@@ -1,7 +1,14 @@
 // Per-session composer drafts (docs/web-client.md). The store outlives the
-// view, including its uploads; localStorage keeps text and attachment metadata,
-// not file bytes. A reload cannot resume an upload.
-import { detachAttachment } from "../api/document.ts";
+// view, including its uploads; localStorage keeps text, document and
+// attachment metadata, not file bytes. A reload cannot resume an upload.
+import {
+  detachAttachment,
+  documentAttachmentNames,
+  documentReadable,
+  isArrival,
+  isUserContent,
+  normalizeDocument,
+} from "../api/document.ts";
 import {
   attachmentUrl,
   removeAttachment,
@@ -10,20 +17,14 @@ import {
 import type { Arrival, UserContent } from "../api/types.ts";
 import { isImage, pastedName, type Staged } from "./staging.ts";
 
-/** A recalled document held with the exact text it was spliced as: an
- * untouched composer resubmits the structured form — the only one that
- * carries its references — while an edit is refused and the text restored.
- * The hold lasts until the send succeeds or the composer is cleared
- * (docs/web-client.md). */
-export interface Held {
-  document: UserContent;
-  spliced: string;
-}
-
+/** The draft's authoritative content: `text` is the readable spelling, the
+ * document carries reference identity and position, and `revision` advances on
+ * every content edit so a send can tell whether it submitted what it sent. */
 export interface Draft {
   text: string;
   staged: Staged[];
-  held: Held | null;
+  document: UserContent | null;
+  revision: number;
 }
 
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -51,48 +52,24 @@ function browserStorage(): DraftStorage | null {
   }
 }
 
-function isAttachment(value: unknown): value is Arrival {
-  if (typeof value !== "object" || value === null) return false;
-  const a = value as Partial<Arrival>;
-  if (typeof a.name !== "string" || typeof a.path !== "string") return false;
-  if (typeof a.kind !== "object" || a.kind === null) return false;
-  if ("Image" in a.kind) {
-    const k = a.kind.Image;
-    return (
-      typeof k === "object" &&
-      k !== null &&
-      typeof k.format === "string" &&
-      typeof k.width === "number" &&
-      typeof k.height === "number" &&
-      typeof k.bytes === "number"
-    );
-  }
-  if ("Text" in a.kind) {
-    const k = a.kind.Text;
-    return (
-      typeof k === "object" &&
-      k !== null &&
-      typeof k.bytes === "number" &&
-      typeof k.lines === "number" &&
-      typeof k.shape === "string" &&
-      typeof k.first_line === "string"
-    );
-  }
-  if ("Binary" in a.kind) {
-    const k = a.kind.Binary;
-    return typeof k === "object" && k !== null && typeof k.bytes === "number";
-  }
-  return false;
-}
+const empty = (): Draft => ({
+  text: "",
+  staged: [],
+  document: null,
+  revision: 0,
+});
 
 function load(storage: DraftStorage | null, base: string): Draft {
   try {
     const raw = storage?.getItem(storageKey(base));
-    if (!raw) return { text: "", staged: [], held: null };
+    if (!raw) return empty();
     const saved: unknown = JSON.parse(raw);
-    if (typeof saved !== "object" || saved === null)
-      return { text: "", staged: [], held: null };
-    const draft = saved as { text?: unknown; staged?: unknown; held?: unknown };
+    if (typeof saved !== "object" || saved === null) return empty();
+    const draft = saved as {
+      text?: unknown;
+      staged?: unknown;
+      document?: unknown;
+    };
     const staged: Staged[] = [];
     if (Array.isArray(draft.staged)) {
       for (const value of draft.staged as unknown[]) {
@@ -106,7 +83,7 @@ function load(storage: DraftStorage | null, base: string): Draft {
         )
           continue;
         const attachment =
-          s.status === "ready" && isAttachment(s.attachment)
+          s.status === "ready" && isArrival(s.attachment)
             ? s.attachment
             : undefined;
         staged.push({
@@ -130,30 +107,28 @@ function load(storage: DraftStorage | null, base: string): Draft {
         });
       }
     }
+    const loaded = isUserContent(draft.document)
+      ? normalizeDocument(draft.document)
+      : null;
+    const document =
+      loaded !== null && Object.keys(loaded.references).length > 0
+        ? loaded
+        : null;
+    // The document is authoritative when present; its readable projection is
+    // the text the composer stores, so the two cannot drift apart on reload.
     return {
-      text: typeof draft.text === "string" ? draft.text : "",
+      text: document
+        ? documentReadable(document)
+        : typeof draft.text === "string"
+          ? draft.text
+          : "",
       staged,
-      held: isHeld(draft.held) ? draft.held : null,
+      document,
+      revision: 0,
     };
   } catch {
-    return { text: "", staged: [], held: null };
+    return empty();
   }
-}
-
-/** Light shape check for a persisted hold: a corrupt one drops the hold, and
- * the spliced text simply sends as a plain turn. */
-function isHeld(value: unknown): value is Held {
-  if (typeof value !== "object" || value === null) return false;
-  const h = value as Partial<Held>;
-  if (typeof h.spliced !== "string") return false;
-  const d = h.document;
-  return (
-    typeof d === "object" &&
-    d !== null &&
-    Array.isArray(d.content) &&
-    typeof d.references === "object" &&
-    d.references !== null
-  );
 }
 
 export class DraftStore {
@@ -186,7 +161,7 @@ export class DraftStore {
       if (
         value.text === "" &&
         value.staged.length === 0 &&
-        value.held === null
+        value.document === null
       ) {
         this.deps.storage?.removeItem(storageKey(this.base));
       } else {
@@ -203,7 +178,7 @@ export class DraftStore {
                 pastedText,
               }),
             ),
-            held: value.held,
+            document: value.document,
           }),
         );
       }
@@ -213,23 +188,32 @@ export class DraftStore {
     this.listeners.forEach((listener) => listener());
   }
 
+  /** The editor's authoritative content. `revision` is deliberately not
+   * persisted: after a reload nothing is in flight to compare against. */
+  setContent = (content: { text: string; document: UserContent | null }) => {
+    const document =
+      content.document !== null &&
+      Object.keys(content.document.references).length > 0
+        ? content.document
+        : null;
+    this.update({
+      ...this.value,
+      text: content.text,
+      document,
+      revision: this.value.revision + 1,
+    });
+  };
+
+  /** Programmatic plain-text replacement. Structured edits go through
+   * `setContent`, so a document cannot be left carrying stale text. */
   setText = (text: string | ((current: string) => string)) => {
     const next = typeof text === "function" ? text(this.value.text) : text;
     this.update({
       ...this.value,
       text: next,
-      // Clearing the composer is the explicit way out of a recalled
-      // structured turn's hold: nothing is left to resubmit, and the next
-      // send is an ordinary continue. A recall that splices an empty readable
-      // form sets the hold after this call, so it is not cleared here.
-      held: next === "" ? null : this.value.held,
+      document: null,
+      revision: this.value.revision + 1,
     });
-  };
-
-  /** Put a recalled document on hold, or drop the current one. Setting does
-   * not touch the text: the splice that carries the document writes it. */
-  setHeld = (held: Held | null) => {
-    this.update({ ...this.value, held });
   };
 
   stage = (file: File, pastedText?: string) => {
@@ -282,12 +266,25 @@ export class DraftStore {
     );
   };
 
+  /** Recalled arrivals that the document does not already represent inline.
+   * A documented attachment has one inline occurrence, so staging it again
+   * would show it twice. */
   restore = (attachments: Arrival[]) => {
+    const present = new Set([
+      ...(this.value.document === null
+        ? []
+        : documentAttachmentNames(this.value.document)),
+      ...this.value.staged.flatMap((s) =>
+        s.attachment ? [s.attachment.name] : [],
+      ),
+    ]);
+    const additions = attachments.filter((a) => !present.has(a.name));
+    if (additions.length === 0) return;
     this.update({
       ...this.value,
       staged: [
         ...this.value.staged,
-        ...attachments.map((attachment): Staged => ({
+        ...additions.map((attachment): Staged => ({
           key: crypto.randomUUID(),
           label: attachment.name,
           status: "ready",
@@ -307,37 +304,35 @@ export class DraftStore {
     if (gone.attachment)
       void this.deps.remove(gone.attachment.name).catch(() => {});
     revoke(gone);
-    // A chip restored by a recall of a documented turn is referenced by the
-    // held document too: removing it detaches that definition and its
-    // occurrences, and a document left with no references stops being held
-    // (an edit may then send its text).
-    let held = this.value.held;
-    if (held !== null && gone.attachment) {
-      const document = detachAttachment(held.document, gone.attachment.name);
-      held =
-        Object.keys(document.references).length > 0
-          ? { ...held, document }
-          : null;
+    // Defensive: if a staged chip shares a name with a document attachment,
+    // removing the chip detaches that definition and its occurrences.
+    let document = this.value.document;
+    if (document !== null && gone.attachment) {
+      document = detachAttachment(document, gone.attachment.name);
+      if (Object.keys(document.references).length === 0) document = null;
     }
     this.update({
       ...this.value,
       staged: this.value.staged.filter((s) => s.key !== key),
-      held,
+      document,
+      revision: this.value.revision + 1,
     });
   };
 
-  /** A successful send clears only what it sent: edits or attachments made
-   * while its response was pending must survive (docs/web-client.md). */
+  /** A successful send clears only what it sent: edits made while its
+   * response was pending must survive, including a same-label access toggle
+   * that changed no readable text (docs/web-client.md). */
   sent = (submitted: Draft) => {
     const keys = new Set(
       submitted.staged.filter((s) => s.status === "ready").map((s) => s.key),
     );
     this.value.staged.filter((s) => keys.has(s.key)).forEach(revoke);
+    const unchanged = this.value.revision === submitted.revision;
     this.update({
-      text: this.value.text === submitted.text ? "" : this.value.text,
+      text: unchanged ? "" : this.value.text,
+      document: unchanged ? null : this.value.document,
       staged: this.value.staged.filter((s) => !keys.has(s.key)),
-      // The hold's send went out structured, so it is spent.
-      held: submitted.held !== null ? null : this.value.held,
+      revision: this.value.revision,
     });
   };
 }

@@ -9,7 +9,7 @@ one line per feature.
 
 - A file or directory referenced in a composer message grants the session read — or read and write, if asked — access to it once the message reaches the agent, and says so in the inbox.
 
-- A composer turn can carry inline references: a user message is one structured document of prose and reference occurrences, submitted as `content`+`references` and rendered to the model with a `references:` block. The TUI and web clients recall such a turn with its references held, put an edited hold back to its spliced spelling rather than silently flattening the references, and show attachments by name beside the readable form.
+- A composer turn can carry inline references: a user message is one structured document of prose and reference occurrences, submitted as `content`+`references` and rendered to the model with a `references:` block. The web composer edits that document directly, with atomic chips, undo, and reference identity through copy/paste within the session; the TUI recalls such a turn with its references held and puts an edited hold back to its spliced spelling rather than silently flattening them. Both clients show attachments by name beside the readable form.
 
 - A composer can ask the control channel for discovery candidates: one directory's entries for a typed path prefix (`GET /v1/discovery/paths`) and the host's sessions for a typed `@` prefix (`GET /v1/discovery/agents`), read from names and metadata only.
 

@@ -70,7 +70,9 @@ for (const narrow of [false, true]) {
           .disabled,
       ).toBe(true);
       expect(store.snapshot().text).toBe("preserve my draft");
-      expect(host.querySelector("textarea")?.value).toBe("preserve my draft");
+      expect(host.querySelector(".composer-editor")?.textContent).toBe(
+        "preserve my draft",
+      );
       render({ text: "reconnecting…" });
       expect(footer().querySelector("[role=status]")?.textContent).toBe(
         "reconnecting…",

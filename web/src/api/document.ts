@@ -12,6 +12,136 @@ import type {
   UserSegment,
 } from "./types.ts";
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** A stored upload's shape, as the daemon described it. Shared by draft
+ * persistence and reference validation so neither invents a second wire
+ * spelling (docs/control-api.md). */
+export const isArrival = (value: unknown): value is Arrival => {
+  if (!isRecord(value)) return false;
+  if (typeof value.name !== "string" || typeof value.path !== "string")
+    return false;
+  const kind = value.kind;
+  if (!isRecord(kind)) return false;
+  if ("Image" in kind) {
+    const image = kind.Image;
+    return (
+      isRecord(image) &&
+      typeof image.format === "string" &&
+      typeof image.width === "number" &&
+      typeof image.height === "number" &&
+      typeof image.bytes === "number"
+    );
+  }
+  if ("Text" in kind) {
+    const text = kind.Text;
+    return (
+      isRecord(text) &&
+      typeof text.bytes === "number" &&
+      typeof text.lines === "number" &&
+      typeof text.shape === "string" &&
+      typeof text.first_line === "string"
+    );
+  }
+  if ("Binary" in kind) {
+    const binary = kind.Binary;
+    return isRecord(binary) && typeof binary.bytes === "number";
+  }
+  return false;
+};
+
+export const isReferenceTarget = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  if (value.type === "filesystem") {
+    return (
+      typeof value.original === "string" &&
+      typeof value.path === "string" &&
+      (value.target === "file" || value.target === "directory") &&
+      isRecord(value.access) &&
+      typeof value.access.read === "boolean" &&
+      typeof value.access.write === "boolean"
+    );
+  }
+  if (value.type === "agent") return typeof value.session === "string";
+  if (value.type === "attachment") return isArrival(value);
+  return false;
+};
+
+export const isReferenceDefinition = (
+  value: unknown,
+): value is ReferenceDefinition =>
+  isRecord(value) &&
+  typeof value.label === "string" &&
+  isReferenceTarget(value.target);
+
+/** The stored structured draft's shape. Content segments are checked
+ * structurally; an occurrence naming a missing definition is pruned by
+ * `normalizeDocument` rather than rejecting the whole draft. */
+export const isUserContent = (value: unknown): value is UserContent => {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.content) ||
+    !isRecord(value.references)
+  )
+    return false;
+  for (const segment of value.content) {
+    if (!isRecord(segment)) return false;
+    if ("Text" in segment) {
+      if (typeof segment.Text !== "string") return false;
+    } else if ("Reference" in segment) {
+      if (typeof segment.Reference !== "string") return false;
+    } else {
+      return false;
+    }
+  }
+  return Object.values(value.references).every(isReferenceDefinition);
+};
+
+/** Make a document safe to load into an editor: drop occurrences whose
+ * definition is absent, keep at most one occurrence per upload (an attachment
+ * has one reference; docs/control-api.md), and prune definitions no
+ * occurrence names. */
+export const normalizeDocument = (content: UserContent): UserContent => {
+  const segments: UserSegment[] = [];
+  const used = new Set<string>();
+  const attachments = new Set<string>();
+  for (const segment of content.content) {
+    if ("Text" in segment) {
+      segments.push({ Text: segment.Text });
+      continue;
+    }
+    const definition = content.references[segment.Reference];
+    if (definition === undefined) continue;
+    if (definition.target.type === "attachment") {
+      if (attachments.has(definition.target.name)) continue;
+      attachments.add(definition.target.name);
+    }
+    used.add(segment.Reference);
+    segments.push({ Reference: segment.Reference });
+  }
+  const references: Record<string, ReferenceDefinition> = {};
+  for (const [id, definition] of Object.entries(content.references)) {
+    if (used.has(id)) references[id] = definition;
+  }
+  return { content: segments, references };
+};
+
+/** A plain draft as a document, for loading into the editor and for merges. */
+export const textDocument = (text: string): UserContent => ({
+  content: text === "" ? [] : [{ Text: text }],
+  references: {},
+});
+
+/** The stored upload names a document already carries, so a staged chip that
+ * is also inline is not shown twice. */
+export const documentAttachmentNames = (content: UserContent): Set<string> =>
+  new Set(
+    Object.values(content.references).flatMap((definition) =>
+      definition.target.type === "attachment" ? [definition.target.name] : [],
+    ),
+  );
+
 /** A definition's readable flat spelling: what re-typing the chip as text
  * grants nothing by. An attachment spells nothing — its name is shown beside
  * the readable form (the transcript's definition list, a staged chip). */

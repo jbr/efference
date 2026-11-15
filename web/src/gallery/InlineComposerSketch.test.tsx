@@ -58,6 +58,9 @@ test("inline editor exports atomic reference occurrences and authoritative defin
 
 test("removal prunes unused definitions and undo restores the original identity", async () => {
   const { click, document } = await mount();
+  // The fixture carries its own reference; start from an empty document so
+  // the assertion measures the inserted chip alone.
+  await click("Clear");
   await click("Insert file at caret");
   const [id] = Object.keys(document().references);
   await click("Remove main.tsx");

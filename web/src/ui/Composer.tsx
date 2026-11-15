@@ -16,7 +16,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import { apiBase } from "../api/base.ts";
-import { appendDocument } from "../api/document.ts";
+import {
+  appendDocument,
+  documentAttachmentNames,
+  textDocument,
+} from "../api/document.ts";
 import { acquireDraft } from "./drafts.ts";
 import {
   ApiError,
@@ -57,7 +61,11 @@ import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useNow } from "./useNow.ts";
 import { StagedAttachments } from "./Attachments.tsx";
-import { pastesAsFile } from "./staging.ts";
+import {
+  ComposerEditor,
+  type ComposerEditorHandle,
+} from "./ComposerEditor.tsx";
+import { initialDocument } from "./composerCore.tsx";
 import { useDragToDismiss } from "./useDragToDismiss.ts";
 
 /** What a recall handed back: the text to prepend and the attachments to stage
@@ -67,8 +75,7 @@ export interface Recalled {
   text: string;
   attachments: Arrival[];
   /** The withdrawn turns' documents merged into one (plain turns as text),
-   * or null when none carried references — the hold needs the composer to
-   * hold the recalled turns plus the draft exactly. */
+   * or null when none carried references. */
   document: UserContent | null;
   nonce: number;
 }
@@ -137,12 +144,11 @@ export function Composer({
    * host, stated beside the turn readout. */
   newerVersion?: NewerVersion | null;
 }) {
-  const store = useMemo(() => acquireDraft(apiBase()), []);
+  const base = apiBase();
+  const store = useMemo(() => acquireDraft(base), [base]);
   const snapshot = useSyncExternalStore(store.subscribe, store.snapshot);
-  const setHeld = store.setHeld;
   const draft = snapshot.text;
   const running = phase !== null && phase.phase !== "idle";
-  const setDraft = store.setText;
   const [error, setError] = useState<string | null>(null);
   const [holdPending, setHoldPending] = useState(false);
   const attachments = {
@@ -151,6 +157,15 @@ export function Composer({
     uploading: snapshot.staged.some((s) => s.status === "uploading"),
     remove: store.remove,
   };
+  // A documented attachment is already an inline occurrence; showing its
+  // recalled arrival as a staged chip too would be the same file twice.
+  const documentNames =
+    snapshot.document === null
+      ? new Set<string>()
+      : documentAttachmentNames(snapshot.document);
+  const stagedRow = snapshot.staged.filter(
+    (s) => !(s.attachment && documentNames.has(s.attachment.name)),
+  );
   const { stage, restore } = store;
   // A file dragged anywhere over the page is headed here: the composer is the
   // only drop target, so the whole window accepts it (docs/web-client.md).
@@ -162,13 +177,13 @@ export function Composer({
   // summons it (docs/web-client.md "The phone breakpoint"). The draft
   // survives collapse; only the band's visibility changes.
   const [expanded, setExpanded] = useState(false);
-  const field = useRef<HTMLTextAreaElement>(null);
+  const editorSurface = useRef<ComposerEditorHandle>(null);
   const fabBottom = useDockOffset();
   const collapsed = narrow && !expanded;
   const { sheet: dragSheet, handlers: dragHandlers } =
     useDragToDismiss<HTMLFormElement>(() => setExpanded(false));
   useEffect(() => {
-    if (narrow && expanded) field.current?.focus();
+    if (narrow && expanded) editorSurface.current?.focus();
   }, [narrow, expanded]);
   // Splice a recall in ahead of whatever is already drafted, joined with a newline —
   // adjacent pending turns are separate blocks on the wire, so popping several into one
@@ -180,62 +195,38 @@ export function Composer({
     if (!recalled || spliced.current === recalled.nonce) return;
     spliced.current = recalled.nonce;
     const before = store.snapshot();
-    const current = before.text;
-    const previous = before.held;
-    // A held document is kept only with the exact spelling it was spliced as;
-    // a plain draft is kept as text. An edit to a held spelling is put back,
-    // because the structured send submits the document rather than the
-    // buffer, so text that differed from the document's readable form would
-    // send something the operator cannot see; the notice says so. The held
-    // document is kept whether or not its spelling is empty: an
-    // attachment-only hold has no readable text of its own.
-    const reverted = previous !== null && previous.spliced !== current;
+    const retainedText = before.text;
     const retained =
-      previous !== null
-        ? previous
-        : current !== ""
-          ? {
-              document: {
-                content: [{ Text: current }],
-                references: {},
-              } as UserContent,
-              spliced: current,
-            }
-          : null;
-    const retainedText = retained?.spliced ?? "";
+      before.document ??
+      (retainedText !== "" ? textDocument(retainedText) : null);
     const buffer =
       retainedText !== "" ? `${recalled.text}\n${retainedText}` : recalled.text;
-    setDraft(buffer);
-    // A recalled turn with references holds a document for an unedited
-    // resubmission — the only form that carries the references. The hold
-    // covers the whole buffer: the recalled document already includes every
-    // withdrawn turn (plain ones as text), and a retained piece with readable
-    // text of its own is appended after a newline — an attachment-only hold
-    // contributes its definitions with no separator, because it spells
-    // nothing. A recall with no references and no previous
-    // hold is plain text and stays editable.
-    const document =
-      recalled.document !== null || previous !== null
+    // The recalled document already includes every withdrawn turn (plain ones
+    // as text). When a previous structured draft is retained, its document is
+    // the merge's second half; a plain recalled turn is itself a document so
+    // its text cannot fall out of a structured merge. Any references left in
+    // the merge stay the editor's authoritative content — recall no longer
+    // refuses an edit.
+    const merged =
+      recalled.document !== null || before.document !== null
         ? appendDocument(
-            recalled.document ?? { content: [], references: {} },
-            retained?.document ?? null,
+            recalled.document ?? textDocument(recalled.text),
+            retained,
             retainedText !== "" ? "\n" : "",
           )
         : null;
-    setHeld(document !== null ? { document, spliced: buffer } : null);
-    if (reverted) {
-      // One notice per recall event — the nonce guard above makes this a
-      // one-shot notification, not a value derived from a render loop — and a
-      // deferral would show the text snapping back before saying why.
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-shot event from the recall value, not derived state.
-      setError(
-        "that turn carries references — its text is back as recalled; clear the composer to start over",
-      );
-    }
+    const document =
+      merged !== null && Object.keys(merged.references).length > 0
+        ? merged
+        : null;
+    store.setContent({ text: buffer, document });
+    editorSurface.current?.replace(document ?? textDocument(buffer));
+    // A documented attachment is inline, so restore only the arrivals the
+    // document does not already carry.
     restore(recalled.attachments);
     setExpanded(true);
-    field.current?.focus();
-  }, [recalled, restore, setDraft, setHeld, setError, store]);
+    editorSurface.current?.focus();
+  }, [recalled, restore, store]);
   useEffect(() => {
     // `dragleave` fires on every child boundary crossed, so presence is tracked
     // as a depth rather than a flag.
@@ -262,7 +253,7 @@ export function Composer({
       setDragging(false);
       for (const file of event.dataTransfer?.files ?? []) stage(file);
       setExpanded(true);
-      field.current?.focus();
+      editorSurface.current?.focus();
     };
     window.addEventListener("dragenter", enter);
     window.addEventListener("dragleave", leave);
@@ -276,31 +267,14 @@ export function Composer({
     };
   }, [stage]);
 
-  // A pasted file or image is staged; so is text past the inline limit, kept
-  // as a file the model can grep rather than a wall in the draft. Anything else
-  // pastes as it always has.
-  function onPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const files = [...event.clipboardData.files];
-    if (files.length > 0) {
-      event.preventDefault();
-      files.forEach((file) => stage(file));
-      return;
-    }
-    const text = event.clipboardData.getData("text/plain");
-    if (pastesAsFile(text)) {
-      event.preventDefault();
-      stage(new File([text], "paste.txt", { type: "text/plain" }), text);
-    }
-  }
-
-  // Put a paste staged for its length back into the draft, at the caret.
+  // Put a paste staged for its length back into the draft, at the caret. The
+  // editor's paste boundary owns staging files and long pastes.
   function inline(key: string) {
     const staged = attachments.staged.find((s) => s.key === key);
     if (staged?.pastedText === undefined) return;
     const text = staged.pastedText;
     attachments.remove(key);
-    const at = field.current?.selectionStart ?? draft.length;
-    setDraft((current) => current.slice(0, at) + text + current.slice(at));
+    editorSurface.current?.insertText(text);
   }
   const act = (call: Promise<unknown>) =>
     void call.then(() => setError(null)).catch((e) => setError(`${e}`));
@@ -321,51 +295,24 @@ export function Composer({
   const askColdLine = ask !== null ? coldLine(cold, "your answer") : null;
 
   async function submit() {
-    const text = draft.trim();
     // A send waits for its files: a chip still uploading has no name to send.
     if (attachments.uploading) {
       setError("an attachment is still uploading");
       return;
     }
-    // A held recalled document: an untouched composer resubmits the
-    // structured form — the only one that carries its references. An edit
-    // would splice the references out, so it is refused and the recalled text
-    // put back; the hold survives the refusal, because the next unedited send
-    // must still carry them. Clearing the composer is the way out
-    // (docs/web-client.md). It decides before the empty-send check: a held
-    // attachment-only document's readable form can be empty, and that send is
-    // a turn, not a continue.
-    const held = snapshot.held;
-    if (held !== null) {
-      if (draft === held.spliced) {
-        try {
-          await send(draft, attachments.ready, held.document);
-          store.sent(snapshot);
-          setError(null);
-          setExpanded(false);
-        } catch (e) {
-          setError(e instanceof Error ? e.message : `${e}`);
-        }
-        return;
-      }
-      setDraft(held.spliced);
-      // `setText` treats an empty buffer as the operator's way out of the
-      // hold, but this revert is the refusal putting the text back, not a
-      // clear — an attachment-only hold must survive it so the next unedited
-      // send still carries the document.
-      setHeld(held);
-      setError(
-        "that turn carries references — it is back as recalled; send it unedited, or clear the composer to start over",
-      );
-      return;
-    }
+    // A structured draft submits the document the editor shows; its readable
+    // spelling is not trimmed, because a leading or trailing newline is part
+    // of the structure. An ordinary draft keeps the trimmed plain path.
+    const structured = snapshot.document !== null;
+    const text = structured ? snapshot.text : snapshot.text.trim();
     // An empty send hands control back with no input (docs/web-client.md): the
     // loop takes another turn on the wire it already has. A decline is a normal
     // answer — the moment had no continue in it — so its message renders on its
     // own rather than as a thrown-error string: from the `verbs` topic without a
     // round trip, or from the route when the topic had not moved yet.
-    // Attachments alone are a turn.
-    if (!text && attachments.ready.length === 0) {
+    // Attachments alone are a turn, and an attachment-only document is
+    // structured with no readable text of its own.
+    if (!structured && !text && attachments.ready.length === 0) {
       const verb = verbs?.continue;
       if (verb !== undefined && !verb.accepted) {
         setError(verb.message ?? null);
@@ -373,18 +320,33 @@ export function Composer({
       }
       try {
         await continueLoop();
-        setError(null);
+        if (apiBase() === base) setError(null);
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : `${e}`);
+        if (apiBase() === base) {
+          setError(e instanceof ApiError ? e.message : `${e}`);
+        }
       }
       return;
     }
     try {
-      await send(text, attachments.ready);
+      if (structured) {
+        await send(snapshot.text, attachments.ready, snapshot.document);
+      } else {
+        await send(text, attachments.ready);
+      }
       store.sent(snapshot);
+      // The send outlived this view's session: its store is still the one that
+      // submitted, but the editor ref and the expanded flag now belong to
+      // whichever session is on screen. Clear the submitted store, then leave
+      // the current view alone.
+      if (apiBase() !== base) return;
+      if (store.snapshot().text === "" && store.snapshot().document === null) {
+        editorSurface.current?.replace(textDocument(""));
+      }
       setError(null);
       setExpanded(false);
     } catch (e) {
+      if (apiBase() !== base) return;
       setError(e instanceof Error ? e.message : `${e}`);
     }
   }
@@ -461,29 +423,25 @@ export function Composer({
             </div>
           )}
           <StagedAttachments
-            staged={attachments.staged}
+            staged={stagedRow}
             onRemove={attachments.remove}
             onInline={inline}
           />
           <div className="composer-input">
             <div className="composer-text-row">
-              <textarea
-                ref={field}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onPaste={onPaste}
-                onKeyDown={(event) => {
-                  // On a phone there is no shift-enter, so intercepting Enter
-                  // would make multi-line drafts impossible: return inserts a
-                  // newline and the send button sends.
-                  if (!narrow && event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void submit();
-                  }
-                  if (narrow && event.key === "Escape") setExpanded(false);
-                }}
+              <ComposerEditor
+                key={base}
+                ref={editorSurface}
+                base={base}
+                initial={initialDocument(snapshot.document, snapshot.text)}
                 placeholder={ask !== null ? replyHint(ask) : "send a turn…"}
-                rows={3}
+                narrow={narrow}
+                onChange={(document, text) =>
+                  store.setContent({ document, text })
+                }
+                onSubmit={() => void submit()}
+                onEscape={() => setExpanded(false)}
+                onStageFile={stage}
               />
             </div>
             <input
