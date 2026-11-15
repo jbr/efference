@@ -63,4 +63,22 @@ impl Directories {
     pub fn grant(&self, key: &str) -> PathBuf {
         lexical_normalize(&absolutize(key, &self.project))
     }
+    /// The `[paths]` key a grant on `target` is written at (docs/permissions.md). `target`
+    /// is already absolute, normalized and judged ([`Self::judged`]) — the shape a
+    /// reference's stored path produces.
+    ///
+    /// Inside the project the key is project-relative, so the file reads the way an
+    /// operator writes it (`.efference`, `src/`); the project root itself is `.`.
+    /// Outside, it stays absolute. `None` when the path has no UTF-8 spelling: a TOML
+    /// key is a string, so a grant there cannot be written and is refused rather than
+    /// stored under a lossy name.
+    pub fn grant_key(&self, target: &Path) -> Option<String> {
+        match target.strip_prefix(&self.project) {
+            Ok(relative) if !relative.as_os_str().is_empty() => {
+                relative.to_str().map(str::to_string)
+            }
+            Ok(_) => Some(".".to_string()),
+            Err(_) => target.to_str().map(str::to_string),
+        }
+    }
 }

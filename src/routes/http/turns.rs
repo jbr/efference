@@ -5,6 +5,7 @@ use super::*;
 use crate::host::Host;
 use crate::protocol::answers::{StatusBody, StatusWord};
 use crate::protocol::turns::{Landing, QueuedTurn, TurnAccepted, WithdrawnTurns};
+use crate::record::log::{ReferenceAccess, ReferenceTargetKind};
 use crate::routes::host_http::host_of;
 use crate::session::Decider;
 use crate::session::Session;
@@ -295,13 +296,71 @@ fn names_an_upload(form: &TurnForm, attachments: &[String]) -> bool {
     }
 }
 
+/// A filesystem definition's structural checks (docs/control-api.md): an access the policy can
+/// act on, an absolute path in normal form, and an existing target of the claimed kind. No
+/// session is needed, so a turn submitted to a starting session validates here too; nothing is
+/// authorized here — that is decided when the turn is admitted (docs/permissions.md).
+fn validate_filesystem(
+    label: String,
+    original: String,
+    path: String,
+    kind: ReferenceTargetKind,
+    access: ReferenceAccess,
+) -> Result<ReferenceDefinition, String> {
+    if access.normalized().is_none() {
+        return Err(format!(
+            "filesystem reference `{original}`: no access requested — a reference grants read, \
+             and optionally write, so it must ask for at least one"
+        ));
+    }
+    let target = std::path::Path::new(&path);
+    if !target.is_absolute() {
+        return Err(format!(
+            "filesystem reference `{original}`: `{path}` is not an absolute path"
+        ));
+    }
+    // Refused, not collapsed: the stored path is what the reference means, and a spelling with
+    // `..` in it would name a different target from the one the policy sees. Symlinks are
+    // deliberately not resolved — the path is kept as submitted and the classifier judges it as
+    // written.
+    if crate::config::policy::lexical_normalize(target) != target {
+        return Err(format!(
+            "filesystem reference `{original}`: `{path}` is not in normal form — send an absolute \
+             path with no `.` or `..` segments"
+        ));
+    }
+    // A missing or unreadable target is a submission error, not something to grant and discover
+    // later. Metadata follows symlinks, matching the spelling kept.
+    let metadata = std::fs::metadata(target)
+        .map_err(|e| format!("filesystem reference `{original}`: `{path}` cannot be read: {e}"))?;
+    match kind {
+        ReferenceTargetKind::File if !metadata.is_file() => {
+            return Err(format!(
+                "filesystem reference `{original}`: `{path}` is not a file"
+            ));
+        }
+        ReferenceTargetKind::Directory if !metadata.is_dir() => {
+            return Err(format!(
+                "filesystem reference `{original}`: `{path}` is not a directory"
+            ));
+        }
+        _ => {}
+    }
+    Ok(ReferenceDefinition::filesystem(
+        label, original, path, kind, access,
+    ))
+}
+
 /// Validate a structured submission and resolve it into the stored document
 /// (docs/control-api.md): ids checked and preserved verbatim — never renamed —
 /// every occurrence resolved to a definition, no unused definitions (a
 /// definition with no occurrence still names a target the model would not
 /// read), attachment definitions used exactly once
 /// and resolved against the session's store, agent identities confirmed
-/// against the host's live registry, and filesystem targets refused.
+/// against the host's live registry, and a filesystem target checked for form — absolute,
+/// in normal form, an existing path of the claimed kind — with its access normalized. A
+/// filesystem reference grants nothing here: it authorizes at admission
+/// (docs/permissions.md).
 fn validate_document(
     session: Option<&Session>,
     host: Option<&Host>,
@@ -347,9 +406,12 @@ fn validate_document(
             return Err(format!("reference `{id}` is defined but never used"));
         }
         let definition = match reference.target {
-            SubmittedTarget::Filesystem { .. } => {
-                return Err("filesystem references are not accepted yet".to_string());
-            }
+            SubmittedTarget::Filesystem {
+                original,
+                path,
+                target,
+                access,
+            } => validate_filesystem(reference.label, original, path, target, access)?,
             SubmittedTarget::Attachment { name } => {
                 if count > 1 {
                     return Err(format!(

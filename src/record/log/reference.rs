@@ -70,15 +70,16 @@ pub enum ReferenceTargetKind {
 /// a session; the server resolves the first against its store and validates
 /// the second against the host registry. A filesystem target carries what the
 /// submitter asserted — the text typed, the absolute path, the kind and the
-/// requested access — and the gate refuses it today (docs/control-api.md).
+/// requested access (docs/control-api.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ReferenceTarget {
     /// A filesystem target. `original` is what the submitter typed; `path` is
-    /// the absolute path the client supplied. The gate refuses this target
-    /// today, so no logged entry carries one; `access` records what the
-    /// submission asked for.
+    /// the absolute path the client supplied, checked for form at submission
+    /// and never re-resolved; `access` records what the submission asked for.
+    /// What the reference authorizes is decided when the turn is admitted
+    /// (docs/permissions.md).
     Filesystem {
         original: String,
         path: String,
@@ -118,6 +119,28 @@ impl ReferenceDefinition {
             label: label.into(),
             target: ReferenceTarget::Agent {
                 session: session.into(),
+            },
+        }
+    }
+
+    /// A filesystem reference the submission gate has validated: `path` absolute and
+    /// lexically normalized, the target present and of the claimed `kind`, and `access`
+    /// one the policy can act on. What it authorizes is decided at admission
+    /// (docs/permissions.md), not here.
+    pub fn filesystem(
+        label: impl Into<String>,
+        original: impl Into<String>,
+        path: impl Into<String>,
+        kind: ReferenceTargetKind,
+        access: ReferenceAccess,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            target: ReferenceTarget::Filesystem {
+                original: original.into(),
+                path: path.into(),
+                target: kind,
+                access,
             },
         }
     }
@@ -210,8 +233,9 @@ pub struct SubmittedReference {
 /// which the server resolves against that store, so a client-supplied arrival
 /// is not trusted. A filesystem target carries the text the submitter typed,
 /// the absolute path it means, and the requested access; the gate validates
-/// its form and then refuses the target today. An agent target names a session
-/// the host registry must know.
+/// its form and stores it, and the reference grants at admission
+/// (docs/permissions.md). An agent target names a session the host registry
+/// must know.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -221,8 +245,7 @@ pub enum SubmittedTarget {
         /// The absolute path the submitter means, supplied by the client. The
         /// gate validates it and never re-derives it from `original` against a
         /// working directory that has since changed, so a recalled target
-        /// keeps its identity (docs/control-api.md). The target is refused
-        /// today.
+        /// keeps its identity (docs/control-api.md).
         path: String,
         target: ReferenceTargetKind,
         #[serde(default)]

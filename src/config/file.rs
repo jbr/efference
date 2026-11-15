@@ -93,29 +93,42 @@ impl ConfigFile {
     /// the document is by construction the last content that parsed, writing it out is how the
     /// file returns to validity, whatever put it in an invalid state.
     pub fn sync(&self) -> std::io::Result<()> {
-        std::fs::write(&self.path, self.doc.to_string())
+        write_atomically(&self.path, &self.doc.to_string())
     }
 
-    /// Apply a committed [`ConfigChange`] to the held document and write it out
+    /// Apply one committed [`ConfigChange`] to the held document and write it out
     /// (docs/permissions.md). **Replaces at a key** while preserving every comment
     /// and unrelated line — the property that makes "yes, always" auto-persist sound for *every*
     /// slot, including a single `scope` narrowing. Idempotent by construction: setting a
     /// key/array-member that already holds the value is a no-op on disk.
+    pub fn apply(&mut self, change: &ConfigChange) -> std::io::Result<()> {
+        self.apply_all(std::slice::from_ref(change))
+    }
+
+    /// Apply several committed changes to the held document and write it out once
+    /// (docs/permissions.md). A batch that arrives together — a message's admission grants — is
+    /// one write and one document, not one per change.
     ///
     /// The mutated document is re-validated before it is written, so the invariant ("the held
     /// document parses") cannot be broken by the harness's own edit; a change that somehow
-    /// wouldn't parse is rejected with the document untouched rather than written out.
-    pub fn apply(&mut self, change: &ConfigChange) -> std::io::Result<()> {
+    /// wouldn't parse is rejected with the document untouched rather than written out. The held
+    /// document and its [`Self::config`] are replaced only after the write succeeds, so a failed
+    /// write leaves both the file's bytes and the state this struct reports unchanged.
+    pub fn apply_all(&mut self, changes: &[ConfigChange]) -> std::io::Result<()> {
         let invalid = |e: String| std::io::Error::new(std::io::ErrorKind::InvalidData, e);
         let mut doc = self.doc.clone();
-        apply_to_document(&mut doc, change);
+        for change in changes {
+            apply_to_document(&mut doc, change);
+        }
         let text = config_schemas::keep_directives_first(&self.doc.to_string(), doc.to_string());
         let config = parse(&self.path, &text).map_err(|e| invalid(e.to_string()))?;
-        self.doc = text
-            .parse()
+        let doc = text
+            .parse::<DocumentMut>()
             .map_err(|e: toml_edit::TomlError| invalid(e.to_string()))?;
+        write_atomically(&self.path, &text)?;
+        self.doc = doc;
         self.config = config;
-        self.sync()
+        Ok(())
     }
 
     /// Re-read the file: **adopt** it if it parses, **revert** it if it doesn't
@@ -151,4 +164,63 @@ impl ConfigFile {
         self.config = config.clone();
         Refreshed::Adopted(config)
     }
+}
+/// The counter [`write_atomically`] names its temp files with. Not state: it exists only so two
+/// writes in one process never contend for one temp name, and its value carries no meaning.
+static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Replace `path`'s contents with `text` so that a reader — an editor, a watcher, the next boot —
+/// sees either the previous bytes or these, never a truncated file.
+///
+/// The text goes to a temp file beside the target, is flushed with `sync_all`, and is renamed
+/// into place; a failure at any step removes the temp file and leaves the target untouched, so a
+/// caller that gets an error still has the file it had before. The temp file is in the same
+/// directory as the target, so the rename cannot cross a filesystem.
+///
+/// A `path` that is a symlink is resolved first and its **target** is replaced: renaming over the
+/// link would swap the operator's symlink — a config kept in a dotfiles checkout, say — for a
+/// regular file. The target's permission bits are preserved, which a plain create does not do
+/// (the umask would apply). A hardlinked config keeps its other links on the old bytes, because
+/// the rename replaces one directory entry; a config reached through a hardlink is not a shape
+/// the session supports.
+fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let invalid = |message: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, message);
+    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let dir = match target.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    let name = target
+        .file_name()
+        .ok_or_else(|| invalid("config path has no file name"))?;
+    let count = NEXT_TEMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut temp_name = std::ffi::OsString::from(".");
+    temp_name.push(name);
+    temp_name.push(format!(".tmp-{}-{count}", std::process::id()));
+    let temp = dir.join(temp_name);
+
+    let mode = std::fs::metadata(&target)
+        .map(|m| m.permissions().mode())
+        .ok();
+    let written = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(mode.unwrap_or(crate::record::session_dir::FILE_MODE))
+            .open(&temp)?;
+        file.write_all(text.as_bytes())?;
+        if let Some(mode) = mode {
+            // `open`'s mode is filtered through the umask; the target's own mode is not.
+            file.set_permissions(std::fs::Permissions::from_mode(mode))?;
+        }
+        file.sync_all()
+    })();
+    let placed = written.and_then(|()| std::fs::rename(&temp, &target));
+    if placed.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    placed
 }

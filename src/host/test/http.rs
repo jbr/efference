@@ -461,22 +461,29 @@ async fn a_turn_with_two_spellings_is_refused() {
 
 /// Every structured definition is validated against the session and the host
 /// before it queues: an occurrence needs a definition, a definition needs an
-/// occurrence, ids stay in the readable charset, and the targets the gate
-/// cannot resolve yet are refused (docs/control-api.md).
+/// occurrence, ids stay in the readable charset, and a filesystem target is
+/// checked for form — absolute, in normal form, present, of the claimed kind —
+/// though it grants nothing here (docs/control-api.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_structured_turn_validates_its_references_before_queueing() {
+    let dir = crate::platform::testing::temp_dir("refs");
+    let notes = dir.path().join("notes.md");
+    std::fs::write(&notes, "notes\n").unwrap();
+    let missing = dir.path().join("missing.md");
     let (shared, mut turns_rx) = Session::in_memory();
     let app = test_server(&shared).await;
     let agent = serde_json::json!({
         "label": "reviewer",
         "target": { "type": "agent", "session": "castback" }
     });
-    let filesystem = serde_json::json!({
-        "label": "notes",
-        "target": { "type": "filesystem", "original": "notes.md",
-                    "path": "/tmp/notes.md", "target": "file",
-                    "access": { "read": true, "write": false } }
-    });
+    let filesystem = |path: String, kind: &str, read: bool, write: bool| {
+        serde_json::json!({
+            "label": "notes",
+            "target": { "type": "filesystem", "original": "notes.md",
+                        "path": path, "target": kind,
+                        "access": { "read": read, "write": write } }
+        })
+    };
     let attachment = serde_json::json!({
         "label": "n.txt",
         "target": { "type": "attachment", "name": "n.txt" }
@@ -491,10 +498,33 @@ async fn a_structured_turn_validates_its_references_before_queueing() {
             "content": [{ "Reference": "a b" }],
             "references": { "a b": agent },
         }),
-        // Filesystem targets are not accepted yet.
+        // A filesystem target is absolute…
         serde_json::json!({
             "content": [{ "Reference": "a" }],
-            "references": { "a": filesystem },
+            "references": { "a": filesystem("notes.md".into(), "file", true, false) },
+        }),
+        // …in normal form (a `..` spelling names something the policy would not)…
+        serde_json::json!({
+            "content": [{ "Reference": "a" }],
+            "references": { "a": filesystem(
+                dir.path().join("..").join("notes.md").display().to_string(),
+                "file", true, false,
+            ) },
+        }),
+        // …present…
+        serde_json::json!({
+            "content": [{ "Reference": "a" }],
+            "references": { "a": filesystem(missing.display().to_string(), "file", true, false) },
+        }),
+        // …and of the kind it claims.
+        serde_json::json!({
+            "content": [{ "Reference": "a" }],
+            "references": { "a": filesystem(notes.display().to_string(), "directory", true, false) },
+        }),
+        // Asking for neither read nor write is not a reference.
+        serde_json::json!({
+            "content": [{ "Reference": "a" }],
+            "references": { "a": filesystem(notes.display().to_string(), "file", false, false) },
         }),
         // An attachment the store does not hold.
         serde_json::json!({
@@ -514,4 +544,42 @@ async fn a_structured_turn_validates_its_references_before_queueing() {
             .assert_status(400);
     }
     assert!(turns_rx.try_recv().is_err(), "nothing was queued");
+}
+
+/// A filesystem reference that passes the form checks is accepted and queues
+/// with its definition intact — the asserted access is recorded, while what it
+/// authorizes is decided at admission (docs/control-api.md,
+/// docs/permissions.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_filesystem_reference_queues_with_its_definition() {
+    let dir = crate::platform::testing::temp_dir("refs-queued");
+    let notes = dir.path().join("notes.md");
+    std::fs::write(&notes, "notes\n").unwrap();
+    let (shared, mut turns_rx) = Session::in_memory();
+    let app = test_server(&shared).await;
+    let body = serde_json::json!({
+        "content": [{ "Text": "look" }, { "Reference": "r1" }],
+        "references": { "r1": {
+            "label": "notes",
+            "target": { "type": "filesystem", "original": "notes.md",
+                        "path": notes.display().to_string(), "target": "file",
+                        "access": { "read": true, "write": true } }
+        } },
+    });
+    app.post("/v1/turns")
+        .with_body(body.to_string())
+        .await
+        .assert_status(202);
+    let queued = turns_rx.recv().await.unwrap();
+    assert_eq!(
+        serde_json::to_value(queued.payload()).unwrap(),
+        serde_json::json!({ "User": [ { "Document": {
+            "content": [ { "Text": "look" }, { "Reference": "r1" } ],
+            "references": { "r1": { "label": "notes", "target": {
+                "type": "filesystem", "original": "notes.md",
+                "path": notes.display().to_string(), "target": "file",
+                "access": { "read": true, "write": true }
+            } } },
+        } } ] })
+    );
 }

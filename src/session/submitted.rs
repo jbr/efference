@@ -23,7 +23,9 @@ pub struct SubmittedTurn {
     /// plus their definitions (docs/log-and-projection.md). References enter
     /// only through the submission gate's validated path —
     /// `routes/http/turns.rs` resolves uploads, validates agent identities,
-    /// and refuses filesystem targets before anything reaches here.
+    /// and form-checks filesystem targets before anything reaches here; what a
+    /// filesystem reference grants is decided at admission
+    /// (docs/permissions.md).
     pub content: UserContent,
 }
 

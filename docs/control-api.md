@@ -587,10 +587,15 @@ question is pending, from every client (below).
   `content` without `references` (or the reverse), or a structured body with a
   separate `attachments` list is a `400`. Before anything queues, the gate
   refuses an occurrence with no definition, a definition with no occurrence, an
-  attachment named twice (including one store upload under two ids), an upload
-  the session's store does not hold, and a filesystem target — the request
-  supplies the absolute `path`, which the gate validates but does not yet
-  admit. An agent target must name a session the host lists; a session without
+  attachment named twice (including one store upload under two ids), and an
+  upload the session's store does not hold. A filesystem target is checked for
+  form: the request supplies the absolute, normalized `path` and the kind
+  (file or directory), the gate requires the path to exist as that kind with
+  symlinks followed, and it requires an access request of at least read. It
+  grants nothing at the gate — a filesystem reference authorizes when the turn
+  is admitted, as a `[paths]` grant at the target
+  ([permissions.md](permissions.md)). An agent target must name a session the
+  host lists; a session without
   the host registry cannot take one. Both spellings normalize into one submitted
   document, and every `User` entry lands as `[Document(document)]`
   ([log-and-projection.md](log-and-projection.md)).

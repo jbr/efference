@@ -436,3 +436,111 @@ fn persist_keeps_the_schema_line_first() {
         }
     }
 }
+
+/// The atomic write replaces the file and leaves no temporary behind: a crash cannot find a
+/// half-written config, and a successful write leaves the directory as the operator left it.
+#[test]
+fn an_atomic_write_leaves_no_temporary_behind() {
+    let scratch = crate::platform::testing::temp_dir("atomic");
+    let path = scratch.path().join("config.toml");
+    std::fs::write(&path, "# mine\n").unwrap();
+    let mut file = ConfigFile::load(&path).unwrap();
+
+    file.apply(&ConfigChange::Path {
+        path: "docs".into(),
+        read: true,
+        write: false,
+    })
+    .unwrap();
+
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("docs = { read = true }"), "{text}");
+    assert!(text.contains("# mine"), "the comment survives: {text}");
+    let names: Vec<String> = std::fs::read_dir(scratch.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["config.toml".to_string()], "no temp remains");
+}
+
+/// A symlinked config keeps its link: the atomic write resolves the target and renames beside
+/// it, so the link is not replaced by a regular file holding the new bytes.
+#[test]
+fn an_atomic_write_follows_a_symlinked_config() {
+    let scratch = crate::platform::testing::temp_dir("atomic-link");
+    let real = scratch.path().join("real.toml");
+    let link = scratch.path().join("config.toml");
+    std::fs::write(&real, "# linked\n").unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let mut file = ConfigFile::load(&link).unwrap();
+
+    file.apply(&ConfigChange::Path {
+        path: "docs".into(),
+        read: true,
+        write: false,
+    })
+    .unwrap();
+
+    let metadata = std::fs::symlink_metadata(&link).unwrap();
+    assert!(metadata.file_type().is_symlink(), "the link is preserved");
+    let text = std::fs::read_to_string(&real).unwrap();
+    assert!(
+        text.contains("docs = { read = true }"),
+        "the target: {text}"
+    );
+    assert!(
+        text.contains("# linked"),
+        "the target's comments survive: {text}"
+    );
+    let names: Vec<String> = std::fs::read_dir(scratch.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names.iter().filter(|name| name.contains(".tmp-")).count(),
+        0,
+        "no temp remains: {names:?}"
+    );
+}
+
+/// A write that fails adopts nothing: the held document and the state this struct reports are the
+/// ones that were on disk, and the temporary is removed. A target that `rename` cannot replace
+/// (here a directory standing where the file was) is the deterministic failure.
+#[test]
+fn a_failed_atomic_write_adopts_nothing_and_leaves_no_temporary() {
+    let scratch = crate::platform::testing::temp_dir("atomic-fail");
+    let path = scratch.path().join("config.toml");
+    std::fs::write(&path, "[paths]\n\"docs\" = { read = true }\n").unwrap();
+    let mut file = ConfigFile::load(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+
+    let err = file
+        .apply(&ConfigChange::Path {
+            path: "src".into(),
+            read: true,
+            write: false,
+        })
+        .expect_err("renaming over a directory fails");
+    assert!(!err.to_string().is_empty());
+
+    assert!(
+        !file.config().paths.contains_key("src"),
+        "the held config is the one that parsed: {:?}",
+        file.config().paths
+    );
+    assert!(
+        file.config().paths.contains_key("docs"),
+        "and keeps what it already had: {:?}",
+        file.config().paths
+    );
+    let names: Vec<String> = std::fs::read_dir(scratch.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names.iter().filter(|name| name.contains(".tmp-")).count(),
+        0,
+        "the temporary was removed: {names:?}"
+    );
+}

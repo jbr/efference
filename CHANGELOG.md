@@ -7,6 +7,8 @@ one line per feature.
 
 ### Added
 
+- A file or directory referenced in a composer message grants the session read — or read and write, if asked — access to it once the message reaches the agent, and says so in the inbox.
+
 - A composer turn can carry inline references: a user message is one structured document of prose and reference occurrences, submitted as `content`+`references` and rendered to the model with a `references:` block. The TUI and web clients recall such a turn with its references held, put an edited hold back to its spliced spelling rather than silently flattening the references, and show attachments by name beside the readable form.
 
 - Hosted agents and external MCP clients can read `efference://models` to discover exact model slugs, known prices and capabilities, with combined filters and pagination.

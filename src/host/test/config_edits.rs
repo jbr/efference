@@ -436,11 +436,13 @@ async fn an_unrepairable_config_parks_the_loop_until_the_file_parses() {
         "a parsing file parks nothing"
     );
 
-    // Invalid content the harness cannot write back over: `[scope]` as a table, on a
-    // file the process may read but not replace.
+    // Invalid content the harness cannot write back over: `[scope]` as a table, in a
+    // directory the process may read but not write. The write-back replaces the file
+    // through a same-directory temporary, so the directory's mode is what binds, not
+    // the file's.
     std::fs::write(&path, "[scope]\ndefault = \"read\"\n").unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
-    if std::fs::write(&path, "probe").is_ok() {
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::write(dir.join("probe"), "probe").is_ok() {
         // Running somewhere the mode doesn't bind (root); the failure this test needs
         // cannot be produced, so there is nothing to assert.
         std::fs::remove_dir_all(&dir).ok();
@@ -468,7 +470,7 @@ async fn an_unrepairable_config_parks_the_loop_until_the_file_parses() {
     );
 
     // The human repairs the file; the watcher picks it up; the gate clears.
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::write(&path, good).unwrap();
     refresh_and_emit(&shared);
     assert!(

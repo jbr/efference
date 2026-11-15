@@ -188,7 +188,7 @@ export type UserSegment =
  * a session; the server resolves the first against its store and validates
  * the second against the host registry. A filesystem target carries what the
  * submitter asserted — the text typed, the absolute path, the kind and the
- * requested access — and the gate refuses it today (docs/control-api.md).
+ * requested access (docs/control-api.md).
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "ReferenceTarget".
@@ -1711,8 +1711,9 @@ export type StreamDelta =
  * which the server resolves against that store, so a client-supplied arrival
  * is not trusted. A filesystem target carries the text the submitter typed,
  * the absolute path it means, and the requested access; the gate validates
- * its form and then refuses the target today. An agent target names a session
- * the host registry must know.
+ * its form and stores it, and the reference grants at admission
+ * (docs/permissions.md). An agent target names a session the host registry
+ * must know.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "SubmittedTarget".
@@ -1725,8 +1726,7 @@ export type SubmittedTarget =
        * The absolute path the submitter means, supplied by the client. The
        * gate validates it and never re-derives it from `original` against a
        * working directory that has since changed, so a recalled target
-       * keeps its identity (docs/control-api.md). The target is refused
-       * today.
+       * keeps its identity (docs/control-api.md).
        */
       path: string;
       target: ReferenceTargetKind;

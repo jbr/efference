@@ -5843,10 +5843,10 @@
       "type": "object"
     },
     "ReferenceTarget": {
-      "description": "Where a stored reference points. A client's submission names an upload or\na session; the server resolves the first against its store and validates\nthe second against the host registry. A filesystem target carries what the\nsubmitter asserted — the text typed, the absolute path, the kind and the\nrequested access — and the gate refuses it today (docs/control-api.md).",
+      "description": "Where a stored reference points. A client's submission names an upload or\na session; the server resolves the first against its store and validates\nthe second against the host registry. A filesystem target carries what the\nsubmitter asserted — the text typed, the absolute path, the kind and the\nrequested access (docs/control-api.md).",
       "oneOf": [
         {
-          "description": "A filesystem target. `original` is what the submitter typed; `path` is\nthe absolute path the client supplied. The gate refuses this target\ntoday, so no logged entry carries one; `access` records what the\nsubmission asked for.",
+          "description": "A filesystem target. `original` is what the submitter typed; `path` is\nthe absolute path the client supplied, checked for form at submission\nand never re-resolved; `access` records what the submission asked for.\nWhat the reference authorizes is decided when the turn is admitted\n(docs/permissions.md).",
           "properties": {
             "access": {
               "$ref": "#/definitions/ReferenceAccess"
@@ -8142,7 +8142,7 @@
       "type": "object"
     },
     "SubmittedTarget": {
-      "description": "What a client points a reference at. An attachment names a store upload,\nwhich the server resolves against that store, so a client-supplied arrival\nis not trusted. A filesystem target carries the text the submitter typed,\nthe absolute path it means, and the requested access; the gate validates\nits form and then refuses the target today. An agent target names a session\nthe host registry must know.",
+      "description": "What a client points a reference at. An attachment names a store upload,\nwhich the server resolves against that store, so a client-supplied arrival\nis not trusted. A filesystem target carries the text the submitter typed,\nthe absolute path it means, and the requested access; the gate validates\nits form and stores it, and the reference grants at admission\n(docs/permissions.md). An agent target names a session the host registry\nmust know.",
       "oneOf": [
         {
           "properties": {
@@ -8161,7 +8161,7 @@
               "type": "string"
             },
             "path": {
-              "description": "The absolute path the submitter means, supplied by the client. The\ngate validates it and never re-derives it from `original` against a\nworking directory that has since changed, so a recalled target\nkeeps its identity (docs/control-api.md). The target is refused\ntoday.",
+              "description": "The absolute path the submitter means, supplied by the client. The\ngate validates it and never re-derives it from `original` against a\nworking directory that has since changed, so a recalled target\nkeeps its identity (docs/control-api.md).",
               "type": "string"
             },
             "target": {

@@ -104,6 +104,7 @@ mod context_rung;
 mod effective;
 mod gate_grant;
 mod probe;
+mod reference;
 mod tools;
 
 /// A config granting the read/write/daemon tools, with cwd read+write and a **disjoint**

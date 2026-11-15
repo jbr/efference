@@ -86,28 +86,125 @@ pub(crate) async fn config_watch_loop(shared: Arc<Session>, path: PathBuf) {
 /// Returns the outcome so the loop — which calls this synchronously after an approved config write
 /// — can put a rejection in that call's tool result, where the author will actually see it.
 pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
-    let outcome = shared.refresh_config()?;
-    let file_config = match outcome {
-        Refreshed::Adopted(config) => config,
-        Refreshed::Reverted { ref error } => {
-            // The revert put valid content back on disk, so a prior park (if any) is over —
-            // the file parses again, which is the whole condition (docs/permissions.md).
-            shared.clear_config_repair();
-            log::debug!("config: edit did not parse, reverted to last good: {error}");
-            shared.notify(Notification::new(
-                "config",
-                format!(
-                    "Your config edit did not take effect — it did not parse, so the file has been \
-                     restored to the last valid config and the effective policy is unchanged. \
-                     Re-edit it so it parses (check that `scope` is a string, not a `[scope]` \
-                     table, and that keys match the schema in the file's header comment). \
-                     Error: {error}"
-                ),
-                Some("config-parse-error".to_string()),
-            ));
-            return Some(outcome);
+    let pass = {
+        let _section = shared.policy_section();
+        refresh_locked(shared)
+    };
+    raise_pass(shared, pass)
+}
+
+/// One pass over the config file, taken with the policy section held (docs/permissions.md).
+///
+/// Everything that raises a notification is deferred into this value — `notify` re-enters
+/// `append` for a slot-less notification, and a caller of this is already inside the section —
+/// and the `[env]` absorb stays out of the section entirely, because resolving a reference can
+/// block on an operator. Admission calls this under its own section, so it must not take one.
+pub(crate) struct Pass {
+    /// What the file is now.
+    file: FileState,
+    /// The parse-error notices the pass owes, raised after the section is released.
+    notices: Vec<Notification>,
+    /// The park an unrecoverable invalid file leaves behind, set after the section.
+    repair: Option<ConfigRepair>,
+}
+
+/// The state one [`refresh_locked`] pass leaves the file in.
+enum FileState {
+    /// The session has no config file (the built-in default role).
+    NoFile,
+    /// The file parsed and is adopted, with the notices its deltas earned.
+    // Boxed: this is the one large variant, and a `Pass` is carried by value through
+    // `refresh_locked`'s return — the config is moved, not cloned, so the indirection costs
+    // nothing the pass would not cost anyway.
+    Adopted {
+        config: Box<crate::config::Config>,
+        notices: Vec<(String, String)>,
+    },
+    /// The file did not parse and the last-good document was written back over it.
+    Reverted { error: String },
+    /// The file did not parse and could not be restored.
+    RevertFailed { error: String, io: io::Error },
+}
+
+impl Pass {
+    /// Whether a grant may be computed and written after this pass: an invalid file that could
+    /// not be restored is the one state where the file cannot be persisted to, so an admission
+    /// on it admits its message and refuses its grants (docs/permissions.md).
+    pub(crate) fn grants_usable(&self) -> bool {
+        !matches!(self.file, FileState::RevertFailed { .. })
+    }
+}
+
+/// Refresh the file, adopt or revert it, and reconcile what it holds against the policy in
+/// force — all with the caller's policy section held. The returned [`Pass`] carries what still
+/// has to be said or done outside it.
+pub(crate) fn refresh_locked(shared: &Session) -> Pass {
+    let Some(outcome) = shared.refresh_config() else {
+        return Pass {
+            file: FileState::NoFile,
+            notices: Vec::new(),
+            repair: None,
+        };
+    };
+    match outcome {
+        Refreshed::Adopted(file_config) => {
+            let changes = crate::config::diff_changes(&shared.effective_config(), &file_config);
+            let notices = if changes.is_empty() {
+                Vec::new()
+            } else {
+                let turn = shared.latest_turn();
+                let edits = changes
+                    .into_iter()
+                    .map(|change| {
+                        // The file edit *is* the commit, and it lives in the file by definition →
+                        // `Persist` (the audit answer to "survives a reboot?" is yes). It does not
+                        // go through `commit_config_edit`, so it is *not* written back — that would
+                        // loop against the very write that triggered us.
+                        crate::record::log::ConfigEdit::new(EditState::Committed, change)
+                            .with_note("config file edited".into())
+                    })
+                    .collect::<Vec<_>>();
+                let batch = shared.append_committed_locked(turn, &edits);
+                if let Some(e) = &batch.error {
+                    // Partly logged, not all of it: the edits before the failure are in the
+                    // effective policy and in the log, and the rest stay in the file until a
+                    // later pass diffs them in again (docs/permissions.md).
+                    shared.warn(format_args!(
+                        "config-watch: {} of {} config edits appended: {e}",
+                        batch.landed,
+                        edits.len()
+                    ));
+                }
+                batch.notices
+            };
+            Pass {
+                file: FileState::Adopted {
+                    config: Box::new(file_config),
+                    notices,
+                },
+                notices: Vec::new(),
+                repair: None,
+            }
         }
-        Refreshed::RevertFailed { ref error, ref io } => {
+        Refreshed::Reverted { error } => {
+            log::debug!("config: edit did not parse, reverted to last good: {error}");
+            Pass {
+                notices: vec![Notification::new(
+                    "config",
+                    format!(
+                        "Your config edit did not take effect — it did not parse, so the file has \
+                         been restored to the last valid config and the effective policy is \
+                         unchanged. Re-edit it so it parses (check that `scope` is a string, not a \
+                         `[scope]` table, and that keys match the schema in the file's header \
+                         comment). Error: {error}"
+                    ),
+                    Some("config-parse-error".to_string()),
+                )],
+                file: FileState::Reverted { error },
+                repair: None,
+            }
+        }
+        Refreshed::RevertFailed { error, io } => {
             // The one state the invariant can't reach: the file is invalid and we couldn't put it
             // back. Say so plainly rather than implying a revert that didn't happen — and park the
             // loop on it (docs/permissions.md) rather than running on indefinitely under a policy
@@ -116,77 +213,97 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             shared.warn(format_args!(
                 "config: edit did not parse AND the revert failed: {error} / {io}"
             ));
-            shared.notify(Notification::new(
-                "config",
-                format!(
-                    "Your config edit did not parse, and restoring the last valid config also \
-                     failed — the file on disk is currently invalid and the effective policy is \
-                     unchanged (last good config still in force). The loop is parked until the \
-                     file parses again; it needs a human repair. \
-                     Parse error: {error}. Restore error: {io}"
-                ),
-                Some("config-parse-error".to_string()),
-            ));
-            shared.require_config_repair(ConfigRepair {
-                path: shared
-                    .config_path()
-                    .map_or_default(|p| p.display().to_string()),
-                at: crate::record::log::Timestamp::now().0,
-                message: "config unparseable — the loop is parked until a human repairs the file"
-                    .to_string(),
-                parse_error: error.clone(),
-                restore_error: io.to_string(),
-            });
-            return Some(outcome);
-        }
-    };
-    // Adopted: the file parses, so a park on it is over and the loop wakes
-    // (docs/permissions.md). This is the human-repair path — they fix the file,
-    // fs-watch lands here, the gate clears.
-    shared.clear_config_repair();
-    // A newly-adopted `[env]` table can only *add* needles (docs/env.md): the set
-    // is append-only for the session, because a variable an edit stopped masking
-    // may still sit in files this session goes on to read. `ConfigChange` has no
-    // `env` variant, so the file itself is the only way the table moves — which is
-    // why the absorb hangs here rather than off the edit fold. A reference in the
-    // edited table resolves here too, at the one moment an operator is demonstrably
-    // present, so a vault prompt has someone to answer it. A failure is announced
-    // on its own stable slot rather than left to surface as a tool's opaque auth
-    // error later; the value in force is unchanged, because injection is fixed at
-    // boot.
-    let unresolved = shared.absorb_env_table(&file_config);
-    if !unresolved.is_empty() {
-        let detail = unresolved
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("; ");
-        log::debug!("config: unresolved [env] reference: {detail}");
-        shared.notify(Notification::new(
-            "config",
-            format!(
-                "An `[env]` reference in your config did not resolve, so no value was fetched \
-                 for it: {detail}. The rest of the edit took effect. Values are injected into \
-                 tool subprocesses at session start, so a reference added now takes effect on \
-                 the next session either way."
-            ),
-            Some("config-env-resolve".to_string()),
-        ));
-    }
-    let changes = crate::config::diff_changes(&shared.effective_config(), &file_config);
-    if changes.is_empty() {
-        return Some(Refreshed::Adopted(file_config));
-    }
-    let turn = shared.latest_turn();
-    for change in changes {
-        // The file edit *is* the commit, and it lives in the file by definition → `Persist` (the
-        // audit answer to "survives a reboot?" is yes). It does not go through `commit_config_edit`,
-        // so it is *not* written back — that would loop against the very write that triggered us.
-        let edit = crate::record::log::ConfigEdit::new(EditState::Committed, change)
-            .with_note("config file edited".into());
-        if let Err(e) = shared.append(turn, Payload::ConfigEdit(edit)) {
-            shared.warn(format_args!("config-watch: append failed: {e}"));
+            Pass {
+                notices: vec![Notification::new(
+                    "config",
+                    format!(
+                        "Your config edit did not parse, and restoring the last valid config also \
+                         failed — the file on disk is currently invalid and the effective policy \
+                         is unchanged (last good config still in force). The loop is parked until \
+                         the file parses again; it needs a human repair. \
+                         Parse error: {error}. Restore error: {io}"
+                    ),
+                    Some("config-parse-error".to_string()),
+                )],
+                repair: Some(ConfigRepair {
+                    path: shared
+                        .config_path()
+                        .map_or_default(|p| p.display().to_string()),
+                    at: crate::record::log::Timestamp::now().0,
+                    message: "config unparseable — the loop is parked until a human repairs the \
+                              file"
+                        .to_string(),
+                    parse_error: error.clone(),
+                    restore_error: io.to_string(),
+                }),
+                file: FileState::RevertFailed { error, io },
+            }
         }
     }
-    Some(Refreshed::Adopted(file_config))
+}
+
+/// Raise what a [`Pass`] owes and report its outcome, with the policy section released
+/// (docs/permissions.md).
+pub(crate) fn raise_pass(shared: &Session, pass: Pass) -> Option<Refreshed> {
+    match pass.file {
+        FileState::NoFile => None,
+        FileState::Reverted { error } => {
+            // The revert put valid content back on disk, so a prior park (if any) is over —
+            // the file parses again, which is the whole condition (docs/permissions.md).
+            shared.clear_config_repair();
+            for notice in pass.notices {
+                shared.notify(notice);
+            }
+            Some(Refreshed::Reverted { error })
+        }
+        FileState::RevertFailed { error, io } => {
+            for notice in pass.notices {
+                shared.notify(notice);
+            }
+            if let Some(repair) = pass.repair {
+                shared.require_config_repair(repair);
+            }
+            Some(Refreshed::RevertFailed { error, io })
+        }
+        FileState::Adopted { config, notices } => {
+            // Adopted: the file parses, so a park on it is over and the loop wakes
+            // (docs/permissions.md). This is the human-repair path — they fix the file,
+            // fs-watch lands here, the gate clears.
+            shared.clear_config_repair();
+            for notice in pass.notices {
+                shared.notify(notice);
+            }
+            // A newly-adopted `[env]` table can only *add* needles (docs/env.md): the set
+            // is append-only for the session, because a variable an edit stopped masking
+            // may still sit in files this session goes on to read. `ConfigChange` has no
+            // `env` variant, so the file itself is the only way the table moves — which is
+            // why the absorb hangs here rather than off the edit fold. A reference in the
+            // edited table resolves here too, at the one moment an operator is demonstrably
+            // present, so a vault prompt has someone to answer it. A failure is announced
+            // on its own stable slot rather than left to surface as a tool's opaque auth
+            // error later; the value in force is unchanged, because injection is fixed at
+            // boot.
+            let unresolved = shared.absorb_env_table(&config);
+            if !unresolved.is_empty() {
+                let detail = unresolved
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                log::debug!("config: unresolved [env] reference: {detail}");
+                shared.notify(Notification::new(
+                    "config",
+                    format!(
+                        "An `[env]` reference in your config did not resolve, so no value was \
+                         fetched for it: {detail}. The rest of the edit took effect. Values are \
+                         injected into tool subprocesses at session start, so a reference added \
+                         now takes effect on the next session either way."
+                    ),
+                    Some("config-env-resolve".to_string()),
+                ));
+            }
+            shared.raise_config_notices(notices);
+            Some(Refreshed::Adopted(*config))
+        }
+    }
 }

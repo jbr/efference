@@ -338,6 +338,7 @@ mod gate_grant;
 mod path_words;
 mod paths;
 mod probe;
+mod reference;
 
 pub use commands::promotable_command;
 pub(crate) use commands::{bash_tokens_in, simple_command_tokens, without_cd_into};
@@ -347,6 +348,7 @@ pub use gate_grant::{GateGrant, gate_grant};
 pub(crate) use path_words::{Decided, decide, path_words};
 pub(crate) use paths::{absolutize, governing_grant, lexical_normalize, path_spec};
 pub use probe::{ProbeLedger, probe_ledger};
+pub(crate) use reference::{filesystem_grants, has_filesystem_references};
 
 use commands::classify_bash;
 use paths::*;

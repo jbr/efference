@@ -154,27 +154,32 @@ pub(super) fn commit_config_edit(
     change: ConfigChange,
     note: String,
 ) -> std::io::Result<Approval> {
-    if let Err(e) = shared.apply_config_change(&change) {
-        // Nothing is appended, so effective policy is untouched — the gate stands, and the reason
-        // names the file rather than implying the rule itself was refused.
-        shared.warn(format_args!(
-            "config edit: could not write to the config file: {e}"
-        ));
-        return Ok(shared.review_redirect(
-            &call.id,
-            format!(
-                "That grant could not be written to the session's config file, so it was not \
-                 applied and this call is still gated. The config file needs attention before \
-                 policy can change. Error: {e}"
-            ),
-        ));
-    }
     // The human upgrading a gate is a *direct* commit — the gesture is the commit, no prior
     // proposal to resolve (docs/permissions.md).
-    shared.append(
-        turn,
-        Payload::ConfigEdit(ConfigEdit::new(EditState::Committed, change).with_note(note)),
-    )?;
+    let edit = ConfigEdit::new(EditState::Committed, change).with_note(note);
+    let notices = {
+        // One section around the write, the append and the fold, so this grant cannot interleave
+        // with another writer's (docs/permissions.md).
+        let _section = shared.policy_section();
+        if let Err(e) = shared.apply_config_change(&edit.change) {
+            // Nothing is appended, so effective policy is untouched — the gate stands, and the
+            // reason names the file rather than implying the rule itself was refused.
+            shared.warn(format_args!(
+                "config edit: could not write to the config file: {e}"
+            ));
+            return Ok(shared.review_redirect(
+                &call.id,
+                format!(
+                    "That grant could not be written to the session's config file, so it was not \
+                     applied and this call is still gated. The config file needs attention before \
+                     policy can change. Error: {e}"
+                ),
+            ));
+        }
+        let (_seq, notice) = shared.append_committed_one(turn, &edit)?;
+        notice.into_iter().collect::<Vec<_>>()
+    };
+    shared.raise_config_notices(notices);
     let role = shared.effective_config();
     Ok(
         if policy::classify(&shared.directories(), &role, call) == Verdict::Clear {

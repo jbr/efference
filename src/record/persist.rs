@@ -184,6 +184,15 @@ impl Log {
         self.masker = Some(masker);
     }
 
+    /// Mask `payload` exactly as [`Self::append`] does, writing nothing (docs/env.md). A caller
+    /// that has to know whether the log would rewrite a value — an admission refusing a grant
+    /// whose path masking changes — masks a copy here instead of reimplementing the filter.
+    pub fn mask_payload(&self, payload: &mut Payload) {
+        if let Some(masker) = &self.masker {
+            masker.mask_payload(payload);
+        }
+    }
+
     /// The entries so far — what [`crate::record::project::project`] folds into the wire.
     pub fn entries(&self) -> &[LogEntry] {
         &self.entries
@@ -220,9 +229,7 @@ impl Log {
             return Err(io::Error::other("the log is closed: its session has ended"));
         }
         let mut payload = payload;
-        if let Some(masker) = &self.masker {
-            masker.mask_payload(&mut payload);
-        }
+        self.mask_payload(&mut payload);
         let seq = self.entries.len() as Seq;
         let entry = LogEntry {
             seq,

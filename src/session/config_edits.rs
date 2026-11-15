@@ -33,6 +33,63 @@ pub(super) fn session_visible_notice(
 }
 
 impl Session {
+    /// The policy-commit section (docs/permissions.md): taken by every writer that folds a
+    /// committed [`ConfigEdit`](crate::record::log::ConfigEdit), across computing what the edit
+    /// changes, persisting it, appending it and folding it. Holding it is what makes the fold
+    /// order the log order for all of them — the gate, a proposal decision, fs-watch, and an
+    /// admission's grants — instead of each writer relying on its own timing.
+    ///
+    /// It is the **outermost** policy lock. Inside it a writer may take `config_file`, `log`,
+    /// `effective` and `proposals`, in that order; nothing takes it while holding any of those.
+    /// A session-visible notice is raised only after it is released: `notify` re-enters
+    /// [`append`](Session::append) for a slot-less notification, which takes the section again.
+    pub(crate) fn policy_section(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.policy_commits.lock().unwrap()
+    }
+
+    /// Raise the `Ambient` notices committed edits earned (`(body, slot)` pairs from
+    /// [`append_committed_locked`](Session::append_committed_locked), docs/permissions.md).
+    /// Called with the policy section released.
+    pub(crate) fn raise_config_notices<I>(&self, notices: I)
+    where
+        I: IntoIterator<Item = (String, String)>,
+    {
+        for (body, slot) in notices {
+            self.notify(Notification::new("config", body, Some(slot)));
+        }
+    }
+
+    /// Apply a batch of committed changes to the config file in one replacement
+    /// (docs/permissions.md). A session with no config file — the built-in default role — is a
+    /// no-op: its grants live in the log fold alone, with no file to diverge from.
+    pub(crate) fn apply_config_changes(
+        &self,
+        changes: &[crate::record::log::ConfigChange],
+    ) -> io::Result<()> {
+        // A test's stand-in for the write failing (a full disk, a permission change): the same
+        // `Err` [`ConfigFile::apply_all`] returns, without the test depending on running
+        // unprivileged (process/testing.md — a race or a failure is forced, not awaited).
+        #[cfg(test)]
+        if let Some(message) = self.fail_config_write.lock().unwrap().take() {
+            return Err(io::Error::other(message));
+        }
+        match self.config_file.lock().unwrap().as_mut() {
+            Some(file) => file.apply_all(changes),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether the policy section is held right now — a test's read of the lock every
+    /// committed-edit writer shares, taken without blocking on it (docs/permissions.md). Used
+    /// at [`append_committed_one`](Self::append_committed_one)'s append-to-fold boundary, where
+    /// the section must still be held.
+    #[cfg(test)]
+    pub(crate) fn policy_section_held(&self) -> bool {
+        self.policy_commits.try_lock().is_err()
+    }
+}
+
+impl Session {
     /// Drop a pending proposal from the queue once an orchestrator resolves it (commit or cancel).
     /// The committing/cancelling entry references the proposal by its `seq`; a direct commit (the
     /// synchronous human gate, fs-watch) has no queued proposal, so this is a no-op there.

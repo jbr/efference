@@ -859,9 +859,14 @@ inspects to see what a session ran under, and what they copy a useful grant up t
 template from — so a grant in force that the file didn't show would be a divergence between two live
 records. The write therefore precedes the append, and its failure aborts the commit (a redirect
 naming the file) rather than degrading to something weaker that still logs success. A session
-running on the built-in default role has no file, and there the grant lives in the log fold alone. It runs only if the changed rule now clears it; otherwise it stays
+running on the built-in default role has no file, and there the grant lives in the log fold alone.
+It runs only if the changed rule now clears it; otherwise it stays
 gated (a redirect). The orchestrator changes the *rule*; the mechanism authorizes the *call* —
 no call is included unchecked.
+
+Every write of the file is an atomic replacement — a same-directory temporary, synced, renamed
+over the target with the target's mode preserved — so a failed write leaves the prior bytes in
+place. A symlinked config resolves to its target, and the link is kept.
 
 A `ConfigEdit` projects to nothing on the wire (audit-only, like `Spot`). Its effect is visible to
 the model **by key**: a `commands`/`[tools]` edit only through the classifier, but a
@@ -880,6 +885,54 @@ commits or cancels it (referencing the proposal's `seq` via `resolves`) — over
 /proposals/:seq` directly, or the `proposal` control tool (docs/operating.md). The synchronous paths —
 the human gate, fs-watch, and an approved session edit — append `Committed` directly; the
 asynchronous proposers go `Proposed → commit/cancel`.
+
+### Admission: a reference's grant (`src/session/grants.rs`, `src/config/policy/reference.rs`)
+
+A composer reference asks to read (optionally write) a file or directory, and it authorizes
+nothing when it is typed, queued, withdrawn, or merely accepted by `POST /v1/turns`; the gate
+checks the target's form and no more ([control-api.md](control-api.md)). The grant is created
+when the turn it arrived with is **admitted** to the log — `Session::append_user`, the one
+durable admission point, taken by the two user-turn sites in `agent::trajectory` and by an ask
+answer's capture in `agent::batch`. A queued or recalled turn never reaches it, so a withdrawn
+turn leaves no permission behind. An ask reply's references authorize the same way: its answer
+lands as a tool result, and the document on that result is read too.
+
+The grant is a `[paths]` change at the reference's judged target, written through the same
+`ConfigFile` edit a gate's grant uses. It is **additive**: a target the `[paths]` table or the
+`[context]` listing already covers adds nothing, a read reference never narrows an existing
+write, and the key is the target itself, never a parent. A deny at equal or broader specificity
+is not coverage — referencing a location the session may not otherwise read is how it widens its
+perimeter for one investigation, the session's own `.efference` directory included. The grant
+survives an inference failure, because it is a policy edit rather than part of the failed
+request.
+
+The whole transaction runs under the session's **policy section** (`Session::policy_section`),
+one `Mutex` taken by every path that appends a committed edit — admission, the gate commit, a
+proposal decision, fs-watch. Lock order is the section, then `config_file`, then the log, then
+the effective policy, then proposals; nothing takes them the other way. Holding it across an
+admission's append and fold is what makes the fold order equal the log order, which the gate's
+reads depend on. Inside the section, admission reconciles the file first (the deltas fs-watch
+would append), computes the grant against the policy in force, probes each change through the
+`[env]` masker — refusing a path the masker would rewrite rather than storing a placeholder —
+appends the message, replaces the file once for the batch, then appends and folds one committed
+edit per grant.
+
+**The message is admitted first, and a failure after it does not undo it.** A config-file write
+that fails adds no grant: the file keeps its bytes, nothing is folded, and one notice says the
+access was not added. An append of the grant edits that fails partway leaves the file holding
+every grant while the log and the effective policy hold the ones before the failure: those are in
+force and keep their own notices, and the rest take effect when a later refresh diffs the file
+against the policy in force. Nothing rolls back and nothing retries; a file ahead of the log is
+left for the next refresh to reconcile, as a file behind it is. Both outcomes arrive on one slot,
+`config:grant-refused`, so no superseded notice hides a live one.
+
+The failure notices state what happened and that some access may follow; they do not describe
+boot precedence. That belongs here: boot loads the session's config file first and then injects
+the `.efference` deny with its read-only re-allows, and the effective policy folds the log on top
+of that result. A committed edit therefore outranks the injected deny on resume, while a key that
+exists only in the file at the same specificity does not. This is why a grant is logged as well as
+written, and it is what makes the file-ahead-of-log window above consequence-free for ordinary
+keys but not for a grant on the `.efference` surface.
 
 ### The grant a gate offers (`src/config/policy/gate_grant.rs`)
 

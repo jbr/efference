@@ -3,6 +3,19 @@
 
 use super::*;
 
+/// How far one [`append_committed_locked`](Session::append_committed_locked) batch got
+/// (docs/permissions.md). A batch is not transactional: a log write that fails partway leaves
+/// the edits before it appended and folded, and the ones from the failure on in neither.
+pub(crate) struct CommittedBatch {
+    /// The session-visible notices the edits that landed earned, raised by the caller after it
+    /// releases the policy section.
+    pub(crate) notices: Vec<(String, String)>,
+    /// How many of the batch's edits landed, in a prefix of its order.
+    pub(crate) landed: usize,
+    /// The append error that stopped the batch; `None` when all of them landed.
+    pub(crate) error: Option<io::Error>,
+}
+
 impl Session {
     /// Run `read` over the log's entries with its lock held, for a readout that renders in
     /// place rather than copying the log out. The lock is only ever held across synchronous
@@ -58,7 +71,32 @@ impl Session {
         source: Option<String>,
     ) -> io::Result<Seq> {
         // User turns only — a submitted turn is never a `ConfigEdit`, so none of
-        // `append`'s proposal-lifecycle handling applies here.
+        // `append`'s proposal-lifecycle handling applies to the entry itself.
+        //
+        // A turn carrying a filesystem reference is admitted through the grant
+        // transaction (`session/grants.rs`), which is what makes the grant exist only
+        // once the message is in the log (docs/permissions.md). One carrying none is
+        // exactly the append it always was, so no policy lock and no config file are
+        // touched at all.
+        match grants::filesystem_document(&payload) {
+            Some(document) => self.admit(turn, payload, submission_id, source, &document),
+            None => self.append_log(turn, payload, submission_id, source),
+        }
+    }
+
+    /// The log append itself, under the log lock, with no policy work of any kind. Every
+    /// entry — a user turn, a config edit, an ambient notification — lands through here.
+    pub(super) fn append_log(
+        &self,
+        turn: Turn,
+        payload: Payload,
+        submission_id: Option<String>,
+        source: Option<String>,
+    ) -> io::Result<Seq> {
+        #[cfg(test)]
+        if let Some(message) = self.fail_log_append.lock().unwrap().take() {
+            return Err(io::Error::other(message));
+        }
         let seq = {
             let mut log = self.log.lock().unwrap();
             let seq = log.append_submission(turn, payload, submission_id, source)?;
@@ -102,67 +140,151 @@ impl Session {
         self.append(turn, Payload::archived(source))
     }
 
-    /// Append to the log (durably) and wake SSE tailers. The single appender is
-    /// the loop; handlers only read.
+    /// Append to the log (durably) and wake SSE tailers.
+    ///
+    /// A `ConfigEdit` also drives the proposal lifecycle (docs/permissions.md): its
+    /// `(state, change)` is captured before the payload moves into the log, and acted on only
+    /// after a successful append, so a failed write never edits state. A **committed** edit
+    /// takes the policy section, so its append and its fold cannot interleave with another
+    /// writer's — the log order and the fold order are one order for every committed edit.
     pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
-        // A `ConfigEdit` drives the proposal lifecycle (docs/permissions.md):
-        // capture its `(state, change)` before the payload moves into the log, then act on it
-        // *after* a successful append, so a failed write never edits state. Cheap clone, edits only.
         let edit = match &payload {
-            Payload::ConfigEdit(edit) => Some((edit.state, edit.change.clone(), edit.resolves)),
-            _ => None,
+            Payload::ConfigEdit(edit) => edit.clone(),
+            _ => return self.append_log(turn, payload, None, None),
         };
-        let seq = {
-            let mut log = self.log.lock().unwrap();
-            let seq = log.append(turn, payload)?;
-            self.observe_operations(&log);
-            seq
-        };
-        if let Some((state, change, resolves)) = edit {
-            match state {
-                // A committed edit takes effect: fold it into the effective policy so a gate reads
-                // current policy in O(1) (no log re-scan), and — for session-visible keys — notify.
-                EditState::Committed => {
-                    {
-                        let mut eff = self.effective.lock().unwrap();
-                        let mut role = (**eff).clone();
-                        crate::config::policy::apply_config_change(&mut role, &change);
-                        *eff = Arc::new(role);
-                    }
-                    // Resolving a proposal: drop the referenced proposal from the pending queue.
-                    // `None` for a direct synchronous/fs-watch commit, which had no queued proposal.
-                    if let Some(proposal) = resolves {
-                        self.resolve_proposal(proposal);
-                    }
-                    // Session-visible edits (`scope`, `paths`) surface as an `Ambient` notification
-                    // so the session learns its perimeter moved — an optional tail append that never
-                    // re-renders the cached preamble (docs/permissions.md). It rides
-                    // the same inbox/triage machinery as any notification, and fires for *every*
-                    // committing initiator because this is the single appender. `commands`/`tools`
-                    // notify nothing — their effect reaches the model only through the classifier.
-                    if let Some((body, slot)) = session_visible_notice(&change) {
-                        self.notify(Notification::new("config", body, Some(slot)));
-                    }
+        match edit.state {
+            // A committed edit takes effect: folded into the effective policy so a gate reads
+            // current policy in O(1) (no log re-scan).
+            EditState::Committed => {
+                let (seq, notice) = {
+                    let _section = self.policy_section();
+                    self.append_committed_one(turn, &edit)?
+                };
+                // Session-visible edits (`scope`, `paths`) surface as an `Ambient` notification
+                // so the session learns its perimeter moved — an optional tail append that never
+                // re-renders the cached preamble (docs/permissions.md). Raised after the section
+                // is released, because `notify` re-enters `append` for a slot-less
+                // notification. `commands`/`tools` notify nothing — their effect reaches the
+                // model only through the classifier.
+                if let Some((body, slot)) = notice {
+                    self.notify(Notification::new("config", body, Some(slot)));
                 }
-                // A proposal is inert in the effective config: it joins the pending-proposals queue,
-                // addressed by its own `seq`, awaiting an orchestrator's commit/cancel.
-                EditState::Proposed => {
-                    self.proposals
-                        .lock()
-                        .unwrap()
-                        .push(PendingProposal { seq, change });
+                Ok(seq)
+            }
+            // A proposal is inert in the effective config: it joins the pending-proposals queue,
+            // addressed by its own `seq`, awaiting an orchestrator's commit/cancel.
+            EditState::Proposed => {
+                let seq = self.append_log(turn, payload, None, None)?;
+                self.proposals.lock().unwrap().push(PendingProposal {
+                    seq,
+                    change: edit.change,
+                });
+                Ok(seq)
+            }
+            // A cancel drops the referenced proposal from the queue; the effective config
+            // never moved.
+            EditState::Cancelled => {
+                let seq = self.append_log(turn, payload, None, None)?;
+                if let Some(proposal) = edit.resolves {
+                    self.resolve_proposal(proposal);
                 }
-                // A cancel drops the referenced proposal from the queue; the effective config
-                // never moved.
-                EditState::Cancelled => {
-                    if let Some(proposal) = resolves {
-                        self.resolve_proposal(proposal);
-                    }
+                Ok(seq)
+            }
+        }
+    }
+
+    /// Append one **committed** `ConfigEdit` and fold it into the effective policy, returning
+    /// the session-visible notice it earns for the caller to raise after releasing the section
+    /// (docs/permissions.md). The caller holds [`policy_section`](Self::policy_section).
+    ///
+    /// This is the one place a committed edit is appended and folded, so no other writer can
+    /// interleave an append between them: the fold order equals the log order by construction
+    /// rather than by every caller being careful.
+    pub(crate) fn append_committed_one(
+        &self,
+        turn: Turn,
+        edit: &crate::record::log::ConfigEdit,
+    ) -> io::Result<(Seq, Option<(String, String)>)> {
+        debug_assert_eq!(
+            edit.state,
+            EditState::Committed,
+            "a committed append takes a committed edit"
+        );
+        // A test's stand-in for a log write that fails partway through a batch: let this many
+        // land, then fail without appending (`fail_committed_append_after`).
+        #[cfg(test)]
+        {
+            let mut after = self.fail_committed_append_after.lock().unwrap();
+            if let Some(remaining) = after.as_mut() {
+                if *remaining == 0 {
+                    *after = None;
+                    return Err(io::Error::other("test: the committed append failed"));
+                }
+                *remaining -= 1;
+            }
+        }
+        let seq = self.append_log(turn, Payload::ConfigEdit(edit.clone()), None, None)?;
+        // Where a test lands a competing writer between the append and the fold
+        // (`between_append_and_fold`); the policy section must still be held here.
+        #[cfg(test)]
+        {
+            let interleaved = self.between_append_and_fold.lock().unwrap().take();
+            if let Some(interleaved) = interleaved {
+                interleaved(self);
+            }
+        }
+        {
+            let mut eff = self.effective.lock().unwrap();
+            let mut role = (**eff).clone();
+            crate::config::policy::apply_config_change(&mut role, &edit.change);
+            *eff = Arc::new(role);
+        }
+        // Resolving a proposal: drop the referenced proposal from the pending queue. `None` for a
+        // direct synchronous/fs-watch commit, which had no queued proposal.
+        if let Some(proposal) = edit.resolves {
+            self.resolve_proposal(proposal);
+        }
+        Ok((seq, session_visible_notice(&edit.change)))
+    }
+
+    /// Append `edits` in order, folding each as it lands, and report how far it got
+    /// ([`CommittedBatch`]) for the caller to raise and describe after releasing the policy
+    /// section (docs/permissions.md). The caller holds [`policy_section`](Self::policy_section)
+    /// — a batch is one admission's grants, or the deltas one refresh of the config file owes
+    /// the log.
+    ///
+    /// A failure partway through is not rolled back: the edits before it are in the log and
+    /// folded, and the ones from it on are in neither. Nothing retries.
+    pub(crate) fn append_committed_locked(
+        &self,
+        turn: Turn,
+        edits: &[crate::record::log::ConfigEdit],
+    ) -> CommittedBatch {
+        let mut notices = Vec::new();
+        for (landed, edit) in edits.iter().enumerate() {
+            match self.append_committed_one(turn, edit) {
+                Ok((_seq, notice)) => notices.extend(notice),
+                Err(error) => {
+                    return CommittedBatch {
+                        notices,
+                        landed,
+                        error: Some(error),
+                    };
                 }
             }
         }
-        self.appended.notify_waiters();
-        Ok(seq)
+        CommittedBatch {
+            notices,
+            landed: edits.len(),
+            error: None,
+        }
+    }
+
+    /// Mask `payload` exactly as an append would, writing nothing (docs/env.md). The
+    /// admission's probe uses this before it believes a grant the log would rewrite —
+    /// whatever the masker does, it does here first (docs/permissions.md).
+    pub(crate) fn mask_payload(&self, payload: &mut Payload) {
+        self.log.lock().unwrap().mask_payload(payload);
     }
 
     /// Publish an ephemeral pre-commit output delta to the control stream's `output`

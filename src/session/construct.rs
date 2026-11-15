@@ -304,6 +304,15 @@ impl Session {
             role,
             effective: Mutex::new(effective),
             config_file: Mutex::new(config_file),
+            policy_commits: Mutex::new(()),
+            #[cfg(test)]
+            between_append_and_fold: Mutex::new(None),
+            #[cfg(test)]
+            fail_config_write: Mutex::new(None),
+            #[cfg(test)]
+            fail_committed_append_after: Mutex::new(None),
+            #[cfg(test)]
+            fail_log_append: Mutex::new(None),
             probes: Mutex::new(probes),
             env_policy,
             review_level: AtomicU8::new(crate::config::policy::ReviewLevel::SpotterHuman.as_u8()),

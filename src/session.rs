@@ -51,7 +51,8 @@ pub(crate) fn session_id_prefix(id: Option<&str>) -> String {
 }
 
 /// Code a test interleaves at one point in a session's work, run once there
-/// (`between_reads`, `between_pushes`, `before_archived`, `before_request`).
+/// (`between_reads`, `between_pushes`, `before_archived`, `before_request`,
+/// `between_append_and_fold`).
 #[cfg(test)]
 type Interleaving = Box<dyn FnOnce(&Session) + Send>;
 
@@ -194,6 +195,25 @@ pub struct Session {
     /// the request arms its abort: a test's stand-in for a press landing there.
     #[cfg(test)]
     pub(crate) before_request: Mutex<Option<Interleaving>>,
+    /// Run once by the next [`Session::append_committed_one`], between its log append and its
+    /// fold: a test's stand-in for a competing writer landing there, which the policy section
+    /// must not admit.
+    #[cfg(test)]
+    pub(crate) between_append_and_fold: Mutex<Option<Interleaving>>,
+    /// Fail the next config-file write with this message: a test's stand-in for a full disk or a
+    /// permission change at the moment an admission writes its grants. Drained once, so the
+    /// session's later writes are unaffected.
+    #[cfg(test)]
+    pub(crate) fail_config_write: Mutex<Option<String>>,
+    /// Let this many committed appends land, then fail the next one: a test's stand-in for a log
+    /// write that fails partway through an admission's batch, where the grants before it are
+    /// logged and folded and the ones after it are not. Drained once.
+    #[cfg(test)]
+    pub(crate) fail_committed_append_after: Mutex<Option<usize>>,
+    /// Fail the next log append with this message: a test's stand-in for a disk the log cannot
+    /// write to, at the moment an admission appends its message. Drained once.
+    #[cfg(test)]
+    pub(crate) fail_log_append: Mutex<Option<String>>,
     /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
     /// the **authority** on what is pending (docs/control-channel.md). The loop **claims** each
     /// received turn against this queue and drops one that is no longer here — that is how a
@@ -359,6 +379,16 @@ pub struct Session {
     /// it; every path in and out of the file goes through here, which is what keeps "the disk
     /// always holds the last content that parsed" true of *all* writers rather than some.
     config_file: Mutex<Option<crate::config::ConfigFile>>,
+    /// Serializes policy commits (docs/permissions.md, *Serializing policy commits*): a grant's
+    /// file write, its `ConfigEdit` entry and the fold into `effective` are one step, so two
+    /// writers cannot append in one order and fold in another — which would leave the fold
+    /// describing a different policy from the one the log records, in either direction
+    /// (a stale snapshot re-narrowing a live grant, or an edit folding under a grant that had
+    /// not been appended yet). Held across that whole step, so it is the outermost policy lock:
+    /// **this, then `config_file` or `log` (and `log` before `operations`)** — and no path
+    /// takes another pending lock while holding one of those. Ordinary log appends,
+    /// `Proposed`/`Cancelled` edits and raising a notice do not take it.
+    policy_commits: Mutex<()>,
     /// The prefix-promotion probe ledger (docs/permissions.md): per-prefix
     /// seen-counts + probe votes, the state the descent reads to decide which prefix (if any) to ask
     /// the spotter to vouch for. Derived from the log's `Spot` entries (folded at startup via
@@ -549,6 +579,7 @@ mod construct;
 pub(crate) mod continuation;
 mod delayed_push;
 pub(crate) mod files_view;
+mod grants;
 mod identity;
 pub(crate) mod keepalive;
 mod metrics;
