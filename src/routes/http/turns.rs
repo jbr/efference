@@ -279,8 +279,8 @@ async fn submitted_turn(
 
 /// Submit to a session that has started: the document validates in full before
 /// anything queues (docs/control-api.md), then the turn is queued by name
-/// (`named_turns.rs`). An error is the body that answers the client, so the caller
-/// keeps the connection.
+/// (`named_turns.rs`). An error is the body sent to the client, so the caller keeps
+/// the connection.
 async fn submit_to_session(
     session: &Session,
     host: Option<&Host>,
@@ -393,7 +393,7 @@ async fn validate_filesystem(
 /// Validate a structured submission and resolve it into the stored document
 /// (docs/control-api.md): ids checked and preserved verbatim — never renamed —
 /// every occurrence resolved to a definition, no unused definitions (a
-/// definition with no occurrence still names a target the model would not
+/// definition with no occurrence still defines a target the model would not
 /// read), attachment definitions used exactly once
 /// and resolved against the session's store, agent identities confirmed
 /// against the host's live registry, and a filesystem target checked for form — absolute,

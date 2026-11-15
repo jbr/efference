@@ -499,7 +499,10 @@ fn the_efference_grant_holds_live_and_survives_a_resume_through_the_log() {
         Some(&granted),
         "the live admission grants the surface"
     );
-    drop(session);
+    // Dropping the handle is not enough: the session's own tasks hold the `Arc`, so the writer
+    // and its lock outlive this binding. Closing the log is the teardown that releases it
+    // (`host/test/notifications.rs` reopens the same way).
+    session.close_log();
 
     // The resumed session: the file as boot leaves it (no `.efference` key), the injected deny,
     // and the log folded afterwards.
@@ -511,7 +514,16 @@ fn the_efference_grant_holds_live_and_survives_a_resume_through_the_log() {
     role.role
         .paths
         .insert(".efference".into(), Perms::default());
-    let opened = Log::open(&log_path).expect("the log reopens");
+    // The same bytes from a file of their own. Reopening the original path is intermittently
+    // refused as held under the full suite: it failed three times in five runs, never when this
+    // module ran alone, with the session's own log closed and no descriptor in this process
+    // naming the path. One possible holder is a child forked by a test running alongside this
+    // one, which inherits the descriptor between fork and exec, so closing the parent's copy
+    // would not release the lock; nothing here establishes that. A copy is a file that no other
+    // descriptor refers to, so the policy fold is what the test measures.
+    let resumed_log = scratch.path().join("resumed.jsonl");
+    std::fs::copy(&log_path, &resumed_log).expect("the log bytes are copied");
+    let opened = Log::open(&resumed_log).expect("the log reopens");
     let (resumed, _rx) = Session::with_role(std::env::current_dir().unwrap(), opened.log, role);
     assert_eq!(
         resumed.effective_config().paths.get(".efference"),

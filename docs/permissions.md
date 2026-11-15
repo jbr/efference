@@ -931,8 +931,8 @@ left for the next refresh to reconcile, as a file behind it is. Both outcomes ar
 The failure notices state what happened and that some access may follow; they do not describe
 boot precedence. That belongs here: boot loads the session's config file first and then injects
 the `.efference` deny with its read-only re-allows, and the effective policy folds the log on top
-of that result. So a committed edit outranks the injected deny on resume, while a key that exists
-only in the file at the same specificity does not. A grant is logged as well as written for that
+of that result. So on resume a committed edit takes precedence over the injected deny, while a key
+that exists only in the file at the same specificity does not. A grant is logged as well as written for that
 reason: after the file-ahead-of-log window above, an ordinary key is present from the file at the
 next load, and a key on the `.efference` surface is in force only if its committed edit is in the
 log.

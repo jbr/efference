@@ -184,7 +184,7 @@ static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 /// over the link, which would destroy it the same way ([`replace_target`]). The target's
 /// permission bits are preserved, which a plain create does not do (the umask would apply). A
 /// hardlinked config keeps its other links on the old bytes, because the rename replaces one
-/// directory entry; a config reached through a hardlink is not a shape the session supports.
+/// directory entry; a config file with other hardlinks is not a shape the session supports.
 fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write as _;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
