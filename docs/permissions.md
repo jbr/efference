@@ -930,14 +930,12 @@ against the policy in force. Nothing rolls back and nothing retries; a file ahea
 left for the next refresh to reconcile, as a file behind it is. Both outcomes arrive on one slot,
 `config:grant-refused`, so no superseded notice hides a live one.
 
-The failure notices state what happened and that some access may follow; they do not describe
-boot precedence. That belongs here: boot loads the session's config file first and then injects
-the `.efference` deny with its read-only re-allows, and the effective policy folds the log on top
-of that result. So on resume a committed edit takes precedence over the injected deny, while a key
-that exists only in the file at the same specificity does not. A grant is logged as well as written for that
-reason: after the file-ahead-of-log window above, an ordinary key is present from the file at the
-next load, and a key on the `.efference` surface is in force only if its committed edit is in the
-log.
+On resume, boot loads the session's config file and then inserts the `.efference` deny and
+read-only exceptions. The effective policy is computed by folding committed log edits over
+that result. A logged edit takes precedence over an injected rule at the same key; a rule
+present only in the file does not. Deeper file rules retain the existing longest-prefix
+behavior. Thus a file-only grant may be effective after a refresh but overridden at the next
+boot, whereas its committed log edit reinstates it after the boot overlay.
 
 ### The grant a gate offers (`src/config/policy/gate_grant.rs`)
 
