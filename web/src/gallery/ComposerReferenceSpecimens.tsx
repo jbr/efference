@@ -6,6 +6,7 @@ import {
 } from "../ui/ComposerReferences.tsx";
 import { Specimen, States } from "./Specimens.tsx";
 import { InlineComposerSketch } from "./InlineComposerSketch.tsx";
+import { UploadSpecimens } from "./UploadSpecimens.tsx";
 
 const paths: CompletionOption[] = [
   {
@@ -272,6 +273,7 @@ export function ComposerReferenceSpecimens() {
           </div>
         </Specimen>
       ))}
+      <UploadSpecimens />
     </>
   );
 }

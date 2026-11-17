@@ -1329,10 +1329,10 @@ pre {
   display: block;
 }
 
-/* Attachment chips (ui/Attachments.tsx): the composer's staged row above the
-   input, and a sent turn's files under its prose. Flat like the dock's other
-   chrome; an image is its own thumbnail, anything else its name and the
-   signals the model reads about it. */
+/* Attachment chips (ui/Attachments.tsx): a sent turn's files under its prose;
+   a draft's own uploads are inline chips (ui/ComposerUploadChip.tsx). Flat like
+   the dock's other chrome; an image is its own thumbnail, anything else its
+   name and the signals the model reads about it. */
 .attachments {
   list-style: none;
   display: flex;

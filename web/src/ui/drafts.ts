@@ -1,48 +1,36 @@
 // Per-session composer drafts (docs/web-client.md). The store outlives the
-// view, including its uploads; localStorage keeps text, document and
-// attachment metadata, not file bytes. A reload cannot resume an upload.
-import {
-  detachAttachment,
-  documentAttachmentNames,
-  documentReadable,
-  isArrival,
-  isUserContent,
-  normalizeDocument,
-} from "../api/document.ts";
-import {
-  attachmentUrl,
-  removeAttachment,
-  uploadAttachment,
-} from "../api/http.ts";
-import type { Arrival, UserContent } from "../api/types.ts";
-import { isImage, pastedName, type Staged } from "./staging.ts";
+// view, including its uploads; localStorage keeps text, the draft document and
+// upload metadata, not file bytes. A reload cannot resume an upload.
+//
+// Ownership: the store owns only uploads this draft created. A record is live
+// while an `Upload` occurrence names it and detached otherwise; a detached
+// record is retained only while the editor whose history could undo the removal
+// is alive. Bytes are deleted when that history is gone, never while a send
+// that names them is in flight. Recalled and sent uploads are `sent`-owned and
+// are never deleted here.
 
-/** The draft's authoritative content: `text` is the readable spelling, the
- * document carries reference identity and position, and `revision` advances on
- * every content edit so a send can tell whether it submitted what it sent. */
-export interface Draft {
-  text: string;
-  staged: Staged[];
-  document: UserContent | null;
-  revision: number;
-}
+import { removeAttachment, uploadAttachment } from "../api/http.ts";
+import type { Arrival } from "../api/types.ts";
+import {
+  detachUpload,
+  draftReadable,
+  draftUploadKeys,
+  hasDraftStructure,
+  normalizeDraftContent,
+} from "./draftDocument.ts";
+import type { DraftContent } from "./draftDocument.ts";
+import { failure, isImageFile, previewOf, revoke } from "./drafts/records.ts";
+import { load, write } from "./drafts/persist.ts";
+import type { Draft, DraftStorage } from "./drafts/persist.ts";
+import { pastedName, type DraftUpload } from "./staging.ts";
 
-type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export type { Draft } from "./drafts/persist.ts";
+
 interface Dependencies {
   storage: DraftStorage | null;
   upload: (name: string, file: File) => Promise<Arrival>;
   remove: (name: string) => Promise<void>;
 }
-
-const storageKey = (base: string) => `efference.composer.v1:${base}`;
-const interrupted = "Upload interrupted by a reload; attach this file again.";
-
-/** A failed upload's text: the daemon's reason when it answered (an
- * `ApiError`'s message is its envelope's), the browser's when the request
- * itself failed (Safari's is `Load failed`). Shown on the chip, not only in its
- * title, because a touch screen has no hover to read a title with. */
-const failure = (error: unknown) =>
-  `Upload failed (${error instanceof Error ? error.message : String(error)}); attach this file again.`;
 
 function browserStorage(): DraftStorage | null {
   try {
@@ -52,89 +40,18 @@ function browserStorage(): DraftStorage | null {
   }
 }
 
-const empty = (): Draft => ({
-  text: "",
-  staged: [],
-  document: null,
-  revision: 0,
-});
-
-function load(storage: DraftStorage | null, base: string): Draft {
-  try {
-    const raw = storage?.getItem(storageKey(base));
-    if (!raw) return empty();
-    const saved: unknown = JSON.parse(raw);
-    if (typeof saved !== "object" || saved === null) return empty();
-    const draft = saved as {
-      text?: unknown;
-      staged?: unknown;
-      document?: unknown;
-    };
-    const staged: Staged[] = [];
-    if (Array.isArray(draft.staged)) {
-      for (const value of draft.staged as unknown[]) {
-        if (typeof value !== "object" || value === null) continue;
-        const s = value as Partial<Staged>;
-        if (typeof s.label !== "string") continue;
-        if (
-          s.status !== "uploading" &&
-          s.status !== "ready" &&
-          s.status !== "failed"
-        )
-          continue;
-        const attachment =
-          s.status === "ready" && isArrival(s.attachment)
-            ? s.attachment
-            : undefined;
-        staged.push({
-          key: crypto.randomUUID(),
-          label: s.label,
-          status: attachment ? "ready" : "failed",
-          attachment,
-          preview:
-            attachment && isImage(attachment.kind)
-              ? attachmentUrl(attachment.name, base)
-              : null,
-          error: attachment
-            ? undefined
-            : s.status === "uploading"
-              ? interrupted
-              : typeof s.error === "string"
-                ? s.error
-                : "Upload failed; attach this file again.",
-          pastedText:
-            typeof s.pastedText === "string" ? s.pastedText : undefined,
-        });
-      }
-    }
-    const loaded = isUserContent(draft.document)
-      ? normalizeDocument(draft.document)
-      : null;
-    const document =
-      loaded !== null && Object.keys(loaded.references).length > 0
-        ? loaded
-        : null;
-    // The document is authoritative when present; its readable projection is
-    // the text the composer stores, so the two cannot drift apart on reload.
-    return {
-      text: document
-        ? documentReadable(document)
-        : typeof draft.text === "string"
-          ? draft.text
-          : "",
-      staged,
-      document,
-      revision: 0,
-    };
-  } catch {
-    return empty();
-  }
-}
-
 export class DraftStore {
   private value: Draft;
   private listeners = new Set<() => void>();
-  private dropped = new Set<string>();
+  /** Bumped on every editor mount and unmount, so a teardown's deferred prune
+   * stands down when a new editor mounted in the same tick (StrictMode runs
+   * the pair twice in development). */
+  private session = 0;
+  private historyGone = true;
+  /** A cleared send replaces the editor; the history that could undo into the
+   * cleared draft is deliberately discarded, so the records it retained may
+   * be dropped at the next mount. */
+  private historyReset = false;
   private deps: Dependencies;
 
   constructor(
@@ -147,6 +64,10 @@ export class DraftStore {
       remove: (name) => removeAttachment(name, base),
     };
     this.value = load(this.deps.storage, base);
+    // A previous page left no live editor history, so detached records it
+    // retained cannot be undone into. Their bytes are cleaned here, except a
+    // sent-owned or pinned record (the send may have been admitted).
+    this.pruneDetached();
   }
 
   snapshot = (): Draft => this.value;
@@ -154,52 +75,28 @@ export class DraftStore {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
+  /** The readable file name a node's key stands for; the clipboard projects an
+   * upload occurrence to this. */
+  uploadLabel = (key: string): string | undefined =>
+    this.value.uploads.find((upload) => upload.key === key)?.label;
 
   private update(value: Draft) {
     this.value = value;
-    try {
-      if (
-        value.text === "" &&
-        value.staged.length === 0 &&
-        value.document === null
-      ) {
-        this.deps.storage?.removeItem(storageKey(this.base));
-      } else {
-        this.deps.storage?.setItem(
-          storageKey(this.base),
-          JSON.stringify({
-            text: value.text,
-            staged: value.staged.map(
-              ({ label, status, attachment, error, pastedText }) => ({
-                label,
-                status,
-                attachment,
-                error,
-                pastedText,
-              }),
-            ),
-            document: value.document,
-          }),
-        );
-      }
-    } catch {
-      // Storage can be denied or full; the live draft and uploads still work.
-    }
+    write(this.deps.storage, this.base, value);
     this.listeners.forEach((listener) => listener());
   }
 
   /** The editor's authoritative content. `revision` is deliberately not
    * persisted: after a reload nothing is in flight to compare against. */
-  setContent = (content: { text: string; document: UserContent | null }) => {
+  setContent = (content: { text: string; document: DraftContent | null }) => {
     const document =
-      content.document !== null &&
-      Object.keys(content.document.references).length > 0
-        ? content.document
+      content.document !== null
+        ? normalizeDraftContent(content.document)
         : null;
     this.update({
       ...this.value,
       text: content.text,
-      document,
+      document: hasDraftStructure(document) ? document : null,
       revision: this.value.revision + 1,
     });
   };
@@ -216,129 +113,222 @@ export class DraftStore {
     });
   };
 
-  stage = (file: File, pastedText?: string) => {
-    const key = crypto.randomUUID();
-    const label = pastedName(file);
-    const image =
-      file.type.startsWith("image/") ||
-      /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(file.name);
-    const preview = image ? URL.createObjectURL(file) : null;
+  /** Detach an upload's occurrence. Nothing is deleted here: undo can restore
+   * the chip, and it must find its record, bytes and preview intact. A
+   * detached ready record this draft owns is deleted once the editor's
+   * history is gone (pruneDetached).
+   *
+   * Removal works while a send names the upload: a pin protects its bytes from
+   * cleanup, not the draft from editing, and a cut or backspace detaches the
+   * same occurrence without consulting the pin. */
+  remove = (key: string) => {
+    if (!this.value.uploads.some((record) => record.key === key)) return;
+    if (this.value.document === null) return;
+    const document = detachUpload(this.value.document, key);
     this.update({
       ...this.value,
-      staged: [
-        ...this.value.staged,
-        { key, label, preview, status: "uploading", pastedText },
+      document: hasDraftStructure(document) ? document : null,
+      text: draftReadable(document),
+      revision: this.value.revision + 1,
+    });
+  };
+
+  /** Create a draft-local upload and start it. The returned key is what the
+   * editor's `Upload` occurrence names; the caller inserts the node. */
+  uploadFile = (file: File, pastedText?: string): string => {
+    const key = crypto.randomUUID();
+    const label = pastedName(file);
+    const preview = isImageFile(file) ? URL.createObjectURL(file) : null;
+    this.update({
+      ...this.value,
+      uploads: [
+        ...this.value.uploads,
+        {
+          key,
+          label,
+          preview,
+          status: "uploading",
+          pastedText,
+          provenance: "draft",
+        },
       ],
     });
     this.deps.upload(label, file).then(
       (attachment) => {
-        if (this.dropped.delete(key)) {
+        if (!this.value.uploads.some((upload) => upload.key === key)) {
+          // The record was pruned at teardown while the request was in
+          // flight: no editor can restore its chip, so the bytes are unused.
           void this.deps.remove(attachment.name).catch(() => {});
           return;
         }
+        // A detached occurrence that lands stays detached — an undo may
+        // still put its chip back, so the record and preview are kept and
+        // the chip is not reinserted (nothing here edits the editor).
         this.update({
           ...this.value,
-          staged: this.value.staged.map((s) => {
-            if (s.key !== key) return s;
-            revoke(s);
+          uploads: this.value.uploads.map((upload) => {
+            if (upload.key !== key) return upload;
+            revoke(upload);
             return {
-              ...s,
+              ...upload,
               status: "ready",
               attachment,
-              preview: isImage(attachment.kind)
-                ? attachmentUrl(attachment.name, this.base)
-                : null,
+              preview: previewOf(attachment, this.base),
+              error: undefined,
             };
           }),
         });
       },
       (error: unknown) => {
-        this.dropped.delete(key);
+        if (!this.value.uploads.some((upload) => upload.key === key)) return;
         this.update({
           ...this.value,
-          staged: this.value.staged.map((s) =>
-            s.key === key
-              ? { ...s, status: "failed", error: failure(error) }
-              : s,
+          uploads: this.value.uploads.map((upload) =>
+            upload.key === key
+              ? { ...upload, status: "failed", error: failure(error) }
+              : upload,
           ),
         });
       },
     );
+    return key;
   };
 
-  /** Recalled arrivals that the document does not already represent inline.
-   * A documented attachment has one inline occurrence, so staging it again
-   * would show it twice. */
-  restore = (attachments: Arrival[]) => {
-    const present = new Set([
-      ...(this.value.document === null
-        ? []
-        : documentAttachmentNames(this.value.document)),
-      ...this.value.staged.flatMap((s) =>
-        s.attachment ? [s.attachment.name] : [],
+  /** Retain uploads a recalled turn already holds by name: the same stored
+   * bytes are now the recalled turn's too, so no teardown may delete them. */
+  retain = (keys: readonly string[]) => {
+    const named = new Set(keys);
+    if (
+      !this.value.uploads.some(
+        (upload) => named.has(upload.key) && upload.provenance !== "sent",
+      )
+    )
+      return;
+    this.update({
+      ...this.value,
+      uploads: this.value.uploads.map((upload) =>
+        named.has(upload.key) ? { ...upload, provenance: "sent" } : upload,
       ),
-    ]);
-    const additions = attachments.filter((a) => !present.has(a.name));
-    if (additions.length === 0) return;
-    this.update({
-      ...this.value,
-      staged: [
-        ...this.value.staged,
-        ...additions.map((attachment): Staged => ({
-          key: crypto.randomUUID(),
-          label: attachment.name,
-          status: "ready",
-          attachment,
-          preview: isImage(attachment.kind)
-            ? attachmentUrl(attachment.name, this.base)
-            : null,
-        })),
-      ],
     });
   };
 
-  remove = (key: string) => {
-    const gone = this.value.staged.find((s) => s.key === key);
-    if (!gone) return;
-    if (gone.status === "uploading") this.dropped.add(key);
-    if (gone.attachment)
-      void this.deps.remove(gone.attachment.name).catch(() => {});
-    revoke(gone);
-    // Defensive: if a staged chip shares a name with a document attachment,
-    // removing the chip detaches that definition and its occurrences.
-    let document = this.value.document;
-    if (document !== null && gone.attachment) {
-      document = detachAttachment(document, gone.attachment.name);
-      if (Object.keys(document.references).length === 0) document = null;
+  /** The editor mounted: a removal is undoable again. When a send cleared the
+   * draft, the editor it replaces was discarded along with the history that
+   * could restore the send, so the records it retained are pruned now rather
+   * than accumulating until the composer unmounts. */
+  beginEditorSession = () => {
+    this.session += 1;
+    this.historyGone = false;
+    if (this.historyReset) {
+      this.historyReset = false;
+      this.pruneDetached(true);
     }
-    this.update({
-      ...this.value,
-      staged: this.value.staged.filter((s) => s.key !== key),
-      document,
-      revision: this.value.revision + 1,
+  };
+
+  /** The composer is about to replace the editor after clearing the draft: no
+   * undo of the submitted content survives that replacement. */
+  resetEditorHistory = () => {
+    this.historyReset = true;
+  };
+
+  /** The editor unmounted: its history (and its undo of a removal) is gone.
+   * The prune waits a microtask, which a same-tick mount cancels. */
+  endEditorSession = () => {
+    const session = ++this.session;
+    this.historyGone = true;
+    queueMicrotask(() => {
+      if (this.session === session) this.pruneDetached();
     });
   };
 
-  /** A successful send clears only what it sent: edits made while its
-   * response was pending must survive, including a same-label access toggle
-   * that changed no readable text (docs/web-client.md). */
-  sent = (submitted: Draft) => {
-    const keys = new Set(
-      submitted.staged.filter((s) => s.status === "ready").map((s) => s.key),
-    );
-    this.value.staged.filter((s) => keys.has(s.key)).forEach(revoke);
+  /** Pin every upload the submitted document names. Pinning is persisted, so a
+   * page that goes away mid-request cannot later decide the bytes are unused.
+   * It does not touch the revision: the draft's content is unchanged. */
+  beginSend = (submitted: Draft): Draft => {
+    const keys = new Set(draftUploadKeys(submitted.document));
+    if (keys.size === 0) return this.value;
+    this.update({
+      ...this.value,
+      uploads: this.value.uploads.map((upload) =>
+        keys.has(upload.key) ? { ...upload, pinned: true } : upload,
+      ),
+    });
+    return this.value;
+  };
+
+  /** A successful send keeps every upload it named, even one the draft no
+   * longer shows: undo may need the chip, and the sent turn may still read the
+   * bytes. Only what the send actually submitted is cleared. */
+  sent = (submitted: Draft): Draft => {
+    const keys = new Set(draftUploadKeys(submitted.document));
     const unchanged = this.value.revision === submitted.revision;
     this.update({
       text: unchanged ? "" : this.value.text,
       document: unchanged ? null : this.value.document,
-      staged: this.value.staged.filter((s) => !keys.has(s.key)),
+      uploads: this.value.uploads.map((upload) =>
+        keys.has(upload.key)
+          ? { ...upload, provenance: "sent", pinned: false }
+          : upload,
+      ),
       revision: this.value.revision,
     });
+    // If the view moved on during the send, no editor will be torn down to
+    // prune the records this send released; the store still has no history to
+    // undo into. A mounted editor defers to its teardown.
+    this.pruneDetached();
+    return this.value;
   };
-}
 
-function revoke(staged: Staged) {
-  if (staged.preview?.startsWith("blob:")) URL.revokeObjectURL(staged.preview);
+  /** A send that did not report success may still have been admitted: the
+   * request can reach the daemon and its response be lost. Every upload the
+   * send named is therefore retained (marked `sent`, pinned released), never
+   * deleted — a failed POST is not proof the file is unused. Only uploads no
+   * send ever named are cleaned up, and only once their history is gone. */
+  sendFailed = (submitted: Draft): Draft => {
+    const keys = new Set(draftUploadKeys(submitted.document));
+    if (keys.size > 0) {
+      this.update({
+        ...this.value,
+        uploads: this.value.uploads.map((upload) =>
+          keys.has(upload.key)
+            ? { ...upload, provenance: "sent", pinned: false }
+            : upload,
+        ),
+      });
+    }
+    this.pruneDetached();
+    return this.value;
+  };
+
+  /** Delete what no edit can restore and no send ever named. A record stays
+   * while an occurrence names it, while a send is in flight, and (while an
+   * editor is mounted) while undo can put its chip back. Only a `draft`-owned
+   * ready upload — one this draft created and no send ever submitted — is
+   * deleted. */
+  private pruneDetached(forced = false) {
+    if (!this.historyGone && !forced) return;
+    const live = new Set(draftUploadKeys(this.value.document));
+    const kept: DraftUpload[] = [];
+    let changed = false;
+    for (const upload of this.value.uploads) {
+      if (live.has(upload.key) || upload.pinned) {
+        kept.push(upload);
+        continue;
+      }
+      changed = true;
+      // A record still uploading when its history ends is dropped; its landing
+      // response finds no record and deletes the bytes, and no chip revives.
+      if (
+        upload.status === "ready" &&
+        upload.attachment !== undefined &&
+        upload.provenance === "draft"
+      ) {
+        void this.deps.remove(upload.attachment.name).catch(() => {});
+      }
+      revoke(upload);
+    }
+    if (changed) this.update({ ...this.value, uploads: kept });
+  }
 }
 
 const drafts = new Map<string, DraftStore>();

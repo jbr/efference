@@ -112,7 +112,7 @@ export const imageAttrs = (src: string | null, alt: string) => ({
  * the component is mounted, so the component that renders the `<img>` is the
  * one that resolves the URL; a component that only passes the URL on (to the
  * lightbox, into draft state) holds nothing. A `blob:` URL is already local
- * bytes — a staged file's own preview (ui/drafts.ts) — and comes back unchanged
+ * bytes — a draft upload's own preview (ui/drafts.ts) — and comes back unchanged
  * without a request. When the URL's bytes have already landed for another
  * holder, the first render returns them.
  */

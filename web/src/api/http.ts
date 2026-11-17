@@ -206,7 +206,7 @@ export const submitTurn = (
   // preserves references; the legacy `text` spelling is the flat fallback
   // (docs/control-api.md). Never both, and a structured turn names its uploads
   // as references rather than a separate `attachments` list, which the gate
-  // refuses: a staged upload is folded in by store name first.
+  // refuses: an upload is folded into the document by store name first.
   if (document !== null) {
     const merged = withAttachments(document, attachments);
     return post<TurnAccepted>("/v1/turns", {

@@ -1628,57 +1628,85 @@ banner is rendered above the transcript.
 
 **Drafts belong to the session, not the mounted composer.** `ui/drafts.ts`
 keeps a `DraftStore` per session API base; `ui/Composer.tsx` subscribes to its
-text, structured document, and staged attachments. The document is
-authoritative and its readable projection is the stored text; a draft with no
-references stores `null` and plain text alone. Client-side switching unmounts
-the view, not the draft or its uploads. Upload requests, late removal requests,
-and image URLs are bound to the originating base, even after the page changes
-sessions. This store opens no session stream, so retaining a draft does not
-count as watching that session or suppress its push notifications.
+text, its draft document, and its upload records. The document is the draft's
+own shape (`ui/draftDocument.ts`): the wire segments plus an `Upload` occurrence
+naming a staged upload's local key. A pending upload has no daemon name and
+cannot be a wire reference, so a `UserContent` is projected from the draft only
+when every occurrence is a ready upload; until then the send is blocked. The
+document is authoritative and its readable projection is the stored text; a
+draft with no reference and no upload stores `null` and plain text alone.
+Client-side switching unmounts the view, not the draft or its uploads. Upload
+requests, late removal requests, and image URLs are bound to the originating
+base, even after the page changes sessions. This store opens no session stream,
+so retaining a draft does not count as watching that session or suppress its
+push notifications.
 
-Each edit and attachment transition saves text, document, and chip metadata to
-origin-scoped localStorage under the session base. Completed attachments restore
-from their stored server references; pasted text remains available for the
-chip's inline action. File bytes and blob preview URLs are not persisted. A
-reload restores an upload that was in progress as a failed chip with an
-interruption reason, not a resumable upload. A failed chip states its reason in
-its detail line, not only in its title, which a touch screen cannot hover to
-read: the daemon's error message when it answered, or the browser's when the
-request itself failed (Safari's `Load failed`). The daemon logs an upload's
-failure at `warn` with its stage (no store, reading the body, storing), so an upload whose
-failure leaves no daemon line never reached the handler. Malformed saved data is ignored;
-denied or full storage leaves the live draft usable without reload persistence.
-Image blob previews are revoked on upload completion or staged-chip removal,
-not on view unmount.
+Each edit and upload transition saves text, document, and upload metadata to
+origin-scoped localStorage under the session base (key `efference.composer.v2`;
+`ui/drafts/persist.ts` owns the stored shape, its parsing, and the migration).
+An upload record has its label, status, stored arrival, failure detail,
+pasted text, provenance (`draft` for one this draft created, `sent` for one
+included in a send), and whether it is pinned by an in-flight send. File bytes
+and blob preview URLs are not persisted. A reload restores an upload that was
+in progress as a failed occurrence with an interruption reason, not a
+resumable upload; an
+occurrence whose record is gone still renders as a failed chip, so it cannot be
+silently omitted from the draft. A failed chip states its reason in its detail
+line, not only in its title, which a touch screen cannot hover to read: the
+daemon's error message when it answered, or the browser's when the request
+itself failed (Safari's `Load failed`). The daemon logs an upload's failure at
+`warn` with its stage (no store, reading the body, storing), so an upload whose
+failure leaves no daemon line never reached the handler. Malformed saved data is
+ignored; denied or full storage leaves the live draft usable without reload
+persistence. Image blob previews are revoked when the upload lands or when its
+detached record is pruned, not on view unmount.
 
-A failed send leaves the draft alone. A successful send clears its submitted
-content only if `revision` has not changed while the request was pending, and
-removes only the submitted ready chips; newer edits, newer attachments, failed
-chips, and a same-label access change remain. `revision` is live-only: after a
-reload nothing is in flight to compare against. A send that outlives a session
-switch clears only the store it came from; the editor and expanded state on
-screen belong to the session now displayed, so the completion leaves them alone.
-Sent files are not deleted.
+A version-1 draft (a `UserContent` document plus staged rows) is migrated once,
+after the v2 write succeeds: its text seeds the draft ahead of the rows, a ready
+row becomes an inline attachment reference with no upload record — a migrated
+upload may already have been sent, so this store must never delete it — and a
+pending or failed row becomes a failed upload occurrence at the end of the
+draft, keeping its pasted text.
+
+A failed send leaves the draft alone. Every upload included in the send is
+pinned before the request leaves; the pin is persisted, so a reload
+mid-request still has the bytes marked in use. A send that fails may still
+have been admitted — the request can be delivered to the daemon before its
+response is lost — so its uploads are marked sent-owned and retained, never
+deleted, and the draft is not cleared. A successful send clears its submitted
+content only if `revision` has not changed while the request was pending; newer
+edits, newer uploads, and a same-label access change remain. `revision` is
+live-only: after a reload nothing is in flight to compare against. A cleared
+send replaces the editor, because setting content keeps the undo stack: the
+cleared draft must not be undoable back into uploads the send released. That
+replacement discards the history and prunes the detached records it could have
+restored, without a DELETE — a sent
+upload stays. A send that outlives a session switch clears only the store it
+came from; the editor and expanded state on screen belong to the session now
+displayed, so the completion leaves them alone. Sent files are not deleted here.
 Empty drafts remove their localStorage entry. The server has no draft store;
 these drafts remain browser-local.
 
 A recalled turn that carried references **merges into the draft's editable
-document** (`ui/Composer.tsx`, `appendDocument`), ahead of what was already
-there; there is no held spelling that refuses edits. A plain recalled turn
-becomes a text document before the merge, so its text cannot fall out of a
-structured draft; a second recall merges the same way, with an attachment-only
-document contributing its definitions and no separator. The editor is
-authoritative after the merge: typing, access toggles, and chip removals update
-the document directly. Removing a chip detaches its definition and occurrences
-but leaves stored upload bytes alone, because an inline attachment may belong
-to a sent turn and undo must restore the chip; the staged row is the deletion
-surface for uploads. A document left with no references becomes null.
-`submitTurn` sends the structured spelling when a document exists, folding any
-separately staged uploads into its `references` so one upload is named once; a
-plain draft keeps the legacy `text`+`attachments` body. A successful send clears
-the submitted document along with the chips (`DraftStore.sent`), so the next
-text is an ordinary draft rather than a document the sent turn no longer
-compares with.
+document** (`ui/Composer.tsx`, `withAttachments` then `appendDraft`), ahead of
+what was already there; there is no held spelling that refuses edits. A plain
+recalled turn becomes a text document before the merge, so its text cannot fall
+out of a structured draft; a second recall merges the same way, with an
+attachment-only document contributing its definitions and no separator. A
+recalled attachment is the daemon's stored file, so it enters the document as an
+inline attachment reference and never as an upload record: this store owns no
+recalled arrival. Recalled attachments land after the recalled text and before
+the retained draft. The editor is authoritative after the merge: typing, access
+toggles, and chip removals update the document directly. Removing a chip detaches
+its definition and occurrences but leaves stored bytes alone, because an inline
+attachment may belong to a sent turn and undo must restore the chip; upload
+bytes follow the lifetime described under Attachments. A document left with no
+references becomes null. `submitTurn` sends the structured spelling when a
+document exists, and `ui/draftDocument.ts` projects the upload occurrences into
+its `references`, so one upload is named once; a plain draft keeps the trimmed
+`text` path. A successful send clears the submitted document along with the
+chips (`DraftStore.sent`), so the next text is an ordinary draft rather than a
+document the sent turn no longer compares with.
 
 **Copying a reference keeps its identity only inside this page.**
 `ui/referenceClipboard.ts` writes readable `text/plain`, token-bearing
@@ -1688,8 +1716,9 @@ entries and scoped to the session's API base; definitions never travel in the
 clipboard. Paste and drop HTML pass through one sanitizer that discards every
 incoming `data-efference-*` attribute and resolves only registry tokens, minting
 fresh ids for inserted nodes. An unknown or stale token, another session, or a
-reload falls back to the readable label. Attachments copy as their name rather
-than a second reference, preserving one occurrence per upload. The reference
+reload falls back to the readable label. An attachment or an upload occurrence
+copies as its readable name rather than a second reference, preserving one
+occurrence per upload. The reference
 node's HTML export is its readable label, never its id or definition.
 
 The status bar (`ui/Composer.tsx`) is the dock's **outermost row, below the
@@ -1733,36 +1762,50 @@ anything the operator acts on (a hint shipped here and was removed
 2026-08-26).
 
 The expanded input uses `ui/ComposerToolbar.tsx` for attach, the turn-state
-readout, interrupt/resume, and send. At the 700px phone breakpoint the readout
+readout, interrupt/resume, and send; its landing state counts the upload
+occurrences the draft still shows as uploading, so a pinned send or a removed
+chip does not disable send. At the 700px phone breakpoint the readout
 occupies a full-width line above the buttons rather than wrapping between them.
 The waiting readout has no dot or glow; its words state the pending action.
 
 **Attachments.** A file can be added to the composer three ways — pasted (a
-clipboard image or file), dropped anywhere on the page (the window listens
-for file drags, so the composer is the one drop target, and the input takes a
-dashed accent border while one is over the page), or picked with the `attach`
-button (the phone's way in, where there is no drag). Pasted text past a dozen
-lines is staged as a `.txt` rather than typed, the same limit and rule as the
-TUI ([inbox.md](inbox.md)); its chip offers `inline` to put the text back in
-the draft instead. Each staged file uploads at once as raw bytes
-(`POST /attachments`, [control-api.md](control-api.md)) —
-`application/octet-stream` being the one other type the TCP bind's CSRF gate
-admits — so its chip shows what the daemon made of it (`PNG · 1280×800 ·
-240 KB`, `40 lines · 2 KB`) while it can still be removed. Staged chips sit
-above the input; an image's chip shows a local object URL while uploading and
-the stored bytes, resolved through `useApiImage`, once ready — the local picture
-stays up until those bytes arrive.
-Removing a staged chip deletes the upload; one removed mid-upload is deleted
-when the upload lands. An upload the document already carries inline is not
-shown in the staged row a second time — the inline chip is its one occurrence —
-and removing that inline chip only detaches the occurrence (see the drafts
-paragraph above). Send waits for uploads to finish, carries every ready chip's
-name — or, on a structured send, folds them into the document's references —
-and removes the submitted ready chips only once the turn is accepted,
-so a refused send keeps them. A draft of attachments alone is a turn, not the continue. The
+clipboard image or file), dropped on the page, or picked with the `attach`
+button (the phone's way in, where there is no drag). Each one becomes an inline
+upload occurrence at the insertion point: a paste or a picked file replaces the
+selection, as text does, and uses the caret when there is none; a drop on the
+editor inserts at the pointer (`posAtCoords`); a drop elsewhere on the page
+inserts at the retained caret — the window listens for file drags, so the
+composer is the one drop target, and the input takes a dashed accent border
+while one is over the page, cleared by any file drop including one the editor
+placed itself. The chip sits in the text where
+the file will be. Pasted text past a dozen lines is uploaded as a `.txt` rather
+than typed, the same limit and rule as the TUI ([inbox.md](inbox.md)); its chip
+offers `inline` to replace the occurrence with the text in one transaction,
+which undo reverses. Each file uploads at once as raw bytes (`POST
+/attachments`, [control-api.md](control-api.md)) — `application/octet-stream`
+being the one other type the TCP bind's CSRF gate admits — so its chip shows
+what the daemon made of it (`PNG · 1280×800 · 240 KB`, `40 lines · 2 KB`)
+while it can still be removed. The chip reads its status from the draft store
+through its subscription (`ui/ComposerUploadChip.tsx`), so an upload landing
+re-renders it without replacing editor content: the caret, selection and undo
+stack stay as they were, and the chip is never reinserted. An image's chip shows
+a local object URL while uploading and the stored bytes, resolved through
+`useApiImage`, once ready — the local picture stays up until those bytes arrive.
+
+Removing a chip detaches the occurrence and keeps its record, bytes, and preview
+so undo can restore it; nothing is deleted at removal time. A detached upload
+this draft created and no send ever named is deleted when the editor whose
+history could undo the removal is gone (unmount, session switch, or the editor
+replacement after a cleared send); a reload prunes the same records. An upload a
+send named is sent-owned and is never deleted, and a failed POST is not proof
+that the turn was not admitted. Send refuses while an occurrence is pending or
+failed, naming each file with its reason and never dropping it from the
+document; the recovery it states follows the record — a staged paste can be
+removed or inserted as text, a file can only be removed (and attached again) —
+and a draft of attachments alone is a turn, not the continue. The
 paste and description rules are `ui/staging.ts`; draft and upload ownership are
-`ui/drafts.ts`; the chips, staged and sent, are
-`ui/Attachments.tsx`. A sent turn — and its pending echo — shows its
+`ui/drafts.ts`; a draft upload's chip is `ui/ComposerUploadChip.tsx`, and the
+sent turn's thumbnails are `ui/Attachments.tsx`. A sent turn — and its pending echo — shows its
 attachments under its prose, an image as a thumbnail of the bytes at
 `GET /attachments/:name`, resolved through `useApiImage`, that opens in the
 lightbox.

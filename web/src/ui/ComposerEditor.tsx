@@ -1,14 +1,21 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import type { JSONContent } from "@tiptap/core";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from "react";
+import type { Editor } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { UserContent } from "../api/types.ts";
 import {
+  ComposerUpload,
   composerCoreExtensions,
-  editorContentFromUserContent,
-  textFromDocument,
-  userContentFromEditor,
+  draftContentFromEditor,
+  editorContentFromDraft,
+  textFromDraft,
 } from "./composerCore.tsx";
+import { hasDraftStructure, type DraftContent } from "./draftDocument.ts";
 import {
   PAYLOAD_TYPE,
   contentFromClipboardPayload,
@@ -17,75 +24,82 @@ import {
   sanitizePastedHtml,
 } from "./referenceClipboard.ts";
 import { pastesAsFile } from "./staging.ts";
+import type { DraftStore } from "./drafts.ts";
 
 export interface ComposerEditorHandle {
   focus: () => void;
-  /** Replace the whole draft (a recall's merge); updates arrive through
-   * `onChange` on the next edit, not from this call. */
-  replace: (content: UserContent) => void;
-  /** Put a staged long paste back at the caret, preserving its newlines. */
-  insertText: (text: string) => void;
+  /** Replace the whole draft (a recall's merge or a clear); updates arrive
+   * through `onChange` on the next edit, not from this call. */
+  replace: (content: DraftContent) => void;
+  /** Insert files as inline upload occurrences — the picker and a drop
+   * outside the editor's own surface. `replace` replaces the retained
+   * selection, as a paste does; `at` inserts at a document position without
+   * replacing anything (a pointer drop). */
+  insertFiles: (
+    files: File[],
+    options?: { at?: number; replace?: boolean; pastedText?: string },
+  ) => void;
 }
 
 export interface ComposerEditorProps {
   /** The session's API base: clipboard tokens are scoped to it. */
   base: string;
-  initial: UserContent;
+  /** The draft store the upload node's status is read from. */
+  store: DraftStore;
+  initial: DraftContent;
   placeholder: string;
   narrow: boolean;
-  onChange: (document: UserContent | null, text: string) => void;
+  onChange: (document: DraftContent | null, text: string) => void;
   onSubmit: () => void;
   onEscape: () => void;
-  onStageFile: (file: File, pastedText?: string) => void;
 }
 
 /** The composer's editable surface. The editor owns the structure; the store
- * receives its projection after every content edit (docs/web-client.md). */
+ * receives its projection after every content edit (docs/web-client.md). An
+ * upload's pending → ready transition is a store event, not an editor edit:
+ * the node view re-renders and the document, selection and undo stack stay
+ * untouched. */
 export const ComposerEditor = forwardRef<
   ComposerEditorHandle,
   ComposerEditorProps
 >(function ComposerEditor(
-  {
-    base,
-    initial,
-    placeholder,
-    narrow,
-    onChange,
-    onSubmit,
-    onEscape,
-    onStageFile,
-  },
+  { base, store, initial, placeholder, narrow, onChange, onSubmit, onEscape },
   ref,
 ) {
   const handlers = useRef({
     base,
+    store,
     narrow,
     onChange,
     onSubmit,
     onEscape,
-    onStageFile,
   });
   handlers.current = {
     base,
+    store,
     narrow,
     onChange,
     onSubmit,
     onEscape,
-    onStageFile,
   };
   const placeholderText = useRef(placeholder);
   placeholderText.current = placeholder;
+  // `insertFiles` is handed to the editor's own paste/drop handlers once, at
+  // creation, so it reads the instance through a ref rather than the render
+  // that built those handlers.
+  const editorRef = useRef<Editor | null>(null);
 
   const editor = useEditor(
     {
       extensions: [
         ...composerCoreExtensions,
+        ComposerUpload.configure({ store }),
         Placeholder.configure({
           placeholder: () => placeholderText.current,
           includeChildren: false,
         }),
       ],
-      content: editorContentFromUserContent(initial),
+      content: editorContentFromDraft(initial),
       editorProps: {
         attributes: {
           role: "textbox",
@@ -114,7 +128,7 @@ export const ComposerEditor = forwardRef<
           const files = [...data.files];
           if (files.length > 0) {
             event.preventDefault();
-            files.forEach((file) => handlers.current.onStageFile(file));
+            insertFiles(files, { replace: true });
             return true;
           }
           let payload: string | null;
@@ -130,20 +144,25 @@ export const ComposerEditor = forwardRef<
             );
             if (content !== null) {
               event.preventDefault();
-              editor
-                ?.chain()
-                .focus()
-                .insertContent(editorContentFromUserContent(content))
-                .run();
+              const instance = editorRef.current;
+              if (instance !== null) {
+                // No `focus()` here: its scroll-into-view is what a paste
+                // does not need, and the caret already follows the insertion.
+                instance.commands.insertContent(
+                  editorContentFromDraft(content),
+                );
+              }
               return true;
             }
           }
           const text = data.getData("text/plain");
           if (pastesAsFile(text)) {
+            // A paste staged for its length inserts where the user pasted,
+            // not at the end of the draft.
             event.preventDefault();
-            handlers.current.onStageFile(
-              new File([text], "paste.txt", { type: "text/plain" }),
-              text,
+            insertFiles(
+              [new File([text], "paste.txt", { type: "text/plain" })],
+              { replace: true, pastedText: text },
             );
             return true;
           }
@@ -154,16 +173,40 @@ export const ComposerEditor = forwardRef<
         transformPastedHTML: (html) => sanitizePastedHtml(html, base),
         handleDOMEvents: {
           copy: (view, event) =>
-            copySelection(view, event as ClipboardEvent, base),
+            copySelection(
+              view,
+              event as ClipboardEvent,
+              handlers.current.base,
+              (key) => handlers.current.store.uploadLabel(key),
+            ),
           cut: (view, event) =>
-            cutSelection(view, event as ClipboardEvent, base),
+            cutSelection(
+              view,
+              event as ClipboardEvent,
+              handlers.current.base,
+              (key) => handlers.current.store.uploadLabel(key),
+            ),
+          drop: (view, event) => {
+            const drag = event as DragEvent;
+            const files = [...(drag.dataTransfer?.files ?? [])];
+            if (files.length === 0) return false;
+            drag.preventDefault();
+            const at = view.posAtCoords({
+              left: drag.clientX,
+              top: drag.clientY,
+            })?.pos;
+            insertFiles(files, { at });
+            return true;
+          },
         },
       },
+      onCreate: () => handlers.current.store.beginEditorSession(),
+      onDestroy: () => handlers.current.store.endEditorSession(),
       onUpdate: ({ editor }) => {
-        const document = userContentFromEditor(editor.getJSON());
+        const document = draftContentFromEditor(editor.getJSON());
         handlers.current.onChange(
-          Object.keys(document.references).length > 0 ? document : null,
-          textFromDocument(document),
+          hasDraftStructure(document) ? document : null,
+          textFromDraft(document),
         );
       },
     },
@@ -177,36 +220,55 @@ export const ComposerEditor = forwardRef<
     editor.view.dispatch(editor.state.tr);
   }, [editor, placeholder]);
 
+  const insertFiles = useCallback(
+    (
+      files: File[],
+      options: { at?: number; replace?: boolean; pastedText?: string } = {},
+    ): void => {
+      const instance = editorRef.current;
+      if (files.length === 0 || instance === null) return;
+      const nodes = files.map((file) =>
+        instance.schema.nodeFromJSON({
+          type: "upload",
+          attrs: {
+            key: handlers.current.store.uploadFile(file, options.pastedText),
+          },
+        }),
+      );
+      // A plain transaction: inserting at the paste or drop position must not
+      // scroll the editor, and the caret moves only where the insertion moves
+      // it. Pasting or choosing files over a selection replaces it, as text
+      // does; a pointer drop is placed where the drop happened.
+      const state = instance.state;
+      const from = options.replace
+        ? state.selection.from
+        : Math.min(options.at ?? state.selection.from, state.doc.content.size);
+      const to = options.replace ? state.selection.to : from;
+      instance.view.dispatch(state.tr.replaceWith(from, to, nodes));
+    },
+    [],
+  );
+
   useImperativeHandle(
     ref,
     () => ({
       focus: () => {
-        editor?.commands.focus();
+        // The composer is already on screen: focus moves the caret, it does
+        // not scroll a page the user is looking at.
+        editor?.commands.focus(null, { scrollIntoView: false });
       },
-      replace: (content) => {
+      replace: (content: DraftContent) => {
         if (!editor) return;
-        editor.commands.setContent(editorContentFromUserContent(content), {
+        editor.commands.setContent(editorContentFromDraft(content), {
           emitUpdate: false,
         });
-        editor.commands.focus("end");
+        editor.commands.focus("end", { scrollIntoView: false });
       },
-      insertText: (value) => {
-        if (!editor || value === "") return;
-        const nodes: JSONContent[] = [];
-        value.split("\n").forEach((line, index) => {
-          if (index > 0) nodes.push({ type: "hardBreak" });
-          if (line !== "") nodes.push({ type: "text", text: line });
-        });
-        if (nodes.length === 0) return;
-        editor
-          .chain()
-          .focus()
-          .insertContentAt(editor.state.selection.from, nodes)
-          .run();
-      },
+      insertFiles: (files, options) => insertFiles(files, options),
     }),
-    [editor],
+    [editor, insertFiles],
   );
 
+  editorRef.current = editor;
   return <EditorContent editor={editor} />;
 });

@@ -3,7 +3,8 @@ import type { EditorView } from "@tiptap/pm/view";
 import type { Slice } from "@tiptap/pm/model";
 import { normalizeDocument, isUserContent } from "../api/document.ts";
 import type { ReferenceDefinition, UserContent } from "../api/types.ts";
-import { readableDefinition, userContentFromEditor } from "./composerCore.tsx";
+import { contentFromEditor, readableDefinition } from "./composerCore.tsx";
+import type { DraftContent } from "./draftDocument.ts";
 
 /** The internal flavor. It carries structure and tokens, never definitions:
  * a definition is admitted only by resolving its token in this page's
@@ -61,7 +62,7 @@ const escapeAttribute = (value: string): string =>
   escapeText(value).replaceAll('"', "&quot;");
 
 const partsForDocument = (
-  document: UserContent,
+  document: DraftContent,
   base: string,
 ): { text: string; parts: Part[] } => {
   let text = "";
@@ -72,6 +73,9 @@ const partsForDocument = (
       parts.push({ kind: "text", value: segment.Text });
       continue;
     }
+    // An upload was already spelled as its file name by `contentFromEditor`;
+    // an upload with no readable name at all cannot be resolved here.
+    if ("Upload" in segment) continue;
     const definition = document.references[segment.Reference];
     if (definition === undefined) continue;
     text += readableDefinition(definition);
@@ -133,15 +137,21 @@ const payloadOf = (parts: Part[]): string =>
   });
 
 /** A selection serialized once: exact readable text, token HTML for browsers
- * that drop the internal flavor, and the internal payload for this page. */
+ * that drop the internal flavor, and the internal payload for this page. An
+ * upload occurrence copies as its file name — one occurrence per upload, so
+ * the copy cannot carry a second identity. */
 export const clipboardForSlice = (
   slice: Slice,
   base: string,
+  uploadLabel: (key: string) => string | undefined,
 ): ComposerClipboard => {
-  const document = userContentFromEditor({
-    type: "doc",
-    content: slice.content.toJSON() as JSONContent[],
-  });
+  const document = contentFromEditor(
+    {
+      type: "doc",
+      content: slice.content.toJSON() as JSONContent[],
+    },
+    uploadLabel,
+  );
   const { text, parts } = partsForDocument(document, base);
   return { text, html: htmlOf(parts), payload: payloadOf(parts) };
 };
@@ -304,9 +314,14 @@ export const copySelection = (
   view: EditorView,
   event: ClipboardEvent,
   base: string,
+  uploadLabel: (key: string) => string | undefined,
 ): boolean => {
   if (view.state.selection.empty) return false;
-  const clipboard = clipboardForSlice(view.state.selection.content(), base);
+  const clipboard = clipboardForSlice(
+    view.state.selection.content(),
+    base,
+    uploadLabel,
+  );
   const data = event.clipboardData;
   if (!data) return false;
   data.setData("text/plain", clipboard.text);
@@ -324,8 +339,9 @@ export const cutSelection = (
   view: EditorView,
   event: ClipboardEvent,
   base: string,
+  uploadLabel: (key: string) => string | undefined,
 ): boolean => {
-  if (!copySelection(view, event, base)) return false;
+  if (!copySelection(view, event, base, uploadLabel)) return false;
   view.dispatch(view.state.tr.deleteSelection());
   return true;
 };

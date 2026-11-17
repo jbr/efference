@@ -43,13 +43,17 @@ export function describeKind(kind: AttachmentKind): string {
 
 export const isImage = (kind: AttachmentKind) => "Image" in kind;
 
-/** One staged file. `key` is local (a file can be staged twice); `attachment`
- * is what the daemon stored once the upload lands. */
-export interface Staged {
+/** One draft-local upload. `key` is the occurrence's stable identity in the
+ * draft (a file can be attached twice); `attachment` is what the daemon stored
+ * once the upload lands. A record is live while an `Upload` segment names it;
+ * detached records are retained only while the editor's history can undo their
+ * removal (ui/drafts.ts). */
+export interface DraftUpload {
   key: string;
   label: string;
   /** A thumbnail source: an object URL for a local image, the stored bytes'
-   * URL once uploaded or restored, `null` for anything that is not an image. */
+   * URL once uploaded, `null` for anything that is not an image (or a file
+   * whose bytes are gone). */
   preview: string | null;
   status: "uploading" | "ready" | "failed";
   attachment?: Arrival;
@@ -57,6 +61,13 @@ export interface Staged {
   /** A paste staged for its length keeps its text, so the chip can put it back
    * in the draft instead. */
   pastedText?: string;
+  /** `draft` owns bytes this draft may delete; `sent` came from a recalled or
+   * submitted turn and is never deleted by this store. */
+  provenance: "draft" | "sent";
+  /** A send names this upload and has not settled. Its bytes must survive
+   * until it does; persisted so a reload during the request cannot delete
+   * them. */
+  pinned?: boolean;
 }
 
 /** A pasted blob has no name worth keeping (`image.png` every time); name it

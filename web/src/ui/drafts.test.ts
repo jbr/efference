@@ -1,91 +1,41 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ApiError } from "../api/http.ts";
-import type {
-  Arrival,
-  ReferenceDefinition,
-  UserContent,
-} from "../api/types.ts";
+import type { ReferenceDefinition, UserContent } from "../api/types.ts";
 import { DraftStore } from "./drafts.ts";
+import {
+  attachment,
+  attachmentDocument,
+  deferred,
+  image,
+  installBrowser,
+  occurrence,
+  setup,
+  unmount,
+} from "./drafts/fixtures.ts";
 
-const attachment: Arrival = {
-  name: "note.txt",
-  path: "/stored/note.txt",
-  kind: { Binary: { bytes: 5 } },
-};
-const attachmentDefinition: ReferenceDefinition = {
-  label: "note.txt",
-  target: { type: "attachment", ...attachment },
-};
-const attachmentDocument: UserContent = {
-  content: [{ Reference: "r1" }],
-  references: { r1: attachmentDefinition },
-};
-const image: Arrival = {
-  name: "image.png",
-  path: "/stored/image.png",
-  kind: { Image: { format: "PNG", width: 1, height: 1, bytes: 5 } },
-};
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-function setup(base = "/sessions/a") {
-  const pending = deferred<Arrival>();
-  const upload = vi.fn(() => pending.promise);
-  const remove = vi.fn(() => Promise.resolve());
-  const store = new DraftStore(base, { storage: localStorage, upload, remove });
-  return { store, upload, remove, pending };
-}
-
-beforeEach(() => {
-  const values = new Map<string, string>();
-  vi.stubGlobal("localStorage", {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => void values.set(key, value),
-    removeItem: (key: string) => void values.delete(key),
-    key: (index: number) => [...values.keys()][index] ?? null,
-    get length() {
-      return values.size;
-    },
-  });
-  history.replaceState(null, "", "/sessions/a/");
-  vi.stubGlobal(
-    "URL",
-    class extends URL {
-      static createObjectURL = vi.fn(() => "blob:preview");
-      static revokeObjectURL = vi.fn();
-    },
-  );
-});
+beforeEach(installBrowser);
 afterEach(() => vi.unstubAllGlobals());
 
-test("text and completed attachments restore independently for each session", () => {
+test("text and draft content stay independent for each session", () => {
   const a = setup().store;
   const b = setup("/sessions/b").store;
   a.setText("  a draft\n");
-  a.restore([image]);
+  const key = a.uploadFile(new File(["bytes"], "note.txt"));
+  a.setContent({ text: "", document: occurrence(key) });
   b.setText("b draft");
   const restored = setup().store.snapshot();
-  expect(restored.text).toBe("  a draft\n");
-  expect(restored.staged[0]).toMatchObject({
-    status: "ready",
-    attachment: image,
-    preview: "/sessions/a/v1/attachments/image.png",
-  });
+  expect(restored.text).toBe("");
+  expect(restored.document).toEqual(occurrence(restored.uploads[0]!.key));
   expect(setup("/sessions/b").store.snapshot().text).toBe("b draft");
 });
 
-test("uploads finish in their original draft with no mounted subscriber", async () => {
+test("an upload lands in its original draft with no mounted subscriber", async () => {
   const { store, pending } = setup();
   const listener = vi.fn();
   const unsubscribe = store.subscribe(listener);
-  store.stage(new File(["bytes"], "note.txt"));
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
   unsubscribe();
   listener.mockClear();
   history.replaceState(null, "", "/sessions/b/");
@@ -93,27 +43,28 @@ test("uploads finish in their original draft with no mounted subscriber", async 
   pending.resolve(attachment);
   await pending.promise;
   expect(listener).not.toHaveBeenCalled();
-  expect(store.snapshot().staged[0]).toMatchObject({
+  expect(store.snapshot().uploads[0]).toMatchObject({
     status: "ready",
     attachment,
   });
-  expect(b.snapshot().staged).toEqual([]);
-  expect(setup().store.snapshot().staged[0]?.attachment).toEqual(attachment);
+  expect(b.snapshot().uploads).toEqual([]);
 });
 
 test("reload keeps upload presence and pasted text but never file bytes or blob URLs", () => {
   const { store } = setup();
-  store.stage(
+  store.beginEditorSession();
+  const key = store.uploadFile(
     new File(["secret file bytes"], "image.png", { type: "image/png" }),
     "pasted text",
   );
+  store.setContent({ text: "", document: occurrence(key) });
   const raw = localStorage.getItem(localStorage.key(0)!);
   expect(raw).not.toContain("secret file bytes");
   expect(raw).not.toContain("blob:");
-  const restored = setup().store.snapshot().staged[0];
+  const restored = setup().store.snapshot().uploads[0];
   expect(restored).toMatchObject({
     status: "failed",
-    label: store.snapshot().staged[0].label,
+    label: store.snapshot().uploads[0].label,
     pastedText: "pasted text",
     preview: null,
   });
@@ -121,37 +72,87 @@ test("reload keeps upload presence and pasted text but never file bytes or blob 
   expect(restored.attachment).toBeUndefined();
 });
 
-test("removing a pending upload deletes its eventual stored result without reviving the chip", async () => {
+test("removing a pending upload detaches it now and deletes the landing bytes only after teardown", async () => {
   const { store, pending, remove } = setup();
-  store.stage(new File(["bytes"], "note.txt"));
-  store.remove(store.snapshot().staged[0].key);
+  store.beginEditorSession();
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
+  store.remove(key);
+  expect(store.snapshot().document).toBeNull();
+  // Detached, not deleted: undo can still restore the chip.
+  expect(store.snapshot().uploads[0]).toMatchObject({
+    key,
+    status: "uploading",
+  });
+  pending.resolve(attachment);
+  await pending.promise;
+  expect(remove).not.toHaveBeenCalled();
+  expect(store.snapshot().uploads[0]).toMatchObject({
+    status: "ready",
+    attachment,
+  });
+  await unmount(store);
+  expect(remove).toHaveBeenCalledExactlyOnceWith("note.txt");
+  expect(store.snapshot().uploads).toEqual([]);
+});
+
+test("a pending upload pruned while in flight deletes its landing bytes and revives no chip", async () => {
+  const { store, pending, remove } = setup();
+  store.beginEditorSession();
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
+  store.remove(key);
+  await unmount(store);
+  expect(store.snapshot().uploads).toEqual([]);
   pending.resolve(attachment);
   await pending.promise;
   expect(remove).toHaveBeenCalledExactlyOnceWith("note.txt");
-  expect(store.snapshot().staged).toEqual([]);
-  expect(localStorage.length).toBe(0);
+  expect(store.snapshot().uploads).toEqual([]);
 });
 
-test("failed uploads remain removable and survive reload", async () => {
-  const { store, pending } = setup();
-  store.stage(new File(["bytes"], "note.txt"));
+test("an undo restoring the chip before the upload lands keeps it live and completing in place", async () => {
+  const { store, pending, remove } = setup();
+  store.beginEditorSession();
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
+  store.remove(key);
+  // The editor's undo dispatches the removed content back.
+  store.setContent({ text: "", document: occurrence(key) });
+  pending.resolve(attachment);
+  await pending.promise;
+  expect(store.snapshot().uploads[0]).toMatchObject({
+    status: "ready",
+    attachment,
+  });
+  await unmount(store);
+  expect(remove).not.toHaveBeenCalled();
+});
+
+test("failed uploads stay visible across reload and are dropped without a delete", async () => {
+  const { store, pending, remove } = setup();
+  store.beginEditorSession();
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
   pending.reject(new Error("offline"));
   await pending.promise.catch(() => {});
-  expect(store.snapshot().staged[0]).toMatchObject({
+  expect(store.snapshot().uploads[0]).toMatchObject({
     status: "failed",
     error: "Upload failed (offline); attach this file again.",
   });
   const restored = setup().store;
-  expect(restored.snapshot().staged[0]?.error).toBe(
+  expect(restored.snapshot().uploads[0]?.error).toBe(
     "Upload failed (offline); attach this file again.",
   );
-  restored.remove(restored.snapshot().staged[0].key);
-  expect(localStorage.length).toBe(0);
+  restored.beginEditorSession();
+  restored.setContent({ text: "", document: null });
+  await unmount(restored);
+  expect(remove).not.toHaveBeenCalled();
 });
 
 test("a failed upload names the daemon's reason", async () => {
   const { store, pending } = setup();
-  store.stage(new File(["bytes"], "note.txt"));
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
   pending.reject(
     new ApiError(500, {
       code: "internal",
@@ -159,60 +160,98 @@ test("a failed upload names the daemon's reason", async () => {
     }),
   );
   await pending.promise.catch(() => {});
-  expect(store.snapshot().staged[0]?.error).toBe(
+  expect(store.snapshot().uploads[0]?.error).toBe(
     "Upload failed (storing the upload: disk full); attach this file again.",
   );
 });
 
-test("successful send clears the sent draft but does not delete its uploaded files", () => {
+test("a successful send clears the sent draft, marks its uploads sent, and deletes nothing", async () => {
   const { store, remove } = setup();
-  store.setText("send this");
-  store.restore([attachment]);
-  store.sent(store.snapshot());
-  expect(store.snapshot()).toMatchObject({
-    text: "",
-    staged: [],
-    document: null,
+  store.beginEditorSession();
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
+  const submitted = store.beginSend(store.snapshot());
+  store.sent(submitted);
+  expect(store.snapshot()).toMatchObject({ text: "", document: null });
+  expect(store.snapshot().uploads.find((u) => u.key === key)).toMatchObject({
+    provenance: "sent",
+    pinned: false,
   });
-  expect(localStorage.length).toBe(0);
+  await unmount(store);
   expect(remove).not.toHaveBeenCalled();
 });
 
-test("a late successful send keeps newer edits, attachments, and failed chips", () => {
+test("a late successful send keeps newer edits and uploads", () => {
   const { store } = setup();
   store.setText("first");
-  store.restore([attachment]);
   const submitted = store.snapshot();
   store.setText("next draft");
-  store.restore([image]);
   store.sent(submitted);
   expect(store.snapshot().text).toBe("next draft");
-  expect(store.snapshot().staged.map((s) => s.attachment)).toEqual([image]);
 });
 
-test("a failed chip is not silently discarded when sending text", () => {
-  const { store } = setup();
-  store.stage(new File(["bytes"], "note.txt"));
-  const restored = setup().store;
-  restored.setText("text only");
-  restored.sent(restored.snapshot());
-  expect(restored.snapshot().text).toBe("");
-  expect(restored.snapshot().staged[0]?.status).toBe("failed");
+test("a failed send retains the uploads it named and releases their pins", async () => {
+  const { store, remove, pending } = setup();
+  store.beginEditorSession();
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
+  pending.resolve(attachment);
+  await pending.promise;
+  const submitted = store.beginSend(store.snapshot());
+  store.sendFailed(submitted);
+  expect(store.snapshot().uploads[0]).toMatchObject({
+    provenance: "sent",
+    pinned: false,
+  });
+  expect(store.snapshot().document).toEqual(occurrence(key));
+  // Nothing is deleted while the draft still shows it…
+  store.setContent({ text: "", document: null });
+  await unmount(store);
+  // …and even detached, a possibly-admitted upload's bytes stay.
+  expect(remove).not.toHaveBeenCalled();
+});
+
+test("removing an occurrence during a pinned send detaches it and keeps its bytes", async () => {
+  const { store, remove, pending } = setup();
+  store.beginEditorSession();
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
+  pending.resolve(attachment);
+  await pending.promise;
+  const submitted = store.beginSend(store.snapshot());
+  // A pin protects the bytes from cleanup, not the draft from editing: a cut
+  // or backspace detaches the same occurrence without consulting it.
+  store.remove(key);
+  expect(store.snapshot().document).toBeNull();
+  expect(store.snapshot().uploads[0]).toMatchObject({
+    status: "ready",
+    pinned: true,
+  });
+  store.sendFailed(submitted);
+  expect(store.snapshot().uploads[0]).toMatchObject({
+    provenance: "sent",
+    pinned: false,
+  });
+  await unmount(store);
+  expect(remove).not.toHaveBeenCalled();
 });
 
 test("image previews are revoked on upload completion and use the original session URL", async () => {
   const { store, pending } = setup();
-  store.stage(new File(["bytes"], "image.png", { type: "image/png" }));
+  const key = store.uploadFile(
+    new File(["bytes"], "image.png", { type: "image/png" }),
+  );
+  store.setContent({ text: "", document: occurrence(key) });
   history.replaceState(null, "", "/sessions/b/");
   pending.resolve(image);
   await pending.promise;
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
-  expect(store.snapshot().staged[0]?.preview).toBe(
+  expect(store.snapshot().uploads[0]?.preview).toBe(
     "/sessions/a/v1/attachments/image.png",
   );
 });
 
-test("default upload and a late removal remain bound to the original API base", async () => {
+test("default upload and a teardown delete stay bound to the original API base", async () => {
   const response = deferred<Response>();
   const fetchMock = vi
     .fn()
@@ -220,93 +259,23 @@ test("default upload and a late removal remain bound to the original API base", 
     .mockResolvedValue(new Response(null, { status: 204 }));
   vi.stubGlobal("fetch", fetchMock);
   const store = new DraftStore("/sessions/a");
-  store.stage(new File(["bytes"], "note.txt"));
+  store.beginEditorSession();
+  const key = store.uploadFile(new File(["bytes"], "note.txt"));
+  store.setContent({ text: "", document: occurrence(key) });
   expect(fetchMock.mock.calls[0][0]).toBe(
     "/sessions/a/v1/attachments?name=note.txt",
   );
-  store.remove(store.snapshot().staged[0].key);
   history.replaceState(null, "", "/sessions/b/");
   response.resolve(new Response(JSON.stringify(attachment), { status: 200 }));
+  await vi.waitFor(() =>
+    expect(store.snapshot().uploads[0]?.status).toBe("ready"),
+  );
+  store.remove(key);
+  await unmount(store);
   await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   expect(fetchMock.mock.calls[1][0]).toBe(
     "/sessions/a/v1/attachments/note.txt",
   );
-});
-
-test("malformed stored data is ignored without breaking the composer", () => {
-  localStorage.setItem("efference.composer.v1:/sessions/a", "{");
-  expect(setup().store.snapshot()).toMatchObject({
-    text: "",
-    staged: [],
-    document: null,
-  });
-  localStorage.setItem(
-    "efference.composer.v1:/sessions/a",
-    JSON.stringify({
-      text: "kept",
-      staged: [
-        null,
-        2,
-        {},
-        {
-          label: "bad.png",
-          status: "ready",
-          attachment: { name: "bad", path: "bad", kind: { Image: null } },
-        },
-      ],
-    }),
-  );
-  expect(setup().store.snapshot().text).toBe("kept");
-  expect(setup().store.snapshot().staged[0]).toMatchObject({
-    status: "failed",
-    preview: null,
-  });
-});
-
-test("denied or full storage does not break editing and staging", () => {
-  const storage = {
-    getItem: () => {
-      throw new Error("denied");
-    },
-    setItem: () => {
-      throw new Error("full");
-    },
-    removeItem: () => {
-      throw new Error("denied");
-    },
-  };
-  const store = new DraftStore("/sessions/a", {
-    storage,
-    upload: () => Promise.resolve(attachment),
-    remove: () => Promise.resolve(),
-  });
-  store.setText("still works");
-  store.restore([attachment]);
-  expect(store.snapshot().text).toBe("still works");
-  expect(store.snapshot().staged).toHaveLength(1);
-  store.sent(store.snapshot());
-  expect(store.snapshot()).toMatchObject({
-    text: "",
-    staged: [],
-    document: null,
-  });
-});
-
-test("structured content persists and clearing the composer removes the document", () => {
-  const { store } = setup();
-  store.setContent({ text: "", document: attachmentDocument });
-  expect(store.snapshot().document).toEqual(attachmentDocument);
-  const restored = setup().store;
-  expect(restored.snapshot().document).toEqual(attachmentDocument);
-  expect(restored.snapshot().text).toBe("");
-  restored.setText("");
-  expect(restored.snapshot().document).toBeNull();
-});
-
-test("exact multiline text persists without normalization", () => {
-  const { store } = setup();
-  store.setText("a\n\n  b  \n");
-  expect(setup().store.snapshot().text).toBe("a\n\n  b  \n");
 });
 
 test("a successful send clears an unchanged structured draft", () => {
@@ -347,23 +316,4 @@ test("a same-label access edit during a pending send survives", () => {
   store.sent(submitted);
   expect(store.snapshot().text).toBe("look ./main.tsx");
   expect(store.snapshot().document).toEqual(edited);
-});
-
-test("restore skips arrivals the document already carries", () => {
-  const { store } = setup();
-  store.setContent({ text: "", document: attachmentDocument });
-  store.restore([attachment]);
-  expect(store.snapshot().staged).toEqual([]);
-});
-
-test("removing a staged chip deletes its upload and detaches a same-name inline attachment", async () => {
-  const { store, remove, pending } = setup();
-  store.setContent({ text: "", document: attachmentDocument });
-  store.stage(new File(["bytes"], "note.txt"));
-  pending.resolve(attachment);
-  await pending.promise;
-  const key = store.snapshot().staged[0].key;
-  store.remove(key);
-  expect(remove).toHaveBeenCalledExactlyOnceWith("note.txt");
-  expect(store.snapshot().document).toBeNull();
 });

@@ -2,13 +2,14 @@ import { expect, test } from "vitest";
 import { textDocument } from "../api/document.ts";
 import type { ReferenceDefinition, UserContent } from "../api/types.ts";
 import {
-  editorContentFromUserContent,
-  textFromDocument,
-  userContentFromEditor,
+  draftContentFromEditor,
+  editorContentFromDraft,
+  textFromDraft,
 } from "./composerCore.tsx";
+import type { DraftContent } from "./draftDocument.ts";
 
-const roundTrip = (content: UserContent): UserContent =>
-  userContentFromEditor(editorContentFromUserContent(content));
+const roundTrip = (content: UserContent): DraftContent =>
+  draftContentFromEditor(editorContentFromDraft(content));
 
 test("plain text keeps blank interior lines and trailing newlines", () => {
   for (const text of [
@@ -21,7 +22,7 @@ test("plain text keeps blank interior lines and trailing newlines", () => {
     "",
   ]) {
     const document = textDocument(text);
-    expect(textFromDocument(roundTrip(document))).toBe(text);
+    expect(textFromDraft(roundTrip(document))).toBe(text);
   }
 });
 
@@ -47,7 +48,7 @@ test("a reference between text keeps its position and definition", () => {
   const output = roundTrip(input);
   expect(output.content).toEqual(input.content);
   expect(output.references.r1).toEqual(definition);
-  expect(textFromDocument(output)).toBe(
+  expect(textFromDraft(output)).toBe(
     "look at ./main.tsx before editing\n\nthanks",
   );
 });
@@ -62,11 +63,11 @@ test("a duplicated attachment occurrence is stored once", () => {
       path: "/tmp/notes.txt",
     },
   };
-  const json = editorContentFromUserContent({
+  const json = editorContentFromDraft({
     content: [{ Reference: "a" }, { Text: " and " }, { Reference: "b" }],
     references: { a: reference, b: reference },
   });
-  const output = userContentFromEditor(json);
+  const output = draftContentFromEditor(json);
   expect(
     output.content.filter((segment) => "Reference" in segment),
   ).toHaveLength(1);

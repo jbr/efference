@@ -144,9 +144,10 @@ export const documentAttachmentNames = (content: UserContent): Set<string> =>
 
 /** A definition's readable flat spelling: what re-typing the chip as text
  * grants nothing by. An attachment spells nothing — its name is shown beside
- * the readable form (the transcript's definition list, a staged chip). */
-const readableReference = (content: UserContent, id: string): string => {
-  const definition = content.references[id];
+ * the readable form (the transcript's definition list, an attachment chip). */
+export const readableOccurrence = (
+  definition: ReferenceDefinition | undefined,
+): string => {
   if (definition === undefined) return "";
   const target = definition.target;
   if (target.type === "filesystem") return target.original;
@@ -161,7 +162,7 @@ export const documentReadable = (content: UserContent): string =>
     .map((segment: UserSegment) =>
       "Text" in segment
         ? segment.Text
-        : readableReference(content, segment.Reference),
+        : readableOccurrence(content.references[segment.Reference]),
     )
     .join("");
 
@@ -182,14 +183,59 @@ export const recallDocuments = (turns: QueuedTurn[]): UserContent | null => {
   );
 };
 
+/** Union the second document's definitions into the first, renaming an id
+ * both use with different definitions (two submissions mint ids
+ * independently), and dropping a later attachment definition whose store name
+ * the merge already carries — the gate admits one definition per upload.
+ * Returns the rename map and the dropped ids so a caller can copy its own
+ * occurrences over. Both the wire document's merge and the draft's merge
+ * (ui/draftDocument.ts) use this, so the identity rules have one home. */
+export const mergeReferences = (
+  merged: Record<string, ReferenceDefinition>,
+  document: Record<string, ReferenceDefinition>,
+): { renames: Map<string, string>; dropped: Set<string> } => {
+  const uploads = new Set(
+    Object.values(merged).flatMap((definition) =>
+      definition.target.type === "attachment" ? [definition.target.name] : [],
+    ),
+  );
+  const dropped = new Set<string>();
+  for (const [id, definition] of Object.entries(document)) {
+    if (definition.target.type === "attachment") {
+      if (uploads.has(definition.target.name)) dropped.add(id);
+      else uploads.add(definition.target.name);
+    }
+  }
+  const renames = new Map<string, string>();
+  for (const [id, definition] of Object.entries(document)) {
+    if (dropped.has(id)) continue;
+    const existing = merged[id];
+    let target = id;
+    if (
+      existing !== undefined &&
+      JSON.stringify(existing) !== JSON.stringify(definition)
+    ) {
+      let suffix = 2;
+      while (
+        merged[`${id}-${suffix}`] !== undefined ||
+        document[`${id}-${suffix}`] !== undefined
+      ) {
+        suffix += 1;
+      }
+      target = `${id}-${suffix}`;
+    }
+    renames.set(id, target);
+    merged[target] = definition;
+  }
+  return { renames, dropped };
+};
+
 /** Append one document to a merge, ahead of it with `joiner` when the merge
  * already has content and some text separates the two pieces: definitions
- * union by id and occurrences follow their definition. Two submissions mint
- * ids independently, so an id both documents use with different definitions
- * renames in the later document, occurrences included. A later document's
- * attachment definition for an upload the merge already names is dropped with
- * its occurrences — the gate admits one definition per upload, and an
- * attachment spells nothing, so the readable form is unchanged. */
+ * union by id and occurrences follow their definition (see
+ * `mergeReferences`). A later document's attachment definition for an upload
+ * the merge already names is dropped with its occurrences — an attachment
+ * spells nothing, so the readable form is unchanged. */
 export const appendDocument = (
   merged: UserContent,
   document: UserContent | null | undefined,
@@ -199,39 +245,10 @@ export const appendDocument = (
   if (merged.content.length > 0 && joiner !== "") {
     merged.content.push({ Text: joiner });
   }
-  const uploads = new Set(
-    Object.values(merged.references).flatMap((definition) =>
-      definition.target.type === "attachment" ? [definition.target.name] : [],
-    ),
+  const { renames, dropped } = mergeReferences(
+    merged.references,
+    document.references,
   );
-  const dropped = new Set<string>();
-  for (const [id, definition] of Object.entries(document.references)) {
-    if (definition.target.type === "attachment") {
-      if (uploads.has(definition.target.name)) dropped.add(id);
-      else uploads.add(definition.target.name);
-    }
-  }
-  const renames = new Map<string, string>();
-  for (const [id, definition] of Object.entries(document.references)) {
-    if (dropped.has(id)) continue;
-    const existing = merged.references[id];
-    let target = id;
-    if (
-      existing !== undefined &&
-      JSON.stringify(existing) !== JSON.stringify(definition)
-    ) {
-      let suffix = 2;
-      while (
-        merged.references[`${id}-${suffix}`] !== undefined ||
-        document.references[`${id}-${suffix}`] !== undefined
-      ) {
-        suffix += 1;
-      }
-      target = `${id}-${suffix}`;
-    }
-    renames.set(id, target);
-    merged.references[target] = definition;
-  }
   for (const segment of document.content) {
     if ("Text" in segment) {
       merged.content.push({ Text: segment.Text });

@@ -4,10 +4,11 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import type { ReferenceDefinition, UserContent } from "../api/types.ts";
 import {
   composerCoreExtensions,
-  editorContentFromUserContent,
-  textFromDocument,
-  userContentFromEditor,
+  draftContentFromEditor,
+  editorContentFromDraft,
+  textFromDraft,
 } from "../ui/composerCore.tsx";
+import type { DraftContent } from "../ui/draftDocument.ts";
 import "./InlineComposerSketch.css";
 
 const fixture: UserContent = {
@@ -48,10 +49,10 @@ const definitions: Record<"file" | "agent", ReferenceDefinition> = {
 };
 
 export function InlineComposerSketch() {
-  const [document, setDocument] = useState<UserContent>(fixture);
+  const [document, setDocument] = useState<DraftContent>(fixture);
   const editor = useEditor({
     extensions: composerCoreExtensions,
-    content: editorContentFromUserContent(fixture),
+    content: editorContentFromDraft(fixture),
     editorProps: {
       attributes: {
         "aria-label": "Inline reference editor",
@@ -61,7 +62,7 @@ export function InlineComposerSketch() {
       },
     },
     onUpdate: ({ editor }) => {
-      const next = userContentFromEditor(editor.getJSON());
+      const next = draftContentFromEditor(editor.getJSON());
       setDocument(next);
     },
   });
@@ -117,7 +118,7 @@ export function InlineComposerSketch() {
         </pre>
       </details>
       <p className="g-intro">
-        Readable spelling: {JSON.stringify(textFromDocument(document))}
+        Readable spelling: {JSON.stringify(textFromDraft(document))}
       </p>
       <p className="g-intro">
         Try typing on either side of a chip, selecting across it, deleting, and

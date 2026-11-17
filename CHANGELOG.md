@@ -11,6 +11,8 @@ one line per feature.
 
 - A composer turn can carry inline references: a user message is one structured document of prose and reference occurrences, submitted as `content`+`references` and rendered to the model with a `references:` block. The web composer edits that document directly, with atomic chips, undo, and reference identity through copy/paste within the session; the TUI recalls such a turn with its references held and puts an edited hold back to its spliced spelling rather than silently flattening them. Both clients show attachments by name beside the readable form.
 
+- A web-composer file is an inline upload at the point it was pasted, dropped, or picked: its chip reads upload status without replacing editor content, a pending or failed upload blocks the send by name, an upload a send named is never deleted as unused, and one this draft never sent is cleaned up only once undo can no longer restore it.
+
 - A composer can ask the control channel for discovery candidates: one directory's entries for a typed path prefix (`GET /v1/discovery/paths`) and the host's sessions for a typed `@` prefix (`GET /v1/discovery/agents`), read from names and metadata only.
 
 - Hosted agents and external MCP clients can read `efference://models` to discover exact model slugs, known prices and capabilities, with combined filters and pagination.

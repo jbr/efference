@@ -2,144 +2,62 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { textDocument } from "../api/document.ts";
 import type { ReferenceDefinition, UserContent } from "../api/types.ts";
-import { editorContentFromUserContent } from "./composerCore.tsx";
 import { Composer, type Recalled } from "./Composer.tsx";
 import { acquireDraft } from "./drafts.ts";
+import {
+  agentDocument,
+  appendToEditor,
+  attachmentOnly,
+  composerText,
+  defaults,
+  editorOf,
+  insertReference,
+  installStorage,
+  mount,
+  recallArrival,
+  setEditorText,
+} from "./composerTestKit.tsx";
 
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-beforeEach(() => {
-  const values = new Map<string, string>();
-  vi.stubGlobal("localStorage", {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => void values.set(key, value),
-    removeItem: (key: string) => void values.delete(key),
-  });
-});
+beforeEach(installStorage);
 afterEach(() => vi.unstubAllGlobals());
 
-const defaults = {
-  recalled: null,
-  pace: null,
-  phase: null,
-  verbs: null,
-  stall: null,
-  retrying: false,
-  gatePending: false,
-  ask: null,
-  cold: null,
-  compactionFailure: null,
-  operations: null,
-  model: "test",
-};
-function mount(
-  send = vi.fn(() => Promise.resolve()),
-  { keyed = true }: { keyed?: boolean } = {},
-) {
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  const render = (id: string, recalled: Recalled | null = null) => {
-    history.replaceState(null, "", `/sessions/${id}/`);
-    act(() =>
-      root.render(
-        keyed ? (
-          <Composer key={id} {...defaults} recalled={recalled} submit={send} />
-        ) : (
-          <Composer {...defaults} recalled={recalled} submit={send} />
-        ),
-      ),
-    );
-  };
-  const close = () => {
-    act(() => root.unmount());
-    host.remove();
-  };
-  return { host, render, close };
-}
-
-type Chain = {
-  focus: (position?: "end" | "start") => Chain;
-  insertContent: (content: unknown) => Chain;
-  selectAll: () => Chain;
-  run: () => void;
-};
-interface LiveEditor {
-  commands: {
-    setContent: (content: unknown, options?: { emitUpdate?: boolean }) => void;
-    undo: () => void;
-    redo: () => void;
-  };
-  getHTML: () => string;
-  chain: () => Chain;
-}
-const editorOf = (host: HTMLElement): LiveEditor => {
-  const element = host.querySelector<HTMLElement & { editor?: LiveEditor }>(
-    ".composer-editor",
-  );
-  if (!element?.editor) throw new Error("composer editor is not mounted");
-  return element.editor;
-};
-const setEditorText = (host: HTMLElement, text: string) => {
-  act(() =>
-    editorOf(host).commands.setContent(
-      editorContentFromUserContent(textDocument(text)),
-    ),
-  );
-};
-const appendToEditor = (host: HTMLElement, text: string) => {
-  act(() =>
-    editorOf(host)
-      .chain()
-      .focus("end")
-      .insertContent({ type: "text", text })
-      .run(),
-  );
-};
-const composerText = (host: HTMLElement): string =>
-  [...host.querySelectorAll(".composer-editor p")]
-    .map((paragraph) => paragraph.textContent ?? "")
-    .join("\n");
-const insertReference = (
-  host: HTMLElement,
-  id: string,
-  definition: ReferenceDefinition,
-) => {
-  act(() =>
-    editorOf(host)
-      .chain()
-      .focus("end")
-      .insertContent({ type: "reference", attrs: { id, definition } })
-      .run(),
-  );
-};
-
-test("composer text and completed attachments return after switching sessions", () => {
+test("composer text and completed attachments return after switching sessions", async () => {
   const a = `draft-${crypto.randomUUID()}`;
   const b = `draft-${crypto.randomUUID()}`;
   const store = acquireDraft(`/sessions/${a}`);
-  store.setText("a's unsent text");
-  store.restore([
-    {
-      name: "note.txt",
-      path: "/stored/note.txt",
-      kind: { Binary: { bytes: 5 } },
+  store.setContent({
+    text: "a's unsent text",
+    document: {
+      content: [{ Text: "a's unsent text" }, { Reference: "r1" }],
+      references: {
+        r1: {
+          label: "note.txt",
+          target: {
+            type: "attachment",
+            name: "note.txt",
+            path: "/stored/note.txt",
+            kind: { Binary: { bytes: 5 } },
+          },
+        },
+      },
     },
-  ]);
+  });
   const view = mount();
   try {
     view.render(a);
+    await act(async () => {});
     expect(composerText(view.host)).toBe("a's unsent text");
-    expect(view.host.querySelector(".attachment-name")?.textContent).toBe(
+    expect(view.host.querySelector(".reference-chip")?.textContent).toContain(
       "note.txt",
     );
     view.render(b);
     expect(composerText(view.host)).toBe("");
-    expect(view.host.querySelector(".attachments")).toBeNull();
+    expect(view.host.querySelector(".reference-chip")).toBeNull();
     view.render(a);
+    await act(async () => {});
     expect(composerText(view.host)).toBe("a's unsent text");
-    expect(view.host.querySelector(".attachment-name")?.textContent).toBe(
+    expect(view.host.querySelector(".reference-chip")?.textContent).toContain(
       "note.txt",
     );
   } finally {
@@ -225,7 +143,7 @@ test("a plain send keeps the trimmed path and exact multiline storage", async ()
     await act(async () =>
       view.host.querySelector<HTMLFormElement>("form")!.requestSubmit(),
     );
-    expect(send).toHaveBeenCalledExactlyOnceWith("spaced", []);
+    expect(send).toHaveBeenCalledExactlyOnceWith("spaced", [], null);
   } finally {
     view.close();
   }
@@ -415,42 +333,10 @@ test("desktop Enter sends, Shift-Enter and a composing Enter do not", async () =
         }),
       ),
     );
-    expect(send).toHaveBeenCalledExactlyOnceWith("send me", []);
+    expect(send).toHaveBeenCalledExactlyOnceWith("send me", [], null);
   } finally {
     view.close();
   }
-});
-
-const recallArrival = (name: string) => ({
-  name,
-  path: `att/composer/${name}`,
-  kind: { Binary: { bytes: 3 } },
-});
-
-const agentDocument = (): NonNullable<Recalled["document"]> => ({
-  content: [
-    { Text: "look at " },
-    { Reference: "a" },
-    { Text: " please" },
-    { Reference: "b" },
-  ],
-  references: {
-    a: { label: "reviewer", target: { type: "agent", session: "castback" } },
-    b: {
-      label: "shot.png",
-      target: { type: "attachment", ...recallArrival("shot.png") },
-    },
-  },
-});
-
-const attachmentOnly = (): NonNullable<Recalled["document"]> => ({
-  content: [{ Reference: "r1" }],
-  references: {
-    r1: {
-      label: "shot.png",
-      target: { type: "attachment", ...recallArrival("shot.png") },
-    },
-  },
 });
 
 test("a second recall keeps an attachment-only document inline and unstaged", () => {
@@ -466,7 +352,7 @@ test("a second recall keeps an attachment-only document inline and unstaged", ()
     });
     expect(store.snapshot().text).toBe("");
     expect(store.snapshot().document).not.toBeNull();
-    expect(store.snapshot().staged).toEqual([]);
+    expect(store.snapshot().uploads).toEqual([]);
     expect(view.host.querySelectorAll(".reference-chip")).toHaveLength(1);
     view.render(id, {
       text: "more",
@@ -615,7 +501,7 @@ test("a successful structured send clears its document, so the next text is ordi
     await act(async () =>
       view.host.querySelector<HTMLFormElement>("form")!.requestSubmit(),
     );
-    expect(send.mock.calls[1]).toEqual(["plain", []]);
+    expect(send.mock.calls[1]).toEqual(["plain", [], null]);
   } finally {
     view.close();
   }

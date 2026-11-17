@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The components that draw API images — a sent attachment's thumbnail, a
-// staged chip's, a result's picture — each resolve their URL through the shared
+// draft upload's, a result's picture — each resolve their URL through the shared
 // cache (useApiImage.ts), and hand the lightbox the URL rather than what they
 // resolved, so the viewer's hold on the bytes is its own. A result's picture
 // also waits for its box to come near the viewport before it asks.
@@ -11,8 +11,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Arrival } from "../api/types.ts";
 import { LightboxHost } from "./Lightbox.tsx";
 import { closeLightbox } from "./lightbox.ts";
-import { SentAttachments, StagedAttachments } from "./Attachments.tsx";
-import type { Staged } from "./staging.ts";
+import { AttachmentThumbnail, SentAttachments } from "./Attachments.tsx";
 import { ResultImages } from "./ToolBlocks.tsx";
 
 vi.hoisted(() => {
@@ -167,51 +166,23 @@ test("the lightbox holds a sent image's bytes itself, so the thumbnail can leave
   await view.unmount();
 });
 
-test("a staged chip draws its local preview as given and its stored bytes by fetch", async () => {
-  const chip = (key: string, preview: string | null): Staged => ({
-    key,
-    label: key,
-    preview,
-    status: "ready",
-    attachment: picture,
-  });
+test("an upload's thumbnail draws its local preview as given and its stored bytes by fetch", async () => {
   const view = mount();
-  await view.render(
-    <StagedAttachments
-      staged={[
-        chip("local", "blob:local-preview"),
-        chip("stored", "/v1/attachments/pic.png"),
-        chip("note", null),
-      ]}
-      onRemove={() => {}}
-      onInline={() => {}}
-    />,
-  );
-  expect(view.thumbnails()).toEqual(["blob:local-preview", "blob:image-1"]);
+  await view.render(<AttachmentThumbnail preview="blob:local-preview" />);
+  expect(view.thumbnails()).toEqual(["blob:local-preview"]);
+  // The preview is the draft store's object URL; the component does not revoke
+  // it, and the store is what owns that lifetime.
+  expect(fetchMock).not.toHaveBeenCalled();
+
+  await view.render(<AttachmentThumbnail preview="/v1/attachments/pic.png" />);
   expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
     "/v1/attachments/pic.png",
   ]);
   await view.unmount();
-  // The local preview belongs to the draft store, which revokes it.
-  expect(revokeObjectURL.mock.calls).toEqual([["blob:image-1"]]);
 });
 
-test("a staged chip keeps drawing its local preview until the stored bytes arrive", async () => {
-  const row = (preview: string) => (
-    <StagedAttachments
-      staged={[
-        {
-          key: "k",
-          label: "pic.png",
-          preview,
-          status: "ready",
-          attachment: picture,
-        },
-      ]}
-      onRemove={() => {}}
-      onInline={() => {}}
-    />
-  );
+test("a draft upload's thumbnail keeps its local preview until the stored bytes arrive", async () => {
+  const row = (preview: string) => <AttachmentThumbnail preview={preview} />;
   let land!: (response: Response) => void;
   fetchMock.mockImplementation(
     () =>

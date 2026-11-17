@@ -5,14 +5,16 @@ import { Text } from "@tiptap/extension-text";
 import { HardBreak } from "@tiptap/extension-hard-break";
 import { UndoRedo } from "@tiptap/extensions";
 import { ReactNodeViewRenderer } from "@tiptap/react";
+import { isReferenceDefinition, textDocument } from "../api/document.ts";
+import type { ReferenceDefinition } from "../api/types.ts";
+import type { DraftStore } from "./drafts.ts";
 import {
-  documentReadable,
-  isReferenceDefinition,
-  normalizeDocument,
-  textDocument,
-} from "../api/document.ts";
-import type { ReferenceDefinition, UserContent } from "../api/types.ts";
+  draftReadable,
+  normalizeDraftContent,
+  type DraftContent,
+} from "./draftDocument.ts";
 import { ComposerChip } from "./ComposerChip.tsx";
+import { ComposerUploadChip } from "./ComposerUploadChip.tsx";
 
 /** What the clipboard's plain-text flavor spells for a definition. An
  * attachment has no textual capability, but its name stays readable. */
@@ -70,8 +72,47 @@ export const ComposerReference = Node.create({
   },
 });
 
-/** The chat schema. Completion and other composer features add their own
- * extensions on top; no module here exports vendor JSON as a contract. */
+/** An inline upload occurrence: a draft-local key, no wire definition until
+ * the daemon has stored the file. It has no HTML parse rule, so pasted or
+ * external HTML can never mint one; the node view reads its status from the
+ * draft store, and only a change to the draft's content (not an upload
+ * landing) touches the document. */
+export const ComposerUpload = Node.create<{ store: DraftStore | null }>({
+  name: "upload",
+  inline: true,
+  group: "inline",
+  atom: true,
+  selectable: true,
+  addOptions() {
+    return { store: null };
+  },
+  addAttributes() {
+    return { key: { default: null } };
+  },
+  parseHTML() {
+    return [];
+  },
+  renderHTML({ node }) {
+    return [
+      "span",
+      { class: "upload-clipboard-label" },
+      this.options.store?.uploadLabel(node.attrs.key as string) ?? "attachment",
+    ];
+  },
+  renderText({ node }) {
+    return (
+      this.options.store?.uploadLabel(node.attrs.key as string) ?? "attachment"
+    );
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ComposerUploadChip);
+  },
+});
+
+/** The chat schema. The editor adds `ComposerUpload` configured with its
+ * store (ComposerEditor.tsx); tests that only project content need neither.
+ * Completion and other composer features add their own extensions on top; no
+ * module here exports vendor JSON as a contract. */
 export const composerCoreExtensions = [
   Document,
   Paragraph,
@@ -82,10 +123,9 @@ export const composerCoreExtensions = [
 ];
 
 /** `"a\n\nb"` loads as three paragraphs, preserving blank lines; a document's
- * newlines are the only textual boundary UserContent has. */
-export function editorContentFromUserContent(
-  content: UserContent,
-): JSONContent {
+ * newlines are the only textual boundary its content has. An upload node
+ * carries its stable key. */
+export function editorContentFromDraft(content: DraftContent): JSONContent {
   const paragraphs: JSONContent[] = [];
   let inline: JSONContent[] = [];
   const flush = () => {
@@ -102,6 +142,8 @@ export function editorContentFromUserContent(
         if (index > 0) flush();
         if (line !== "") inline.push({ type: "text", text: line });
       });
+    } else if ("Upload" in segment) {
+      inline.push({ type: "upload", attrs: { key: segment.Upload } });
     } else {
       const definition = content.references[segment.Reference];
       if (definition === undefined) continue;
@@ -116,10 +158,17 @@ export function editorContentFromUserContent(
 }
 
 /** The editor is authoritative: this walks its current JSON, mints an id for
- * any node that lacks one, and normalizes attachment occurrences. */
-export function userContentFromEditor(json: JSONContent): UserContent {
-  const content: UserContent = { content: [], references: {} };
+ * any reference that lacks one, normalizes attachment occurrences, and keeps
+ * an upload occurrence as a draft segment unless `uploadText` names it —
+ * which is the clipboard's projection, where it becomes its readable file so
+ * a copy carries one occurrence rather than a second identity. */
+export function contentFromEditor(
+  json: JSONContent,
+  uploadText: (key: string) => string | undefined,
+): DraftContent {
+  const content: DraftContent = { content: [], references: {} };
   const attachments = new Set<string>();
+  const uploadKeys = new Set<string>();
 
   const text = (value: string) => {
     if (value === "") return;
@@ -142,10 +191,20 @@ export function userContentFromEditor(json: JSONContent): UserContent {
     content.references[id] = definition;
   };
 
+  const upload = (node: JSONContent) => {
+    const key = node.attrs?.key as string | undefined;
+    if (!key || uploadKeys.has(key)) return;
+    uploadKeys.add(key);
+    const readable = uploadText(key);
+    if (readable !== undefined) text(readable);
+    else content.content.push({ Upload: key });
+  };
+
   const visit = (node: JSONContent) => {
     if (node.type === "text") text(node.text ?? "");
     else if (node.type === "hardBreak") text("\n");
     else if (node.type === "reference") reference(node);
+    else if (node.type === "upload") upload(node);
     else if (node.type === "doc") {
       node.content?.forEach((child, index) => {
         if (index > 0) text("\n");
@@ -157,15 +216,19 @@ export function userContentFromEditor(json: JSONContent): UserContent {
   };
 
   visit(json);
-  return normalizeDocument(content);
+  return normalizeDraftContent(content);
 }
 
+/** The editor's content as the draft holds it: uploads stay occurrences. */
+export const draftContentFromEditor = (json: JSONContent): DraftContent =>
+  contentFromEditor(json, () => undefined);
+
 /** The draft's text spelling, shared with the transcript's pending echo. */
-export const textFromDocument = (content: UserContent): string =>
-  documentReadable(content);
+export const textFromDraft = (content: DraftContent): string =>
+  draftReadable(content);
 
 /** The store's plain text as the editor's initial document. */
 export const initialDocument = (
-  document: UserContent | null,
+  document: DraftContent | null,
   text: string,
-): UserContent => document ?? textDocument(text);
+): DraftContent => document ?? textDocument(text);
