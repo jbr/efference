@@ -8,7 +8,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, expect, test, vi } from "vitest";
-import { deriveBase, deriveRoute } from "./base.ts";
+import { deriveBase, deriveRoute, sessionId } from "./base.ts";
 import {
   claimSignIn,
   continueLoop,
@@ -88,4 +88,11 @@ test("control paths join onto the base; the listener's own do not", async () => 
   history.pushState({}, "", "/");
   await continueLoop();
   expect(urls[4]).toBe("/v1/loop/continue");
+});
+
+test("session identity can be bound to an explicit base across navigation", () => {
+  history.pushState({}, "", "/sessions/current/");
+  expect(sessionId()).toBe("current");
+  expect(sessionId("/sessions/origin")).toBe("origin");
+  expect(sessionId("")).toBeNull();
 });

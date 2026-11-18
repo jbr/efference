@@ -3,7 +3,7 @@
 // jsdom's missing layout, and the events a test drives paste, copy and drop
 // with.
 
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { vi } from "vitest";
 import { textDocument } from "../api/document.ts";
@@ -62,7 +62,9 @@ export const defaults = {
   model: "test",
 };
 export function mount(
-  send = vi.fn(() => Promise.resolve()),
+  send: ComponentProps<typeof Composer>["submit"] = vi.fn(() =>
+    Promise.resolve(),
+  ),
   { keyed = true }: { keyed?: boolean } = {},
 ) {
   const host = document.createElement("div");

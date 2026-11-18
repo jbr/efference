@@ -1891,6 +1891,25 @@ row are wired around the editor rather than on a textarea. The editor is keyed b
 session base, so switching sessions does not carry the previous draft's
 selection or undo history.
 
+Composer completion is matched at a collapsed caret by `ui/completionMatch.ts`:
+`./`, `../`, `~/`, and absolute path prefixes browse files; `@` searches session
+handles. Matching requires a token boundary and excludes URLs, inline code and
+fenced code. `ui/useComposerCompletion.ts` debounces discovery, cancels stale
+lookups, and binds requests and self-filtering to the originating session base.
+The current session is omitted from its own agent suggestions. The popup uses
+`ui/ComposerReferences.tsx`; path candidates retain the server's absolute target,
+kind and original spelling, and agent candidates retain the exact session ID.
+
+Arrow keys select a row. Tab and Enter accept the highlighted file, directory,
+or session as a reference, never submitting while the menu is open; loading,
+empty and failed lookups also consume these keys. Paragraph boundaries and
+Shift-Enter hard breaks both delimit completion tokens. Escape dismisses the current
+query. IME confirmation bypasses both acceptance and submission. Pointer acceptance
+retains editor focus. Touch-first menus omit physical-keyboard hints. An accepted filesystem reference requests read
+access by default; its existing chip control can add write. Discovery and draft
+acceptance change no effective permissions: grants are applied at admission.
+Agent references send no notification. Lookup failure leaves the draft unchanged.
+
 The controls strip is gone; its last resident, the usage line, lives in the
 top bar. A non-`live` connection replaces the turn readout in the composer footer.
 

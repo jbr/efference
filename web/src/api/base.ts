@@ -50,8 +50,8 @@ export const apiBase = (): string => deriveBase(pathname());
 
 /** The session id the page is showing, or `null` when the base is the root — in
  * which case *which* session is a question only the endpoint answers. */
-export const sessionId = (): string | null =>
-  apiBase() === "" ? null : apiBase().slice("/sessions/".length);
+export const sessionId = (base = apiBase()): string | null =>
+  base === "" ? null : base.slice("/sessions/".length);
 
 /** The client route this page loaded at. */
 export const clientRoute = (): string => deriveRoute(pathname());

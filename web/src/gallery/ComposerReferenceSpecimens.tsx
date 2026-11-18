@@ -28,20 +28,6 @@ const paths: CompletionOption[] = [
     kind: "file",
   },
 ];
-const children: CompletionOption[] = [
-  {
-    id: "./web/src/ui/",
-    label: "ui/",
-    detail: "./web/src/ · directory",
-    kind: "directory",
-  },
-  {
-    id: "./web/src/main.tsx",
-    label: "main.tsx",
-    detail: "./web/src/ · file",
-    kind: "file",
-  },
-];
 const agents: CompletionOption[] = [
   {
     id: "@new-lilac",
@@ -61,7 +47,6 @@ export function CompletionSketch() {
   const id = useId();
   const [text, setText] = useState("Please check ./web/");
   const [mode, setMode] = useState<"paths" | "agents">("paths");
-  const [level, setLevel] = useState(0);
   const [selected, setSelected] = useState(0);
   const [open, setOpen] = useState(true);
   const [chips, setChips] = useState<(CompletionOption & { write: boolean })[]>(
@@ -70,7 +55,7 @@ export function CompletionSketch() {
   const [notice, setNotice] = useState(
     "Fixture only — no messages or permissions are changed.",
   );
-  const options = mode === "agents" ? agents : level === 0 ? paths : children;
+  const options = mode === "agents" ? agents : paths;
   function accept(index: number) {
     const option = options[index];
     setChips((current) => [
@@ -83,7 +68,6 @@ export function CompletionSketch() {
   }
   function reset(next: "paths" | "agents") {
     setMode(next);
-    setLevel(0);
     setSelected(0);
     setOpen(true);
     setText(next === "paths" ? "Please check ./web/" : "Ask @");
@@ -133,35 +117,16 @@ export function CompletionSketch() {
                       options.length) %
                     options.length,
                 );
-              } else if (event.key === "Enter") {
+              } else if (
+                event.key === "Enter" ||
+                (event.key === "Tab" && !event.shiftKey)
+              ) {
                 event.preventDefault();
                 accept(selected);
               } else if (event.key === "Escape") {
                 event.preventDefault();
                 setOpen(false);
                 setNotice("Dismissed without accepting a reference.");
-              } else if (event.key === "Tab") {
-                event.preventDefault();
-                const option = options[selected];
-                setText(
-                  `${mode === "paths" ? "Please check " : "Ask "}${option.id}`,
-                );
-                if (
-                  option.kind === "directory" &&
-                  level === 0 &&
-                  selected === 0
-                ) {
-                  setLevel(1);
-                  setSelected(0);
-                  setNotice(
-                    "Completed src/. Now browsing its children; no reference accepted.",
-                  );
-                } else {
-                  setOpen(false);
-                  setNotice(
-                    "Completed spelling only; no reference accepted. This sketch has one child listing.",
-                  );
-                }
               }
             }}
           />

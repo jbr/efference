@@ -262,3 +262,53 @@
   background: color-mix(in srgb, var(--lilac) 15%, white);
   box-shadow: inset 2px 0 var(--lilac-strong);
 }
+
+/* The editor keeps its own scrolling surface; the menu is a sibling so it
+   remains outside that clipping region. */
+.composer-editor-shell {
+  position: relative;
+}
+
+.composer-editor-shell > div:last-child {
+  display: flex;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.composer-completion-popup {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 0.5rem);
+  left: 0;
+  width: min(100%, 40rem);
+  max-height: 45dvh;
+  overflow-y: auto;
+  border: 1px solid var(--border-control);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow:
+    var(--control-halo),
+    0 8px 30px rgb(0 0 0 / 0.2);
+}
+
+.composer-completion-popup .reference-completion {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.composer-completion-popup [role="listbox"] {
+  max-height: min(14rem, 26dvh);
+  overflow-y: auto;
+}
+
+.composer-completion-disclosure {
+  padding: 0.45rem 0.8rem;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--fg-dim);
+  font: 0.7rem/1.5 var(--font-ui);
+}
+
+:root[data-theme="lilac"] .composer-completion-popup {
+  box-shadow: 0 5px 20px rgb(65 41 89 / 0.12);
+}

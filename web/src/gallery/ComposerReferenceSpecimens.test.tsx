@@ -33,14 +33,11 @@ function mount() {
   return { host, input, key };
 }
 
-test("Tab completes a directory segment without accepting a reference", () => {
-  const { host, input, key } = mount();
+test("Tab accepts the highlighted directory as a reference", () => {
+  const { host, key } = mount();
   expect(key("Tab").defaultPrevented).toBe(true);
-  expect(input.value).toBe("Please check ./web/src/");
-  expect(host.querySelector('[role="listbox"]')?.textContent).toContain(
-    "main.tsx",
-  );
-  expect(host.querySelector(".reference-chip")).toBeNull();
+  expect(host.querySelector(".reference-chip-label")?.textContent).toBe("src/");
+  expect(host.querySelector('[role="listbox"]')).toBeNull();
 });
 
 test("Enter accepts the highlighted directory without sending", () => {

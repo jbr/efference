@@ -25,6 +25,9 @@ import {
 } from "./referenceClipboard.ts";
 import { pastesAsFile } from "./staging.ts";
 import type { DraftStore } from "./drafts.ts";
+import { useId } from "react";
+import { CompletionMenu } from "./ComposerReferences.tsx";
+import { useComposerCompletion } from "./useComposerCompletion.ts";
 
 export interface ComposerEditorHandle {
   focus: () => void;
@@ -88,6 +91,8 @@ export const ComposerEditor = forwardRef<
   // creation, so it reads the instance through a ref rather than the render
   // that built those handlers.
   const editorRef = useRef<Editor | null>(null);
+  const completionKeys = useRef<(event: KeyboardEvent) => boolean>(() => false);
+  const completionId = useId();
 
   const editor = useEditor(
     {
@@ -109,6 +114,9 @@ export const ComposerEditor = forwardRef<
         },
         handleKeyDown(view, event) {
           const current = handlers.current;
+          if (event.isComposing || view.composing || event.keyCode === 229)
+            return false;
+          if (completionKeys.current(event)) return true;
           if (event.key === "Escape" && current.narrow) {
             current.onEscape();
             return true;
@@ -213,6 +221,42 @@ export const ComposerEditor = forwardRef<
     [base],
   );
 
+  const completion = useComposerCompletion(editor, base);
+  completionKeys.current = completion.keyDown;
+  const menu = completion.snapshot;
+  useEffect(() => {
+    const element = editor?.view.dom;
+    if (!element) return;
+    element.setAttribute("aria-autocomplete", "list");
+    element.setAttribute("aria-expanded", String(menu !== null));
+    if (menu) {
+      element.setAttribute("aria-controls", completionId);
+      if (menu.options.length)
+        element.setAttribute(
+          "aria-activedescendant",
+          `${completionId}-${menu.selected}`,
+        );
+      else element.removeAttribute("aria-activedescendant");
+    } else {
+      element.removeAttribute("aria-controls");
+      element.removeAttribute("aria-activedescendant");
+    }
+  }, [editor, menu, completionId]);
+  useEffect(() => {
+    if (!menu?.options.length || !editor) return;
+    const shell = editor.view.dom.closest(".composer-editor-shell");
+    const row = shell?.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    );
+    const list = row?.parentElement;
+    if (!row || !list) return;
+    const bounds = list.getBoundingClientRect();
+    const item = row.getBoundingClientRect();
+    if (item.bottom > bounds.bottom)
+      list.scrollTop += item.bottom - bounds.bottom;
+    else if (item.top < bounds.top) list.scrollTop -= bounds.top - item.top;
+  }, [editor, menu]);
+
   // The placeholder is a function of a ref, so an ask arriving while the
   // editor is empty needs a transaction to rebuild the decoration.
   useEffect(() => {
@@ -270,5 +314,28 @@ export const ComposerEditor = forwardRef<
   );
 
   editorRef.current = editor;
-  return <EditorContent editor={editor} />;
+  return (
+    <div className="composer-editor-shell">
+      {menu && (
+        <div className="composer-completion-popup">
+          <CompletionMenu
+            id={completionId}
+            options={menu.options}
+            selected={menu.selected}
+            state={menu.state}
+            kind={menu.match.kind === "agents" ? "agent" : "file"}
+            onHighlight={completion.highlight}
+            onAccept={completion.accept}
+          />
+          <div className="composer-completion-disclosure">
+            {menu.match.kind === "paths"
+              ? "Host files · accepting requests read access when sent; write is optional."
+              : "Reference a session · no notification is sent."}
+            {menu.truncated && " More matches — type to narrow."}
+          </div>
+        </div>
+      )}
+      <EditorContent editor={editor} />
+    </div>
+  );
 });

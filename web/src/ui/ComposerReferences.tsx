@@ -76,7 +76,9 @@ export function CompletionMenu({
   onHighlight,
   onAccept,
   state = "ready",
+  kind,
 }: {
+  kind?: ReferenceKind;
   id: string;
   options: CompletionOption[];
   selected: number;
@@ -85,10 +87,11 @@ export function CompletionMenu({
   state?: "ready" | "loading" | "empty" | "error";
 }) {
   const caption = useId();
+  const agents = (kind ?? options[0]?.kind) === "agent";
   return (
     <div className="reference-completion">
       <div className="reference-completion-heading" id={caption}>
-        {options[0]?.kind === "agent" ? "Sessions" : "Files and directories"}
+        {agents ? "Sessions" : "Files and directories"}
         <span>reference completion</span>
       </div>
       <div
@@ -108,6 +111,7 @@ export function CompletionMenu({
               className="reference-completion-row"
               tabIndex={-1}
               onPointerMove={() => onHighlight(index)}
+              onPointerDown={(event) => event.preventDefault()}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => onAccept(index)}
             >
@@ -130,8 +134,12 @@ export function CompletionMenu({
             {state === "loading"
               ? "Looking up candidates…"
               : state === "empty"
-                ? "No matches. Keep typing to change the path."
-                : "Could not list this location. Your draft is unchanged."}
+                ? agents
+                  ? "No other sessions match. Keep typing to change the search."
+                  : "No matches. Keep typing to change the path."
+                : agents
+                  ? "Could not list sessions. Your draft is unchanged."
+                  : "Could not list this location. Your draft is unchanged."}
           </p>
         )}
       </div>
@@ -141,10 +149,7 @@ export function CompletionMenu({
           <kbd>↓</kbd> browse
         </span>
         <span>
-          <kbd>Tab</kbd> complete segment
-        </span>
-        <span>
-          <kbd>Enter</kbd>{" "}
+          <kbd>Tab</kbd> / <kbd>Enter</kbd>{" "}
           {options[selected]?.kind === "directory"
             ? "reference directory"
             : "reference"}
