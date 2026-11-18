@@ -30,6 +30,8 @@ one line per feature.
 
 ### Fixed
 
+- Inline composer image uploads use bounded thumbnails rather than their intrinsic image dimensions.
+
 - Both permission spotters receive an explicit explanation of managed worktree path mapping, distinguishing project grants from the session-storage deny.
 
 - Archiving a session removed a managed worktree other sessions still worked in (the hand-off case): a worktree is now shared occupancy — any session whose working directory sits in it holds it, it is retired at the last occupant leaving, and any former occupant restores it at its original path on resume.

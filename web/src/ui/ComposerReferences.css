@@ -28,53 +28,6 @@
 
 .reference-chip .reference-chip-access,
 .reference-chip .reference-chip-remove {
-  /* An upload chip carries a thumbnail, a filename, a status detail and two
-   actions. Wrapping keeps the actions on the chip at 390px, and the label
-   ellipsizes rather than pushing them off the edge. */
-  .upload-chip {
-    flex-wrap: wrap;
-    row-gap: 0.1rem;
-  }
-
-  .upload-chip img {
-    width: 1.1rem;
-    height: 1.1rem;
-    border-radius: 3px;
-    object-fit: cover;
-  }
-
-  .upload-chip .reference-chip-label {
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-
-  .upload-chip .upload-detail {
-    flex: 1 1 6rem;
-    min-width: 0;
-    overflow: hidden;
-    color: var(--fg-muted);
-    font-size: 0.72rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* A failure's reason is the chip's only explanation of itself: it takes a
-   row of its own and wraps instead of being cut off. */
-  .upload-chip.failed {
-    border-color: var(--warn);
-  }
-
-  .upload-chip.failed .upload-detail {
-    flex-basis: 100%;
-    overflow-wrap: anywhere;
-    color: var(--warn);
-    white-space: normal;
-  }
-
-  :root[data-theme="lilac"] .reference-chip.upload-chip.failed {
-    border-color: var(--warn);
-  }
-
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
@@ -82,6 +35,53 @@
   color: var(--fg-dim);
   padding: 0.05rem 0.25rem;
   font-size: 0.7rem;
+}
+
+/* An upload chip carries a thumbnail, a filename, a status detail and two
+ actions. Wrapping keeps the actions on the chip at 390px, and the label
+ ellipsizes rather than pushing them off the edge. */
+.upload-chip {
+  flex-wrap: wrap;
+  row-gap: 0.1rem;
+}
+
+.upload-chip img {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+.upload-chip .reference-chip-label {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.upload-chip .upload-detail {
+  flex: 1 1 6rem;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A failure's reason is the chip's only explanation of itself: it takes a
+ row of its own and wraps instead of being cut off. */
+.upload-chip.failed {
+  border-color: var(--warn);
+}
+
+.upload-chip.failed .upload-detail {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+  color: var(--warn);
+  white-space: normal;
+}
+
+:root[data-theme="lilac"] .reference-chip.upload-chip.failed {
+  border-color: var(--warn);
 }
 
 .reference-chip .reference-chip-access {

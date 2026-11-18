@@ -27,11 +27,12 @@ test("the upload specimen renders every chip state at both widths", async () => 
   // The ready fixture answers on a microtask; the store re-renders the chips.
   await act(async () => {});
   const chips = [...host.querySelectorAll<HTMLElement>(".upload-chip")];
-  // Five states in the full-width editor and the same five at phone width.
-  expect(chips).toHaveLength(10);
-  // Only the never-answering upload and the refused one stay in their states;
+  // Six states in the full-width editor and the same six at phone width.
+  expect(chips).toHaveLength(12);
+  expect(host.querySelectorAll(".upload-chip img")).toHaveLength(2);
+  // The never-answering file/image uploads and refused file keep their states;
   // the ready, pasted and long-name files land.
-  expect(host.querySelectorAll(".upload-chip.uploading")).toHaveLength(2);
+  expect(host.querySelectorAll(".upload-chip.uploading")).toHaveLength(4);
   expect(host.querySelectorAll(".upload-chip.ready")).toHaveLength(6);
   expect(host.querySelectorAll(".upload-chip.failed")).toHaveLength(2);
   // Only the staged paste has an inline action, in each editor.

@@ -36,6 +36,15 @@ function uploadFixture() {
     store.uploadFile(file, pastedText);
   const pending = upload(new File([""], "pending-scan.pdf"));
   const ready = upload(new File([""], "ready-notes.txt"));
+  const image = upload(
+    new File(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1179" height="2556"><rect width="1179" height="2556" fill="#8973ac"/><circle cx="590" cy="900" r="400" fill="#e8dff3"/></svg>',
+      ],
+      "pending-portrait-preview.svg",
+      { type: "image/svg+xml" },
+    ),
+  );
   const failed = upload(new File([""], "failed-drawing.dwg"));
   const pasted = upload(
     new File([""], "paste.txt", { type: "text/plain" }),
@@ -53,6 +62,8 @@ function uploadFixture() {
       { Upload: pending },
       { Text: " · ready: " },
       { Upload: ready },
+      { Text: " · image: " },
+      { Upload: image },
       { Text: " · failed: " },
       { Upload: failed },
       { Text: " · long paste: " },
