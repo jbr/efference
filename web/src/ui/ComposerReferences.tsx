@@ -1,4 +1,4 @@
-import { useId } from "react";
+import type { ReactNode } from "react";
 import "./ComposerReferences.css";
 
 // Composer reference presentation (docs/web-client.md). The gallery exercises
@@ -9,6 +9,7 @@ export interface CompletionOption {
   id: string;
   label: string;
   detail: string;
+  insertFolder?: boolean;
   kind: ReferenceKind;
 }
 
@@ -50,11 +51,31 @@ export function ReferenceChip({
         <button
           type="button"
           className="reference-chip-access"
+          title={write ? "Read and write" : "Read only"}
           aria-label={`Allow write access to ${label}`}
           aria-pressed={write}
           onClick={() => onWriteChange?.(!write)}
         >
-          {write ? "read + write" : "read"}
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            {write ? (
+              <path d="m2.5 13.5 1-3.5L11 2.5a1 1 0 0 1 1.4 0l1.1 1.1a1 1 0 0 1 0 1.4L6 12.5z M10 3.5l2.5 2.5" />
+            ) : (
+              <>
+                <path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z" />
+                <circle cx="8" cy="8" r="1.75" />
+              </>
+            )}
+          </svg>
         </button>
       )}
       <button
@@ -66,6 +87,36 @@ export function ReferenceChip({
         ×
       </button>
     </span>
+  );
+}
+
+function CompletionIcon({ kind }: { kind: ReferenceKind }) {
+  if (kind !== "file" && kind !== "directory") return <Kind kind={kind} />;
+  return (
+    <svg
+      className="reference-kind"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {kind === "directory" ? (
+        <path d="M1.5 4h4.7l1.5 1.6h6.8v7.2h-13z" />
+      ) : (
+        <path d="M4 1.5h5l3 3v10H4z M9 1.5v3h3 M6 8h4 M6 10.5h4" />
+      )}
+    </svg>
+  );
+}
+
+export function CompletionTray({ children }: { children: ReactNode }) {
+  return (
+    <div className="composer-completion-anchor col">
+      <div className="composer-completion-popup">{children}</div>
+    </div>
   );
 }
 
@@ -86,50 +137,58 @@ export function CompletionMenu({
   onAccept: (index: number) => void;
   state?: "ready" | "loading" | "empty" | "error";
 }) {
-  const caption = useId();
   const agents = (kind ?? options[0]?.kind) === "agent";
   return (
     <div className="reference-completion">
-      <div className="reference-completion-heading" id={caption}>
-        {agents ? "Sessions" : "Files and directories"}
-        <span>reference completion</span>
-      </div>
+      {agents && <div className="reference-completion-heading">Sessions</div>}
       <div
         id={id}
         role="listbox"
-        aria-labelledby={caption}
+        aria-label={agents ? "Sessions" : "Host files"}
         aria-busy={state === "loading"}
       >
-        {state === "ready" ? (
-          options.map((option, index) => (
-            <button
-              type="button"
-              role="option"
-              id={`${id}-${index}`}
-              key={option.id}
-              aria-selected={selected === index}
-              className="reference-completion-row"
-              tabIndex={-1}
-              onPointerMove={() => onHighlight(index)}
-              onPointerDown={(event) => event.preventDefault()}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => onAccept(index)}
-            >
-              <Kind kind={option.kind} />
-              <span className="reference-completion-copy">
+        {options.map((option, index) => (
+          <button
+            type="button"
+            role="option"
+            id={`${id}-${index}`}
+            key={option.id}
+            aria-selected={selected === index}
+            aria-label={
+              option.insertFolder ? `${option.label}, insert folder` : undefined
+            }
+            className={`reference-completion-row selection-row${selected === index ? " selected" : ""}`}
+            tabIndex={-1}
+            onPointerMove={() => onHighlight(index)}
+            onPointerDown={(event) => event.preventDefault()}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onAccept(index)}
+          >
+            <CompletionIcon kind={option.kind} />
+            <span className="reference-completion-copy">
+              {option.insertFolder ? (
+                <bdi className="reference-completion-label reference-completion-folder-path">
+                  {option.label}
+                </bdi>
+              ) : (
                 <span className="reference-completion-label">
                   {option.label}
                 </span>
+              )}
+              {agents && (
                 <span className="reference-completion-detail">
                   {option.detail}
                 </span>
+              )}
+            </span>
+            {option.kind === "directory" && !option.insertFolder && (
+              <span className="reference-completion-next" aria-hidden="true">
+                ›
               </span>
-              <span className="reference-completion-action">
-                {option.kind === "directory" ? "directory" : option.kind}
-              </span>
-            </button>
-          ))
-        ) : (
+            )}
+          </button>
+        ))}
+        {state !== "ready" && (
           <p className="reference-completion-note" role="status">
             {state === "loading"
               ? "Looking up candidates…"
@@ -142,21 +201,6 @@ export function CompletionMenu({
                   : "Could not list this location. Your draft is unchanged."}
           </p>
         )}
-      </div>
-      <div className="reference-completion-help">
-        <span>
-          <kbd>↑</kbd>
-          <kbd>↓</kbd> browse
-        </span>
-        <span>
-          <kbd>Tab</kbd> / <kbd>Enter</kbd>{" "}
-          {options[selected]?.kind === "directory"
-            ? "reference directory"
-            : "reference"}
-        </span>
-        <span>
-          <kbd>Esc</kbd> dismiss
-        </span>
       </div>
     </div>
   );

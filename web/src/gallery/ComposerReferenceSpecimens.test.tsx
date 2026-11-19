@@ -33,33 +33,41 @@ function mount() {
   return { host, input, key };
 }
 
-test("Tab accepts the highlighted directory as a reference", () => {
-  const { host, key } = mount();
+test("Tab opens a folder, then inserts the selected file reference", () => {
+  const { host, input, key } = mount();
   expect(key("Tab").defaultPrevented).toBe(true);
-  expect(host.querySelector(".reference-chip-label")?.textContent).toBe("src/");
+  expect(input.value).toBe("Please check ./web/src/");
+  expect(host.querySelector(".reference-chip")).toBeNull();
+  expect(host.querySelector('[aria-selected="true"]')?.textContent).toBe(
+    "/home/demo/project/web/src",
+  );
+  key("ArrowDown");
+  expect(host.querySelector('[aria-selected="true"]')?.textContent).toBe(
+    "main.tsx",
+  );
+  expect(key("Tab").defaultPrevented).toBe(true);
+  expect(host.querySelector(".reference-chip-label")?.textContent).toBe(
+    "main.tsx",
+  );
   expect(host.querySelector('[role="listbox"]')).toBeNull();
 });
 
-test("Enter accepts the highlighted directory without sending", () => {
+test("Click opens the folder; Enter inserts the highlighted folder action without sending", () => {
   const { host, key } = mount();
+  act(() => host.querySelector<HTMLButtonElement>('[role="option"]')!.click());
+  expect(host.querySelector(".reference-chip")).toBeNull();
   expect(key("Enter").defaultPrevented).toBe(true);
   expect(host.querySelector(".reference-chip-label")?.textContent).toBe("src/");
-  expect(host.querySelector('[role="listbox"]')).toBeNull();
   expect(host.querySelector('[role="status"]')?.textContent).toContain(
     "Nothing was sent",
   );
 });
 
-test("arrows change the active descendant and Escape leaves the draft alone", () => {
+test("Escape leaves the browsed folder as editable text", () => {
   const { host, input, key } = mount();
-  const before = input.getAttribute("aria-activedescendant");
-  key("ArrowDown");
-  expect(input.getAttribute("aria-activedescendant")).not.toBe(before);
-  expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain(
-    "public/",
-  );
+  key("Enter");
   key("Escape");
-  expect(input.value).toBe("Please check ./web/");
+  expect(input.value).toBe("Please check ./web/src/");
   expect(host.querySelector(".reference-chip")).toBeNull();
 });
 
@@ -73,12 +81,21 @@ test("IME confirmation does not accept a candidate", () => {
 test("accepted references expose additive write and removal controls", () => {
   const { host, key } = mount();
   key("Enter");
+  key("Enter");
   const access = host.querySelector<HTMLButtonElement>(
     ".reference-chip-access",
   )!;
+  const name = access.getAttribute("aria-label");
+  expect(name).toMatch(/^Allow write access to /);
+  expect(access.title).toBe("Read only");
   expect(access.getAttribute("aria-pressed")).toBe("false");
   act(() => access.click());
+  expect(access.title).toBe("Read and write");
   expect(access.getAttribute("aria-pressed")).toBe("true");
+  expect(access.getAttribute("aria-label")).toBe(name);
+  act(() => access.click());
+  expect(access.title).toBe("Read only");
+  expect(access.getAttribute("aria-pressed")).toBe("false");
   act(() =>
     host.querySelector<HTMLButtonElement>(".reference-chip-remove")!.click(),
   );

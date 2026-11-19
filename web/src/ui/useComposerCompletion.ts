@@ -13,7 +13,7 @@ import {
 
 interface Candidate extends CompletionOption {
   definition: ReferenceDefinition;
-  spelling: string;
+  spelling?: string;
 }
 interface Completion {
   match: CompletionMatch;
@@ -23,13 +23,32 @@ interface Completion {
   truncated: boolean;
 }
 
+function folderAction(
+  label: string,
+  target: Extract<ReferenceDefinition["target"], { type: "filesystem" }>,
+): Candidate {
+  return {
+    id: "insert-current-folder",
+    label: target.path,
+    detail: "",
+    kind: "directory",
+    insertFolder: true,
+    definition: { label, target },
+  };
+}
+
 /** Discovery has operator authority but edits no policy. Only accepting a row
- * creates a reference; Tab and Enter accept, and permissions remain admission-time
+ * for insertion creates a reference; browsing replaces text, and permissions remain admission-time
  * work (docs/web-client.md, docs/permissions.md). */
 export function useComposerCompletion(editor: Editor | null, base: string) {
   const [snapshot, setSnapshot] = useState<Completion | null>(null);
   const live = useRef<Completion | null>(null);
   const dismissed = useRef<string | null>(null);
+  const opened = useRef<{
+    from: number;
+    prefix: string;
+    option: Candidate;
+  } | null>(null);
   const refresh = useRef<() => void>(() => {});
 
   const publish = (value: Completion | null) => {
@@ -48,7 +67,9 @@ export function useComposerCompletion(editor: Editor | null, base: string) {
       controller?.abort();
     };
     const update = () => {
-      const match = editor.isFocused ? completionMatch(editor.state) : null;
+      const match = editor.isFocused
+        ? completionMatch(editor.state, opened.current)
+        : null;
       if (!match) {
         dismissed.current = null;
       }
@@ -60,9 +81,14 @@ export function useComposerCompletion(editor: Editor | null, base: string) {
       if (live.current && matchKey(live.current.match) === matchKey(match))
         return;
       cancel();
+      const known = opened.current;
+      const folder =
+        known?.prefix === match.prefix && known.from === match.from
+          ? known.option
+          : undefined;
       publish({
         match,
-        options: [],
+        options: folder ? [folder] : [],
         selected: 0,
         state: "loading",
         truncated: false,
@@ -76,11 +102,30 @@ export function useComposerCompletion(editor: Editor | null, base: string) {
           let options: Candidate[];
           let problem: string | null | undefined;
           let truncated: boolean;
+          let insert = folder;
           if (query.kind === "paths") {
             const result = await discoverPaths(base, query.prefix, signal);
             if (result.prefix !== query.prefix)
               throw new Error("Discovery prefix mismatch");
             problem = result.problem;
+            const { directory } = result;
+            if (
+              !problem &&
+              !insert &&
+              query.prefix.endsWith("/") &&
+              directory
+            ) {
+              insert = folderAction(
+                directory.split("/").filter(Boolean).at(-1) ?? "/",
+                {
+                  type: "filesystem",
+                  original: query.prefix,
+                  path: directory,
+                  target: "directory",
+                  access: { read: true, write: false },
+                },
+              );
+            }
             truncated = result.truncated;
             options = result.entries.map((entry) => ({
               id: entry.path,
@@ -121,11 +166,15 @@ export function useComposerCompletion(editor: Editor | null, base: string) {
               }));
           }
           if (requestGeneration !== generation || signal.aborted) return;
+          const rows = [
+            ...(insert ? [insert] : []),
+            ...(problem ? [] : options),
+          ];
           publish({
             match: query,
-            options: problem ? [] : options,
+            options: rows,
             selected: 0,
-            state: problem ? "error" : options.length ? "ready" : "empty",
+            state: problem ? "error" : rows.length ? "ready" : "empty",
             truncated,
           });
         };
@@ -133,7 +182,7 @@ export function useComposerCompletion(editor: Editor | null, base: string) {
           if (requestGeneration === generation && !signal.aborted)
             publish({
               match: query,
-              options: [],
+              options: folder ? [folder] : [],
               selected: 0,
               state: "error",
               truncated: false,
@@ -156,6 +205,7 @@ export function useComposerCompletion(editor: Editor | null, base: string) {
       editor.off("focus", update);
       editor.off("blur", blur);
       live.current = null;
+      opened.current = null;
     };
   }, [editor, base]);
 
@@ -170,6 +220,25 @@ export function useComposerCompletion(editor: Editor | null, base: string) {
     const candidate = current?.options[index];
     if (!editor || !current || !candidate) return;
     const { from, to } = current.match;
+    const { label, target } = candidate.definition;
+    if (
+      candidate.kind === "directory" &&
+      !candidate.insertFolder &&
+      candidate.spelling &&
+      target.type === "filesystem"
+    ) {
+      const prefix = `${candidate.spelling}/`;
+      opened.current = {
+        from,
+        prefix,
+        option: folderAction(label, target),
+      };
+      editor.view.dispatch(
+        closeHistory(editor.state.tr).insertText(prefix, from, to),
+      );
+      return;
+    }
+    opened.current = null;
     publish(null);
     editor.view.dispatch(
       closeHistory(editor.state.tr).replaceWith(
@@ -219,7 +288,7 @@ export function useComposerCompletion(editor: Editor | null, base: string) {
     }
     if (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey)) {
       event.preventDefault();
-      accept(current.selected);
+      if (!event.repeat) accept(current.selected);
       return true;
     }
     return false;

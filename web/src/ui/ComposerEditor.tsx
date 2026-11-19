@@ -5,9 +5,10 @@ import {
   useImperativeHandle,
   useRef,
 } from "react";
-import type { Editor } from "@tiptap/core";
+import { isiOS, isMacOS, type Editor } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { TextSelection } from "@tiptap/pm/state";
 import {
   ComposerUpload,
   composerCoreExtensions,
@@ -26,7 +27,7 @@ import {
 import { pastesAsFile } from "./staging.ts";
 import type { DraftStore } from "./drafts.ts";
 import { useId } from "react";
-import { CompletionMenu } from "./ComposerReferences.tsx";
+import { CompletionMenu, CompletionTray } from "./ComposerReferences.tsx";
 import { useComposerCompletion } from "./useComposerCompletion.ts";
 
 export interface ComposerEditorHandle {
@@ -116,6 +117,31 @@ export const ComposerEditor = forwardRef<
           const current = handlers.current;
           if (event.isComposing || view.composing || event.keyCode === 229)
             return false;
+          // Tiptap's Ctrl-A goes to the textblock start, skipping hard breaks.
+          if (
+            (isMacOS() || isiOS()) &&
+            event.key === "a" &&
+            event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            !event.shiftKey
+          ) {
+            const { $head } = view.state.selection;
+            if ($head.parent.isTextblock) {
+              let start = $head.start();
+              $head.parent.forEach((node, offset) => {
+                const end = offset + node.nodeSize;
+                if (end <= $head.parentOffset && node.type.name === "hardBreak")
+                  start = $head.start() + end;
+              });
+              view.dispatch(
+                view.state.tr
+                  .setSelection(TextSelection.create(view.state.doc, start))
+                  .scrollIntoView(),
+              );
+              return true;
+            }
+          }
           if (completionKeys.current(event)) return true;
           if (event.key === "Escape" && current.narrow) {
             current.onEscape();
@@ -127,7 +153,7 @@ export const ComposerEditor = forwardRef<
           if (event.isComposing || view.composing) return false;
           if (current.narrow || event.shiftKey) return false;
           event.preventDefault();
-          current.onSubmit();
+          if (!event.repeat) current.onSubmit();
           return true;
         },
         handlePaste(_view, event) {
@@ -317,7 +343,7 @@ export const ComposerEditor = forwardRef<
   return (
     <div className="composer-editor-shell">
       {menu && (
-        <div className="composer-completion-popup">
+        <CompletionTray>
           <CompletionMenu
             id={completionId}
             options={menu.options}
@@ -327,13 +353,15 @@ export const ComposerEditor = forwardRef<
             onHighlight={completion.highlight}
             onAccept={completion.accept}
           />
-          <div className="composer-completion-disclosure">
-            {menu.match.kind === "paths"
-              ? "Host files · accepting requests read access when sent; write is optional."
-              : "Reference a session · no notification is sent."}
-            {menu.truncated && " More matches — type to narrow."}
-          </div>
-        </div>
+          {(menu.match.kind === "agents" || menu.truncated) && (
+            <div className="composer-completion-disclosure">
+              {menu.match.kind === "agents" &&
+                "Reference a session · no notification is sent."}
+              {menu.truncated &&
+                `${menu.match.kind === "agents" ? " " : ""}More matches — type to narrow.`}
+            </div>
+          )}
+        </CompletionTray>
       )}
       <EditorContent editor={editor} />
     </div>

@@ -1899,15 +1899,27 @@ lookups, and binds requests and self-filtering to the originating session base.
 The current session is omitted from its own agent suggestions. The popup uses
 `ui/ComposerReferences.tsx`; path candidates retain the server's absolute target,
 kind and original spelling, and agent candidates retain the exact session ID.
+On macOS and iOS, Ctrl-A moves to the beginning of the selection head's logical
+line, delimited by paragraphs and hard breaks rather than visual wrapping.
+Select All is unchanged.
 
-Arrow keys select a row. Tab and Enter accept the highlighted file, directory,
-or session as a reference, never submitting while the menu is open; loading,
-empty and failed lookups also consume these keys. Paragraph boundaries and
-Shift-Enter hard breaks both delimit completion tokens. Escape dismisses the current
-query. IME confirmation bypasses both acceptance and submission. Pointer acceptance
-retains editor focus. Touch-first menus omit physical-keyboard hints. An accepted filesystem reference requests read
-access by default; its existing chip control can add write. Discovery and draft
-acceptance change no effective permissions: grants are applied at admission.
+The completion tray overlays the transcript above the dock without changing
+its height. It matches the surface at the dock's top edge and starts at the
+composer input's left edge. The selected row spans the tray width.
+
+Arrow keys select a row. Tab, Enter, and click activate a row without sending.
+A folder row opens that folder as editable text with a trailing slash. The
+first row inside it shows the folder's full path and inserts the folder reference
+when activated. The remaining rows list its children. Typing the trailing slash
+opens the same list, and typing a child prefix filters the list to matching
+children. A held activation key does not count as a second press. File and
+session rows insert references directly.
+Escape dismisses the current query; IME confirmation bypasses both activation
+and submission. Paragraph boundaries and Shift-Enter hard breaks delimit
+tokens. Pointer activation retains editor focus. An inserted filesystem
+reference requests read access by default. The chip's access control shows an
+eye for read-only and a pencil when write is also requested. Discovery and
+draft acceptance change no effective permissions: grants are applied at admission.
 Agent references send no notification. Lookup failure leaves the draft unchanged.
 
 The controls strip is gone; its last resident, the usage line, lives in the

@@ -85,8 +85,14 @@
 }
 
 .reference-chip .reference-chip-access {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  box-sizing: border-box;
+  inline-size: 1.5rem;
+  block-size: 1.25rem;
+  padding: 0;
   border-left-color: var(--border-control);
-  white-space: nowrap;
 }
 
 .reference-chip .reference-chip-access[aria-pressed="true"] {
@@ -118,41 +124,53 @@
 .reference-completion {
   overflow: hidden;
   border: 1px solid var(--border-control);
-  border-radius: 10px;
-  background: var(--bg-raised);
-  box-shadow: 0 8px 30px rgb(0 0 0 / 0.2);
+  background: var(--bg-surface);
   font-family: var(--font-ui);
 }
 
-.reference-completion-heading,
-.reference-completion-help {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.4rem 0.8rem;
+.reference-completion-heading {
   padding: 0.6rem 0.8rem;
-  color: var(--fg-dim);
   font-size: 0.7rem;
-}
-
-.reference-completion-heading > span {
-  color: var(--fg-dim);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+  font-weight: 600;
 }
 
 .reference-completion .reference-completion-row {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  width: calc(100% - 0.7rem);
-  margin: 0.1rem 0.35rem;
-  padding: 0.55rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--fg);
-  text-align: left;
+  width: 100%;
+  margin: 0;
+  padding: 0.34rem 0.8rem;
+  min-height: 2rem;
+  border-radius: 0;
+}
+
+.reference-completion
+  .reference-completion-row:is(.selected, :focus-visible, :active) {
+  box-shadow: inset 0 0 0 1px var(--selection-border);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reference-completion .reference-completion-row:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 1px var(--selection-border);
+  }
+
+  .reference-completion
+    .reference-completion-row:hover:not(
+      .selected,
+      :focus-visible,
+      :active,
+      :disabled
+    ) {
+    background: none;
+    box-shadow: none;
+  }
+}
+
+.reference-completion-row .reference-kind {
+  flex: none;
 }
 
 .reference-completion-copy {
@@ -164,8 +182,16 @@
 }
 
 .reference-completion-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--fg-bright);
   font-size: 0.85rem;
+}
+
+.reference-completion-folder-path {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .reference-completion-detail {
@@ -176,54 +202,9 @@
   white-space: nowrap;
 }
 
-.reference-completion-action {
-  color: var(--fg-dim);
-  font-size: 0.65rem;
-}
-
-.reference-completion .reference-completion-row[aria-selected="true"] {
-  border-color: var(--selection-border);
-  background: color-mix(in srgb, var(--accent) 6%, var(--bg-raised));
-  box-shadow:
-    inset 2px 0 var(--neon-ink-dim),
-    var(--control-halo);
-}
-
-.reference-completion .reference-completion-row:hover {
-  border-color: var(--selection-border);
-  background: var(--bg-inset);
-}
-
-.reference-completion .reference-completion-row:active {
-  background: var(--bg-chip);
-}
-
-.reference-completion .reference-completion-row:focus-visible {
-  outline: 1px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.reference-completion-help {
-  justify-content: flex-start;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 0.65rem;
-}
-
-.reference-completion-help span {
-  white-space: nowrap;
-}
-
-.reference-completion-help kbd {
-  margin-right: 0.2rem;
+.reference-completion-next {
+  flex: none;
   color: var(--fg-muted);
-  font: inherit;
-  font-family: var(--font-mono);
-}
-
-@media (hover: none) and (pointer: coarse) {
-  .reference-completion-help {
-    display: none;
-  }
 }
 
 .reference-completion-note {
@@ -252,17 +233,6 @@
   border-color: var(--border-strong);
 }
 
-:root[data-theme="lilac"] .reference-completion {
-  box-shadow: 0 6px 24px rgb(76 52 120 / 0.08);
-}
-
-:root[data-theme="lilac"]
-  .reference-completion
-  .reference-completion-row[aria-selected="true"] {
-  background: color-mix(in srgb, var(--lilac) 15%, white);
-  box-shadow: inset 2px 0 var(--lilac-strong);
-}
-
 /* The editor keeps its own scrolling surface; the menu is a sibling so it
    remains outside that clipping region. */
 .composer-editor-shell {
@@ -275,26 +245,48 @@
   min-width: 0;
 }
 
-.composer-completion-popup {
+/* In the session, position against the dock rather than the editor inset.
+   The column gives the tray and input the same left edge. */
+.dock .composer-editor-shell {
+  position: static;
+}
+
+.composer-completion-anchor {
   position: absolute;
   z-index: 20;
-  bottom: calc(100% + 0.5rem);
-  left: 0;
-  width: min(100%, 40rem);
+  inset-inline: 0;
+  bottom: 100%;
+  pointer-events: none;
+}
+
+.composer-completion-anchor:not(.dock *) {
+  padding-inline: 0;
+}
+
+.dock .composer-completion-anchor {
+  /* Cover the dock’s top rule at the opening into the tray. */
+  bottom: calc(100% - 1px);
+}
+
+.composer-completion-popup {
+  box-sizing: border-box;
+  width: min(100%, 32rem);
   max-height: 45dvh;
   overflow-y: auto;
-  border: 1px solid var(--border-control);
-  border-radius: 10px;
-  background: var(--bg-raised);
-  box-shadow:
-    var(--control-halo),
-    0 8px 30px rgb(0 0 0 / 0.2);
+  border: 1px solid var(--completion-edge, var(--border-subtle));
+  border-bottom: 0;
+  background: var(--completion-surface, var(--bg-surface));
+  pointer-events: auto;
+}
+
+.dock:has(> .task-strip) .composer-completion-popup {
+  --completion-edge: var(--border);
+  --completion-surface: var(--bg-page);
 }
 
 .composer-completion-popup .reference-completion {
   border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  background: transparent;
 }
 
 .composer-completion-popup [role="listbox"] {
@@ -307,8 +299,4 @@
   border-top: 1px solid var(--border-subtle);
   color: var(--fg-dim);
   font: 0.7rem/1.5 var(--font-ui);
-}
-
-:root[data-theme="lilac"] .composer-completion-popup {
-  box-shadow: 0 5px 20px rgb(65 41 89 / 0.12);
 }

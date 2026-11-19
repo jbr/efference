@@ -33,7 +33,10 @@ function inCode(text: string): boolean {
 const leafText = (node: import("@tiptap/pm/model").Node) =>
   node.type.name === "hardBreak" ? "\n" : "\ufffc";
 
-export function completionMatch(state: EditorState): CompletionMatch | null {
+export function completionMatch(
+  state: EditorState,
+  opened?: { from: number; prefix: string } | null,
+): CompletionMatch | null {
   const { empty, $from, from } = state.selection;
   if (!empty || !$from.parent.isTextblock) return null;
   const before = $from.parent.textBetween(
@@ -50,12 +53,20 @@ export function completionMatch(state: EditorState): CompletionMatch | null {
   );
   // Don't replace the first half of a token when the caret moves within it.
   if (after && !/^[\s)\]}>,;!?"']/.test(after)) return null;
+  // A chosen folder name can contain characters (e.g. spaces) that aren't
+  // recognized in a manually typed path token. Match its known span first.
+  const offset = opened ? opened.from - (from - $from.parentOffset) : -1;
+  const browsed = offset >= 0 ? before.slice(offset) : "";
+  const openedPath =
+    opened &&
+    browsed.startsWith(opened.prefix) &&
+    /^[^\s\ufffc`<>"'\])}]*$/.test(browsed.slice(opened.prefix.length));
   const found =
     /(?:^|[\s([{"'])((?:\.\/|\.\.\/|~\/|\/)[^\s\ufffc`<>"'\])}]*|@[a-zA-Z0-9_-]*)$/.exec(
       before,
     );
-  if (!found) return null;
-  const prefix = found[1];
+  const prefix = openedPath ? browsed : found?.[1];
+  if (!prefix) return null;
   const context = state.doc.textBetween(0, from, "\n", leafText);
   if (inCode(context)) return null;
   return {

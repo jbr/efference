@@ -147,6 +147,20 @@
   max-width: 44rem;
 }
 
+.g-completion-scene {
+  background: var(--bg-page);
+}
+
+.g-completion-transcript {
+  min-height: 16rem;
+  padding: 1rem;
+  color: var(--fg-muted);
+}
+
+.g-completion-scene .dock {
+  position: relative;
+}
+
 .g-composer {
   position: static;
   margin-bottom: 1rem;
