@@ -68,7 +68,7 @@ export const topics: {
         scope: null,
         source: null,
         tools: {},
-        watch_for: [],
+        spotter_notes: [],
       },
       session_identity: null,
       stall: null,

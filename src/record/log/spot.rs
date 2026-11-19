@@ -77,7 +77,7 @@ pub enum Stance {
 
 /// One assessment's answers, as the model reported them: P(true) per axis, and the
 /// sketch distribution. The two optional axes are asked only when the state
-/// carries the thing they are about — a watch-for list, a promotion probe — so
+/// carries the thing they are about — a spotter-notes list, a promotion probe — so
 /// `None` means "not asked", never "answered zero".
 ///
 /// Recorded alongside the stance on `Spot::axes`. Entries that predate the sketch
@@ -96,8 +96,10 @@ pub struct Axes {
     /// is a different question from being outside every grant.
     pub path_denied: f64,
     pub exposes_secrets: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub watch_for_hit: Option<f64>,
+    /// A note for the spotter warns against this kind of move.
+    // Entries recorded before the rename carry this axis as `watch_for_hit`.
+    #[serde(skip_serializing_if = "Option::is_none", alias = "watch_for_hit")]
+    pub note_warns: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prefix_safe: Option<f64>,
     /// P(level) for sketch levels 0 to 4, lowest first.
@@ -122,7 +124,7 @@ impl Axes {
         parts.push(show("path_outside", self.path_outside));
         parts.push(show("path_denied", self.path_denied));
         parts.push(show("exposes_secrets", self.exposes_secrets));
-        parts.extend(self.watch_for_hit.map(|p| show("watch_for_hit", p)));
+        parts.extend(self.note_warns.map(|p| show("note_warns", p)));
         parts.extend(self.prefix_safe.map(|p| show("prefix_safe", p)));
         if let Some(p) = &self.precedent {
             let required = p.required.map_or("never".to_string(), |n| n.to_string());

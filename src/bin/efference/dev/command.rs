@@ -406,9 +406,10 @@ pub(crate) struct SpotterArgs {
     /// The scope (perimeter prose) to judge against. Omit to test the no-scope frame.
     #[arg(long)]
     pub(crate) scope: Option<String>,
-    /// A spotter-only "thing to watch for". Repeatable.
-    #[arg(long = "watch-for")]
-    pub(crate) watch_for: Vec<String>,
+    /// A note for the spotter about this project. Repeatable.
+    // `--watch-for`, the older spelling, is still accepted and not listed in help.
+    #[arg(long = "spotter-note", alias = "watch-for")]
+    pub(crate) spotter_notes: Vec<String>,
     /// An allowed path grant, repeatable. Format: `<path>:rw` (read+write),
     /// `<path>:r` (read), or bare `<path>` (no access). E.g. `--path .:rw --path /refs:r`.
     #[arg(long = "path")]
@@ -435,7 +436,7 @@ pub(crate) struct SpotterArgs {
     pub(crate) input: String,
     /// A config file to take the mission from, and — the reason this exists — to
     /// mount the `[mcp.servers.<name>]` declarations from, so `--tool` can name a
-    /// real connected tool. `--scope`/`--watch-for`/`--path` override what it
+    /// real connected tool. `--scope`/`--spotter-note`/`--path` override what it
     /// supplies. Omit to judge against the flags alone (no servers mounted).
     #[arg(long)]
     pub(crate) config: Option<PathBuf>,

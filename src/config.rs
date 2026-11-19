@@ -23,7 +23,7 @@
 //!
 //! ```toml
 //! scope = "Work only inside this repo."
-//! watch-for = ["network egress to non-registry hosts"]
+//! spotter-notes = ["network egress to non-registry hosts"]
 //!
 //! [commands]
 //! cargo = true            # blanket — key lexes to ["cargo"]
@@ -204,11 +204,12 @@ pub struct Config {
     /// cached preamble via [`Config::preamble_section`]. TOML: `scope = "…"`.
     pub scope: Option<String>,
 
-    /// The spotter's "things to watch for" — gotchas specific to this mission,
-    /// **spotter-only**, never shown to the acting session (attention-division, not
-    /// teach-to-the-test; the threat model is error, not deception). TOML:
-    /// `watch-for = ["…", "…"]`. Consumed by the spotter rung.
-    pub watch_for: Vec<String>,
+    /// The spotter's notes for this mission — a hazard particular to this kind of work,
+    /// or a fact that makes a move ordinary here — **spotter-only**, never shown to the
+    /// acting session (attention-division, not teach-to-the-test; the threat model is
+    /// error, not deception). TOML: `spotter-notes = ["…", "…"]`. Consumed by the
+    /// spotter rung.
+    pub spotter_notes: Vec<String>,
 
     /// Trust posture → where the watch-window/gate cutoffs sit. `None` = unset (a real `0`
     /// would mean something specific, so absence is kept distinct). TOML:
@@ -400,7 +401,7 @@ impl Config {
     /// Render the scope into the byte-stable preamble section appended to the system prompt
     /// (docs/permissions.md), or `None` if there is no scope. The header is fixed
     /// and the body is the scope verbatim (trimmed), so the output is a pure, deterministic
-    /// function of the scope — safe for the cached prefix. The watch-for list is deliberately
+    /// function of the scope — safe for the cached prefix. The spotter-notes list is deliberately
     /// *not* projected here: it is spotter-only.
     pub fn preamble_section(&self) -> Option<String> {
         let scope = self

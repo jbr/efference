@@ -645,7 +645,7 @@
       "type": "string"
     },
     "Axes": {
-      "description": "One assessment's answers, as the model reported them: P(true) per axis, and the\nsketch distribution. The two optional axes are asked only when the state\ncarries the thing they are about — a watch-for list, a promotion probe — so\n`None` means \"not asked\", never \"answered zero\".\n\nRecorded alongside the stance on `Spot::axes`. Entries that predate the sketch\nfold carry `reversible` and `sanctioned`, which are ignored on read, and lack\n`sketch` and `precedent`, which default to `None`.",
+      "description": "One assessment's answers, as the model reported them: P(true) per axis, and the\nsketch distribution. The two optional axes are asked only when the state\ncarries the thing they are about — a spotter-notes list, a promotion probe — so\n`None` means \"not asked\", never \"answered zero\".\n\nRecorded alongside the stance on `Spot::axes`. Entries that predate the sketch\nfold carry `reversible` and `sanctioned`, which are ignored on read, and lack\n`sketch` and `precedent`, which default to `None`.",
       "properties": {
         "exposes_secrets": {
           "format": "double",
@@ -654,6 +654,14 @@
         "in_scope": {
           "format": "double",
           "type": "number"
+        },
+        "note_warns": {
+          "description": "A note for the spotter warns against this kind of move.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "path_denied": {
           "description": "Names a path under a grant marked `denied` — the carve-out case, which\nis a different question from being outside every grant.",
@@ -691,13 +699,6 @@
           },
           "type": [
             "array",
-            "null"
-          ]
-        },
-        "watch_for_hit": {
-          "format": "double",
-          "type": [
-            "number",
             "null"
           ]
         }
@@ -1531,7 +1532,7 @@
       ]
     },
     "ConfigChange": {
-      "description": "What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape\n(docs/permissions.md). Each variant addresses one section of the config table;\n[`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).\nMost variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the\nnarrowing edit append-only KDL couldn't do. There is no `watch-for` variant: its replace\nsemantics over a list are undecided.\n\n**Session-visibility** (which edits notify the session) is decided by variant in\n[`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;\n`Command` and `Tool` reach the model only through the classifier.",
+      "description": "What a [`ConfigEdit`] changes — the `{ which slot, new value }` reshape\n(docs/permissions.md). Each variant addresses one section of the config table;\n[`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).\nMost variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the\nnarrowing edit append-only KDL couldn't do. There is no `spotter-notes` variant: its replace\nsemantics over a list are undecided.\n\n**Session-visibility** (which edits notify the session) is decided by variant in\n[`crate::session`]: `Scope` and `Path` are the perimeter the session should learn moved;\n`Command` and `Tool` reach the model only through the classifier.",
       "oneOf": [
         {
           "additionalProperties": false,
@@ -6812,25 +6813,25 @@
             "null"
           ]
         },
+        "spotter_notes": {
+          "description": "What the spotter watches for, which is on no other wire.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "tools": {
           "additionalProperties": {
             "$ref": "#/definitions/ToolSettings"
           },
           "description": "The `[tools]` table keyed as the file spells each entry (`efference`,\n`\"agents.message\"`), carrying only the fields the entry sets: a `granted = false`\ncarve-out under a granted namespace reads as one.",
           "type": "object"
-        },
-        "watch_for": {
-          "description": "What the spotter watches for, which is on no other wire.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         }
       },
       "required": [
         "source",
         "scope",
-        "watch_for",
+        "spotter_notes",
         "commands",
         "tools",
         "paths"

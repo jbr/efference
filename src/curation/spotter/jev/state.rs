@@ -5,7 +5,7 @@
 //! generative model reads English. A decision model is answering fixed questions
 //! *about* a state, and the route takes that state as JSON, so this renders
 //! structure: named fields the question text can point at by name
-//! (`path_grants`, `working_directory`, `watch_for`).
+//! (`path_grants`, `working_directory`, `spotter_notes`).
 //!
 //! What is included and what is withheld follows the prose spotter exactly — the
 //! same grants including the denies, the same `$TMPDIR` alias, the same resolved
@@ -39,7 +39,7 @@ pub(super) fn state(
         "working_directory": dirs.map(|d| d.judged_working().display().to_string()),
         "path_grants": grants(role, dirs),
         "scratch_directory": scratch.map(|p| p.display().to_string()),
-        "watch_for": watch_for(role),
+        "spotter_notes": spotter_notes(role),
         "move": proposed_move(role, call, brief, dirs, scratch),
     });
     let object = state.as_object_mut().expect("state is built as an object");
@@ -105,8 +105,8 @@ fn access(perms: &crate::config::Perms) -> &'static str {
     }
 }
 
-fn watch_for(role: &Config) -> Vec<&str> {
-    role.watch_for
+fn spotter_notes(role: &Config) -> Vec<&str> {
+    role.spotter_notes
         .iter()
         .map(|w| w.trim())
         .filter(|w| !w.is_empty())
@@ -264,7 +264,7 @@ fn proposed_move(
         let guarantees = super::super::guarantees(definition);
         if !guarantees.is_empty() {
             // Only the safe-direction hints, which hold for every input; the
-            // unsafe-direction ones say nothing about this call (docs/permissions.md,
+            // unsafe-direction ones are uninformative about this call (docs/permissions.md,
             // the spotter's brief). `self_reported` records whose guarantee it is.
             object.insert(
                 "tool_declarations".into(),

@@ -145,7 +145,7 @@ export const readouts: {
       scope: null,
       source: null,
       tools: {},
-      watch_for: [],
+      spotter_notes: [],
     },
     {
       commands: {
@@ -166,7 +166,7 @@ export const readouts: {
         ferritin: {},
         lsp: { enabled: true },
       },
-      watch_for: ["deleting tests", "force pushes"],
+      spotter_notes: ["deleting tests", "force pushes"],
     },
   ],
   sessionIdentity: [

@@ -65,13 +65,13 @@ fn a_hold_reads_as_its_cause_then_its_history() {
         Some("it names a path this session is denied; no earlier call like it was allowed")
     );
     let watched = Axes {
-        watch_for_hit: Some(0.6),
+        note_warns: Some(0.6),
         ..clean()
     };
     assert!(
         plain_reason(&with_precedent(watched, 0, 0, Some(2)))
             .unwrap()
-            .starts_with("it may match something the operator asked to watch for;")
+            .starts_with("a note for the spotter may warn against it;")
     );
 }
 

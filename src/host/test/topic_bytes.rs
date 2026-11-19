@@ -98,7 +98,7 @@ fn a_fresh_sessions_state_keeps_its_bytes() {
     let (shared, _turns) = Session::in_memory();
     assert_eq!(
         shared.state_json(),
-        r#"{"ask":null,"cold":null,"compaction_failure":null,"config_repair":null,"current_operations":null,"gate":null,"last_seq":null,"loop_phase":{"phase":"idle"},"newer_version":null,"notifications":[],"pace":{"held":false,"speed_ms":0},"processes":[],"proposals":[],"queued":[],"resolved_review_level":"spotter_human","review_level":"spotter_human","role":{"commands":{},"paths":{},"scope":null,"source":null,"tools":{},"watch_for":[]},"session_identity":null,"stall":null,"starting":null,"status":{"condition":{"kind":"idle"},"footer":{},"id":""},"supervisor":null,"triage_upstream_failure":null,"upstream_failure":null,"upstream_retry":null,"usage":{"cold_streak":0,"context":null,"cost":null,"cumulative":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":0,"output_tokens":0},"keepalive_skipped":null,"last":null,"last_cache_miss":null,"last_request_at":null,"plan":null,"retention":{"kept_lines":0,"shown_lines":0,"truncated_lines":0,"withheld":0},"triage_cold_streak":null,"triage_keepalive_skipped":null,"triage_plan":null},"verbs":{"compact":{"accepted":false,"message":"nothing to compact: the conversation is already shorter than what a compaction keeps verbatim"},"continue":{"accepted":false,"message":"nothing to continue: the session has no turns yet"},"turn":{"accepted":true,"delivery":"now"}}}"#
+        r#"{"ask":null,"cold":null,"compaction_failure":null,"config_repair":null,"current_operations":null,"gate":null,"last_seq":null,"loop_phase":{"phase":"idle"},"newer_version":null,"notifications":[],"pace":{"held":false,"speed_ms":0},"processes":[],"proposals":[],"queued":[],"resolved_review_level":"spotter_human","review_level":"spotter_human","role":{"commands":{},"paths":{},"scope":null,"source":null,"spotter_notes":[],"tools":{}},"session_identity":null,"stall":null,"starting":null,"status":{"condition":{"kind":"idle"},"footer":{},"id":""},"supervisor":null,"triage_upstream_failure":null,"upstream_failure":null,"upstream_retry":null,"usage":{"cold_streak":0,"context":null,"cost":null,"cumulative":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":0,"output_tokens":0},"keepalive_skipped":null,"last":null,"last_cache_miss":null,"last_request_at":null,"plan":null,"retention":{"kept_lines":0,"shown_lines":0,"truncated_lines":0,"withheld":0},"triage_cold_streak":null,"triage_keepalive_skipped":null,"triage_plan":null},"verbs":{"compact":{"accepted":false,"message":"nothing to compact: the conversation is already shorter than what a compaction keeps verbatim"},"continue":{"accepted":false,"message":"nothing to continue: the session has no turns yet"},"turn":{"accepted":true,"delivery":"now"}}}"#
     );
     assert_eq!(
         shared.loop_json(),
@@ -247,13 +247,13 @@ fn the_role_topic_keeps_its_bytes() {
     let (shared, _turns) = Session::in_memory();
     assert_eq!(
         bytes(&shared, Topic::Role),
-        r#"{"commands":{},"paths":{},"scope":null,"source":null,"tools":{},"watch_for":[]}"#
+        r#"{"commands":{},"paths":{},"scope":null,"source":null,"spotter_notes":[],"tools":{}}"#
     );
 
     let mut config = ConfigFixture::new()
         .with_scope("Fix the parser.")
-        .with_watch_for("deleting tests")
-        .with_watch_for("force pushes")
+        .with_spotter_note("deleting tests")
+        .with_spotter_note("force pushes")
         .with_command("git", CommandStance::Clear)
         .with_command("git push", CommandStance::Deny)
         .with_command("cargo", CommandStance::Watch)
@@ -274,7 +274,7 @@ fn the_role_topic_keeps_its_bytes() {
     });
     assert_eq!(
         bytes(&shared, Topic::Role),
-        r#"{"commands":{"cargo":"watch","git":"clear","git push":"deny","make":"gate"},"paths":{"/tmp/scratch":{"read":true,"write":true},"src":{"read":true,"write":false}},"scope":"Fix the parser.","source":"/work/efference.toml","tools":{"efference":{"enabled":true},"efference.read":{"granted":true},"ferritin":{},"lsp":{"enabled":true}},"watch_for":["deleting tests","force pushes"]}"#
+        r#"{"commands":{"cargo":"watch","git":"clear","git push":"deny","make":"gate"},"paths":{"/tmp/scratch":{"read":true,"write":true},"src":{"read":true,"write":false}},"scope":"Fix the parser.","source":"/work/efference.toml","spotter_notes":["deleting tests","force pushes"],"tools":{"efference":{"enabled":true},"efference.read":{"granted":true},"ferritin":{},"lsp":{"enabled":true}}}"#
     );
 }
 

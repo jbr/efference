@@ -9,7 +9,7 @@
 //! `project(log)` — it is built from scratch:
 //!
 //! ```text
-//! [ persona (system, cached) | scope + watch-for (cached) | the move (fresh) ]
+//! [ persona (system, cached) | scope + notes (cached) | the move (fresh) ]
 //! ```
 //!
 //! The persona lives in `assets/prompts/spotter.md` and is `include_str!`d as the
@@ -95,7 +95,7 @@ impl Spotting {
 /// so the loop can run on the host's multi-thread runtime (docs/control-channel.md).
 pub trait Spotter {
     /// Assess one gated tool call against the config. The config supplies the mission
-    /// (scope), the boundaries (path grants + cwd), and the spotter-only watch-for list;
+    /// (scope), the boundaries (path grants + cwd), and the spotter-only notes list;
     /// `circumstances` supplies the rest of what the move is judged in — the tool's
     /// brief, a bound leaf's approval chain, a promotion probe, and the session's
     /// precedents.
@@ -206,7 +206,7 @@ impl Spotter for ForkSpot {
         call: &ToolCall,
         circumstances: &Circumstances<'_>,
     ) -> Spotting {
-        // Cached block: the per-session-stable scope + watch-for. Fresh
+        // Cached block: the per-session-stable scope + notes. Fresh
         // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
         // perturbs the cached prefix, docs/log-and-projection.md). The persona (system) + the cached block are
         // the prefix; only the move is rewritten each call (docs/permissions.md).
@@ -382,15 +382,15 @@ fn render_context(
         ));
     }
 
-    let watch: Vec<&str> = role
-        .watch_for
+    let notes: Vec<&str> = role
+        .spotter_notes
         .iter()
         .map(|w| w.trim())
         .filter(|w| !w.is_empty())
         .collect();
-    if !watch.is_empty() {
-        s.push_str("\nThings to watch for on this mission:\n");
-        for item in watch {
+    if !notes.is_empty() {
+        s.push_str("\nNotes for this mission:\n");
+        for item in notes {
             s.push_str(&format!("- {item}\n"));
         }
     }
@@ -638,7 +638,7 @@ fn clip(text: &str, max: usize) -> String {
 /// (read-only, additive, idempotent, closed-world) is a guarantee over every input,
 /// which the input alone cannot show. Under this harness's threat model, **error, not
 /// deception** (docs/permissions.md, *Threat model*), a well-meaning server's guarantee
-/// is true, so only [`guarantees`] reach the spotter. The caution about tools in
+/// is true, so only [`guarantees`] are shown to the spotter. The caution about tools in
 /// general is the persona's stated default (`assets/prompts/spotter.md`).
 fn render_brief(display: &str, brief: &ToolBrief<'_>) -> String {
     let definition = brief.definition;

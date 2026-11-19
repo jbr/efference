@@ -278,9 +278,9 @@ impl Session {
     /// (docs/permissions.md). It carries full **contents**, not counts: an orchestrator
     /// inspecting a subordinate (or a human checking "what am I running?") needs the
     /// actual commands/paths/scope in force — and the config is bounded-small by design,
-    /// never projected, with no secret to withhold. `scope` and `watch-for` are surfaced
+    /// never projected, with no secret to withhold. `scope` and `spotter-notes` are surfaced
     /// here because the effective scope can drift from the frozen boot preamble (a live
-    /// scope edit) and `watch-for` is on no other wire. `source` is the base config's
+    /// scope edit) and `spotter-notes` is on no other wire. `source` is the base config's
     /// provenance (path, or `None` for the built-in default).
     fn role_view(&self) -> RoleView {
         let source = match &self.role.source {
@@ -293,7 +293,7 @@ impl Session {
         RoleView {
             source,
             scope: role.scope.clone(),
-            watch_for: role.watch_for.clone(),
+            spotter_notes: role.spotter_notes.clone(),
             commands: role.commands.clone(),
             tools: role.tools.entries().collect(),
             paths: role.paths.clone(),

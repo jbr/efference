@@ -20,9 +20,16 @@ pub(crate) struct RawConfig {
     /// is inside this scope, not whether it is dangerous.
     #[serde(default)]
     scope: Option<String>,
-    /// Hazards the spotter should look out for in this project. Shown to the spotter
-    /// only, never to the session.
+    /// Notes for the permission spotter about this project: a hazard particular to this
+    /// kind of work, or a fact that makes a move ordinary here (a host that is the
+    /// project's own development server, a directory the work routinely reads). Shown to
+    /// the spotter only, never to the session.
+    #[serde(rename = "spotter-notes", default)]
+    spotter_notes: Vec<String>,
+    /// Older name for `spotter-notes`.
+    // The older key is still read, silently: its entries come first, then `spotter-notes`.
     #[serde(rename = "watch-for", default)]
+    #[schemars(extend("deprecated" = true))]
     watch_for: Vec<String>,
     /// Reserved: parsed, with no effect.
     #[serde(rename = "trust-threshold", default)]
@@ -594,7 +601,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
     }
     Ok(Config {
         scope: raw.scope,
-        watch_for: raw.watch_for,
+        spotter_notes: raw.watch_for.into_iter().chain(raw.spotter_notes).collect(),
         trust_threshold: raw.trust_threshold,
         first_turn: raw.first_turn,
         consolidation_bytes: raw.consolidation_bytes,

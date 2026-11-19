@@ -66,7 +66,7 @@ malformed edit fail-closes *and* is reverted, so the file is never left unparsea
 "Session-only" is thus a matter of geography, not a flag — the file is per-session, and every
 committed grant is written to it.
 
-`GET /state` reports the resolved source *and the full effective policy in force* (scope, watch-for,
+`GET /state` reports the resolved source *and the full effective policy in force* (scope, spotter-notes,
 commands, tools, paths) — effective, not boot, so a live config edit (a session grant, an fs-watch
 file change) is visible there; an orchestrator reads a subordinate's live perimeter from it.
 
@@ -76,7 +76,7 @@ file plus the log's config-edits:
 
 ```toml
 scope = "Work only inside this repo."
-watch-for = ["network egress to non-registry hosts"]
+spotter-notes = ["network egress to non-registry hosts"]
 
 [commands]
 cargo = true            # blanket — key lexes to ["cargo"]
@@ -105,10 +105,13 @@ the config holds:
   [substrate](log-and-projection.md)): it is rendered once at startup from the scope text and
   frozen. A live, mid-session scope edit must **not** re-render it (that would mutate behind
   the cache breakpoint); instead it surfaces as a notification (see the config-edit loop).
-- **`watch-for`** — the "things to watch for" list, *spotter-only*. Kept off the session's
-  preamble for **attention-division** (not anti-gaming — the threat model is error, not
-  deception, so there's no test to game): the focused session shouldn't carry low-probability
-  peripheral hazards in working memory; the spotter holds them. Consumed by the spotter rung.
+- **`spotter-notes`** — a list of short prose notes for the spotter, *spotter-only*. A note is
+  either cautionary (a hazard particular to this kind of work) or informational (a fact that
+  makes a move ordinary here, such as a host that is the project's own development server).
+  Kept off the session's preamble for **attention-division** (not anti-gaming — the threat
+  model is error, not deception, so there's no test to game): the focused session shouldn't
+  carry low-probability peripheral hazards in working memory; the spotter holds them. Consumed
+  by the spotter rung.
 - **`[commands]`** — the bash prefix policy, a **map** from command-prefix key to stance (below).
 - **`[tools]`** and **`[paths]`** — which tools the session mounts and which it may call
   without review, and the filesystem-grant map the fast-path reads (below).
@@ -144,7 +147,7 @@ The check is ahead of the rungs rather than inside one because the call cannot r
 any rung answers. Asked anyway, the spotter answered: it returned `clear` for a call naming
 a nonexistent tool, with a rationale invented for the call it imagined ("reversible query
 that doesn't modify state or escape the repo"), and `spotter-log` counted that as a clean
-clear. A rung that judges intent against `scope` and `watch-for` has nothing in its inputs
+clear. A rung that judges intent against `scope` and `spotter-notes` has nothing in its inputs
 that says the target does not exist.
 
 ## The fast-path (`src/config/policy.rs`)
@@ -576,7 +579,7 @@ fixed questions with probabilities, so the stance is a fold in code
 
 - **Cold** — the state above, asked `sketch` (a Score: how concerning the move is, five
   described levels from routine to severe) and the axes `in_scope`, `path_outside`,
-  `path_denied`, `exposes_secrets`, plus `watch_for_hit` when the config names one and
+  `path_denied`, `exposes_secrets`, plus `note_warns` when the config has a note and
   `prefix_safe` when a promotion probe is included.
 - **Relation** — the move alone, as plaintext, with one Choice per **precedent
   candidate**: an earlier call in this session of the same family (the same tool, or for
@@ -598,7 +601,7 @@ The fold:
 ```
 level  = the sketch Score's most probable level (0–4),
          raised to at least 3 by path_denied > 0.25, exposes_secrets > 0.15,
-         or watch_for_hit > 0.25; to at least 2 by path_outside > 0.35 or in_scope ≤ 0.30
+         or note_warns > 0.25; to at least 2 by path_outside > 0.35 or in_scope ≤ 0.30
 Gate   if exposes_secrets ≥ 0.5            — no precedent clears a printed secret
 Clear  if precedents ≥ REQUIRED[level]     REQUIRED = [0, 0, 1, 2, never]
 Gate   otherwise
@@ -751,10 +754,10 @@ own to hold a call, and what decides is what this call's input does. A tool whos
 description and input leave that unclear is judged as if it could do anything. A listed
 guarantee is taken as true and rules out only what it names: read-only rules out changing
 anything, not sending the call's input somewhere; additive rules out removing or
-overwriting, not publishing. The jev spotter's state carries the same guarantees as
+overwriting, not publishing. The jev spotter's state includes the same guarantees, as
 `tool_declarations.claims`.
 
-**The request layout** is `[persona (system) | scope + watch-for (cached) | the move
+**The request layout** is `[persona (system) | scope + notes (cached) | the move
 (fresh)]`. The scope block is the config's scope prose plus the `[paths]` grants + cwd, so the
 spotter judges "outside scope" against a fixed, external authority — never the session's own
 narration. Grants render resolved to their absolute form (the same lexical rule the
@@ -785,8 +788,8 @@ waits instead: a triage without a verdict holds its results until one arrives �
 this get through — or stop?", and the corpus for any future triaged approval model). It
 projects to nothing — audit-only, never on the canonical wire. This is the *first* permission
 decision that is logged: fast-path clears stay deliberately unlogged. `efference
-spotter --scope … --watch-for … --path … "<cmd>"` runs the exact `assess` path on one move,
-for iterating on the persona and config against real cases (`--watch-for` repeats; `--path`
+spotter --scope … --spotter-note … --path … "<cmd>"` runs the exact `assess` path on one move,
+for iterating on the persona and config against real cases (`--spotter-note` repeats; `--path`
 takes `<path>:rw` / `<path>:r`). `--tool <name> --input <json>` judges a **structured** move
 instead: with `--config`, the declared servers are mounted first, so the brief is built from
 the definition the server actually advertises rather than a hand-written stand-in that could

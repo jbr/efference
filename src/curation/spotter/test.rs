@@ -218,8 +218,8 @@ fn a_server_tool_is_attributed_neutrally() {
 
 #[test]
 fn unsafe_direction_hints_render_nothing() {
-    // Destructive and open-world describe the tool over every input; they say
-    // nothing about this call, so the brief carries neither them nor a heading.
+    // Destructive and open-world describe the tool over every input; they are
+    // uninformative about this call, so the brief includes neither them nor a heading.
     let rendered = server_brief(&briefed_tool(hints(
         Some(false),
         Some(true),
@@ -318,10 +318,10 @@ fn an_oversized_description_and_schema_are_clipped_at_a_char_boundary() {
 }
 
 #[test]
-fn render_context_includes_scope_and_watch_for() {
+fn render_context_includes_scope_and_notes() {
     let role = ConfigFixture::new()
         .with_scope("Fix the build.")
-        .with_watch_for("Don't touch the deploy keys.")
+        .with_spotter_note("Don't touch the deploy keys.")
         .with_path(".", true, true)
         .with_path("/refs", true, false)
         .build();
@@ -342,7 +342,10 @@ fn render_context_includes_scope_and_watch_for() {
     );
     assert!(ctx.contains("  - /refs (read only)\n"), "{ctx}");
     assert!(!ctx.contains("granted as `/refs`"), "{ctx}");
-    assert!(ctx.contains("Don't touch the deploy keys."), "{ctx}");
+    assert!(
+        ctx.contains("\nNotes for this mission:\n- Don't touch the deploy keys.\n"),
+        "{ctx}"
+    );
     assert!(
         !ctx.contains("$TMPDIR"),
         "no scratch → no alias line: {ctx}"
@@ -418,7 +421,7 @@ fn render_context_resolves_parent_relative_grants() {
 
 #[test]
 fn render_context_handles_empty_role() {
-    // No scope, no paths, no watch-for: the spotter still gets a usable frame.
+    // No scope, no paths, no notes: the spotter still gets a usable frame.
     let ctx = render_context(
         &Config::default(),
         Some(&crate::config::policy::Directories::at(Path::new(
@@ -429,8 +432,8 @@ fn render_context_handles_empty_role() {
     assert!(ctx.contains("no scope specified"), "{ctx}");
     assert!(ctx.contains("none configured"), "{ctx}");
     assert!(
-        !ctx.contains("Things to watch for"),
-        "no empty watch-for section: {ctx}"
+        !ctx.contains("Notes for this mission"),
+        "no empty notes section: {ctx}"
     );
 }
 

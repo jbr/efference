@@ -54,7 +54,7 @@ pub const CONFIG_SCAFFOLD: &str = "\
 # \"take\", check that the file still parses. Unknown keys are rejected. Schema (all keys optional; each in full at
 # efference://guide/config-format):
 #   scope = \"...\"                       # STRING, top-level — what this session is for (NOT a [scope] table)
-#   watch-for = [\"...\"]                 # hazards the permission spotter should watch for
+#   spotter-notes = [\"...\"]            # notes for the permission spotter: hazards here, or facts that make a move ordinary
 #   trust-threshold = 0.5               # where the watch-window/gate cutoffs sit (optional float)
 #   [tools]                             # which tools the session has, and which run without review:
 #                                       #   efference = { enabled = true, granted = true } (its own tools),

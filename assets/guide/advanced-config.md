@@ -95,17 +95,19 @@ Memories = { path = "/home/<user>/.claude/projects/-home-<user>-code-<project>/m
 Read-only as written; `create = true` would let sessions add memories of their own there,
 which is a further question.
 
-## Hazards for the spotter
+## Notes for the spotter
 
-`watch-for` names things the permission spotter should look out for in this project —
-never shown to the session itself, which is the point: it directs the reviewer's attention
-without teaching the reviewed to route around it.
+`spotter-notes` holds short notes for the permission spotter about this project, of two
+kinds: a hazard to look out for, and a fact that makes a move ordinary here. They are never
+shown to the session itself, which is the point: they direct the reviewer's attention
+without teaching the reviewed to route around them.
 
 ```toml
-watch-for = [
+spotter-notes = [
   "anything that runs scripts/deploy.sh",
   "connections to the production database",
+  "https://dev.example.net:7878 is this project's own development server",
 ]
 ```
 
-Set it when the operator names a hazard, not from a guess.
+Set it when the operator names a hazard or a fact, not from a guess.

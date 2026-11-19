@@ -113,7 +113,7 @@ fn an_untouched_document_syncs_back_byte_identically() {
     let original = "# efference config — schema in this header\n\
              scope = \"stay in src/\"   # the mission\n\
              \n\
-             watch-for = [\n  \"network egress\",\n]\n\
+             spotter-notes = [\n  \"network egress\",\n]\n\
              \n\
              [commands]\n\
              cargo   = true\n\

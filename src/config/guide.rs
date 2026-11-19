@@ -101,7 +101,7 @@ pub const DOCUMENTS: &[Document] = &[
         slug: "advanced-config",
         description: "What a setup can offer when the project calls for it: mounting efference \
                       in another agent harness, secrets through [env], denying secret-bearing \
-                      files, Claude Code memories, watch-for.",
+                      files, Claude Code memories, spotter notes.",
         body: include_str!("../../assets/guide/advanced-config.md"),
         tools: &["read"],
     },

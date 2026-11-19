@@ -216,8 +216,9 @@ that each is possible; read `efference://guide/advanced-config` for how, when on
   down, and keeps credentials out of the log and out of the commands a session runs.
 - **Claude Code has worked here** (`CLAUDE.md`). Its per-project memories can be listed for
   efference sessions to read.
-- **A hazard the spotter should watch for** — deploy scripts, a production database URL.
-  `watch-for` names it for the spotter alone.
+- **A note for the spotter** — a hazard such as a deploy script or a production database
+  URL, or a fact that makes a move ordinary, such as the project's own development server.
+  `spotter-notes` holds it for the spotter alone.
 
 Questions about efference itself rather than this project are answered elsewhere: a
 different model, a provider, or the environment sessions start with in
@@ -349,7 +350,7 @@ count.
 
 - **Secrets.** Never a literal value; `efference://guide/advanced-config` has the vault
   reference, when one is needed at all.
-- **`watch-for`,** unless the operator asked for one. It is read only by the permission
+- **`spotter-notes`,** unless the operator asked for one. It is read only by the permission
   spotter and never shown to the session, which is the point of it.
 - **Anything the session should discover for itself.** The preamble is frozen at boot and
   every byte of it is re-sent on every request.

@@ -23,14 +23,14 @@ fn a_fixture_is_the_config_its_toml_would_be() {
         .with_command("git push", CommandStance::Gate)
         .with_command("npm", CommandStance::Deny)
         .with_command("make", CommandStance::Watch)
-        .with_watch_for("deploy keys")
+        .with_spotter_note("deploy keys")
         .with_scope("Fix the build.")
-        .with_watch_for("network egress")
+        .with_spotter_note("network egress")
         .build();
     let written = parse_str(
         r#"
         scope = "Fix the build."
-        watch-for = ["deploy keys", "network egress"]
+        spotter-notes = ["deploy keys", "network egress"]
 
         [tools]
         efference = { enabled = true }

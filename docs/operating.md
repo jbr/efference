@@ -881,7 +881,7 @@ The frozen system prompt tells it, in these words or close to them:
 
 Two things the session is **not** told: the path to its own config file (it learns that from
 a gate rejection when a move actually strays, so the perimeter stays out of its attention
-until it is relevant), and the `watch-for` list (which the spotter holds instead).
+until it is relevant), and the `spotter-notes` list (which the spotter holds instead).
 
 ## Reading the log for audit
 

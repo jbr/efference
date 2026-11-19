@@ -109,7 +109,7 @@ fn a_role_reads_back_with_every_section_filled() {
     round_trips(&RoleView {
         source: Some("/work/efference.toml".into()),
         scope: Some("Fix the parser.".into()),
-        watch_for: vec!["deleting tests".into()],
+        spotter_notes: vec!["deleting tests".into()],
         commands: BTreeMap::from([
             ("git".to_string(), crate::config::CommandStance::Clear),
             ("git push".to_string(), crate::config::CommandStance::Deny),

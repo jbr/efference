@@ -164,7 +164,7 @@ fn available_tools(toolbox: &Toolbox) -> Vec<String> {
 fn tester_role(
     config: Option<&Path>,
     scope: Option<String>,
-    watch_for: Vec<String>,
+    spotter_notes: Vec<String>,
     paths: &[String],
 ) -> Result<efference::config::Config, CliError> {
     let base = match config {
@@ -179,10 +179,10 @@ fn tester_role(
     };
     Ok(efference::config::Config {
         scope: scope.or(base.scope),
-        watch_for: if watch_for.is_empty() {
-            base.watch_for
+        spotter_notes: if spotter_notes.is_empty() {
+            base.spotter_notes
         } else {
-            watch_for
+            spotter_notes
         },
         paths: if paths.is_empty() {
             base.paths
@@ -275,7 +275,7 @@ fn print_verdict(
 pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
     let dev::SpotterArgs {
         scope,
-        watch_for,
+        spotter_notes,
         paths,
         model,
         probe,
@@ -287,7 +287,7 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
         command,
     } = args;
     let command = command.join(" ");
-    let role = tester_role(config.as_deref(), scope, watch_for, &paths)?;
+    let role = tester_role(config.as_deref(), scope, spotter_notes, &paths)?;
 
     // The tester judges a move as if made from here, so this is the cwd the scope
     // block renders and resolves grants against.

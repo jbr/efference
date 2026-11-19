@@ -150,14 +150,14 @@ fn bumps_raise_the_level_to_the_axis_floor() {
     );
     assert_eq!(
         level(Axes {
-            watch_for_hit: Some(0.3),
+            note_warns: Some(0.3),
             ..clean()
         }),
         3
     );
     assert_eq!(
         level(Axes {
-            watch_for_hit: Some(0.2),
+            note_warns: Some(0.2),
             ..clean()
         }),
         0
@@ -257,7 +257,7 @@ fn the_fold_never_returns_watch() {
                     path_outside: p,
                     path_denied: p,
                     exposes_secrets: p,
-                    watch_for_hit: Some(p),
+                    note_warns: Some(p),
                     prefix_safe: Some(p),
                     ..at_level(level)
                 };
@@ -355,7 +355,7 @@ fn the_record_carries_the_sketch_and_the_precedent() {
     );
     let bare = serde_json::to_value(clean()).expect("serializes");
     assert!(bare.get("precedent").is_none());
-    assert!(bare.get("watch_for_hit").is_none());
+    assert!(bare.get("note_warns").is_none());
 }
 
 /// A `Spot` recorded before the sketch fold carries `reversible` and `sanctioned`
@@ -374,7 +374,7 @@ fn an_entry_recorded_with_the_old_axes_still_parses() {
     let axes: Axes = serde_json::from_value(old).expect("old shape parses");
     assert_eq!(axes.in_scope, 0.93);
     assert_eq!(axes.prefix_safe, Some(0.9));
-    assert_eq!(axes.watch_for_hit, None);
+    assert_eq!(axes.note_warns, None);
     assert_eq!(axes.sketch, None);
     assert_eq!(axes.precedent, None);
 }
@@ -429,12 +429,12 @@ fn the_cold_questions_are_the_sketch_and_the_shipping_axes() {
 #[test]
 fn conditional_questions_are_asked_only_when_they_apply() {
     let bare = ask::questions(false, false);
-    assert!(!bare.contains_key(questions::WATCH_FOR_HIT));
+    assert!(!bare.contains_key(questions::NOTE_WARNS));
     assert!(!bare.contains_key(questions::PREFIX_SAFE));
     assert!(bare.contains_key(questions::IN_SCOPE));
 
     let full = ask::questions(true, true);
-    assert!(full.contains_key(questions::WATCH_FOR_HIT));
+    assert!(full.contains_key(questions::NOTE_WARNS));
     assert!(full.contains_key(questions::PREFIX_SAFE));
 }
 
@@ -464,7 +464,7 @@ fn a_missing_answer_for_an_asked_question_fails_rather_than_reading_as_absent() 
     // Not asked: the axis is absent and the read succeeds.
     let axes =
         read_axes(&answered(&full), false, false).expect("the unconditional set is complete");
-    assert_eq!(axes.watch_for_hit, None);
+    assert_eq!(axes.note_warns, None);
     assert_eq!(axes.sketch, Some(vec![0.6, 0.2, 0.1, 0.07, 0.03]));
     // Asked and unanswered: no verdict.
     assert!(read_axes(&answered(&full), true, false).is_none());
@@ -510,7 +510,7 @@ fn the_state_withholds_the_harness_injected_intent() {
     );
 }
 
-/// The state carries a tool's safe-direction hints as `claims` and drops the
+/// The state includes a tool's safe-direction hints as `claims` and omits the
 /// unsafe-direction ones, as the prose brief does.
 #[test]
 fn the_state_carries_only_the_tools_guarantees() {
@@ -729,4 +729,51 @@ fn a_worktree_move_is_shown_as_its_project_counterpart() {
             "under_grant": { "path": "/work/proj", "access": "read, write" },
         }])
     );
+}
+
+/// The note question asks whether a note warns against the move, so a note that
+/// describes the project does not match; it points at the state's `spotter_notes`.
+#[test]
+fn the_note_question_asks_whether_a_note_warns() {
+    let questions = ask::questions(true, false);
+    let text = serde_json::to_string(&questions[questions::NOTE_WARNS]).unwrap();
+    assert!(text.contains("Does one of the `spotter_notes` warn against this kind of move?"));
+    assert!(text.contains("A note that only describes the project"));
+    assert_eq!(questions::NOTE_WARNS, "note_warns");
+}
+
+/// The state carries the trimmed, non-empty notes under `spotter_notes`.
+#[test]
+fn the_state_carries_the_spotter_notes() {
+    let call = ToolCall::new("fs__read", "c1", json!({ "path": "src/lib.rs" }));
+    let config = ConfigFixture::new()
+        .with_spotter_note("  deleting tests  ")
+        .with_spotter_note("https://dev.example:7878 is this project's own server")
+        .build();
+    let state = state::state(&config, &call, None, &[], None, None, None);
+    assert_eq!(
+        state["spotter_notes"],
+        json!([
+            "deleting tests",
+            "https://dev.example:7878 is this project's own server"
+        ])
+    );
+    assert!(state.get("watch_for").is_none());
+}
+
+/// An assessment recorded under the older axis name still reads into `note_warns`.
+#[test]
+fn an_entry_recorded_with_the_older_note_axis_still_parses() {
+    let old = json!({
+        "in_scope": 0.9,
+        "path_outside": 0.1,
+        "path_denied": 0.0,
+        "exposes_secrets": 0.0,
+        "watch_for_hit": 0.4,
+    });
+    let axes: Axes = serde_json::from_value(old).expect("older axis name parses");
+    assert_eq!(axes.note_warns, Some(0.4));
+    let rewritten = serde_json::to_value(&axes).unwrap();
+    assert_eq!(rewritten["note_warns"], json!(0.4));
+    assert!(rewritten.get("watch_for_hit").is_none());
 }

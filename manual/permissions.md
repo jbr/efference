@@ -46,7 +46,7 @@ while sending edits to the spotter:
 
 ```toml
 scope = "Work on this Rust crate: edit its source and tests, run its build and tests."
-watch-for = ["changes to CI configuration", "new dependencies"]
+spotter-notes = ["changes to CI configuration", "new dependencies"]
 
 [tools]
 efference = { enabled = true, granted = true }   # efference's own tools, without asking
@@ -63,10 +63,11 @@ efference = { enabled = true, granted = true }   # efference's own tools, withou
 "git log" = true
 "git push" = "deny"         # skip the spotter; always ask
 ```
-<!-- src: src/config/raw.rs; src/config/policy/paths.rs::governing_grant; src/config/policy/commands.rs::command_stance; src/curation/spotter.rs::render_context (watch-for) -->
+<!-- src: src/config/raw.rs; src/config/policy/paths.rs::governing_grant; src/config/policy/commands.rs::command_stance; src/curation/spotter.rs::render_context (spotter-notes) -->
 
-Here, `scope` tells the spotter what the sessions are for, and `watch-for` names changes
-that deserve attention. The agent can read, build, and test without interrupting you;
+Here, `scope` tells the spotter what the sessions are for, and `spotter-notes` gives it short
+notes about the project: changes that deserve attention, or facts that make a move
+ordinary here. The agent can read, build, and test without interrupting you;
 file edits go to the spotter for review.
 
 You can allow writes outright with `"." = true`, but those edits then pass without review.
@@ -213,7 +214,7 @@ covers it.
 
 The spotter sees the call (for efference's file tools and MCP tools, a description of the
 tool and its arguments; for shell commands, the command and the paths it names), the
-project's `scope` and `watch-for`, the working directory, and your `[paths]` settings. It
+project's `scope` and `spotter-notes`, the working directory, and your `[paths]` settings. It
 does not see the conversation, or the reason the agent gave for the call. An MCP server's
 own claims about its tools are grounds to hold, never to run. The spotter can let a call run
 or hold it; it cannot refuse one. If it fails or gives no usable answer, the call is held.

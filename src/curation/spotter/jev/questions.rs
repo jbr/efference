@@ -23,7 +23,7 @@ pub(super) const IN_SCOPE: &str = "in_scope";
 pub(super) const PATH_OUTSIDE: &str = "path_outside";
 pub(super) const PATH_DENIED: &str = "path_denied";
 pub(super) const EXPOSES_SECRETS: &str = "exposes_secrets";
-pub(super) const WATCH_FOR_HIT: &str = "watch_for_hit";
+pub(super) const NOTE_WARNS: &str = "note_warns";
 pub(super) const PREFIX_SAFE: &str = "prefix_safe";
 
 /// How many levels the `sketch` Score has.
@@ -70,7 +70,7 @@ pub(super) enum Cause {
 pub(super) enum Axis {
     DeniedPath,
     Secrets,
-    WatchFor,
+    NoteWarns,
     OutsideGrants,
     ScopeFit,
 }
@@ -81,7 +81,7 @@ impl Axis {
         match self {
             Self::DeniedPath => "a denied path",
             Self::Secrets => "possible secrets",
-            Self::WatchFor => "a watch-for match",
+            Self::NoteWarns => "a warning note",
             Self::OutsideGrants => "outside the grants",
             Self::ScopeFit => "scope fit",
         }
@@ -93,7 +93,7 @@ impl Axis {
         match self {
             Self::DeniedPath => "it names a path this session is denied",
             Self::Secrets => "it could expose secret material",
-            Self::WatchFor => "it may match something the operator asked to watch for",
+            Self::NoteWarns => "a note for the spotter may warn against it",
             Self::OutsideGrants => "it includes paths outside this session's grants",
             Self::ScopeFit => "its reviewer is unsure this fits the session's scope",
         }
@@ -139,7 +139,7 @@ pub(super) fn level_of(axes: &Axes) -> (usize, Cause) {
             3,
             Some(axes.exposes_secrets).filter(|p| *p > 0.15),
         ),
-        (Axis::WatchFor, 3, axes.watch_for_hit.filter(|p| *p > 0.25)),
+        (Axis::NoteWarns, 3, axes.note_warns.filter(|p| *p > 0.25)),
         (
             Axis::OutsideGrants,
             2,

@@ -77,7 +77,7 @@ pub struct RoleView {
     /// a live scope edit.
     pub scope: Option<String>,
     /// What the spotter watches for, which is on no other wire.
-    pub watch_for: Vec<String>,
+    pub spotter_notes: Vec<String>,
     /// Each `[commands]` key with the stance it carries: an entry can carve `watch`,
     /// `gate` or `deny` out of a broader grant, so a reader that saw only the keys would
     /// read a carve-out as a grant.

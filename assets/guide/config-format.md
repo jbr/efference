@@ -18,7 +18,7 @@ Zero checks any nonempty tool-work budget; it does not force an account.
 
 ```toml
 scope = "Work only inside this repo."          # what this session is for
-watch-for = ["network egress to non-registry hosts"]
+spotter-notes = ["network egress to non-registry hosts"]
 trust-threshold = 0.5
 first-turn = "Summarize what changed since the last session."
 extends = ["base.toml"]
@@ -27,8 +27,9 @@ extends = ["base.toml"]
 - **`scope`** — a string (not a `[scope]` table). It is rendered into the session's frozen
   preamble, and it is the authority the permission spotter judges a move against: the
   question at that rung is "is this inside the mission", not "is this dangerous".
-- **`watch-for`** — hazards the spotter should look out for. Spotter-only; deliberately
-  never shown to the session.
+- **`spotter-notes`** — short notes for the spotter about this project: a hazard to look
+  out for, or a fact that makes a move ordinary here. Spotter-only; deliberately never
+  shown to the session.
 - **`trust-threshold`** — parsed, reserved for the watch-window; nothing reads it yet.
 - **`first-turn`** — a user turn the harness sends when a session starts with nothing yet
   said, so the agent speaks first. Like the preamble it opens the session rather than being

@@ -6,7 +6,7 @@ use super::*;
 fn empty_document_is_a_valid_default_config() {
     let role = parse_str("");
     assert!(role.scope.is_none());
-    assert!(role.watch_for.is_empty());
+    assert!(role.spotter_notes.is_empty());
     assert!(role.trust_threshold.is_none());
     assert!(role.commands.is_empty());
     assert_eq!(role.tools, ToolsTable::default());
@@ -16,20 +16,46 @@ fn empty_document_is_a_valid_default_config() {
 }
 
 #[test]
-fn parses_scope_watch_for_and_trust_threshold() {
+fn parses_scope_spotter_notes_and_trust_threshold() {
     let role = parse_str(
         r#"
             scope = "Work only inside this repo."
-            watch-for = ["Flag network egress to non-registry hosts."]
+            spotter-notes = ["Flag network egress to non-registry hosts."]
             trust-threshold = 0.5
             "#,
     );
     assert_eq!(role.scope.as_deref(), Some("Work only inside this repo."));
     assert_eq!(
-        role.watch_for,
+        role.spotter_notes,
         ["Flag network egress to non-registry hosts."]
     );
     assert_eq!(role.trust_threshold, Some(0.5));
+}
+
+/// The older key still reads, into the same list.
+#[test]
+fn the_older_notes_key_still_parses() {
+    let role = parse_str(r#"watch-for = ["deleting tests"]"#);
+    assert_eq!(role.spotter_notes, ["deleting tests"]);
+}
+
+/// A file with both keys yields one list: the older key's entries, then the new key's.
+#[test]
+fn both_notes_keys_concatenate_older_first() {
+    let role = parse_str(
+        r#"
+            spotter-notes = ["a host that is the project's own server"]
+            watch-for = ["deleting tests", "force pushes"]
+            "#,
+    );
+    assert_eq!(
+        role.spotter_notes,
+        [
+            "deleting tests",
+            "force pushes",
+            "a host that is the project's own server"
+        ]
+    );
 }
 
 #[test]

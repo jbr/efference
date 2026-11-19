@@ -28,7 +28,7 @@ review you want along the way:
 
 | Key | What you can use it for | More |
 | --- | --- | --- |
-| `scope`, `watch-for` | Describe the work in a sentence, and flag changes the permission spotter should look out for | [Permissions](permissions.md) |
+| `scope`, `spotter-notes` | Describe the work in a sentence, and give the permission spotter short notes about the project: changes to look out for, or facts that make a move ordinary | [Permissions](permissions.md) |
 | `[tools]` | Choose which tools sessions have, and which run without asking; efference’s own tools are off unless enabled | [Permissions](permissions.md) |
 | `[paths]`, `[commands]` | Allow file access and shell command prefixes without asking | [Permissions](permissions.md) |
 | `[context]` | Include files such as `AGENTS.md`, or the output of commands run at startup | |

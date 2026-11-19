@@ -115,8 +115,8 @@ impl Spotter for JevSpot {
             dirs.as_ref(),
             self.scratch.as_deref(),
         );
-        let watch_for = role.watch_for.iter().any(|w| !w.trim().is_empty());
-        let questions = ask::questions(watch_for, probe.is_some());
+        let spotter_notes = role.spotter_notes.iter().any(|w| !w.trim().is_empty());
+        let questions = ask::questions(spotter_notes, probe.is_some());
 
         // The relation request rides beside the cold one, only when the session
         // has consented calls of the move's family to compare against.
@@ -183,7 +183,7 @@ impl Spotter for JevSpot {
         // Every unconditional axis must have come back. A partial answer set is
         // not a partial verdict — the fold reads all of them — so it fails closed
         // exactly as an unparseable `spot` call does.
-        let Some(mut axes) = read_axes(&decisions, watch_for, probe.is_some()) else {
+        let Some(mut axes) = read_axes(&decisions, spotter_notes, probe.is_some()) else {
             log::warn!(
                 "spotter decisions response answered {:?}, which is not the asked set",
                 decisions.answers.keys().collect::<Vec<_>>()
@@ -226,7 +226,7 @@ fn add_usage(
 /// missing or came back as something other than a boolean answer.
 fn read_axes(
     decisions: &crate::inference::api::Decisions,
-    watch_for: bool,
+    spotter_notes: bool,
     probe: bool,
 ) -> Option<Axes> {
     Some(Axes {
@@ -237,8 +237,8 @@ fn read_axes(
         // A conditional axis is `None` when it wasn't asked, and a hard failure
         // when it was asked and went unanswered — the fold reads "not asked" as
         // "nothing to weigh", which is wrong if the question was in fact posed.
-        watch_for_hit: if watch_for {
-            Some(decisions.probability(questions::WATCH_FOR_HIT)?)
+        note_warns: if spotter_notes {
+            Some(decisions.probability(questions::NOTE_WARNS)?)
         } else {
             None
         },

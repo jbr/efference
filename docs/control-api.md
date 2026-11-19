@@ -1194,7 +1194,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   "role": {                        // EFFECTIVE policy = base config + folded edits
     "source": "/path/efference.toml",   // or null for the built-in default
     "scope": "…",
-    "watch_for": [ … ],
+    "spotter_notes": [ … ],
     "commands": { "<prefix>": "clear|watch|gate|deny" },
     "tools": { "<key>": { "enabled"?: true, "granted"?: true } },  // the [tools] table, keyed as
                                    //   the file spells it, with only the fields an entry sets

@@ -12,7 +12,7 @@ use super::*;
 /// path's perms, or replace the scope text — it cannot *remove* a set member or clear scope. So a
 /// key deleted from the file is **not** propagated live (the effective config keeps it); tightening
 /// by file edit takes effect on the next boot, which reloads the file as the base. This is the
-/// honest frontier of the additive fold, not a bug to paper over. `watch-for` is likewise skipped —
+/// honest frontier of the additive fold, not a bug to paper over. `spotter-notes` is likewise skipped —
 /// it has no [`ConfigChange`] variant yet (see [`crate::record::log::ConfigChange`]). Emission order is
 /// deterministic: the `BTreeSet`/`BTreeMap` slots iterate sorted.
 pub fn diff_changes(from: &Config, to: &Config) -> Vec<ConfigChange> {

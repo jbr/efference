@@ -362,7 +362,7 @@ pub struct Session {
     /// Read-only for the session's lifetime — the scope is already frozen into the
     /// cached preamble; this copy backs the `GET /state` report ("which role am I?") and
     /// is where the cascade rungs (the prefix fast-path and the spotter) read the
-    /// allowlist, path grants, scope, and watch-for from. Immutable, so no lock.
+    /// allowlist, path grants, scope, and spotter-notes from. Immutable, so no lock.
     role: LoadedConfig,
     /// The **effective** policy = the base `role` + the fold of every `ConfigEdit` appended so
     /// far (docs/permissions.md). Maintained incrementally in [`append`]

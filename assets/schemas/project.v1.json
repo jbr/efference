@@ -60,6 +60,14 @@
       "description": "What sessions here are for, in prose. It opens each session's preamble, and the\nspotter judges every move it reviews against it: the question is whether the move\nis inside this scope, not whether it is dangerous.",
       "type": "string"
     },
+    "spotter-notes": {
+      "description": "Notes for the permission spotter about this project: a hazard particular to this\nkind of work, or a fact that makes a move ordinary here (a host that is the\nproject's own development server, a directory the work routinely reads). Shown to\nthe spotter only, never to the session.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
     "tools": {
       "description": "Which tools sessions here have, and which of those run without review. A bare key\nnames a namespace: `efference` for efference's own tools, `agents` for the tools that\nreach other sessions, `lsp` for the language-server tools (definition, references,\nrename), `resources` for reading the resources declared servers offer, or a server\ndeclared under `[mcp.servers]`. A quoted dotted key\nnames one tool and overrides its namespace, as in `\"agents.message\" = { granted =\ntrue }` or `\"efference.bash\" = { enabled = false }`. The tools a session's own loop\nrelies on (`consolidate`, `ask`, `wait`, and the process and inbox tools) are always\npresent.",
       "type": "object",
@@ -75,9 +83,10 @@
       "type": "number"
     },
     "watch-for": {
-      "description": "Hazards the spotter should look out for in this project. Shown to the spotter\nonly, never to the session.",
+      "description": "Older name for `spotter-notes`.",
       "type": "array",
       "default": [],
+      "deprecated": true,
       "items": {
         "type": "string"
       }
@@ -154,7 +163,7 @@
               "enumValues": [
                 "Every document, each listed as a one-line stub.",
                 "Setting up a project: where the config lives, what belongs in it, and the difference between the project template and a session's own copy.",
-                "What a setup can offer when the project calls for it: mounting efference in another agent harness, secrets through [env], denying secret-bearing files, Claude Code memories, watch-for.",
+                "What a setup can offer when the project calls for it: mounting efference in another agent harness, secrets through [env], denying secret-bearing files, Claude Code memories, spotter notes.",
                 "Every key in the user-wide ~/.efference/config.toml: connections and their credentials, the three roles, env_hook (the environment sessions start with), [secrets], [host], [updates], [tui].",
                 "The host that holds sessions, the web interface, reaching it over Tailscale, signing browsers in, and keeping the host running as a service.",
                 "Reference for every `efference.toml` key: scope, tools, [commands], [paths], [context], [env], [bash], [transport], [mcp.servers].",

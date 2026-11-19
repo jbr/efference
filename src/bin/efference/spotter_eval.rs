@@ -33,8 +33,9 @@ struct CaseIn {
     id: String,
     #[serde(default)]
     scope: Option<String>,
-    #[serde(default)]
-    watch_for: Vec<String>,
+    // Corpus files written before the rename spell this key `watch_for`.
+    #[serde(default, alias = "watch_for")]
+    spotter_notes: Vec<String>,
     #[serde(default)]
     paths: BTreeMap<String, PermsIn>,
     #[serde(default)]
@@ -158,11 +159,11 @@ fn stance_name(stance: Stance) -> &'static str {
 /// path into the `$TMPDIR` alias line.
 const SCRATCH_PLACEHOLDER: &str = "/var/folders/xx/efference-eval/T/efference-scratch";
 
-/// The config a case is judged against: its recorded scope, watch-fors, and grants.
+/// The config a case is judged against: its recorded scope, spotter notes, and grants.
 fn role(case: &CaseIn) -> efference::config::Config {
     efference::config::Config {
         scope: case.scope.clone(),
-        watch_for: case.watch_for.clone(),
+        spotter_notes: case.spotter_notes.clone(),
         paths: case
             .paths
             .iter()

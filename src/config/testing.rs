@@ -77,14 +77,16 @@ impl ConfigFixture {
         self
     }
 
-    /// Add `item` to the end of the spotter's `watch-for` list.
-    pub(crate) fn with_watch_for(mut self, item: &str) -> Self {
+    /// Add `item` to the end of the spotter's `spotter-notes` list.
+    pub(crate) fn with_spotter_note(mut self, item: &str) -> Self {
         let list = self
             .doc
             .as_table_mut()
-            .entry("watch-for")
+            .entry("spotter-notes")
             .or_insert(value(toml_edit::Array::new()));
-        list.as_array_mut().expect("watch-for is a list").push(item);
+        list.as_array_mut()
+            .expect("spotter-notes is a list")
+            .push(item);
         self
     }
 

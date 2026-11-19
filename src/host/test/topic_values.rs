@@ -410,7 +410,7 @@ fn state_reports_session_cost_only_when_armed() {
 
 /// `GET /state` reports the resolved role (docs/permissions.md): a
 /// `null` source for the built-in default, and the path plus the **effective** config's full
-/// contents (scope, watch-for, commands, tools, paths) when a config is in effect — so "what is
+/// contents (scope, spotter-notes, commands, tools, paths) when a config is in effect — so "what is
 /// my live perimeter?" is answerable, not just "which file?". The contents track the *effective*
 /// policy, so a folded config edit shows up (docs/permissions.md).
 #[test]
@@ -426,7 +426,7 @@ fn state_reports_effective_role_contents() {
     let loaded = LoadedConfig {
         role: ConfigFixture::new()
             .with_scope("stay in the repo")
-            .with_watch_for("network egress")
+            .with_spotter_note("network egress")
             .with_tool("read")
             .with_command("cargo", CommandStance::Clear)
             .with_command("git diff", CommandStance::Clear)
@@ -443,7 +443,7 @@ fn state_reports_effective_role_contents() {
     );
     assert_eq!(v["role"]["scope"], "stay in the repo");
     assert_eq!(
-        v["role"]["watch_for"],
+        v["role"]["spotter_notes"],
         serde_json::json!(["network egress"])
     );
     // key → stance, so a carve-out is legible as one rather than reading as a grant.

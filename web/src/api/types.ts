@@ -86,7 +86,7 @@ export type Approval =
  * (docs/permissions.md). Each variant addresses one section of the config table;
  * [`crate::config::policy::apply_config_change`] sets the named key (replace-at-key, last-write-wins).
  * Most variants set membership or a perm; [`ConfigChange::Scope`] replaces a scalar — the
- * narrowing edit append-only KDL couldn't do. There is no `watch-for` variant: its replace
+ * narrowing edit append-only KDL couldn't do. There is no `spotter-notes` variant: its replace
  * semantics over a list are undecided.
  *
  * **Session-visibility** (which edits notify the session) is decided by variant in
@@ -2079,7 +2079,7 @@ export interface AttentiveClient {
 /**
  * One assessment's answers, as the model reported them: P(true) per axis, and the
  * sketch distribution. The two optional axes are asked only when the state
- * carries the thing they are about — a watch-for list, a promotion probe — so
+ * carries the thing they are about — a spotter-notes list, a promotion probe — so
  * `None` means "not asked", never "answered zero".
  *
  * Recorded alongside the stance on `Spot::axes`. Entries that predate the sketch
@@ -2092,6 +2092,10 @@ export interface AttentiveClient {
 export interface Axes {
   exposes_secrets: number;
   in_scope: number;
+  /**
+   * A note for the spotter warns against this kind of move.
+   */
+  note_warns?: number | null;
   /**
    * Names a path under a grant marked `denied` — the carve-out case, which
    * is a different question from being outside every grant.
@@ -2113,7 +2117,6 @@ export interface Axes {
    * P(level) for sketch levels 0 to 4, lowest first.
    */
   sketch?: number[] | null;
-  watch_for_hit?: number | null;
 }
 /**
  * What the relation request read: of the `candidates` earlier calls asked about,
@@ -4565,6 +4568,10 @@ export interface RoleView {
    */
   source: string | null;
   /**
+   * What the spotter watches for, which is on no other wire.
+   */
+  spotter_notes: string[];
+  /**
    * The `[tools]` table keyed as the file spells each entry (`efference`,
    * `"agents.message"`), carrying only the fields the entry sets: a `granted = false`
    * carve-out under a granted namespace reads as one.
@@ -4572,10 +4579,6 @@ export interface RoleView {
   tools: {
     [k: string]: ToolSettings;
   };
-  /**
-   * What the spotter watches for, which is on no other wire.
-   */
-  watch_for: string[];
 }
 /**
  * One `[tools]` entry as written. A field left `None` comes from the namespace's entry, then

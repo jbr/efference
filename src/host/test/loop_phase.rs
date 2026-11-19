@@ -75,7 +75,7 @@ async fn settle_waits_through_an_autonomous_decline() {
     let (host, runtime, _dir) = start_with(&upstream, |boot| {
         boot.autonomous = true;
         boot.spotter.stance = Stance::Watch;
-        boot.spotter.reason = "watch-for: echo".into();
+        boot.spotter.reason = "note warns: echo".into();
     })
     .await;
     let session = Arc::clone(runtime.session());

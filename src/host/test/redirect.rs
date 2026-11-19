@@ -78,7 +78,7 @@ async fn the_autonomous_redirect_is_the_reviews() {
     let (_host, runtime, _dir) = start_with(&upstream, |boot| {
         boot.autonomous = true;
         boot.spotter.stance = Stance::Watch;
-        boot.spotter.reason = "watch-for: rm".into();
+        boot.spotter.reason = "note warns: rm".into();
     })
     .await;
     let session = Arc::clone(runtime.session());

@@ -19,13 +19,13 @@ fn preamble_section_is_none_without_a_scope() {
     assert!(role.preamble_section().is_none());
 }
 
-/// The watch-for list is spotter-only — it must never leak into the session's preamble.
+/// The spotter-notes list is spotter-only — it must never leak into the session's preamble.
 #[test]
-fn preamble_section_excludes_the_watch_for() {
+fn preamble_section_excludes_the_spotter_notes() {
     let role = parse_str(
         r#"
             scope = "Do the task."
-            watch-for = ["SECRET RED FLAGS"]
+            spotter-notes = ["SECRET RED FLAGS"]
             "#,
     );
     let section = role.preamble_section().unwrap();

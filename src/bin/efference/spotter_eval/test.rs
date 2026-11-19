@@ -26,3 +26,16 @@ fn a_case_without_a_cwd_parses_as_none() {
     assert!(case.cwd.is_none());
     assert_eq!(case.expected.as_deref(), Some("approve"));
 }
+
+/// A corpus line spells its notes `spotter_notes`, or `watch_for` when it was extracted
+/// before the rename; both read into the one field.
+#[test]
+fn a_case_reads_its_notes_under_either_key() {
+    let old = r#"{"id":"a","watch_for":["one"],"call":{"name":"bash","input":{"command":"ls"}}}"#;
+    let new =
+        r#"{"id":"b","spotter_notes":["two"],"call":{"name":"bash","input":{"command":"ls"}}}"#;
+    let old: CaseIn = serde_json::from_str(old).unwrap();
+    let new: CaseIn = serde_json::from_str(new).unwrap();
+    assert_eq!(old.spotter_notes, ["one"]);
+    assert_eq!(new.spotter_notes, ["two"]);
+}
