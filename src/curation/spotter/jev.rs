@@ -98,13 +98,13 @@ impl Spotter for JevSpot {
         call: &ToolCall,
         circumstances: &Circumstances<'_>,
     ) -> Spotting {
-        let Circumstances {
-            brief,
+        let &Circumstances {
+            ref brief,
             chain,
             probe,
             precedents,
+            supervision: _, // the prose rung's alone: no question here reads it
         } = circumstances;
-        let (probe, precedents) = (*probe, *precedents);
         let dirs = self.directories.clone().or_else(super::process_directories);
         let state = state::state(
             role,

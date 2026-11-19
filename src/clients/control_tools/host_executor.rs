@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::args;
 use crate::host::Host;
-use crate::protocol::agents::{ARCHIVE_WIRE_NAME, BoundAction, DECIDE_WIRE_NAME, allows};
+use crate::protocol::agents::{BoundAction, DECIDE_WIRE_NAME, allows, archive_target};
 use crate::protocol::sessions::CreateSession;
 use crate::protocol::transcript::Handle;
 use crate::record::log::ToolCall;
@@ -255,10 +255,7 @@ impl HostExecutor {
     /// succession record. False when the host holds no record — after a host restart the
     /// link is not restored, so nothing clears here then.
     pub(super) fn completes_hand_off(&self, call: &ToolCall) -> bool {
-        if call.name != ARCHIVE_WIRE_NAME {
-            return false;
-        }
-        let Some(target) = call.input.get("agent").and_then(Value::as_str) else {
+        let Some(target) = archive_target(call) else {
             return false;
         };
         let Ok(host) = self.host() else {

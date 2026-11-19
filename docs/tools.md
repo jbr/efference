@@ -295,7 +295,7 @@ server it mounts. A host with none installed boots sessions without the `agents_
 The toolbox holds the server over the verbs as a `ControlServer` trait object, the one
 provider whose calls go through a boxed future. The session's model reaches its project's other
 sessions by tool call, under namespaced wire names (`agents__message`, `agents__status`,
-`agents__create`). None is granted by default, so the spotter judges each call. Acting verbs never block: an in-session caller hears its
+`agents__create`). None is granted by default, so the spotter judges each call, apart from three kinds that clear on the fast path: a denying or escalating `decide`, a successor's `archive` of its predecessor, and a supervisor's `archive` of a session it supervises ([permissions.md](permissions.md)). The spotter's request includes the session's supervisor and the sessions it supervises. Acting verbs never block: an in-session caller hears its
 children through its inbox (below) rather than through a waiting call. What a supervising
 session is told about this surface is the guide document `efference://guide/supervising`
 (`assets/guide/supervising.md`, [context.md](context.md)).
@@ -584,7 +584,9 @@ fast-path, spotter brief, and human gate read that action rather than the handle
 gate view includes it as `acting_on` (docs/control-api.md). A held call that is itself an
 allowing `agents__decide` is followed through the host to the leaf; a stale seq refuses
 with "gate moved" before any rung is consulted. A denying or escalating `agents__decide`
-authorizes nothing, so it is not bound and clears on the fast path.
+authorizes nothing, so it is not bound and clears on the fast path. An `agents__archive` of
+a session the caller supervises clears there too, with no spotter request
+([permissions.md](permissions.md)); it still ends that session's non-detached descendants.
 
 `McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the
 instantiations (fs-mcp, semantic-edit-mcp, and the session-control server). It holds

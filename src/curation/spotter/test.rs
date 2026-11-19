@@ -182,14 +182,14 @@ fn hints(
     destructive: Option<bool>,
     idempotent: Option<bool>,
     open_world: Option<bool>,
-) -> Option<mcplease::types::ToolAnnotations> {
-    Some(mcplease::types::ToolAnnotations {
+) -> mcplease::types::ToolAnnotations {
+    mcplease::types::ToolAnnotations {
         title: None,
         read_only_hint: read_only,
         destructive_hint: destructive,
         idempotent_hint: idempotent,
         open_world_hint: open_world,
-    })
+    }
 }
 
 /// The brief of `definition` as a connected server's tool, rendered.
@@ -220,12 +220,12 @@ fn a_server_tool_is_attributed_neutrally() {
 fn unsafe_direction_hints_render_nothing() {
     // Destructive and open-world describe the tool over every input; they are
     // uninformative about this call, so the brief includes neither them nor a heading.
-    let rendered = server_brief(&briefed_tool(hints(
+    let rendered = server_brief(&briefed_tool(Some(hints(
         Some(false),
         Some(true),
         Some(false),
         Some(true),
-    )));
+    ))));
     assert!(!rendered.contains("guarantees"), "{rendered}");
     assert!(!rendered.contains("destructive"), "{rendered}");
     assert!(!rendered.contains("open-world"), "{rendered}");
@@ -236,7 +236,12 @@ fn unsafe_direction_hints_render_nothing() {
 
 #[test]
 fn a_read_only_open_world_tool_renders_only_the_read_only_guarantee() {
-    let rendered = server_brief(&briefed_tool(hints(Some(true), None, None, Some(true))));
+    let rendered = server_brief(&briefed_tool(Some(hints(
+        Some(true),
+        None,
+        None,
+        Some(true),
+    ))));
     assert!(
         rendered.contains(
             "\nWhat the server guarantees about it, for every input:\n\
@@ -249,12 +254,12 @@ fn a_read_only_open_world_tool_renders_only_the_read_only_guarantee() {
 
 #[test]
 fn every_safe_direction_hint_renders_as_a_guarantee() {
-    let rendered = server_brief(&briefed_tool(hints(
+    let rendered = server_brief(&briefed_tool(Some(hints(
         Some(true),
         Some(false),
         Some(true),
         Some(false),
-    )));
+    ))));
     assert!(
         rendered.contains(
             "What the server guarantees about it, for every input:\n\
@@ -288,7 +293,7 @@ fn a_tool_with_no_annotations_renders_no_guarantees_section() {
 
 #[test]
 fn a_built_in_tools_guarantees_are_the_harnesss() {
-    let definition = briefed_tool(hints(Some(true), None, None, Some(false)));
+    let definition = briefed_tool(Some(hints(Some(true), None, None, Some(false))));
     let rendered = render_brief(
         "search",
         &ToolBrief {

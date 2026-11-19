@@ -436,3 +436,61 @@ async fn a_child_with_no_setting_answers_to_its_creator() {
 
     fixture.host.swansong().shut_down().await;
 }
+
+/// A session's place in the supervision relation, as the spotter is told it
+/// (docs/permissions.md): its live supervisor, and each session whose pointer names it,
+/// with whether it created that session and its status now. The archive fast path
+/// reads the same pointer: a session supervises the sessions listed and no other.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_sessions_supervision_lists_its_supervisor_and_supervisees() {
+    use crate::protocol::agents::{Supervisee, Supervision};
+    use crate::protocol::sessions::ListedStatus;
+    let fixture = Fixture::new().await;
+    fixture.host.set_supervisor("b", Some("a".into())).unwrap();
+    let _gate = fixture
+        .session("kid")
+        .register_pending(&leaf(), Default::default());
+
+    assert_eq!(
+        fixture.session("a").supervision(),
+        Some(Supervision {
+            supervisor: None,
+            supervisees: vec![
+                Supervisee {
+                    id: "b".into(),
+                    created: false,
+                    status: ListedStatus::Idle,
+                },
+                Supervisee {
+                    id: "kid".into(),
+                    created: true,
+                    status: ListedStatus::Gated,
+                },
+            ],
+        })
+    );
+    assert_eq!(
+        fixture.session("kid").supervision(),
+        Some(Supervision {
+            supervisor: Some("a".into()),
+            supervisees: Vec::new(),
+        })
+    );
+    assert_eq!(
+        fixture.session("c").supervision(),
+        Some(Supervision::default()),
+        "a root supervising nothing is known to have no relation"
+    );
+    assert_eq!(
+        Session::in_memory().0.supervision(),
+        None,
+        "without a host nothing is known"
+    );
+
+    let a = fixture.session("a");
+    assert!(a.supervises("b") && a.supervises("kid"));
+    assert!(!a.supervises("c") && !a.supervises("stranger") && !a.supervises("a"));
+    assert!(!fixture.session("b").supervises("a"));
+
+    fixture.host.swansong().shut_down().await;
+}

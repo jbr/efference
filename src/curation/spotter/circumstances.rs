@@ -1,11 +1,13 @@
 //! The circumstances a spotter judges a move in (docs/permissions.md).
 
+use crate::protocol::agents::Supervision;
 use crate::record::log::ToolCall;
 use crate::tools::ToolBrief;
 
 /// Everything [`super::Spotter::assess`] is given beyond the config and the call
 /// itself. [`Circumstances::default`] is the plain move: a bash command or
-/// structured call with no brief, no approval chain, no probe and no precedents.
+/// structured call with no brief, no approval chain, no probe, no precedents, and no
+/// known place among the host's sessions.
 /// The `with_*` methods set one input each. The fields borrow from the toolbox
 /// and the session, so a value lives for one `assess` call.
 #[derive(Default)]
@@ -32,6 +34,13 @@ pub struct Circumstances<'a> {
     /// is the child's, not this session's. The decision rung weighs them; the prose
     /// rung ignores them.
     pub precedents: &'a [ToolCall],
+    /// The calling session's place in the supervision relation: the session that
+    /// supervises it and the sessions it supervises (docs/permissions.md). For a bound
+    /// leaf it is the approving session's, not the leaf holder's. `None` when it is not
+    /// known — no host is at hand (the `efference dev spotter` dev command, the offline
+    /// eval) — which is not the same as a session with no supervisor and none
+    /// supervised. The prose rung renders it; the decision rung ignores it.
+    pub supervision: Option<&'a Supervision>,
 }
 
 impl<'a> Circumstances<'a> {
@@ -56,6 +65,12 @@ impl<'a> Circumstances<'a> {
     /// The consented earlier calls of the session.
     pub fn with_precedents(mut self, precedents: &'a [ToolCall]) -> Self {
         self.precedents = precedents;
+        self
+    }
+
+    /// The session's place in the supervision relation, when it is known.
+    pub fn with_supervision(mut self, supervision: Option<&'a Supervision>) -> Self {
+        self.supervision = supervision;
         self
     }
 }

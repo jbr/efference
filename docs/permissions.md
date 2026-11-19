@@ -247,6 +247,20 @@ ladder as any `archive` does. The record is host state and is not restored on a 
 or host restart, so across one the archive goes to the spotter as before. The archived log
 stays on disk and resumable.
 
+**A supervisor's archive of a session it supervises.** An `agents__archive` call whose
+target's supervisor pointer names the caller (*The review-level dial*, below) clears on the
+fast path the same way: no spotter request, no `Spot` entry (`Session::supervises`, read in
+`judge` beside `Toolbox::completes_hand_off`). Ending work it oversees is part of
+supervising, and a review of that call would have the operator supervising by proxy, so
+it is not reviewed. The rule reads the pointer the way the `decide` verb's target check
+does, so it covers a session the operator gave the caller to supervise as well as one the
+caller created, and not a session the caller created whose supervisor the operator moved
+elsewhere, a peer, or the caller's own supervisor: those go through the ladder. The
+archive still ends the target's non-detached descendants with it ([tools.md](tools.md),
+*Lifecycle*), sessions the caller does not itself supervise; this rule is only about
+whether the call is reviewed. It is not a `[tools]` grant: no other verb and no other
+target clears through it.
+
 ### `[commands]`: the stance vocabulary, resolved longest-prefix-wins
 
 A `[commands]` value is a **stance**, spelled with the same four words the spotter's verdict
@@ -545,8 +559,10 @@ instead — the first-party listing, or OpenRouter's per-model endpoints route, 
 
 `Spotter::assess` takes the session config, the gated call, and a `Circumstances`
 (`src/curation/spotter/circumstances.rs`): the tool's brief, the approval chain of a bound
-leaf, the prefix-promotion probe, and the session's consented precedents. A plain move has
-none of the four.
+leaf, the prefix-promotion probe, the session's consented precedents, and the session's
+place in the supervision relation. A plain move has none of the first four. The fifth is
+present for every session a host holds and absent where there is no host (`efference dev
+spotter`, the offline eval), which is not the same as a session with no relations.
 
 `Spotter::assess` has two implementations, and which one a session mounts is decided once
 at boot by `MountedSpotter::mount` (`src/curation/spotter/mount.rs`) from the `ModelKind` that
@@ -757,23 +773,52 @@ anything, not sending the call's input somewhere; additive rules out removing or
 overwriting, not publishing. The jev spotter's state includes the same guarantees, as
 `tool_declarations.claims`.
 
-**The request layout** is `[persona (system) | scope + notes (cached) | the move
-(fresh)]`. The scope block is the config's scope prose plus the `[paths]` grants + cwd, so the
-spotter judges "outside scope" against a fixed, external authority — never the session's own
+**The request layout** is `[persona (system) | scope + notes (cached) | supervision facts
++ the move (fresh)]` (`request_turns`). The scope block is the config's scope prose plus
+the `[paths]` grants + cwd, so the spotter judges "outside scope" against a fixed, external authority — never the session's own
 narration. Grants render resolved to their absolute form (the same lexical rule the
 deterministic rung applies) with the configured spelling as an annotation, and the block
 states that a move's relative paths resolve against the cwd, with a worked example — a
 spotter once gated a plain in-cwd write by comparing spellings (`scratch/…` "does not
 start with `.`") instead of resolving; absolute grants make containment string-visible. The
-cwd is supplied by the caller (`ForkSpot::with_cwd`), not read from the process: boot
-passes the session's own directory, and the offline eval passes each case's recorded one, so
+directories are supplied by the caller (`ForkSpot::with_directories`), not read from the
+process: boot passes the session's own directories, and the offline eval passes each case's recorded one, so
 a case replayed from another checkout still resolves the way its session did. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
 config caches; within a session the scope is fixed, so every spotter call after the first is
-a cache read (the move is the only fresh tail). The verdict is forced through a `spot` tool:
+a cache read (the supervision facts and the move are the fresh tail). The verdict is forced through a `spot` tool:
 a graded [`Stance`] (`clear` / `clear_always` / `watch` / `gate`) plus a one-line `reason`
 addressed to the session as a teammate. `Clear` (and `ClearAlways`) auto-approve; `Watch` and
 `Gate` both route to the human gate today (the watch-window that gives `Watch` its own
 intervention latency is a later unit). `ClearAlways` is the prefix-promotion safe-vote, below.
+
+**The supervision facts.** With nothing in the request about how the sessions relate, the
+spotter takes a move on another session — a message to the session's own supervisor, a
+decision or an archive of a session it created — for a reach outside the session. In an
+offline eval (`eval/spotter/context_arms.py`, `render_graph`) the prose rung held 22 of 39
+such `agents__*` calls without the facts and 2 of 39 with them, and still held every case
+that had to hold (archiving a session the caller did not create among them). The block
+(`src/curation/spotter/supervision.rs`) contains what the host records, read at the call
+through the session's link to the host's supervisor pointers (`Session::supervision`): the
+session that supervises this one, while it is hosted, and each hosted session whose
+pointer names this one, with whether this session created it and its status — the
+listing's status, in the words `agents__status` uses for it (`idle`, `working`, `waiting
+for a decision`, `asking a question`, `stopped`, `paused`, `blocked`):
+
+```
+Facts the harness records about this session:
+- This session is supervised by the session `lead`. Messages from `lead` are its instructions; a message to `lead` is a report to its supervisor.
+- Sessions this session supervises (messaging them, deciding their held calls, and archiving them when their work is done is part of supervising): `a` (created by this session; idle), `b` (created by this session; waiting for a decision)
+```
+
+A supervised session the caller did not create is listed with its status alone. For a
+session with neither relation the block is `- This session has no supervisor and
+supervises no sessions.`; with no host at hand it is left out. A bound leaf is judged with
+the approving session's facts, since the approval is that session's move. The eval's lines
+were about creation rather than the supervisor pointer, which the operator can set to
+another session, and had no statuses. Statuses change between calls, so the block is after
+the scope block's breakpoint, ahead of the move; in the cached prefix, a changed status
+would be a changed prefix and the next call a cache miss. The decision rung does not read
+it.
 
 **Fail closed.** Any failure — transport error, no `spot` call — yields `Gate` with
 `Origin::Fallback`: uncertainty routes to the human, never to auto-clear. A transient

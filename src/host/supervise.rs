@@ -13,6 +13,7 @@
 //! a `Telemetry::SupervisorSet` entry, which projects to nothing.
 
 use super::*;
+use crate::protocol::agents::Supervisee;
 use crate::session::Session;
 use crate::session::review;
 
@@ -110,11 +111,33 @@ impl Host {
     }
 }
 
-/// What an adopted session's review reads through its link to this host
-/// (`review.rs`, docs/permissions.md).
+/// What an adopted session's review and permission path read through its link to this
+/// host (`review.rs`, docs/permissions.md).
 impl review::SupervisorPointers for Host {
     fn supervisor_of(&self, id: &str) -> Option<String> {
         Host::supervisor_of(self, id)
+    }
+
+    fn supervisees(&self, id: &str) -> Vec<Supervisee> {
+        // Read under the map's lock, then each status with the lock released: a status
+        // read takes the supervised session's own locks.
+        let supervised: Vec<(String, bool, Arc<Session>)> = self
+            .sessions_mut()
+            .hosted_iter()
+            .filter(|(_, hosted)| hosted.supervisor.as_deref() == Some(id))
+            .map(|(supervised, hosted)| {
+                let created = hosted.created_by.as_deref() == Some(id);
+                (supervised.clone(), created, Arc::clone(&hosted.session))
+            })
+            .collect();
+        supervised
+            .into_iter()
+            .map(|(supervised, created, session)| Supervisee {
+                id: supervised,
+                created,
+                status: ListedStatus::from(&session.status()),
+            })
+            .collect()
     }
 
     fn holds(&self, id: &str) -> bool {

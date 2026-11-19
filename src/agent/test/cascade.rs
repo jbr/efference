@@ -1,6 +1,8 @@
 //! Tests for the approval cascade, with the test doubles it needs.
 use super::*;
 
+mod supervision;
+
 /// A frontend that must not be reached. A call naming no tool cannot run, so nothing
 /// on the permission path — human gate included — should be asked about it.
 struct NeverGates;
@@ -72,10 +74,18 @@ impl Frontend for RecordingFrontend {
     }
 }
 
+/// What [`RecordingSpotter`] was handed for one move: the tool, the approval chain, and
+/// the calling session's supervision facts.
+type Seen = (
+    String,
+    Vec<String>,
+    Option<crate::protocol::agents::Supervision>,
+);
+
 /// A spotter that records the move it was asked about, so a test can pin that the
 /// parent's rung judged the child's leaf rather than the `agents__decide` call.
 struct RecordingSpotter {
-    seen: std::sync::Mutex<Vec<(String, Vec<String>)>>,
+    seen: std::sync::Mutex<Vec<Seen>>,
     stance: Stance,
     reason: String,
 }
@@ -87,10 +97,11 @@ impl Spotter for RecordingSpotter {
         call: &ToolCall,
         circumstances: &crate::curation::spotter::Circumstances<'_>,
     ) -> crate::curation::spotter::Spotting {
-        self.seen
-            .lock()
-            .unwrap()
-            .push((call.name.clone(), circumstances.chain.to_vec()));
+        self.seen.lock().unwrap().push((
+            call.name.clone(),
+            circumstances.chain.to_vec(),
+            circumstances.supervision.cloned(),
+        ));
         crate::curation::spotter::Spotting {
             read: crate::curation::spotter::Read {
                 stance: self.stance,

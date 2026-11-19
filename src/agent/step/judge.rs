@@ -32,8 +32,13 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
     // A successor archiving its own predecessor is the hand-off's completion
     // (docs/permissions.md): the host wrote the link at `hand_off`, so the call clears on
     // the fast path, before the spotter or the human is asked. A denial or an escalation
-    // at a child's gate authorizes nothing, and clears the same way.
-    if bound.is_none() && (toolbox.completes_hand_off(call) || toolbox.authorizes_nothing(call)) {
+    // at a child's gate authorizes nothing, and a supervisor archiving a session it
+    // supervises is ending work it oversees; both clear the same way.
+    if bound.is_none()
+        && (toolbox.completes_hand_off(call)
+            || toolbox.authorizes_nothing(call)
+            || archives_supervisee(shared, call))
+    {
         return Ok(Approval::Approve);
     }
     // The judged call: the child's leaf when bound, else the parent's own call.
@@ -128,6 +133,14 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
     }
 }
 
+/// Whether `call` is an `agents__archive` of a session this one supervises, by the
+/// host's supervisor pointer (docs/permissions.md). Any other target, including a
+/// session this one created whose supervisor the operator moved elsewhere, goes through
+/// the ladder.
+fn archives_supervisee(shared: &Session, call: &ToolCall) -> bool {
+    crate::protocol::agents::archive_target(call).is_some_and(|target| shared.supervises(target))
+}
+
 /// Prefix-promotion probe (docs/permissions.md): on a bash move, observe
 /// its recurrence and pick the shortest prefix worth asking the spotter to
 /// vouch for *for all arguments*. The spotter answers via the stance
@@ -174,11 +187,16 @@ async fn consult_spotter<S: Spotter>(
     } else {
         Vec::new()
     };
+    // Where this session sits among the host's sessions, read now: a supervised
+    // session's status moves between calls (docs/permissions.md). A bound leaf is judged
+    // with this session's place, the approver's, not the leaf holder's.
+    let supervision = shared.supervision();
     let circumstances = Circumstances::default()
         .with_brief(brief)
         .with_chain(chain)
         .with_probe(probe)
-        .with_precedents(&precedents);
+        .with_precedents(&precedents)
+        .with_supervision(supervision.as_ref());
     spotter.assess(role, judged, &circumstances).await
 }
 

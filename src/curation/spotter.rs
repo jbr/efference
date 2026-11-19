@@ -9,7 +9,7 @@
 //! `project(log)` — it is built from scratch:
 //!
 //! ```text
-//! [ persona (system, cached) | scope + notes (cached) | the move (fresh) ]
+//! [ persona (system, cached) | scope + notes (cached) | supervision facts + the move (fresh) ]
 //! ```
 //!
 //! The persona lives in `assets/prompts/spotter.md` and is `include_str!`d as the
@@ -23,6 +23,7 @@ mod circumstances;
 pub mod jev;
 mod mount;
 pub mod precedent;
+mod supervision;
 
 pub use circumstances::Circumstances;
 pub use mount::MountedSpotter;
@@ -206,24 +207,14 @@ impl Spotter for ForkSpot {
         call: &ToolCall,
         circumstances: &Circumstances<'_>,
     ) -> Spotting {
-        // Cached block: the per-session-stable scope + notes. Fresh
-        // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
-        // perturbs the cached prefix, docs/log-and-projection.md). The persona (system) + the cached block are
-        // the prefix; only the move is rewritten each call (docs/permissions.md).
         let dirs = self.directories.clone().or_else(process_directories);
-        let turns = vec![WireTurn::User(vec![
-            UserPart::Text(render_context(role, dirs.as_ref(), self.scratch.as_deref())),
-            UserPart::Breakpoint,
-            UserPart::Text(render_move(
-                role,
-                call,
-                circumstances.brief.as_ref(),
-                circumstances.chain,
-                circumstances.probe,
-                dirs.as_ref(),
-                self.scratch.as_deref(),
-            )),
-        ])];
+        let turns = request_turns(
+            role,
+            call,
+            circumstances,
+            dirs.as_ref(),
+            self.scratch.as_deref(),
+        );
 
         // A transient upstream failure is retried briefly before failing closed
         // (docs/permissions.md): the fallback is a human gate, which an operator at
@@ -277,6 +268,37 @@ impl Spotter for ForkSpot {
             tokio::time::sleep(pause).await;
         }
     }
+}
+
+/// The prose rung's request (docs/permissions.md). The scope block (scope + notes) is
+/// stable for the session and ends at the breakpoint, so with the persona it is the cached
+/// prefix. After it is the fresh part, rewritten each call: the supervision facts when
+/// they are known — statuses move between calls — and then the move, with the optional
+/// promotion probe (docs/log-and-projection.md).
+fn request_turns(
+    role: &Config,
+    call: &ToolCall,
+    circumstances: &Circumstances<'_>,
+    dirs: Option<&crate::config::policy::Directories>,
+    scratch: Option<&std::path::Path>,
+) -> Vec<WireTurn> {
+    let mut parts = vec![
+        UserPart::Text(render_context(role, dirs, scratch)),
+        UserPart::Breakpoint,
+    ];
+    if let Some(supervision) = circumstances.supervision {
+        parts.push(UserPart::Text(supervision::render(supervision)));
+    }
+    parts.push(UserPart::Text(render_move(
+        role,
+        call,
+        circumstances.brief.as_ref(),
+        circumstances.chain,
+        circumstances.probe,
+        dirs,
+        scratch,
+    )));
+    vec![WireTurn::User(parts)]
 }
 
 /// A deterministic stub: returns a fixed verdict, ignoring the role and call. For

@@ -36,6 +36,10 @@ one line per feature.
 
 - The web client's dev builds no longer install the stream scrubber or the stream debug overlay unless each is switched on in app settings.
 
+- The prose spotter is told the session's supervisor and the sessions it supervises, with whether it created each and its status.
+
+- A session's `agents__archive` of a session it supervises clears without a spotter request.
+
 ### Fixed
 
 - `efference --host` refuses to start when another host is answering its socket, and a host whose web bind fails exits with the error instead of running on the socket alone.

@@ -16,14 +16,20 @@
 use super::*;
 
 use crate::config::policy::ReviewLevel;
+use crate::protocol::agents::{Supervisee, Supervision};
 
-/// What a session's review reads of the host that adopted it (docs/permissions.md): the
-/// supervisor pointer the host holds for each session, and whether a session is hosted.
-/// `Host` implements it (`src/host/supervise.rs`).
+/// What a session's review and its permission path read of the host that adopted it
+/// (docs/permissions.md): the supervisor pointer the host holds for each session, the
+/// sessions whose pointer names a session, and whether a session is hosted. `Host`
+/// implements it (`src/host/supervise.rs`).
 pub(crate) trait SupervisorPointers: Send + Sync {
     /// The supervisor pointer for `id`, whether or not the session it names is still
     /// hosted. `None` when `id` is not hosted or has no supervisor.
     fn supervisor_of(&self, id: &str) -> Option<String>;
+
+    /// The hosted sessions whose supervisor pointer names `id`, in id order, each with
+    /// whether `id` created it and its status now.
+    fn supervisees(&self, id: &str) -> Vec<Supervisee>;
 
     /// Whether a session `id` is hosted now.
     fn holds(&self, id: &str) -> bool;
@@ -55,26 +61,43 @@ impl Session {
     /// root, or one whose pointer was cleared), for a session built without a host, and
     /// for a session whose supervisor has ended.
     pub fn supervisor(&self) -> Option<String> {
-        // Read the link out and drop the guard before touching the host: the host's
-        // session map is a lock of its own, and this one is never held across it.
-        let (host, id) = {
-            let guard = self.supervisor.lock().unwrap();
-            let link = guard.as_ref()?;
-            (link.host.upgrade()?, link.id.clone())
-        };
-        let supervisor = host.supervisor_of(&id)?;
-        host.holds(&supervisor).then_some(supervisor)
+        let (host, id) = self.host_link()?;
+        live_supervisor(host.as_ref(), &id)
+    }
+
+    /// This session's place in the supervision relation (docs/permissions.md): its live
+    /// supervisor, as [`Session::supervisor`] reads it, and the sessions it supervises.
+    /// `None` for a session built without a host, for which neither is known.
+    pub fn supervision(&self) -> Option<Supervision> {
+        let (host, id) = self.host_link()?;
+        Some(Supervision {
+            supervisor: live_supervisor(host.as_ref(), &id),
+            supervisees: host.supervisees(&id),
+        })
+    }
+
+    /// Whether this session supervises `id`: the host's supervisor pointer for `id` names
+    /// it, the rule `decide` enforces (docs/tools.md). What the archive fast path reads
+    /// (docs/permissions.md). False for a session built without a host.
+    pub fn supervises(&self, id: &str) -> bool {
+        self.host_link()
+            .is_some_and(|(host, me)| host.supervisor_of(id).as_deref() == Some(me.as_str()))
+    }
+
+    /// The host this session lives in and its id there, when it is linked to a host that
+    /// is still running. The guard is dropped before the caller touches the host: the
+    /// host's session map is a lock of its own, and this one is never held across it.
+    fn host_link(&self) -> Option<(Arc<dyn SupervisorPointers>, String)> {
+        let guard = self.supervisor.lock().unwrap();
+        let link = guard.as_ref()?;
+        Some((link.host.upgrade()?, link.id.clone()))
     }
 
     /// Whether the host this session lives in holds a session `id` now — what an
     /// escalated gate's routing asks of the session it went to (`status/view.rs`).
     /// False for a session built without a host.
     pub(super) fn host_holds(&self, id: &str) -> bool {
-        let host = {
-            let guard = self.supervisor.lock().unwrap();
-            guard.as_ref().and_then(|link| link.host.upgrade())
-        };
-        host.is_some_and(|host| host.holds(id))
+        self.host_link().is_some_and(|(host, _)| host.holds(id))
     }
 
     /// Move the dial to `supervisor` when it sits at the supervised default,
@@ -97,6 +120,12 @@ impl Session {
             level => level,
         }
     }
+}
+
+/// The session `host`'s supervisor pointer names for `id`, while that session is hosted.
+fn live_supervisor(host: &dyn SupervisorPointers, id: &str) -> Option<String> {
+    let supervisor = host.supervisor_of(id)?;
+    host.holds(&supervisor).then_some(supervisor)
 }
 
 /// Where a gate is routed (docs/permissions.md).

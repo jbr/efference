@@ -1,6 +1,7 @@
 //! The `agents__<verb>` tool surface as the model and the loop see it: the namespace, the
-//! wire names the loop treats specially, the `decide` argument, and the action a decision
-//! binds (docs/tools.md, docs/permissions.md).
+//! wire names the loop treats specially, the `decide` argument, the action a decision
+//! binds, and a session's place in the supervision relation, which the spotter is told
+//! (docs/tools.md, docs/permissions.md).
 //!
 //! The verbs themselves are `control_tools`. This is the part the rest of the crate reads
 //! without importing them: `tools` mounts the namespace, `config` reserves it, and the
@@ -100,6 +101,39 @@ pub(crate) fn authorizes_nothing(call: &ToolCall) -> bool {
             decision_of(&call.input),
             Some(Decision::Deny | Decision::Escalate)
         )
+}
+
+/// The session an `agents__archive` call names, when `call` is one that names a session.
+/// The two archives that clear on the fast path, a successor's of its predecessor and a
+/// supervisor's of a session it supervises, are read by their target (docs/permissions.md).
+pub(crate) fn archive_target(call: &ToolCall) -> Option<&str> {
+    (call.name == ARCHIVE_WIRE_NAME)
+        .then(|| call.input.get("agent").and_then(Value::as_str))
+        .flatten()
+}
+
+/// A session's place in the supervision relation, as the host records it: the session
+/// that supervises it and the sessions it supervises (docs/permissions.md). The prose
+/// spotter reads it as facts about the session whose move it judges.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Supervision {
+    /// The session the host's supervisor pointer names for this one, while that session
+    /// is hosted (`Session::supervisor`). `None` for a session with no supervisor.
+    pub supervisor: Option<String>,
+    /// The hosted sessions whose supervisor pointer names this one, by id.
+    pub supervisees: Vec<Supervisee>,
+}
+
+/// A session another supervises, as [`Supervision::supervisees`] lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Supervisee {
+    /// The supervised session's id.
+    pub id: String,
+    /// Whether the supervising session created it (its `created_by`). False for a
+    /// session the operator gave it to supervise.
+    pub created: bool,
+    /// Its status now, in the session listing's words.
+    pub status: crate::protocol::sessions::ListedStatus,
 }
 
 #[cfg(test)]
