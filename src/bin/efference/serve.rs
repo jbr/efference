@@ -391,6 +391,17 @@ pub(crate) async fn host(flags: HostFlags, bind: Option<String>) -> CliResult {
         Some(socket) => socket,
         None => user_host_socket()?,
     };
+    // One host per socket (docs/control-channel.md). Replacing a live host's socket file
+    // below would strand that host where no socket client reaches it, and this one would
+    // share its state database and reopen the sessions it is running.
+    if local_daemon_is_listening(&socket) {
+        return Err(format!(
+            "a host is already listening on {}; stop it first, or give this one its own \
+             --socket",
+            socket.display()
+        )
+        .into());
+    }
     let home = std::env::var_os("HOME").ok_or("no HOME to read ~/.efference/config.toml under")?;
     // An island takes no bind from the table (docs/operating.md): the machine's
     // bind belongs to the machine's host, and two islands would contend for

@@ -138,7 +138,7 @@ fn rotate() -> CliResult {
 /// Whether something is answering `socket` right now. A successful connect is
 /// the daemon's own evidence of listening — the same liveness rule the client
 /// verbs resolve a host by (docs/control-channel.md) — so a stale socket file
-/// left by a dead process does not refuse a rotation.
+/// left by a dead process refuses neither a rotation nor a host start.
 fn local_daemon_is_listening(socket: &Path) -> bool {
     std::os::unix::net::UnixStream::connect(socket).is_ok()
 }

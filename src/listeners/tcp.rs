@@ -93,15 +93,11 @@ pub(crate) struct Listener {
     pub(crate) open: bool,
 }
 
-/// Split a bind into its credential state and its listener parameters.
-pub(crate) fn arm(bind: TcpBind) -> (Arc<TcpAuth>, Listener) {
-    arm_with_state(bind, crate::platform::state::user_scoped())
-}
-
-/// [`arm`] with the user state database injected — the interface a test uses to keep
-/// enrolled devices and pending sign-ins out of the real user-scoped file. Both tables
-/// the bind keeps are in that one file (docs/state-store.md).
-pub(crate) fn arm_with_state(bind: TcpBind, state: PathBuf) -> (Arc<TcpAuth>, Listener) {
+/// Split a bind into its credential state and its listener parameters. The enrolled
+/// devices and pending sign-ins the bind keeps are both in the user state database at
+/// `state` (docs/state-store.md); a test passes a scratch path to keep them out of the
+/// real user-scoped file.
+pub(crate) fn arm(bind: TcpBind, state: PathBuf) -> (Arc<TcpAuth>, Listener) {
     let TcpBind {
         addr,
         tls,

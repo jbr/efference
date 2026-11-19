@@ -126,7 +126,15 @@ session's lifetime from `start` to teardown and nothing outside it.
 one root `Swansong`; `serve_host` (`src/listeners/serve.rs`) binds the control socket (`~/.efference/host.sock`,
 or the path `efference --host --socket` names) and the optional TCP listener with that
 `Swansong`,
-so a signal stops the listeners and every session. `Host::adopt` registers a
+so a signal stops the listeners and every session. A bind that fails shuts that
+`Swansong` down before `serve_host` returns its error. The control socket is already
+serving when the TCP bind runs, so without the shutdown the host would keep running on
+the socket alone, and the tasks waiting on the `Swansong` would hold the error back.
+One host serves a socket: `efference --host` refuses to start when a connect to its
+socket succeeds, and replaces the socket file only when nothing answers. Replacing a
+live host's file would leave that host running where no socket client reaches it, while
+the new host shares its state database and reopens the sessions it is running
+([resumption](resumption.md)). `Host::adopt` registers a
 runtime started under the host's `Swansong` and spawns a watcher that removes the
 entry once the runtime has finished, whether by `DELETE /sessions/:id`, its own
 end of input, or host shutdown. That watcher is the host's supervision of session

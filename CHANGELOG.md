@@ -32,6 +32,7 @@ one line per feature.
 
 ### Fixed
 
+- `efference --host` refuses to start when another host is answering its socket, and a host whose web bind fails exits with the error instead of running on the socket alone.
 - Inline composer image uploads use bounded thumbnails rather than their intrinsic image dimensions.
 
 - Both permission spotters receive an explicit explanation of managed worktree path mapping, distinguishing project grants from the session-storage deny.

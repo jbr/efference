@@ -22,7 +22,7 @@ pub(super) fn scratch_state() -> (PathBuf, tempfile::TempDir) {
 /// An armed plaintext-loopback bind under a per-test root, over `state` (a distinct
 /// root per test keeps one test's tokens from verifying at another's bind).
 pub(super) fn armed_over(root: &str, state: PathBuf) -> Arc<TcpAuth> {
-    let (auth, _listener) = arm_with_state(
+    let (auth, _listener) = arm(
         TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,
@@ -248,7 +248,7 @@ fn host_and_origin_parsing() {
 #[test]
 fn only_a_tls_arm_is_tls() {
     let (state, _state_dir) = scratch_state();
-    let (tls, _listener) = arm_with_state(
+    let (tls, _listener) = arm(
         TcpBind {
             addr: "0.0.0.0:0".into(),
             tls: Some(TlsPem {
@@ -270,7 +270,7 @@ fn only_a_tls_arm_is_tls() {
 #[test]
 fn a_port_zero_bind_mints_links_on_its_bound_port() {
     let (state, _state_dir) = scratch_state();
-    let (auth, _listener) = arm_with_state(
+    let (auth, _listener) = arm(
         TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,

@@ -147,7 +147,7 @@ async fn network_host_server(
     use crate::platform::auth::Root;
     use crate::platform::devices::{Joined, Kind};
     let scratch = crate::platform::testing::temp_dir("net-host");
-    let (auth, _listener) = tcp::arm_with_state(
+    let (auth, _listener) = tcp::arm(
         TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,

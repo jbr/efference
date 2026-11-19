@@ -517,6 +517,41 @@ fn a_listening_socket_answers_and_a_stale_or_absent_one_does_not() {
     let _ = std::fs::remove_file(&stale);
 }
 
+/// A host does not start over a live one (docs/control-channel.md): with a listener
+/// answering the socket, `--host` refuses before it touches the socket file, and the
+/// listener is still reachable at that path afterwards.
+#[tokio::test]
+async fn a_host_refuses_a_socket_another_host_answers() {
+    use clap::Parser;
+    // A short absolute path, as in the liveness test above: Darwin's `SUN_LEN`.
+    let n = {
+        use std::hash::{BuildHasher, Hasher, RandomState};
+        RandomState::new().build_hasher().finish()
+    };
+    let socket = PathBuf::from(format!("/tmp/ehst-{n:016x}.sock"));
+    let _live = std::os::unix::net::UnixListener::bind(&socket).expect("bind");
+    let cli = Cli::try_parse_from([
+        "efference",
+        "--host",
+        "--socket",
+        socket.to_str().expect("a UTF-8 path"),
+    ])
+    .expect("the flags parse");
+
+    let refused = serve::host(cli.host, None)
+        .await
+        .expect_err("a live socket refuses the start");
+    assert!(
+        refused.to_string().contains("already listening"),
+        "the refusal says why: {refused}"
+    );
+    assert!(
+        local_daemon_is_listening(&socket),
+        "the live listener still answers at its path"
+    );
+    let _ = std::fs::remove_file(&socket);
+}
+
 /// Every piece of help text a person can read from `--help` is free of repository
 /// paths: `docs/` is internal and ships nowhere. Implementer cross-references sit in
 /// `//` comments beside the `///` text, which clap never sees. Each command's rendered
