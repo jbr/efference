@@ -20,6 +20,7 @@ import remarkGfm from "remark-gfm";
 import type { ArtifactKind, ArtifactLink } from "../api/types.ts";
 import { Artifact, ArtifactPlaceholder } from "./Artifact.tsx";
 import { Code } from "./Code.tsx";
+import type { MarkdownAtoms } from "./markdownAtoms.tsx";
 
 /** A fenced block goes through the same highlighter as a tool result body,
  * so prose code and tool code are coloured by one language map rather than
@@ -170,6 +171,7 @@ export function Markdown({
   followLink,
   artifacts,
   streamingArtifacts = false,
+  atoms,
 }: {
   children: string;
   /** 1-based source line ranges to stamp as changed (the file viewer);
@@ -184,6 +186,7 @@ export function Markdown({
   /** Supplied by the session transcript's streaming tail: artifact fences in
    * text not yet committed draw as placeholders. */
   streamingArtifacts?: boolean;
+  atoms?: MarkdownAtoms;
 }) {
   // Both memos key on the context's values, not its object: callers build it
   // inline, and a fresh `code` component on every render would remount every
@@ -238,9 +241,13 @@ export function Markdown({
   return (
     <div className="prose">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={
+          atoms === undefined ? [remarkGfm] : [remarkGfm, atoms.plugin]
+        }
         rehypePlugins={rehypePlugins}
-        components={linked}
+        components={
+          atoms === undefined ? linked : { ...linked, span: atoms.span }
+        }
       >
         {children}
       </ReactMarkdown>

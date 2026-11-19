@@ -7,6 +7,8 @@ one line per feature.
 
 ### Added
 
+- Sent web messages show filesystem, session, and download chips; attached images appear on their own lines where they were inserted and open in the lightbox.
+
 - The web composer completes host paths and other session handles into inline references: Tab or Enter opens a folder or inserts the selected reference without sending; filesystem chips request read access with optional write.
 
 - A file or directory referenced in a composer message grants the session read — or read and write, if asked — access to it once the message reaches the agent, and says so in the inbox.

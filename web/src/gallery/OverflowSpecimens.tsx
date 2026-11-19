@@ -4,6 +4,7 @@
 // stay as wide as the screen; `?overflow` lists any element whose content
 // spills (docs/web-client.md "A transcript item never widens the page").
 
+import type { UserContent } from "../api/types.ts";
 import type { LogEntry } from "../api/entry.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { emptyStreaming } from "../session/store.ts";
@@ -48,8 +49,61 @@ const shell = {
 const unbroken =
   "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a089f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
 
+const longPath = `journal/${"long-unbroken-folder-".repeat(7)}decision.md`;
+const sent: UserContent = {
+  content: [
+    { Text: "Please **read " },
+    { Reference: "file" },
+    { Text: "** and update " },
+    { Reference: "dir" },
+    { Text: " with " },
+    { Reference: "agent" },
+    { Text: ". Compare " },
+    { Reference: "file" },
+    { Text: " again. Literal: `@new-lilac`; missing: " },
+    { Reference: "missing" },
+    { Text: ".\n\nSee [the guide](https://efference.net)." },
+    { Reference: "upload" },
+  ],
+  references: {
+    file: {
+      label: "decision.md",
+      target: {
+        type: "filesystem",
+        target: "file",
+        original: longPath,
+        path: `/home/example/project/${longPath}`,
+        access: { read: true, write: false },
+      },
+    },
+    dir: {
+      label: "docs/",
+      target: {
+        type: "filesystem",
+        target: "directory",
+        original: "docs/",
+        path: "/home/example/project/docs/",
+        access: { read: true, write: true },
+      },
+    },
+    agent: {
+      label: "@new-lilac",
+      target: { type: "agent", session: "new-lilac" },
+    },
+    upload: {
+      label: "trace.bin",
+      target: {
+        type: "attachment",
+        name: "trace.bin",
+        path: "/example/uploads/trace.bin",
+        kind: { Binary: { bytes: 192 } },
+      },
+    },
+  },
+};
+
 const entries: LogEntry[] = [
-  entry(1, { User: [{ Text: "Check the long values on a phone." }] }),
+  entry(1, { User: [{ Document: sent }] }),
   entry(2, {
     Assistant: messagesAssistant([], [], [write, readLong, shell]),
   }),
@@ -100,6 +154,8 @@ export function OverflowSpecimens() {
         onRecall={noop}
         onInspect={noop}
         onOpenFile={noop}
+        onOpenReference={noop}
+        workspace="/home/example/project"
       />
     </>
   );

@@ -25,7 +25,7 @@ export function AttachmentThumbnail({ preview }: { preview: string }) {
  * lightbox resolves that URL through its own hold on the bytes
  * (ui/useApiImage.ts), so this button leaving the page does not take the image
  * from under it. */
-function SentThumbnail({ attachment }: { attachment: Arrival }) {
+export function SentThumbnail({ attachment }: { attachment: Arrival }) {
   const url = attachmentUrl(attachment.name);
   const src = useApiImage(url);
   return (

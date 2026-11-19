@@ -50,6 +50,7 @@ interface OpenRequest {
   callId: CallId | null;
   key: number;
   anchor?: DiffAnchor | null;
+  directory?: string;
 }
 
 /** The client's routing, such as it is: the paths the server's SPA index
@@ -300,6 +301,15 @@ export function SessionView() {
     },
     [],
   );
+  const onOpenReference = useCallback((path: string, directory: boolean) => {
+    setInspecting(null);
+    setViewingFile((prev) => ({
+      path: directory ? null : path,
+      directory: directory ? path : undefined,
+      callId: null,
+      key: (prev?.key ?? 0) + 1,
+    }));
+  }, []);
   const closeFile = useCallback(() => setViewingFile(null), []);
   // The header's files toggle: the tree with nothing chosen, as `/tree` opens
   // it, or closing whatever the sidebar holds.
@@ -391,6 +401,8 @@ export function SessionView() {
           onRecall={onRecall}
           onInspect={onInspect}
           onOpenFile={onOpenFile}
+          onOpenReference={onOpenReference}
+          workspace={session.topics.session_identity?.cwd}
         />
         {/* Desktop file context is beside the transcript; only an overlay
             sheet hides the jump destination. */}
@@ -452,6 +464,7 @@ export function SessionView() {
         <FileView
           root={projectName(session.topics.session_identity?.cwd ?? null)}
           path={shownFile.path}
+          directory={shownFile.directory}
           openKey={shownFile.key}
           openAnchor={openAnchor}
           lastEdit={newestEdit}

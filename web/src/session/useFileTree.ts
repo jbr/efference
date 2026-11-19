@@ -36,8 +36,9 @@ export interface FileTree {
   expanded: ReadonlySet<string>;
   toggle: (path: string) => void;
   /** Open a directory and every parent of it — how the finder and the viewer
-   * reveal a path the reader arrived at some other way. */
-  reveal: (path: string) => void;
+   * reveal a path the reader arrived at some other way. Include the target
+   * itself when it is a directory. */
+  reveal: (path: string, includeTarget?: boolean) => void;
 }
 
 /** The parents of a path, root first: `a/b/c` → `["", "a", "a/b"]`. */
@@ -130,10 +131,11 @@ export function useFileTree(): FileTree {
     });
   }, []);
 
-  const reveal = useCallback((path: string) => {
+  const reveal = useCallback((path: string, includeTarget = false) => {
     setExpanded((prev) => {
       const next = new Set(prev);
       for (const parent of ancestors(path)) next.add(parent);
+      if (includeTarget) next.add(path);
       return next;
     });
   }, []);

@@ -1326,6 +1326,33 @@ source. CSS image assets must therefore avoid that inlining (for example, by
 living in `public/`). Runtime matte backgrounds use canvas blobs instead:
 `img-src` permits `blob:`, but not canvas data URLs.
 
+## References in sent messages
+
+`ui/SentDocument.tsx` renders structured occurrences in committed user turns
+without the composer's remove or access controls. Within the session workspace,
+a filesystem chip reveals its resolved file or directory in the Files sidebar.
+An agent chip links to that session. Non-image attachment chips download the
+file; image thumbnails appear on their own lines at their authored positions,
+with a 100px cap on the longest edge, and open in the attachment lightbox.
+Plain text that spells the same path or handle remains prose. The full chip
+label remains selectable even when clipped. Repeated references remain in
+place; an occurrence with no definition shows its ID in brackets as plain text.
+
+One **Reference details** disclosure per turn lists the used definitions, once
+per ID, with attachment metadata, original and resolved paths, and access
+requested at submission. The request is historical, not an effective grant or
+a control. An upload already shown as a structured occurrence is not drawn
+again as a separate attachment. A final run of uploads sits just after the
+Markdown, since uploads appended by the host have no prose separator. Queued
+echoes and unstructured turns retain their existing display.
+
+`ui/markdownAtoms.tsx` gives the prose parser a local token for each occurrence,
+then replaces tokens in prose nodes with chips or thumbnails. The document is
+parsed as a whole, so formatting can span a reference. Code, raw markup, and
+authored links and image metadata use readable text rather than nested controls;
+the normal Markdown URL and HTML handling still applies. Tokens are not part of
+the document or its wire projection.
+
 ## Transcript ergonomics
 
 Two behaviours over the render-whole transcript. **Follow-tail**

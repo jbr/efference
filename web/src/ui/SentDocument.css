@@ -1,0 +1,88 @@
+.sent-document {
+  min-inline-size: 0;
+}
+
+.sent-document .reference-chip {
+  /* Inline flex adds a newline on either side of its children in copied prose. */
+  display: inline-block;
+  box-sizing: border-box;
+  padding-inline-end: 0.45rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: -0.42em;
+}
+
+.sent-document .reference-kind {
+  display: inline-block;
+  inline-size: 1rem;
+  margin-inline-end: 0.3rem;
+  user-select: none;
+}
+
+.sent-document-uploads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-block: 0.35rem;
+}
+
+.sent-document-uploads > span {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.sent-document-details {
+  margin-block-start: 0.35rem;
+  color: var(--fg-dim);
+  font: 0.8rem/1.5 var(--font-ui);
+  overflow-wrap: anywhere;
+}
+
+.sent-document-details > summary {
+  inline-size: fit-content;
+}
+
+.sent-document-details > ul {
+  margin-block: 0.35rem 0;
+  padding-inline-start: 1.35rem;
+}
+
+.sent-document-details li + li {
+  margin-block-start: 0.4rem;
+}
+
+.sent-document-details code {
+  color: var(--fg-bright);
+}
+
+.sent-document :is(a, button).reference-chip:hover {
+  filter: brightness(1.18);
+}
+
+.sent-document a.reference-chip {
+  text-decoration: none;
+}
+
+.sent-document .attachment-image {
+  display: block;
+  max-inline-size: min(100px, 100%);
+}
+
+.sent-document > .prose .attachment-image {
+  margin-block: 0.35rem;
+}
+
+.sent-document-uploads > span:has(> .attachment-image) {
+  flex-basis: 100%;
+}
+
+.sent-document .attachment-image img {
+  display: block;
+  inline-size: auto;
+  block-size: auto;
+  max-inline-size: 100%;
+  max-block-size: 100px;
+  object-fit: contain;
+  margin: 0;
+}

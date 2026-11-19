@@ -27,6 +27,46 @@ function Kind({ kind }: { kind: ReferenceKind }) {
   );
 }
 
+export function ReferenceChipFrame({
+  label,
+  kind,
+  title,
+  children,
+  href,
+  download,
+  onClick,
+}: {
+  label: string;
+  kind: ReferenceKind;
+  title?: string;
+  children?: ReactNode;
+  href?: string;
+  download?: string;
+  onClick?: () => void;
+}) {
+  const props = { className: "reference-chip", title };
+  const content = (
+    <>
+      <Kind kind={kind} />
+      <span className="reference-chip-label">{label}</span>
+      {children}
+    </>
+  );
+  if (href !== undefined)
+    return (
+      <a {...props} href={href} download={download}>
+        {content}
+      </a>
+    );
+  if (onClick !== undefined)
+    return (
+      <button {...props} type="button" onClick={onClick}>
+        {content}
+      </button>
+    );
+  return <span {...props}>{content}</span>;
+}
+
 export function ReferenceChip({
   label,
   detail,
@@ -44,9 +84,7 @@ export function ReferenceChip({
 }) {
   const filesystem = kind === "file" || kind === "directory";
   return (
-    <span className="reference-chip" title={detail}>
-      <Kind kind={kind} />
-      <span className="reference-chip-label">{label}</span>
+    <ReferenceChipFrame kind={kind} label={label} title={detail}>
       {filesystem && (
         <button
           type="button"
@@ -86,7 +124,7 @@ export function ReferenceChip({
       >
         ×
       </button>
-    </span>
+    </ReferenceChipFrame>
   );
 }
 

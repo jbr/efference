@@ -105,6 +105,7 @@ interface Target {
 export function FileView({
   root,
   path,
+  directory,
   openKey,
   openAnchor,
   lastEdit,
@@ -119,6 +120,8 @@ export function FileView({
   /** The path the viewer was opened on, or `null` for the tree with no file
    * chosen — the `/tree` entry. Following may move off it. */
   path: string | null;
+  /** A directory to expand in the tree instead of loading a file. */
+  directory?: string;
   /** Bumped by each open request, so re-opening the same path from a
    * different call re-runs its anchor rather than looking like no change. */
   openKey: number;
@@ -272,7 +275,7 @@ export function FileView({
         ? null
         : { path, anchor: openAnchor, demanded: true, key: openKey },
     );
-    if (path !== null) setTreeOpen(false);
+    setTreeOpen(path === null);
   }
 
   // Following the agent: a landed edit on the open path re-reads it now rather
@@ -333,6 +336,10 @@ export function FileView({
 
   const { width, grip } = useDrawerWidth();
   const tree = useFileTree();
+  const { reveal } = tree;
+  useEffect(() => {
+    if (directory !== undefined) reveal(directory, true);
+  }, [directory, openKey, reveal]);
   const lang = useMemo(() => langForPath(current ?? ""), [current]);
   const isMarkdown = lang === "markdown";
 
@@ -381,18 +388,14 @@ export function FileView({
     }));
   }, []);
 
-  const { reveal, expanded, toggle } = tree;
   /** The tree, opened down to `dir` — the path's directory segments and a
    * relative link to a directory both land here. */
   const showTree = useCallback(
     (dir: string) => {
-      if (dir !== "") {
-        reveal(dir);
-        if (!expanded.has(dir)) toggle(dir);
-      }
+      reveal(dir, true);
       setTreeOpen(true);
     },
-    [reveal, expanded, toggle],
+    [reveal],
   );
   // A relative link in a rendered file opens its target here: a file in the
   // viewer, a directory in the tree (ui/fileLinks.ts).
