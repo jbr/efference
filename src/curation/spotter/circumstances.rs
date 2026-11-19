@@ -10,7 +10,7 @@ use crate::tools::ToolBrief;
 /// and the session, so a value lives for one `assess` call.
 #[derive(Default)]
 pub struct Circumstances<'a> {
-    /// What the mounted tool table knows about a structured call's tool — its
+    /// What the mounted tool table records about a structured call's tool — its
     /// description, its input schema, and the server's own behavior hints
     /// (docs/permissions.md). `None` for bash (judged as command text) and when no
     /// toolbox is at hand (the `efference dev spotter` dev command).
@@ -21,9 +21,9 @@ pub struct Circumstances<'a> {
     /// and the chain names the approvers it passed through. Empty for an ordinary
     /// move.
     pub chain: &'a [String],
-    /// A command prefix the prefix-promotion descent (docs/permissions.md) wants
-    /// judged *for promotion* alongside this move: when `Some`, the move prompt asks
-    /// whether that prefix is safe for **every** argument, and a
+    /// A command prefix picked by the prefix-promotion descent (docs/permissions.md)
+    /// to be judged *for promotion* alongside this move: when `Some`, the move prompt
+    /// includes the question whether that prefix is safe for **every** argument, and a
     /// [`Stance::ClearAlways`](crate::record::log::Stance::ClearAlways) is the
     /// safe-vote. `None` on most calls.
     pub probe: Option<&'a str>,
@@ -47,7 +47,7 @@ impl<'a> Circumstances<'a> {
         self
     }
 
-    /// The prefix a promotion probe asks about.
+    /// The prefix a promotion probe is about.
     pub fn with_probe(mut self, probe: Option<&'a str>) -> Self {
         self.probe = probe;
         self

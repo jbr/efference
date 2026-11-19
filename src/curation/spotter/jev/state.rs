@@ -239,8 +239,7 @@ fn proposed_move(
             "tool_source".into(),
             match brief.server {
                 Some(server) => json!(format!(
-                    "the connected MCP server `{server}`, which this operator declared and \
-                     this harness does not implement or vet"
+                    "the MCP server `{server}`, which this session's configuration connects"
                 )),
                 None => json!("built into this harness"),
             },
@@ -262,16 +261,16 @@ fn proposed_move(
                 )),
             );
         }
-        let declarations = super::super::declarations(definition);
-        if !declarations.is_empty() {
-            // The server's claims about its own tool, labelled as such: enough to
-            // raise a concern, never enough on its own to settle one
-            // (docs/permissions.md — the threat model is error, not deception).
+        let guarantees = super::super::guarantees(definition);
+        if !guarantees.is_empty() {
+            // Only the safe-direction hints, which hold for every input; the
+            // unsafe-direction ones say nothing about this call (docs/permissions.md,
+            // the spotter's brief). `self_reported` records whose guarantee it is.
             object.insert(
                 "tool_declarations".into(),
                 json!({
                     "self_reported": brief.server.is_some(),
-                    "claims": declarations,
+                    "claims": guarantees,
                 }),
             );
         }

@@ -113,7 +113,7 @@ fn render_move_withholds_the_calls_intent() {
 }
 
 /// A connected server's entry: namespaced name, description, schema, and the
-/// self-reported hints the wire definition has no slot for.
+/// behavior hints the wire definition has no slot for.
 fn briefed_tool(annotations: Option<mcplease::types::ToolAnnotations>) -> ToolDefinition {
     ToolDefinition {
         name: "ferritin__get".into(),
@@ -157,7 +157,7 @@ fn a_brief_puts_the_tool_before_its_input() {
     assert!(rendered.contains("`ferritin.get`"), "{rendered}");
     assert!(!rendered.contains("ferritin__get"), "{rendered}");
     assert!(
-        rendered.contains("connected MCP server `ferritin`"),
+        rendered.contains("from the MCP server `ferritin`"),
         "{rendered}"
     );
     // Description and schema both ride along.
@@ -177,42 +177,133 @@ fn a_brief_puts_the_tool_before_its_input() {
     );
 }
 
-#[test]
-fn declared_hints_are_rendered_as_the_servers_claims_not_as_findings() {
-    let definition = briefed_tool(Some(mcplease::types::ToolAnnotations {
+fn hints(
+    read_only: Option<bool>,
+    destructive: Option<bool>,
+    idempotent: Option<bool>,
+    open_world: Option<bool>,
+) -> Option<mcplease::types::ToolAnnotations> {
+    Some(mcplease::types::ToolAnnotations {
         title: None,
-        read_only_hint: Some(true),
-        destructive_hint: None,
-        idempotent_hint: None,
-        open_world_hint: Some(true),
-    }));
-    let brief = ToolBrief {
-        server: Some("ferritin"),
-        definition: &definition,
-    };
-    let rendered = render_brief("ferritin.get", &brief);
+        read_only_hint: read_only,
+        destructive_hint: destructive,
+        idempotent_hint: idempotent,
+        open_world_hint: open_world,
+    })
+}
 
-    assert!(rendered.contains("read-only"), "{rendered}");
-    assert!(rendered.contains("open-world"), "{rendered}");
-    // The hedge is load-bearing: these are the judged party's own claims, so they may
-    // raise a concern but must never settle one (docs/permissions.md).
-    assert!(rendered.contains("self-reported"), "{rendered}");
-    assert!(rendered.contains("never enough on its own"), "{rendered}");
-    // An absent hint says nothing — it must not render as a denial.
-    assert!(!rendered.contains("destructive"), "{rendered}");
-    assert!(!rendered.contains("idempotent"), "{rendered}");
+/// The brief of `definition` as a connected server's tool, rendered.
+fn server_brief(definition: &ToolDefinition) -> String {
+    render_brief(
+        "ferritin.get",
+        &ToolBrief {
+            server: Some("ferritin"),
+            definition,
+        },
+    )
 }
 
 #[test]
-fn a_tool_with_no_annotations_renders_no_declarations_section() {
-    let definition = briefed_tool(None);
-    let brief = ToolBrief {
-        server: None,
-        definition: &definition,
-    };
-    let rendered = render_brief("read", &brief);
-    assert!(rendered.contains("built into this harness"), "{rendered}");
+fn a_server_tool_is_attributed_neutrally() {
+    let rendered = server_brief(&briefed_tool(None));
+    assert!(
+        rendered.starts_with(
+            "The tool `ferritin.get`, from the MCP server `ferritin`, which this session's \
+             configuration connects.\n"
+        ),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("vet"), "{rendered}");
+}
+
+#[test]
+fn unsafe_direction_hints_render_nothing() {
+    // Destructive and open-world describe the tool over every input; they say
+    // nothing about this call, so the brief carries neither them nor a heading.
+    let rendered = server_brief(&briefed_tool(hints(
+        Some(false),
+        Some(true),
+        Some(false),
+        Some(true),
+    )));
+    assert!(!rendered.contains("guarantees"), "{rendered}");
+    assert!(!rendered.contains("destructive"), "{rendered}");
+    assert!(!rendered.contains("open-world"), "{rendered}");
+    assert!(!rendered.contains("idempotent"), "{rendered}");
     assert!(!rendered.contains("self-reported"), "{rendered}");
+    assert!(rendered.contains("What it says it does:"), "{rendered}");
+}
+
+#[test]
+fn a_read_only_open_world_tool_renders_only_the_read_only_guarantee() {
+    let rendered = server_brief(&briefed_tool(hints(Some(true), None, None, Some(true))));
+    assert!(
+        rendered.contains(
+            "\nWhat the server guarantees about it, for every input:\n\
+             - read-only: it does not modify its environment\n\nWhat it accepts:"
+        ),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("open-world"), "{rendered}");
+}
+
+#[test]
+fn every_safe_direction_hint_renders_as_a_guarantee() {
+    let rendered = server_brief(&briefed_tool(hints(
+        Some(true),
+        Some(false),
+        Some(true),
+        Some(false),
+    )));
+    assert!(
+        rendered.contains(
+            "What the server guarantees about it, for every input:\n\
+             - read-only: it does not modify its environment\n\
+             - additive: it does not remove or overwrite what is already there\n\
+             - idempotent: repeating it with the same arguments changes nothing further\n\
+             - closed-world: its effects stay inside a closed domain\n"
+        ),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn a_tool_with_no_annotations_renders_no_guarantees_section() {
+    let rendered = server_brief(&briefed_tool(None));
+    assert!(!rendered.contains("guarantees"), "{rendered}");
+    let definition = briefed_tool(None);
+    let rendered = render_brief(
+        "read",
+        &ToolBrief {
+            server: None,
+            definition: &definition,
+        },
+    );
+    assert!(
+        rendered.starts_with("The tool `read`, built into this harness.\n"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("guarantees"), "{rendered}");
+}
+
+#[test]
+fn a_built_in_tools_guarantees_are_the_harnesss() {
+    let definition = briefed_tool(hints(Some(true), None, None, Some(false)));
+    let rendered = render_brief(
+        "search",
+        &ToolBrief {
+            server: None,
+            definition: &definition,
+        },
+    );
+    assert!(
+        rendered.contains(
+            "What the harness guarantees about it, for every input:\n\
+             - read-only: it does not modify its environment\n\
+             - closed-world: its effects stay inside a closed domain\n"
+        ),
+        "{rendered}"
+    );
 }
 
 #[test]

@@ -732,17 +732,27 @@ outside the toolbox with no brief path, so the spotter judged `check_inbox` and
 `list_processes` as bare names and called them opaque — the descriptions existed and
 were never supplied to the rung.
 
-The hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) are the
-judged party's claims about itself, and the MCP spec warns clients not to make trust
-decisions on them for untrusted servers. They are rendered anyway, labelled as
-self-reported, because the threat model here is **error, not deception**: a well-meaning
-server's hints are true, and a lying one is already out of scope (virtualization's tail).
-A harness-owned tool's hints render without the caveat ("What the harness declares about
-it") — its claims about itself have no server distance.
-The asymmetry that holds under either model is stated in the prompt — a hint is grounds to
-*gate*, never sufficient on its own to *clear*. An absent hint renders as nothing rather
-than as its negation: "the server said no" and "the server filled nothing in" are
-different evidence.
+The hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) describe
+the tool over every input it accepts. An unsafe-direction hint (destructive, open-world,
+not read-only, not idempotent) says only that some input could do harm, and the MCP spec
+makes those the defaults when a hint is absent, so it says nothing about this call, whose
+input the spotter reads. They are not rendered. A safe-direction hint (read-only, additive, idempotent, closed-world) is a
+guarantee over every input, which the input alone cannot show. The threat model here is
+**error, not deception** (*Threat model*): a well-meaning server's guarantee is true, so
+these are rendered under "What the server guarantees about it, for every input" ("the
+harness", for a harness-owned tool), without a self-reported caveat. An absent hint, and an
+unsafe-direction one, render as nothing. The MCP server is introduced neutrally, as one
+"which this session's configuration connects"; whether the harness implemented or vetted
+the tool is not part of the brief.
+
+The caution about tools in general is the persona's stated default, not a per-tool
+line: any tool can change things and reach beyond this machine, so that is no reason on its
+own to hold a call, and what decides is what this call's input does. A tool whose
+description and input leave that unclear is judged as if it could do anything. A listed
+guarantee is taken as true and rules out only what it names: read-only rules out changing
+anything, not sending the call's input somewhere; additive rules out removing or
+overwriting, not publishing. The jev spotter's state carries the same guarantees as
+`tool_declarations.claims`.
 
 **The request layout** is `[persona (system) | scope + watch-for (cached) | the move
 (fresh)]`. The scope block is the config's scope prose plus the `[paths]` grants + cwd, so the

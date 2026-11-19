@@ -510,6 +510,52 @@ fn the_state_withholds_the_harness_injected_intent() {
     );
 }
 
+/// The state carries a tool's safe-direction hints as `claims` and drops the
+/// unsafe-direction ones, as the prose brief does.
+#[test]
+fn the_state_carries_only_the_tools_guarantees() {
+    let state_for = |read_only, destructive, open_world| {
+        let definition = mcplease::types::Tool {
+            name: "play__click".into(),
+            title: None,
+            description: Some("Click an element.".into()),
+            input_schema: json!({ "type": "object" }),
+            output_schema: None,
+            annotations: Some(mcplease::types::ToolAnnotations {
+                title: None,
+                read_only_hint: read_only,
+                destructive_hint: destructive,
+                idempotent_hint: None,
+                open_world_hint: open_world,
+            }),
+            icons: None,
+            meta: None,
+        };
+        let brief = ToolBrief {
+            server: Some("play"),
+            definition: &definition,
+        };
+        state::state(
+            &ConfigFixture::new().with_scope("work here").build(),
+            &ToolCall::new("play__click", "c1", json!({ "element": "OK" })),
+            Some(&brief),
+            &[],
+            None,
+            None,
+            None,
+        )
+    };
+
+    let unsafe_only = state_for(Some(false), Some(true), Some(true));
+    assert!(unsafe_only["move"].get("tool_declarations").is_none());
+
+    let mixed = state_for(Some(true), None, Some(true));
+    assert_eq!(
+        mixed["move"]["tool_declarations"]["claims"],
+        json!(["read-only: it does not modify its environment"])
+    );
+}
+
 /// Grants render resolved-absolute, so containment against the working directory
 /// is string-visible; the denies are included, because a denied subtree under an
 /// allowed parent is exactly what a bash move can stray into.
