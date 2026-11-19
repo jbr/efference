@@ -188,15 +188,26 @@ async fn consult_spotter<S: Spotter>(
         Vec::new()
     };
     // Where this session sits among the host's sessions, read now: a supervised
-    // session's status moves between calls (docs/permissions.md). A bound leaf is judged
-    // with this session's place, the approver's, not the leaf holder's.
-    let supervision = shared.supervision();
+    // session's status moves between calls (docs/permissions.md). The spotter is given it
+    // only for a session-control move: no other move turns on it, and a supervisor's
+    // messages are already labelled with its id among the utterances. A bound leaf is
+    // judged with this session's place, the approver's, not the leaf holder's, and only
+    // when the leaf is itself a session-control move.
+    let supervision = if toolbox.is_session_control(&judged.name) {
+        shared.supervision()
+    } else {
+        None
+    };
+    // What was said in this session: for a bound leaf, the approver's conversation, which
+    // is where the approval was asked for (docs/permissions.md).
+    let utterances = shared.utterances();
     let circumstances = Circumstances::default()
         .with_brief(brief)
         .with_chain(chain)
         .with_probe(probe)
         .with_precedents(&precedents)
-        .with_supervision(supervision.as_ref());
+        .with_supervision(supervision.as_ref())
+        .with_utterances(Some(&utterances));
     spotter.assess(role, judged, &circumstances).await
 }
 

@@ -74,12 +74,13 @@ impl Frontend for RecordingFrontend {
     }
 }
 
-/// What [`RecordingSpotter`] was handed for one move: the tool, the approval chain, and
-/// the calling session's supervision facts.
+/// What [`RecordingSpotter`] was handed for one move: the tool, the approval chain, the
+/// calling session's supervision facts, and its utterances.
 type Seen = (
     String,
     Vec<String>,
     Option<crate::protocol::agents::Supervision>,
+    Option<Vec<crate::record::utterances::Utterance>>,
 );
 
 /// A spotter that records the move it was asked about, so a test can pin that the
@@ -101,6 +102,7 @@ impl Spotter for RecordingSpotter {
             call.name.clone(),
             circumstances.chain.to_vec(),
             circumstances.supervision.cloned(),
+            circumstances.utterances.map(<[_]>::to_vec),
         ));
         crate::curation::spotter::Spotting {
             read: crate::curation::spotter::Read {

@@ -2,12 +2,13 @@
 
 use crate::protocol::agents::Supervision;
 use crate::record::log::ToolCall;
+use crate::record::utterances::Utterance;
 use crate::tools::ToolBrief;
 
 /// Everything [`super::Spotter::assess`] is given beyond the config and the call
 /// itself. [`Circumstances::default`] is the plain move: a bash command or
-/// structured call with no brief, no approval chain, no probe, no precedents, and no
-/// known place among the host's sessions.
+/// structured call with no brief, no approval chain, no probe, no precedents, no
+/// known place among the host's sessions, and no known utterances.
 /// The `with_*` methods set one input each. The fields borrow from the toolbox
 /// and the session, so a value lives for one `assess` call.
 #[derive(Default)]
@@ -36,11 +37,20 @@ pub struct Circumstances<'a> {
     pub precedents: &'a [ToolCall],
     /// The calling session's place in the supervision relation: the session that
     /// supervises it and the sessions it supervises (docs/permissions.md). For a bound
-    /// leaf it is the approving session's, not the leaf holder's. `None` when it is not
-    /// known — no host is at hand (the `efference dev spotter` dev command, the offline
-    /// eval) — which is not the same as a session with no supervisor and none
-    /// supervised. The prose rung renders it; the decision rung ignores it.
+    /// leaf it is the approving session's, not the leaf holder's. The loop passes it only
+    /// for a session-control move (an `agents__*` verb); on any other move it is `None`.
+    /// `None` also when it is not known — no host is at hand (the `efference dev
+    /// spotter` dev command, the offline eval) — which is not the same as a session with
+    /// no supervisor and none supervised. The prose rung renders it; the decision rung
+    /// ignores it.
     pub supervision: Option<&'a Supervision>,
+    /// What the operator, and any session supervising this one, said in the session,
+    /// oldest first (docs/permissions.md). For a bound leaf they are the approving
+    /// session's. `None` when they are not known — no session log is at hand (the
+    /// `efference dev spotter` dev command, the offline eval) — which is not the same as
+    /// a session where nobody has spoken yet. The prose rung renders them; the decision
+    /// rung ignores them.
+    pub utterances: Option<&'a [Utterance]>,
 }
 
 impl<'a> Circumstances<'a> {
@@ -71,6 +81,12 @@ impl<'a> Circumstances<'a> {
     /// The session's place in the supervision relation, when it is known.
     pub fn with_supervision(mut self, supervision: Option<&'a Supervision>) -> Self {
         self.supervision = supervision;
+        self
+    }
+
+    /// What was said in the session, when it is known.
+    pub fn with_utterances(mut self, utterances: Option<&'a [Utterance]>) -> Self {
+        self.utterances = utterances;
         self
     }
 }

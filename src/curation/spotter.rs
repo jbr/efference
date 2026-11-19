@@ -9,8 +9,12 @@
 //! `project(log)` — it is built from scratch:
 //!
 //! ```text
-//! [ persona (system, cached) | scope + notes (cached) | supervision facts + the move (fresh) ]
+//! [ persona (system) | scope + notes | ◆ | utterances | ◆ | supervision facts + the move ]
 //! ```
+//!
+//! where each `◆` is a cache breakpoint: everything before the second is the cached
+//! prefix, and the utterances block grows by appending, so it stays cached between
+//! operator turns.
 //!
 //! The persona lives in `assets/prompts/spotter.md` and is `include_str!`d as the
 //! client's byte-stable system prompt, so it sits in the cached prefix. Any failure
@@ -24,6 +28,7 @@ pub mod jev;
 mod mount;
 pub mod precedent;
 mod supervision;
+mod utterances;
 
 pub use circumstances::Circumstances;
 pub use mount::MountedSpotter;
@@ -98,8 +103,8 @@ pub trait Spotter {
     /// Assess one gated tool call against the config. The config supplies the mission
     /// (scope), the boundaries (path grants + cwd), and the spotter-only notes list;
     /// `circumstances` supplies the rest of what the move is judged in — the tool's
-    /// brief, a bound leaf's approval chain, a promotion probe, and the session's
-    /// precedents.
+    /// brief, a bound leaf's approval chain, a promotion probe, the session's
+    /// precedents, its place among the host's sessions, and what was said in it.
     fn assess(
         &self,
         role: &Config,
@@ -271,9 +276,11 @@ impl Spotter for ForkSpot {
 }
 
 /// The prose rung's request (docs/permissions.md). The scope block (scope + notes) is
-/// stable for the session and ends at the breakpoint, so with the persona it is the cached
-/// prefix. After it is the fresh part, rewritten each call: the supervision facts when
-/// they are known — statuses move between calls — and then the move, with the optional
+/// stable for the session and ends at the first breakpoint. The utterances block, when
+/// they are known, follows it and ends at the second: it changes only by appending
+/// between rollovers, so a later call reads an earlier call's prefix from the cache.
+/// After it is the fresh part, rewritten each call: the supervision facts when they are
+/// passed — statuses move between calls — and then the move, with the optional
 /// promotion probe (docs/log-and-projection.md).
 fn request_turns(
     role: &Config,
@@ -286,6 +293,14 @@ fn request_turns(
         UserPart::Text(render_context(role, dirs, scratch)),
         UserPart::Breakpoint,
     ];
+    if let Some(utterances) = circumstances.utterances {
+        parts.extend(
+            utterances::parts(utterances)
+                .into_iter()
+                .map(UserPart::Text),
+        );
+        parts.push(UserPart::Breakpoint);
+    }
     if let Some(supervision) = circumstances.supervision {
         parts.push(UserPart::Text(supervision::render(supervision)));
     }
@@ -595,21 +610,25 @@ fn render_move(
 /// The approval context for a move bound to a parent's `agents__decide`
 /// (docs/permissions.md), or empty for an ordinary move. The chain is the session
 /// ids from the directly-targeted child down to the session holding the leaf; the
-/// spotter judges the leaf, and this says whose it is.
+/// spotter judges the leaf, and this says whose it is, and that the utterances shown
+/// are the approving session's rather than the holder's.
 fn chain_context(chain: &[String]) -> String {
-    let Some(holder) = chain.last() else {
+    let (Some(holder), Some(top)) = (chain.last(), chain.first()) else {
         return String::new();
     };
     if chain.len() == 1 {
         format!(
             "\n\nThis move is held by the session `{holder}`; approving it authorizes that \
-             session to run the move."
+             session to run the move. What the operator has said, above, was said to the \
+             session approving the move, and `{holder}` is a session working under it."
         )
     } else {
         format!(
             "\n\nThis move is the leaf of an approval chain — {} — held by the most recent \
              session, `{holder}`. Each named session approved on the way here; judge the move \
-             itself, not the approvals.",
+             itself, not the approvals. What the operator has said, above, was said to the \
+             session approving the move: `{top}` is a session working under it, and each \
+             session in the chain works under the one before it.",
             chain.join(" → ")
         )
     }

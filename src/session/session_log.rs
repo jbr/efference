@@ -395,4 +395,12 @@ impl Session {
     pub(crate) fn consented_calls(&self) -> Vec<ToolCall> {
         crate::curation::spotter::precedent::consented(self.log.lock().unwrap().entries())
     }
+
+    /// What the operator, and any session supervising this one, said in this session,
+    /// folded under the log lock (docs/permissions.md). The prose spotter's account of
+    /// the session; the fold reads the entries in memory, so a spotter call costs one
+    /// pass over them.
+    pub(crate) fn utterances(&self) -> Vec<crate::record::utterances::Utterance> {
+        crate::record::utterances::utterances(self.log.lock().unwrap().entries())
+    }
 }

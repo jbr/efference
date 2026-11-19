@@ -103,7 +103,9 @@ impl Spotter for JevSpot {
             chain,
             probe,
             precedents,
-            supervision: _, // the prose rung's alone: no question here reads it
+            // The prose rung's alone: no question here reads them.
+            supervision: _,
+            utterances: _,
         } = circumstances;
         let dirs = self.directories.clone().or_else(super::process_directories);
         let state = state::state(
@@ -178,7 +180,6 @@ impl Spotter for JevSpot {
                 (None, Vec::new())
             }
         };
-        let usage = Some(usage);
 
         // Every unconditional axis must have come back. A partial answer set is
         // not a partial verdict — the fold reads all of them — so it fails closed
@@ -188,7 +189,7 @@ impl Spotter for JevSpot {
                 "spotter decisions response answered {:?}, which is not the asked set",
                 decisions.answers.keys().collect::<Vec<_>>()
             );
-            return Spotting::fail_closed(usage);
+            return Spotting::fail_closed(Some(usage));
         };
 
         let decision = questions::decide(&axes, reading, probe.is_some());
@@ -205,7 +206,7 @@ impl Spotter for JevSpot {
                 reason: decision.reason,
             },
             origin: Origin::Model,
-            usage,
+            usage: Some(usage),
             axes: Some(axes),
         }
     }

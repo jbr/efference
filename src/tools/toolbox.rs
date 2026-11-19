@@ -171,6 +171,16 @@ impl Toolbox {
         })
     }
 
+    /// Whether the tool `name` is one of the mounted session-control provider's verbs
+    /// (`agents__*`, docs/tools.md): a move on another session rather than on the
+    /// world. False when no sessions provider is mounted.
+    pub fn is_session_control(&self, name: &str) -> bool {
+        self.providers.iter().any(|p| match p {
+            Provider::Sessions(s) => s.handles(name),
+            _ => false,
+        })
+    }
+
     /// Whether `call` is an `agents__decide` that denies or escalates, which
     /// authorizes nothing and so clears on the fast path (docs/permissions.md). False
     /// when no sessions provider is mounted.

@@ -36,7 +36,9 @@ one line per feature.
 
 - The web client's dev builds no longer install the stream scrubber or the stream debug overlay unless each is switched on in app settings.
 
-- The prose spotter is told the session's supervisor and the sessions it supervises, with whether it created each and its status.
+- The prose spotter is told the session's supervisor and the sessions it supervises, with whether it created each and its status, when the move is an `agents__*` call.
+
+- The prose spotter reads what the operator and a supervising session said in the session, each message under the end of the session's text it answered, and judges a move against what was asked for.
 
 - A session's `agents__archive` of a session it supervises clears without a spotter request.
 
