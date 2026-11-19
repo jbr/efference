@@ -540,6 +540,11 @@ instead — the first-party listing, or OpenRouter's per-model endpoints route, 
 
 ### Two rungs behind one trait
 
+`Spotter::assess` takes the session config, the gated call, and a `Circumstances`
+(`src/curation/spotter/circumstances.rs`): the tool's brief, the approval chain of a bound
+leaf, the prefix-promotion probe, and the session's consented precedents. A plain move has
+none of the four.
+
 `Spotter::assess` has two implementations, and which one a session mounts is decided once
 at boot by `MountedSpotter::mount` (`src/curation/spotter/mount.rs`) from the `ModelKind` that
 `Endpoint::spotter_kind` reports for the spotter selection:

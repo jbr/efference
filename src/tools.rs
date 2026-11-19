@@ -174,6 +174,7 @@ pub struct McpServer<State, ToolEnum> {
 /// (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) and its
 /// `title` are dropped there, and they are exactly what a permission rung wants —
 /// so the brief reads the `ToolDefinition` the mount snapshotted instead.
+#[derive(Clone, Copy)]
 pub struct ToolBrief<'a> {
     /// The connected server that advertised this tool; `None` for an embedded
     /// one. The spotter is told which, because "a tool this harness ships" and

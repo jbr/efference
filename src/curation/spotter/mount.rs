@@ -19,9 +19,8 @@
 use crate::config::Config;
 use crate::inference::api::{Endpoint, ModelKind};
 use crate::record::log::ToolCall;
-use crate::tools::ToolBrief;
 
-use super::{ForkSpot, Spotter, Spotting, jev::JevSpot};
+use super::{Circumstances, ForkSpot, Spotter, Spotting, jev::JevSpot};
 
 /// The rung a session actually mounted.
 // `large_enum_variant` wants the bigger arm boxed. Exactly one of these exists per
@@ -126,20 +125,11 @@ impl Spotter for MountedSpotter {
         &self,
         role: &Config,
         call: &ToolCall,
-        brief: Option<&ToolBrief<'_>>,
-        chain: &[String],
-        probe: Option<&str>,
-        precedents: &[ToolCall],
+        circumstances: &Circumstances<'_>,
     ) -> Spotting {
         match self {
-            MountedSpotter::Fork(fork) => {
-                fork.assess(role, call, brief, chain, probe, precedents)
-                    .await
-            }
-            MountedSpotter::Jev(jev) => {
-                jev.assess(role, call, brief, chain, probe, precedents)
-                    .await
-            }
+            MountedSpotter::Fork(fork) => fork.assess(role, call, circumstances).await,
+            MountedSpotter::Jev(jev) => jev.assess(role, call, circumstances).await,
         }
     }
 }

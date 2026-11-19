@@ -213,10 +213,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
             &self,
             _: &crate::config::Config,
             call: &ToolCall,
-            _: Option<&crate::tools::ToolBrief<'_>>,
-            _: &[String],
-            _: Option<&str>,
-            _: &[ToolCall],
+            _: &crate::curation::spotter::Circumstances<'_>,
         ) -> crate::curation::spotter::Spotting {
             panic!("an ask reached the spotter: {}", call.name)
         }

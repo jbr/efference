@@ -36,7 +36,7 @@ use crate::inference::api::Endpoint;
 use crate::record::log::{Axes, Origin, Precedent, RequestOrigin, ToolCall};
 use crate::tools::ToolBrief;
 
-use super::{Read, Spotter, Spotting};
+use super::{Circumstances, Read, Spotter, Spotting};
 
 mod ask;
 mod questions;
@@ -96,16 +96,20 @@ impl Spotter for JevSpot {
         &self,
         role: &Config,
         call: &ToolCall,
-        brief: Option<&ToolBrief<'_>>,
-        chain: &[String],
-        probe: Option<&str>,
-        precedents: &[ToolCall],
+        circumstances: &Circumstances<'_>,
     ) -> Spotting {
+        let Circumstances {
+            brief,
+            chain,
+            probe,
+            precedents,
+        } = circumstances;
+        let (probe, precedents) = (*probe, *precedents);
         let dirs = self.directories.clone().or_else(super::process_directories);
         let state = state::state(
             role,
             call,
-            brief,
+            brief.as_ref(),
             chain,
             probe,
             dirs.as_ref(),

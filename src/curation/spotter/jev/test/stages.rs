@@ -63,7 +63,7 @@ async fn assess(endpoint: Endpoint, recorder: &Arc<Recorder>) -> Spotting {
         "c1",
         json!({ "command": "ls" }),
     );
-    spot.assess(&Config::default(), &call, None, &[], None, &[])
+    spot.assess(&Config::default(), &call, &Circumstances::default())
         .await
 }
 

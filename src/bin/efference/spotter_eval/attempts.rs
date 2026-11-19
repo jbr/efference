@@ -94,7 +94,7 @@ impl Eval {
         let brief = efference::agent::brief(&self.toolbox, &call.name);
         let start = Instant::now();
         let spotting = spot
-            .assess(&role, &call, brief.as_ref(), &[], None, &[])
+            .assess(&role, &call, &Circumstances::default().with_brief(brief))
             .await;
         let ms = start.elapsed().as_millis() as u64;
         let (stance, verdict, ok) = match spotting.origin {

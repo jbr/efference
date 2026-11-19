@@ -19,10 +19,12 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod circumstances;
 pub mod jev;
 mod mount;
 pub mod precedent;
 
+pub use circumstances::Circumstances;
 pub use mount::MountedSpotter;
 
 use crate::config::Config;
@@ -93,36 +95,15 @@ impl Spotting {
 /// so the loop can run on the host's multi-thread runtime (docs/control-channel.md).
 pub trait Spotter {
     /// Assess one gated tool call against the config. The config supplies the mission
-    /// (scope), the boundaries (path grants + cwd), and the spotter-only watch-for list.
-    ///
-    /// `brief` is what the mounted tool table knows about a structured call's tool
-    /// — its description, its input schema, and the server's own behavior hints
-    /// (docs/permissions.md). `None` for bash (judged as command text) and when no
-    /// toolbox is at hand (the `efference dev spotter` dev command).
-    ///
-    /// `probe` is an optional command prefix the prefix-promotion descent
-    /// (docs/permissions.md) wants judged *for promotion* alongside this move:
-    /// when `Some`, the move prompt asks whether that prefix is safe for **every** argument, and a
-    /// [`Stance::ClearAlways`] is the safe-vote. `None` on most calls (no probe rides along).
-    ///
-    /// `chain` is non-empty when `call` is a leaf bound to a parent's
-    /// `agents__decide` (docs/permissions.md): the session ids from the
-    /// directly-targeted child down to the session holding the leaf. The move
-    /// presented is the child's action, and the chain names the approvers it
-    /// passed through. Empty for an ordinary move.
-    ///
-    /// `precedents` are the earlier calls in this session that ran with the
-    /// operator's consent (`precedent::consented`), oldest first; empty for a bound
-    /// leaf, whose history is the child's. The decision rung weighs them, the
-    /// prose rung ignores them.
+    /// (scope), the boundaries (path grants + cwd), and the spotter-only watch-for list;
+    /// `circumstances` supplies the rest of what the move is judged in — the tool's
+    /// brief, a bound leaf's approval chain, a promotion probe, and the session's
+    /// precedents.
     fn assess(
         &self,
         role: &Config,
         call: &ToolCall,
-        brief: Option<&ToolBrief<'_>>,
-        chain: &[String],
-        probe: Option<&str>,
-        precedents: &[ToolCall],
+        circumstances: &Circumstances<'_>,
     ) -> impl Future<Output = Spotting> + Send;
 
     /// Report the rung's upstream requests to `sink` as request stages
@@ -223,10 +204,7 @@ impl Spotter for ForkSpot {
         &self,
         role: &Config,
         call: &ToolCall,
-        brief: Option<&ToolBrief<'_>>,
-        chain: &[String],
-        probe: Option<&str>,
-        _precedents: &[ToolCall],
+        circumstances: &Circumstances<'_>,
     ) -> Spotting {
         // Cached block: the per-session-stable scope + watch-for. Fresh
         // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
@@ -239,9 +217,9 @@ impl Spotter for ForkSpot {
             UserPart::Text(render_move(
                 role,
                 call,
-                brief,
-                chain,
-                probe,
+                circumstances.brief.as_ref(),
+                circumstances.chain,
+                circumstances.probe,
                 dirs.as_ref(),
                 self.scratch.as_deref(),
             )),
@@ -313,10 +291,7 @@ impl Spotter for StaticSpotter {
         &self,
         _role: &Config,
         _call: &ToolCall,
-        _brief: Option<&ToolBrief<'_>>,
-        _chain: &[String],
-        _probe: Option<&str>,
-        _precedents: &[ToolCall],
+        _circumstances: &Circumstances<'_>,
     ) -> Spotting {
         Spotting {
             read: Read {

@@ -367,9 +367,10 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
         };
         println!("{preview}\n");
     }
-    let spotting = spotter
-        .assess(&role, &call, sent, &[], probe.as_deref(), &[])
-        .await;
+    let circumstances = efference::curation::spotter::Circumstances::default()
+        .with_brief(sent.copied())
+        .with_probe(probe.as_deref());
+    let spotting = spotter.assess(&role, &call, &circumstances).await;
     print_verdict(&spotting, probe.as_deref(), &role);
     Ok(())
 }

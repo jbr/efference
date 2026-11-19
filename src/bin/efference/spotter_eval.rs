@@ -17,7 +17,7 @@
 use super::*;
 use crate::dev::SpotterEvalArgs;
 use efference::config::Perms;
-use efference::curation::spotter::{MountedSpotter, Spotter};
+use efference::curation::spotter::{Circumstances, MountedSpotter, Spotter};
 use efference::record::log::{Origin, Stance};
 use serde::Serialize;
 use serde_json::Value;

@@ -2,7 +2,7 @@
 //! spotter, and the human gate.
 
 use super::*;
-use crate::curation::spotter::{Read, Spotting};
+use crate::curation::spotter::{Circumstances, Read, Spotting};
 use crate::record::names::tools::BASH;
 
 /// The permission cascade for one call (docs/permissions.md). `bound` is the leaf
@@ -174,9 +174,12 @@ async fn consult_spotter<S: Spotter>(
     } else {
         Vec::new()
     };
-    spotter
-        .assess(role, judged, brief.as_ref(), chain, probe, &precedents)
-        .await
+    let circumstances = Circumstances::default()
+        .with_brief(brief)
+        .with_chain(chain)
+        .with_probe(probe)
+        .with_precedents(&precedents);
+    spotter.assess(role, judged, &circumstances).await
 }
 
 /// Record what the spotter answered: its request's usage and the `Spot` entry, then the
