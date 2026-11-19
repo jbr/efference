@@ -18,6 +18,7 @@ import { connect, type Connector } from "./connect.ts";
 import { ProcessSeeder } from "./processSeed.ts";
 import { acquireStore } from "./registry.ts";
 import { acquireHistory, type HistoryLoader } from "./history.ts";
+import { useDevSettings } from "./devSettings.ts";
 import type { Session } from "./store.ts";
 
 export interface SessionActions {
@@ -43,27 +44,39 @@ export function useSession(): {
   const base = useMemo(() => apiBase(), []);
   const store = useMemo(() => acquireStore(base), [base]);
   const live = useRef<Connector | null>(null);
+  const dev = useDevSettings();
   useEffect(() => {
-    // A dev build interposes the scrubber (record.ts) between the stream and
-    // the fold, so a momentary pre-commit state can be held and looked at. The
-    // connection itself is unchanged — same catch-up read, same stream, same
-    // frames. `import.meta.env.DEV` folds to `false` in a production build, so
-    // neither the branch nor the module it imports reaches a shipped bundle.
-    if (import.meta.env.DEV) {
+    // A dev build can interpose the scrubber (record.ts) between the stream
+    // and the fold, so a momentary pre-commit state can be held and looked
+    // at, and install the stream debug overlay (ui/streamDebug.ts). Each is
+    // off by default and opted into per browser in app settings
+    // (session/devSettings.ts) — while installed, both cost frame time — and
+    // a switch re-runs this effect, so it takes effect on the live
+    // connection. The connection itself is unchanged — same catch-up read,
+    // same stream, same frames. `import.meta.env.DEV` folds to `false` in a
+    // production build, so neither the branch nor the modules it imports are
+    // included in a shipped bundle.
+    const scrub = import.meta.env.DEV && dev.scrub;
+    const debug = import.meta.env.DEV && dev.streamDebug;
+    if (scrub || debug) {
       let connector: Connector | null = null;
       let recorder: { close(): void } | null = null;
       let cancelled = false;
       void Promise.all([
-        import("./record.ts"),
-        import("../ui/streamDebug.ts"),
-      ]).then(([{ record }, { installStreamDebug }]) => {
-        const installed = record(store);
-        const debug = installStreamDebug(store, installed.scrub, base);
-        connector = connect(store, installed.tap, base, debug.observer);
+        scrub ? import("./record.ts") : undefined,
+        debug ? import("../ui/streamDebug.ts") : undefined,
+      ]).then(([recorded, debugged]) => {
+        const installed = recorded?.record(store);
+        const overlay = debugged?.installStreamDebug(
+          store,
+          installed?.scrub,
+          base,
+        );
+        connector = connect(store, installed?.tap, base, overlay?.observer);
         recorder = {
           close() {
-            installed.close();
-            debug.close();
+            installed?.close();
+            overlay?.close();
           },
         };
         // The import resolves after StrictMode's cleanup has already run, so
@@ -89,7 +102,7 @@ export function useSession(): {
       live.current = null;
       connector.close();
     };
-  }, [store, base]);
+  }, [store, base, dev.scrub, dev.streamDebug]);
   const connector = useMemo<Connector>(
     () => ({
       retry: () => live.current?.retry(),

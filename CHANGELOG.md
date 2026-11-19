@@ -32,6 +32,10 @@ one line per feature.
 - A web page left open across a host upgrade now notices that the host serves a newer build and offers a reload, instead of going on rendering with the old one.
 - A supplied session name is a preferred base: `POST /sessions {"name": "foo"}` takes `foo`, or the first free `foo-1`, `foo-2`, … when the name is held by a live session, a session directory, or a worktree checkout an earlier session left behind — instead of being refused.
 
+### Changed
+
+- The web client's dev builds no longer install the stream scrubber or the stream debug overlay unless each is switched on in app settings.
+
 ### Fixed
 
 - `efference --host` refuses to start when another host is answering its socket, and a host whose web bind fails exits with the error instead of running on the socket alone.

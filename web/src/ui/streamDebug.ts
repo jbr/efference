@@ -1,4 +1,6 @@
-// Temporary stream-recovery diagnostics (docs/web-client.md); installed only in dev.
+// Temporary stream-recovery diagnostics (docs/web-client.md); installed only
+// in a dev build, and only while its switch is on in app settings
+// (session/devSettings.ts).
 import type { StreamCallbacks } from "../api/stream.ts";
 import type { ScrubHandle } from "../session/record.ts";
 import type { Store } from "../session/store.ts";
@@ -10,7 +12,7 @@ let minimized = true;
 
 export function installStreamDebug(
   store: Store,
-  scrub: ScrubHandle,
+  scrub: ScrubHandle | undefined,
   base: string,
 ) {
   const badge = document.createElement("pre");
@@ -85,7 +87,7 @@ export function installStreamDebug(
     at === null ? "—" : `${Math.floor((Date.now() - at) / 1000)}s`;
   const paint = () => {
     const session = store.snapshot();
-    const mode = scrub.following ? "live" : "held";
+    const mode = scrub?.following ? "live" : "held";
     badge.textContent = [
       `stream debug ${base.replace("/sessions/", "") || "root"}`,
       `${session.connection} · ${document.visibilityState} · ${navigator.onLine ? "online" : "offline"}`,
@@ -95,7 +97,9 @@ export function installStreamDebug(
       `${latest} · wire seq ${wireSeq ?? "—"}`,
       `store seq ${session.lastSeq ?? "—"} · entries ${session.entries.length} · blocks ${session.streaming.blocks.length}`,
       `render seq ${renderedSeq ?? "—"} · last render ${age(renderedAt)}`,
-      `tape ${mode} ${scrub.cursor}/${scrub.length} · rolled ${scrub.evicted}${scrub.expired ? " · EXPIRED" : ""}`,
+      scrub
+        ? `tape ${mode} ${scrub.cursor}/${scrub.length} · rolled ${scrub.evicted}${scrub.expired ? " · EXPIRED" : ""}`
+        : "tape off",
       `last error ${error}`,
     ].join("\n");
   };

@@ -7,6 +7,11 @@ import {
   useViewSettings,
   type ViewSettings,
 } from "./viewSettings.ts";
+import {
+  setDevSetting,
+  useDevSettings,
+  type DevSettings,
+} from "../session/devSettings.ts";
 
 /** base64url → the raw bytes `applicationServerKey` takes. The daemon answers
  * the VAPID key in the encoding the RFC spells it in; `subscribe` wants the
@@ -136,11 +141,26 @@ const VIEW_LABELS: Record<keyof ViewSettings, string> = {
   ambient: "ambient",
 };
 
-/** Interface preferences: the theme, and the transcript density switches.
- * Shared across sessions in the home-accessible app settings view. Hiding
- * via the switches is display-only; the entries stay in the store. */
+const DEV_LABELS: Record<keyof DevSettings, { label: string; title: string }> =
+  {
+    scrub: {
+      label: "stream scrubber",
+      title:
+        "Record the incoming stream so an interim state can be held and scrubbed (window.__scrub). Starts capturing when switched on.",
+    },
+    streamDebug: {
+      label: "stream debug",
+      title: "Floating overlay of stream and connection diagnostics.",
+    },
+  };
+
+/** Interface preferences: the theme, the transcript density switches, and —
+ * in a dev build — the dev tooling switches (session/devSettings.ts). Shared
+ * across sessions in the home-accessible app settings view. Hiding via the
+ * switches is display-only; the entries stay in the store. */
 export function Interface() {
   const settings = useViewSettings();
+  const dev = useDevSettings();
   const [choice, setChoice] = useState(themeChoice);
   return (
     <div className="panel-body interface">
@@ -172,6 +192,23 @@ export function Interface() {
           </label>
         ))}
       </div>
+      {/* The instrumentation exists only in a dev build (session/useSession.ts),
+          so its switches exist there too — a production build folds this away. */}
+      {import.meta.env.DEV && (
+        <div className="view-toggles">
+          dev tools:
+          {(Object.keys(DEV_LABELS) as (keyof DevSettings)[]).map((key) => (
+            <label key={key} title={DEV_LABELS[key].title}>
+              <input
+                type="checkbox"
+                checked={dev[key]}
+                onChange={(event) => setDevSetting(key, event.target.checked)}
+              />
+              {DEV_LABELS[key].label}
+            </label>
+          ))}
+        </div>
+      )}
       {/* Hidden entirely where the browser has no push at all — there is
           nothing to explain, and an obstacle notice implies a path forward. */}
       {"PushManager" in window && <Notifications />}

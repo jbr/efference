@@ -64,3 +64,19 @@ test("overlay separates raw reads, delivered frames, folded state and rendered s
   expect(document.querySelector("[data-stream-debug]")).toBeNull();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+test("overlay reports the tape as off when no recorder is installed", () => {
+  vi.useFakeTimers();
+  const store = new Store();
+  const { close } = installStreamDebug(store, undefined, "/sessions/test");
+  try {
+    vi.advanceTimersByTime(2000);
+    const text = document.querySelector("[data-stream-debug]")!.textContent;
+    expect(text).toContain("tape off");
+    expect(text).not.toContain("rolled");
+  } finally {
+    close();
+  }
+  expect(document.querySelector("[data-stream-debug]")).toBeNull();
+  expect(vi.getTimerCount()).toBe(0);
+});

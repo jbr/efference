@@ -24,6 +24,7 @@ import {
 } from "../session/touchedFiles.ts";
 import { buildTree, type CallNode } from "../session/tree.ts";
 import { useSession } from "../session/useSession.ts";
+import { useDevSettings } from "../session/devSettings.ts";
 import { Composer, type Recalled } from "./Composer.tsx";
 import { sessionDocumentTitle, useDocumentTitle } from "./documentTitle.ts";
 import { EarlierHistory } from "./EarlierHistory.tsx";
@@ -88,15 +89,20 @@ export function SessionView() {
       sessionName(session.topics.session_identity, sessionId()),
     ),
   );
+  // The render signal the stream tooling reads (ui/streamDebug.ts): fired
+  // only while some of it is installed, so a dev build with the switches off
+  // dispatches nothing.
+  const dev = useDevSettings();
+  const streamTooling = dev.scrub || dev.streamDebug;
   useEffect(() => {
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && streamTooling) {
       document.dispatchEvent(
         new CustomEvent("efference:stream-render", {
           detail: { base: apiBase(), seq: session.lastSeq },
         }),
       );
     }
-  }, [session]);
+  }, [session, streamTooling]);
   // One projection, shared: the transcript renders it, the inspector reads
   // the selected call out of it. The selection is a call id, not a node —
   // the node is re-found each render so a landing result or verdict shows

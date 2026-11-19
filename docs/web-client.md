@@ -14,7 +14,8 @@ For UI polish and transient-state debugging in a dev build:
 
 - **Component gallery:** open `/?gallery` for fixture-driven components and composed
   transcript states. See [The design gallery](#the-design-gallery--websrcgallery).
-- **Stream tape and replay API:** use `window.__scrub` to `hold()`, `step(n)`,
+- **Stream tape and replay API:** off by default; switch on the stream scrubber
+  in app settings to record. Then use `window.__scrub` to `hold()`, `step(n)`,
   `seek(n)`, and `resume()` the session's incoming frames. `tapes()` lists saved
   recordings; `restore()` loads an earlier recording. This lets browser automation
   inspect an interim state without racing the live stream. See
@@ -1406,7 +1407,9 @@ even though its bounding rectangle fits the viewport.
 
 **Density toggles** (`ui/viewSettings.ts`, persisted like the theme): two
 switches hide thinking and ambient entries. Hiding is display-only — the
-entries stay in the store and reappear on toggle. A spot verdict is drawn only on
+entries stay in the store and reappear on toggle. The dev tooling switches
+(`session/devSettings.ts`) persist the same way and sit beside them in app
+settings. A spot verdict is drawn only on
 the call waiting at the gate, as the reason alone; on every decided call — clear,
 approved, or declined — the outcome is the call's result and the verdict is the
 inspector's.
@@ -2632,7 +2635,12 @@ copies when a stylesheet changes, so under HMR the pinned states follow the edit
 
 ### Scrubbing the stream — `web/src/session/record.ts`
 
-A dev build interposes a recorder between the stream reader and the fold.
+A dev build can interpose a recorder between the stream reader and the fold.
+The recorder is off by default — while installed, it folds every stream frame
+twice (once onto the tape, once into the store) — and switched on per browser
+in app settings (`session/devSettings.ts`); a switch takes effect on the open
+session's connection at once, so a recording starts at the moment it is
+switched on rather than reaching back before it.
 `connect` takes an optional `FrameTap`; the recorder retains the latest 20,000
 frames in arrival order and controls when the store consumes them. `session/frameTape.ts`
 uses a ring buffer; each evicted frame folds into the tape's base snapshot, so
@@ -2667,8 +2675,10 @@ DOM and nothing else, so a global the page set is invisible to them. Installing
 the recorder prints the interface to the console, and each command logs the mode
 and position it landed on (`[scrub] scrub 137/412`).
 
-While investigating stream recovery, dev session views also install a temporary,
-non-interactive overlay (`ui/streamDebug.ts`). A one-second timer reads diagnostics
+While investigating stream recovery, dev session views can also install a
+temporary, non-interactive overlay (`ui/streamDebug.ts`), switched on in app
+settings alongside the recorder but independently of it — with no recorder
+installed its tape line reports `tape off`. A one-second timer reads diagnostics
 without updating the session store or rerendering React: connection attempts,
 raw byte reads including heartbeats, delivered frame counts and sequence,
 folded store sequence, last reported view render, and recorder mode/window.
@@ -2689,7 +2699,10 @@ daemon's own code remains the only way the TUI gets the same
 ([../backlog/inbox/session-replay.md](../backlog/inbox/session-replay.md)).
 
 The whole module sits behind `import.meta.env.DEV` in `useSession.ts`, which a
-production build folds to `false`; the branch and the module go with it.
+production build folds to `false`; the branch and the modules go with it. Inside
+a dev build, the branch installs only what the two switches enable
+(`session/devSettings.ts`), and flipping a switch re-runs the connection effect —
+same catch-up read, same stream.
 
 ### Command inspection and running-task shortcuts
 
