@@ -40,16 +40,16 @@ pub struct Circumstances<'a> {
     /// leaf it is the approving session's, not the leaf holder's. The loop passes it only
     /// for a session-control move (an `agents__*` verb); on any other move it is `None`.
     /// `None` also when it is not known — no host is at hand (the `efference dev
-    /// spotter` dev command, the offline eval) — which is not the same as a session with
-    /// no supervisor and none supervised. The prose rung renders it; the decision rung
-    /// ignores it.
+    /// spotter` and `spotter-request` dev commands, the offline eval) — which is not the
+    /// same as a session with no supervisor and none supervised. The prose rung renders
+    /// it; the decision rung ignores it.
     pub supervision: Option<&'a Supervision>,
     /// What the operator, and any session supervising this one, said in the session,
     /// oldest first (docs/permissions.md). For a bound leaf they are the approving
     /// session's. `None` when they are not known — no session log is at hand (the
-    /// `efference dev spotter` dev command, the offline eval) — which is not the same as
-    /// a session where nobody has spoken yet. The prose rung renders them; the decision
-    /// rung ignores them.
+    /// `efference dev spotter` dev command, an offline eval case with no readable log) —
+    /// which is not the same as a session where nobody has spoken yet. The prose rung
+    /// renders them; the decision rung ignores them.
     pub utterances: Option<&'a [Utterance]>,
 }
 

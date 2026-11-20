@@ -5,7 +5,8 @@ use super::*;
 /// What the attempts run against.
 pub(super) struct Eval {
     pub(super) cases: Vec<Labeled>,
-    pub(super) toolbox: Toolbox,
+    /// What each case's session held, and the tools its brief comes from.
+    pub(super) records: records::Records,
     pub(super) endpoint: efference::inference::api::Endpoint,
     pub(super) model: String,
     pub(super) persona: Option<String>,
@@ -65,11 +66,7 @@ impl Eval {
     async fn attempt(&self, case_index: usize, run: usize) -> Attempt {
         let (case, expected, bucket) = &self.cases[case_index];
         let role = role(case);
-        let call = efference::record::log::ToolCall::new(
-            case.call.name.clone(),
-            "toolu_spotter_eval",
-            case.call.input.clone(),
-        );
+        let call = self.records.call(case_index, case);
         // Which rung the model is (docs/permissions.md).
         // The persona/model mismatch was rejected before the
         // first request, so this cannot fail here.
@@ -91,11 +88,13 @@ impl Eval {
             }
             None => spot,
         };
-        let brief = efference::agent::brief(&self.toolbox, &call.name);
+        let brief = self.records.brief(case_index, &call.name);
+        let circumstances = match &self.records.moves[case_index] {
+            Some(recorded) => recorded.circumstances(brief),
+            None => Circumstances::default().with_brief(brief),
+        };
         let start = Instant::now();
-        let spotting = spot
-            .assess(&role, &call, &Circumstances::default().with_brief(brief))
-            .await;
+        let spotting = spot.assess(&role, &call, &circumstances).await;
         let ms = start.elapsed().as_millis() as u64;
         let (stance, verdict, ok) = match spotting.origin {
             Origin::Model => {

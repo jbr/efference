@@ -408,6 +408,26 @@ impl Endpoint {
         result
     }
 
+    /// The body a decisions request for `model` sends, built without sending it: what
+    /// `efference dev spotter-request --json` prints.
+    pub fn decisions_body(
+        &self,
+        model: &str,
+        state: &Value,
+        questions: &BTreeMap<String, Question>,
+    ) -> Result<String, Error> {
+        Ok(serde_json::to_string(&DecisionsRequest {
+            model,
+            state,
+            questions,
+            session_id: self
+                .provider
+                .decisions_takes_session_id()
+                .then_some(self.session_id.as_deref())
+                .flatten(),
+        })?)
+    }
+
     async fn post_decisions(
         &self,
         trace: Option<&Trace>,
@@ -426,16 +446,7 @@ impl Endpoint {
                 )
                 .into()
             })?;
-        let body = serde_json::to_string(&DecisionsRequest {
-            model,
-            state,
-            questions,
-            session_id: self
-                .provider
-                .decisions_takes_session_id()
-                .then_some(self.session_id.as_deref())
-                .flatten(),
-        })?;
+        let body = self.decisions_body(model, state, questions)?;
         let http = self.http().with_handler(decisions_retry());
         let auth = self.auth_value.current().await;
         let conn = self

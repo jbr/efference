@@ -60,7 +60,7 @@ whether a newer version is out and prints the install command when one is;
   line's, the stdio server's, and a hosted session's own toolbox (below) — so the paths
   cannot drift apart ([tools.md](tools.md)).
 - **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
-  `gallery`, `triage`, `spotter`, `spotter-log`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
+  `gallery`, `triage`, `spotter`, `spotter-log`, `spotter-request`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
   web-bind sign-in-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
   cargo feature, which is in `default`; a release build passes `--no-default-features`.
 

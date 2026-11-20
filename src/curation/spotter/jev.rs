@@ -31,8 +31,12 @@
 //! [`Stance::Gate`](crate::record::log::Stance::Gate). A failed relation request degrades
 //! to no precedents instead, so it holds only what needed one.
 
+use std::collections::BTreeMap;
+
+use serde_json::Value;
+
 use crate::config::Config;
-use crate::inference::api::Endpoint;
+use crate::inference::api::{Endpoint, Question};
 use crate::record::log::{Axes, Origin, Precedent, RequestOrigin, ToolCall};
 use crate::tools::ToolBrief;
 
@@ -85,6 +89,38 @@ impl JevSpot {
         self.directories = Some(directories);
         self
     }
+
+    /// The bodies [`Spotter::assess`] would send for this call — the cold request, then
+    /// the relation request when one is sent — built without sending them: what
+    /// `efference dev spotter-request --json` prints.
+    pub fn request_bodies(
+        &self,
+        role: &Config,
+        call: &ToolCall,
+        circumstances: &Circumstances<'_>,
+    ) -> Result<Vec<String>, crate::inference::api::Error> {
+        let dirs = self.directories.clone().or_else(super::process_directories);
+        let asked = requests(
+            role,
+            call,
+            circumstances,
+            dirs.as_ref(),
+            self.scratch.as_deref(),
+        );
+        let mut bodies =
+            vec![
+                self.endpoint
+                    .decisions_body(&self.model, &asked.state, &asked.questions)?,
+            ];
+        if let Some(relation) = &asked.relation {
+            bodies.push(self.endpoint.decisions_body(
+                &self.model,
+                &relation.state,
+                &relation.questions,
+            )?);
+        }
+        Ok(bodies)
+    }
 }
 
 impl Spotter for JevSpot {
@@ -98,38 +134,21 @@ impl Spotter for JevSpot {
         call: &ToolCall,
         circumstances: &Circumstances<'_>,
     ) -> Spotting {
-        let &Circumstances {
-            ref brief,
-            chain,
-            probe,
-            precedents,
-            // The prose rung's alone: no question here reads them.
-            supervision: _,
-            utterances: _,
-        } = circumstances;
+        let probe = circumstances.probe;
         let dirs = self.directories.clone().or_else(super::process_directories);
-        let state = state::state(
+        let Requests {
+            state,
+            questions,
+            relation,
+            candidates,
+        } = requests(
             role,
             call,
-            brief.as_ref(),
-            chain,
-            probe,
+            circumstances,
             dirs.as_ref(),
             self.scratch.as_deref(),
         );
         let spotter_notes = role.spotter_notes.iter().any(|w| !w.trim().is_empty());
-        let questions = ask::questions(spotter_notes, probe.is_some());
-
-        // The relation request rides beside the cold one, only when the session
-        // has consented calls of the move's family to compare against.
-        let candidates = relation::candidates(call, precedents);
-        let relation_state = relation::state(
-            call,
-            dirs.as_ref()
-                .map(crate::config::policy::Directories::judged_working)
-                .as_deref(),
-        );
-        let relation_questions = relation::questions(&candidates);
         let cold = self.endpoint.decide_traced(
             self.stages.as_ref(),
             RequestOrigin::Spot,
@@ -138,16 +157,16 @@ impl Spotter for JevSpot {
             &questions,
         );
         let relation = async {
-            match candidates.is_empty() {
-                true => None,
-                false => Some(
+            match &relation {
+                None => None,
+                Some(relation) => Some(
                     self.endpoint
                         .decide_traced(
                             self.stages.as_ref(),
                             RequestOrigin::Spot,
                             &self.model,
-                            &relation_state,
-                            &relation_questions,
+                            &relation.state,
+                            &relation.questions,
                         )
                         .await,
                 ),
@@ -210,6 +229,78 @@ impl Spotter for JevSpot {
             axes: Some(axes),
         }
     }
+}
+
+/// What one assessment asks the decision model: the cold request, and the relation
+/// request when the session has consented calls of the move's family to compare it
+/// against.
+pub struct Requests<'a> {
+    /// The cold request's state: the config and the move, as JSON.
+    pub state: Value,
+    /// The cold request's questions, by key.
+    pub questions: BTreeMap<String, Question>,
+    /// The relation request; `None` when no consented call of the move's family exists.
+    pub relation: Option<Relation>,
+    /// The consented calls the relation request compares the move against, oldest
+    /// first.
+    candidates: Vec<&'a ToolCall>,
+}
+
+/// The relation request's state and questions.
+pub struct Relation {
+    pub state: Value,
+    pub questions: BTreeMap<String, Question>,
+}
+
+/// The requests [`JevSpot::assess`] sends for this call, from the judged session's
+/// directories and scratch dir. `efference dev spotter-request` prints them.
+pub fn requests<'a>(
+    role: &Config,
+    call: &ToolCall,
+    circumstances: &Circumstances<'a>,
+    dirs: Option<&crate::config::policy::Directories>,
+    scratch: Option<&std::path::Path>,
+) -> Requests<'a> {
+    let &Circumstances {
+        ref brief,
+        chain,
+        probe,
+        precedents,
+        // The prose rung's alone: no question here reads them.
+        supervision: _,
+        utterances: _,
+    } = circumstances;
+    let state = state::state(role, call, brief.as_ref(), chain, probe, dirs, scratch);
+    let spotter_notes = role.spotter_notes.iter().any(|w| !w.trim().is_empty());
+    let questions = ask::questions(spotter_notes, probe.is_some());
+    // The relation request rides beside the cold one, only when the session has
+    // consented calls of the move's family to compare against.
+    let candidates = relation::candidates(call, precedents);
+    let relation = (!candidates.is_empty()).then(|| Relation {
+        state: relation::state(
+            call,
+            dirs.map(crate::config::policy::Directories::judged_working)
+                .as_deref(),
+        ),
+        questions: relation::questions(&candidates),
+    });
+    Requests {
+        state,
+        questions,
+        relation,
+        candidates,
+    }
+}
+
+/// The consented calls in `precedents` the relation request would compare `call`
+/// against: the most recent of the move's family, oldest first. Passing only these as
+/// the precedents asks the same requests, which is what lets the offline eval keep a
+/// case's history small.
+pub fn compared_precedents(call: &ToolCall, precedents: &[ToolCall]) -> Vec<ToolCall> {
+    relation::candidates(call, precedents)
+        .into_iter()
+        .cloned()
+        .collect()
 }
 
 /// Fold the relation request's billing into the cold request's, so the spot is

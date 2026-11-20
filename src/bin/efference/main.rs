@@ -179,6 +179,8 @@ mod spot_report;
 #[cfg(feature = "dev")]
 mod spotter_eval;
 #[cfg(feature = "dev")]
+mod spotter_request;
+#[cfg(feature = "dev")]
 mod stop_report;
 #[cfg(feature = "dev")]
 mod triage_replay;

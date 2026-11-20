@@ -104,6 +104,20 @@ impl MountedSpotter {
         }
     }
 
+    /// The bodies this rung would send for the call, in order, built without sending
+    /// them (`ForkSpot::request_body`, `JevSpot::request_bodies`).
+    pub fn request_bodies(
+        &self,
+        role: &Config,
+        call: &ToolCall,
+        circumstances: &Circumstances<'_>,
+    ) -> Result<Vec<String>, crate::inference::api::Error> {
+        match self {
+            MountedSpotter::Fork(fork) => Ok(vec![fork.request_body(role, call, circumstances)?]),
+            MountedSpotter::Jev(jev) => jev.request_bodies(role, call, circumstances),
+        }
+    }
+
     /// What to call this rung in a log line or a status surface.
     pub fn kind(&self) -> &'static str {
         match self {

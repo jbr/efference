@@ -255,13 +255,13 @@ fn proposed_move(
         {
             object.insert(
                 "tool_description".into(),
-                json!(super::super::clip(
+                json!(super::super::brief::clip(
                     description,
-                    super::super::DESCRIPTION_BUDGET
+                    super::super::brief::DESCRIPTION_BUDGET
                 )),
             );
         }
-        let guarantees = super::super::guarantees(definition);
+        let guarantees = super::super::brief::guarantees(definition);
         if !guarantees.is_empty() {
             // Only the safe-direction hints, which hold for every input; the
             // unsafe-direction ones are uninformative about this call (docs/permissions.md,
@@ -276,10 +276,10 @@ fn proposed_move(
         }
         object.insert(
             "tool_input_schema".into(),
-            json!(super::super::clip(
+            json!(super::super::brief::clip(
                 &serde_json::to_string(&definition.input_schema)
                     .unwrap_or_else(|_| definition.input_schema.to_string()),
-                super::super::SCHEMA_BUDGET
+                super::super::brief::SCHEMA_BUDGET
             )),
         );
     }

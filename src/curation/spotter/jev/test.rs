@@ -438,11 +438,11 @@ fn conditional_questions_are_asked_only_when_they_apply() {
     assert!(full.contains_key(questions::PREFIX_SAFE));
 }
 
-fn answered(answers: &serde_json::Value) -> crate::inference::api::Decisions {
+fn answered(answers: &Value) -> crate::inference::api::Decisions {
     serde_json::from_value(json!({ "answers": answers, "usage": {} })).expect("parses")
 }
 
-fn cold_answers() -> serde_json::Value {
+fn cold_answers() -> Value {
     json!({
         "sketch": {
             "type": "score",

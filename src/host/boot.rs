@@ -31,7 +31,7 @@ use env::resolve_env_values;
 use mint::Minted;
 pub use mint::{mint_scratch_dir, mint_session_dir};
 pub use resume::{ResumeRequest, recorded_selections, resume};
-pub use scaffold::CONFIG_SCAFFOLD;
+pub use scaffold::{CONFIG_SCAFFOLD, load_session_config};
 
 pub const CONFIG_NAME: &str = "config.toml";
 
@@ -205,7 +205,7 @@ async fn prepare_minting(
 
     let session_config = session_dir.join(CONFIG_NAME);
     scaffold::snapshot_config(&origin, &session_config)?;
-    let mut loaded = scaffold::load_session_config(&session_config, &session_dir)?;
+    let mut loaded = load_session_config(&session_config, &session_dir)?;
 
     let scratch = scaffold::mint_scratch(minted, &mut loaded)?;
 

@@ -566,9 +566,13 @@ leaf, the prefix-promotion probe, the session's consented precedents, the sessio
 place in the supervision relation, and what was said in the session (its utterances). A
 plain move has none of the first four. The fifth is passed only for a session-control move
 (an `agents__*` verb) of a session a host holds. The sixth is passed for every move the
-loop judges. Both are absent where there is no host or log (`efference dev spotter`, the
-offline eval), which is not the same as a session with no relations or one nobody has
-spoken to.
+loop judges. The fifth is absent wherever no host is at hand (`efference dev spotter`,
+`dev spotter-request`, the offline eval), and the sixth wherever no session log is
+(`efference dev spotter`, an offline eval case with no readable log), which is not the
+same as a session with no relations or one nobody has spoken to. Everything but the
+supervision facts and the brief is folded from the log alone, so `RecordedMove::find`
+(`src/curation/spotter/recorded.rs`) rebuilds them for a recorded call as of the entry
+before its verdict.
 
 `Spotter::assess` has two implementations, and which one a session mounts is decided once
 at boot by `MountedSpotter::mount` (`src/curation/spotter/mount.rs`) from the `ModelKind` that
@@ -949,6 +953,22 @@ these `Spot` entries back out of the session logs — a stance-distribution summ
 fail-closed rate) plus each verdict correlated to the call it judged and its one-line reason,
 across every `.efference/*/log.jsonl` or one session; `--stance`/`--no-fallback` filter, and
 `--summary`/`--list` pick a half. The dev-facing lens for auditing how the spotter is doing.
+`efference dev spotter-request <session> --seq <n>` prints the request one of those verdicts
+was given, built by the rung's own renderer (`--rung prose`, the default, or `--rung jev`;
+`--system` adds the persona; `--call <id>` names the call instead, and a call that was never
+spotted renders what the spotter would have been sent). The log supplies the call, the probe
+the verdict records, a bound leaf (read from the held session's log), the consented
+precedents and the utterances before the verdict; the session's `config.toml` supplies the
+scope and grants, with the path grants recorded after the verdict taken back out (a later
+scope edit cannot be, and a stderr note says so); a structured call's brief comes from the
+session's tools, its MCP server mounted with stored credentials and never a sign-in. The
+scratch dir's name and the supervision facts are not recorded, and stderr says what stands in
+for them. `--json` prints the body the session's spotter connection's client would send
+(`Client::preview_body`, `Endpoint::decisions_body`), which needs that connection's
+credentials. `efference dev spotter-eval` replays each corpus case with the same rebuild when
+its session log is readable, and mounts the servers its sessions declare for cases from the
+project it runs in; `--no-session-log` replays each case from its corpus line alone, the
+comparison arm.
 
 **A `cd` that goes nowhere is left out of the move** (`policy::without_cd_into`). Agents prefix
 their own working directory habitually (`cd /abs/project && cat .claude/x`), and a reviewer

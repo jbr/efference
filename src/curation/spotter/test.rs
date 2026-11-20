@@ -1,9 +1,12 @@
+use super::brief::{DESCRIPTION_BUDGET, clip};
 use super::*;
 use crate::config::Config;
 use crate::config::testing::ConfigFixture;
 use crate::inference::api::Completion;
+use mcplease::types::Tool as ToolDefinition;
 use std::path::Path;
 
+mod preview;
 mod worktrees;
 
 fn spot_completion(name: &str, input: Value) -> Completion {

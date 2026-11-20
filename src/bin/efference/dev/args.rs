@@ -24,6 +24,15 @@ impl StanceArg {
     }
 }
 
+/// Which spotter rung's request `spotter-request` renders.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum RungArg {
+    /// The prose rung: the persona, then one user turn of scope, utterances and the move.
+    Prose,
+    /// The decision rung: a JSON state and the questions asked about it.
+    Jev,
+}
+
 /// Output format for the `wire` dev view.
 #[derive(Clone, Copy, clap::ValueEnum)]
 pub(crate) enum WireFormat {

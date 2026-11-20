@@ -1,10 +1,12 @@
 //! `efference dev spotter-eval` — run the labeled spotter corpus against a model
 //! (docs/permissions.md).
 //!
-//! Each case is a self-contained (config, call, expected) triple; the runner
-//! renders it through the production `ForkSpot::assess` path — the same
-//! `render_context`/`render_move` a live gate uses — so what it measures is the
-//! shipping ask, not a replica. Verdicts are scored on the binary the system
+//! Each case is a (config, call, expected) triple, plus the session log and verdict
+//! seq it was extracted from; the runner renders it through the production
+//! `ForkSpot::assess` path — the same `render_context`/`render_move` a live gate
+//! uses — with the circumstances that log held before the verdict when it is
+//! readable (`records.rs`, shared with `dev spotter-request`), so what it measures is
+//! the shipping ask, not a replica. Verdicts are scored on the binary the system
 //! acts on (`clear`/`clear_always` → approve; `watch`/`gate` → human), with the
 //! exact stance recorded so the is-`watch`-distinct question stays answerable.
 //!
@@ -47,6 +49,13 @@ struct CaseIn {
     /// outside-grants (docs/permissions.md).
     #[serde(default)]
     cwd: Option<String>,
+    /// The session log the case was extracted from, relative to where the corpus was
+    /// extracted, and the seq of the verdict in it. With both, the replay reads what the
+    /// log held before the verdict (`records.rs`).
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    seq: Option<u64>,
     call: CallIn,
     #[serde(default)]
     expected: Option<String>,
@@ -136,6 +145,7 @@ struct Attempt {
 mod test;
 
 mod attempts;
+mod records;
 use attempts::Eval;
 
 fn binary(stance: Stance) -> &'static str {
@@ -193,7 +203,7 @@ pub(crate) fn dump_states(
     limit: Option<usize>,
     out: &Path,
 ) -> CliResult {
-    let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
+    let toolbox = spotter_request::builtin_toolbox(&std::env::current_dir()?, "spotter-eval")?;
     let mut lines = String::new();
     let mut n = 0usize;
     for path in cases_files {
@@ -306,6 +316,7 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
         no_cost,
         against_recorded,
         dump_states: _,
+        no_session_log,
     } = args;
     let runs = runs.max(1);
     let labels = load_labels(labels_file.as_deref())?;
@@ -333,10 +344,12 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
     let kind = endpoint.spotter_kind(&model).await?;
     MountedSpotter::mount_with_persona(endpoint.clone(), &model, kind, persona.clone())?;
     let thinking = endpoint.spotter_thinking(&model, kind).await?;
-    // Briefs come from the same lookup a live gate uses; connected-server tools
-    // in recorded cases have no mount here and run brief-less, which matches
-    // how most were recorded.
-    let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
+    // Briefs come from the same lookup a live gate uses, over the built-in tools and
+    // the servers the cases' sessions declare; the circumstances from each case's log.
+    let records = records::records(&cases, kind, no_session_log).await?;
+    for note in &records.notes {
+        eprintln!("{note}");
+    }
 
     let total_attempts = cases.len() * runs;
     eprintln!(
@@ -365,7 +378,7 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
     let local = tokio::task::LocalSet::new();
     let eval = Rc::new(Eval {
         cases,
-        toolbox,
+        records,
         endpoint,
         model,
         persona,

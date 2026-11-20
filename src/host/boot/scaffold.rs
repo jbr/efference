@@ -154,7 +154,7 @@ pub(super) fn snapshot_config(origin: &LoadedConfig, session_config: &Path) -> R
 /// The per-session snapshot *is* the live config now (a malformed hand-edit on resume fails fast
 /// here). Everything downstream — the preamble, fs-watch, `/state`, persisted config-edits — keys
 /// off this path, not the origin.
-pub(super) fn load_session_config(
+pub fn load_session_config(
     session_config: &Path,
     session_dir: &Path,
 ) -> Result<LoadedConfig, Error> {

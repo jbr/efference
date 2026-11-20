@@ -32,7 +32,7 @@ use crate::inference::{InferenceRegistry, ResumeSwitch, SessionOptions};
 use crate::record::log::{LogEntry, LoggedInference, Payload, Resumed, Timestamp};
 use crate::record::persist::{LoadedRecording, Log, SessionMetadata};
 use crate::record::recovery::{Resumption, resume_point};
-use crate::record::session_dir::{LOG_NAME, SESSION_BASE};
+use crate::record::session_dir::LOG_NAME;
 
 /// What a resume needs from whoever resumes. The session's working directory, role
 /// selections, and flags come from the log's header; what the header cannot hold (a
@@ -373,31 +373,21 @@ async fn resume_minting(
     ))
 }
 
-/// The directories the session ran in: the header's project (`cwd`) and working
-/// directory (the project when none is recorded), else the project root a
-/// `<project>/.efference/<id>` directory implies, with the session working there.
+/// The directories the session ran in ([`Directories::recorded`]), or why a resume
+/// cannot run without them.
+///
+/// [`Directories::recorded`]: crate::config::policy::Directories::recorded
 fn session_directories(
     metadata: Option<&SessionMetadata>,
     session_dir: &std::path::Path,
 ) -> Result<crate::config::policy::Directories, Error> {
-    if let Some(metadata) = metadata {
-        let working = metadata.working.clone().unwrap_or(metadata.cwd.clone());
-        return Ok(crate::config::policy::Directories::new(
-            metadata.cwd.clone(),
-            working,
-        ));
-    }
-    let base = session_dir.parent();
-    match base.and_then(|base| Some((base, base.parent()?))) {
-        Some((base, root)) if base.ends_with(SESSION_BASE) => {
-            Ok(crate::config::policy::Directories::at(root))
-        }
-        _ => Err(format!(
+    crate::config::policy::Directories::recorded(metadata, session_dir).ok_or_else(|| {
+        format!(
             "cannot resume {}: the log header records no working directory",
             session_dir.display()
         )
-        .into()),
-    }
+        .into()
+    })
 }
 
 /// The role selections the log recorded, as the options the registry resolves, with

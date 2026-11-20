@@ -140,19 +140,7 @@ impl Client {
         mut abort: Pin<&mut Notified<'_>>,
         on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
-        // A turn list recorded in the other dialect never becomes a request: the
-        // encoder would skip every assistant turn and send a history with the
-        // model's replies missing (docs/transport.md). Live sessions are pinned to
-        // one provider, so this answers only a recorded session continued or
-        // rendered under another.
-        crate::record::project::check_dialect(turns, self.dialect())?;
-        let encoded = self.encode(turns);
-        // The prompt's variable parts, sized before `max_tokens` is chosen: the
-        // reservation is a function of how much of the window the prompt takes
-        // (`api/reservation.rs`), estimated from these bytes against the last
-        // response's exact count.
-        let body_bytes = encoded.body_bytes(&self.system, tools)?;
-        let mut max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
+        let (encoded, body_bytes, mut max_tokens) = self.first_attempt(turns, tools, cap)?;
         let open = Open {
             trace,
             encoded: &encoded,
@@ -178,6 +166,53 @@ impl Client {
             }
             return Ok(self.settle(completion, body_bytes));
         }
+    }
+
+    /// The turns encoded once for this client's dialect, the bytes the reservation sizes,
+    /// and the output cap the first attempt asks for: `cap` when the caller fixed one.
+    fn first_attempt(
+        &self,
+        turns: &[WireTurn],
+        tools: &[Value],
+        cap: Option<u32>,
+    ) -> Result<(Encoded, usize, u32), Error> {
+        // A turn list recorded in the other dialect never becomes a request: the
+        // encoder would skip every assistant turn and send a history with the
+        // model's replies missing (docs/transport.md). Live sessions are pinned to
+        // one provider, so this answers only a recorded session continued or
+        // rendered under another.
+        crate::record::project::check_dialect(turns, self.dialect())?;
+        let encoded = self.encode(turns);
+        // The prompt's variable parts, sized before `max_tokens` is chosen: the
+        // reservation is a function of how much of the window the prompt takes
+        // (`api/reservation.rs`), estimated from these bytes against the last
+        // response's exact count.
+        let body_bytes = encoded.body_bytes(&self.system, tools)?;
+        let max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
+        Ok((encoded, body_bytes, max_tokens))
+    }
+
+    /// The body the first attempt of a request for these turns sends, built without
+    /// sending anything: what `efference dev spotter-request --json` prints. A retry
+    /// after a refused reservation would send another `max_tokens`.
+    pub fn preview_body(
+        &self,
+        turns: &[WireTurn],
+        tools: &[Value],
+        tool_choice: ToolChoice,
+    ) -> Result<String, Error> {
+        let (encoded, _, max_tokens) = self.first_attempt(turns, tools, None)?;
+        self.request_body(
+            &Open {
+                trace: None,
+                encoded: &encoded,
+                turn_count: turns.len(),
+                tools,
+                tool_choice,
+                cap: None,
+            },
+            max_tokens,
+        )
     }
 
     /// Encode the turns once per dialect (docs/transport.md). The encoded form is

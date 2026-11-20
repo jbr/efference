@@ -30,6 +30,25 @@ impl Directories {
         Self::new(project.to_path_buf(), project.to_path_buf())
     }
 
+    /// The directories a recorded session ran in: its log header's project and working
+    /// directory (the project when none is recorded), else the project root a
+    /// `<project>/.efference/<id>` session directory implies, with the session working
+    /// there. `None` when the header records none and the directory is not under a
+    /// session base.
+    pub fn recorded(
+        metadata: Option<&crate::record::persist::SessionMetadata>,
+        session_dir: &Path,
+    ) -> Option<Self> {
+        if let Some(metadata) = metadata {
+            let working = metadata.working.clone().unwrap_or(metadata.cwd.clone());
+            return Some(Self::new(metadata.cwd.clone(), working));
+        }
+        let base = session_dir.parent()?;
+        let root = base.parent()?;
+        base.ends_with(crate::record::session_dir::SESSION_BASE)
+            .then(|| Self::at(root))
+    }
+
     pub fn project(&self) -> &Path {
         &self.project
     }

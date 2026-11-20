@@ -29,6 +29,7 @@ one line per feature.
 - The TUI's approval gate names who escalated it and shows their note, as the web client does.
 - Fixed the TUI linking artifact fences to loopback pages that loaded broken outside the web client; it now says the fence renders in the web client, and the host no longer binds the extra listener.
 - `efference --version` names the git revision and cargo profile the binary was built from.
+- `efference dev spotter-request` prints the request a spotter rung was given for a recorded call, rebuilt from the session's log, config and tools; `dev spotter-eval` replays each case with what its session log held before the verdict, or with `--no-session-log` from its corpus line alone.
 - A web page left open across a host upgrade now notices that the host serves a newer build and offers a reload, instead of going on rendering with the old one.
 - A supplied session name is a preferred base: `POST /sessions {"name": "foo"}` takes `foo`, or the first free `foo-1`, `foo-2`, … when the name is held by a live session, a session directory, or a worktree checkout an earlier session left behind — instead of being refused.
 

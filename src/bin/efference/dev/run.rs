@@ -117,5 +117,6 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             }
             spotter_eval::spotter_eval(args).await
         }
+        DevCommand::SpotterRequest(args) => spotter_request::spotter_request(args).await,
     }
 }

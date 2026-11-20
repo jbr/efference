@@ -9,7 +9,7 @@ use super::*;
 pub(crate) struct ReadName {
     /// The session to read, by id; what the positional would name.
     #[arg(long)]
-    pub(super) name: Option<String>,
+    pub(crate) name: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -290,7 +290,10 @@ pub(crate) enum DevCommand {
         no_fallback: bool,
     },
     /// Run the labeled spotter corpus against a model. Each case's config + call renders through the
-    /// production `assess` path; verdicts score against the case's `expected`
+    /// production `assess` path, given what the case's session log held before its
+    /// verdict when the log is readable — what was said, the consented precedents, the
+    /// promotion probe, a bound leaf — and the brief of its tool, with the MCP servers
+    /// of sessions under this project mounted. Verdicts score against the case's `expected`
     /// on the binary the system acts on (approve vs route-to-human). Reports
     /// per-class rates (human-miss = safety, false-gate = friction), the flip
     /// rate across repeated runs, latency percentiles, token totals, and — on
@@ -298,6 +301,52 @@ pub(crate) enum DevCommand {
     /// detail lands in a results jsonl for offline cross-tabs.
     // docs/permissions.md
     SpotterEval(SpotterEvalArgs),
+    /// Print the request a spotter rung was sent for a recorded call, as the rung's own
+    /// renderer builds it: the session's log supplies the call, the promotion probe, a
+    /// bound leaf, the consented precedents and what was said before it; the session's
+    /// config file, with later recorded edits taken back out, supplies the scope and
+    /// grants; and a structured call's brief comes from the session's tools, mounted as
+    /// the session mounted them. Name the call by the seq `spotter-log` lists for its
+    /// verdict, or by its id; a call that was never spotted renders what the spotter
+    /// would have been sent. No network unless the call's tool is a declared MCP
+    /// server's, which is mounted (stored credentials only, never a sign-in), or
+    /// `--json` is given. Notes on stderr say what may differ from the request the
+    /// session sent.
+    // docs/permissions.md
+    SpotterRequest(SpotterRequestArgs),
+}
+
+// The flags of `dev spotter-request`; the variant that holds them carries the command's help
+// text.
+#[derive(clap::Args)]
+pub(crate) struct SpotterRequestArgs {
+    /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
+    /// session directory, or a path to a `log.jsonl`. Omit to use `--name`.
+    pub(crate) session: Option<String>,
+    #[command(flatten)]
+    pub(crate) read: ReadName,
+    /// The spotter verdict's seq, as `spotter-log` lists it, or the handle of the call
+    /// itself, spotted or not: its assistant entry's seq, or `seq.n` for that entry's
+    /// n-th call.
+    #[arg(long, required_unless_present = "call")]
+    pub(crate) seq: Option<String>,
+    /// The call's id, spotted or not. With `--seq`, the two must name the same call.
+    #[arg(long)]
+    pub(crate) call: Option<String>,
+    /// Which rung's request to render. Defaults to the rung that judged the call: the
+    /// decision rung when its verdict records axes, otherwise the prose rung. With
+    /// `--json`, the session's own spotter decides, and naming the other rung is refused.
+    #[arg(long, value_enum)]
+    pub(crate) rung: Option<RungArg>,
+    /// Print the prose rung's system prompt, its persona, before the turn.
+    #[arg(long)]
+    pub(crate) system: bool,
+    /// Print the request body as the client for the session's spotter connection
+    /// serializes it, instead of the text view. Resolves that connection from
+    /// `~/.efference/config.toml` and asks its provider about the model, so it needs the
+    /// connection's credentials.
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 // The flags of `dev triage`; the variant that holds them carries the command's help text.
@@ -509,4 +558,10 @@ pub(crate) struct SpotterEvalArgs {
     // docs/permissions.md
     #[arg(long = "dump-states")]
     pub(crate) dump_states: Option<PathBuf>,
+    /// Replay each case from its corpus line alone: its session log is not read, so the
+    /// spotter is given no utterances, precedents, promotion probe or bound leaf — the
+    /// comparison arm for what the session's record adds. Without it, a case whose log
+    /// is readable is replayed with what the log held before its verdict.
+    #[arg(long = "no-session-log")]
+    pub(crate) no_session_log: bool,
 }
