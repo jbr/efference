@@ -291,8 +291,8 @@ pub(crate) enum DevCommand {
     },
     /// Run the labeled spotter corpus against a model. Each case's config + call renders through the
     /// production `assess` path, given what the case's session log held before its
-    /// verdict when the log is readable — what was said, the consented precedents, the
-    /// promotion probe, a bound leaf — and the brief of its tool, with the MCP servers
+    /// verdict when the log is readable — what was said, the promotion probe, a bound
+    /// leaf — and the brief of its tool, with the MCP servers
     /// of sessions under this project mounted. Verdicts score against the case's `expected`
     /// on the binary the system acts on (approve vs route-to-human). Reports
     /// per-class rates (human-miss = safety, false-gate = friction), the flip
@@ -303,7 +303,7 @@ pub(crate) enum DevCommand {
     SpotterEval(SpotterEvalArgs),
     /// Print the request a spotter rung was sent for a recorded call, as the rung's own
     /// renderer builds it: the session's log supplies the call, the promotion probe, a
-    /// bound leaf, the consented precedents and what was said before it; the session's
+    /// bound leaf and what was said before it; the session's
     /// config file, with later recorded edits taken back out, supplies the scope and
     /// grants; and a structured call's brief comes from the session's tools, mounted as
     /// the session mounted them. Name the call by the seq `spotter-log` lists for its
@@ -555,25 +555,17 @@ pub(crate) struct SpotterEvalArgs {
     // eval/spotter/README.md
     #[arg(long = "against-recorded")]
     pub(crate) against_recorded: bool,
-    /// Write the decision rung's request state for every case to this path,
-    /// labeled or not, and send nothing — the starting point for experiments
-    /// that vary what else the state carries.
+    /// Write the decision rung's request state for every case to this path, labeled
+    /// or not, and send nothing: one `{id, state, log_read, notes}` line per case, the
+    /// state as the rung sends it for the case as it would be replayed — rebuilt from
+    /// its session log when the log is readable, with what was said before the verdict
+    /// as `conversation`. The starting point for experiments that vary what the state
+    /// carries or what it is asked.
     // docs/permissions.md
     #[arg(long = "dump-states")]
     pub(crate) dump_states: Option<PathBuf>,
-    /// With `--dump-states`, rebuild each case from its session log and add the
-    /// session's conversation to its state, as `conversation`: every message before
-    /// the move, whole and oldest first, each with its writer. The decision rung sends
-    /// no conversation; this is the input to an experiment that gives it one.
-    // docs/permissions.md
-    #[arg(
-        long = "with-conversation",
-        requires = "dump_states",
-        conflicts_with = "no_session_log"
-    )]
-    pub(crate) with_conversation: bool,
     /// Replay each case from its corpus line alone: its session log is not read, so the
-    /// spotter is given no utterances, precedents, promotion probe or bound leaf — the
+    /// spotter is given no utterances, promotion probe or bound leaf — the
     /// comparison arm for what the session's record adds. Without it, a case whose log
     /// is readable is replayed with what the log held before its verdict.
     #[arg(long = "no-session-log")]

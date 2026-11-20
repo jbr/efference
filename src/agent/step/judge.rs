@@ -180,13 +180,6 @@ async fn consult_spotter<S: Spotter>(
     // when bound, so the spotter reads the child's tool.
     let brief = brief(toolbox, &judged.name);
     let chain: &[String] = bound.map_or(&[], |b| b.chain.as_slice());
-    // A bound leaf's history is the child's, not this log's, so it has no
-    // precedents here (docs/permissions.md).
-    let precedents = if bound.is_none() {
-        shared.consented_calls()
-    } else {
-        Vec::new()
-    };
     // Where this session sits among the host's sessions, read now: a supervised
     // session's status moves between calls (docs/permissions.md). The spotter is given it
     // only for a session-control move: no other move turns on it, and a supervisor's
@@ -205,7 +198,6 @@ async fn consult_spotter<S: Spotter>(
         .with_brief(brief)
         .with_chain(chain)
         .with_probe(probe)
-        .with_precedents(&precedents)
         .with_supervision(supervision.as_ref())
         .with_utterances(Some(&utterances));
     spotter.assess(role, judged, &circumstances).await

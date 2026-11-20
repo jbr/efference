@@ -17,13 +17,13 @@ fn explicit_worktree_explanation_and_git_c_facts_agree() {
             "worktree-read",
             json!({"command": "git -C /work/proj/.efference/worktrees/other status; wc -l /work/proj/.efference/worktrees/other/private/key; wc -l /work/proj/.efference/other/log.jsonl"}),
         );
-        let rendered = state::state(&role, &call, None, &[], None, Some(&dirs), None);
+        let rendered = state::state(&role, &call, &Circumstances::default(), Some(&dirs), None);
         assert_eq!(
             rendered["worktrees"],
             crate::curation::spotter::worktree_context(&dirs)
         );
         let paths = rendered["move"]["paths"].as_array().unwrap();
-        assert_eq!(paths.len(), 3, "{rendered}");
+        assert_eq!(paths.len(), 3, "{rendered:?}");
         assert_eq!(paths[0]["resolved"], "/work/proj");
         assert_eq!(paths[0]["under_grant"]["access"], "read, write");
         assert_eq!(paths[1]["resolved"], "/work/proj/private/key");
@@ -39,6 +39,12 @@ fn explicit_worktree_explanation_and_git_c_facts_agree() {
 #[test]
 fn unknown_directories_do_not_assert_a_worktree_location() {
     let call = ToolCall::new(BASH, "plain", json!({"command": "pwd"}));
-    let rendered = state::state(&Config::default(), &call, None, &[], None, None, None);
-    assert!(rendered.get("worktrees").is_none(), "{rendered}");
+    let rendered = state::state(
+        &Config::default(),
+        &call,
+        &Circumstances::default(),
+        None,
+        None,
+    );
+    assert!(rendered.get("worktrees").is_none(), "{rendered:?}");
 }

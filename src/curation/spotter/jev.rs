@@ -7,47 +7,44 @@
 //! prompt to shape and no prose to read, only questions and numbers.
 //!
 //! ```text
-//!   cold request:      state (config + move, as JSON) ──▶ sketch, P(in_scope), …
-//!   relation request:  the move + earlier approved calls ──▶ same | wider | different
-//!                                      folded in code ──▶ Stance + reason
+//!   positive request:  state ──▶ P(yes) per battery question, as written (+ prefix_safe)
+//!   negative request:  state ──▶ P(yes) per battery question, negated
+//!                      averaged, folded in code ──▶ Stance + reason
 //! ```
 //!
 //! The consequences are why this is a separate implementation rather than a model swap:
 //!
 //! - **The judgement is decomposed.** No single question can be "what is your
-//!   stance?", because the stance is a policy over several considerations. The
-//!   cold axes and the operator's approved history are read separately and
+//!   stance?", because the stance is a policy over several considerations. A battery
+//!   of reasons to clear and hazards is read, each question in two wordings, and
 //!   folded in code (`questions.rs`).
 //! - **The reason is synthesized.** The model emits no prose, so the one line the
-//!   acting session and the human gate read is written here from the level, what
-//!   raised it, and the precedents found — what the model actually reported, not
-//!   a sentence it wrote.
+//!   acting session and the human gate read is written here from what decided the
+//!   fold — what the model actually reported, not a sentence it wrote.
 //! - **Nothing caches.** The route has no cache-control and the model's endpoint
 //!   reports none, so every call pays full input, and the persona/scope prefix
 //!   economics that shape `ForkSpot` have no analogue here.
 //!
-//! Fail-closed holds for the cold request: any transport error or missing answer,
-//! and the rung returns [`Origin::Fallback`] +
-//! [`Stance::Gate`](crate::record::log::Stance::Gate). A failed relation request degrades
-//! to no precedents instead, so it holds only what needed one.
+//! Fail-closed holds for both requests: any transport error or missing answer, and
+//! the rung returns [`Origin::Fallback`] +
+//! [`Stance::Gate`](crate::record::log::Stance::Gate).
 
 use std::collections::BTreeMap;
 
-use serde_json::Value;
-
 use crate::config::Config;
-use crate::inference::api::{Endpoint, Question};
-use crate::record::log::{Axes, Origin, Precedent, RequestOrigin, ToolCall};
-use crate::tools::ToolBrief;
+use crate::inference::api::{Decisions, Endpoint, Question};
+use crate::record::log::{Axes, Origin, QuestionReading, RequestOrigin, ToolCall};
 
 use super::{Circumstances, Read, Spotter, Spotting};
 
 mod ask;
 mod questions;
-mod relation;
 mod state;
 
 pub use questions::plain_reason;
+pub use state::{State, conversation};
+
+use ask::Polarity;
 
 /// The decision-model spotter. Holds the [`Endpoint`] rather than a
 /// [`Client`](crate::inference::api::Client): the decisions route is one JSON POST with no
@@ -90,9 +87,9 @@ impl JevSpot {
         self
     }
 
-    /// The bodies [`Spotter::assess`] would send for this call — the cold request, then
-    /// the relation request when one is sent — built without sending them: what
-    /// `efference dev spotter-request --json` prints.
+    /// The bodies [`Spotter::assess`] would send for this call — the positive request,
+    /// then the negative one — built without sending them: what `efference dev
+    /// spotter-request --json` prints.
     pub fn request_bodies(
         &self,
         role: &Config,
@@ -107,19 +104,30 @@ impl JevSpot {
             dirs.as_ref(),
             self.scratch.as_deref(),
         );
-        let mut bodies =
-            vec![
+        [&asked.positive, &asked.negative]
+            .into_iter()
+            .map(|questions| {
                 self.endpoint
-                    .decisions_body(&self.model, &asked.state, &asked.questions)?,
-            ];
-        if let Some(relation) = &asked.relation {
-            bodies.push(self.endpoint.decisions_body(
+                    .decisions_body(&self.model, &asked.state, questions)
+            })
+            .collect()
+    }
+
+    /// Ask `questions` about `state`, reporting the request's stages.
+    async fn ask(
+        &self,
+        state: &State,
+        questions: &BTreeMap<String, Question>,
+    ) -> Result<Decisions, crate::inference::api::Error> {
+        self.endpoint
+            .decide_traced(
+                self.stages.as_ref(),
+                RequestOrigin::Spot,
                 &self.model,
-                &relation.state,
-                &relation.questions,
-            )?);
-        }
-        Ok(bodies)
+                state,
+                questions,
+            )
+            .await
     }
 }
 
@@ -134,13 +142,13 @@ impl Spotter for JevSpot {
         call: &ToolCall,
         circumstances: &Circumstances<'_>,
     ) -> Spotting {
-        let probe = circumstances.probe;
+        let probe = circumstances.probe.is_some();
         let dirs = self.directories.clone().or_else(super::process_directories);
         let Requests {
             state,
-            questions,
-            relation,
-            candidates,
+            positive,
+            negative,
+            outside_grants,
         } = requests(
             role,
             call,
@@ -148,201 +156,118 @@ impl Spotter for JevSpot {
             dirs.as_ref(),
             self.scratch.as_deref(),
         );
-        let spotter_notes = role.spotter_notes.iter().any(|w| !w.trim().is_empty());
-        let cold = self.endpoint.decide_traced(
-            self.stages.as_ref(),
-            RequestOrigin::Spot,
-            &self.model,
-            &state,
-            &questions,
-        );
-        let relation = async {
-            match &relation {
-                None => None,
-                Some(relation) => Some(
-                    self.endpoint
-                        .decide_traced(
-                            self.stages.as_ref(),
-                            RequestOrigin::Spot,
-                            &self.model,
-                            &relation.state,
-                            &relation.questions,
-                        )
-                        .await,
-                ),
-            }
-        };
-        let (cold, relation) = futures_lite::future::zip(cold, relation).await;
+        let (positive, negative) =
+            futures_lite::future::zip(self.ask(&state, &positive), self.ask(&state, &negative))
+                .await;
 
-        let decisions = match cold {
-            Ok(decisions) => decisions,
-            Err(error) => {
+        // The spot is one ledger entry with both requests' cost; the id and model are
+        // the positive request's.
+        let mut usage = None;
+        for answered in [&positive, &negative].into_iter().flatten() {
+            let request = answered.request_usage();
+            match &mut usage {
+                None => usage = Some(request),
+                Some(sum) => sum.usage.add(&request.usage),
+            }
+        }
+        let (positive, negative) = match (positive, negative) {
+            (Ok(positive), Ok(negative)) => (positive, negative),
+            (Err(error), _) | (_, Err(error)) => {
                 log::warn!("spotter decisions request failed: {error}");
-                return Spotting::fail_closed(None);
-            }
-        };
-        let mut usage = decisions.request_usage();
-
-        // A relation failure means no precedents, not no verdict: the move holds
-        // or clears on its level alone.
-        let (reading, compared) = match relation {
-            None => (Some(questions::Reading::default()), Vec::new()),
-            Some(Ok(answered)) => {
-                // The relation request's billing goes into the cold request's, so the
-                // spot is one ledger entry with the whole cost; the id and model stay
-                // the cold request's.
-                usage.usage.add(&answered.request_usage().usage);
-                (
-                    Some(relation::read(&answered, candidates.len())),
-                    relation::compared(&answered, &candidates),
-                )
-            }
-            Some(Err(error)) => {
-                log::warn!("spotter relation request failed: {error}");
-                (None, Vec::new())
+                return Spotting::fail_closed(usage);
             }
         };
 
-        // Every unconditional axis must have come back. A partial answer set is
-        // not a partial verdict — the fold reads all of them — so it fails closed
-        // exactly as an unparseable `spot` call does.
-        let Some(mut axes) = read_axes(&decisions, spotter_notes, probe.is_some()) else {
+        // Every asked question must have come back in both wordings. A partial answer
+        // set is not a partial verdict — the fold reads all of them — so it fails
+        // closed exactly as an unparseable `spot` call does.
+        let spotter_notes = has_spotter_notes(role);
+        let Some(axes) = read_axes(&positive, &negative, spotter_notes, probe) else {
             log::warn!(
-                "spotter decisions response answered {:?}, which is not the asked set",
-                decisions.answers.keys().collect::<Vec<_>>()
+                "spotter decisions responses answered {:?} and {:?}, which is not the asked set",
+                positive.answers.keys().collect::<Vec<_>>(),
+                negative.answers.keys().collect::<Vec<_>>(),
             );
-            return Spotting::fail_closed(Some(usage));
+            return Spotting::fail_closed(usage);
         };
+        let axes = axes.with_outside_grants(outside_grants);
 
-        let decision = questions::decide(&axes, reading, probe.is_some());
-        axes.precedent = reading.map(|r| Precedent {
-            candidates: r.candidates,
-            same: r.same,
-            wider: r.wider,
-            required: decision.required,
-            compared,
-        });
+        let decision = questions::decide(&axes, probe);
         Spotting {
             read: Read {
                 stance: decision.stance,
                 reason: decision.reason,
             },
             origin: Origin::Model,
-            usage: Some(usage),
+            usage,
             axes: Some(axes),
         }
     }
 }
 
-/// What one assessment asks the decision model: the cold request, and the relation
-/// request when the session has consented calls of the move's family to compare it
-/// against.
-pub struct Requests<'a> {
-    /// The cold request's state: the config and the move, as JSON.
-    pub state: Value,
-    /// The cold request's questions, by key.
-    pub questions: BTreeMap<String, Question>,
-    /// The relation request; `None` when no consented call of the move's family exists.
-    pub relation: Option<Relation>,
-    /// The consented calls the relation request compares the move against, oldest
-    /// first.
-    candidates: Vec<&'a ToolCall>,
-}
-
-/// The relation request's state and questions.
-pub struct Relation {
-    pub state: Value,
-    pub questions: BTreeMap<String, Question>,
+/// What one assessment asks the decision model: one state, asked the battery in each
+/// wording, and the harness's own fact the fold reads beside the answers.
+pub struct Requests {
+    /// The state both requests carry.
+    pub state: State,
+    /// The positive request's questions, by key: the battery as written, and the
+    /// promotion question when a probe is present.
+    pub positive: BTreeMap<String, Question>,
+    /// The negative request's questions, by key: the battery negated.
+    pub negative: BTreeMap<String, Question>,
+    /// Whether the move's resolved paths place it outside the grants.
+    pub outside_grants: bool,
 }
 
 /// The requests [`JevSpot::assess`] sends for this call, from the judged session's
 /// directories and scratch dir. `efference dev spotter-request` prints them.
-pub fn requests<'a>(
+pub fn requests(
     role: &Config,
     call: &ToolCall,
-    circumstances: &Circumstances<'a>,
+    circumstances: &Circumstances<'_>,
     dirs: Option<&crate::config::policy::Directories>,
     scratch: Option<&std::path::Path>,
-) -> Requests<'a> {
-    let &Circumstances {
-        ref brief,
-        chain,
-        probe,
-        precedents,
-        // The prose rung's alone: no question here reads them.
-        supervision: _,
-        utterances: _,
-    } = circumstances;
-    let state = state::state(role, call, brief.as_ref(), chain, probe, dirs, scratch);
-    let spotter_notes = role.spotter_notes.iter().any(|w| !w.trim().is_empty());
-    let questions = ask::questions(spotter_notes, probe.is_some());
-    // The relation request rides beside the cold one, only when the session has
-    // consented calls of the move's family to compare against.
-    let candidates = relation::candidates(call, precedents);
-    let relation = (!candidates.is_empty()).then(|| Relation {
-        state: relation::state(
-            call,
-            dirs.map(crate::config::policy::Directories::judged_working)
-                .as_deref(),
-        ),
-        questions: relation::questions(&candidates),
-    });
+) -> Requests {
+    let spotter_notes = has_spotter_notes(role);
+    let probe = circumstances.probe.is_some();
     Requests {
-        state,
-        questions,
-        relation,
-        candidates,
+        state: state::state(role, call, circumstances, dirs, scratch),
+        positive: ask::questions(Polarity::Positive, spotter_notes, probe),
+        negative: ask::questions(Polarity::Negative, spotter_notes, probe),
+        outside_grants: state::outside_grants(role, call, dirs, scratch),
     }
 }
 
-/// The consented calls in `precedents` the relation request would compare `call`
-/// against: the most recent of the move's family, oldest first. Passing only these as
-/// the precedents asks the same requests, which is what lets the offline eval keep a
-/// case's history small.
-pub fn compared_precedents(call: &ToolCall, precedents: &[ToolCall]) -> Vec<ToolCall> {
-    relation::candidates(call, precedents)
-        .into_iter()
-        .cloned()
-        .collect()
+/// Whether the config has a spotter note, which is when the two note questions are
+/// asked.
+fn has_spotter_notes(role: &Config) -> bool {
+    role.spotter_notes.iter().any(|w| !w.trim().is_empty())
 }
 
-/// Pull the asked axes out of the response. `None` when an unconditional axis is
-/// missing or came back as something other than a boolean answer.
+/// Pull the asked answers out of the two responses. `None` when an asked question is
+/// missing from either, or came back as something other than a boolean answer. A
+/// conditional question that was not asked has no entry; one that was asked and went
+/// unanswered is a failure, since the fold would read its absence as "nothing to weigh".
 fn read_axes(
-    decisions: &crate::inference::api::Decisions,
+    positive: &Decisions,
+    negative: &Decisions,
     spotter_notes: bool,
     probe: bool,
 ) -> Option<Axes> {
-    Some(Axes {
-        in_scope: decisions.probability(questions::IN_SCOPE)?,
-        path_outside: decisions.probability(questions::PATH_OUTSIDE)?,
-        path_denied: decisions.probability(questions::PATH_DENIED)?,
-        exposes_secrets: decisions.probability(questions::EXPOSES_SECRETS)?,
-        // A conditional axis is `None` when it wasn't asked, and a hard failure
-        // when it was asked and went unanswered — the fold reads "not asked" as
-        // "nothing to weigh", which is wrong if the question was in fact posed.
-        note_warns: if spotter_notes {
-            Some(decisions.probability(questions::NOTE_WARNS)?)
-        } else {
-            None
-        },
-        prefix_safe: if probe {
-            Some(decisions.probability(questions::PREFIX_SAFE)?)
-        } else {
-            None
-        },
-        sketch: Some(sketch(decisions)?),
-        precedent: None,
-    })
-}
-
-/// The sketch distribution as five probabilities, level 0 first. `None` when the
-/// answer is missing a level.
-fn sketch(decisions: &crate::inference::api::Decisions) -> Option<Vec<f64>> {
-    let answered = decisions.probabilities(questions::SKETCH)?;
-    (0..questions::LEVELS)
-        .map(|level| answered.get(&level.to_string()).copied())
-        .collect()
+    let readings = ask::asked(spotter_notes)
+        .map(|question| {
+            let reading = QuestionReading::new(
+                positive.probability(question.key)?,
+                negative.probability(question.key)?,
+            );
+            Some((question.key.to_string(), reading))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let prefix_safe = match probe {
+        true => Some(positive.probability(questions::PREFIX_SAFE)?),
+        false => None,
+    };
+    Some(Axes::new(readings).with_prefix_safe(prefix_safe))
 }
 
 /// The exact state a request would carry for this call, pretty-printed — what the
@@ -351,13 +276,12 @@ fn sketch(decisions: &crate::inference::api::Decisions) -> Option<Vec<f64>> {
 pub fn preview_state(
     role: &Config,
     call: &ToolCall,
-    brief: Option<&ToolBrief<'_>>,
-    probe: Option<&str>,
+    circumstances: &Circumstances<'_>,
     dirs: Option<&crate::config::policy::Directories>,
     scratch: Option<&std::path::Path>,
 ) -> String {
-    let state = state::state(role, call, brief, &[], probe, dirs, scratch);
-    serde_json::to_string_pretty(&state).unwrap_or_else(|_| state.to_string())
+    let state = state::state(role, call, circumstances, dirs, scratch);
+    serde_json::to_string_pretty(&state).unwrap_or_else(|e| format!("unserializable state: {e}"))
 }
 
 #[cfg(test)]

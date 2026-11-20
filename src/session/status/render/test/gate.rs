@@ -3,22 +3,20 @@
 
 use super::*;
 
-/// A decision-rung cause with no precedent: the reviewer is told the call, why it was
+/// A decision-rung hold outside the grants: the reviewer is told the call, why it was
 /// held in plain words, and the moves that decide it; a driver is told who decides.
 #[test]
-fn a_gate_held_for_scope_with_no_precedent() {
-    let scope = Axes {
-        in_scope: 0.21,
-        ..axes(0, Some(precedent(0, 0, Some(1))))
-    };
+fn a_gate_held_outside_the_grants_with_nothing_asked() {
+    let outside = axes(&[("contained", 0.9), ("asked", 0.2)]).with_outside_grants(true);
     let spot = spot(
         Origin::Model,
-        "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
-        Some(scope),
+        "held: it reaches outside the granted paths, and nothing the operator or a \
+         supervising agent said asks for it",
+        Some(outside),
     );
     let lines = "intent: fetch only the response headers\n\
-        held because: its reviewer is unsure this fits the session's scope; no earlier call \
-        like it was allowed";
+        held because: it reaches outside the granted paths, and nothing the operator or a \
+        supervising agent said asks for it";
     assert_eq!(
         rendered(&gated(&spot, supervisor("parent")), &reviewer()),
         format!(
@@ -35,16 +33,15 @@ fn a_gate_held_for_scope_with_no_precedent() {
     );
 }
 
-/// Precedents short of the requirement say how many there were and how many it needs.
+/// A hazard's hold names the hazard, without its figure.
 #[test]
-fn a_gate_held_with_precedents_short_of_the_requirement() {
+fn a_gate_held_by_a_hazard() {
     let spot = spot(
         Origin::Model,
-        "level 3 (sketch, 80%): needs 2 approved calls like it, found 1.",
-        Some(axes(3, Some(precedent(3, 1, Some(2))))),
+        "held: it would print, store or send a secret (0.85)",
+        Some(axes(&[("inspects", 0.9), ("secret", 0.85)])),
     );
-    let reason = "held because: its reviewer rates it serious: hard to undo, or reaching other \
-        people; only 1 earlier call like it was allowed, and a call like this needs 2";
+    let reason = "held because: it would print, store or send a secret";
     let first = "bash `curl -sI https://example.com` (seq 8.2)\n\
         intent: fetch only the response headers";
     assert_eq!(
@@ -155,7 +152,7 @@ fn a_summary_with_backticks_is_one_code_span() {
         summary: Some("message=\"check `ls ~/.ssh` first\"".into()),
         intent: None,
         handle: Some("8".into()),
-        held_because: held_because(&spot(Origin::Model, "level 2", None)),
+        held_because: held_because(&spot(Origin::Model, "held", None)),
         reviewer: Reviewer::Operator,
         escalations: Vec::new(),
     }));

@@ -128,23 +128,52 @@ fn latest_title_latest_entry_wins() {
 /// predates the field still reads (docs/permissions.md).
 #[test]
 fn a_spot_carries_the_decision_axes_and_old_entries_still_read() {
-    let axes = Axes {
-        in_scope: 0.94,
-        path_outside: 0.19,
-        sketch: Some(vec![0.9, 0.05, 0.03, 0.01, 0.01]),
-        ..Default::default()
-    };
-    let spot = Spot::new(CallId("c1".into()), Stance::Clear, "routine (level 0).")
-        .with_model(Some("jev-1.13.0".into()))
-        .with_axes(Some(axes.clone()));
+    let axes = Axes::new([("asked".to_string(), QuestionReading::new(0.75, 0.25))])
+        .with_outside_grants(true);
+    let spot = Spot::new(
+        CallId("c1".into()),
+        Stance::Clear,
+        "clear: the operator or a supervising agent asked for this (0.75)",
+    )
+    .with_model(Some("jev-1.14.0".into()))
+    .with_axes(Some(axes.clone()));
     let json = serde_json::to_string(&spot).unwrap();
-    assert!(json.contains(r#""axes":{"in_scope":0.94,"#), "{json}");
+    assert!(
+        json.contains(
+            r#""axes":{"readings":{"asked":{"positive":0.75,"negative":0.25,"reading":0.75}},"outside_grants":true}"#
+        ),
+        "{json}"
+    );
     let back: Spot = serde_json::from_str(&json).unwrap();
     assert_eq!(back.axes, Some(axes));
 
     let old = r#"{"call_id":"c1","stance":"clear","reason":"r","origin":"Model"}"#;
     let back: Spot = serde_json::from_str(old).unwrap();
     assert_eq!(back.axes, None);
+}
+
+/// A `Spot` line recorded under the sketch fold, with its relation reading, still parses:
+/// the old figures are ignored and the entry reads as having no readings, while its
+/// stance, reason and model are kept (docs/permissions.md).
+#[test]
+fn a_spot_recorded_under_the_sketch_fold_still_parses() {
+    let line = r#"{"seq":471,"turn":29,"at":1792908307360,"payload":{"Spot":{"call_id":"call_691e","stance":"gate","reason":"level 2 (sketch, 51%): needs 1 approved call like it, found none; goes further than 1 call the operator approved.","origin":"Model","model":"jev-1.14.0","axes":{"in_scope":0.86,"path_outside":0.09,"path_denied":0.1,"exposes_secrets":0.03,"sketch":[0.38,0.1,0.51,0.01,0.0],"precedent":{"candidates":1,"same":0,"wider":1,"required":1,"compared":[{"call_id":"call_3945","same":0.325,"wider":0.51}]}}}}}"#;
+    let entry: LogEntry = serde_json::from_str(line).expect("a sketch-fold line parses");
+    let Payload::Spot(spot) = entry.payload else {
+        panic!("a Spot entry");
+    };
+    assert_eq!(spot.stance, Stance::Gate);
+    assert!(spot.reason.starts_with("level 2 (sketch, 51%)"));
+    assert_eq!(spot.model.as_deref(), Some("jev-1.14.0"));
+    assert_eq!(spot.axes, Some(Axes::default()));
+
+    // The fold before that one recorded `reversible`, `sanctioned` and a probe's answer,
+    // which is the same question the battery's promotion step still asks.
+    let older = r#"{"call_id":"c1","stance":"clear","reason":"r","origin":"Model","axes":{"in_scope":0.93,"reversible":0.88,"sanctioned":0.04,"path_outside":0.19,"path_denied":0.02,"exposes_secrets":0.03,"watch_for_hit":0.4,"prefix_safe":0.9}}"#;
+    let spot: Spot = serde_json::from_str(older).expect("an older line parses");
+    let axes = spot.axes.expect("axes");
+    assert!(axes.readings.is_empty());
+    assert_eq!(axes.prefix_safe, Some(0.9));
 }
 
 /// Telemetry nests under one key, `{"Telemetry": {"<Variant>": …}}` — the shape

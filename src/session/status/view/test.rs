@@ -1,7 +1,7 @@
 //! The status view as the host builds it from a session's state.
 
 use super::*;
-use crate::record::log::{AssistantOutput, Axes, ContentBlock, Precedent, Stance, Telemetry};
+use crate::record::log::{AssistantOutput, Axes, ContentBlock, QuestionReading, Stance, Telemetry};
 
 fn session() -> Arc<Session> {
     Session::in_memory().0
@@ -43,19 +43,12 @@ fn a_gate_names_its_handle_summary_and_plain_reason() {
                 Spot::new(
                     CallId("toolu_1".into()),
                     Stance::Gate,
-                    "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
+                    "held: it goes further than anything the operator or a supervising agent asked for (0.70)",
                 )
-                .with_axes(Some(Axes {
-                    in_scope: 0.21,
-                    precedent: Some(Precedent {
-                        candidates: 0,
-                        same: 0,
-                        wider: 0,
-                        required: Some(1),
-                        compared: Vec::new(),
-                    }),
-                    ..Axes::default()
-                })),
+                .with_axes(Some(Axes::new([
+                    ("inspects".to_string(), QuestionReading::new(0.9, 0.1)),
+                    ("further".to_string(), QuestionReading::new(0.7, 0.3)),
+                ]))),
             ),
         )
         .unwrap();
@@ -72,8 +65,7 @@ fn a_gate_names_its_handle_summary_and_plain_reason() {
             intent: Some("fetch headers".into()),
             handle: Some("0.2".into()),
             held_because: Some(
-                "its reviewer is unsure this fits the session's scope; no earlier call like it \
-                 was allowed"
+                "it goes further than anything the operator or a supervising agent asked for"
                     .into()
             ),
             reviewer: Reviewer::Operator,

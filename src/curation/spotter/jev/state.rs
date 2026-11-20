@@ -5,68 +5,229 @@
 //! generative model reads English. A decision model is answering fixed questions
 //! *about* a state, and the route takes that state as JSON, so this renders
 //! structure: named fields the question text can point at by name
-//! (`path_grants`, `working_directory`, `spotter_notes`).
+//! (`path_grants`, `working_directory`, `spotter_notes`, `conversation`).
 //!
-//! What is included and what is withheld follows the prose spotter exactly — the
-//! same grants including the denies, the same `$TMPDIR` alias, the same resolved
-//! absolute paths so containment is visible without the model resolving anything,
+//! What is included and what is withheld follows the prose spotter: the same grants
+//! including the denies, the same `$TMPDIR` alias, the same resolved absolute paths so
+//! containment is visible without the model resolving anything, the session's
+//! conversation with each message's writer, the prose rung's persona as `guidance`,
 //! and the harness-injected `intent` withheld for the same reason (the party being
 //! judged wrote it).
+//!
+//! The fields go on the wire in one fixed order ([`State`]): the config, then the
+//! guidance and the conversation, then the move. The battery's thresholds were fitted
+//! on states in that order.
 
+use std::ops::Index;
+
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::config::Config;
+use crate::config::policy::Directories;
 use crate::record::log::ToolCall;
 use crate::record::names::tools::{BASH, INTENT, display_name};
+use crate::record::utterances::{Speaker, Utterances};
 use crate::tools::ToolBrief;
 
-/// The state for one assessment.
+use super::super::Circumstances;
+
+/// The state of one assessment: its fields in the order they go on the wire. A
+/// `serde_json::Value` object sorts its keys, so the order is carried as pairs and
+/// written entry by entry.
+#[derive(Clone, Debug, PartialEq)]
+pub struct State(Vec<(&'static str, Value)>);
+
+impl State {
+    /// The field `key`, when the state has one.
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.0
+            .iter()
+            .find_map(|(name, value)| (*name == key).then_some(value))
+    }
+
+    /// The field names, in wire order.
+    pub fn keys(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.0.iter().map(|(name, _)| *name)
+    }
+}
+
+/// `state["move"]` reads like a `Value` index: a field the state lacks reads as null.
+impl Index<&str> for State {
+    type Output = Value;
+
+    fn index(&self, key: &str) -> &Value {
+        self.get(key).unwrap_or(&Value::Null)
+    }
+}
+
+impl Serialize for State {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (key, value) in &self.0 {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+/// The state for one assessment. `circumstances` supplies the tool's brief, a bound
+/// leaf's approval chain, the promotion probe and the conversation; the supervision
+/// facts are the prose rung's alone.
 pub(super) fn state(
     role: &Config,
     call: &ToolCall,
-    brief: Option<&ToolBrief<'_>>,
-    chain: &[String],
-    probe: Option<&str>,
-    dirs: Option<&crate::config::policy::Directories>,
+    circumstances: &Circumstances<'_>,
+    dirs: Option<&Directories>,
     scratch: Option<&std::path::Path>,
-) -> Value {
-    let mut state = json!({
-        "mission": role
-            .scope
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty()),
-        "working_directory": dirs.map(|d| d.judged_working().display().to_string()),
-        "path_grants": grants(role, dirs),
-        "scratch_directory": scratch.map(|p| p.display().to_string()),
-        "spotter_notes": spotter_notes(role),
-        "move": proposed_move(role, call, brief, dirs, scratch),
-    });
-    let object = state.as_object_mut().expect("state is built as an object");
+) -> State {
+    let mut fields: Vec<(&'static str, Value)> = vec![
+        (
+            "mission",
+            json!(
+                role.scope
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+            ),
+        ),
+        ("spotter_notes", json!(spotter_notes(role))),
+        (
+            "working_directory",
+            json!(dirs.map(|d| d.judged_working().display().to_string())),
+        ),
+        ("path_grants", Value::Array(grants(role, dirs))),
+        (
+            "scratch_directory",
+            json!(scratch.map(|p| p.display().to_string())),
+        ),
+    ];
     if let Some(dirs) = dirs {
-        object.insert(
-            "worktrees".into(),
-            json!(super::super::worktree_context(dirs)),
-        );
+        fields.push(("worktrees", json!(super::super::worktree_context(dirs))));
     }
-
-    if let Some(holder) = chain.last() {
+    if let Some(holder) = circumstances.chain.last() {
         // The leaf of an approval chain (docs/permissions.md): the move is the
         // child's, and the chain names who approved on the way here. Present only
         // when there is one, so an ordinary move's state carries no empty field
         // inviting an answer about it.
-        object.insert(
-            "approval_chain".into(),
+        fields.push((
+            "approval_chain",
             json!({
-                "sessions": chain,
+                "sessions": circumstances.chain,
                 "held_by": holder,
             }),
-        );
+        ));
     }
-    if let Some(prefix) = probe {
-        object.insert("promotion_probe".into(), json!(prefix));
+    fields.push(("guidance", json!(super::super::PERSONA)));
+    // Left out, rather than empty, when no session log is at hand: an empty list
+    // reads as "nothing was said" (docs/permissions.md).
+    if let Some(utterances) = circumstances.utterances {
+        fields.push(("conversation", conversation(utterances)));
     }
-    state
+    fields.push((
+        "move",
+        proposed_move(role, call, circumstances.brief.as_ref(), dirs, scratch),
+    ));
+    if let Some(prefix) = circumstances.probe {
+        fields.push(("promotion_probe", json!(prefix)));
+    }
+    State(fields)
+}
+
+/// The utterances as `[{writer, text}]`, oldest first, each text whole. The writer is
+/// `operator`, `supervisor:<id>` for a supervising agent, or `agent`; the battery's
+/// questions say which of them counts as asking.
+pub fn conversation(utterances: &Utterances) -> Value {
+    utterances
+        .said
+        .iter()
+        .map(|utterance| {
+            let writer = match &utterance.speaker {
+                Speaker::Operator => "operator".to_string(),
+                Speaker::Supervisor(id) => format!("supervisor:{id}"),
+                Speaker::Agent => "agent".to_string(),
+            };
+            json!({ "writer": writer, "text": utterance.text })
+        })
+        .collect()
+}
+
+/// Whether the harness's resolved path facts place `call` outside the grants
+/// (docs/permissions.md): one of its paths is under no grant or under a denied one.
+/// The fold reads it beside the answers; it is not a question the model is asked.
+///
+/// A shell command is judged by the facts its state's `move.paths` lists: an entry
+/// with no grant or a denied one is outside, an entry that expands at run time is
+/// outside when it starts in the home directory (`~`, `$HOME`), and a pattern that may
+/// span grants decides nothing. A structured call is judged by the paths in its
+/// `path`, `file_path`, `cwd` and `paths` arguments, whatever the tool: one written
+/// from the home directory is outside, and the rest resolve against the working
+/// directory, with the scratch directory inside and a glob character standing for
+/// itself.
+pub(super) fn outside_grants(
+    role: &Config,
+    call: &ToolCall,
+    dirs: Option<&Directories>,
+    scratch: Option<&std::path::Path>,
+) -> bool {
+    use crate::config::policy::{Decided, decide, path_words};
+    if call.name == BASH {
+        let (Some(dirs), Some(command)) = (dirs, call.input.get("command").and_then(Value::as_str))
+        else {
+            return false;
+        };
+        let command = judged_command(command, dirs);
+        return path_words(command, dirs, scratch).words.iter().any(|word| {
+            match decide(role, word, dirs, scratch) {
+                Decided::Unresolved => from_home(&word.word),
+                Decided::Straddles(_) => false,
+                Decided::NoGrant => true,
+                Decided::Grant(_, perms) => denied(perms),
+            }
+        });
+    }
+    let input = &call.input;
+    let mut paths: Vec<&str> = ["path", "file_path", "cwd"]
+        .iter()
+        .filter_map(|key| input.get(*key).and_then(Value::as_str))
+        .collect();
+    if let Some(Value::Array(items)) = input.get("paths") {
+        paths.extend(items.iter().filter_map(|item| match item {
+            Value::Array(parts) => parts.first().and_then(Value::as_str),
+            item => item.as_str(),
+        }));
+    }
+    paths.into_iter().any(|path| {
+        if from_home(path) {
+            return true;
+        }
+        let Some(dirs) = dirs else {
+            return false;
+        };
+        let target = dirs.target(&path.replace('*', "x"));
+        if scratch.is_some_and(|scratch| target.starts_with(scratch)) {
+            return false;
+        }
+        crate::config::policy::governing_grant(role, &target, dirs)
+            .is_none_or(|(_, perms)| denied(perms))
+    })
+}
+
+/// Whether a path as written starts in the home directory.
+fn from_home(written: &str) -> bool {
+    written.starts_with('~') || written.starts_with("$HOME")
+}
+
+fn denied(perms: &crate::config::Perms) -> bool {
+    !perms.read && !perms.write
+}
+
+/// The shell command the state's move carries: a leading `cd` into the working
+/// directory goes nowhere, so the move is the rest (`policy::without_cd_into`) — the
+/// resolution the model would otherwise have to do against `working_directory` itself.
+fn judged_command<'a>(command: &'a str, dirs: &Directories) -> &'a str {
+    crate::config::policy::without_cd_into(command, dirs).unwrap_or(command)
 }
 
 /// The path grants, resolved absolute by the same lexical rule the deterministic
@@ -78,7 +239,7 @@ pub(super) fn state(
 /// The denies are included: a more specific grant overrides a broader one, and a
 /// denied subtree under an allowed parent is exactly the carve-out a bash move can
 /// stray into without the deterministic fast-path ever seeing it.
-fn grants(role: &Config, dirs: Option<&crate::config::policy::Directories>) -> Vec<Value> {
+fn grants(role: &Config, dirs: Option<&Directories>) -> Vec<Value> {
     role.paths
         .iter()
         .map(|(path, perms)| {
@@ -121,7 +282,7 @@ fn spotter_notes(role: &Config) -> Vec<&str> {
 fn paths(
     command: &str,
     role: &Config,
-    dirs: &crate::config::policy::Directories,
+    dirs: &Directories,
     scratch: Option<&std::path::Path>,
 ) -> (Vec<Value>, bool) {
     let found = crate::config::policy::path_words(command, dirs, scratch);
@@ -183,19 +344,15 @@ fn proposed_move(
     role: &Config,
     call: &ToolCall,
     brief: Option<&ToolBrief<'_>>,
-    dirs: Option<&crate::config::policy::Directories>,
+    dirs: Option<&Directories>,
     scratch: Option<&std::path::Path>,
 ) -> Value {
     if call.name == BASH {
         return match call.input.get("command").and_then(Value::as_str) {
             Some(command) => {
-                // A leading `cd` into the working directory goes nowhere, so the move
-                // is the rest (`policy::without_cd_into`) — the resolution the model
-                // would otherwise have to do against `working_directory` itself. Its
-                // paths are the rest's too, so the dropped `cd` target is not listed.
-                let command = dirs
-                    .and_then(|dirs| crate::config::policy::without_cd_into(command, dirs))
-                    .unwrap_or(command);
+                // The `cd`-less command's paths are the rest's too, so the dropped `cd`
+                // target is not listed.
+                let command = dirs.map_or(command, |dirs| judged_command(command, dirs));
                 let mut shell = json!({
                     "kind": "shell_command",
                     "command": command,

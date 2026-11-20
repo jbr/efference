@@ -336,6 +336,34 @@ fn each_arm_names_its_own_default_spotter() {
         Provider::Custom(WireDialect::Messages).default_spotter_model(),
         None
     );
+    // TypeSafe serves only jev, pinned to the version the decision rung was fitted on.
+    assert_eq!(
+        Provider::TypeSafe.default_spotter_model(),
+        Some("jev-1.14.0")
+    );
+}
+
+/// The jev a connection supplies as the spotter default is the version the decision
+/// rung's thresholds were fitted against, spelled as each provider names it, never a
+/// floating alias (docs/permissions.md).
+#[test]
+fn the_decision_model_default_is_the_fitted_jev_version() {
+    assert_eq!(
+        Provider::TypeSafe.default_decision_model(),
+        Some("jev-1.14.0")
+    );
+    assert_eq!(
+        Provider::OpenRouter.default_decision_model(),
+        Some("typesafe/jev-1.14")
+    );
+    for provider in [
+        Provider::Anthropic,
+        Provider::OpenAI,
+        Provider::OpenAICodex,
+        Provider::Custom(WireDialect::SystemOne),
+    ] {
+        assert_eq!(provider.default_decision_model(), None, "{provider}");
+    }
 }
 
 /// Image input, per provider (docs/tools.md). OpenRouter states it in

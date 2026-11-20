@@ -645,70 +645,28 @@
       "type": "string"
     },
     "Axes": {
-      "description": "One assessment's answers, as the model reported them: P(true) per axis, and the\nsketch distribution. The two optional axes are asked only when the state\ncarries the thing they are about — a spotter-notes list, a promotion probe — so\n`None` means \"not asked\", never \"answered zero\".\n\nRecorded alongside the stance on `Spot::axes`. Entries that predate the sketch\nfold carry `reversible` and `sanctioned`, which are ignored on read, and lack\n`sketch` and `precedent`, which default to `None`.",
+      "description": "The decision rung's answers behind one verdict (docs/permissions.md): each battery\nquestion's [`QuestionReading`] by the key it is asked under, whether the harness placed\nthe move outside the grants (the one input to the fold that is not an answer), and\nthe promotion question's answer when a probe was asked.\n\nRecorded alongside the stance on `Spot::axes`, so the verdict can be re-folded and\nreplayed under other thresholds without asking again. A conditional question (the\ntwo about spotter notes) that was not asked has no entry, so an absent key means \"not\nasked\", never \"answered zero\".\n\nAn entry recorded under an earlier fold carries that fold's figures (`in_scope`,\n`sketch`, `precedent`, …) instead of `readings`. They are ignored on read, and the\nlog line keeps them as written; such an entry reads as having no readings.",
       "properties": {
-        "exposes_secrets": {
-          "format": "double",
-          "type": "number"
-        },
-        "in_scope": {
-          "format": "double",
-          "type": "number"
-        },
-        "note_warns": {
-          "description": "A note for the spotter warns against this kind of move.",
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "path_denied": {
-          "description": "Names a path under a grant marked `denied` — the carve-out case, which\nis a different question from being outside every grant.",
-          "format": "double",
-          "type": "number"
-        },
-        "path_outside": {
-          "description": "Names a path outside every grant. Split from [`Self::path_denied`]\nbecause one question asking both was four hops — resolve the move's\npaths, resolve the grants, check containment, check the denies — and\nscored 0.21–0.56 on plainly in-scope read-only commands.",
-          "format": "double",
-          "type": "number"
-        },
-        "precedent": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Precedent"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "What the relation request found, when the fold reached the precedent step."
+        "outside_grants": {
+          "description": "Whether the harness's resolved path facts place the move outside the grants: a\npath no grant covers, or one under a denied grant. Read by the fold, and stated\nby the harness rather than answered by the model.",
+          "type": "boolean"
         },
         "prefix_safe": {
+          "description": "P(yes) to the promotion question, asked once and only when a probe was.",
           "format": "double",
           "type": [
             "number",
             "null"
           ]
         },
-        "sketch": {
-          "description": "P(level) for sketch levels 0 to 4, lowest first.",
-          "items": {
-            "format": "double",
-            "type": "number"
+        "readings": {
+          "additionalProperties": {
+            "$ref": "#/definitions/QuestionReading"
           },
-          "type": [
-            "array",
-            "null"
-          ]
+          "description": "Each asked battery question's reading, by its key.",
+          "type": "object"
         }
       },
-      "required": [
-        "in_scope",
-        "path_outside",
-        "path_denied",
-        "exposes_secrets"
-      ],
       "type": "object"
     },
     "Background": {
@@ -1260,28 +1218,6 @@
       "required": [
         "error",
         "at"
-      ],
-      "type": "object"
-    },
-    "Compared": {
-      "description": "One candidate's reading: the earlier call, by id, and the mean of its two\naskings for `same` and for `wider`.",
-      "properties": {
-        "call_id": {
-          "$ref": "#/definitions/CallId"
-        },
-        "same": {
-          "format": "double",
-          "type": "number"
-        },
-        "wider": {
-          "format": "double",
-          "type": "number"
-        }
-      },
-      "required": [
-        "call_id",
-        "same",
-        "wider"
       ],
       "type": "object"
     },
@@ -5158,49 +5094,6 @@
       ],
       "type": "object"
     },
-    "Precedent": {
-      "description": "What the relation request read: of the `candidates` earlier calls asked about,\nhow many the model read as the `same` action and how many as `wider`, with the\nnumber the move's level required.",
-      "properties": {
-        "candidates": {
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "compared": {
-          "description": "Each candidate's reading, in the order asked. The counts above are these\nunder the fold's cut; recording the figures is what lets a different cut be\nreplayed, and a surprising clear be traced to the approved call it matched.",
-          "items": {
-            "$ref": "#/definitions/Compared"
-          },
-          "type": "array"
-        },
-        "required": {
-          "description": "`None` when no number of precedents clears the level.",
-          "format": "uint",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "same": {
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "wider": {
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "candidates",
-        "same",
-        "wider",
-        "required"
-      ],
-      "type": "object"
-    },
     "PreviewIssue": {
       "description": "Why a field could not be used as given. `field` names the request field, so a\nclient can attach the message to the control the operator is editing.\n\n`field` is a `Cow` rather than a `&'static str` because the type crosses the\nwire in both directions: the host builds every issue from a literal, and a\ncontrol client decodes the same type back (docs/control-api.md).",
       "properties": {
@@ -5823,6 +5716,32 @@
       "required": [
         "moment",
         "kind"
+      ],
+      "type": "object"
+    },
+    "QuestionReading": {
+      "description": "One battery question's answers (docs/permissions.md). Each question is asked in two\nwordings, as written and negated, because a decision model leans toward yes; the\nreading is their average with the negation flipped.",
+      "properties": {
+        "negative": {
+          "description": "P(yes) to its negation.",
+          "format": "double",
+          "type": "number"
+        },
+        "positive": {
+          "description": "P(yes) to the question as written.",
+          "format": "double",
+          "type": "number"
+        },
+        "reading": {
+          "description": "`(positive + 1 - negative) / 2`.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "positive",
+        "negative",
+        "reading"
       ],
       "type": "object"
     },

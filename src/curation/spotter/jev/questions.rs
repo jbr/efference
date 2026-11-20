@@ -1,312 +1,211 @@
-//! What the decision model's answers record, and how they become a [`Stance`]
+//! What the decision model's answers mean, and how they become a [`Stance`]
 //! (docs/permissions.md).
 //!
-//! The prose spotter is asked one question — "what is your stance?" — and does
-//! the whole judgement inside the model. A decision model cannot: it answers a
-//! fixed question with a probability and says nothing else. So the judgement is
-//! split into a sketchiness reading and the operator's own history, and the
-//! combination back into a stance happens here, in code:
+//! The prose spotter is asked one question — "what is your stance?" — and does the
+//! whole judgement inside the model. A decision model answers a fixed question with a
+//! probability and says nothing else, so the judgement is split into a battery of
+//! yes/no questions, and the combination back into a stance happens here, in code:
 //!
 //! ```text
-//!   sketch level (raised by a tripped axis)  ×  approved calls like this one  ──▶  Clear | Gate
+//!   some reason to clear  ×  no hazard  ×  (inside the grants, or asked for)  ──▶  Clear | Gate
 //! ```
 //!
-//! The rule is inspectable — the stance is a function of numbers that are all
-//! recorded in [`Axes`] — and it never returns `Watch`: how many approved calls a
-//! level needs ([`REQUIRED`]) is the dial between asking and not asking.
+//! Each question is a reason to clear (an *allow-reason*: the operator asked for it,
+//! agreed to it, it is contained, it only reads, a note calls it ordinary) or a
+//! *hazard* (it goes further than asked, against a limit, prints a secret, is one-way,
+//! edits its own permissions, is opaque, a note warns against it). The rule is
+//! inspectable — the stance is a function of numbers that are all recorded in
+//! [`Axes`] — and it never returns `Watch`.
 
 use crate::record::log::{Axes, Stance};
 
-/// The question keys, as they go on the wire and come back in `answers`.
-pub(super) const SKETCH: &str = "sketch";
-pub(super) const IN_SCOPE: &str = "in_scope";
-pub(super) const PATH_OUTSIDE: &str = "path_outside";
-pub(super) const PATH_DENIED: &str = "path_denied";
-pub(super) const EXPOSES_SECRETS: &str = "exposes_secrets";
-pub(super) const NOTE_WARNS: &str = "note_warns";
+use super::ask::BATTERY;
+
+/// The battery's keys, as they go on the wire and come back in `answers`, spelled as they
+/// were asked when the thresholds were fitted.
+pub(super) const ASKED: &str = "asked";
+pub(super) const AGREED: &str = "agreed";
+pub(super) const CONTAINED: &str = "contained";
+pub(super) const INSPECTS: &str = "inspects";
+pub(super) const NOTED_ORDINARY: &str = "noted-ordinary";
+pub(super) const FURTHER: &str = "further";
+pub(super) const NARROWED: &str = "narrowed";
+pub(super) const SECRET: &str = "secret";
+pub(super) const ONE_WAY: &str = "one-way";
+pub(super) const SELF_MODIFIES: &str = "self-modifies";
+pub(super) const OPAQUE: &str = "opaque";
+pub(super) const NOTE_WARNS: &str = "note-warns";
+/// The promotion question, asked once beside the battery when a probe is present.
 pub(super) const PREFIX_SAFE: &str = "prefix_safe";
 
-/// How many levels the `sketch` Score has.
-pub(super) const LEVELS: usize = 5;
-
-/// How many approved same-action calls each sketch level needs before the move
-/// clears; `None` is a level no history clears.
-pub(super) const REQUIRED: [Option<usize>; LEVELS] = [Some(0), Some(0), Some(1), Some(2), None];
-
-/// `exposes_secrets` at or above this gates, whatever the history says.
-const SECRETS_GATE: f64 = 0.5;
-/// A relation reading (`same`, `wider`) counts at or above this.
-pub(super) const RELATION_COUNTS: f64 = 0.5;
+/// An allow-reason reading at or above this is a reason to clear (docs/permissions.md).
+/// Fitted with [`HAZARD_HOLDS`] on labelled corpus gates and validated on real gates
+/// with must-hold moves transplanted into their sessions.
+pub(super) const ALLOW_COUNTS: f64 = 0.50;
+/// A hazard reading at or above this holds the move, whatever reason to clear it has
+/// (docs/permissions.md).
+pub(super) const HAZARD_HOLDS: f64 = 0.625;
 /// `prefix_safe` at or above this lets a clear carry the promotion safe-vote.
 const PREFIX_VOUCH: f64 = 0.8;
 
-/// The relation request's reading, before the fold has said how many were needed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub(super) struct Reading {
-    pub candidates: usize,
-    pub same: usize,
-    pub wider: usize,
+/// Which way a battery question's yes points.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Side {
+    /// A reason to clear.
+    Allow,
+    /// A reason to hold.
+    Hazard,
 }
 
-/// The fold's result: the stance, the sentence the session and the human gate
-/// read, and the requirement it applied.
+/// The fold's result: the stance and the sentence the acting agent and the human gate
+/// read.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Decision {
     pub stance: Stance,
     pub reason: String,
-    pub required: Option<usize>,
 }
 
-/// What put a move at its level: the sketch's own reading, or an axis that
-/// raised it past the sketch.
+/// What held a move.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum Cause {
-    Sketch(Option<f64>),
-    Raised(Axis, f64),
+enum Held {
+    /// This hazard, the strongest at or over [`HAZARD_HOLDS`].
+    Hazard(&'static str, f64),
+    /// The move reaches outside the grants and neither `asked` nor `agreed` counted.
+    OutsideUnasked,
+    /// No allow-reason counted; the strongest one, when any was read.
+    NoReason(Option<(&'static str, f64)>),
 }
 
-/// A shipping axis that raises a move's level past the sketch's reading.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Axis {
-    DeniedPath,
-    Secrets,
-    NoteWarns,
-    OutsideGrants,
-    ScopeFit,
+/// The asked questions on `side` with their readings, in battery order.
+fn read_side(axes: &Axes, side: Side) -> impl Iterator<Item = (&'static str, f64)> + '_ {
+    BATTERY
+        .iter()
+        .filter(move |question| question.side == side)
+        .filter_map(|question| {
+            axes.readings
+                .get(question.key)
+                .map(|reading| (question.key, reading.reading))
+        })
 }
 
-impl Axis {
-    /// The term the rung's own reason names it by ([`Decision::reason`]).
-    fn term(self) -> &'static str {
-        match self {
-            Self::DeniedPath => "a denied path",
-            Self::Secrets => "possible secrets",
-            Self::NoteWarns => "a warning note",
-            Self::OutsideGrants => "outside the grants",
-            Self::ScopeFit => "scope fit",
-        }
+/// The strongest of `readings`, the earliest on a tie.
+fn strongest(readings: impl Iterator<Item = (&'static str, f64)>) -> Option<(&'static str, f64)> {
+    readings.reduce(|best, next| if next.1 > best.1 { next } else { best })
+}
+
+/// The fold (docs/permissions.md): clear when some allow-reason counts and no hazard
+/// holds, and, for a move outside the grants, only when `asked` or `agreed` counts.
+/// `Ok` is the allow-reason the move cleared on, with its reading.
+fn fold(axes: &Axes) -> Result<(&'static str, f64), Held> {
+    if let Some((key, reading)) =
+        strongest(read_side(axes, Side::Hazard).filter(|(_, reading)| *reading >= HAZARD_HOLDS))
+    {
+        return Err(Held::Hazard(key, reading));
     }
-
-    /// What the tripped axis says about the move, for whoever decides the gate
-    /// ([`plain_reason`]).
-    fn plain(self) -> &'static str {
-        match self {
-            Self::DeniedPath => "it names a path this session is denied",
-            Self::Secrets => "it could expose secret material",
-            Self::NoteWarns => "a note for the spotter may warn against it",
-            Self::OutsideGrants => "it includes paths outside this session's grants",
-            Self::ScopeFit => "its reviewer is unsure this fits the session's scope",
-        }
-    }
-}
-
-/// What the sketch's own level says about a move, for whoever decides the gate,
-/// lowest first — the levels `ask.rs` describes to the model, without their numbers.
-const SKETCH_PLAIN: [&str; LEVELS] = [
-    "its reviewer rates it routine",
-    "its reviewer rates it mild",
-    "its reviewer rates it notable, a move to understand before it runs",
-    "its reviewer rates it serious: hard to undo, or reaching other people",
-    "its reviewer rates it severe: it could expose a credential or destroy data",
-];
-
-/// The move's sketchiness level and what set it.
-pub(super) fn level_of(axes: &Axes) -> (usize, Cause) {
-    let (mut level, mut cause) = match axes.sketch.as_deref() {
-        Some(sketch) if !sketch.is_empty() => {
-            let (level, p) =
-                sketch
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .fold(
-                        (0, f64::MIN),
-                        |best, (i, p)| if p > best.1 { (i, p) } else { best },
-                    );
-            (level, Cause::Sketch(Some(p)))
-        }
-        _ => (0, Cause::Sketch(None)),
+    let allowed = match strongest(read_side(axes, Side::Allow)) {
+        Some(best) if best.1 >= ALLOW_COUNTS => best,
+        best => return Err(Held::NoReason(best)),
     };
-    // A tripped shipping axis raises the level to at least the one it names.
-    let bumps: [(Axis, usize, Option<f64>); 5] = [
-        (
-            Axis::DeniedPath,
-            3,
-            Some(axes.path_denied).filter(|p| *p > 0.25),
-        ),
-        (
-            Axis::Secrets,
-            3,
-            Some(axes.exposes_secrets).filter(|p| *p > 0.15),
-        ),
-        (Axis::NoteWarns, 3, axes.note_warns.filter(|p| *p > 0.25)),
-        (
-            Axis::OutsideGrants,
-            2,
-            Some(axes.path_outside).filter(|p| *p > 0.35),
-        ),
-        (
-            Axis::ScopeFit,
-            2,
-            Some(axes.in_scope).filter(|p| *p <= 0.30),
-        ),
-    ];
-    for (axis, to, figure) in bumps {
-        if let Some(figure) = figure
-            && to > level
-        {
-            level = to;
-            cause = Cause::Raised(axis, figure);
-        }
+    if !axes.outside_grants {
+        return Ok(allowed);
     }
-    (level.min(LEVELS - 1), cause)
+    // Outside the grants, only what the operator or a supervisor said clears: a move
+    // can be contained in its effects and still reach somewhere nobody granted.
+    match strongest(read_side(axes, Side::Allow).filter(|(key, _)| [ASKED, AGREED].contains(key))) {
+        Some(asked) if asked.1 >= ALLOW_COUNTS => Ok(asked),
+        _ => Err(Held::OutsideUnasked),
+    }
 }
 
-/// Fold the answers into a stance (docs/permissions.md). `precedent` is `None`
-/// when no relation reading exists (no candidates, or the request failed), which
-/// folds as zero precedents. `probe` is whether a promotion probe rode the call.
-pub(super) fn decide(axes: &Axes, precedent: Option<Reading>, probe: bool) -> Decision {
-    let (level, cause) = level_of(axes);
-    let required = REQUIRED[level];
-    let reading = precedent.unwrap_or_default();
-    // Exposing a secret is the one move no history sanctions: the value is out
-    // the moment it is printed.
-    if axes.exposes_secrets >= SECRETS_GATE {
-        return Decision {
+/// Fold the recorded answers into a stance and its reason (docs/permissions.md).
+/// `probe` is whether a promotion probe was asked: a clear with `prefix_safe` at or
+/// above [`PREFIX_VOUCH`] is a `ClearAlways`.
+pub(super) fn decide(axes: &Axes, probe: bool) -> Decision {
+    match fold(axes) {
+        Ok((key, reading)) => {
+            let reason = format!("clear: {} ({reading:.2})", allow_clause(key));
+            match axes.prefix_safe.filter(|p| probe && *p >= PREFIX_VOUCH) {
+                Some(safe) => Decision {
+                    stance: Stance::ClearAlways,
+                    reason: format!(
+                        "{reason}, and the probed prefix reads safe for any argument ({safe:.2})"
+                    ),
+                },
+                None => Decision {
+                    stance: Stance::Clear,
+                    reason,
+                },
+            }
+        }
+        Err(held) => Decision {
             stance: Stance::Gate,
-            reason: format!(
-                "this looks like it would expose secret material ({} confidence) — no earlier \
-                 approval clears that, so it stops here.",
-                pct(axes.exposes_secrets)
-            ),
-            required,
-        };
-    }
-    let lead = lead(level, cause);
-    let further = match reading.wider {
-        0 => String::new(),
-        n => format!("; goes further than {}", approved_calls(n)),
-    };
-    let cleared = required.is_some_and(|need| reading.same >= need);
-    if !cleared {
-        let needs = match required {
-            Some(need) => format!(
-                "needs {need} approved {} like it, found {}",
-                plural(need, "call"),
-                match reading.same {
-                    0 => "none".to_string(),
-                    n => n.to_string(),
+            reason: match held {
+                Held::Hazard(key, reading) => {
+                    format!("held: {} ({reading:.2})", hazard_clause(key))
                 }
-            ),
-            None => "no number of approved calls clears this level".to_string(),
-        };
-        return Decision {
-            stance: Stance::Gate,
-            reason: format!("{lead}: {needs}{further}."),
-            required,
-        };
-    }
-    let matched = match reading.same {
-        0 => String::new(),
-        n => format!("; matches {}", approved_calls_earlier(n)),
-    };
-    let (stance, vouch) = match axes.prefix_safe.filter(|p| probe && *p >= PREFIX_VOUCH) {
-        Some(safe) => (
-            Stance::ClearAlways,
-            format!(
-                "; the offered prefix reads safe for any argument ({})",
-                pct(safe)
-            ),
-        ),
-        None => (Stance::Clear, String::new()),
-    };
-    Decision {
-        stance,
-        reason: format!("{lead}{matched}{further}{vouch}."),
-        required,
+                Held::NoReason(Some((key, reading))) => format!(
+                    "held: no reason to clear it was clear enough (best: {key} {reading:.2})"
+                ),
+                held => format!("held: {}", held_clause(held)),
+            },
+        },
     }
 }
 
 /// Why the decision rung held a move, in plain words for whoever decides the gate
-/// (docs/permissions.md): what put it at its level, then what the session's allowed
-/// calls said. Phrased from the recorded answers — the axes and the precedent
-/// reading `Spot::axes` carries — never from [`Decision::reason`], whose levels and
-/// figures are the rung's own terms. `None` when the answers fold to a clear.
-///
-/// An entry without a precedent reading (the relation request failed) folded as no
-/// precedents, under the requirement its level sets; the history clause is left out,
-/// since there is no reading to report.
+/// (docs/permissions.md): the clause [`decide`]'s reason names, with no figures.
+/// Phrased by re-folding the recorded answers, never by rewriting `Spot::reason`.
+/// `None` when the answers fold to a clear, and for an entry recorded under an earlier
+/// fold, which has no readings to fold.
 pub fn plain_reason(axes: &Axes) -> Option<String> {
-    if axes.exposes_secrets >= SECRETS_GATE {
-        return Some("it may expose secret material".to_string());
-    }
-    let (level, cause) = level_of(axes);
-    let precedent = axes.precedent.as_ref();
-    // The requirement the fold applied is the recorded one; a different table
-    // since would otherwise re-judge the call it held.
-    let required = precedent.map_or(REQUIRED[level], |p| p.required);
-    let same = precedent.map_or(0, |p| p.same);
-    if required.is_some_and(|need| same >= need) {
+    if axes.readings.is_empty() {
         return None;
     }
-    let mut clauses = vec![match cause {
-        Cause::Raised(axis, _) => axis.plain().to_string(),
-        Cause::Sketch(_) => SKETCH_PLAIN[level].to_string(),
-    }];
-    match (required, precedent) {
-        (None, _) => clauses.push("no earlier approval clears a call this risky".to_string()),
-        (Some(_), None) => {}
-        (Some(_), Some(p)) if p.same == 0 => {
-            clauses.push("no earlier call like it was allowed".to_string());
+    fold(axes).err().map(held_clause)
+}
+
+/// What held the move, as a clause.
+fn held_clause(held: Held) -> String {
+    match held {
+        Held::Hazard(key, _) => hazard_clause(key).to_string(),
+        Held::OutsideUnasked => "it reaches outside the granted paths, and nothing the operator \
+                                 or a supervising agent said asks for it"
+            .to_string(),
+        Held::NoReason(_) => {
+            "it was not clearly asked for, agreed to, contained, or read-only".to_string()
         }
-        (Some(need), Some(p)) => clauses.push(format!(
-            "only {} earlier {} like it {} allowed, and a call like this needs {need}",
-            p.same,
-            plural(p.same, "call"),
-            if p.same == 1 { "was" } else { "were" },
-        )),
-    }
-    if let Some(p) = precedent.filter(|p| p.wider > 0) {
-        clauses.push(format!(
-            "it goes further than {} {} allowed earlier",
-            p.wider,
-            plural(p.wider, "call")
-        ));
-    }
-    Some(clauses.join("; "))
-}
-
-fn pct(p: f64) -> String {
-    format!("{:.0}%", p * 100.0)
-}
-
-fn plural(n: usize, noun: &str) -> String {
-    if n == 1 {
-        noun.to_string()
-    } else {
-        format!("{noun}s")
     }
 }
 
-/// "2 calls the operator approved".
-fn approved_calls(n: usize) -> String {
-    format!("{n} {} the operator approved", plural(n, "call"))
-}
-
-/// "2 earlier calls the operator approved".
-fn approved_calls_earlier(n: usize) -> String {
-    format!("{n} earlier {} the operator approved", plural(n, "call"))
-}
-
-/// The level and what set it: "routine (level 0)", or "level 2 (outside the
-/// grants, 62%)" with the figure of the axis (or the sketch) behind it.
-fn lead(level: usize, cause: Cause) -> String {
-    if level == 0 {
-        return "routine (level 0)".to_string();
+/// What an allow-reason says about the move it cleared.
+fn allow_clause(key: &str) -> &'static str {
+    match key {
+        ASKED => "the operator or a supervising agent asked for this",
+        AGREED => "the operator agreed to this when the agent proposed it",
+        CONTAINED => {
+            "it stays inside the granted paths, where git or the scratch directory can undo it"
+        }
+        INSPECTS => "it only reads or inspects",
+        NOTED_ORDINARY => "a spotter note says moves like this are ordinary here",
+        _ => "a reason to clear it counted",
     }
-    match cause {
-        Cause::Sketch(Some(p)) => format!("level {level} (sketch, {})", pct(p)),
-        Cause::Sketch(None) => format!("level {level}"),
-        Cause::Raised(axis, p) => format!("level {level} ({}, {})", axis.term(), pct(p)),
+}
+
+/// What a hazard says about the move it held.
+fn hazard_clause(key: &str) -> &'static str {
+    match key {
+        FURTHER => "it goes further than anything the operator or a supervising agent asked for",
+        NARROWED => {
+            "the operator or a supervising agent ruled out moves like this, or limited the task \
+             in a way this goes against"
+        }
+        SECRET => "it would print, store or send a secret",
+        ONE_WAY => {
+            "it has an effect git or the scratch directory cannot undo, which nobody asked for"
+        }
+        SELF_MODIFIES => "it changes the configuration or hooks that govern what this agent may do",
+        OPAQUE => "it runs code whose effect cannot be seen from the move itself",
+        NOTE_WARNS => "a spotter note warns against moves like this",
+        _ => "a hazard question held it",
     }
 }

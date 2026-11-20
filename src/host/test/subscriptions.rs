@@ -214,27 +214,26 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
                 crate::record::log::Spot::new(
                     curl.id.clone(),
                     crate::record::log::Stance::Gate,
-                    "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
+                    "held: it goes further than anything the operator or a supervising agent asked for (0.70)",
                 )
-                .with_axes(Some(crate::record::log::Axes {
-                    in_scope: 0.21,
-                    precedent: Some(crate::record::log::Precedent {
-                        candidates: 0,
-                        same: 0,
-                        wider: 0,
-                        required: Some(1),
-                        compared: Vec::new(),
-                    }),
-                    ..Default::default()
-                })),
+                .with_axes(Some(crate::record::log::Axes::new([
+                    (
+                        "inspects".to_string(),
+                        crate::record::log::QuestionReading::new(0.9, 0.1),
+                    ),
+                    (
+                        "further".to_string(),
+                        crate::record::log::QuestionReading::new(0.7, 0.3),
+                    ),
+                ]))),
             ),
         )
         .unwrap();
     let _rx = child.register_pending(&curl, Default::default());
     let gate = format!(
         "waiting for your decision on bash `curl -sI https://example.com` (seq \
-         {issued})\nintent: fetch only the response headers\nheld because: its reviewer is \
-         unsure this fits the session's scope; no earlier call like it was allowed\ndecide: \
+         {issued})\nintent: fetch only the response headers\nheld because: it goes further than \
+         anything the operator or a supervising agent asked for\ndecide: \
          agents__decide(agent: \"child\", seq: \"{issued}\", decision: \"allow\" | \"deny\", \
          message?) — allow runs it, and a message is sent with its result; deny with a message \
          refuses it and the session goes on under your message; a bare deny ends its \

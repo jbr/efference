@@ -117,31 +117,38 @@ fn the_prose_view_is_the_request_as_the_verdict_was_given_it() {
     );
 }
 
-/// The call's id names the same verdict, and the decision rung's view carries the move
-/// in its state.
+/// The call's id names the same verdict, and the decision rung's view shows its two
+/// requests: one state carrying the move and what was said before the verdict, the
+/// battery in each wording, and the harness's grants fact.
 #[test]
-fn the_call_id_names_the_verdict_and_the_jev_view_shows_its_state() {
+fn the_call_id_names_the_verdict_and_the_jev_view_shows_its_requests() {
     let (_project, log) = recorded_project();
     let rebuilt = rebuild(&log, None, Some("c1")).unwrap();
     assert_eq!(rebuilt.recorded.spot.as_ref().map(|(seq, _)| *seq), Some(2));
     let circumstances = rebuilt.recorded.circumstances(None);
     let rendered = render(&rebuilt, &circumstances, RungArg::Jev, false).unwrap();
-    assert!(
-        rendered.starts_with("── cold request: state ──\n{"),
-        "{rendered}"
-    );
+    assert!(rendered.starts_with("── state ──\n{"), "{rendered}");
     assert!(
         rendered.contains("\"command\": \"cargo clean\""),
         "{rendered}"
     );
     assert!(
-        rendered.contains("── cold request: questions ──\n"),
+        rendered.contains("\"conversation\": [\n    {\n      \"text\": \"clean the build\""),
         "{rendered}"
     );
+    assert!(!rendered.contains("and the docs"), "{rendered}");
+    let positive = rendered
+        .find("── positive request: questions ──\n")
+        .expect("the positive request");
+    let negative = rendered
+        .find("── negative request: questions ──\n")
+        .expect("the negative request");
+    assert!(positive < negative);
+    // The probe the verdict records is asked once, in the positive request.
+    assert!(rendered[positive..negative].contains("\"prefix_safe\""));
+    assert!(!rendered[negative..].contains("\"prefix_safe\""));
     assert!(
-        rendered.ends_with(
-            "── relation request: not sent, no consented call of the move's family ──\n"
-        ),
+        rendered.ends_with("── outside the grants ──\nno\n"),
         "{rendered}"
     );
 }

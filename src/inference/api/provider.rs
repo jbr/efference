@@ -44,6 +44,14 @@ pub use row::{ListedModel, ModelKind, Price};
 /// band, and the arm's catalog reports no cost to pick from.
 const OPENAI_DEFAULT_SPOTTER_MODEL: &str = "gpt-5.6-luna";
 
+/// The jev version the decision rung's question battery and thresholds were fitted and
+/// validated against (docs/permissions.md), as the first-party route names it. A later
+/// version is a re-fit, not a drop-in.
+const JEV_VERSION: &str = "jev-1.14.0";
+
+/// [`JEV_VERSION`] as OpenRouter names it.
+const OPENROUTER_JEV_VERSION: &str = "typesafe/jev-1.14";
+
 impl Serialize for Provider {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.name())
@@ -201,10 +209,9 @@ impl Provider {
             // route before the first request.
             Self::OpenRouter => Some("anthropic/claude-haiku-4-5"),
             Self::OpenAI | Self::OpenAICodex => Some(OPENAI_DEFAULT_SPOTTER_MODEL),
-            // The one model family this provider serves. The floating alias
-            // rather than a dated slug: TypeSafe publishes `jev-latest` as the
-            // entry point and the API takes it directly.
-            Self::TypeSafe => Some("jev-latest"),
+            // The one model family this provider serves, pinned to the version the
+            // decision rung's thresholds were fitted against ([`JEV_VERSION`]).
+            Self::TypeSafe => Some(JEV_VERSION),
             Self::Custom(_) => None,
         }
     }
@@ -238,13 +245,16 @@ impl Provider {
 
     /// The decision model this provider serves, for the spotter default
     /// (docs/permissions.md): any connection with jev support supplies it, ahead
-    /// of the main provider's cheap band. Floating aliases on both — the
-    /// first-party `jev-latest`, and OpenRouter's `~`-prefixed alias for it — so
-    /// a new jev version needs no new build.
+    /// of the main provider's cheap band. Pinned to one version on both rather than
+    /// the floating aliases (`jev-latest`, `~typesafe/jev-latest`): the decision rung's
+    /// thresholds were fitted against that version, and an alias moves on release.
+    /// An id the operator configures is used as written.
     pub fn default_decision_model(&self) -> Option<&'static str> {
         match self {
-            Self::TypeSafe => Some("jev-latest"),
-            Self::OpenRouter => Some("~typesafe/jev-latest"),
+            Self::TypeSafe => Some(JEV_VERSION),
+            // OpenRouter serves the version as `typesafe/jev-1.14` (its endpoint is
+            // `typesafe/jev-1.14-20261014`); `typesafe/jev-1.14.0` is not an id there.
+            Self::OpenRouter => Some(OPENROUTER_JEV_VERSION),
             Self::Anthropic | Self::OpenAI | Self::OpenAICodex | Self::Custom(_) => None,
         }
     }

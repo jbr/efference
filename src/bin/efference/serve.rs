@@ -347,13 +347,15 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
     let dirs = efference::config::policy::Directories::at(&cwd);
     let spotter = MountedSpotter::mount(endpoint, &model, kind, None, dirs.clone())
         .with_capabilities(capabilities.as_ref());
+    let circumstances = efference::curation::spotter::Circumstances::default()
+        .with_brief(sent.copied())
+        .with_probe(probe.as_deref());
     if show_move || tool.is_some() {
         let preview = match &spotter {
             MountedSpotter::Jev(_) => efference::curation::spotter::jev::preview_state(
                 &role,
                 &call,
-                sent,
-                probe.as_deref(),
+                &circumstances,
                 Some(&dirs),
                 None,
             ),
@@ -367,9 +369,6 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
         };
         println!("{preview}\n");
     }
-    let circumstances = efference::curation::spotter::Circumstances::default()
-        .with_brief(sent.copied())
-        .with_probe(probe.as_deref());
     let spotting = spotter.assess(&role, &call, &circumstances).await;
     print_verdict(&spotting, probe.as_deref(), &role);
     Ok(())

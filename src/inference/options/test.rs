@@ -855,7 +855,7 @@ auth = {{ kind = "env", key = "ANTHROPIC_KEY" }}
     let routed = routed.value.unwrap();
     assert_eq!(
         (routed.connection.as_str(), routed.model.as_str()),
-        ("router", "~typesafe/jev-latest")
+        ("router", "typesafe/jev-1.14")
     );
 
     let both = spotter(&format!(
@@ -873,7 +873,7 @@ auth = {{ kind = "env", key = "ANTHROPIC_KEY" }}
     .unwrap();
     assert_eq!(
         (both.connection.as_str(), both.model.as_str()),
-        ("ts", "jev-latest"),
+        ("ts", "jev-1.14.0"),
         "first-party wins even when OpenRouter sorts first"
     );
 

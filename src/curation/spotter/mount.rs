@@ -68,8 +68,8 @@ impl MountedSpotter {
         match (kind == ModelKind::Decisions, persona) {
             (true, Some(_)) => Err(format!(
                 "spotter model {model:?} is a decision model, which takes no persona: it \
-                 answers fixed questions and has no prompt to replace. Its tuning knob is \
-                 the sketch and precedent fold."
+                 answers fixed questions and has no prompt to replace. Its tuning knobs \
+                 are the question text and the fold's thresholds."
             )
             .into()),
             (true, None) => Ok(MountedSpotter::Jev(JevSpot::new(endpoint, model))),

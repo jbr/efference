@@ -153,7 +153,7 @@ mod attempts;
 mod dump;
 mod records;
 use attempts::Eval;
-pub(crate) use dump::{dump_conversation_states, dump_states};
+pub(crate) use dump::dump_states;
 
 fn binary(stance: Stance) -> &'static str {
     match stance {
@@ -265,7 +265,6 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
         no_cost,
         against_recorded,
         dump_states: _,
-        with_conversation: _,
         no_session_log,
     } = args;
     let runs = runs.max(1);
@@ -296,7 +295,7 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
     let capabilities = endpoint.spotter_capabilities(&model, kind).await?;
     // Briefs come from the same lookup a live gate uses, over the built-in tools and
     // the servers the cases' sessions declare; the circumstances from each case's log.
-    let records = records::records(&cases, kind, no_session_log).await?;
+    let records = records::records(&cases, no_session_log).await?;
     for note in &records.notes {
         eprintln!("{note}");
     }

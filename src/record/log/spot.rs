@@ -1,6 +1,8 @@
 //! The spotter's logged verdict on one gated call, and the decision model's answers
 //! recorded beside it (docs/permissions.md).
 
+use std::collections::BTreeMap;
+
 use super::*;
 
 /// The spotter's verdict on one gated tool call (docs/permissions.md), logged as a
@@ -75,92 +77,103 @@ pub enum Stance {
     Gate,
 }
 
-/// One assessment's answers, as the model reported them: P(true) per axis, and the
-/// sketch distribution. The two optional axes are asked only when the state
-/// carries the thing they are about — a spotter-notes list, a promotion probe — so
-/// `None` means "not asked", never "answered zero".
+/// The decision rung's answers behind one verdict (docs/permissions.md): each battery
+/// question's [`QuestionReading`] by the key it is asked under, whether the harness placed
+/// the move outside the grants (the one input to the fold that is not an answer), and
+/// the promotion question's answer when a probe was asked.
 ///
-/// Recorded alongside the stance on `Spot::axes`. Entries that predate the sketch
-/// fold carry `reversible` and `sanctioned`, which are ignored on read, and lack
-/// `sketch` and `precedent`, which default to `None`.
+/// Recorded alongside the stance on `Spot::axes`, so the verdict can be re-folded and
+/// replayed under other thresholds without asking again. A conditional question (the
+/// two about spotter notes) that was not asked has no entry, so an absent key means "not
+/// asked", never "answered zero".
+///
+/// An entry recorded under an earlier fold carries that fold's figures (`in_scope`,
+/// `sketch`, `precedent`, …) instead of `readings`. They are ignored on read, and the
+/// log line keeps them as written; such an entry reads as having no readings.
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Axes {
-    pub in_scope: f64,
-    /// Names a path outside every grant. Split from [`Self::path_denied`]
-    /// because one question asking both was four hops — resolve the move's
-    /// paths, resolve the grants, check containment, check the denies — and
-    /// scored 0.21–0.56 on plainly in-scope read-only commands.
-    pub path_outside: f64,
-    /// Names a path under a grant marked `denied` — the carve-out case, which
-    /// is a different question from being outside every grant.
-    pub path_denied: f64,
-    pub exposes_secrets: f64,
-    /// A note for the spotter warns against this kind of move.
-    // Entries recorded before the rename carry this axis as `watch_for_hit`.
-    #[serde(skip_serializing_if = "Option::is_none", alias = "watch_for_hit")]
-    pub note_warns: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Each asked battery question's reading, by its key.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub readings: BTreeMap<String, QuestionReading>,
+    /// Whether the harness's resolved path facts place the move outside the grants: a
+    /// path no grant covers, or one under a denied grant. Read by the fold, and stated
+    /// by the harness rather than answered by the model.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub outside_grants: bool,
+    /// P(yes) to the promotion question, asked once and only when a probe was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix_safe: Option<f64>,
-    /// P(level) for sketch levels 0 to 4, lowest first.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sketch: Option<Vec<f64>>,
-    /// What the relation request found, when the fold reached the precedent step.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub precedent: Option<Precedent>,
 }
 
 impl Axes {
+    /// The answers of a verdict that read `readings`, inside the grants, with no probe.
+    pub fn new(readings: impl IntoIterator<Item = (String, QuestionReading)>) -> Self {
+        Self {
+            readings: readings.into_iter().collect(),
+            outside_grants: false,
+            prefix_safe: None,
+        }
+    }
+
+    /// Whether the harness placed the move outside the grants.
+    pub fn with_outside_grants(mut self, outside_grants: bool) -> Self {
+        self.outside_grants = outside_grants;
+        self
+    }
+
+    /// The promotion question's answer, when a probe was asked.
+    pub fn with_prefix_safe(mut self, prefix_safe: Option<f64>) -> Self {
+        self.prefix_safe = prefix_safe;
+        self
+    }
+
     /// One `name value` string per recorded figure, for the dev verbs that print a
-    /// spot's whole vector.
+    /// spot's whole vector: each question's reading with its two answers, positive
+    /// wording first.
     pub fn summary(&self) -> Vec<String> {
-        let show = |label: &str, p: f64| format!("{label} {p:.2}");
-        let mut parts = Vec::new();
-        if let Some(sketch) = &self.sketch {
-            let figures: Vec<String> = sketch.iter().map(|p| format!("{p:.2}")).collect();
-            parts.push(format!("sketch {}", figures.join("/")));
+        let mut parts: Vec<String> = self
+            .readings
+            .iter()
+            .map(|(key, r)| {
+                format!(
+                    "{key} {:.2} ({:.2}/{:.2})",
+                    r.reading, r.positive, r.negative
+                )
+            })
+            .collect();
+        if self.outside_grants {
+            parts.push("outside_grants".to_string());
         }
-        parts.push(show("in_scope", self.in_scope));
-        parts.push(show("path_outside", self.path_outside));
-        parts.push(show("path_denied", self.path_denied));
-        parts.push(show("exposes_secrets", self.exposes_secrets));
-        parts.extend(self.note_warns.map(|p| show("note_warns", p)));
-        parts.extend(self.prefix_safe.map(|p| show("prefix_safe", p)));
-        if let Some(p) = &self.precedent {
-            let required = p.required.map_or("never".to_string(), |n| n.to_string());
-            parts.push(format!(
-                "precedent same {} wider {} of {} (required {required})",
-                p.same, p.wider, p.candidates
-            ));
-        }
+        parts.extend(self.prefix_safe.map(|p| format!("prefix_safe {p:.2}")));
         parts
     }
 }
 
-/// What the relation request read: of the `candidates` earlier calls asked about,
-/// how many the model read as the `same` action and how many as `wider`, with the
-/// number the move's level required.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// One battery question's answers (docs/permissions.md). Each question is asked in two
+/// wordings, as written and negated, because a decision model leans toward yes; the
+/// reading is their average with the negation flipped.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct Precedent {
-    pub candidates: usize,
-    pub same: usize,
-    pub wider: usize,
-    /// `None` when no number of precedents clears the level.
-    pub required: Option<usize>,
-    /// Each candidate's reading, in the order asked. The counts above are these
-    /// under the fold's cut; recording the figures is what lets a different cut be
-    /// replayed, and a surprising clear be traced to the approved call it matched.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub compared: Vec<Compared>,
+pub struct QuestionReading {
+    /// P(yes) to the question as written.
+    pub positive: f64,
+    /// P(yes) to its negation.
+    pub negative: f64,
+    /// `(positive + 1 - negative) / 2`.
+    pub reading: f64,
 }
 
-/// One candidate's reading: the earlier call, by id, and the mean of its two
-/// askings for `same` and for `wider`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct Compared {
-    pub call_id: CallId,
-    pub same: f64,
-    pub wider: f64,
+impl QuestionReading {
+    /// The reading of a question whose wording was answered `positive` and whose
+    /// negation was answered `negative`. The sum is taken in the order the harness that
+    /// fitted the thresholds took it, so a reading near a threshold rounds the same way
+    /// here.
+    pub fn new(positive: f64, negative: f64) -> Self {
+        Self {
+            positive,
+            negative,
+            reading: (positive + 1.0 - negative) / 2.0,
+        }
+    }
 }

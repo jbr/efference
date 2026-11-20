@@ -300,9 +300,9 @@ impl Decisions {
 }
 
 #[derive(Serialize)]
-struct DecisionsRequest<'a> {
+struct DecisionsRequest<'a, S: ?Sized> {
     model: &'a str,
-    state: &'a Value,
+    state: &'a S,
     questions: &'a BTreeMap<String, Question>,
     /// The sticky key already sent to this endpoint, for grouping in the
     /// provider's own accounting. Omitted where there is no session, and where
@@ -363,15 +363,19 @@ impl Endpoint {
 
     /// Ask `model` the `questions` about `state`.
     ///
+    /// `state` is anything that serializes to a JSON object. It is generic rather than a
+    /// `serde_json::Value` because a `Value` object sorts its keys, and the decision
+    /// rung sends its state's fields in a fixed order (docs/permissions.md).
+    ///
     /// Unlike the streaming routes this is one request and one body, so there is
     /// no assembler and no partial: it either answers or errors. The caller's
     /// error path is the spotter's fail-closed gate (docs/permissions.md); a
     /// short [`decisions_retry`] budget absorbs a rate-limit burst before that
     /// path is taken.
-    pub async fn decide(
+    pub async fn decide<S: Serialize + Sync + ?Sized>(
         &self,
         model: &str,
-        state: &Value,
+        state: &S,
         questions: &BTreeMap<String, Question>,
     ) -> Result<Decisions, Error> {
         self.decide_traced(None, RequestOrigin::Spot, model, state, questions)
@@ -384,12 +388,12 @@ impl Endpoint {
     /// The route is one request and one body, so there is no stream to open: the
     /// response's arrival is the first byte. Retries inside the transport's budget
     /// record no `attempt_failed`; the retry handler here is not wired to the trace.
-    pub async fn decide_traced(
+    pub async fn decide_traced<S: Serialize + Sync + ?Sized>(
         &self,
         stages: Option<&StageSink>,
         origin: RequestOrigin,
         model: &str,
-        state: &Value,
+        state: &S,
         questions: &BTreeMap<String, Question>,
     ) -> Result<Decisions, Error> {
         let trace = Trace::begin(stages, origin, &ActiveTrace::default());
@@ -410,10 +414,10 @@ impl Endpoint {
 
     /// The body a decisions request for `model` sends, built without sending it: what
     /// `efference dev spotter-request --json` prints.
-    pub fn decisions_body(
+    pub fn decisions_body<S: Serialize + ?Sized>(
         &self,
         model: &str,
-        state: &Value,
+        state: &S,
         questions: &BTreeMap<String, Question>,
     ) -> Result<String, Error> {
         Ok(serde_json::to_string(&DecisionsRequest {
@@ -428,11 +432,11 @@ impl Endpoint {
         })?)
     }
 
-    async fn post_decisions(
+    async fn post_decisions<S: Serialize + Sync + ?Sized>(
         &self,
         trace: Option<&Trace>,
         model: &str,
-        state: &Value,
+        state: &S,
         questions: &BTreeMap<String, Question>,
     ) -> Result<Decisions, Error> {
         let url = self

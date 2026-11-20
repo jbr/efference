@@ -6,7 +6,6 @@ use super::*;
 use crate::spotter_request::{builtin_toolbox, mount_servers};
 use efference::config::McpServerEntry;
 use efference::curation::spotter::recorded::{RecordedMove, held_in};
-use efference::inference::api::ModelKind;
 use efference::protocol::transcript::Handle;
 use efference::record::names::tools::namespace_of;
 use std::collections::HashMap;
@@ -54,11 +53,7 @@ impl Records {
 /// Read every case's session: its log, unless `no_session_log`, and the servers its tool
 /// needs. Only servers of sessions under this process's project root are mounted, the
 /// root the eval runs in; the rest are counted.
-pub(super) async fn records(
-    cases: &[Labeled],
-    kind: ModelKind,
-    no_session_log: bool,
-) -> Result<Records, CliError> {
+pub(super) async fn records(cases: &[Labeled], no_session_log: bool) -> Result<Records, CliError> {
     let mut notes = Vec::new();
     let moves = match no_session_log {
         true => {
@@ -70,7 +65,7 @@ pub(super) async fn records(
             cases.iter().map(|_| None).collect()
         }
         false => {
-            let moves = session_moves(cases, kind);
+            let moves = session_moves(cases);
             let read = moves.iter().filter(|m| m.is_some()).count();
             notes.push(format!(
                 "{read} of {} case(s) replayed with what their session log held before the \
@@ -147,10 +142,9 @@ pub(super) async fn records(
     })
 }
 
-/// What each case's log held before its verdict, keeping only what the rung `kind`
-/// reads: the prose rung reads the utterances, the decision rung the precedents it
-/// compares the move against. Each log is loaded once for all its cases.
-pub(super) fn session_moves(cases: &[Labeled], kind: ModelKind) -> Vec<Option<RecordedMove>> {
+/// What each case's log held before its verdict. Each log is loaded once for all its
+/// cases.
+pub(super) fn session_moves(cases: &[Labeled]) -> Vec<Option<RecordedMove>> {
     let mut by_log: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
     for (index, (case, ..)) in cases.iter().enumerate() {
         if case.seq.is_some()
@@ -197,20 +191,7 @@ pub(super) fn session_moves(cases: &[Labeled], kind: ModelKind) -> Vec<Option<Re
                     held_in(&project),
                 ),
             };
-            moves[index] = found.ok().map(|mut recorded| {
-                match kind {
-                    ModelKind::Text => recorded.precedents.clear(),
-                    ModelKind::Decisions => {
-                        recorded.utterances.said.clear();
-                        recorded.precedents =
-                            efference::curation::spotter::jev::compared_precedents(
-                                &recorded.judged,
-                                &recorded.precedents,
-                            );
-                    }
-                }
-                recorded
-            });
+            moves[index] = found.ok();
         }
     }
     moves

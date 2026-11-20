@@ -14,11 +14,11 @@ expression: self.render()
  6 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
  7 │    │? new session in /code/example                                                            │    │
  8 │    │❯ start session                                                                           │    │
- 9 │    │  main model     work/claude-sonnet-4-5       recent pick                                 │    │
-10 │    │  effort         —                            provider default                            │    │
-11 │    │  temperature    —                            provider default                            │    │
-12 │    │  spotter model  router/~typesafe/jev-latest  decision model                              │    │
-13 │    │  triage model   the main client              nothing configured                          │    │
+ 9 │    │  main model     work/claude-sonnet-4-5    recent pick                                    │    │
+10 │    │  effort         —                         provider default                               │    │
+11 │    │  temperature    —                         provider default                               │    │
+12 │    │  spotter model  router/typesafe/jev-1.14  decision model                                 │    │
+13 │    │  triage model   the main client           nothing configured                             │    │
 14 │    │  worktree       off  its own checkout and branch at .efference/worktrees/<id>            │    │
 15 │    │  model: connection "blank" is unavailable                                                │    │
 16 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │

@@ -2077,81 +2077,62 @@ export interface AttentiveClient {
   session: string | null;
 }
 /**
- * One assessment's answers, as the model reported them: P(true) per axis, and the
- * sketch distribution. The two optional axes are asked only when the state
- * carries the thing they are about — a spotter-notes list, a promotion probe — so
- * `None` means "not asked", never "answered zero".
+ * The decision rung's answers behind one verdict (docs/permissions.md): each battery
+ * question's [`QuestionReading`] by the key it is asked under, whether the harness placed
+ * the move outside the grants (the one input to the fold that is not an answer), and
+ * the promotion question's answer when a probe was asked.
  *
- * Recorded alongside the stance on `Spot::axes`. Entries that predate the sketch
- * fold carry `reversible` and `sanctioned`, which are ignored on read, and lack
- * `sketch` and `precedent`, which default to `None`.
+ * Recorded alongside the stance on `Spot::axes`, so the verdict can be re-folded and
+ * replayed under other thresholds without asking again. A conditional question (the
+ * two about spotter notes) that was not asked has no entry, so an absent key means "not
+ * asked", never "answered zero".
+ *
+ * An entry recorded under an earlier fold carries that fold's figures (`in_scope`,
+ * `sketch`, `precedent`, …) instead of `readings`. They are ignored on read, and the
+ * log line keeps them as written; such an entry reads as having no readings.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "Axes".
  */
 export interface Axes {
-  exposes_secrets: number;
-  in_scope: number;
   /**
-   * A note for the spotter warns against this kind of move.
+   * Whether the harness's resolved path facts place the move outside the grants: a
+   * path no grant covers, or one under a denied grant. Read by the fold, and stated
+   * by the harness rather than answered by the model.
    */
-  note_warns?: number | null;
+  outside_grants?: boolean;
   /**
-   * Names a path under a grant marked `denied` — the carve-out case, which
-   * is a different question from being outside every grant.
+   * P(yes) to the promotion question, asked once and only when a probe was.
    */
-  path_denied: number;
-  /**
-   * Names a path outside every grant. Split from [`Self::path_denied`]
-   * because one question asking both was four hops — resolve the move's
-   * paths, resolve the grants, check containment, check the denies — and
-   * scored 0.21–0.56 on plainly in-scope read-only commands.
-   */
-  path_outside: number;
-  /**
-   * What the relation request found, when the fold reached the precedent step.
-   */
-  precedent?: Precedent | null;
   prefix_safe?: number | null;
   /**
-   * P(level) for sketch levels 0 to 4, lowest first.
+   * Each asked battery question's reading, by its key.
    */
-  sketch?: number[] | null;
+  readings?: {
+    [k: string]: QuestionReading;
+  };
 }
 /**
- * What the relation request read: of the `candidates` earlier calls asked about,
- * how many the model read as the `same` action and how many as `wider`, with the
- * number the move's level required.
+ * One battery question's answers (docs/permissions.md). Each question is asked in two
+ * wordings, as written and negated, because a decision model leans toward yes; the
+ * reading is their average with the negation flipped.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
- * via the `definition` "Precedent".
+ * via the `definition` "QuestionReading".
  */
-export interface Precedent {
-  candidates: number;
+export interface QuestionReading {
   /**
-   * Each candidate's reading, in the order asked. The counts above are these
-   * under the fold's cut; recording the figures is what lets a different cut be
-   * replayed, and a surprising clear be traced to the approved call it matched.
+   * P(yes) to its negation.
    */
-  compared?: Compared[];
+  negative: number;
   /**
-   * `None` when no number of precedents clears the level.
+   * P(yes) to the question as written.
    */
-  required: number | null;
-  same: number;
-  wider: number;
-}
-/**
- * One candidate's reading: the earlier call, by id, and the mean of its two
- * askings for `same` and for `wider`.
- *
- * This interface was referenced by `ControlChannel`'s JSON-Schema
- * via the `definition` "Compared".
- */
-export interface Compared {
-  call_id: CallId;
-  same: number;
-  wider: number;
+  positive: number;
+  /**
+   * `(positive + 1 - negative) / 2`.
+   */
+  reading: number;
 }
 /**
  * A background process the session holds.

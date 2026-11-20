@@ -1,14 +1,13 @@
 //! The circumstances a spotter judges a move in (docs/permissions.md).
 
 use crate::protocol::agents::Supervision;
-use crate::record::log::ToolCall;
 use crate::record::utterances::Utterances;
 use crate::tools::ToolBrief;
 
 /// Everything [`super::Spotter::assess`] is given beyond the config and the call
 /// itself. [`Circumstances::default`] is the plain move: a bash command or
-/// structured call with no brief, no approval chain, no probe, no precedents, no
-/// known place among the host's sessions, and no known utterances.
+/// structured call with no brief, no approval chain, no probe, no known place among
+/// the host's sessions, and no known utterances.
 /// The `with_*` methods set one input each. The fields borrow from the toolbox
 /// and the session, so a value lives for one `assess` call.
 #[derive(Default)]
@@ -30,11 +29,6 @@ pub struct Circumstances<'a> {
     /// [`Stance::ClearAlways`](crate::record::log::Stance::ClearAlways) is the
     /// safe-vote. `None` on most calls.
     pub probe: Option<&'a str>,
-    /// The earlier calls in this session that ran with the operator's consent
-    /// (`precedent::consented`), oldest first. Empty for a bound leaf, whose history
-    /// is the child's, not this session's. The decision rung weighs them; the prose
-    /// rung ignores them.
-    pub precedents: &'a [ToolCall],
     /// The calling session's place in the supervision relation: the session that
     /// supervises it and the sessions it supervises (docs/permissions.md). For a bound
     /// leaf it is the approving session's, not the leaf holder's. The loop passes it only
@@ -49,8 +43,8 @@ pub struct Circumstances<'a> {
     /// (docs/permissions.md). For a bound leaf it is the approving session's. `None`
     /// when it is not known — no session log is at hand (the `efference dev spotter`
     /// dev command, an offline eval case with no readable log) — which is not the same
-    /// as a session where nothing has been written yet. The prose rung renders it; the
-    /// decision rung ignores it.
+    /// as a session where nothing has been written yet. The prose rung renders it, and
+    /// the decision rung carries it as its state's `conversation`.
     pub utterances: Option<&'a Utterances>,
 }
 
@@ -70,12 +64,6 @@ impl<'a> Circumstances<'a> {
     /// The prefix a promotion probe is about.
     pub fn with_probe(mut self, probe: Option<&'a str>) -> Self {
         self.probe = probe;
-        self
-    }
-
-    /// The consented earlier calls of the session.
-    pub fn with_precedents(mut self, precedents: &'a [ToolCall]) -> Self {
-        self.precedents = precedents;
         self
     }
 

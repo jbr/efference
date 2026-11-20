@@ -454,36 +454,29 @@ fn render_prose(persona: Option<&str>, turns: &[WireTurn]) -> String {
     out
 }
 
-/// The decision rung's requests as text: the cold request's state and questions, then
-/// the relation request's, or a line saying it is not sent.
-fn render_jev(
-    requests: &efference::curation::spotter::jev::Requests<'_>,
-) -> Result<String, CliError> {
+/// The decision rung's requests as text: the state both carry, the questions of the
+/// positive request and of the negative one, and whether the harness places the move
+/// outside the grants, which the fold reads beside the answers.
+fn render_jev(requests: &efference::curation::spotter::jev::Requests) -> Result<String, CliError> {
     let mut out = String::new();
     let mut section = |title: &str, value: String| {
         out.push_str(&format!("── {title} ──\n{value}\n"));
     };
+    section("state", serde_json::to_string_pretty(&requests.state)?);
     section(
-        "cold request: state",
-        serde_json::to_string_pretty(&requests.state)?,
+        "positive request: questions",
+        serde_json::to_string_pretty(&requests.positive)?,
     );
     section(
-        "cold request: questions",
-        serde_json::to_string_pretty(&requests.questions)?,
+        "negative request: questions",
+        serde_json::to_string_pretty(&requests.negative)?,
     );
-    match &requests.relation {
-        Some(relation) => {
-            section(
-                "relation request: state",
-                serde_json::to_string_pretty(&relation.state)?,
-            );
-            section(
-                "relation request: questions",
-                serde_json::to_string_pretty(&relation.questions)?,
-            );
-        }
-        None => out
-            .push_str("── relation request: not sent, no consented call of the move's family ──\n"),
-    }
+    section(
+        "outside the grants",
+        match requests.outside_grants {
+            true => "yes: only `asked` or `agreed` can clear it".to_string(),
+            false => "no".to_string(),
+        },
+    );
     Ok(out)
 }

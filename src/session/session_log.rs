@@ -389,15 +389,8 @@ impl Session {
             .cloned()
     }
 
-    /// The calls that ran with the operator's consent, folded under the log lock so
-    /// the whole log is never cloned (docs/permissions.md). The decision rung's
-    /// precedent evidence.
-    pub(crate) fn consented_calls(&self) -> Vec<ToolCall> {
-        crate::curation::spotter::precedent::consented(self.log.lock().unwrap().entries())
-    }
-
     /// What the operator, any session supervising this one, and the agent wrote in this
-    /// session, folded under the log lock (docs/permissions.md). The prose spotter's
+    /// session, folded under the log lock (docs/permissions.md). Both spotter rungs'
     /// account of the session; the fold reads the entries in memory, so a spotter call
     /// costs one pass over them.
     pub(crate) fn utterances(&self) -> crate::record::utterances::Utterances {

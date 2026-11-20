@@ -1,6 +1,6 @@
 use super::super::fixtures::*;
 use super::*;
-use crate::record::log::{Approval, Axes, Keep, Precedent, Triaged};
+use crate::record::log::{Approval, Axes, Keep, QuestionReading, Triaged};
 
 fn child<'a>(me: Option<&'a str>) -> Reading<'a> {
     Reading {
@@ -35,19 +35,12 @@ fn a_gated_call_shows_its_decision_trail_and_raw_result() {
         Spot::new(
             "toolu_1",
             Stance::Gate,
-            "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
+            "held: it goes further than anything the operator or a supervising agent asked for (0.70)",
         )
-        .with_axes(Some(Axes {
-            in_scope: 0.21,
-            precedent: Some(Precedent {
-                candidates: 0,
-                same: 0,
-                wider: 0,
-                required: Some(1),
-                compared: Vec::new(),
-            }),
-            ..Axes::default()
-        })),
+        .with_axes(Some(Axes::new([
+            ("inspects".to_string(), QuestionReading::new(0.9, 0.1)),
+            ("further".to_string(), QuestionReading::new(0.7, 0.3)),
+        ]))),
     ));
     log.add(decision(
         "toolu_1",
@@ -66,8 +59,8 @@ fn a_gated_call_shows_its_decision_trail_and_raw_result() {
          intent: fetch the headers\n\
          input: {\n  \"command\": \"curl -sI https://example.com\"\n}\n\
          reviewer: held it for a decision\n\
-         held because: its reviewer is unsure this fits the session's scope; no earlier call \
-         like it was allowed\n\
+         held because: it goes further than anything the operator or a supervising agent \
+         asked for\n\
          decision: allowed by you (seq 2)\n\
          result: seq 3, ok, 3 lines, 47 B\n\
          it saw: line 1 of 3: the status line\n\

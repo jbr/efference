@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::protocol::state::Cost;
-use crate::record::log::{Axes, CallId, Origin, Precedent, Spot, Stance};
+use crate::record::log::{Axes, CallId, Origin, QuestionReading, Spot, Stance};
 use crate::session::status::held_because;
 
 mod gate;
@@ -50,31 +50,13 @@ fn spot(origin: Origin, reason: &str, axes: Option<Axes>) -> Spot {
         .with_axes(axes)
 }
 
-/// Answers clean on every axis but the ones a case sets.
-fn axes(sketch_level: usize, precedent: Option<Precedent>) -> Axes {
-    Axes {
-        in_scope: 0.95,
-        path_outside: 0.02,
-        path_denied: 0.01,
-        exposes_secrets: 0.01,
-        sketch: Some(
-            (0..5)
-                .map(|i| if i == sketch_level { 0.8 } else { 0.05 })
-                .collect(),
-        ),
-        precedent,
-        ..Axes::default()
-    }
-}
-
-fn precedent(candidates: usize, same: usize, required: Option<usize>) -> Precedent {
-    Precedent {
-        candidates,
-        same,
-        wider: 0,
-        required,
-        compared: Vec::new(),
-    }
+/// Decision-rung answers reading each named question at its figure, both wordings
+/// agreeing.
+fn axes(read: &[(&str, f64)]) -> Axes {
+    Axes::new(
+        read.iter()
+            .map(|(key, p)| (key.to_string(), QuestionReading::new(*p, 1.0 - p))),
+    )
 }
 
 /// A held `bash` call at `8.2`, held for what `spot` says and routed to `reviewer`.
@@ -492,11 +474,8 @@ fn ended_failed_and_starting() {
 /// No line leans on indentation: every line after the first opens with a label.
 #[test]
 fn every_later_line_opens_with_a_label() {
-    let scope = Axes {
-        in_scope: 0.21,
-        ..axes(0, Some(precedent(0, 0, Some(1))))
-    };
-    let spot = spot(Origin::Model, "", Some(scope));
+    let outside = axes(&[("contained", 0.9), ("asked", 0.2)]).with_outside_grants(true);
+    let spot = spot(Origin::Model, "", Some(outside));
     let text = rendered(&gated(&spot, supervisor("parent")), &reviewer());
     for line in text.lines().skip(1) {
         assert_eq!(line, line.trim_start(), "{line:?}");

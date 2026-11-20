@@ -4,8 +4,8 @@
 //! `efference dev spotter-request` renders a rung's request from it, and `efference dev
 //! spotter-eval` replays a corpus case with it. Everything here is read from the log, so
 //! it is what the loop passed: the judged call, the promotion probe recorded on the
-//! verdict, the bound leaf of an allowing `agents__decide`, the consented precedents, the
-//! utterances, and the committed config edits. The supervision facts are host state the
+//! verdict, the bound leaf of an allowing `agents__decide`, the utterances, and the
+//! committed config edits. The supervision facts are host state the
 //! log does not hold, and the tool's brief comes from a mounted toolbox; both are the
 //! caller's.
 
@@ -24,7 +24,6 @@ use crate::record::utterances::{Utterances, utterances};
 use crate::tools::ToolBrief;
 
 use super::Circumstances;
-use super::precedent::consented;
 
 /// A recorded call and what the spotter was given beside it.
 pub struct RecordedMove {
@@ -42,9 +41,6 @@ pub struct RecordedMove {
     pub cut: Option<Seq>,
     /// What was written in the session before the cut.
     pub utterances: Utterances,
-    /// The consented calls before the cut, oldest first; empty for a bound leaf, whose
-    /// history is the leaf session's.
-    pub precedents: Vec<ToolCall>,
     /// A bound leaf's approval chain: the session the decision names, down to the session
     /// holding the leaf. Empty for an ordinary move.
     pub chain: Vec<String>,
@@ -106,8 +102,7 @@ impl RecordedMove {
         }
         let cut_at = spot_at
             .or_else(|| (made_at + 1..entries.len()).find(|&at| concerns(&entries[at], &call_id)));
-        let bound = allows(&made);
-        let (judged, chain) = match bound {
+        let (judged, chain) = match allows(&made) {
             false => (made.clone(), Vec::new()),
             true => match leaf(&made, &mut held) {
                 Ok((leaf, chain)) => (ToolCall::new(leaf.name, made.id.clone(), leaf.input), chain),
@@ -132,12 +127,6 @@ impl RecordedMove {
             }),
             cut: cut_at.map(|at| entries[at].seq),
             utterances: history.utterances,
-            // A bound leaf's history is the leaf session's, so the loop passes it none
-            // (docs/permissions.md).
-            precedents: match bound {
-                true => Vec::new(),
-                false => history.precedents,
-            },
             chain,
             edits: history.edits,
             later_edits: history.later_edits,
@@ -158,7 +147,6 @@ impl RecordedMove {
             spot: None,
             cut: cut_at.map(|cut| entries[cut].seq),
             utterances: history.utterances,
-            precedents: history.precedents,
             chain: Vec::new(),
             edits: history.edits,
             later_edits: history.later_edits,
@@ -183,7 +171,6 @@ impl RecordedMove {
             .with_brief(brief)
             .with_chain(&self.chain)
             .with_probe(self.probe())
-            .with_precedents(&self.precedents)
             .with_utterances(Some(&self.utterances))
     }
 
@@ -246,7 +233,6 @@ impl RecordedMove {
 /// What a log held before a cut, as the request reads it.
 struct History {
     utterances: Utterances,
-    precedents: Vec<ToolCall>,
     /// The committed config edits before the cut, in log order.
     edits: Vec<ConfigChange>,
     /// The committed config edits at or after the cut, with their seqs.
@@ -272,7 +258,6 @@ impl History {
         }
         Self {
             utterances: utterances(session, before),
-            precedents: consented(before),
             edits,
             later_edits,
         }

@@ -57,9 +57,8 @@ async fn a_case_with_a_log_is_replayed_with_what_was_said_before_it() {
     .to_string();
     let case: CaseIn = serde_json::from_str(&line).unwrap();
     let cases = vec![(case, "human".to_string(), None)];
-    let kind = efference::inference::api::ModelKind::Text;
 
-    let read = records::records(&cases, kind, false).await.unwrap();
+    let read = records::records(&cases, false).await.unwrap();
     let recorded = read.moves[0].as_ref().expect("the log is read");
     let said: Vec<&str> = recorded
         .utterances
@@ -72,7 +71,7 @@ async fn a_case_with_a_log_is_replayed_with_what_was_said_before_it() {
     let circumstances = recorded.circumstances(None);
     assert_eq!(circumstances.utterances.map(|u| u.said.len()), Some(1));
 
-    let unread = records::records(&cases, kind, true).await.unwrap();
+    let unread = records::records(&cases, true).await.unwrap();
     assert!(unread.moves[0].is_none());
     assert_eq!(unread.call(0, &cases[0].0).input["command"], "cargo clean");
 }
@@ -95,9 +94,8 @@ async fn an_authored_case_replays_its_own_call_with_the_history_before_its_seq()
     let case: CaseIn = serde_json::from_str(&line).unwrap();
     assert!(case.authored);
     let cases = vec![(case, "human".to_string(), None)];
-    let kind = efference::inference::api::ModelKind::Text;
 
-    let read = records::records(&cases, kind, false).await.unwrap();
+    let read = records::records(&cases, false).await.unwrap();
     let recorded = read.moves[0].as_ref().expect("the log is read");
     let said: Vec<&str> = recorded
         .utterances
@@ -166,11 +164,12 @@ fn dumped(out: &Path) -> Vec<Value> {
         .collect()
 }
 
-/// `--with-conversation` dumps the decision rung's state with every message said before
-/// the verdict, whole and in order, each with its writer; nothing said after it, and no
-/// promotion probe (docs/permissions.md).
+/// `--dump-states` dumps the state the decision rung sends: every message said before the
+/// verdict, whole and in order, each with its writer, and nothing said after it; the
+/// guidance; the probe the verdict records; and the fields in their wire order
+/// (docs/permissions.md).
 #[tokio::test]
-async fn a_conversation_dump_carries_every_message_before_the_verdict_with_its_writer() {
+async fn a_dumped_state_carries_every_message_before_the_verdict_with_its_writer() {
     let (project, log) = conversation_project();
     let cases = project.path().join("cases.jsonl");
     let line = serde_json::json!({
@@ -185,7 +184,7 @@ async fn a_conversation_dump_carries_every_message_before_the_verdict_with_its_w
     std::fs::write(&cases, format!("{line}\n")).unwrap();
     let out = project.path().join("states.jsonl");
 
-    dump_conversation_states(std::slice::from_ref(&cases), None, None, &out)
+    dump_states(std::slice::from_ref(&cases), None, None, false, &out)
         .await
         .unwrap();
     let lines = dumped(&out);
@@ -205,7 +204,20 @@ async fn a_conversation_dump_carries_every_message_before_the_verdict_with_its_w
     // The move is the one the log records, judged against the case's config.
     assert_eq!(state["move"]["command"], "cargo clean");
     assert_eq!(state["mission"], "tidy the build");
-    assert!(state.get("promotion_probe").is_none());
+    assert_eq!(state["promotion_probe"], "cargo");
+    assert!(
+        state["guidance"]
+            .as_str()
+            .is_some_and(|g| g.starts_with("You are the **spotter**")),
+        "{state}"
+    );
+    // The file keeps the order the rung sends the fields in.
+    let text = std::fs::read_to_string(&out).unwrap();
+    let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
+    assert!(at("mission") < at("guidance"));
+    assert!(at("guidance") < at("conversation"));
+    assert!(at("conversation") < at("move"));
+    assert!(at("move") < at("promotion_probe"));
 }
 
 /// A case whose log is not readable is dumped from its corpus line, marked as such and
@@ -225,7 +237,7 @@ async fn a_case_without_a_readable_log_is_dumped_without_a_conversation() {
     std::fs::write(&cases, format!("{line}\n")).unwrap();
     let out = scratch.path().join("states.jsonl");
 
-    dump_conversation_states(std::slice::from_ref(&cases), None, None, &out)
+    dump_states(std::slice::from_ref(&cases), None, None, false, &out)
         .await
         .unwrap();
     let lines = dumped(&out);

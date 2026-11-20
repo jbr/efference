@@ -107,24 +107,15 @@ pub(crate) async fn run(command: DevCommand) -> CliResult {
             no_fallback,
         } => spot_report::spotter_log(path, &stances, summary, list, no_fallback),
         DevCommand::SpotterEval(args) => {
-            if let Some(out) = &args.dump_states
-                && args.with_conversation
-            {
-                return spotter_eval::dump_conversation_states(
-                    &args.cases,
-                    args.filter.as_deref(),
-                    args.limit,
-                    out,
-                )
-                .await;
-            }
             if let Some(out) = &args.dump_states {
                 return spotter_eval::dump_states(
                     &args.cases,
                     args.filter.as_deref(),
                     args.limit,
+                    args.no_session_log,
                     out,
-                );
+                )
+                .await;
             }
             spotter_eval::spotter_eval(args).await
         }

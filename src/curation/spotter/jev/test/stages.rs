@@ -1,11 +1,12 @@
-//! The decision-rung spotter's request stages (docs/log-and-projection.md): its decisions
-//! request records `sent`, `first_byte`, and `ended` under the `spot` origin, or `failed`
-//! when the route refuses it, against a scripted endpoint.
+//! The decision-rung spotter's request stages (docs/log-and-projection.md): each of its
+//! two decisions requests records `sent`, `first_byte`, and `ended` under the `spot`
+//! origin, or `failed` when the route refuses it, against a scripted endpoint.
 
+use super::requests::{answered, endpoint, response};
 use super::*;
 use crate::inference::api::{StageRecorder, StageSink};
 use crate::inference::testing::upstream::{Canned, ScriptedUpstream};
-use crate::record::log::{Provider, RequestStage, RequestStageKind, WireDialect};
+use crate::record::log::{RequestStage, RequestStageKind};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -24,37 +25,6 @@ impl StageRecorder for Recorder {
     }
 }
 
-/// An upstream answering its one request with `status` and the JSON `body`.
-fn scripted(status: u16, body: String) -> ScriptedUpstream {
-    ScriptedUpstream::answering([Canned::json(status, body)])
-}
-
-/// The decisions endpoint `upstream` answers on.
-fn endpoint(upstream: &ScriptedUpstream) -> Endpoint {
-    Endpoint::without_credential(
-        Provider::Custom(WireDialect::SystemOne),
-        ScriptedUpstream::url("/v1/decisions"),
-    )
-    .with_http(upstream.http())
-}
-
-/// Every unconditional axis answered, sketch at level 0.
-fn clean_answers() -> String {
-    json!({
-        "model": "jev",
-        "answers": {
-            "in_scope": { "type": "noul", "noul": 0.95 },
-            "path_outside": { "type": "noul", "noul": 0.02 },
-            "path_denied": { "type": "noul", "noul": 0.01 },
-            "exposes_secrets": { "type": "noul", "noul": 0.01 },
-            "sketch": { "type": "score", "probabilities":
-                { "0": 0.8, "1": 0.05, "2": 0.05, "3": 0.05, "4": 0.05 } },
-        },
-        "usage": { "input_tokens": 10, "output_tokens": 0 },
-    })
-    .to_string()
-}
-
 async fn assess(endpoint: Endpoint, recorder: &Arc<Recorder>) -> Spotting {
     let mut spot = JevSpot::new(endpoint, "jev");
     spot.set_stage_sink(Arc::clone(recorder) as StageSink);
@@ -67,30 +37,36 @@ async fn assess(endpoint: Endpoint, recorder: &Arc<Recorder>) -> Spotting {
         .await
 }
 
-fn recorded(recorder: &Recorder) -> Vec<(u64, RequestOrigin, RequestStageKind)> {
+/// Each request's stages in the order it recorded them, by request id. The two
+/// requests run concurrently, so their stages interleave in no fixed order.
+fn by_request(recorder: &Recorder) -> Vec<Vec<RequestStageKind>> {
     let stages = recorder.stages.lock().unwrap();
-    stages
-        .iter()
-        .map(|s| (s.request, s.origin, s.stage.clone()))
-        .collect()
+    let mut requests: Vec<Vec<RequestStageKind>> = Vec::new();
+    for stage in stages.iter() {
+        assert_eq!(stage.origin, RequestOrigin::Spot);
+        let id = usize::try_from(stage.request).expect("a small id");
+        if requests.len() <= id {
+            requests.resize(id + 1, Vec::new());
+        }
+        requests[id].push(stage.stage.clone());
+    }
+    requests
 }
 
-/// **A decision records the stages every request does.** One decisions request, one
-/// request id, under the spotter's origin.
+/// **A decision records the stages every request does.** Two decisions requests, two
+/// request ids, each under the spotter's origin.
 #[tokio::test]
-async fn a_decision_records_sent_first_byte_ended() {
+async fn each_decisions_request_records_sent_first_byte_ended() {
     let recorder = Arc::new(Recorder::default());
-    let upstream = scripted(200, clean_answers());
+    let upstream = ScriptedUpstream::new(|_| response(&answered(0.5)));
     let spotting = assess(endpoint(&upstream), &recorder).await;
     assert_eq!(spotting.origin, Origin::Model);
-    assert_eq!(
-        recorded(&recorder),
-        vec![
-            (0, RequestOrigin::Spot, RequestStageKind::Sent),
-            (0, RequestOrigin::Spot, RequestStageKind::FirstByte),
-            (0, RequestOrigin::Spot, RequestStageKind::Ended),
-        ]
-    );
+    let complete = vec![
+        RequestStageKind::Sent,
+        RequestStageKind::FirstByte,
+        RequestStageKind::Ended,
+    ];
+    assert_eq!(by_request(&recorder), vec![complete.clone(), complete]);
 }
 
 /// **A refused request records `failed`** with the error, and the rung still fails
@@ -98,17 +74,18 @@ async fn a_decision_records_sent_first_byte_ended() {
 #[tokio::test]
 async fn a_refused_decision_records_failed() {
     let recorder = Arc::new(Recorder::default());
-    let upstream = scripted(400, r#"{"error":"nope"}"#.into());
+    let upstream = ScriptedUpstream::new(|_| Canned::json(400, r#"{"error":"nope"}"#));
     let spotting = assess(endpoint(&upstream), &recorder).await;
     assert_eq!(spotting.origin, Origin::Fallback);
-    let stages = recorded(&recorder);
-    assert_eq!(stages.len(), 3, "{stages:?}");
-    assert_eq!(stages[0].2, RequestStageKind::Sent);
-    assert_eq!(stages[1].2, RequestStageKind::FirstByte);
-    match &stages[2].2 {
-        RequestStageKind::Failed { reason } => {
-            assert!(reason.contains("400"), "{reason}");
+    for stages in by_request(&recorder) {
+        assert_eq!(stages.len(), 3, "{stages:?}");
+        assert_eq!(stages[0], RequestStageKind::Sent);
+        assert_eq!(stages[1], RequestStageKind::FirstByte);
+        match &stages[2] {
+            RequestStageKind::Failed { reason } => {
+                assert!(reason.contains("400"), "{reason}");
+            }
+            other => panic!("expected failed, got {other:?}"),
         }
-        other => panic!("expected failed, got {other:?}"),
     }
 }

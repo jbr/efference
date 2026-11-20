@@ -19,7 +19,7 @@ fn bash(id: &str, command: &str) -> ToolCall {
     ToolCall::new("bash", id, json!({ "command": command }))
 }
 
-/// The telemetry a call that ran leaves behind, which is what makes it consented.
+/// The telemetry a call that ran leaves behind.
 fn ran(seq: Seq, id: &str) -> LogEntry {
     entry(
         seq,
@@ -91,10 +91,6 @@ fn texts(move_: &RecordedMove) -> Vec<&str> {
         .collect()
 }
 
-fn ids(calls: &[ToolCall]) -> Vec<&str> {
-    calls.iter().map(|c| c.id.0.as_str()).collect()
-}
-
 /// A verdict's seq names the call it judged, and what the request read is the log
 /// before the verdict: nothing said, ran, or granted after it.
 #[test]
@@ -107,8 +103,6 @@ fn a_verdict_rebuilds_its_call_and_what_preceded_it() {
     assert_eq!(found.cut, Some(6));
     assert_eq!(found.spot.as_ref().map(|(seq, _)| *seq), Some(6));
     assert_eq!(texts(&found), ["run the tests, then clean the target dir"]);
-    // `b` ran too, but only after the verdict.
-    assert_eq!(ids(&found.precedents), ["a"]);
     assert_eq!(found.probe(), Some("rm"));
     assert!(found.chain.is_empty());
     assert!(found.notes.is_empty(), "{:?}", found.notes);
@@ -172,7 +166,6 @@ fn a_call_never_spotted_reads_the_log_up_to_its_start() {
             "and the docs too"
         ]
     );
-    assert_eq!(ids(&found.precedents), ["a", "b"]);
     assert_eq!(found.probe(), None);
 
     // The second call of the same entry has no later entry at all: the whole log.
@@ -216,7 +209,7 @@ fn the_config_leaves_out_what_was_granted_after_the_move() {
 }
 
 /// An allowing decision is judged as the leaf it authorizes, read from the held
-/// session's log, under the decision's own id and with no precedents of its own.
+/// session's log, under the decision's own id, with the approving session's conversation.
 #[test]
 fn an_allowing_decision_is_judged_as_its_leaf() {
     let decide = ToolCall::new(
@@ -238,7 +231,6 @@ fn an_allowing_decision_is_judged_as_its_leaf() {
     assert_eq!(found.call, decide);
     assert_eq!(found.judged, bash("p1", "git push"));
     assert_eq!(found.chain, ["child"]);
-    assert!(found.precedents.is_empty());
     assert_eq!(texts(&found), ["let the child push"]);
 
     // Without the child's log, the decision itself stands in, and the notes say so.
@@ -261,7 +253,6 @@ fn an_authored_call_is_judged_against_the_log_before_its_seq() {
     assert!(found.spot.is_none());
     assert_eq!(found.cut, Some(8));
     assert_eq!(texts(&found), ["run the tests, then clean the target dir"]);
-    assert_eq!(ids(&found.precedents), ["a"]);
     assert!(found.chain.is_empty());
     assert_eq!(found.notes.len(), 1, "{:?}", found.notes);
     assert!(found.notes[0].contains("authored"), "{:?}", found.notes);
@@ -278,5 +269,4 @@ fn an_authored_call_is_judged_against_the_log_before_its_seq() {
     let past = RecordedMove::authored("s", &log, 99, call);
     assert_eq!(past.cut, None);
     assert_eq!(texts(&past).len(), 2);
-    assert_eq!(ids(&past.precedents), ["a", "b"]);
 }

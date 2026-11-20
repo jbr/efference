@@ -66,7 +66,7 @@ pub use reference::{
 };
 pub use request::{RequestOrigin, RequestStage, RequestStageKind};
 pub use result::{ContentElision, RawResult, ResultImage};
-pub use spot::{Axes, Compared, Precedent, Spot, Stance};
+pub use spot::{Axes, QuestionReading, Spot, Stance};
 pub use stops::Stop;
 pub use summary::{Audience, MadeBy, Summary};
 pub use telemetry::{ContinueOrigin, Escalation, GateDecision, InterruptOrigin, Telemetry};

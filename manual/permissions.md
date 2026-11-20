@@ -214,14 +214,16 @@ covers it.
 
 The spotter sees the call (for efference's file tools and MCP tools, a description of the
 tool and its arguments; for shell commands, the command and the paths it names), the
-project's `scope` and `spotter-notes`, the working directory, and your `[paths]` settings. It
-does not see the conversation, or the reason the agent gave for the call. An MCP server's
+project's `scope` and `spotter-notes`, the working directory, your `[paths]` settings, and
+what was written in the session: your messages, a supervising agent's, and the agent's own
+replies. It does not see the agent's other tool calls or their results, or the reason the
+agent gave for the call. An MCP server's
 own claims about its tools are grounds to hold, never to run. The spotter can let a call run
 or hold it; it cannot refuse one. If it fails or gives no usable answer, the call is held.
-<!-- src: src/curation/spotter.rs::render_context, render_move, render_brief, parse_spot, Spotting::fail_closed; src/config/policy/path_words.rs -->
+<!-- src: src/curation/spotter.rs::render_context, render_move, render_brief, parse_spot, Spotting::fail_closed; src/curation/spotter/jev/state.rs::state; src/record/utterances.rs; src/config/policy/path_words.rs -->
 
 Each review is a model request on the spotter’s connection, so that provider receives the
-command text, scope, and path settings. To choose the model, efference uses the first
+command text, scope, path settings, and the session’s messages. To choose the model, efference uses the first
 available option in this order:
 
 1. The **spotter model** chosen for the session.
@@ -230,9 +232,10 @@ available option in this order:
 4. A purpose-built decision model, if you have a TypeSafe or OpenRouter connection.
 5. A small model from the main provider.
 
-Adding an OpenRouter connection can therefore change where spotter requests go. A decision
-model also compares the call with earlier calls you approved in the session.
-<!-- src: src/inference/options.rs::resolve_spotter, decision_spotter; src/inference/api/provider.rs::default_spotter_model; src/agent/step/judge.rs::judge (RequestOrigin::Spot); src/curation/spotter/precedent.rs -->
+Adding an OpenRouter connection can therefore change where spotter requests go. The decision
+model chosen this way is a fixed version, `jev-1.14.0` (`typesafe/jev-1.14` on OpenRouter);
+a model you name is used as you wrote it.
+<!-- src: src/inference/options.rs::resolve_spotter, decision_spotter; src/inference/api/provider.rs::default_spotter_model, default_decision_model; src/agent/step/judge.rs::judge (RequestOrigin::Spot) -->
 
 When the spotter sees a command prefix more than once, it may propose permitting it in the
 session. A proposal changes nothing until you accept it, in the terminal interface's sidebar

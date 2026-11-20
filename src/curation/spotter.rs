@@ -28,7 +28,6 @@ mod brief;
 mod circumstances;
 pub mod jev;
 mod mount;
-pub mod precedent;
 pub mod recorded;
 mod supervision;
 mod utterances;
@@ -106,8 +105,8 @@ pub trait Spotter {
     /// Assess one gated tool call against the config. The config supplies the mission
     /// (scope), the boundaries (path grants + cwd), and the spotter-only notes list;
     /// `circumstances` supplies the rest of what the move is judged in — the tool's
-    /// brief, a bound leaf's approval chain, a promotion probe, the session's
-    /// precedents, its place among the host's sessions, and what was said in it.
+    /// brief, a bound leaf's approval chain, a promotion probe, the session's place
+    /// among the host's sessions, and what was said in it.
     fn assess(
         &self,
         role: &Config,
