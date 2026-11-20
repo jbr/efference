@@ -56,6 +56,11 @@ struct CaseIn {
     source: Option<String>,
     #[serde(default)]
     seq: Option<u64>,
+    /// The call was written for the eval and is in no log: with `source` and `seq`, it is
+    /// judged as if made at `seq` in that log, against the history before it, instead of
+    /// replaying the call the log holds there (`records.rs`).
+    #[serde(default)]
+    authored: bool,
     call: CallIn,
     #[serde(default)]
     expected: Option<String>,

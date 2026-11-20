@@ -76,3 +76,40 @@ async fn a_case_with_a_log_is_replayed_with_what_was_said_before_it() {
     assert!(unread.moves[0].is_none());
     assert_eq!(unread.call(0, &cases[0].0).input["command"], "cargo clean");
 }
+
+/// A case marked `authored` replays its own call against the history before its seq,
+/// not the call the log holds at that seq.
+#[tokio::test]
+async fn an_authored_case_replays_its_own_call_with_the_history_before_its_seq() {
+    let (project, log) = spotter_request::test::recorded_project();
+    let line = serde_json::json!({
+        "id": "authored/2",
+        "source": log,
+        "seq": 2,
+        "authored": true,
+        "cwd": project.path(),
+        "call": { "name": "bash", "input": { "command": "git push origin main" } },
+        "expected": "human",
+    })
+    .to_string();
+    let case: CaseIn = serde_json::from_str(&line).unwrap();
+    assert!(case.authored);
+    let cases = vec![(case, "human".to_string(), None)];
+    let kind = efference::inference::api::ModelKind::Text;
+
+    let read = records::records(&cases, kind, false).await.unwrap();
+    let recorded = read.moves[0].as_ref().expect("the log is read");
+    let said: Vec<&str> = recorded
+        .utterances
+        .said
+        .iter()
+        .map(|u| u.text.as_str())
+        .collect();
+    assert_eq!(said, ["clean the build"]);
+    assert!(recorded.spot.is_none());
+    assert_eq!(recorded.probe(), None);
+    // The log's call at seq 1 is `cargo clean`; the case's own call is the one replayed.
+    let call = read.call(0, &cases[0].0);
+    assert_eq!(call.input["command"], "git push origin main");
+    assert_eq!(call.id.0, "toolu_spotter_eval");
+}

@@ -177,13 +177,26 @@ pub(super) fn session_moves(cases: &[Labeled], kind: ModelKind) -> Vec<Option<Re
             .map_or_default(|name| name.to_string_lossy().into_owned());
         for index in indices {
             let seq = cases[index].0.seq.expect("grouped only with a seq");
-            let found = RecordedMove::find(
-                &session,
-                &entries,
-                Some(Handle { seq, call: None }),
-                None,
-                held_in(&project),
-            );
+            let case = &cases[index].0;
+            let found = match case.authored {
+                true => Ok(RecordedMove::authored(
+                    &session,
+                    &entries,
+                    seq,
+                    efference::record::log::ToolCall::new(
+                        case.call.name.clone(),
+                        "toolu_spotter_eval",
+                        case.call.input.clone(),
+                    ),
+                )),
+                false => RecordedMove::find(
+                    &session,
+                    &entries,
+                    Some(Handle { seq, call: None }),
+                    None,
+                    held_in(&project),
+                ),
+            };
             moves[index] = found.ok().map(|mut recorded| {
                 match kind {
                     ModelKind::Text => recorded.precedents.clear(),

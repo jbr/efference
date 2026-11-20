@@ -106,8 +106,6 @@ impl RecordedMove {
         }
         let cut_at = spot_at
             .or_else(|| (made_at + 1..entries.len()).find(|&at| concerns(&entries[at], &call_id)));
-        let before = &entries[..cut_at.unwrap_or(entries.len())];
-
         let bound = allows(&made);
         let (judged, chain) = match bound {
             false => (made.clone(), Vec::new()),
@@ -123,18 +121,7 @@ impl RecordedMove {
             },
         };
 
-        let mut edits = Vec::new();
-        let mut later_edits = Vec::new();
-        for (at, entry) in entries.iter().enumerate() {
-            if let Payload::ConfigEdit(edit) = &entry.payload
-                && edit.state == EditState::Committed
-            {
-                match cut_at.is_none_or(|cut| at < cut) {
-                    true => edits.push(edit.change.clone()),
-                    false => later_edits.push((entry.seq, edit.change.clone())),
-                }
-            }
-        }
+        let history = History::before(session, entries, cut_at);
 
         Ok(Self {
             call: made,
@@ -144,18 +131,42 @@ impl RecordedMove {
                 _ => None,
             }),
             cut: cut_at.map(|at| entries[at].seq),
-            utterances: utterances(session, before),
+            utterances: history.utterances,
             // A bound leaf's history is the leaf session's, so the loop passes it none
             // (docs/permissions.md).
             precedents: match bound {
                 true => Vec::new(),
-                false => consented(before),
+                false => history.precedents,
             },
             chain,
-            edits,
-            later_edits,
+            edits: history.edits,
+            later_edits: history.later_edits,
             notes,
         })
+    }
+
+    /// `call`, which is in no log, judged as if it were made at `at` in `entries`, the
+    /// log of the session `session`: the history is what the log held before its first
+    /// entry at or after `at`, or all of it when `at` is past the end. The move has no
+    /// verdict and no leaf, so `call` is both what was made and what is judged.
+    pub fn authored(session: &str, entries: &[LogEntry], at: Seq, call: ToolCall) -> Self {
+        let cut_at = entries.iter().position(|entry| entry.seq >= at);
+        let history = History::before(session, entries, cut_at);
+        Self {
+            judged: call.clone(),
+            call,
+            spot: None,
+            cut: cut_at.map(|cut| entries[cut].seq),
+            utterances: history.utterances,
+            precedents: history.precedents,
+            chain: Vec::new(),
+            edits: history.edits,
+            later_edits: history.later_edits,
+            notes: vec![format!(
+                "the call is authored, not recorded: it is judged against the log's history \
+                 before seq {at}"
+            )],
+        }
     }
 
     /// The promotion probe the verdict records, which was asked alongside the move.
@@ -229,6 +240,42 @@ impl RecordedMove {
             crate::config::policy::apply_config_change(&mut role, change);
         }
         (role, notes)
+    }
+}
+
+/// What a log held before a cut, as the request reads it.
+struct History {
+    utterances: Utterances,
+    precedents: Vec<ToolCall>,
+    /// The committed config edits before the cut, in log order.
+    edits: Vec<ConfigChange>,
+    /// The committed config edits at or after the cut, with their seqs.
+    later_edits: Vec<(Seq, ConfigChange)>,
+}
+
+impl History {
+    /// What `entries`, the log of `session`, held before the entry at position `cut_at`;
+    /// all of it when `None`.
+    fn before(session: &str, entries: &[LogEntry], cut_at: Option<usize>) -> Self {
+        let before = &entries[..cut_at.unwrap_or(entries.len())];
+        let mut edits = Vec::new();
+        let mut later_edits = Vec::new();
+        for (at, entry) in entries.iter().enumerate() {
+            if let Payload::ConfigEdit(edit) = &entry.payload
+                && edit.state == EditState::Committed
+            {
+                match cut_at.is_none_or(|cut| at < cut) {
+                    true => edits.push(edit.change.clone()),
+                    false => later_edits.push((entry.seq, edit.change.clone())),
+                }
+            }
+        }
+        Self {
+            utterances: utterances(session, before),
+            precedents: consented(before),
+            edits,
+            later_edits,
+        }
     }
 }
 

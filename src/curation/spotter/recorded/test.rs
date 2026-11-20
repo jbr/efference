@@ -248,3 +248,35 @@ fn an_allowing_decision_is_judged_as_its_leaf() {
     assert!(unread.chain.is_empty());
     assert_eq!(unread.notes.len(), 1, "{:?}", unread.notes);
 }
+
+/// An authored call is its own move, judged against what the log held before `at`: what
+/// was said, ran, and granted from there on is not read, whatever call sits at that seq.
+#[test]
+fn an_authored_call_is_judged_against_the_log_before_its_seq() {
+    let log = session();
+    let call = bash("authored", "git push origin main");
+    let found = RecordedMove::authored("s", &log, 8, call.clone());
+    assert_eq!(found.call, call);
+    assert_eq!(found.judged, call);
+    assert!(found.spot.is_none());
+    assert_eq!(found.cut, Some(8));
+    assert_eq!(texts(&found), ["run the tests, then clean the target dir"]);
+    assert_eq!(ids(&found.precedents), ["a"]);
+    assert!(found.chain.is_empty());
+    assert_eq!(found.notes.len(), 1, "{:?}", found.notes);
+    assert!(found.notes[0].contains("authored"), "{:?}", found.notes);
+    // The grant at seq 7 precedes `at`, so it is in the config at the move.
+    let (role, _) = found.config(&ConfigFixture::new().build());
+    assert!(role.paths.contains_key("/later"));
+
+    let early = RecordedMove::authored("s", &log, 5, call.clone());
+    assert_eq!(early.cut, Some(5));
+    let (role, _) = early.config(&ConfigFixture::new().build());
+    assert!(!role.paths.contains_key("/later"));
+    assert!(role.paths.contains_key("../other"));
+
+    let past = RecordedMove::authored("s", &log, 99, call);
+    assert_eq!(past.cut, None);
+    assert_eq!(texts(&past).len(), 2);
+    assert_eq!(ids(&past.precedents), ["a", "b"]);
+}
