@@ -504,6 +504,9 @@ pub(crate) struct SpotterArgs {
 }
 
 // The flags of `dev spotter-eval`; the variant that holds them carries the command's help text.
+// Each bool is one command-line switch the operator sets independently of the others, so they
+// are not alternatives of one state.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(clap::Args)]
 pub(crate) struct SpotterEvalArgs {
     /// A corpus file (jsonl), repeatable. A case missing an inline
@@ -558,6 +561,17 @@ pub(crate) struct SpotterEvalArgs {
     // docs/permissions.md
     #[arg(long = "dump-states")]
     pub(crate) dump_states: Option<PathBuf>,
+    /// With `--dump-states`, rebuild each case from its session log and add the
+    /// session's conversation to its state, as `conversation`: every message before
+    /// the move, whole and oldest first, each with its writer. The decision rung sends
+    /// no conversation; this is the input to an experiment that gives it one.
+    // docs/permissions.md
+    #[arg(
+        long = "with-conversation",
+        requires = "dump_states",
+        conflicts_with = "no_session_log"
+    )]
+    pub(crate) with_conversation: bool,
     /// Replay each case from its corpus line alone: its session log is not read, so the
     /// spotter is given no utterances, precedents, promotion probe or bound leaf — the
     /// comparison arm for what the session's record adds. Without it, a case whose log

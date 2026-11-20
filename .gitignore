@@ -12,6 +12,8 @@
 eval/spotter/candidates.jsonl
 eval/spotter/results*.jsonl
 eval/spotter/context-arms/
+# The jev battery's cases, states and answers hold session transcript text.
+eval/spotter/jev-battery/
 /tmp/
 __pycache__/
 

@@ -1032,7 +1032,10 @@ for them. `--json` prints the body the session's spotter connection's client wou
 credentials. `efference dev spotter-eval` replays each corpus case with the same rebuild when
 its session log is readable, and mounts the servers its sessions declare for cases from the
 project it runs in; `--no-session-log` replays each case from its corpus line alone, the
-comparison arm.
+comparison arm. `--dump-states` writes the decision rung's request state per case and sends
+nothing; with `--with-conversation` each case is rebuilt from its log the same way and its
+state gains `conversation`, the utterances before the verdict as `[{writer, text}]` — input
+for an experiment that shows jev what the prose rung reads, not a field the rung sends.
 
 **A `cd` that goes nowhere is left out of the move** (`policy::without_cd_into`). Agents prefix
 their own working directory habitually (`cd /abs/project && cat .claude/x`), and a reviewer

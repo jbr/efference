@@ -113,3 +113,125 @@ async fn an_authored_case_replays_its_own_call_with_the_history_before_its_seq()
     assert_eq!(call.input["command"], "git push origin main");
     assert_eq!(call.id.0, "toolu_spotter_eval");
 }
+
+/// A project holding one recorded session, `led`: the operator asks for a tidy build, a
+/// supervising agent narrows it, and the agent says what it will do and proposes
+/// `cargo clean`, which the spotter watches with a promotion probe. The operator speaks
+/// again after the verdict.
+fn conversation_project() -> (tempfile::TempDir, PathBuf) {
+    use efference::record::log::{AssistantOutput, ContentBlock, Payload, Spot, Stance, ToolCall};
+    let project = tempfile::TempDir::with_prefix("efference-spotter-eval-").unwrap();
+    let session_dir = project.path().join(SESSION_BASE).join("led");
+    std::fs::create_dir_all(&session_dir).unwrap();
+    let log_path = session_dir.join(LOG_NAME);
+    let mut log = efference::record::persist::Log::create(&log_path, None).unwrap();
+    log.append(1, Payload::user("tidy the build")).unwrap();
+    log.append_submission(
+        1,
+        Payload::user("only the target dir, nothing else"),
+        Some("sub-1".into()),
+        Some("session[lead]".into()),
+    )
+    .unwrap();
+    log.append(
+        1,
+        Payload::assistant(AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![ContentBlock::Text("I'll clean the target dir.".into())],
+            vec![ToolCall::new(
+                "bash",
+                "c1",
+                serde_json::json!({ "command": "cargo clean" }),
+            )],
+        )),
+    )
+    .unwrap();
+    log.append(
+        1,
+        Payload::Spot(
+            Spot::new("c1", Stance::Watch, "a deletion").with_probed_prefix(Some("cargo".into())),
+        ),
+    )
+    .unwrap();
+    log.append(2, Payload::user("and the docs")).unwrap();
+    (project, log_path)
+}
+
+/// The dumped lines, one value each.
+fn dumped(out: &Path) -> Vec<Value> {
+    std::fs::read_to_string(out)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// `--with-conversation` dumps the decision rung's state with every message said before
+/// the verdict, whole and in order, each with its writer; nothing said after it, and no
+/// promotion probe (docs/permissions.md).
+#[tokio::test]
+async fn a_conversation_dump_carries_every_message_before_the_verdict_with_its_writer() {
+    let (project, log) = conversation_project();
+    let cases = project.path().join("cases.jsonl");
+    let line = serde_json::json!({
+        "id": "led/3",
+        "source": log,
+        "seq": 3,
+        "cwd": project.path(),
+        "scope": "tidy the build",
+        "paths": { ".": { "read": true, "write": true } },
+        "call": { "name": "bash", "input": { "command": "echo not the recorded move" } },
+    });
+    std::fs::write(&cases, format!("{line}\n")).unwrap();
+    let out = project.path().join("states.jsonl");
+
+    dump_conversation_states(std::slice::from_ref(&cases), None, None, &out)
+        .await
+        .unwrap();
+    let lines = dumped(&out);
+    assert_eq!(lines.len(), 1);
+    let line = &lines[0];
+    assert_eq!(line["id"], "led/3");
+    assert_eq!(line["log_read"], true);
+    let state = &line["state"];
+    assert_eq!(
+        state["conversation"],
+        serde_json::json!([
+            { "writer": "operator", "text": "tidy the build" },
+            { "writer": "supervisor:lead", "text": "only the target dir, nothing else" },
+            { "writer": "agent", "text": "I'll clean the target dir." },
+        ])
+    );
+    // The move is the one the log records, judged against the case's config.
+    assert_eq!(state["move"]["command"], "cargo clean");
+    assert_eq!(state["mission"], "tidy the build");
+    assert!(state.get("promotion_probe").is_none());
+}
+
+/// A case whose log is not readable is dumped from its corpus line, marked as such and
+/// with no conversation, rather than with an empty one that reads as "nothing was said".
+#[tokio::test]
+async fn a_case_without_a_readable_log_is_dumped_without_a_conversation() {
+    let scratch = tempfile::TempDir::with_prefix("efference-spotter-eval-").unwrap();
+    let cases = scratch.path().join("cases.jsonl");
+    let line = serde_json::json!({
+        "id": "gone/7",
+        "source": scratch.path().join("no-such/log.jsonl"),
+        "seq": 7,
+        "cwd": scratch.path(),
+        "paths": { ".": { "read": true, "write": true } },
+        "call": { "name": "bash", "input": { "command": "cat docs/notes.md" } },
+    });
+    std::fs::write(&cases, format!("{line}\n")).unwrap();
+    let out = scratch.path().join("states.jsonl");
+
+    dump_conversation_states(std::slice::from_ref(&cases), None, None, &out)
+        .await
+        .unwrap();
+    let lines = dumped(&out);
+    assert_eq!(lines[0]["log_read"], false);
+    assert!(lines[0]["state"].get("conversation").is_none());
+    assert_eq!(lines[0]["state"]["move"]["command"], "cat docs/notes.md");
+    let paths = lines[0]["state"]["move"]["paths"].as_array().unwrap();
+    assert!(paths[0]["under_grant"].is_object());
+}

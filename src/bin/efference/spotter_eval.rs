@@ -150,8 +150,10 @@ struct Attempt {
 mod test;
 
 mod attempts;
+mod dump;
 mod records;
 use attempts::Eval;
+pub(crate) use dump::{dump_conversation_states, dump_states};
 
 fn binary(stance: Stance) -> &'static str {
     match stance {
@@ -194,64 +196,6 @@ fn role(case: &CaseIn) -> efference::config::Config {
             .collect(),
         ..Default::default()
     }
-}
-
-/// Write the decision rung's request `state` for every case, one `{id, state}`
-/// line each, and send nothing (docs/permissions.md). The state carries the
-/// resolved `move.paths` only this code computes, so an experiment that varies
-/// what *else* the state holds — history, precedent — starts from the shipping
-/// state rather than a re-implementation of it. Labels are not required: every
-/// case is dumped.
-pub(crate) fn dump_states(
-    cases_files: &[PathBuf],
-    filter: Option<&str>,
-    limit: Option<usize>,
-    out: &Path,
-) -> CliResult {
-    let toolbox = spotter_request::builtin_toolbox(&std::env::current_dir()?, "spotter-eval")?;
-    let mut lines = String::new();
-    let mut n = 0usize;
-    for path in cases_files {
-        for line in std::fs::read_to_string(path)?.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let case: CaseIn = serde_json::from_str(line)
-                .map_err(|e| format!("{}: bad case line: {e}", path.display()))?;
-            if filter.is_some_and(|f| !case.id.contains(f)) {
-                continue;
-            }
-            if limit.is_some_and(|l| n >= l) {
-                break;
-            }
-            let call = efference::record::log::ToolCall::new(
-                case.call.name.clone(),
-                "toolu_spotter_eval",
-                case.call.input.clone(),
-            );
-            let brief = efference::agent::brief(&toolbox, &call.name);
-            let scratch = case.scratch.then(|| PathBuf::from(SCRATCH_PLACEHOLDER));
-            let state = efference::curation::spotter::jev::preview_state(
-                &role(&case),
-                &call,
-                brief.as_ref(),
-                None,
-                // A recorded case holds one directory, which stands as both.
-                case.cwd
-                    .as_deref()
-                    .map(|cwd| efference::config::policy::Directories::at(Path::new(cwd)))
-                    .as_ref(),
-                scratch.as_deref(),
-            );
-            let state: Value = serde_json::from_str(&state)?;
-            lines.push_str(&serde_json::json!({ "id": case.id, "state": state }).to_string());
-            lines.push('\n');
-            n += 1;
-        }
-    }
-    std::fs::write(out, lines)?;
-    eprintln!("{n} states -> {}", out.display());
-    Ok(())
 }
 
 /// The labels file's rows by case id; none without a file.
@@ -321,6 +265,7 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
         no_cost,
         against_recorded,
         dump_states: _,
+        with_conversation: _,
         no_session_log,
     } = args;
     let runs = runs.max(1);
