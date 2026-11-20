@@ -1,6 +1,7 @@
 //! Tests for declared effort levels and thinking types, the effort/thinking
 //! coupling checks, the thinking matrix, the thinking-off switch, and that the
-//! keepalive sends the turn's thinking and effort.
+//! keepalive sends the turn's thinking and effort, and when a Responses request sends
+//! `reasoning`.
 
 use super::*;
 use crate::record::log::RequestOrigin;
@@ -474,4 +475,51 @@ fn thinking_off_takes_the_models_spelling() {
         sent(&unasked, ThinkingOff::Omit),
         (Thinking::Adaptive { .. }, None)
     ));
+}
+
+/// On Responses, `reasoning` is sent where the model reports reasoning and thinking is
+/// on, with `summary: auto`, and wherever the client was given an effort, whatever the
+/// metadata declares — a level the caller set is the provider's to accept or refuse
+/// (docs/transport.md). With thinking off or undeclared, the effort goes alone.
+#[test]
+fn a_responses_effort_is_sent_whatever_the_metadata_declares() {
+    let endpoint = Endpoint::without_url(Provider::Custom(WireDialect::Responses));
+    let adaptive = ThinkingSupport {
+        adaptive: true,
+        off: ThinkingOff::Omit,
+    };
+    let reasoning = |client: Client| -> Value {
+        let body = client
+            .preview_body(
+                &[crate::record::project::WireTurn::text("hi")],
+                &[],
+                ToolChoice::auto(),
+            )
+            .unwrap();
+        serde_json::from_str::<Value>(&body).unwrap()["reasoning"].clone()
+    };
+    let client = || Client::new(endpoint.clone(), "m", "sys");
+    let low = || Some("low".to_string());
+    assert_eq!(reasoning(client()), Value::Null);
+    assert_eq!(
+        reasoning(client().with_effort(low())),
+        serde_json::json!({ "effort": "low" })
+    );
+    assert_eq!(
+        reasoning(client().with_thinking(adaptive)),
+        serde_json::json!({ "summary": "auto" })
+    );
+    assert_eq!(
+        reasoning(client().with_thinking(adaptive).with_effort(low())),
+        serde_json::json!({ "effort": "low", "summary": "auto" })
+    );
+    assert_eq!(
+        reasoning(
+            client()
+                .with_thinking(adaptive)
+                .with_effort(low())
+                .without_thinking()
+        ),
+        serde_json::json!({ "effort": "low" })
+    );
 }

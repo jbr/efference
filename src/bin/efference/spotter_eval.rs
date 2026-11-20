@@ -348,7 +348,7 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
     // per-case mount below then cannot fail.
     let kind = endpoint.spotter_kind(&model).await?;
     MountedSpotter::mount_with_persona(endpoint.clone(), &model, kind, persona.clone())?;
-    let thinking = endpoint.spotter_thinking(&model, kind).await?;
+    let capabilities = endpoint.spotter_capabilities(&model, kind).await?;
     // Briefs come from the same lookup a live gate uses, over the built-in tools and
     // the servers the cases' sessions declare; the circumstances from each case's log.
     let records = records::records(&cases, kind, no_session_log).await?;
@@ -388,7 +388,7 @@ pub(crate) async fn spotter_eval(args: SpotterEvalArgs) -> CliResult {
         model,
         persona,
         kind,
-        thinking,
+        capabilities,
         runs,
         semaphore: tokio::sync::Semaphore::new(concurrency.max(1)),
     });

@@ -23,6 +23,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod ask;
 mod brief;
 mod circumstances;
 pub mod jev;
@@ -125,6 +126,14 @@ pub trait Spotter {
 /// (Haiku), independent of the acting session's model.
 pub struct ForkSpot {
     client: Client,
+    /// The effort the client's requests carry (`ask::spot_effort`), or `None` on a
+    /// dialect where the forced call's thinking off asks for no reasoning.
+    effort: Option<&'static str>,
+    /// Set once the model refused the effort and a request without it succeeded:
+    /// every later request goes without it (`ask.rs`).
+    effort_refused: std::sync::atomic::AtomicBool,
+    /// The output cap a request the cap cut short is sent again at (`ask::raised_cap`).
+    retry_cap: u64,
     /// The session scratch dir (docs/tools.md), when one exists. Rendered into the
     /// scope block as the `$TMPDIR` alias: a bash move writes `$TMPDIR/…` (the
     /// shell expands it in-child, so the spotter sees the *variable*), and without
@@ -157,20 +166,19 @@ impl ForkSpot {
         model: impl Into<String>,
         persona: impl Into<String>,
     ) -> Self {
+        let client = Client::new(endpoint, model, persona)
+            .without_turn_routing()
+            .with_origin(crate::record::log::RequestOrigin::Spot)
+            .with_max_output(ask::SPOT_MAX_OUTPUT);
+        let effort = ask::spot_effort(client.dialect());
         ForkSpot {
-            client: Client::new(endpoint, model, persona)
-                .without_turn_routing()
-                .with_origin(crate::record::log::RequestOrigin::Spot),
+            client: client.with_effort(effort.map(str::to_string)),
+            effort,
+            effort_refused: std::sync::atomic::AtomicBool::new(false),
+            retry_cap: ask::raised_cap(ask::SPOT_MAX_OUTPUT, None),
             scratch: None,
             directories: None,
         }
-    }
-
-    /// Apply the model's thinking answer: the forced `spot` call sends thinking
-    /// off, spelled as the model's metadata says (docs/transport.md).
-    pub fn with_thinking(mut self, thinking: crate::inference::api::ThinkingSupport) -> Self {
-        self.client = self.client.with_thinking(thinking);
-        self
     }
 
     /// Name the session scratch dir so the scope block can render the `$TMPDIR`
@@ -234,10 +242,6 @@ pub(crate) fn process_directories() -> Option<crate::config::policy::Directories
         .map(|cwd| crate::config::policy::Directories::at(&cwd))
 }
 
-/// Attempts per spotter call when the upstream fails transiently, doubling from a
-/// one-second pause (docs/permissions.md).
-const SPOT_ATTEMPTS: u32 = 3;
-
 impl Spotter for ForkSpot {
     fn set_stage_sink(&mut self, sink: crate::inference::api::StageSink) {
         self.client.set_stage_sink(sink);
@@ -250,58 +254,7 @@ impl Spotter for ForkSpot {
         circumstances: &Circumstances<'_>,
     ) -> Spotting {
         let turns = self.turns(role, call, circumstances);
-
-        // A transient upstream failure is retried briefly before failing closed
-        // (docs/permissions.md): the fallback is a human gate, which an operator at
-        // the keyboard answers in less time than a long backoff, and which leaves
-        // an unattended run waiting — so a short burst is worth absorbing and an
-        // outage is not worth waiting out here.
-        let mut attempt = 0;
-        loop {
-            attempt += 1;
-            // No-op sink: the spotter's tokens are internal and must never surface
-            // on the control stream (mirrors the triage).
-            let (usage, transient) = match self
-                .client
-                .complete(
-                    &turns,
-                    &[spot_tool()],
-                    crate::inference::api::ToolChoice::force(SPOT),
-                    |_| {},
-                )
-                .await
-            {
-                Ok(completion) => {
-                    let usage = Some(completion.request_usage());
-                    if completion.upstream_failure().is_none() {
-                        return match parse_spot(&completion) {
-                            Some(read) => Spotting {
-                                read,
-                                origin: Origin::Model,
-                                usage,
-                                axes: None,
-                            },
-                            None => Spotting::fail_closed(usage),
-                        };
-                    }
-                    // An unfinalized stream (docs/transport.md) is not a verdict.
-                    (
-                        usage,
-                        completion.terminal_failure().is_none() && !completion.operator_abort(),
-                    )
-                }
-                Err(e) => (
-                    None,
-                    crate::inference::api::error_class(&e)
-                        == crate::inference::api::FailureClass::Transient,
-                ),
-            };
-            if !transient || attempt >= SPOT_ATTEMPTS {
-                return Spotting::fail_closed(usage);
-            }
-            let pause = std::time::Duration::from_secs(1 << (attempt - 1));
-            tokio::time::sleep(pause).await;
-        }
+        self.verdict(&turns).await
     }
 }
 

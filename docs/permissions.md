@@ -966,14 +966,39 @@ the second breakpoint, ahead of the move; in the cached prefix, a changed status
 would be a changed prefix and the next call a cache miss. The decision rung does not read
 it.
 
+**The request** (`src/curation/spotter/ask.rs`). The prose rung's output cap is 16384
+(`SPOT_MAX_OUTPUT`), or the model's own when that is smaller, reserved against the model's
+window like a turn's ([transport.md](transport.md)). A reasoning model thinks before the
+call and the thinking counts against the cap; at the client's default of 4096 a reasoning
+spotter at its default effort was cut off before the call. The cap is not the model's
+whole cap, because a provider may set the cap aside against a rate limit before
+generating (Meta answers an oversized one with a 429). The forced call sends thinking off
+in the model's spelling ([transport.md](transport.md)), and on the Responses dialect,
+whose `reasoning` field has no spelling of off that every model accepts, it asks for
+effort `low` instead (`SPOT_EFFORT`): `none` is refused by models that take `low`, and an
+omitted field leaves the model at its default effort. A request carrying the effort
+that the endpoint rejects is sent once more without it, and when that is answered the
+rung sends no effort from then on, as the client learns a refused forced choice. The
+level is a constant of the rung rather than a session setting: replayed against
+`meta/muse-ember-1.0`, `low` answered every request, gave the same or a more cautious
+stance than the default effort on each call, and wrote under half its output
+(journal/2026-11-19-spotter-effort-and-retry.md).
+
 **Fail closed.** Any failure — transport error, no `spot` call — yields `Gate` with
-`Origin::Fallback`: uncertainty routes to the human, never to auto-clear. A transient
-upstream failure (a dropped stream, a timed-out or refused connection, an overloaded
-status) is first retried up to three attempts, one and two seconds apart: a short burst is
-worth absorbing, and an outage is not worth waiting out when the fallback is a prompt the
-operator answers faster. (The triager has no fallback that is safe to show, so it
-waits instead: a triage without a verdict holds its results until one arrives —
-[triage.md](triage.md) — never a silent keep-all.)
+`Origin::Fallback`: uncertainty routes to the human, never to auto-clear. Before that, a
+verdict gets up to three requests. An answer without a usable `spot` call — the model
+ended its turn without the call, or the cap cut it off first — is sent again once, at
+once, and at twice the cap (bounded by the model's) when the cap cut it; a second such
+answer fails closed. A transient upstream failure (a dropped stream, a timed-out or
+refused connection, an overloaded status) is sent again one and then two seconds later. A
+short burst is worth absorbing, and an outage is not worth waiting out when the fallback
+is a prompt the operator answers faster, so a spotter that never answers reaches the
+human after two requests, and one behind an outage after three. Each request records its
+own stages under the `spot` origin ([log-and-projection.md](log-and-projection.md)), so a
+retry is a second request before the `Spot` entry, the first one's `ended` stage naming
+how it finished; the spot's usage entry sums the requests' tokens. (The triager has no
+fallback that is safe to show, so it waits instead: a triage without a verdict holds its
+results until one arrives — [triage.md](triage.md) — never a silent keep-all.)
 
 **Each verdict is logged** as a `Payload::Spot` audit entry (the audit answer to "why did
 this get through — or stop?", and the corpus for any future triaged approval model). It

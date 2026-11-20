@@ -78,7 +78,7 @@ fn responses_envelope_matches_expected_wire_bytes() {
         max_output_tokens: Some(4096),
         reasoning: Some(Reasoning {
             effort: Some("low".into()),
-            summary: "auto",
+            summary: Some("auto"),
         }),
         temperature: Some(0.7),
         prompt_cache_key: Some("sess"),
@@ -117,7 +117,7 @@ fn codex_profile_envelope_matches_expected_wire_bytes() {
         max_output_tokens: None,
         reasoning: Some(Reasoning {
             effort: None,
-            summary: "auto",
+            summary: Some("auto"),
         }),
         temperature: None,
         prompt_cache_key: Some("sess"),

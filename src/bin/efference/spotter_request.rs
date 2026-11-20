@@ -385,7 +385,7 @@ async fn request_bodies(
         &rebuilt.session_dir,
     ));
     let kind = endpoint.spotter_kind(&model).await?;
-    let thinking = endpoint.spotter_thinking(&model, kind).await?;
+    let capabilities = endpoint.spotter_capabilities(&model, kind).await?;
     let mounted = MountedSpotter::mount(
         endpoint.for_spotter(),
         &model,
@@ -393,7 +393,7 @@ async fn request_bodies(
         Some(rebuilt.scratch.clone()),
         rebuilt.directories.clone(),
     )
-    .with_thinking(thinking);
+    .with_capabilities(capabilities.as_ref());
     let own = match &mounted {
         MountedSpotter::Fork(_) => RungArg::Prose,
         MountedSpotter::Jev(_) => RungArg::Jev,

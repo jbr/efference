@@ -89,19 +89,19 @@ impl Endpoint {
         }
     }
 
-    /// How a spotter model takes `thinking` (`ModelCapabilities::thinking`): the
-    /// prose rung forces its `spot` call, which sends thinking off, spelled as the
-    /// model's metadata specifies (docs/transport.md). The lookup doubles as a text
-    /// model's existence check. A decision model sends no `thinking` field, so it
-    /// is not asked.
-    pub async fn spotter_thinking(
+    /// What a spotter model's metadata says, for the prose rung's client: how its
+    /// forced `spot` call spells thinking off (docs/transport.md), and the output cap
+    /// and window its requests are reserved against (docs/permissions.md). The lookup
+    /// doubles as a text model's existence check. A decision model has no such
+    /// metadata, so it is not asked: `None`.
+    pub async fn spotter_capabilities(
         &self,
         model: &str,
         kind: ModelKind,
-    ) -> Result<ThinkingSupport, Error> {
+    ) -> Result<Option<ModelCapabilities>, Error> {
         match kind {
-            ModelKind::Text => Ok(self.fetch_capabilities(model, &[]).await?.thinking),
-            ModelKind::Decisions => Ok(ThinkingSupport::UNKNOWN),
+            ModelKind::Text => Ok(Some(self.fetch_capabilities(model, &[]).await?)),
+            ModelKind::Decisions => Ok(None),
         }
     }
 

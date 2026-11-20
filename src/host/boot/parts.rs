@@ -283,10 +283,11 @@ pub(super) async fn mount_spotter(
     // The spotter's model is validated against *its* provider's metadata source,
     // not the main model's: a hosted spotter may sit on a different connection and
     // dialect. The lookup is the existence check that fails boot instead of the
-    // first permission decision, and its thinking answer is the one capability the
-    // spotter's client applies: its forced tool call sends thinking off, and how
-    // off is spelled is the model's (docs/transport.md). It sends no effort or
-    // temperature.
+    // first permission decision, and the spotter's client applies three of its
+    // answers: thinking, since its forced tool call sends thinking off and how off
+    // is spelled is the model's (docs/transport.md), and the output cap and window
+    // its requests are reserved against (docs/permissions.md). It sends no
+    // temperature, and none of the session's effort.
     //
     // A decision model has no such metadata: there is no context window, output
     // cap, or cache policy behind a decisions request (docs/permissions.md). The
@@ -302,11 +303,11 @@ pub(super) async fn mount_spotter(
             .into());
         }
     };
-    let thinking = match spotter_endpoint
-        .spotter_thinking(&spotter_model, kind)
+    let capabilities = match spotter_endpoint
+        .spotter_capabilities(&spotter_model, kind)
         .await
     {
-        Ok(thinking) => thinking,
+        Ok(capabilities) => capabilities,
         Err(error) => {
             return Err(format!(
                 "spotter model {spotter_model:?} on {}: {error}",
@@ -324,7 +325,7 @@ pub(super) async fn mount_spotter(
         Some(scratch.to_path_buf()),
         directories.clone(),
     )
-    .with_thinking(thinking);
+    .with_capabilities(capabilities.as_ref());
     log::debug!("spotter rung: {}", spotter.kind());
     Ok(spotter)
 }

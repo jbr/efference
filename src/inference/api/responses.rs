@@ -63,8 +63,10 @@ pub(super) struct Reasoning {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     /// `auto` enables the visible summary; without it reasoning items contain
-    /// only their opaque continuation.
-    pub summary: &'static str,
+    /// only their opaque continuation. Absent on a request that sends an effort
+    /// with thinking off, whose reasoning nothing reads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<&'static str>,
 }
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]

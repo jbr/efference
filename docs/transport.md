@@ -163,7 +163,8 @@ triage both send `auto` —
 the shared envelope ([triage.md](triage.md)): identical
 `tool_choice` and thinking are part of what lets the triage read the agent lineage's
 cache — so both may think (the fork's thinking is discarded with its throwaway
-tail); the spotter still forces its `spot` tool → thinking off; a separate-model
+tail); the spotter still forces its `spot` tool → thinking off (on Responses, effort
+`low` instead, [permissions.md](permissions.md)); a separate-model
 triage sends thinking off unless `--triage-thinking` or `--triage-effort` — for the
 per-result triages only; the idle triage rides the agent's client and thinks as the
 agent does ([triage.md](triage.md)). Where off is omitted on
@@ -280,8 +281,14 @@ request that client makes carries it — the main turn and the triage, which is
 the shared envelope ([triage.md](triage.md)): if one carried it
 and the other didn't, the triage would stop reading the agent lineage's cache — and
 the keepalive, which sends the turn's envelope (above). The spotter forces its
-tool, sends thinking off, and runs on its own client, which is never given an
-effort.
+tool, sends thinking off, and runs on its own client, which is never given the
+session's effort; on the Responses dialect, which has no spelling of off every model
+accepts, that client asks for its own `low` ([permissions.md](permissions.md)).
+
+On Responses the level is sent as `reasoning: {effort}` whatever the model's metadata
+declares about reasoning: a level the caller set is the provider's to accept or refuse,
+as an unvalidated level is elsewhere, and a custom endpoint's listing declares nothing
+about reasoning at all.
 
 **Foreign slugs, unverified.** OpenRouter's docs show `output_config.effort`
 honored on the Messages skin for Anthropic models. Whether the skin *translates*
@@ -829,8 +836,9 @@ is the only history; encrypted reasoning arrives by default in stateless mode),
 `parallel_tool_calls: true` under `auto` and `false` under a forced choice ([README.md](README.md)), `tools[]` as `function` entries
 with `strict: false` built from the same `{name, description, input_schema}`
 definitions Messages sends, `tool_choice` as `auto` or `{type: function, name}`,
-`max_output_tokens` from the same reservation as `max_tokens`, `reasoning: {effort,
-summary: auto}` when the model reports reasoning, `prompt_cache_key` carrying the
+`max_output_tokens` from the same reservation as `max_tokens`, `reasoning` when the
+model reports reasoning and thinking is on (`{effort, summary: auto}`) or when the
+client has an effort (`{effort}` alone otherwise), `prompt_cache_key` carrying the
 sticky session id, and `prompt_cache_options: {mode: explicit}` plus the encoded
 `prompt_cache_breakpoint` marker when the model's cache policy is explicit. No
 `anthropic-version` header rides this dialect; auth is `authorization: Bearer`.
@@ -1654,12 +1662,13 @@ and the request retried, once per halving down to the floor, and any other
 open failure stays terminal. The refusal can also arrive as an `error` event on a
 stream that opened 200 (DeepInfra through OpenRouter: "maximum context length is N
 tokens. However, you requested M output tokens and your prompt contains at least P
-The refusal can also arrive as an `error` event on a stream that opened 200 (DeepInfra through OpenRouter: "maximum context length is N tokens. However, you requested M output tokens and your prompt contains at least P input tokens"); a completion whose failure text matches the same phrasings is
-resent at half the reservation too, whatever class its error type was assigned, and the
+input tokens"); a completion whose failure text matches the same phrasings is resent
+at half the reservation too, whatever class its error type was assigned, and the
 refused attempt's partial is dropped. The interrupt and a fixed `cap` are never
-resent. Turns, triages, and triage all share the one
-client and so the one calibration; the keepalive's `max_tokens: 0` ping and
-the spotter's own client (no window set) are outside it.
+resent. Turns and triages on the agent's client share the one calibration; the
+keepalive's `max_tokens: 0` ping is outside it, and the spotter's client and a
+separate-model triage's each reserve against their own model's window
+([permissions.md](permissions.md), [triage.md](triage.md)).
 
 `GET /state` surfaces the window as `usage.context = {limit, used}`, where
 `limit` is `context_length` itself and `used` is the last request's total

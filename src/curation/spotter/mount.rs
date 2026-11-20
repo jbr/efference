@@ -87,12 +87,18 @@ impl MountedSpotter {
         }
     }
 
-    /// Apply the model's thinking answer (`ModelCapabilities::thinking`) to the
-    /// prose rung's client; a decision model sends no `thinking` field.
-    pub fn with_thinking(self, thinking: crate::inference::api::ThinkingSupport) -> Self {
-        match self {
-            MountedSpotter::Fork(fork) => MountedSpotter::Fork(fork.with_thinking(thinking)),
-            jev @ MountedSpotter::Jev(_) => jev,
+    /// Apply the model's metadata (`Endpoint::spotter_capabilities`) to the prose
+    /// rung's client: its thinking answer, output cap and window. A decision model has
+    /// none, and its request sends none of these.
+    pub fn with_capabilities(
+        self,
+        capabilities: Option<&crate::inference::api::ModelCapabilities>,
+    ) -> Self {
+        match (self, capabilities) {
+            (MountedSpotter::Fork(fork), Some(capabilities)) => {
+                MountedSpotter::Fork(fork.with_capabilities(capabilities))
+            }
+            (mounted, _) => mounted,
         }
     }
 

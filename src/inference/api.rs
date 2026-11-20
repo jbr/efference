@@ -213,12 +213,6 @@ impl Usage {
         self.input_tokens + self.cache_read_input_tokens + self.cache_creation_input_tokens
     }
 
-    /// Fold another `usage` object from the same response into this one, keeping
-    /// the larger count per field (docs/transport.md: the usage merge). Max
-    /// rather than "last event wins" because both usage-bearing events report
-    /// per-response *totals*, not increments — neither can legitimately report
-    /// less than the other for the same field, so a placeholder or zero from
-    /// either side is harmless.
     /// Whether every count is zero — the shape of a stream that produced nothing
     /// billable. What separates an aborted attempt with nothing to price from one
     /// that finalized with real usage and then failed to parse (docs/transport.md).
@@ -229,6 +223,22 @@ impl Usage {
             && self.cache_read_input_tokens == 0
     }
 
+    /// Add another request's counts to this one's, field by field: the usage of
+    /// several requests reported as one, as a spotter verdict's is
+    /// (docs/permissions.md).
+    pub(crate) fn add(&mut self, other: &Usage) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.cache_creation_input_tokens += other.cache_creation_input_tokens;
+        self.cache_read_input_tokens += other.cache_read_input_tokens;
+    }
+
+    /// Fold another `usage` object from the same response into this one, keeping
+    /// the larger count per field (docs/transport.md: the usage merge). Max
+    /// rather than "last event wins" because both usage-bearing events report
+    /// per-response *totals*, not increments — neither can legitimately report
+    /// less than the other for the same field, so a placeholder or zero from
+    /// either side is harmless.
     pub(crate) fn merge_max(&mut self, other: &Usage) {
         self.input_tokens = self.input_tokens.max(other.input_tokens);
         self.output_tokens = self.output_tokens.max(other.output_tokens);

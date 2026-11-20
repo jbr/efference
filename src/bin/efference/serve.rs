@@ -342,11 +342,11 @@ pub(crate) async fn spotter_check(args: dev::SpotterArgs) -> CliResult {
     // decision model reads a JSON state (docs/permissions.md).
     let (model, endpoint) = inference::spotter_endpoint(model.as_deref())?;
     let kind = endpoint.spotter_kind(&model).await?;
-    let thinking = endpoint.spotter_thinking(&model, kind).await?;
+    let capabilities = endpoint.spotter_capabilities(&model, kind).await?;
     // The tester has one directory, so it stands as both.
     let dirs = efference::config::policy::Directories::at(&cwd);
-    let spotter =
-        MountedSpotter::mount(endpoint, &model, kind, None, dirs.clone()).with_thinking(thinking);
+    let spotter = MountedSpotter::mount(endpoint, &model, kind, None, dirs.clone())
+        .with_capabilities(capabilities.as_ref());
     if show_move || tool.is_some() {
         let preview = match &spotter {
             MountedSpotter::Jev(_) => efference::curation::spotter::jev::preview_state(

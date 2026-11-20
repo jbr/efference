@@ -188,7 +188,10 @@ impl Spotter for JevSpot {
         let (reading, compared) = match relation {
             None => (Some(questions::Reading::default()), Vec::new()),
             Some(Ok(answered)) => {
-                add_usage(&mut usage, &answered.request_usage());
+                // The relation request's billing goes into the cold request's, so the
+                // spot is one ledger entry with the whole cost; the id and model stay
+                // the cold request's.
+                usage.usage.add(&answered.request_usage().usage);
                 (
                     Some(relation::read(&answered, candidates.len())),
                     relation::compared(&answered, &candidates),
@@ -301,17 +304,6 @@ pub fn compared_precedents(call: &ToolCall, precedents: &[ToolCall]) -> Vec<Tool
         .into_iter()
         .cloned()
         .collect()
-}
-
-/// Fold the relation request's billing into the cold request's, so the spot is
-/// one entry in the ledger with the whole cost. The id and model stay the cold
-/// request's.
-fn add_usage(
-    total: &mut crate::inference::api::RequestUsage,
-    extra: &crate::inference::api::RequestUsage,
-) {
-    total.usage.input_tokens += extra.usage.input_tokens;
-    total.usage.output_tokens += extra.usage.output_tokens;
 }
 
 /// Pull the asked axes out of the response. `None` when an unconditional axis is

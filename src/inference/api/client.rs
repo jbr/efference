@@ -93,7 +93,8 @@ pub struct Client {
     temperature: Option<u8>,
     /// The capability lookup's answer to how this model takes `thinking`
     /// (`ModelCapabilities::thinking`) — the input to `Thinking::for_request`, and
-    /// on Responses whether the `reasoning` object is sent at all.
+    /// on Responses whether the `reasoning` object asks for a summary, and whether
+    /// it is sent at all when no effort is set.
     /// [`ThinkingSupport::UNKNOWN`] until [`Self::with_thinking`] sets it.
     thinking: ThinkingSupport,
     /// Never think, whatever the model would do on its own (docs/triage.md):
@@ -131,11 +132,12 @@ pub struct Client {
     /// trajectory's start has consumed any earlier press, while every other request on
     /// these clients may run with an earlier press still latched, which is not theirs.
     interrupt_latch: Option<Arc<std::sync::atomic::AtomicBool>>,
-    /// The session's effort level, when one is set (docs/transport.md). Rides
-    /// every request this client makes — the turn loop and the triage, so the
-    /// triage's prefix still matches the agent lineage's (docs/triage.md),
+    /// The effort level, when one is set (docs/transport.md). Rides every request
+    /// this client makes — on the agent's client the turn loop and the triage, so
+    /// the triage's prefix still matches the agent lineage's (docs/triage.md),
     /// and the keepalive, which sends the turn's envelope. The spotter's client
-    /// never sets it.
+    /// sets one on the Responses dialect only, where `reasoning` has no spelling
+    /// of off every model accepts (docs/permissions.md).
     effort: Option<String>,
     /// Which upstream serves this session, when pinned (docs/transport.md).
     upstream: Option<Upstream>,
@@ -577,11 +579,12 @@ impl Client {
         self
     }
 
-    /// Set the session's effort level (`--effort`, `[transport] effort` —
-    /// docs/transport.md). Boot-time only: it is set before the first turn and
-    /// never changed, since a mid-session change would move the cached prefix.
-    /// Applies to every [`Self::complete`] this client makes, so the turn and
-    /// the triage carry the same envelope; the keepalive is not built from it.
+    /// Set the effort level: the session's (`--effort`, `[transport] effort` —
+    /// docs/transport.md), or the spotter's own (docs/permissions.md). Boot-time
+    /// only: it is set before the first request and never changed, since a
+    /// mid-session change would move the cached prefix. Applies to every
+    /// [`Self::complete`] this client makes, so the turn and the triage carry
+    /// the same envelope; the keepalive is not built from it.
     pub fn with_effort(mut self, effort: Option<String>) -> Self {
         self.effort = effort;
         self

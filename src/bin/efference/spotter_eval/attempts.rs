@@ -11,7 +11,7 @@ pub(super) struct Eval {
     pub(super) model: String,
     pub(super) persona: Option<String>,
     pub(super) kind: efference::inference::api::ModelKind,
-    pub(super) thinking: efference::inference::api::ThinkingSupport,
+    pub(super) capabilities: Option<efference::inference::api::ModelCapabilities>,
     pub(super) runs: usize,
     /// Bounds the attempts in flight across cases.
     pub(super) semaphore: tokio::sync::Semaphore,
@@ -77,7 +77,7 @@ impl Eval {
             self.persona.clone(),
         )
         .expect("the rung was validated before the runs began")
-        .with_thinking(self.thinking)
+        .with_capabilities(self.capabilities.as_ref())
         .with_scratch(case.scratch.then(|| PathBuf::from(SCRATCH_PLACEHOLDER)));
         // A case without a recorded cwd keeps the pre-existing
         // behavior (the process cwd, via the rung's fallback);

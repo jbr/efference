@@ -629,11 +629,15 @@ impl Client {
         max_output_tokens: u32,
         capped: bool,
     ) -> responses::ResponsesRequest<'a> {
-        let reasoning =
-            (self.thinking.adaptive && !self.thinking_off).then(|| responses::Reasoning {
-                effort: self.effort.clone(),
-                summary: "auto",
-            });
+        // The object is sent where the model reports reasoning and thinking is on,
+        // and wherever this client was given an effort: a level the caller set is
+        // the provider's to accept or refuse, whatever the model's metadata declares
+        // (docs/transport.md). The summary is asked for only with thinking on.
+        let thinking = self.thinking.adaptive && !self.thinking_off;
+        let reasoning = (thinking || self.effort.is_some()).then(|| responses::Reasoning {
+            effort: self.effort.clone(),
+            summary: thinking.then_some("auto"),
+        });
         match self.endpoint.provider.responses_profile() {
             ResponsesProfile::Platform => responses::ResponsesRequest {
                 model: &self.model,
