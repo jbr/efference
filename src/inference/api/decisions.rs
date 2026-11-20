@@ -386,8 +386,10 @@ impl Endpoint {
     /// (docs/log-and-projection.md): `sent` before the POST, `first_byte` when the
     /// response arrives, then `ended` once its body parsed, or `failed` with the error.
     /// The route is one request and one body, so there is no stream to open: the
-    /// response's arrival is the first byte. Retries inside the transport's budget
-    /// record no `attempt_failed`; the retry handler here is not wired to the trace.
+    /// response's arrival is the first byte. A size refusal re-sent with the
+    /// long-context header records `attempt_failed` between `sent` and the re-send's
+    /// `first_byte`. Retries inside the transport's budget record no `attempt_failed`;
+    /// the retry handler here is not wired to the trace.
     pub async fn decide_traced<S: Serialize + Sync + ?Sized>(
         &self,
         stages: Option<&StageSink>,
@@ -451,30 +453,32 @@ impl Endpoint {
                 .into()
             })?;
         let body = self.decisions_body(model, state, questions)?;
-        let http = self.http().with_handler(decisions_retry());
-        let auth = self.auth_value.current().await;
-        let conn = self
-            .authorize(http.post(url.as_str()), auth)
-            .with_request_header("content-type", "application/json")
-            .with_body(body);
-        // Billed inference, so it carries the same attribution the inference
-        // POSTs do (`Provider::attribution`) — the metadata GETs deliberately
-        // don't, and this is not one of those.
-        let conn = self
-            .provider
-            .attribution()
-            .iter()
-            .fold(conn, |conn, (name, value)| {
-                conn.with_request_header(*name, *value)
-            });
-        let mut conn = conn
-            .await
-            .map_err(|e| -> Error { format!("POST {url} failed: {e}").into() })?;
+        let mut conn = self.send_decisions(&url, &body, None).await?;
+        // A body read early, to tell a size refusal from another 400, and not re-sent.
+        let mut refused = None;
+        if let Some(header) = self.provider.decisions_long_context_header()
+            && conn.status() == Some(Status::BadRequest)
+        {
+            let response = conn.response_body().read_string().await?;
+            if refused_for_size(&response) {
+                // Over the default size limits: sent once more, at once, with the
+                // header that raises them (docs/transport.md). A second refusal fails.
+                if let Some(trace) = trace {
+                    trace.attempt_failed(u16::from(Status::BadRequest));
+                }
+                conn = self.send_decisions(&url, &body, Some(header)).await?;
+            } else {
+                refused = Some(response);
+            }
+        }
         if let Some(trace) = trace {
             trace.first_byte();
         }
         let status = conn.status();
-        let response = conn.response_body().read_string().await?;
+        let response = match refused {
+            Some(response) => response,
+            None => conn.response_body().read_string().await?,
+        };
         if !status.is_some_and(|s| s.is_success()) {
             let status = status.map_or_else(|| "no status".to_string(), |s| s.to_string());
             return Err(format!("POST {url} returned {status}: {response}").into());
@@ -482,6 +486,42 @@ impl Endpoint {
         serde_json::from_str(&response)
             .map_err(|e| -> Error { format!("could not parse decisions response: {e}").into() })
     }
+
+    /// POST a decisions `body` to `url`, with `header` added when given, under the
+    /// route's retry policy ([`decisions_retry`]).
+    async fn send_decisions(
+        &self,
+        url: &str,
+        body: &str,
+        header: Option<(&'static str, &'static str)>,
+    ) -> Result<Conn, Error> {
+        let http = self.http().with_handler(decisions_retry());
+        let auth = self.auth_value.current().await;
+        let conn = self
+            .authorize(http.post(url), auth)
+            .with_request_header("content-type", "application/json")
+            .with_body(body.to_string());
+        // Billed inference, so it carries the same attribution the inference
+        // POSTs do (`Provider::attribution`) — the metadata GETs deliberately
+        // don't, and this is not one of those.
+        let conn = self
+            .provider
+            .attribution()
+            .iter()
+            .chain(header.as_slice())
+            .fold(conn, |conn, (name, value)| {
+                conn.with_request_header(*name, *value)
+            });
+        conn.await
+            .map_err(|e| -> Error { format!("POST {url} failed: {e}").into() })
+    }
+}
+
+/// Whether a 400's body is the first-party route's refusal of a request over its size
+/// limits: `{"detail": {"error_type": "max_tokens_exceeded"}}`.
+fn refused_for_size(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .is_ok_and(|refusal| refusal["detail"]["error_type"] == "max_tokens_exceeded")
 }
 
 #[cfg(test)]

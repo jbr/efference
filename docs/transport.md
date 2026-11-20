@@ -1306,11 +1306,13 @@ Three question types: `noul` (the API's own name for yes/no, spelled as the wire
 it, answered as P(yes)), `choice` (one of named options, answered with the chosen option
 and a probability per option), and `score` (a position among ordered, described levels,
 answered with an expected level and a probability per level). A question's `instructions`
-is a string or a JSON object, which is how a question contains data of its own — the
-spotter inlines the earlier call it is comparing against rather than pointing into the
-state. A choice's options are sent **in the order given**: a decision model leans toward
-the first option, so the spotter asks each choice in both orders, and the request type
-preserves order on the wire for that reason.
+is a string or a JSON object, which is how a question can contain data of its own rather
+than point into the state. A choice's options are sent **in the order given**: a decision
+model leans toward the first option, and the request type preserves order on the wire so a
+caller can ask in both orders. The same lean toward yes is why the spotter asks each of its
+`noul` questions in two wordings ([permissions.md](permissions.md)). The `state` is any value
+that serializes to a JSON object, so a caller can fix the order of its fields, which a
+`serde_json` object would sort.
 
 Answers are parsed leniently — a shape this harness does not model yet yields `None` for
 that question rather than failing the response away, and the caller's `None` handling is
@@ -1337,6 +1339,22 @@ is thirty seconds because a turn waiting on a model has nothing better to do; a 
 has a fallback, the human, which an operator at the keyboard answers faster than a
 long backoff. The budget exists so a brief rate-limit burst does not turn every
 gated call in it into a human gate.
+
+**A size refusal on the first-party route is sent once more with the long-context
+header.** TypeSafe's route accepts at most 64k tokens per request and 32k per question
+(the state and one question) by default, and answers a larger request with a 400 whose
+body is `{"detail": {"error_type": "max_tokens_exceeded"}}`. The header
+`TypeSafe-Danger-Zone-Long-Context: true` raises both limits to 262k at the same price; the
+provider documents it as slower and less accurate, so it is not sent by default. On that
+refusal the route sends the same body again at once, with the header added
+(`Provider::decisions_long_context_header`), and returns whatever that answers: a second
+refusal fails the request, and the spotter fails closed. The re-send is one more request
+under the same retry policy as the first (its 429s and 5xx retried on the same budget),
+with no wait before it, and it is recorded as an `attempt_failed` stage of the one
+request ([log-and-projection.md](log-and-projection.md)). No other provider is sent the
+header: OpenRouter accepted a 72.8k-token state without it, and a described System One
+endpoint documents no such header. What makes a spotter state large is the session's
+conversation it carries.
 
 Nothing on this route caches (the model's endpoint metadata reports
 `supports_implicit_caching: false` and there are no markers to send), so the

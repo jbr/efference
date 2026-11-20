@@ -96,6 +96,13 @@ impl Trace {
         self.core.record(RequestStageKind::FirstByte);
     }
 
+    /// An attempt of this request got a non-success status, and the caller sends it
+    /// again: a re-send the caller makes itself rather than the transport's retry
+    /// handler, which reports through the client's active trace instead.
+    pub(super) fn attempt_failed(&self, status: u16) {
+        self.core.attempt_failed(status);
+    }
+
     /// The stream finalized; `finish` is the provider's word for why, when it gave one.
     pub(super) fn ended(mut self, finish: Option<&str>) {
         self.closed = true;

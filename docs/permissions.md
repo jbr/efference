@@ -733,8 +733,9 @@ model mounts this rung with the same thresholds, which were not fitted for it.
 **Nothing caches, and the conversation is most of the input.** The decisions route has no
 prompt cache, so an assessment pays its whole input twice, once per polarity. On the
 validation sample the median request was about 11.5k input tokens and the largest about 32k,
-within the route's default per-request limit; a state the route refuses as too long fails
-closed like any other error.
+within the first-party route's default limits. A state over them is sent once more with
+TypeSafe's long-context header ([transport.md](transport.md), the decisions route); a
+refusal after that fails closed like any other error.
 
 Fail-closed is unchanged on both rungs. A transport error, a missing answer for a question
 that *was* asked, or an unparseable verdict all return `Origin::Fallback` + `Stance::Gate`.

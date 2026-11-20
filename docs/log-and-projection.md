@@ -209,7 +209,10 @@ entry's own `at` is the stage's time. Streaming sub-stages (thinking, text, a to
 call) are not recorded; the ephemeral `output` class distinguishes them. The
 decision-rung spotter's decisions request (docs/permissions.md) is one POST and one JSON
 body: it records `sent`, `first_byte` when the response arrives, then `ended` or `failed`
-under `spot`, one request id per POST (the cold question set and the relation set are two).
+under `spot`, one request id per question set (the positive and the negative wording are
+two). A first-party size refusal sent again with the long-context header
+([transport.md](transport.md)) records `attempt_failed {attempt: 1, status: 400}` between
+`sent` and the re-send's `first_byte`, under the same request id.
 
 `Interrupt` records where an interrupt came from: `{source?, control?}`, both
 client-asserted labels as `POST /loop/interrupt` received them (`source` spelled as a

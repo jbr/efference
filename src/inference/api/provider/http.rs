@@ -68,6 +68,23 @@ impl Provider {
         matches!(self, Self::OpenRouter)
     }
 
+    /// The header that raises this provider's decisions-route size limits, sent only on
+    /// the one re-send of a request the route refused as too long (docs/transport.md).
+    /// The first-party route's defaults are 64k tokens per request and 32k per question
+    /// (the state and one question); `TypeSafe-Danger-Zone-Long-Context: true` raises both
+    /// to 262k at the same price, and the provider documents it as slower and less
+    /// accurate, so it is not sent by default. `None` elsewhere: OpenRouter accepted a
+    /// 72.8k-token state without it, and a described System One endpoint documents no
+    /// such header.
+    pub(in crate::inference::api) fn decisions_long_context_header(
+        &self,
+    ) -> Option<(&'static str, &'static str)> {
+        match self {
+            Self::TypeSafe => Some(("TypeSafe-Danger-Zone-Long-Context", "true")),
+            _ => None,
+        }
+    }
+
     /// The auth header **name** this provider reads.
     pub(in crate::inference::api) fn auth_header(&self) -> &'static str {
         match self {
