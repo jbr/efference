@@ -13,8 +13,8 @@
 //! ```
 //!
 //! where each `◆` is a cache breakpoint: everything before the second is the cached
-//! prefix, and the utterances block grows by appending, so it stays cached between
-//! operator turns.
+//! prefix, and the utterances block (the session's conversation, one part per message)
+//! grows by appending, so a later call reads an earlier call's block from the cache.
 //!
 //! The persona lives in `assets/prompts/spotter.md` and is `include_str!`d as the
 //! client's byte-stable system prompt, so it sits in the cached prefix. Any failure
@@ -307,8 +307,8 @@ impl Spotter for ForkSpot {
 
 /// The prose rung's request (docs/permissions.md). The scope block (scope + notes) is
 /// stable for the session and ends at the first breakpoint. The utterances block, when
-/// they are known, follows it and ends at the second: it changes only by appending
-/// between rollovers, so a later call reads an earlier call's prefix from the cache.
+/// they are known, follows it and ends at the second: it changes only by appending, so a
+/// later call reads an earlier call's prefix from the cache.
 /// After it is the fresh part, rewritten each call: the supervision facts when they are
 /// passed — statuses move between calls — and then the move, with the optional
 /// promotion probe (docs/log-and-projection.md).
@@ -582,7 +582,7 @@ fn render_move(
                 let rest = dirs.and_then(|dirs| crate::config::policy::without_cd_into(cmd, dirs));
                 let shown = match rest {
                     Some(rest) => format!(
-                        "A shell command, run in the session's working directory (its leading \
+                        "A shell command, run in the agent's working directory (its leading \
                          `cd` into that directory is left out):\n\n    {rest}"
                     ),
                     None => format!("A shell command:\n\n    {cmd}"),
@@ -632,7 +632,7 @@ fn render_move(
     };
     let approval = chain_context(chain);
     format!(
-        "---\n\nThe session is about to make this move:\n\n{body}{approval}{promotion}\n\n\
+        "---\n\nThe agent is about to make this move:\n\n{body}{approval}{promotion}\n\n\
          Call `spot` with your stance and a one-line reason."
     )
 }
@@ -640,25 +640,25 @@ fn render_move(
 /// The approval context for a move bound to a parent's `agents__decide`
 /// (docs/permissions.md), or empty for an ordinary move. The chain is the session
 /// ids from the directly-targeted child down to the session holding the leaf; the
-/// spotter judges the leaf, and this says whose it is, and that the utterances shown
-/// are the approving session's rather than the holder's.
+/// spotter judges the leaf, and this says whose it is, and that the conversation shown
+/// is the approving session's rather than the holder's.
 fn chain_context(chain: &[String]) -> String {
     let (Some(holder), Some(top)) = (chain.last(), chain.first()) else {
         return String::new();
     };
     if chain.len() == 1 {
         format!(
-            "\n\nThis move is held by the session `{holder}`; approving it authorizes that \
-             session to run the move. What the operator has said, above, was said to the \
-             session approving the move, and `{holder}` is a session working under it."
+            "\n\nThis move is held by the agent `{holder}`; approving it authorizes that \
+             agent to run the move. The conversation above is with the agent approving the \
+             move, and `{holder}` is an agent working under it."
         )
     } else {
         format!(
             "\n\nThis move is the leaf of an approval chain — {} — held by the most recent \
-             session, `{holder}`. Each named session approved on the way here; judge the move \
-             itself, not the approvals. What the operator has said, above, was said to the \
-             session approving the move: `{top}` is a session working under it, and each \
-             session in the chain works under the one before it.",
+             agent, `{holder}`. Each named agent approved on the way here; judge the move \
+             itself, not the approvals. The conversation above is with the agent approving \
+             the move: `{top}` is an agent working under it, and each agent in the chain \
+             works under the one before it.",
             chain.join(" → ")
         )
     }
@@ -711,7 +711,7 @@ fn spot_tool() -> Value {
                 },
                 "reason": {
                     "type": "string",
-                    "description": "One sentence to the session as a teammate: what crosses the line (and the in-scope alternative if you see one), or a brief note on a clean clear."
+                    "description": "One sentence to the agent as a teammate: what crosses the line (and the in-scope alternative if you see one), or a brief note on a clean clear."
                 }
             },
             "required": ["stance", "reason"]

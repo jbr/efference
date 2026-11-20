@@ -2,7 +2,7 @@
 
 use crate::protocol::agents::Supervision;
 use crate::record::log::ToolCall;
-use crate::record::utterances::Utterance;
+use crate::record::utterances::Utterances;
 use crate::tools::ToolBrief;
 
 /// Everything [`super::Spotter::assess`] is given beyond the config and the call
@@ -44,13 +44,14 @@ pub struct Circumstances<'a> {
     /// same as a session with no supervisor and none supervised. The prose rung renders
     /// it; the decision rung ignores it.
     pub supervision: Option<&'a Supervision>,
-    /// What the operator, and any session supervising this one, said in the session,
-    /// oldest first (docs/permissions.md). For a bound leaf they are the approving
-    /// session's. `None` when they are not known — no session log is at hand (the
-    /// `efference dev spotter` dev command, an offline eval case with no readable log) —
-    /// which is not the same as a session where nobody has spoken yet. The prose rung
-    /// renders them; the decision rung ignores them.
-    pub utterances: Option<&'a [Utterance]>,
+    /// The session's conversation: what the operator, any session supervising this one,
+    /// and the agent itself wrote, oldest first, with the id the block's tags carry
+    /// (docs/permissions.md). For a bound leaf it is the approving session's. `None`
+    /// when it is not known — no session log is at hand (the `efference dev spotter`
+    /// dev command, an offline eval case with no readable log) — which is not the same
+    /// as a session where nothing has been written yet. The prose rung renders it; the
+    /// decision rung ignores it.
+    pub utterances: Option<&'a Utterances>,
 }
 
 impl<'a> Circumstances<'a> {
@@ -85,7 +86,7 @@ impl<'a> Circumstances<'a> {
     }
 
     /// What was said in the session, when it is known.
-    pub fn with_utterances(mut self, utterances: Option<&'a [Utterance]>) -> Self {
+    pub fn with_utterances(mut self, utterances: Option<&'a Utterances>) -> Self {
         self.utterances = utterances;
         self
     }

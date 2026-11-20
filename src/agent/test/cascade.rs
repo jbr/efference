@@ -102,7 +102,7 @@ impl Spotter for RecordingSpotter {
             call.name.clone(),
             circumstances.chain.to_vec(),
             circumstances.supervision.cloned(),
-            circumstances.utterances.map(<[_]>::to_vec),
+            circumstances.utterances.map(|u| u.said.clone()),
         ));
         crate::curation::spotter::Spotting {
             read: crate::curation::spotter::Read {

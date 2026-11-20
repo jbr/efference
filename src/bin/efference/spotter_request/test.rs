@@ -77,13 +77,17 @@ fn the_prose_view_is_the_request_as_the_verdict_was_given_it() {
     assert!(scope.contains("— granted as `.`"), "{scope}");
     assert!(scope.contains("efference-<scratch>"), "{scope}");
     assert!(!scope.contains("/later"), "a later grant:\n{scope}");
+    let id = &rebuilt.recorded.utterances.id;
     assert_eq!(
         *said,
-        "What the operator has said in this session, oldest first:\n\nOperator:\nclean the build\n\n"
+        format!(
+            "The conversation in this session, oldest first:\n\n<operator id=\"{id}\">\n\
+             clean the build\n</operator id=\"{id}\">\n\n"
+        )
     );
     assert!(
         fresh.starts_with(
-            "---\n\nThe session is about to make this move:\n\nA shell command:\n\n    cargo clean"
+            "---\n\nThe agent is about to make this move:\n\nA shell command:\n\n    cargo clean"
         ),
         "{fresh}"
     );

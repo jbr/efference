@@ -63,13 +63,14 @@ async fn a_case_with_a_log_is_replayed_with_what_was_said_before_it() {
     let recorded = read.moves[0].as_ref().expect("the log is read");
     let said: Vec<&str> = recorded
         .utterances
+        .said
         .iter()
         .map(|u| u.text.as_str())
         .collect();
     assert_eq!(said, ["clean the build"]);
     assert_eq!(recorded.probe(), Some("cargo"));
     let circumstances = recorded.circumstances(None);
-    assert_eq!(circumstances.utterances.map(<[_]>::len), Some(1));
+    assert_eq!(circumstances.utterances.map(|u| u.said.len()), Some(1));
 
     let unread = records::records(&cases, kind, true).await.unwrap();
     assert!(unread.moves[0].is_none());

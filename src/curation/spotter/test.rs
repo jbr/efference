@@ -1,4 +1,3 @@
-use super::brief::{DESCRIPTION_BUDGET, clip};
 use super::*;
 use crate::config::Config;
 use crate::config::testing::ConfigFixture;
@@ -314,15 +313,31 @@ fn a_built_in_tools_guarantees_are_the_harnesss() {
     );
 }
 
+/// A long description and a large schema render whole: a cut schema once hid the
+/// description of an argument the call used.
 #[test]
-fn an_oversized_description_and_schema_are_clipped_at_a_char_boundary() {
-    // Multi-byte chars straddling the budget must not panic or split a char.
-    let long = "é".repeat(DESCRIPTION_BUDGET);
-    let clipped = clip(&long, DESCRIPTION_BUDGET);
-    assert!(clipped.ends_with("… (truncated)"), "{clipped}");
-    assert!(clipped.len() <= DESCRIPTION_BUDGET + "\n… (truncated)".len());
-    // Under budget passes through untouched.
-    assert_eq!(clip("short", DESCRIPTION_BUDGET), "short");
+fn a_long_description_and_schema_render_whole() {
+    let mut definition = briefed_tool(None);
+    let description = format!(
+        "{} The `worktree` argument names the checkout.",
+        "é".repeat(5000)
+    );
+    definition.description = Some(description.clone());
+    let properties: serde_json::Map<String, Value> = (0..200)
+        .map(|i| (format!("arg_{i:03}"), json!({ "type": "string" })))
+        .chain([(
+            "worktree".to_string(),
+            json!({ "type": "string", "description": "The checkout the call runs in." }),
+        )])
+        .collect();
+    definition.input_schema = json!({ "type": "object", "properties": properties });
+    let rendered = server_brief(&definition);
+    assert!(rendered.contains(&description), "the description is whole");
+    let schema = serde_json::to_string_pretty(&definition.input_schema).unwrap();
+    assert!(schema.len() > 5000);
+    assert!(rendered.contains(&schema), "the schema is whole");
+    assert!(rendered.contains("The checkout the call runs in."));
+    assert!(!rendered.contains("truncated"), "{rendered}");
 }
 
 #[test]

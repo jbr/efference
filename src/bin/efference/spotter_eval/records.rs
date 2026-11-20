@@ -170,9 +170,15 @@ pub(super) fn session_moves(cases: &[Labeled], kind: ModelKind) -> Vec<Option<Re
             .and_then(Path::parent)
             .and_then(Path::parent)
             .map_or_default(Path::to_path_buf);
+        // The session's id: its directory's name, as the live session knows it.
+        let session = log
+            .parent()
+            .and_then(Path::file_name)
+            .map_or_default(|name| name.to_string_lossy().into_owned());
         for index in indices {
             let seq = cases[index].0.seq.expect("grouped only with a seq");
             let found = RecordedMove::find(
+                &session,
                 &entries,
                 Some(Handle { seq, call: None }),
                 None,
@@ -182,7 +188,7 @@ pub(super) fn session_moves(cases: &[Labeled], kind: ModelKind) -> Vec<Option<Re
                 match kind {
                     ModelKind::Text => recorded.precedents.clear(),
                     ModelKind::Decisions => {
-                        recorded.utterances.clear();
+                        recorded.utterances.said.clear();
                         recorded.precedents =
                             efference::curation::spotter::jev::compared_precedents(
                                 &recorded.judged,

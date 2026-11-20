@@ -1,96 +1,74 @@
-//! The utterances block the prose spotter reads (docs/permissions.md): what the operator,
-//! and any session supervising this one, said in the session, oldest first, each with the
-//! end of the session's text it answers.
+//! The conversation block the prose spotter reads (docs/permissions.md): every utterance
+//! of the session, whole and oldest first, each between an open and a close tag naming
+//! its writer.
 //!
 //! The block sits between the request's two breakpoints, so it is part of the cached
 //! prefix, and it is rendered so that a later call's block starts with an earlier call's
-//! block byte for byte. Each utterance is a part of its own, which keeps the block
-//! boundaries of an earlier rendering in place in a later one. Past a size budget the
-//! block rolls over once ([`parts`]): it starts again with the first utterance, a marker
-//! counting the ones left out, and the most recent ones, and grows by appending from
-//! there.
+//! block byte for byte: each utterance is a part of its own, which keeps the block
+//! boundaries of an earlier rendering in place in a later one, and nothing in a part
+//! depends on what comes after it.
 
-use crate::record::utterances::{Speaker, Utterance};
+use crate::record::utterances::{Speaker, Utterance, Utterances};
 
 /// The block's heading, its first part.
-const HEADING: &str = "What the operator has said in this session, oldest first:\n\n";
+const HEADING: &str = "The conversation in this session, oldest first:\n\n";
 
 /// The part a session with no utterances renders after the heading.
 const NOTHING: &str = "(nothing before this move)\n\n";
 
-/// The most characters the utterance parts may hold together, marker included, before
-/// the block rolls over.
-pub(super) const BUDGET: usize = 24_000;
+/// The tag names a writer's message is wrapped in. Text inside a message that starts one
+/// of them is escaped ([`escaped`]).
+const TAG_NAMES: [&str; 3] = ["operator", "agent-text", "supervisor"];
+
+/// What replaces the `<` that would open or close a tag inside a message's text.
+const ESCAPED_ANGLE: char = '‹';
 
 /// The block as parts, heading first. A pure function of `utterances`, so an identical
 /// log renders identical bytes, a host restart included.
-pub(super) fn parts(utterances: &[Utterance]) -> Vec<String> {
-    let rendered: Vec<String> = utterances.iter().map(render).collect();
+pub(super) fn parts(utterances: &Utterances) -> Vec<String> {
     let mut parts = vec![HEADING.to_string()];
-    if rendered.is_empty() {
+    if utterances.said.is_empty() {
         parts.push(NOTHING.to_string());
-    } else {
-        parts.extend(rolled(&rendered));
     }
+    parts.extend(
+        utterances
+            .said
+            .iter()
+            .map(|utterance| render(utterance, &utterances.id)),
+    );
     parts
 }
 
-/// The utterance parts, `rendered` non-empty. Walking them in order, each is appended
-/// until appending one would take the parts past [`BUDGET`]; then the block rolls over:
-/// the first utterance, a marker counting the utterances left out, then the most recent
-/// ones, the one being appended among them, that fit in half the budget. The walk goes on
-/// appending from there.
-fn rolled(rendered: &[String]) -> Vec<String> {
-    let size = |part: &String| part.chars().count();
-    let mut out = vec![rendered[0].clone()];
-    let mut used = size(&rendered[0]);
-    for (index, part) in rendered.iter().enumerate().skip(1) {
-        if used + size(part) <= BUDGET {
-            used += size(part);
-            out.push(part.clone());
-            continue;
-        }
-        // The most recent utterances that fit in half the budget, back from this one;
-        // this one is kept whatever its size.
-        let mut start = index;
-        let mut kept = size(part);
-        while start > 1 && kept + size(&rendered[start - 1]) <= BUDGET / 2 {
-            start -= 1;
-            kept += size(&rendered[start]);
-        }
-        out.truncate(1);
-        used = size(&rendered[0]) + kept;
-        let left_out = start - 1;
-        if left_out > 0 {
-            let marker = marker(left_out);
-            used += size(&marker);
-            out.push(marker);
-        }
-        out.extend(rendered[start..=index].iter().cloned());
-    }
-    out
+/// One utterance as its part: its text between an open and a close tag that name its
+/// writer and carry the session's tag id.
+fn render(utterance: &Utterance, id: &str) -> String {
+    let tag = match &utterance.speaker {
+        Speaker::Operator => format!("operator id=\"{id}\""),
+        Speaker::Supervisor(agent) => format!("supervisor agent=\"{agent}\" id=\"{id}\""),
+        Speaker::Agent => format!("agent-text id=\"{id}\""),
+    };
+    format!("<{tag}>\n{}\n</{tag}>\n\n", escaped(&utterance.text))
 }
 
-/// The line that stands for the utterances a rollover left out.
-fn marker(left_out: usize) -> String {
-    format!("[… {left_out} earlier turns left out …]\n\n")
-}
-
-/// One utterance as its part: the end of the session's text it answers, when there is
-/// one, then who said it and what they said.
-fn render(utterance: &Utterance) -> String {
-    let mut out = String::new();
-    if let Some(answers) = &utterance.answers {
-        out.push_str("[the session had just written]\n");
-        out.push_str(answers);
-        out.push('\n');
+/// `text` with every `<` that starts one of the [`TAG_NAMES`], opening or closing and in
+/// any letter case, replaced by [`ESCAPED_ANGLE`], so nothing a message contains reads
+/// as the end of that message or the start of another. The rest of the text is
+/// unchanged.
+fn escaped(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('<') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let name = after.strip_prefix('/').unwrap_or(after);
+        let opens_a_tag = TAG_NAMES.iter().any(|tag| {
+            name.get(..tag.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(tag))
+        });
+        out.push(if opens_a_tag { ESCAPED_ANGLE } else { '<' });
+        rest = after;
     }
-    match &utterance.speaker {
-        Speaker::Operator => out.push_str("Operator:\n"),
-        Speaker::Session(id) => out.push_str(&format!("Supervising session `{id}`:\n")),
-    }
-    out.push_str(&utterance.text);
-    out.push_str("\n\n");
+    out.push_str(rest);
     out
 }
 

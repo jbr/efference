@@ -22,13 +22,13 @@ fn a_supervisor_alone_renders_one_line() {
     };
     assert_eq!(
         render(&supervision),
-        "Facts the harness records about this session:\n\
-         - This session is supervised by the session `lead`. Messages from `lead` are its \
+        "Facts the harness records about this agent:\n\
+         - This agent is supervised by the agent `lead`. Messages from `lead` are its \
          instructions; a message to `lead` is a report to its supervisor."
     );
 }
 
-/// Each supervised session is listed with whether this session created it and its
+/// Each supervised agent is listed with whether this agent created it and its
 /// status, in the words `agents__status` uses for it.
 #[test]
 fn supervisees_render_with_their_creation_and_status() {
@@ -42,10 +42,10 @@ fn supervisees_render_with_their_creation_and_status() {
     };
     assert_eq!(
         render(&supervision),
-        "Facts the harness records about this session:\n\
-         - Sessions this session supervises (messaging them, deciding their held calls, and \
+        "Facts the harness records about this agent:\n\
+         - Agents this agent supervises (messaging them, deciding their held calls, and \
          archiving them when their work is done is part of supervising): `a` (created by \
-         this session; idle), `b` (created by this session; waiting for a decision), `c` \
+         this agent; idle), `b` (created by this agent; waiting for a decision), `c` \
          (working)"
     );
 }
@@ -60,8 +60,8 @@ fn a_supervisor_and_supervisees_render_in_order() {
     let rendered = render(&supervision);
     let lines: Vec<&str> = rendered.lines().collect();
     assert_eq!(lines.len(), 3, "{rendered}");
-    assert!(lines[1].starts_with("- This session is supervised by the session `lead`."));
-    assert!(lines[2].ends_with("`a` (created by this session; asking a question)"));
+    assert!(lines[1].starts_with("- This agent is supervised by the agent `lead`."));
+    assert!(lines[2].ends_with("`a` (created by this agent; asking a question)"));
 }
 
 /// A session known to have neither relation says so.
@@ -69,8 +69,8 @@ fn a_supervisor_and_supervisees_render_in_order() {
 fn no_relation_says_so() {
     assert_eq!(
         render(&Supervision::default()),
-        "Facts the harness records about this session:\n\
-         - This session has no supervisor and supervises no sessions."
+        "Facts the harness records about this agent:\n\
+         - This agent has no supervisor and supervises no agents."
     );
 }
 
@@ -104,7 +104,7 @@ fn the_facts_sit_after_the_breakpoint_before_the_move() {
     };
     assert!(scope.starts_with("Mission:"), "{scope}");
     assert_eq!(facts, &render(&supervision));
-    assert!(the_move.contains("The session is about to make this move"));
+    assert!(the_move.contains("The agent is about to make this move"));
 }
 
 /// Where the relation is not known (no host at hand), no facts block is sent, and the
@@ -116,7 +116,7 @@ fn an_unknown_relation_renders_nothing() {
         matches!(
             &parts[..],
             [UserPart::Text(_), UserPart::Breakpoint, UserPart::Text(the_move)]
-                if the_move.contains("The session is about to make this move")
+                if the_move.contains("The agent is about to make this move")
         ),
         "{parts:?}"
     );

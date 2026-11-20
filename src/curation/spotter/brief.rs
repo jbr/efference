@@ -1,29 +1,10 @@
 //! A structured tool's brief as the spotter reads it (docs/permissions.md): where the
 //! tool came from, what it says it does, what it guarantees for every input, and what it
-//! accepts.
+//! accepts, each whole: a clipped schema can hide the description of an argument the
+//! call uses.
 
 use crate::tools::ToolBrief;
 use mcplease::types::Tool as ToolDefinition;
-
-/// How much of a description and of an input schema ride into the move block. A
-/// verbose server (or a schema with a large enum) would otherwise push the fresh
-/// tail past the useful signal and pay for it on every gated call. Clipped at a
-/// char boundary, with the clip marked so a truncated schema is never mistaken for
-/// the whole one.
-pub(super) const DESCRIPTION_BUDGET: usize = 1200;
-pub(super) const SCHEMA_BUDGET: usize = 2000;
-
-/// Clip to `max` bytes at a char boundary, marking the clip.
-pub(super) fn clip(text: &str, max: usize) -> String {
-    if text.len() <= max {
-        return text.to_string();
-    }
-    let mut end = max;
-    while end > 0 && !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}\n… (truncated)", &text[..end])
-}
 
 /// Describe the tool a structured move would call: where it came from, what it says
 /// it does, what it guarantees for every input, and what it accepts.
@@ -58,10 +39,7 @@ pub(super) fn render_brief(display: &str, brief: &ToolBrief<'_>) -> String {
         .map(str::trim)
         .filter(|d| !d.is_empty())
     {
-        Some(description) => s.push_str(&format!(
-            "\nWhat it says it does:\n{}\n",
-            clip(description, DESCRIPTION_BUDGET)
-        )),
+        Some(description) => s.push_str(&format!("\nWhat it says it does:\n{description}\n")),
         None => s.push_str("\nIt carries no description.\n"),
     }
 
@@ -78,10 +56,7 @@ pub(super) fn render_brief(display: &str, brief: &ToolBrief<'_>) -> String {
 
     let schema = serde_json::to_string_pretty(&definition.input_schema)
         .unwrap_or_else(|_| definition.input_schema.to_string());
-    s.push_str(&format!(
-        "\nWhat it accepts:\n{}\n",
-        clip(&schema, SCHEMA_BUDGET)
-    ));
+    s.push_str(&format!("\nWhat it accepts:\n{schema}\n"));
     s
 }
 

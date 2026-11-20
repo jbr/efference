@@ -2,7 +2,7 @@ use super::*;
 use crate::config::policy::Directories;
 use crate::inference::api::Endpoint;
 use crate::record::log::Provider;
-use crate::record::utterances::{Speaker, Utterance};
+use crate::record::utterances::utterances;
 
 /// The preview is the request `assess` sends: the persona, then one user turn of the
 /// scope block, the utterances and the move, each block ending at its breakpoint.
@@ -13,7 +13,13 @@ fn the_preview_is_the_persona_and_the_assessed_turn() {
         .with_scope("tidy the build")
         .build();
     let call = ToolCall::new(BASH, "x", json!({ "command": "cargo clean" }));
-    let said = [Utterance::new(Speaker::Operator, "clean it out", None)];
+    let said = utterances(
+        "tidy",
+        &[crate::record::log::LogEntry::new(
+            0,
+            crate::record::log::Payload::user("clean it out"),
+        )],
+    );
     let circumstances = Circumstances::default().with_utterances(Some(&said));
     let dirs = Directories::at(Path::new("/proj"));
     let (persona, turns) = preview_request(&role, &call, &circumstances, &dirs, None);
@@ -35,7 +41,11 @@ fn the_preview_is_the_persona_and_the_assessed_turn() {
     let UserPart::Text(utterance) = &parts[3] else {
         panic!("{parts:?}")
     };
-    assert_eq!(utterance, "Operator:\nclean it out\n\n");
+    let id = &said.id;
+    assert_eq!(
+        utterance,
+        &format!("<operator id=\"{id}\">\nclean it out\n</operator id=\"{id}\">\n\n")
+    );
     let Some(UserPart::Text(fresh)) = parts.last() else {
         panic!("{parts:?}")
     };

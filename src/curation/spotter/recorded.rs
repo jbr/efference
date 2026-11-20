@@ -20,7 +20,7 @@ use crate::protocol::transcript::Handle;
 use crate::record::log::{
     CallId, ConfigChange, EditState, LogEntry, Payload, Seq, Spot, Telemetry, ToolCall,
 };
-use crate::record::utterances::{Utterance, utterances};
+use crate::record::utterances::{Utterances, utterances};
 use crate::tools::ToolBrief;
 
 use super::Circumstances;
@@ -40,8 +40,8 @@ pub struct RecordedMove {
     /// never spotted, the first later entry about the call. `None` when no later entry
     /// is about it, and the log as it ends was read.
     pub cut: Option<Seq>,
-    /// What was said in the session before the cut.
-    pub utterances: Vec<Utterance>,
+    /// What was written in the session before the cut.
+    pub utterances: Utterances,
     /// The consented calls before the cut, oldest first; empty for a bound leaf, whose
     /// history is the leaf session's.
     pub precedents: Vec<ToolCall>,
@@ -65,8 +65,10 @@ impl RecordedMove {
     /// with its verdict when it has one, and as it stood before its first later entry
     /// when it was never spotted. `held` reads another session's log by id, to follow an
     /// allowing `agents__decide` to the leaf it authorizes ([`held_in`] reads them from
-    /// a project's session base); `None` when that log is not at hand.
+    /// a project's session base); `None` when that log is not at hand. `session` is the
+    /// session's id, which the utterances' tag id is derived from.
     pub fn find(
+        session: &str,
         entries: &[LogEntry],
         seq: Option<Handle>,
         call: Option<&str>,
@@ -142,7 +144,7 @@ impl RecordedMove {
                 _ => None,
             }),
             cut: cut_at.map(|at| entries[at].seq),
-            utterances: utterances(before),
+            utterances: utterances(session, before),
             // A bound leaf's history is the leaf session's, so the loop passes it none
             // (docs/permissions.md).
             precedents: match bound {

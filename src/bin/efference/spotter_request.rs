@@ -72,6 +72,7 @@ pub(crate) fn rebuild(
             )
         })?;
     let recorded = RecordedMove::find(
+        &session,
         &recording.entries,
         seq,
         call,

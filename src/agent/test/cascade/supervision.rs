@@ -251,7 +251,6 @@ async fn the_spotter_is_handed_the_callers_utterances() {
     let expected = vec![crate::record::utterances::Utterance::new(
         crate::record::utterances::Speaker::Operator,
         "open the gallery in Playwright",
-        None,
     )];
     assert_eq!(seen[0].3.as_ref(), Some(&expected), "an ordinary move");
     assert_eq!(seen[1].3.as_ref(), Some(&expected), "a bound leaf");

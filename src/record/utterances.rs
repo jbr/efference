@@ -1,17 +1,18 @@
-//! What the operator, and any session supervising this one, said in a session, folded
-//! from its log: the prose spotter's account of the session (docs/permissions.md).
+//! What was said in a session, folded from its log: the prose spotter's account of the
+//! session's conversation (docs/permissions.md).
 //!
-//! An utterance is a person's or a client's words: a `User` entry, or the reply to an
-//! `ask`. Each carries the end of the session's own text it answers, so a short reply
-//! has its referent. A `User` entry the harness wrote is left out: the kickoff a
-//! `first-turn` config submits, a hand-off brief (written by the predecessor session),
-//! and a redirect the loop's own permission review wrote. The fold reads the log alone,
-//! in order, and an utterance depends only on the entries before it, so appending to a
-//! log only ever appends to its utterances.
+//! An utterance is one message, whole, with its writer: a `User` entry a person or a
+//! client sent, the reply to an `ask`, or the prose of one of the agent's own replies
+//! with the question of any `ask` it made. A `User` entry the harness wrote is left out:
+//! the kickoff a `first-turn` config submits, a hand-off brief (written by the
+//! predecessor session), and a redirect the loop's own permission review wrote. The fold
+//! reads the log alone, in order, and an utterance depends only on the entries before
+//! it, so appending to a log only ever appends to its utterances.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use serde_json::Value;
+use sha2::Digest;
 
 use crate::record::log::{
     Approval, CallId, ContentBlock, LogEntry, Payload, RawResult, Telemetry, UserContent,
@@ -19,66 +20,61 @@ use crate::record::log::{
 use crate::record::names::sources;
 use crate::record::names::tools::ASK;
 
-/// How much of an utterance's text is kept: its first this-many characters.
-pub const TEXT_CLIP: usize = 1500;
-
-/// How much of the session's text an utterance answers is kept: its last this-many
-/// characters.
-pub const ANSWERS_CLIP: usize = 1200;
-
-/// Who said an utterance.
+/// Who wrote an utterance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Speaker {
     /// A person or client: no source, `web`, or `mcp[<name>]`.
     Operator,
-    /// Another session, by id: a turn whose source is `session[<id>]`, which the
-    /// spotter reads as the session supervising this one.
-    Session(String),
+    /// Another session's agent, by id: a turn whose source is `session[<id>]`, which the
+    /// spotter reads as the agent supervising this one.
+    Supervisor(String),
+    /// The session's own agent: the prose of one of its replies.
+    Agent,
 }
 
 impl Speaker {
-    /// The speaker a `source` names.
+    /// The speaker a `source` names, for an entry a submission produced.
     fn of(source: Option<&str>) -> Self {
         match source.and_then(sources::source_session) {
-            Some(id) => Self::Session(id.to_string()),
+            Some(id) => Self::Supervisor(id.to_string()),
             None => Self::Operator,
         }
     }
 }
 
-/// One thing the operator or a supervising session said, clipped.
+/// One message of the conversation, whole.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Utterance {
     pub speaker: Speaker,
-    /// What was said: its first [`TEXT_CLIP`] characters, with ` …` appended when
-    /// clipped.
+    /// What was written, trimmed.
     pub text: String,
-    /// The end of the session's text this answers — the prose of the session's last
-    /// reply since the previous utterance, or the question an `ask` reply answers —
-    /// as its last [`ANSWERS_CLIP`] characters, with `… ` prepended when clipped.
-    /// `None` when the session wrote nothing since the previous utterance.
-    pub answers: Option<String>,
 }
 
 impl Utterance {
-    /// `text` by `speaker`, answering `answers`, each clipped.
-    pub fn new(speaker: Speaker, text: &str, answers: Option<&str>) -> Self {
+    /// `text` by `speaker`, trimmed.
+    pub fn new(speaker: Speaker, text: &str) -> Self {
         Self {
             speaker,
-            text: clip_head(text, TEXT_CLIP),
-            answers: answers.map(|answers| clip_tail(answers, ANSWERS_CLIP)),
+            text: text.trim().to_string(),
         }
     }
 }
 
-/// The utterances in `entries`, oldest first.
-pub fn utterances(entries: &[LogEntry]) -> Vec<Utterance> {
-    let mut out = Vec::new();
-    // The prose of the session's last reply since the previous utterance.
-    let mut answers: Option<String> = None;
-    // The question of each `ask` call not yet answered, by call id. Looked up, never
-    // iterated, so its order does not reach the output.
-    let mut asks: HashMap<CallId, String> = HashMap::new();
+/// A session's utterances and the id the spotter's block tags them with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Utterances {
+    /// One value per session ([`tag_id`]): every tag around an utterance carries it.
+    pub id: String,
+    /// The utterances, oldest first.
+    pub said: Vec<Utterance>,
+}
+
+/// The utterances in `entries`, the log of the session `session`, oldest first.
+pub fn utterances(session: &str, entries: &[LogEntry]) -> Utterances {
+    let mut said = Vec::new();
+    // The `ask` calls made so far, by call id: a submitted result for one is a reply.
+    // Looked up, never iterated, so its order does not reach the output.
+    let mut asks: HashSet<CallId> = HashSet::new();
     // The messages the permission review redirected with, in the order decided: each is
     // the text of a user turn the loop appends after the call's result.
     let mut reviewed: Vec<&str> = Vec::new();
@@ -88,20 +84,22 @@ pub fn utterances(entries: &[LogEntry]) -> Vec<Utterance> {
                 output,
                 excluded: None,
             } => {
-                let prose = output.text().join(" ");
-                let prose = prose.trim();
-                if !prose.is_empty() {
-                    answers = Some(prose.to_string());
-                }
+                let mut text: Vec<String> = output
+                    .text()
+                    .into_iter()
+                    .map(|text| text.trim().to_string())
+                    .collect();
                 for call in output.tool_calls().unwrap_or_default() {
-                    let question = call.input.get("question").and_then(Value::as_str);
-                    if call.name == ASK
-                        && let Some(question) = question
-                    {
-                        let question = question.trim().to_string();
-                        asks.insert(call.id, question);
+                    if call.name != ASK {
+                        continue;
                     }
+                    if let Some(question) = call.input.get("question").and_then(Value::as_str) {
+                        text.push(question.trim().to_string());
+                    }
+                    asks.insert(call.id);
                 }
+                text.retain(|text| !text.is_empty());
+                push(&mut said, Speaker::Agent, &text.join("\n\n"));
             }
             Payload::Telemetry(Telemetry::GateDecision(decision)) => {
                 if let Approval::Redirect(message) = &decision.decision
@@ -114,38 +112,46 @@ pub fn utterances(entries: &[LogEntry]) -> Vec<Utterance> {
                 }
             }
             Payload::User(blocks) => {
-                if harness_written(entry, blocks, &mut reviewed) {
-                    continue;
+                if !harness_written(entry, blocks, &mut reviewed) {
+                    let speaker = Speaker::of(entry.source.as_deref());
+                    push(&mut said, speaker, &user_text(blocks));
                 }
-                let text = user_text(blocks);
-                if text.trim().is_empty() {
-                    continue;
-                }
-                out.push(Utterance::new(
-                    Speaker::of(entry.source.as_deref()),
-                    &text,
-                    answers.take().as_deref(),
-                ));
             }
             // An `ask` reply: a submission produced it. Without one the question was
             // interrupted or malformed, and nobody answered it.
-            Payload::ToolResult { call_id, raw, .. } if entry.submission_id.is_some() => {
-                if let Some(question) = asks.remove(call_id) {
-                    let text = reply_text(raw);
-                    if !text.trim().is_empty() {
-                        out.push(Utterance::new(
-                            Speaker::of(entry.source.as_deref()),
-                            &text,
-                            Some(&question),
-                        ));
-                        answers = None;
-                    }
-                }
+            Payload::ToolResult { call_id, raw, .. }
+                if entry.submission_id.is_some() && asks.remove(call_id) =>
+            {
+                let speaker = Speaker::of(entry.source.as_deref());
+                push(&mut said, speaker, &reply_text(raw));
             }
             _ => {}
         }
     }
-    out
+    Utterances {
+        id: tag_id(session, entries),
+        said,
+    }
+}
+
+/// Append `text` by `speaker`, unless it is blank.
+fn push(said: &mut Vec<Utterance>, speaker: Speaker, text: &str) {
+    if !text.trim().is_empty() {
+        said.push(Utterance::new(speaker, text));
+    }
+}
+
+/// The id a session's utterance tags carry: the first eight hex digits of a SHA-256 over
+/// the session's id and the time its log's first entry was written. Neither changes once
+/// the log has an entry, so every spotter call in the session renders the same id, a
+/// host restart included, and two sessions render different ones.
+fn tag_id(session: &str, entries: &[LogEntry]) -> String {
+    let first = entries.first().map_or(0, |entry| entry.at.0);
+    let digest = sha2::Sha256::digest(format!("{session}\n{first}").as_bytes());
+    digest[..4]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Whether a `User` entry is one the harness wrote rather than a person or client: the
@@ -184,7 +190,7 @@ fn user_text(blocks: &[ContentBlock]) -> String {
         })
         .filter(|text| !text.is_empty())
         .collect();
-    parts.join(" ")
+    parts.join("\n\n")
 }
 
 /// An `ask` reply's text: the readable form of its document when it has one, which
@@ -194,29 +200,6 @@ fn reply_text(raw: &RawResult) -> String {
         Some(document) => UserContent::readable(document),
         None => raw.content.clone(),
     }
-}
-
-/// The first `max` characters of `text`, trimmed, with ` …` appended when clipped.
-fn clip_head(text: &str, max: usize) -> String {
-    let text = text.trim();
-    match text.char_indices().nth(max) {
-        Some((end, _)) => format!("{} …", &text[..end]),
-        None => text.to_string(),
-    }
-}
-
-/// The last `max` characters of `text`, trimmed, with `… ` prepended when clipped.
-fn clip_tail(text: &str, max: usize) -> String {
-    let text = text.trim();
-    let count = text.chars().count();
-    if count <= max {
-        return text.to_string();
-    }
-    let start = text
-        .char_indices()
-        .nth(count - max)
-        .map_or(0, |(start, _)| start);
-    format!("… {}", &text[start..])
 }
 
 #[cfg(test)]

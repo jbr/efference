@@ -253,13 +253,7 @@ fn proposed_move(
             .map(str::trim)
             .filter(|d| !d.is_empty())
         {
-            object.insert(
-                "tool_description".into(),
-                json!(super::super::brief::clip(
-                    description,
-                    super::super::brief::DESCRIPTION_BUDGET
-                )),
-            );
+            object.insert("tool_description".into(), json!(description));
         }
         let guarantees = super::super::brief::guarantees(definition);
         if !guarantees.is_empty() {
@@ -276,11 +270,10 @@ fn proposed_move(
         }
         object.insert(
             "tool_input_schema".into(),
-            json!(super::super::brief::clip(
-                &serde_json::to_string(&definition.input_schema)
-                    .unwrap_or_else(|_| definition.input_schema.to_string()),
-                super::super::brief::SCHEMA_BUDGET
-            )),
+            json!(
+                serde_json::to_string(&definition.input_schema)
+                    .unwrap_or_else(|_| definition.input_schema.to_string())
+            ),
         );
     }
     proposed

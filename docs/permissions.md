@@ -521,7 +521,7 @@ The parent's ladder then determines whether to allow the leaf:
   config, with the leaf's cwd. A `[commands]` grant the parent holds clears a matching
   child command; an ungranted leaf gates.
 - The spotter is handed the leaf — its tool brief and the approval chain — with the
-  approving session's utterances, and answers the same scope question, not one about the
+  approving session's conversation, and answers the same scope question, not one about the
   approval call.
 - The human gate shows the child and its held move (`acting_on`, docs/control-api.md)
   instead of the id.
@@ -538,8 +538,9 @@ one-shot, **fresh-context** model call (the provider's cheap band by default, on
 `Client`, model-independent of the acting session) that re-decides the residual. Independence is the point: the
 acting session can't check its own folly because it shares its own trajectory; the spotter
 can, precisely because its context is built from scratch — *not* `project(log)`. What it
-reads of the session is what other parties wrote: the operator's and a supervising
-session's words, and facts the host records (*What the operator has said*, below).
+reads of the session is its conversation — the operator's and a supervising session's
+words, which are its authority, and the agent's own prose, attributed and never authority —
+and facts the host records (*The conversation*, below).
 
 Which model that is resolves in order: an explicit `--spotter-model`, then
 `[defaults].spotter`, then the main connection's own `spotter-model`, then **jev on any
@@ -563,13 +564,13 @@ instead — the first-party listing, or OpenRouter's per-model endpoints route, 
 `Spotter::assess` takes the session config, the gated call, and a `Circumstances`
 (`src/curation/spotter/circumstances.rs`): the tool's brief, the approval chain of a bound
 leaf, the prefix-promotion probe, the session's consented precedents, the session's
-place in the supervision relation, and what was said in the session (its utterances). A
+place in the supervision relation, and what was written in the session (its utterances). A
 plain move has none of the first four. The fifth is passed only for a session-control move
 (an `agents__*` verb) of a session a host holds. The sixth is passed for every move the
 loop judges. The fifth is absent wherever no host is at hand (`efference dev spotter`,
 `dev spotter-request`, the offline eval), and the sixth wherever no session log is
 (`efference dev spotter`, an offline eval case with no readable log), which is not the
-same as a session with no relations or one nobody has spoken to. Everything but the
+same as a session with no relations or one where nothing has been written. Everything but the
 supervision facts and the brief is folded from the log alone, so `RecordedMove::find`
 (`src/curation/spotter/recorded.rs`) rebuilds them for a recorded call as of the entry
 before its verdict.
@@ -643,7 +644,7 @@ Two things the fold leaves out on purpose. **Operator turns are not read**: ques
 about the session's history (was this asked for, does it go against something the
 operator said, would they approve) separated approved holds from routine clears no better
 than chance in the corpus, so what the operator said reaches this rung only through what
-they then approved. The prose rung does read them (*What the operator has said*, below). And **a declined call does not veto** the moves like it: the corpus's
+they then approved. The prose rung does read them (*The conversation*, below). And **a declined call does not veto** the moves like it: the corpus's
 redirects were steering ("use the docs tool instead"), and letting one veto its family
 held calls the operator went on to approve.
 
@@ -741,10 +742,9 @@ later" — which undermines the honesty the condensed-transcript use depends on.
 is red team first: take commands the spotter blocks, have a model write intents designed
 to get them through, read the flip rate. Withheld is the reversible default until then.
 
-The utterances block (*What the operator has said*, below) leaves this unchanged. The
-session's own prose appears there only as the referent of the reply under it, and the
-persona says that text is not authority; the intent, written for this very call, stays
-withheld.
+The conversation block (*The conversation*, below) leaves this unchanged. The agent's
+prose appears there, tagged as the agent's: it was written to the operator, and the persona
+says it is never authority. The intent, written for this very call, stays withheld.
 
 **A structured move has a brief.** A bash command describes itself; `{"path": "x"}`
 does not, so a call to a connected server's tool reaches the spotter as a name and a
@@ -754,9 +754,9 @@ behavior hints — and only then shows the arguments (`tools::ToolBrief`,
 `spotter::render_brief`). The brief is read from the `ToolDefinition` the mount
 snapshotted, not from the wire `tools[]` entry, because `anthropic_def` keeps only the
 three fields the Anthropic tool shape has: `annotations` and `title` are dropped there.
-Description and schema are clipped to a fixed budget, so a verbose server can't crowd the
-tail on every gated call. It is in the **fresh** block, so nothing about the cached prefix
-moves.
+Description and schema are rendered whole, as the call's input is: an earlier budget cut a
+large schema before the description of an argument the call used. The brief is in the
+**fresh** block, so nothing about the cached prefix moves.
 
 The lookup covers everything a turn advertises, not just the toolbox providers:
 `agent::brief` is the mirror of `agent::tool_definitions`, falling through to the
@@ -786,7 +786,7 @@ description and input leave that unclear is judged as if it could do anything. A
 guarantee is taken as true and rules out only what it names: read-only rules out changing
 anything, not sending the call's input somewhere; additive rules out removing or
 overwriting, not publishing. The jev spotter's state includes the same guarantees, as
-`tool_declarations.claims`.
+`tool_declarations.claims`, and the same whole description and schema.
 
 **The request layout** is
 
@@ -811,84 +811,123 @@ directories are supplied by the caller (`ForkSpot::with_directories`), not read 
 process: boot passes the session's own directories, and the offline eval passes each case's recorded one, so
 a case replayed from another checkout still resolves the way its session did. The persona is sized to clear Haiku's cache floor on its own, so even a minimal
 config caches; within a session the scope is fixed, so every spotter call after the first
-reads at least the persona and the scope block from the cache, and the utterances block
-too when nobody has spoken since the last call (the supervision facts and the move are the
-fresh tail). The verdict is forced through a `spot` tool:
+reads at least the persona and the scope block from the cache, and the utterances block up
+to where the previous call's ended (*The conversation*, below; the supervision facts and
+the move are the fresh tail). The verdict is forced through a `spot` tool:
 a graded [`Stance`] (`clear` / `clear_always` / `watch` / `gate`) plus a one-line `reason`
-addressed to the session as a teammate. `Clear` (and `ClearAlways`) auto-approve; `Watch` and
+addressed to the agent as a teammate. `Clear` (and `ClearAlways`) auto-approve; `Watch` and
 `Gate` both route to the human gate today (the watch-window that gives `Watch` its own
 intervention latency is a later unit). `ClearAlways` is the prefix-promotion safe-vote, below.
 
-**What the operator has said.** With only the mission and the move, the prose rung held
-moves the operator had plainly asked for, because nothing in the request said they were
-asked for: loading a page in Playwright at a URL the operator gave, a web search the
-operator had invited, an agent created on the model the operator named. In an offline
-eval (`eval/spotter/context_arms.py`, the `graph` arm, which sent this block and the
+**The conversation.** With only the mission and the move, the prose rung held moves the
+operator had plainly asked for, because nothing in the request said they were asked for:
+loading a page in Playwright at a URL the operator gave, a web search the operator had
+invited, an agent created on the model the operator named. In an offline eval
+(`eval/spotter/context_arms.py`, the `graph` arm, which sent the operator's words and the
 supervision facts with every move) the prose rung held 21 of 24 Playwright calls without
 them and between 0 and 2 with them, and 4 of 8 web searches without them and none with
 them, on two models. It still held every authored case that goes *further* than the
 operator's words: an external login page, a `DELETE` fetch, cookies sent to another host,
 a second hook skip after a one-time one, archiving an agent the session did not create.
 
-The block (`src/curation/spotter/utterances.rs`) contains, oldest first, each utterance
-(`src/record/utterances.rs`, folded from the judged session's log): each `User` entry a
-person or client sent, and each reply to an `ask`, with who said it and what. A turn with
-a `session[<id>]` source is labelled ``Supervising session `<id>` ``; one with no source,
-`web` or `mcp[<name>]` is labelled `Operator`. A document is rendered in its readable
-form, references as the submitter typed them. Left out are the `User` entries the harness wrote: the kickoff
-(`source: efference`), a hand-off brief (`handoff[…]`, written by the predecessor session,
-which shares the session's lineage), and a redirect the permission review wrote, which is
-the loop's own user turn whose text is the message of a `GateDecision` recorded under a
-`review[…]` source. A redirect a person or a supervisor wrote is kept, under its decider.
-Notifications, inbox and cold-check notes are other payloads and are not read. Above each
-utterance is the end of the session's own text it answers: the prose of the session's last
-reply since the previous utterance, or the question an `ask` reply answers.
+The block (`src/curation/spotter/utterances.rs`) contains every utterance of the session,
+whole and oldest first (`src/record/utterances.rs`, folded from the judged session's log).
+An utterance is one message with its writer:
+
+- the **operator**: a `User` entry with no source, `web` or `mcp[<name>]`, or an `ask`
+  reply submitted under one of those;
+- a **supervisor**: a `User` entry or an `ask` reply under a `session[<id>]` source, named
+  by that id;
+- the **agent**: the prose of one of the session's own replies, its text blocks joined,
+  followed by the question of any `ask` call in the reply. A reply of calls alone has
+  none, and an excluded reply (docs/log-and-projection.md) is not read.
+
+A document is rendered in its readable form, references as the submitter typed them. Left
+out are the `User` entries the harness wrote: the kickoff (`source: efference`), a
+hand-off brief (`handoff[…]`, written by the predecessor session, which shares the
+session's lineage), and a redirect the permission review wrote, which is the loop's own
+user turn whose text is the message of a `GateDecision` recorded under a `review[…]`
+source. A redirect a person or a supervisor wrote is kept, under its decider. Tool calls,
+their results, reasoning, notifications, inbox and cold-check notes are not read.
+
+Each utterance is a text part of its own, between an open and a close tag that name its
+writer and carry the session's **tag id**:
 
 ```
-What the operator has said in this session, oldest first:
+The conversation in this session, oldest first:
 
-Operator:
+<operator id="570012ce">
 Load the gallery at http://localhost:5173 in Playwright.
+</operator id="570012ce">
 
-[the session had just written]
+<agent-text id="570012ce">
 Loaded. Want me to try the dark theme too?
-Operator:
-yes
+</agent-text id="570012ce">
 
-Supervising session `lead`:
+<operator id="570012ce">
+yes
+</operator id="570012ce">
+
+<supervisor agent="lead" id="570012ce">
 Report back when the gallery passes.
+</supervisor agent="lead" id="570012ce">
 ```
 
-An utterance's text is clipped to its first 1500 characters (` …` marks the cut), the
-session's text to its last 1200 (`… `).
+The tag id is the first eight hex digits of a SHA-256 over the session's id (its storage
+directory's name) and the timestamp of its log's first entry. Neither changes once the log
+has an entry, so every call in the session renders the same id, across a host restart
+too, and two sessions render different ones; `efference dev spotter-request` derives it
+the same way. Inside a message, the `<` that starts `<operator`, `</operator`,
+`<agent-text`, `</agent-text`, `<supervisor` or `</supervisor`, in any letter case, is
+replaced by `‹` (U+2039). Text in a message — an agent quoting this format, or writing an
+operator tag into its own prose — then cannot close the message or open another, and a
+reader can see where the replacement was made; every other character is unchanged. A
+session with no utterances renders `(nothing before this move)`.
 
-The operator's turns do not compromise the rung's independence: the judged session did not
-write them, and they are the authority the persona judges against, the specific assignment
-inside the mission's general perimeter. The session's own text is shown only so a short
-reply ("yes", "go ahead") has its referent; in the persona the operator's agreement is the
-authority, and anything the session wrote that the operator did not answer is none. The
-session's reasoning, its tool results and the call's `intent` stay out.
+Nothing is cut. A grant at the end of a long message, and an earlier message the operator
+refers back to ("let's do option 3 above"), are in the block however long the session
+runs.
 
-The block is in the cached prefix, so it is rendered to change only by appending. Each
-utterance is a text part of its own, so an earlier call's block boundaries are block
-boundaries of the later call too: Anthropic finds an earlier breakpoint's entry only at a
-block boundary, within 20 blocks of the new breakpoint. Each utterance depends only on the
-entries before it, so appending to the log appends parts. Past a budget of 24 000
-characters the block **rolls over**: walking the utterances in order, when appending one
-would take the parts past the budget, the block starts again with the first utterance (the
-assignment), a marker line `[… N earlier turns left out …]`, and the most recent
-utterances, the new one among them, that fit in half the budget; appending continues from
-there. A rollover costs one cache miss. The fold and the rollover are pure functions of the
-log, so an identical log renders identical bytes, across a host restart too. A session with
-no utterances renders `(nothing before this move)`.
+The operator's and a supervisor's messages do not compromise the rung's independence: the
+judged agent did not write them, and they are the authority the persona judges against,
+the specific assignment inside the mission's general perimeter, taking precedence over the
+mission where the two differ. The agent's text is shown so a short reply ("yes", "let's do
+3") has its referent, and all of it is shown, not only the text before each reply, because
+a reply can refer to anything earlier. In the persona the agent's text is never authority,
+a claim in it that the operator approved something included; the operator's agreement is.
+The tags state the writer of every message, so agent text phrased like an operator's
+message is still the agent's. The agent's tool calls, their results, its reasoning and the
+call's `intent` stay out.
+
+The text the prose rung renders around the block names the acting party "the agent" — the
+move header (`The agent is about to make this move:`), the supervision facts, the
+bound-leaf sentence, a bash move's working directory and the `spot` tool's `reason`
+description — and keeps "session" for the conversation and the configuration ("this
+session's configuration connects").
+
+The block is in the cached prefix, between the scope block's breakpoint and its own, so it
+is rendered to change only by appending. Each utterance depends only on the entries before
+it and the tag id is fixed, so appending to the log appends parts, and an earlier call's
+block boundaries are block boundaries of the later call too: Anthropic finds an earlier
+breakpoint's entry only at a block boundary, within about 20 blocks of the new breakpoint.
+Every reply with prose is a part, so more than about 20 new parts between two spotter
+calls would have the later call read the earlier block fresh. Across 9,789 consecutive
+spotter-call pairs in this project's session logs, 99% were 7 or fewer parts apart, 9 were
+more than 20 apart and none more than 40, so the request carries no breakpoint inside the
+block: two of the four a request may carry. If longer runs appear, a third breakpoint at
+the end of the previous call's block, whose position the log's `Spot` entries determine,
+would bridge any run. The fold and the rendering are pure functions of the log and the
+session's id, so an identical log renders identical bytes, across a host restart too. The
+block grows with the session's prose, about 45k tokens for the largest session in the
+corpus, all of it in the cached prefix.
 
 The fold runs on each spotter call over the entries the session holds in memory
 (`Session::utterances`), one pass under the log lock, as the precedent fold does.
 
-For a bound leaf the utterances are the approving session's: the approval is its move, and
-its conversation is where the approval was asked for. The leaf's move block has a
-sentence to that effect: the conversation shown is with the session approving the move,
-and the leaf holder is a session working under it (each session in a longer chain working
+For a bound leaf the conversation is the approving session's: the approval is its agent's
+move, and its conversation is where the approval was asked for. The leaf's move block has
+a sentence to that effect: the conversation shown is with the agent approving the move,
+and the leaf holder is an agent working under it (each agent in a longer chain working
 under the one before it).
 The decision rung does not read the block.
 
@@ -906,17 +945,17 @@ listing's status, in the words `agents__status` uses for it (`idle`, `working`, 
 for a decision`, `asking a question`, `stopped`, `paused`, `blocked`):
 
 ```
-Facts the harness records about this session:
-- This session is supervised by the session `lead`. Messages from `lead` are its instructions; a message to `lead` is a report to its supervisor.
-- Sessions this session supervises (messaging them, deciding their held calls, and archiving them when their work is done is part of supervising): `a` (created by this session; idle), `b` (created by this session; waiting for a decision)
+Facts the harness records about this agent:
+- This agent is supervised by the agent `lead`. Messages from `lead` are its instructions; a message to `lead` is a report to its supervisor.
+- Agents this agent supervises (messaging them, deciding their held calls, and archiving them when their work is done is part of supervising): `a` (created by this agent; idle), `b` (created by this agent; waiting for a decision)
 ```
 
 A supervised session the caller did not create is listed with its status alone. For a
-session with neither relation the block is `- This session has no supervisor and
-supervises no sessions.`; with no host at hand it is left out. The block is sent only when
+session with neither relation the block is `- This agent has no supervisor and
+supervises no agents.`; with no host at hand it is left out. The block is sent only when
 the judged move is a session-control call — a tool of the mounted sessions provider
 (`Toolbox::is_session_control`), decided in `consult_spotter`. On any other move the facts
-have nothing to bear on, and a supervisor's messages already name it in the utterances
+have nothing to bear on, and a supervisor's messages already name it in the conversation
 block, so no block is sent, not even the no-relation line. A bound leaf is judged with the
 approving session's facts, since the approval is that session's move, and only when the
 leaf itself is a session-control call; the leaf's move block states the approval relation

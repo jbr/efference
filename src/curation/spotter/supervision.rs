@@ -11,14 +11,15 @@
 use crate::protocol::agents::{Supervisee, Supervision};
 use crate::protocol::sessions::ListedStatus;
 
-/// The facts block for `supervision`. A session with no supervisor and no supervisees
+/// The facts block for `supervision`, which names the acting party "the agent", as the
+/// rest of the spotter's request does. A session with no supervisor and no supervisees
 /// says so, which is different from a request with no block at all: that one was built
 /// where the relation is not known.
 pub(super) fn render(supervision: &Supervision) -> String {
     let mut lines = Vec::new();
     if let Some(supervisor) = &supervision.supervisor {
         lines.push(format!(
-            "- This session is supervised by the session `{supervisor}`. Messages from \
+            "- This agent is supervised by the agent `{supervisor}`. Messages from \
              `{supervisor}` are its instructions; a message to `{supervisor}` is a report \
              to its supervisor."
         ));
@@ -26,16 +27,16 @@ pub(super) fn render(supervision: &Supervision) -> String {
     if !supervision.supervisees.is_empty() {
         let listed: Vec<String> = supervision.supervisees.iter().map(supervisee).collect();
         lines.push(format!(
-            "- Sessions this session supervises (messaging them, deciding their held \
-             calls, and archiving them when their work is done is part of supervising): {}",
+            "- Agents this agent supervises (messaging them, deciding their held calls, \
+             and archiving them when their work is done is part of supervising): {}",
             listed.join(", ")
         ));
     }
     if lines.is_empty() {
-        lines.push("- This session has no supervisor and supervises no sessions.".to_string());
+        lines.push("- This agent has no supervisor and supervises no agents.".to_string());
     }
     format!(
-        "Facts the harness records about this session:\n{}",
+        "Facts the harness records about this agent:\n{}",
         lines.join("\n")
     )
 }
@@ -44,7 +45,7 @@ pub(super) fn render(supervision: &Supervision) -> String {
 fn supervisee(supervisee: &Supervisee) -> String {
     let status = status_words(&supervisee.status);
     match supervisee.created {
-        true => format!("`{}` (created by this session; {status})", supervisee.id),
+        true => format!("`{}` (created by this agent; {status})", supervisee.id),
         false => format!("`{}` ({status})", supervisee.id),
     }
 }

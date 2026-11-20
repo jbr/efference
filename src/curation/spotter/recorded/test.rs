@@ -83,7 +83,12 @@ fn no_held(_: &str) -> Option<Vec<LogEntry>> {
 }
 
 fn texts(move_: &RecordedMove) -> Vec<&str> {
-    move_.utterances.iter().map(|u| u.text.as_str()).collect()
+    move_
+        .utterances
+        .said
+        .iter()
+        .map(|u| u.text.as_str())
+        .collect()
 }
 
 fn ids(calls: &[ToolCall]) -> Vec<&str> {
@@ -95,7 +100,8 @@ fn ids(calls: &[ToolCall]) -> Vec<&str> {
 #[test]
 fn a_verdict_rebuilds_its_call_and_what_preceded_it() {
     let log = session();
-    let found = RecordedMove::find(&log, Some(Handle::parse("6").unwrap()), None, no_held).unwrap();
+    let found =
+        RecordedMove::find("s", &log, Some(Handle::parse("6").unwrap()), None, no_held).unwrap();
     assert_eq!(found.judged, bash("b", "rm -rf target"));
     assert_eq!(found.call, found.judged);
     assert_eq!(found.cut, Some(6));
@@ -109,7 +115,7 @@ fn a_verdict_rebuilds_its_call_and_what_preceded_it() {
 
     let circumstances = found.circumstances(None);
     assert_eq!(circumstances.probe, Some("rm"));
-    assert_eq!(circumstances.utterances.map(<[_]>::len), Some(1));
+    assert_eq!(circumstances.utterances.map(|u| u.said.len()), Some(1));
     assert!(circumstances.supervision.is_none());
 }
 
@@ -118,16 +124,28 @@ fn a_verdict_rebuilds_its_call_and_what_preceded_it() {
 fn a_call_id_or_handle_names_the_same_move() {
     let log = session();
     for found in [
-        RecordedMove::find(&log, None, Some("b"), no_held).unwrap(),
-        RecordedMove::find(&log, Some(Handle::parse("5").unwrap()), None, no_held).unwrap(),
-        RecordedMove::find(&log, Some(Handle::parse("6").unwrap()), Some("b"), no_held).unwrap(),
+        RecordedMove::find("s", &log, None, Some("b"), no_held).unwrap(),
+        RecordedMove::find("s", &log, Some(Handle::parse("5").unwrap()), None, no_held).unwrap(),
+        RecordedMove::find(
+            "s",
+            &log,
+            Some(Handle::parse("6").unwrap()),
+            Some("b"),
+            no_held,
+        )
+        .unwrap(),
     ] {
         assert_eq!(found.judged.id.0, "b");
         assert_eq!(found.cut, Some(6));
         assert_eq!(texts(&found).len(), 1);
     }
-    let disagreeing =
-        RecordedMove::find(&log, Some(Handle::parse("6").unwrap()), Some("a"), no_held);
+    let disagreeing = RecordedMove::find(
+        "s",
+        &log,
+        Some(Handle::parse("6").unwrap()),
+        Some("a"),
+        no_held,
+    );
     assert!(disagreeing.is_err());
 }
 
@@ -136,8 +154,14 @@ fn a_call_id_or_handle_names_the_same_move() {
 #[test]
 fn a_call_never_spotted_reads_the_log_up_to_its_start() {
     let log = session();
-    let found =
-        RecordedMove::find(&log, Some(Handle::parse("10.1").unwrap()), None, no_held).unwrap();
+    let found = RecordedMove::find(
+        "s",
+        &log,
+        Some(Handle::parse("10.1").unwrap()),
+        None,
+        no_held,
+    )
+    .unwrap();
     assert_eq!(found.judged.id.0, "c");
     assert!(found.spot.is_none());
     assert_eq!(found.cut, Some(11));
@@ -152,8 +176,14 @@ fn a_call_never_spotted_reads_the_log_up_to_its_start() {
     assert_eq!(found.probe(), None);
 
     // The second call of the same entry has no later entry at all: the whole log.
-    let last =
-        RecordedMove::find(&log, Some(Handle::parse("10.2").unwrap()), None, no_held).unwrap();
+    let last = RecordedMove::find(
+        "s",
+        &log,
+        Some(Handle::parse("10.2").unwrap()),
+        None,
+        no_held,
+    )
+    .unwrap();
     assert_eq!(last.judged.id.0, "d");
     assert_eq!(last.cut, None);
 }
@@ -169,7 +199,8 @@ fn the_config_leaves_out_what_was_granted_after_the_move() {
         .with_path("/later", true, true)
         .with_scope("work here")
         .build();
-    let found = RecordedMove::find(&log, Some(Handle::parse("6").unwrap()), None, no_held).unwrap();
+    let found =
+        RecordedMove::find("s", &log, Some(Handle::parse("6").unwrap()), None, no_held).unwrap();
     let (role, notes) = found.config(&file);
     let keys: Vec<&str> = role.paths.keys().map(String::as_str).collect();
     assert_eq!(keys, [".", "../other"]);
@@ -178,7 +209,7 @@ fn the_config_leaves_out_what_was_granted_after_the_move() {
     assert!(notes[0].contains("`/later`"), "{notes:?}");
 
     // At the later call, the grant had been made.
-    let later = RecordedMove::find(&log, None, Some("c"), no_held).unwrap();
+    let later = RecordedMove::find("s", &log, None, Some("c"), no_held).unwrap();
     let (role, notes) = later.config(&file);
     assert!(role.paths.contains_key("/later"));
     assert!(notes.is_empty(), "{notes:?}");
@@ -202,7 +233,8 @@ fn an_allowing_decision_is_judged_as_its_leaf() {
     ];
     let child = vec![assistant(3, vec![bash("x", "git push")])];
     let held = |id: &str| (id == "child").then(|| child.clone());
-    let found = RecordedMove::find(&log, Some(Handle::parse("4").unwrap()), None, held).unwrap();
+    let found =
+        RecordedMove::find("s", &log, Some(Handle::parse("4").unwrap()), None, held).unwrap();
     assert_eq!(found.call, decide);
     assert_eq!(found.judged, bash("p1", "git push"));
     assert_eq!(found.chain, ["child"]);
@@ -211,7 +243,7 @@ fn an_allowing_decision_is_judged_as_its_leaf() {
 
     // Without the child's log, the decision itself stands in, and the notes say so.
     let unread =
-        RecordedMove::find(&log, Some(Handle::parse("4").unwrap()), None, no_held).unwrap();
+        RecordedMove::find("s", &log, Some(Handle::parse("4").unwrap()), None, no_held).unwrap();
     assert_eq!(unread.judged, decide);
     assert!(unread.chain.is_empty());
     assert_eq!(unread.notes.len(), 1, "{:?}", unread.notes);
