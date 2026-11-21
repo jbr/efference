@@ -202,7 +202,7 @@ fn the_report_names_the_label_and_the_disagreement() {
 
 #[tokio::test]
 async fn an_empty_corpus_builds_both_arms_and_spends_nothing() {
-    // Exercises the runner's arm construction — the clone that carries everything but the
+    // Exercises the runner's arm construction — the clone that matches the base in everything but the
     // effort — without a request, since no case means no draw.
     let endpoint = crate::inference::api::Endpoint::from_credentials(
         crate::record::log::Provider::Anthropic,

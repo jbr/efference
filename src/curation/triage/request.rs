@@ -16,8 +16,8 @@ pub(super) const TRIAGE_ATTEMPTS: usize = 3;
 pub const TRIAGE_RESTARTS: usize = 3;
 
 /// How long a triage keeps trying, and which reasoning its requests carry
-/// (docs/triage.md). The triage waits failures out, because its results reach the agent
-/// only through a verdict; the asides — the idle triage and the title — give up early,
+/// (docs/triage.md). The triage waits failures out, because its results are shown to the
+/// agent only through a verdict; the asides — the idle triage and the title — give up early,
 /// because each has a harmless fallback and the loop is blocked on it meanwhile.
 #[derive(Clone, Copy)]
 pub(super) struct Patience {

@@ -14,8 +14,8 @@ use tokio::time::{Duration, Instant};
 const EVIDENCE_WINDOW: Duration = Duration::from_secs(240);
 
 /// The reasoning setting a separate-model result triage request was sent with
-/// (docs/triage.md). The discriminants order the fallback sequence: a route
-/// remembers the furthest setting a completed fallback reached.
+/// (docs/triage.md). The discriminants order the fallback sequence: the floor stored
+/// for a route is the furthest setting a completed fallback has used.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TriageReasoning {
     /// The model's explicit Messages spelling of thinking off.
@@ -27,8 +27,8 @@ pub(crate) enum TriageReasoning {
 }
 
 impl TriageReasoning {
-    /// The next setting to try when `error` is the provider refusing this one, by an
-    /// HTTP 400 that names it. `None` for any other error.
+    /// The next setting to try when `error` is an HTTP 400 whose message names this
+    /// setting. `None` for any other error.
     pub(super) fn rejection(self, error: &Error) -> Option<Self> {
         if error_status(error) != Some(400) {
             return None;
@@ -67,7 +67,7 @@ pub(crate) enum SharedEffort {
 }
 
 /// What shared result triage has established about effort `low` on this client's route
-/// (docs/triage.md). Only a contrast reaches [`Self::Inherit`]: a `low` read short of the
+/// (docs/triage.md). [`Self::Inherit`] requires a contrast: a `low` read short of the
 /// turn's prefix, a control at the inherited effort that reads it, and a second short
 /// `low` read. A short control means the misses have another cause, so the count restarts.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -131,8 +131,8 @@ impl Client {
             // After off was refused, do not send the same field under a forced choice.
             client.thinking.off = ThinkingOff::Omit;
         }
-        // Even the forced-choice fallback must not ask the gateway to disable
-        // reasoning on a model whose thinking control is omitted.
+        // Even a forced-choice fallback request must not include the gateway's switch
+        // that disables reasoning on a model whose thinking control is omitted.
         client.foreground_triage = Some(mode);
         client
     }
@@ -230,7 +230,7 @@ impl Client {
     }
 
     /// Send a shared result triage (docs/triage.md): the agent's own request with only
-    /// the effort changed to `low`, unless this route's evidence says `low` moves its
+    /// the effort changed to `low`, unless this route's evidence shows that `low` moves its
     /// cache. `effort` is the triage's choice, made on its first request and kept for
     /// the rest of that triage's requests; only the first request's read is evidence,
     /// since a later attempt reads the fork's own tail.

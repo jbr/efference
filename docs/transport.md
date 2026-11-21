@@ -226,7 +226,7 @@ never elided today — that's a deferred generalization of the triage model
 `output_config: { effort }` is the second reasoning knob, orthogonal to
 `thinking`: `thinking` is the **type** (whether and when the model thinks),
 `effort` is the **level**. It is set at boot from `--effort` or
-`[transport] effort` (the flag wins), and there is no runtime mutation path:
+`[transport] effort` (the flag takes precedence), and there is no runtime mutation path:
 changing a thinking parameter mid-session invalidates the message-tier cache on
 Anthropic, as does changing the effort level on some models, and a replayed
 thinking block's signature under a changed config is its own unanswered question.

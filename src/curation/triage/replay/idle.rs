@@ -7,7 +7,7 @@
 //! full `tools[]`, `tool_choice: auto`, the message shape and the retry policy are the ones
 //! a live session would send. Only the effort on the client differs between the arms.
 //!
-//! # What the recorded log cannot answer
+//! # What the recorded log does not contain
 //!
 //! [`HISTORICAL_LIMITS`] is the short version. In detail:
 //!
@@ -37,7 +37,7 @@ use crate::inference::api::{Client, RequestUsage};
 use crate::record::log::{Disposition, Origin, Seq};
 
 /// The headline of what a session log cannot supply, for a caller's `--help` or report
-/// header. The module docs carry the reasoning.
+/// header. The module docs have the reasoning.
 pub const HISTORICAL_LIMITS: &str = "the main agent's effort is not logged, an idle triage's \
 verdict is one sample with no ground truth, and the process tails it saw are never logged — \
 so the historical log cannot supply either arm or a baseline; these cases are labelled \
@@ -67,7 +67,7 @@ pub struct IdleAttempt {
 
 impl IdleAttempt {
     /// The live loop's rule (docs/inbox.md): a trajectory starts iff an **inbox**
-    /// disposition pins, and one that pinned nothing returns to idle. A background `Pin`
+    /// disposition is a pin; with no pin the session stays idle. A background `Pin`
     /// snapshots a running tail onto the wire but starts no trajectory, so it is not a wake
     /// here either.
     pub fn wakes(&self) -> bool {
@@ -166,8 +166,8 @@ pub async fn idle_attempt(agent: &Client, tools: &[Value], case: &IdleCase) -> I
 
 // ─────────────────────────────── scoring ───────────────────────────────
 
-/// One arm's draws on one case. `matches_label` counts usable verdicts that reached the
-/// labelled decision; a failed parse is `no_verdicts`, not a dismissal, because the event is
+/// One arm's draws on one case. `matches_label` counts usable verdicts whose decision
+/// matched the label; a failed parse is `no_verdicts`, not a dismissal, because the event is
 /// left in the inbox rather than cleared.
 #[derive(Default, Clone)]
 pub struct IdleArmTally {
@@ -204,7 +204,7 @@ impl IdleArmTally {
         }
     }
 
-    /// The decision this arm reached most often, over usable verdicts only. `None` on a tie
+    /// The most frequent decision among this arm's draws, over usable verdicts only. `None` on a tie
     /// or with no usable verdict.
     pub fn modal_wake(&self) -> Option<bool> {
         let usable = self.draws - self.no_verdicts;
@@ -242,7 +242,7 @@ pub struct IdleCaseReport {
     pub rationale: &'static str,
     pub default: IdleArmTally,
     pub lower: IdleArmTally,
-    /// The arms reached different modal decisions.
+    /// The arms' modal decisions differ.
     pub disagrees: bool,
 }
 
@@ -340,7 +340,7 @@ fn case_report(
 /// "the provider default", or set the level the session was declared to run at.
 ///
 /// `lower_effort: None` strips the base client's effort: a real arm only when the base
-/// carries one. With a base that has none the two arms are identical, and the run measures
+/// has one. With a base that has none the two arms are identical, and the run measures
 /// nothing.
 pub async fn compare_idle_efforts(
     agent: &Client,

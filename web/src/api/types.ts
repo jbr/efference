@@ -3697,7 +3697,7 @@ export interface Triage {
   /**
    * The triage's own reasoning — the text of every thinking block the fork emitted,
    * one entry per attempt that produced any, in attempt order (docs/triage.md).
-   * Only attempts that emit thinking contribute text. Signatures are not kept:
+   * An attempt with no thinking blocks adds no entry. Signatures are not kept:
    * this is a record, not a replay input —
    * the fork's transcript stays throwaway. Operator/developer observability only;
    * [`project`] never reads it, so recording it cannot move the wire.

@@ -152,7 +152,7 @@ pub struct Client {
     /// instead. Shared across clones, so the lesson is learned once per client.
     forced_choice_refused: Arc<std::sync::atomic::AtomicBool>,
     /// The furthest separate-model triage reasoning setting a completed fallback has
-    /// reached on this route (docs/triage.md). Shared across clones; reset when the
+    /// used on this route (docs/triage.md). Shared across clones; reset when the
     /// upstream changes.
     triage_reasoning_floor: Arc<std::sync::atomic::AtomicU8>,
     /// Set on a separate-model triage request's clone: the request follows the triage

@@ -88,7 +88,7 @@ fn notice(seq: Seq, source: &str, body: &str) -> ShownNotification {
 /// that should wait. Ordinary work that happens to finish is the ambiguous middle — it is
 /// deliberately absent, because a label there would be a guess.
 ///
-/// Every case carries `wake: false` on its notification, matching the live loop: must-wake
+/// Every case has `wake: false` on its notification, matching the live loop: must-wake
 /// notifications are pinned before the triage runs and never reach it as a decision.
 pub fn synthetic_cases() -> Vec<IdleCase> {
     vec![
