@@ -2,6 +2,10 @@
 
 use super::*;
 
+mod idle;
+
+pub use idle::*;
+
 /// What one un-retried triage came back with — the `triage` dev tool's measurement
 /// primitive (docs/triage.md).
 ///

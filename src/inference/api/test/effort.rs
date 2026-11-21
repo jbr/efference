@@ -6,6 +6,9 @@
 use super::*;
 use crate::record::log::RequestOrigin;
 
+mod shared_triage;
+mod triage;
+
 /// Anthropic's `GET /v1/models/{id}` declares the `thinking` types and the
 /// effort levels a model takes (docs/transport.md). Live API bodies:
 /// Haiku 5.5 takes adaptive and `disabled` and every level; Sonnet 5.5 refuses

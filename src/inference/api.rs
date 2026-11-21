@@ -634,6 +634,7 @@ mod thinking;
 
 pub use auth_value::{AuthValue, Reload, Reloaded, Reread, sync_reload};
 pub use client::{Client, KeepaliveError, SentRequest};
+pub(crate) use client::{SharedEffort, TriageReasoning};
 pub use completions::{
     encode_completions, render_completions_request_pretty, translate_completions,
 };

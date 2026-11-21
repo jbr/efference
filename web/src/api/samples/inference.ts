@@ -61,11 +61,9 @@ export const inference: {
           value: {
             auto_choice: false,
             connection: "test",
-            effort: "low",
             mode: "separate",
             model: "t",
             provider: "anthropic",
-            thinking: true,
           },
         },
         effort: { source: "request", value: "high" },

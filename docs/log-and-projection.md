@@ -821,7 +821,7 @@ the expected-bytes pin deliberately.
 | Cache write cost | **1.25× (5m TTL), 2× (1h TTL)** | base input price |
 | Cache read cost | **0.1×** | the lever |
 | Break-even | 2 requests (5m), 3 requests (1h) | |
-| Invalidation tiers | tools / system / messages | changing `tool_choice`, toggling `thinking`, adding images invalidate *system+messages* but **not** the tools cache; changing a tool def or the model invalidates everything |
+| Invalidation tiers | tools / system / messages | changing `tool_choice`, toggling `thinking`, adding images invalidate *system+messages* but **not** the tools cache; changing a tool def or the model invalidates everything. Changing the effective effort level misses the cache on Opus 4.5–5, Sonnet 4.6 and Sonnet 5 and not on Haiku/Sonnet/Opus 5.5 or Fable 5.2 (probed 2026-11-20, [triage.md](triage.md)) |
 | Concurrent timing | a cache entry is readable only **after the first response begins streaming** | N parallel identical-prefix requests all pay full price — fire one, await first token, then fan out |
 | Determinism hazard | `HashMap` JSON key order is per-process random | serialize tool-use inputs via `BTreeMap` or `serde_json` `preserve_order`; a non-stable projection silently kills caching |
 | Mid-conversation system msgs | **Opus 4.8**: append `{role:"system"}` to `messages[]` | does **not** invalidate the cached prefix; a non-spoofable operator channel — the natural merge point for ambient/operator events |
@@ -904,10 +904,11 @@ than the raw output or the triage's ask. The marker is a write instruction, not
 content, so the two requests differ only in where it sits.
 
 One request shape is used with this marker everywhere: agent turns, triages, and
-keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking policy
-([triage.md](triage.md), the shared envelope), so a session's
-requests read and extend a **single cache lineage** rather than keying one per
-request shape.
+keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking
+([triage.md](triage.md), the shared envelope), so a session's requests read and
+extend a **single cache lineage** rather than keying one per request shape. A
+shared result triage may send effort `low` where the agent's differs, only while
+its reads show the route's cache does not key on the level ([triage.md](triage.md)).
 
 ---
 

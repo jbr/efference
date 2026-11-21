@@ -56,7 +56,14 @@ impl Client {
             .send(turns, tools, tool_choice, None, &mut on_delta)
             .await
         {
-            Err(e) if is_request_rejection(&e) => e,
+            Err(e)
+                if is_request_rejection(&e)
+                    && !self
+                        .foreground_triage
+                        .is_some_and(|mode| mode.rejection(&e).is_some()) =>
+            {
+                e
+            }
             answered => return answered,
         };
         match self
@@ -120,6 +127,7 @@ impl Client {
                     tools: tools.to_vec(),
                     choice: ToolChoice::auto(),
                     unforced: true,
+                    triage_reasoning: None,
                 }
             }
             _ => SentRequest::new(turns, tools.to_vec(), choice),
@@ -139,6 +147,7 @@ pub struct SentRequest {
     /// Sent by the forced-choice fallback: `choice` is the `auto` it went out with, and
     /// the request carried no thinking.
     pub unforced: bool,
+    pub(crate) triage_reasoning: Option<TriageReasoning>,
 }
 
 impl SentRequest {
@@ -149,6 +158,7 @@ impl SentRequest {
             tools,
             choice,
             unforced: false,
+            triage_reasoning: None,
         }
     }
 

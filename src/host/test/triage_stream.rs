@@ -5,7 +5,9 @@
 use super::runtime::{boot, started, workdir};
 use super::*;
 use crate::curation::triage::Triager;
-use crate::inference::testing::upstream::{Canned, ScriptedUpstream, end_turn, events, tool_call};
+use crate::inference::testing::upstream::{
+    Canned, Request, ScriptedUpstream, end_turn, events, tool_call,
+};
 use crate::protocol::stream::StreamDelta;
 use crate::record::log::Provider;
 use crate::session::submitted::SubmittedTurn;
@@ -33,8 +35,14 @@ fn thinking_verdict() -> String {
 /// Run one turn whose single bash call is triaged on the main upstream or, with `own`,
 /// on a triage client of its own against a second upstream, and return every triage
 /// delta the stream carried as `(kind, call_ids, text)`, plus the session for log
-/// assertions.
-async fn run(own: bool) -> (Vec<(&'static str, Vec<String>, String)>, Arc<Session>) {
+/// assertions and the main upstream's request bodies.
+async fn run(
+    own: bool,
+) -> (
+    Vec<(&'static str, Vec<String>, String)>,
+    Arc<Session>,
+    Vec<Value>,
+) {
     let (main, triage) = if own {
         (
             ScriptedUpstream::new(|n| match n {
@@ -85,7 +93,8 @@ async fn run(own: bool) -> (Vec<(&'static str, Vec<String>, String)>, Arc<Sessio
             _ => {}
         }
     }
-    (seen, session)
+    let bodies = main.requests().iter().map(Request::json).collect();
+    (seen, session, bodies)
 }
 
 fn assert_streamed(seen: &[(&'static str, Vec<String>, String)], session: &Session) {
@@ -110,13 +119,18 @@ fn assert_streamed(seen: &[(&'static str, Vec<String>, String)], session: &Sessi
 /// are still on the stream as triage kinds, with the call being triaged identified.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_shared_triage_streams_its_thinking_and_text() {
-    let (seen, session) = run(false).await;
+    let (seen, session, bodies) = run(false).await;
     assert_streamed(&seen, &session);
+    // The result triage is the turn's request with the effort at `low` and the turn's
+    // thinking unchanged (docs/triage.md).
+    assert_eq!(bodies[0].get("output_config"), None, "{}", bodies[0]);
+    assert_eq!(bodies[1]["output_config"]["effort"], "low", "{}", bodies[1]);
+    assert_eq!(bodies[1].get("thinking"), bodies[0].get("thinking"));
 }
 
 /// **The separate-model triage streams too.**
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_separate_triage_streams_its_thinking_and_text() {
-    let (seen, session) = run(true).await;
+    let (seen, session, _) = run(true).await;
     assert_streamed(&seen, &session);
 }

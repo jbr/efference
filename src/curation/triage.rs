@@ -20,9 +20,11 @@
 //!   throwaway branch off the cached prefix, show the model the line-numbered raw
 //!   output + the inbox, and ask it (via the tail instruction, never a forced
 //!   `tool_choice`) to call `retain` to choose what the canonical wire keeps and which
-//!   notifications to pin. The triage sends the *same* request envelope as an agent turn —
-//!   one shared `tools[]`, `tool_choice: auto`, the same thinking policy — so both
-//!   shapes read one cache lineage (docs/triage.md, docs/log-and-projection.md).
+//!   notifications to pin. Shared triage sends the agent's own request envelope —
+//!   its `tools[]`, `tool_choice: auto`, and thinking — so it reads the agent
+//!   lineage's cache; a result triage changes only the effort, to `low`, while the
+//!   route's cache evidence shows that costs no cache read (docs/triage.md,
+//!   docs/log-and-projection.md).
 //!   A non-compliant response gets a bounded in-fork retry, then a fresh fork; an
 //!   upstream failure takes the main loop's schedule. A triage that still has no verdict
 //!   returns a [`HoldFailure`] and the loop **holds** the results — nothing reaches
@@ -228,7 +230,8 @@ pub struct InboxTriage {
 ///
 /// - [`Self::shared`] — the default. The triage borrows the agent turn's client and
 ///   `tools[]`, so it sends the agent's envelope with a different tail and reads the
-///   agent lineage's cache. Nothing the request keys a cache on differs.
+///   agent lineage's cache. A result triage sends effort `low` while the route's cache
+///   evidence allows; the idle triage sends the agent's effort (docs/triage.md).
 /// - [`Self::own`] — the triage model. The triage has its own client (its own model,
 ///   system prompt, and session key) and a `tools[]` of just the triage tools. Its
 ///   prefix is the same canonical projection, so it has its own warm lineage, but it
@@ -242,6 +245,10 @@ pub struct Triager {
     /// The triage model's client and tools when the triage runs on its own model;
     /// `None` borrows the agent turn's.
     own: Option<OwnTriage>,
+    /// Whether result triage chooses its own reasoning (docs/triage.md): true for a live
+    /// session's triager, false for a dev replay's triage model, which sends the
+    /// settings its flags spelled.
+    automatic_reasoning: bool,
 }
 
 /// The separate-model triage's request surface: everything cache-keyed that the shared
@@ -283,7 +290,10 @@ impl Triager {
 
     /// The shared-lineage triage: the agent's client and `tools[]`, borrowed per call.
     pub fn shared() -> Self {
-        Triager { own: None }
+        Triager {
+            own: None,
+            automatic_reasoning: true,
+        }
     }
 
     /// The separate-model triage over `client`. Its `tools[]` is the two triage tools —
@@ -291,6 +301,7 @@ impl Triager {
     /// lineage shares no cache with the agent turn to keep the arrays identical for.
     pub fn own(client: Client) -> Self {
         Triager {
+            automatic_reasoning: false,
             own: Some(OwnTriage {
                 client,
                 tools: vec![retain_tool(), triage_tool()],
@@ -463,7 +474,11 @@ impl Triager {
         let parsed = triage_with_retries(
             &client,
             &agent.upstream_retry(),
-            Patience::TRIAGE,
+            match (&self.own, self.automatic_reasoning) {
+                (_, false) => Patience::TRIAGE,
+                (None, true) => Patience::SHARED_RESULTS,
+                (Some(_), true) => Patience::SEPARATE_RESULTS,
+            },
             messages,
             tools,
             choice,
@@ -645,7 +660,9 @@ use validate::*;
 pub use digest_view::TriageView;
 pub use handles::{reply_only_triage, shows_rider};
 pub use primer::{TriagePrimerInput, TriagePrimerOutcome};
-pub use replay::{ReplayVerdict, TriageAttempt, triage_request};
+// The replay module's surface is a dev tool's, in full: the per-result attempt and request,
+// and the idle-triage comparison (`replay/idle.rs`).
+pub use replay::*;
 pub use request::{TRIAGE_RESTARTS, TriageFailure};
 pub use resend::SentTriage;
 pub use schema::{retain_tool, triage_tool};

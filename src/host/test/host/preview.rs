@@ -83,6 +83,8 @@ async fn a_preview_keeps_its_bytes() {
     assert_eq!(
         preview(serde_json::json!({
             "cwd": roots.0.join("one"), "connection": "test", "model": "m",
+            // The removed knobs stay in the body: a pre-removal client's request
+            // must keep decoding, and the answer no longer echoes them.
             "triage": {"mode": "separate", "model": "test/t", "thinking": true, "effort": "low"},
             "temperature": "260", "effort": "high",
         }))
@@ -90,7 +92,7 @@ async fn a_preview_keeps_its_bytes() {
         concat!(
             r#"{"effective":{"main":{"value":{"connection":"test","provider":"anthropic","model":"m"},"source":"request"},"#,
             r#""spotter":{"value":{"connection":"test","provider":"anthropic","model":"claude-haiku-4-5"},"source":"main_provider"},"#,
-            r#""triage":{"value":{"mode":"separate","connection":"test","provider":"anthropic","model":"t","thinking":true,"auto_choice":false,"effort":"low"},"source":"request"},"#,
+            r#""triage":{"value":{"mode":"separate","connection":"test","provider":"anthropic","model":"t","auto_choice":false},"source":"request"},"#,
             r#""effort":{"value":"high","source":"request"},"#,
             r#""temperature":{"value":null,"source":null}},"#,
             r#""issues":[{"field":"temperature","code":"invalid_type","message":"must be a whole number from 0 to 100"}],"worktree":false}"#

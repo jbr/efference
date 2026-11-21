@@ -357,9 +357,7 @@ async fn a_dormant_row_carries_its_recorded_selections_and_context_size() {
                 "mode": "separate",
                 "connection": "c",
                 "model": "tri",
-                "thinking": false,
                 "auto_choice": false,
-                "effort": null,
             },
         })
     );

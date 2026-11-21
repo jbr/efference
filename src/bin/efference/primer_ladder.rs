@@ -67,7 +67,7 @@ impl PrimerLadderArgs {
 /// Run the ladder against one recorded triage: the deepest triage by default, which is
 /// where a cold prefix hurts most.
 pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
-    let triage = args.triage_model();
+    let triage_model = args.triage_model();
     let PrimerLadderArgs {
         path,
         seq,
@@ -84,13 +84,8 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
     let inference = inference::resolve(
         Some(model),
         None,
-        triage.clone().map(|triage| {
-            efference::inference::TriageChoice::separate(
-                triage.model,
-                triage.thinking,
-                triage.auto_choice,
-                triage.effort,
-            )
+        triage_model.clone().map(|triage| {
+            efference::inference::TriageChoice::separate(triage.model, triage.auto_choice)
         }),
     );
     let recorded_identity = efference::record::log::recorded_inference(&entries);
@@ -143,6 +138,7 @@ pub(crate) async fn ladder(args: PrimerLadderArgs) -> CliResult {
 
     let (triager, client) = ladder_clients(
         inference,
+        triage_model.as_ref(),
         &path,
         recorded_identity,
         system,
@@ -181,6 +177,7 @@ fn emit_row(rows: &mut Vec<String>, row: String) {
 /// The own triage the ladder plants on, and the client the measuring triage runs through.
 async fn ladder_clients(
     inference: Result<efference::inference::SessionInference, efference::inference::api::Error>,
+    triage_model: Option<&TriageModel>,
     path: &Path,
     recorded_identity: Option<&efference::record::log::LoggedInference>,
     system: String,
@@ -199,7 +196,9 @@ async fn ladder_clients(
     let triage_selection = inference.triage().ok_or(
         "the ladder plants on the own triage lineage; this session resolves a shared triage",
     )?;
-    let (_, mut triage_endpoint, t) = triage_selection;
+    let (_, mut triage_endpoint, resolved) = triage_selection;
+    // The flags' override wins when given, as in the replay verb.
+    let t = triage_model.unwrap_or(resolved);
     triage_endpoint.session_id = endpoint.session_id.clone();
     let triage_system =
         efference::config::env::triage_system_prompt(&t.model, &agent_model, context_block);

@@ -57,7 +57,7 @@ triage has no result and keeps its sections ahead of its instruction.
                                     └──►  + [triaged result]                     (canonical: appended, cached)
 ```
 
-The fork's prefix hits cache; only its tail — raw output plus the extraction
+When the fork's prefix hits cache, only its tail — raw output plus the extraction
 instruction — is fresh. The canonical prefix grows monotonically and is never
 invalidated. What would otherwise be a mutation problem becomes an append problem.
 
@@ -151,16 +151,56 @@ path and a flag cannot.
 
 ## One request shape — the shared envelope
 
-The triage sends the **same request envelope as an agent turn**: the turn's full
-`tools[]` (the world tools plus the `retain`/`triage` schemas, one shared array built
-by `agent::tool_definitions`), `tool_choice: auto`, and consequently the same thinking
-policy. Nothing cache-keyed differs between the two shapes, so the fork is the same
-conversation continued with a different tail and reads the agent lineage's transcript
-cache directly. The alternative — a triage-only tools array and a forced `tool_choice` —
-keys a **second cache lineage** over the same transcript: on Anthropic the
-messages-tier cache is keyed on `tool_choice` and the thinking setting, and everywhere
-a differing tools array splits the prefix, so the fork's whole transcript re-billed at
+Shared triage sends the agent's request envelope: the turn's full `tools[]` (the world
+tools plus the `retain`/`triage` schemas, one shared array built by
+`agent::tool_definitions`), `tool_choice: auto`, and the turn's thinking. The fork is the
+same conversation continued with a different tail, and reads the agent lineage's
+transcript cache directly. A triage-only tools array or a forced `tool_choice` keys a
+**second cache lineage** over the same transcript: everywhere a differing tools array
+splits the prefix, and on Anthropic the messages-tier cache is also keyed on
+`tool_choice` and the thinking type, so the fork's whole transcript was re-billed at
 the cache-write price on every triage ([log-and-projection.md](log-and-projection.md)).
+
+**Effort is the one setting a result triage changes, and only where the cache shows it
+costs nothing.** On Anthropic the effort level keys the messages-tier cache on some
+models and not on others, and no metadata field names which (2026-11-20 probe: every
+active model, each arm a fresh ~9k-token prefix written in the turn's shape and read
+back with one setting changed). A thinking change missed on every model that accepted
+it. An effort change hit on Haiku, Sonnet and Opus 5.5 and Fable 5.2; on Opus 4.5–5,
+Sonnet 4.6 and Sonnet 5 every change between two effective levels missed, an omitted
+effort reading the same as `high`, and a non-default level counting about 100 more
+prompt tokens on Opus 4.5. So a shared result triage sends the turn's request with
+effort `low` and measures whether that costs its cache read
+(`Client::complete_shared_triage`, `src/inference/api/client/triage_effort.rs`):
+
+- **The measure.** A result triage's prompt extends the turn that made the calls, so on
+  a route where `low` does not move the cache its first request reads at least what that
+  turn left cached (read plus write); it *reads short* when it reads less. The comparison
+  is strict because the triage's marker sits before its throwaway tail
+  ([log-and-projection.md](log-and-projection.md)): on a route that `low` splits, a
+  `low` triage can still read most of the prefix from an earlier `low` triage's write.
+  Only a turn that cached something and finished under 240 seconds earlier counts
+  (under the five-minute TTL, so a prefix that expired while the tools ran is not
+  evidence), and only a triage's first request (its retries read the fork's own tail).
+  In this repo's recorded sessions, 19,477 shared triages followed a turn that cached
+  by under 240 seconds: all 477 on Anthropic models read the whole prefix, and 5.9% of
+  the rest read less, mostly in runs of one or two.
+- **The evidence** is a contrast, kept per client and route (`LowEffortEvidence`). One
+  full read at `low` settles the route as neutral for the client's lifetime, and later
+  misses are ignored. A short read at `low` sends the next shared triage at the agent's
+  effort as a control: a control that also reads short means the misses have another
+  cause, and the count restarts; a control that reads the prefix, followed by a second
+  short `low` read, settles the route on the agent's effort, recorded once as a
+  breadcrumb on that triage's `retries`. On a route where `low` splits the cache this
+  costs two short reads. A route that caches nothing produces no reads to measure and
+  stays on `low`.
+- **A refused `low`** (an HTTP 400 naming effort) is re-sent at the agent's effort in the
+  same call, and the route settles there.
+- **An agent already at `low`** sends its own request unchanged.
+
+The evidence starts over when the upstream pin changes. The idle triage and the title
+ask send the agent's settings unchanged.
+
 What forcing bought is re-bought harness-side:
 
 - **The triage schemas are static.** `retain`/`triage` are zero-argument builders; the
@@ -220,14 +260,15 @@ drops the parts of the envelope that only served the shared lineage:
   triage model needs if it is to think.
 - **Its own sticky key** (`Endpoint::for_triage`, a `-triage` suffix), for the same
   reason as the spotter's ([transport.md](transport.md)).
-- **Thinking off** (`Client::without_thinking`) unless `--triage-thinking` or
-  `--triage-effort`: the triage's reasoning is discarded with the tail, so it is latency
-  and tokens per triage. How "off" is spelled follows the model's metadata
-  (`ModelCapabilities::thinking`, [transport.md](transport.md)): `thinking: disabled`
-  where the model takes it, `between_tools` for an Anthropic model that refuses
-  `disabled`, and the field omitted where reasoning is mandatory or the source
-  declares nothing — with, on OpenRouter, `reasoning: {enabled: false}` beside it. `--triage-effort <level>` turns the model down instead
-  of off, validated against its declared levels like `--effort`.
+- **The lowest reasoning the model can be asked for**, chosen per result request
+  (`Client::complete_separate_triage`): the model's explicit Messages spelling of
+  thinking off where it has one (`disabled`, or Anthropic's `between_tools`), otherwise
+  effort `low`; an HTTP 400 naming the off setting advances to `low`, and one naming
+  effort at `low` to no effort field, the provider's default. The agent's effort is never
+  the fallback, and there is no session setting for it. A completed fallback is
+  remembered on the client and route; an unrelated error does not advance the sequence.
+  Where the keepalive re-sends a result request, it sends that request's setting. The
+  lineage is the triage model's own, so its reasoning has no agent prefix to match.
 - **A triage-sized output cap** (`TRIAGE_MAX_OUTPUT`, 16k, or the model's cap if
   smaller): a verdict is one small call, and reserving the model's whole cap against
   the window brought the overflow forward to a 66k prompt on a 131k model.
@@ -277,6 +318,15 @@ table sorts every compared result by disagreement with both notes beside it; `--
 writes every row as JSON. Per-triage judgment against the same prefix is what this
 measures; a candidate triaging from turn one would build a different prefix, and only
 a live session measures that.
+
+**Comparing shared effort.** Run `dev triage` on the same session, model and result
+sequences with `--shared-effort default` (omit effort) and again with a named level.
+Both runs use the same capability-derived settings; neither reproduces the main
+session's historical effort, which is not logged. Add `--idle-candidate-effort low`
+to a baseline run to compare labeled synthetic idle cases instead of replaying
+results. Synthetic cases measure false wakes and false non-wakes under their
+labels, not their frequency in live sessions. A replay sends one fixed effort per run;
+it does not apply the live result triage's reasoning choice or its cache evidence.
 
 The replayed request carries the inbox rider the live triage was shown: the
 notifications that had arrived by the triage's `shown_through` mark and were not resolved
@@ -629,8 +679,7 @@ the fork's audit record of it as a `Triage` entry right after (in `src/record/lo
 | `retries` | one attempt-stamped breadcrumb per non-compliant triage attempt, recovered or not — the durable compliance record (triage-scoped; rides the last `Triage` of a batch, like `inbox`) |
 | `thinking` | the text of the triage's thinking blocks, one entry per attempt that thought (triage-scoped, like `retries`) |
 
-The fork runs under the same thinking policy as an agent turn (the shared envelope above),
-so most triages think. That thinking is recorded on the `Triage` entry and **never
+When a fork emits thinking, its text is recorded on the `Triage` entry and **never
 projected** — it is what answers "why did *that* verdict happen", where replay
 (`efference dev triage`) answers "how does the fork reason about this class of result". Text
 only: a thinking block's `signature` is what the API needs to replay it, and the fork's

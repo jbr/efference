@@ -21,7 +21,7 @@ use crate::record::log::{Provider, WireDialect};
 
 /// The triage choice a session creator makes. Omission inherits the configured
 /// default; `Shared` explicitly bypasses a configured separate default; `Separate`
-/// carries the existing independent-client options.
+/// names the independent client and its tool-choice setting.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "mode", rename_all = "snake_case")]
@@ -34,36 +34,28 @@ pub enum TriageChoice {
         connection: Option<String>,
         model: String,
         #[serde(default)]
-        thinking: bool,
-        #[serde(default)]
         auto_choice: bool,
-        #[serde(default)]
-        effort: Option<String>,
     },
 }
 
 impl TriageChoice {
     /// The slug form: `model` is `connection/model`, or a native id resolved
     /// against `[defaults].model`'s connection.
-    pub fn separate(
-        model: String,
-        thinking: bool,
-        auto_choice: bool,
-        effort: Option<String>,
-    ) -> Self {
+    pub fn separate(model: String, auto_choice: bool) -> Self {
         Self::Separate {
             connection: None,
             model,
-            thinking,
             auto_choice,
-            effort,
         }
     }
 }
 
-/// `--triage-model` and its two knobs, as the CLI collects them and as a host's
-/// creation body spells them. Not [`crate::record::log::TriageModel`], the record of which
-/// inference a session's triage ran on.
+/// The dev verbs' triage override: `--triage-model` and its reasoning and
+/// tool-choice knobs, as the CLI collects them. A live session's triage takes
+/// only the tool-choice knob: its reasoning is the triage client's automatic
+/// foreground policy, and a request that spells `thinking` or `effort` is
+/// ignored (docs/triage.md). Not [`crate::record::log::TriageModel`], the
+/// record of which inference a session's triage ran on.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TriageModel {
     pub model: String,

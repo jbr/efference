@@ -44,9 +44,8 @@ pub struct Triage {
     pub retries: Vec<String>,
     /// The triage's own reasoning — the text of every thinking block the fork emitted,
     /// one entry per attempt that produced any, in attempt order (docs/triage.md).
-    /// The fork runs under the same thinking policy as an agent turn (the shared
-    /// envelope), so most triages think; without this the log records *what* was decided
-    /// and never *why*. Signatures are not kept: this is a record, not a replay input —
+    /// Only attempts that emit thinking contribute text. Signatures are not kept:
+    /// this is a record, not a replay input —
     /// the fork's transcript stays throwaway. Operator/developer observability only;
     /// [`project`] never reads it, so recording it cannot move the wire.
     /// `#[serde(default)]`: old logs read empty.

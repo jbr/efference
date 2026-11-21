@@ -10,12 +10,7 @@ fn switch_to_terra_and_luna() -> ResumeSwitch {
         model: None,
         spotter_connection: Some("oai".into()),
         spotter_model: Some("gpt-5.6-luna".into()),
-        triage: Some(TriageChoice::separate(
-            "oai/gpt-5.6-terra".into(),
-            false,
-            false,
-            None,
-        )),
+        triage: Some(TriageChoice::separate("oai/gpt-5.6-terra".into(), false)),
     }
 }
 

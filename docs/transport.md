@@ -158,18 +158,18 @@ thinking off (`ThinkingOff`):
 An `auto` turn sends `adaptive` (`display: "summarized"`) where the model takes
 it. Everything else sends the model's spelling of off: a forced `tool_choice`
 (Anthropic answers forced choice with thinking on with a 400), a model without
-adaptive, and a client built `without_thinking`. The main agent turn and the
-triage both send `auto` —
-the shared envelope ([triage.md](triage.md)): identical
-`tool_choice` and thinking are part of what lets the triage read the agent lineage's
-cache — so both may think (the fork's thinking is discarded with its throwaway
-tail); the spotter still forces its `spot` tool → thinking off (on Responses, effort
-`low` instead, [permissions.md](permissions.md)); a separate-model
-triage sends thinking off unless `--triage-thinking` or `--triage-effort` — for the
-per-result triages only; the idle triage rides the agent's client and thinks as the
-agent does ([triage.md](triage.md)). Where off is omitted on
-OpenRouter, a client built `without_thinking` sends OpenRouter's own
-`reasoning: {enabled: false}` beside it.
+adaptive, and a client built `without_thinking`. The main agent turn and the shared
+triage both send `auto` with the agent's thinking — the shared envelope
+([triage.md](triage.md)): on Anthropic a thinking change misses the messages-tier
+cache on every model that accepts it (probed 2026-11-20), so the triage keeps the
+turn's thinking to read the agent lineage's cache, and may think (the fork's thinking
+is discarded with its throwaway tail). The spotter forces its `spot` tool → thinking
+off (on Responses, effort `low` instead, [permissions.md](permissions.md)). A
+separate-model result triage sends the model's explicit off where it has one and
+effort `low` otherwise ([triage.md](triage.md)). Where off is omitted on OpenRouter, a
+client built `without_thinking` sends OpenRouter's own `reasoning: {enabled: false}`
+beside it; a separate-model result triage's request does not, since it asks for `low`
+on such a route instead.
 
 Some models refuse a forced `tool_choice` outright, whatever the thinking (Sonnet
 5.5: `type "tool" and "any" are not supported for this model`), and the metadata
@@ -228,8 +228,10 @@ never elided today — that's a deferred generalization of the triage model
 `effort` is the **level**. It is set at boot from `--effort` or
 `[transport] effort` (the flag wins), and there is no runtime mutation path:
 changing a thinking parameter mid-session invalidates the message-tier cache on
-Anthropic, and a replayed thinking block's signature under a changed config is
-its own unanswered question. Unset, the field is omitted entirely and the
+Anthropic, as does changing the effort level on some models, and a replayed
+thinking block's signature under a changed config is its own unanswered question.
+The one per-request override is the shared result triage's `low`, which is
+measured against the cache it reads (below, and [triage.md](triage.md)). Unset, the field is omitted entirely and the
 provider's own default stands — which is why every session that sets nothing
 sends the bytes it always did (`request_envelope_matches_expected_wire_bytes`
 is unmoved; `with_effort_envelope_matches_expected_wire_bytes` pins the other
@@ -247,11 +249,10 @@ list and sent as spelled, not rejected by a local list that cannot include every
 
 **Boot validation, per source** (`ModelCapabilities::validates_efforts` →
 `ModelCapabilities::check_effort`, called from boot). A level is checked only
-against a list the source names and whose values are the request's own. OpenRouter
-refuses a level outside a list its metadata names, because it maps an unsupported
-level to the nearest supported one **silently** — a session could otherwise believe
-it set a knob that did nothing (a model whose `default_effort` is already `max`
-makes `--effort max` a no-op by coincidence). A model whose entry names no levels is not refused: 137 of 459
+against a list the source names and whose values are the request's own. For
+OpenRouter, boot refuses a level outside an advertised list. The gateway can
+accept a recognized level outside that list without reporting the effective level,
+so a successful request does not confirm what ran. A model whose entry names no levels is not refused: 137 of 459
 OpenRouter models name none, `openai/o4-mini` among them, and o4-mini honors effort
 all the same (2,752 reasoning tokens at `low`, the 6,000-token cap at `high`,
 2026-09-25). Anthropic's `capabilities.effort` names the levels a model takes in
@@ -276,11 +277,15 @@ so that combination is refused at boot (`api::check_effort_thinking`, fed by
 provider error on the first turn. A level outside those two spellings has no
 known coupling and passes through.
 
-**Which envelopes carry it.** The effort is stored on the agent `Client`, so every
-request that client makes carries it — the main turn and the triage, which is
-the shared envelope ([triage.md](triage.md)): if one carried it
-and the other didn't, the triage would stop reading the agent lineage's cache — and
-the keepalive, which sends the turn's envelope (above). The spotter forces its
+**Which envelopes carry it.** The effort is stored on the agent `Client`, so the main
+turn, the idle triage and the keepalive (which sends the turn's envelope) carry it. A
+shared result triage sends the agent's request with effort `low` instead, while its
+cache evidence shows that costs no cache read, and the agent's effort once it shows
+otherwise. On Anthropic the effort level keys the messages-tier cache on Opus 4.5–5,
+Sonnet 4.6 and Sonnet 5 (an omitted effort reads the same as `high`) and not on Haiku,
+Sonnet and Opus 5.5 or Fable 5.2 (probed 2026-11-20), and no metadata field names
+which ([triage.md](triage.md)). A separate-model result triage never sends the agent's
+effort. The spotter forces its
 tool, sends thinking off, and runs on its own client, which is never given the
 session's effort; on the Responses dialect, which has no spelling of off every model
 accepts, that client asks for its own `low` ([permissions.md](permissions.md)).
@@ -294,10 +299,10 @@ about reasoning at all.
 honored on the Messages skin for Anthropic models. Whether the skin *translates*
 it to OpenRouter's normalized `reasoning.effort` for a foreign slug is
 **unverified** — no live probe has been run. First use on a foreign model should
-watch behavior and `usage.jsonl` (a level that changes nothing about output token
-counts is the null result). OpenRouter's own `reasoning.effort` maps Gemini 3 to
-Google's `thinkingLevel` (with `xhigh` mapped down to `high`) and other models to
-the nearest supported level; token consumption per level is provider-internal.
+watch behavior and `usage.jsonl`. On Chat Completions, OpenRouter can accept a
+recognized `reasoning.effort` value outside a model's advertised list. A
+successful response does not establish what effort the upstream used, and
+variation in reasoning tokens is not an effective-tier report.
 
 ---
 

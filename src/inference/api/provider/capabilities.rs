@@ -423,11 +423,8 @@ pub struct ModelCapabilities {
     /// no default: `None`.
     pub default_effort: Option<String>,
     /// Whether a configured effort level is checked against `supported_efforts`
-    /// at all (docs/transport.md). True where the source declares the same
-    /// values the request carries: OpenRouter's model entry, which matters
-    /// because OpenRouter maps an unsupported level to the nearest supported one
-    /// silently, and Anthropic's `capabilities.effort`, whose keys are
-    /// `output_config.effort`'s own spellings.
+    /// (docs/transport.md). True where the source declares the same values the
+    /// request carries: OpenRouter's model entry or Anthropic's `capabilities.effort`.
     ///
     /// False where a source names levels that are not the request's values, or
     /// names none. A custom endpoint's listing declares none. A Codex catalog
@@ -472,13 +469,9 @@ impl ModelCapabilities {
     }
 
     /// The boot check for a configured effort level (docs/transport.md), for a
-    /// source that declared the levels ([`Self::validates_efforts`]). A model
-    /// whose entry lists levels accepts only those: OpenRouter maps an
-    /// unsupported level to the nearest supported one silently, so a session
-    /// could otherwise believe it set a knob that did nothing. The membership
-    /// test is exact string equality against the metadata's own spellings; the
-    /// declared default, when present, is named as the unset path in the
-    /// message.
+    /// source that declared the levels ([`Self::validates_efforts`]). The check
+    /// uses exact string equality against the metadata, not gateway acceptance.
+    /// The error names the declared default when present.
     ///
     /// Without declared levels there is nothing to check against, and the level
     /// is left for the provider to accept or refuse. That is the honest reading

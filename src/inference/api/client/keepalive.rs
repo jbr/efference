@@ -99,12 +99,16 @@ impl Client {
         origin: RequestOrigin,
         request: &SentRequest,
     ) -> Result<RequestUsage, KeepaliveError> {
+        let triage_client = request
+            .triage_reasoning
+            .map(|mode| self.for_triage_reasoning(mode));
+        let client = triage_client.as_ref().unwrap_or(self);
         let unforced;
         let client = if request.unforced {
-            unforced = self.unforced();
+            unforced = client.unforced();
             &unforced
         } else {
-            self
+            client
         };
         client
             .ping(origin, &request.turns, &request.tools, request.choice)

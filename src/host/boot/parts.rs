@@ -352,7 +352,7 @@ pub(super) async fn mount_triager(
                 model,
                 context_block,
             ));
-            let (triager, caps) = Triager::for_triage_model(
+            let (triager, caps) = Triager::for_live_triage_model(
                 &triage_endpoint,
                 triage,
                 system,
@@ -361,16 +361,11 @@ pub(super) async fn mount_triager(
             .await
             .map_err(|error| format!("triage model: {error}"))?;
             log::debug!(
-                "triage: {}/{} ({}) · context {} · thinking {} · tool choice {}",
+                "triage: {}/{} ({}) · context {} · tool choice {}",
                 selection.connection,
                 selection.model,
                 selection.provider,
                 describe_window(caps.context_length),
-                match (&triage.effort, triage.thinking) {
-                    (Some(effort), _) => format!("on, effort {effort}"),
-                    (None, true) => "on".into(),
-                    (None, false) => "off".into(),
-                },
                 if triage.auto_choice { "auto" } else { "forced" }
             );
             (triager, caps.prices)

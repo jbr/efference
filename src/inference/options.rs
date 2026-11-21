@@ -129,10 +129,7 @@ pub enum EffectiveTriage {
     Separate {
         #[serde(flatten)]
         selection: ModelSelection,
-        thinking: bool,
         auto_choice: bool,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        effort: Option<String>,
     },
 }
 
@@ -481,16 +478,14 @@ impl InferenceRegistry {
         options: &SessionOptions,
         issues: &mut Vec<Issue>,
     ) -> Effective<EffectiveTriage> {
-        let (selection, options_from, source) = match &options.triage {
+        let (selection, auto_choice, source) = match &options.triage {
             Some(TriageChoice::Shared) => {
                 return Effective::resolved(EffectiveTriage::Shared, SelectionSource::Request);
             }
             Some(TriageChoice::Separate {
                 connection,
                 model,
-                thinking,
                 auto_choice,
-                effort,
             }) => {
                 let reference = match self.requested(
                     connection.as_deref(),
@@ -502,11 +497,7 @@ impl InferenceRegistry {
                     // `Some(model)` above means `requested` is never Omitted.
                     Requested::Omitted | Requested::Failed => return Effective::failed(),
                 };
-                (
-                    reference,
-                    (*thinking, *auto_choice, effort.clone()),
-                    SelectionSource::Request,
-                )
+                (reference, *auto_choice, SelectionSource::Request)
             }
             // No configured triage: an omitted triage shares the main client,
             // whatever main resolved to (docs/transport.md).
@@ -523,13 +514,10 @@ impl InferenceRegistry {
         if !requires_inference(&selection, "triage", issues) {
             return Effective::failed();
         }
-        let (thinking, auto_choice, effort) = options_from;
         Effective::resolved(
             EffectiveTriage::Separate {
                 selection,
-                thinking,
                 auto_choice,
-                effort,
             },
             source,
         )
@@ -648,15 +636,17 @@ impl InferenceRegistry {
             EffectiveTriage::Shared => None,
             EffectiveTriage::Separate {
                 selection,
-                thinking,
                 auto_choice,
-                effort,
             } => {
+                // A live triage takes no reasoning setting from the request: the
+                // triager chooses its result triage's reasoning (docs/triage.md). The
+                // reasoning fields stay at their defaults, which is also what the session
+                // header records for them.
                 let options = TriageModel {
                     model: selection.model.clone(),
-                    thinking,
+                    thinking: false,
                     auto_choice,
-                    effort,
+                    effort: None,
                 };
                 Some(ResolvedTriage {
                     role: self.attach(selection, "triage")?,

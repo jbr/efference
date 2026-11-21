@@ -604,8 +604,10 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
         "model": "claude-sonnet-4-5",
         "spotter_connection": "other",
         "spotter_model": "claude-haiku-4-5",
+        // `thinking` and `effort` are knobs a pre-removal client may still send:
+        // the body must decode, and resolution ignores both.
         "triage": {"mode": "separate", "connection": "main", "model": "claude-haiku-4-5",
-                   "thinking": true},
+                   "auto_choice": true, "thinking": true, "effort": "low"},
     }));
     let resolved = registry.resolve_options(&options, None, None);
     let effective = resolved.effective.clone();
@@ -615,14 +617,17 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
     let (selection, _, triage_options) = prepared.triage().expect("a separate triage client");
     let EffectiveTriage::Separate {
         selection: previewed,
-        thinking,
-        ..
+        auto_choice,
     } = effective.triage.value.expect("a previewed triage")
     else {
         panic!("an explicit separate choice previews as separate");
     };
     assert_eq!(*selection, previewed);
-    assert!(thinking && triage_options.thinking);
+    assert_eq!(auto_choice, triage_options.auto_choice);
+    assert!(
+        !triage_options.thinking && triage_options.effort.is_none(),
+        "a live triage takes no reasoning from the request, whatever the request says"
+    );
 }
 
 /// Creation refuses a draft preview flagged, rather than booting past it.

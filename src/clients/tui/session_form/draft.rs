@@ -116,9 +116,7 @@ impl Draft {
                 TriageDraft::Separate(draft) => Some(TriageChoice::Separate {
                     connection: Some(draft.connection.clone()),
                     model: draft.model.clone(),
-                    thinking: false,
                     auto_choice: false,
-                    effort: None,
                 }),
             },
             effort: self.effort.clone(),

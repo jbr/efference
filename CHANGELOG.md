@@ -35,6 +35,8 @@ one line per feature.
 
 ### Changed
 
+- Result triage asks for less reasoning: a shared triage keeps the agent's thinking and sends effort `low` until its cache reads show the level splits the agent's cache, then sends the agent's effort; a separate triage model sends thinking off, else `low`, else the provider default. The idle triage is unchanged; a creation request's triage `thinking`/`effort` options are ignored.
+
 - The decision-model spotter (jev) reads the session's conversation and the prose spotter's guidance, and decides from yes/no questions asked in both wordings — reasons to clear (asked for, agreed to, contained, read-only) against hazards (goes further, against a limit, a secret, one-way, self-modifying, opaque) — instead of a concern level and earlier approved calls; its default is pinned to `jev-1.14.0` (`typesafe/jev-1.14` on OpenRouter).
 
 - The web client's dev builds no longer install the stream scrubber or the stream debug overlay unless each is switched on in app settings.

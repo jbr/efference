@@ -698,7 +698,7 @@ export type ContextItem =
 /**
  * The triage choice a session creator makes. Omission inherits the configured
  * default; `Shared` explicitly bypasses a configured separate default; `Separate`
- * carries the existing independent-client options.
+ * names the independent client and its tool-choice setting.
  *
  * This interface was referenced by `ControlChannel`'s JSON-Schema
  * via the `definition` "TriageChoice".
@@ -714,10 +714,8 @@ export type TriageChoice =
        * `model` string is the `connection/model` slug.
        */
       connection?: string | null;
-      effort: string | null;
       mode: "separate";
       model: string;
-      thinking: boolean;
     };
 /**
  * A compaction still to land (docs/summary.md), published as its `state`.
@@ -896,11 +894,9 @@ export type EffectiveTriage =
   | {
       auto_choice: boolean;
       connection: string;
-      effort?: string | null;
       mode: "separate";
       model: string;
       provider: Provider;
-      thinking: boolean;
     };
 /**
  * The machine-readable half of an error response. Each variant has one canonical HTTP
@@ -3701,9 +3697,8 @@ export interface Triage {
   /**
    * The triage's own reasoning — the text of every thinking block the fork emitted,
    * one entry per attempt that produced any, in attempt order (docs/triage.md).
-   * The fork runs under the same thinking policy as an agent turn (the shared
-   * envelope), so most triages think; without this the log records *what* was decided
-   * and never *why*. Signatures are not kept: this is a record, not a replay input —
+   * Only attempts that emit thinking contribute text. Signatures are not kept:
+   * this is a record, not a replay input —
    * the fork's transcript stays throwaway. Operator/developer observability only;
    * [`project`] never reads it, so recording it cannot move the wire.
    * `#[serde(default)]`: old logs read empty.

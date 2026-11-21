@@ -147,7 +147,6 @@ test("a resolved value is shown as the slug a reader recognizes", () => {
       connection: "openai",
       provider: "openai",
       model: "gpt-5",
-      thinking: false,
       auto_choice: false,
     }),
   ).toBe("openai/gpt-5");

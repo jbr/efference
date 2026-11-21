@@ -15,16 +15,30 @@ pub(super) const TRIAGE_ATTEMPTS: usize = 3;
 /// answered each time, and the ask or the parse is what failed.
 pub const TRIAGE_RESTARTS: usize = 3;
 
-/// How long a triage keeps trying (docs/triage.md). The triage waits failures
-/// out, because its results reach the agent only through a verdict; the asides —
-/// the idle triage and the title — give up early, because each has a harmless
-/// fallback and the loop is blocked on it meanwhile.
+/// How long a triage keeps trying, and which reasoning its requests carry
+/// (docs/triage.md). The triage waits failures out, because its results reach the agent
+/// only through a verdict; the asides — the idle triage and the title — give up early,
+/// because each has a harmless fallback and the loop is blocked on it meanwhile.
 #[derive(Clone, Copy)]
 pub(super) struct Patience {
     /// Fresh forks to start when one fork's in-fork retries are spent.
     forks: usize,
     /// Upstream attempts per request before giving up.
     upstream: u32,
+    reasoning: Reasoning,
+}
+
+/// The reasoning a triage's requests carry (docs/triage.md).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Reasoning {
+    /// The client's own settings, unchanged: the asides, and a dev replay's triage model.
+    Client,
+    /// Shared result triage: the agent's request with effort `low`, while the route's
+    /// cache evidence allows it.
+    Shared,
+    /// Separate-model result triage: thinking off where the model can say it, else
+    /// `low`, else the provider's default effort.
+    Separate,
 }
 
 impl Patience {
@@ -32,11 +46,23 @@ impl Patience {
     pub(super) const TRIAGE: Self = Self {
         forks: TRIAGE_RESTARTS,
         upstream: STREAM_ABORT_ATTEMPTS,
+        reasoning: Reasoning::Client,
+    };
+    /// A live result triage on the agent's client.
+    pub(super) const SHARED_RESULTS: Self = Self {
+        reasoning: Reasoning::Shared,
+        ..Self::TRIAGE
+    };
+    /// A live result triage on a separate triage model.
+    pub(super) const SEPARATE_RESULTS: Self = Self {
+        reasoning: Reasoning::Separate,
+        ..Self::TRIAGE
     };
     /// An aside's: one fork, and a short upstream schedule.
     pub(super) const ASIDE: Self = Self {
         forks: 1,
         upstream: 3,
+        reasoning: Reasoning::Client,
     };
 }
 
@@ -79,6 +105,12 @@ pub(super) struct TriageRecord {
     /// The request the triage keepalive re-sends, where it re-sends this triage's
     /// (docs/transport.md).
     pub(super) sent: Option<SentTriage>,
+    /// The reasoning setting a separate-model result triage's last completed request was
+    /// sent with, which its keepalive re-sends (docs/triage.md).
+    pub(super) reasoning: Option<crate::inference::api::TriageReasoning>,
+    /// The effort a shared result triage chose on its first request and keeps for the
+    /// rest (docs/triage.md).
+    pub(super) shared_effort: Option<crate::inference::api::SharedEffort>,
 }
 
 /// The renewal sentence for a triage that asks for `tool` (docs/triage.md).
@@ -139,14 +171,7 @@ pub(super) async fn triage_with_retries<T>(
         let mut messages = messages.clone();
         for attempt in 1..=TRIAGE_ATTEMPTS {
             let completion = triage_completion(
-                client,
-                retry,
-                patience.upstream,
-                &messages,
-                tools,
-                choice,
-                record,
-                on_delta,
+                client, retry, patience, &messages, tools, choice, record, on_delta,
             )
             .await?;
             record
@@ -181,7 +206,7 @@ pub(super) async fn triage_with_retries<T>(
 /// (docs/transport.md) — a stream that dies before finalizing, or a request that
 /// could not open one — with the same treatment, on the same budget
 /// ([`STREAM_ABORT_ATTEMPTS`], for the triage) and the same [`stream_abort_backoff`]
-/// schedule that the main loop gives its own turns. `budget` is the attempt count.
+/// schedule that the main loop gives its own turns.
 ///
 /// The partial is discarded rather than replayed: whatever arrived is untrusted, and
 /// the in-fork compliance retry's trick of replaying the assistant turn does not apply
@@ -201,7 +226,7 @@ pub(super) async fn triage_with_retries<T>(
 pub(super) async fn triage_completion(
     client: &Client,
     retry: &UpstreamRetryCell,
-    budget: u32,
+    patience: Patience,
     messages: &[WireTurn],
     tools: &[Value],
     choice: ToolChoice,
@@ -209,10 +234,41 @@ pub(super) async fn triage_completion(
     on_delta: &(dyn Fn(Streamed) + Sync),
 ) -> Result<Completion, TriageFailure> {
     let mut failed: u32 = 0;
+    let budget = patience.upstream;
     loop {
         // The fragments go to `on_delta`, which publishes them on their own `output`
         // kinds (docs/control-api.md) — never as the main loop's response.
-        let (why, terminal) = match client.complete(messages, tools, choice, on_delta).await {
+        let answer = match patience.reasoning {
+            Reasoning::Client => client.complete(messages, tools, choice, on_delta).await,
+            Reasoning::Shared => {
+                client
+                    .complete_shared_triage(
+                        messages,
+                        tools,
+                        choice,
+                        on_delta,
+                        &mut record.shared_effort,
+                        &mut record.retries,
+                    )
+                    .await
+            }
+            Reasoning::Separate => {
+                let (answer, mode) = client
+                    .complete_separate_triage(
+                        messages,
+                        tools,
+                        choice,
+                        on_delta,
+                        &mut record.retries,
+                    )
+                    .await;
+                if answer.is_ok() {
+                    record.reasoning = Some(mode);
+                }
+                answer
+            }
+        };
+        let (why, terminal) = match answer {
             Ok(completion) => {
                 record.usage.push(completion.request_usage());
                 let Some(why) = completion.upstream_failure().map(str::to_string) else {

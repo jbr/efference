@@ -596,6 +596,9 @@ impl Client {
         // remember to. Attempts that never finalized carry no id, and the call is a
         // no-op for them.
         self.remember_response_id(self.origin, completion.id.as_deref());
+        // The same site records what a turn left cached, for the shared triage's
+        // effort evidence (docs/triage.md).
+        self.remember_turn_cache(self.origin, &completion);
         Ok(completion)
     }
 

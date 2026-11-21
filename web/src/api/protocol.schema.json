@@ -2758,12 +2758,6 @@
             "connection": {
               "type": "string"
             },
-            "effort": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
             "mode": {
               "const": "separate",
               "type": "string"
@@ -2773,9 +2767,6 @@
             },
             "provider": {
               "$ref": "#/definitions/Provider"
-            },
-            "thinking": {
-              "type": "boolean"
             }
           },
           "required": [
@@ -2783,7 +2774,6 @@
             "connection",
             "provider",
             "model",
-            "thinking",
             "auto_choice"
           ],
           "type": "object"
@@ -8887,7 +8877,7 @@
         },
         "thinking": {
           "default": [],
-          "description": "The triage's own reasoning — the text of every thinking block the fork emitted,\none entry per attempt that produced any, in attempt order (docs/triage.md).\nThe fork runs under the same thinking policy as an agent turn (the shared\nenvelope), so most triages think; without this the log records *what* was decided\nand never *why*. Signatures are not kept: this is a record, not a replay input —\nthe fork's transcript stays throwaway. Operator/developer observability only;\n[`project`] never reads it, so recording it cannot move the wire.\n`#[serde(default)]`: old logs read empty.\n\n[`project`]: crate::record::project::project",
+          "description": "The triage's own reasoning — the text of every thinking block the fork emitted,\none entry per attempt that produced any, in attempt order (docs/triage.md).\nOnly attempts that emit thinking contribute text. Signatures are not kept:\nthis is a record, not a replay input —\nthe fork's transcript stays throwaway. Operator/developer observability only;\n[`project`] never reads it, so recording it cannot move the wire.\n`#[serde(default)]`: old logs read empty.\n\n[`project`]: crate::record::project::project",
           "items": {
             "type": "string"
           },
@@ -8906,7 +8896,7 @@
       "type": "object"
     },
     "TriageChoice": {
-      "description": "The triage choice a session creator makes. Omission inherits the configured\ndefault; `Shared` explicitly bypasses a configured separate default; `Separate`\ncarries the existing independent-client options.",
+      "description": "The triage choice a session creator makes. Omission inherits the configured\ndefault; `Shared` explicitly bypasses a configured separate default; `Separate`\nnames the independent client and its tool-choice setting.",
       "oneOf": [
         {
           "properties": {
@@ -8933,31 +8923,18 @@
                 "null"
               ]
             },
-            "effort": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
-            },
             "mode": {
               "const": "separate",
               "type": "string"
             },
             "model": {
               "type": "string"
-            },
-            "thinking": {
-              "default": false,
-              "type": "boolean"
             }
           },
           "required": [
             "mode",
             "model",
-            "thinking",
-            "auto_choice",
-            "effort"
+            "auto_choice"
           ],
           "type": "object"
         }

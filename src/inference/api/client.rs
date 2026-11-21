@@ -29,12 +29,14 @@ mod forced_choice;
 mod images;
 mod keepalive;
 mod send;
+mod triage_effort;
 mod upstream_status;
 
 pub use forced_choice::SentRequest;
 pub use keepalive::KeepaliveError;
 #[cfg(test)]
 pub(crate) use keepalive::KeepaliveResponse;
+pub(crate) use triage_effort::{LowEffortEvidence, SharedEffort, TriageReasoning};
 use upstream_status::{CapturedErrorBody, UpstreamStatusHandler, read_error_body, response_meta};
 #[cfg(test)]
 pub(super) use upstream_status::{clear_upstream_failure, record_upstream_failure};
@@ -132,12 +134,8 @@ pub struct Client {
     /// trajectory's start has consumed any earlier press, while every other request on
     /// these clients may run with an earlier press still latched, which is not theirs.
     interrupt_latch: Option<Arc<std::sync::atomic::AtomicBool>>,
-    /// The effort level, when one is set (docs/transport.md). Rides every request
-    /// this client makes — on the agent's client the turn loop and the triage, so
-    /// the triage's prefix still matches the agent lineage's (docs/triage.md),
-    /// and the keepalive, which sends the turn's envelope. The spotter's client
-    /// sets one on the Responses dialect only, where `reasoning` has no spelling
-    /// of off every model accepts (docs/permissions.md).
+    /// The effort level, when set (docs/transport.md). Result triage overrides it on a
+    /// request-local clone (docs/triage.md).
     effort: Option<String>,
     /// Which upstream serves this session, when pinned (docs/transport.md).
     upstream: Option<Upstream>,
@@ -153,6 +151,21 @@ pub struct Client {
     /// clones, goes as `auto` with [`forced_choice::forced_choice_instruction`]
     /// instead. Shared across clones, so the lesson is learned once per client.
     forced_choice_refused: Arc<std::sync::atomic::AtomicBool>,
+    /// The furthest separate-model triage reasoning setting a completed fallback has
+    /// reached on this route (docs/triage.md). Shared across clones; reset when the
+    /// upstream changes.
+    triage_reasoning_floor: Arc<std::sync::atomic::AtomicU8>,
+    /// Set on a separate-model triage request's clone: the request follows the triage
+    /// reasoning setting, so the gateway's off switch and the forced-choice fallback
+    /// leave its reasoning alone (docs/triage.md).
+    foreground_triage: Option<TriageReasoning>,
+    /// What shared result triage has established about effort `low` on this route
+    /// (docs/triage.md). Shared across clones; reset when the upstream changes.
+    low_effort_evidence: Arc<Mutex<LowEffortEvidence>>,
+    /// The prefix the last finished turn left cached, which a shared triage's cache read
+    /// is measured against (docs/triage.md). Shared across clones, so the triage's
+    /// clone reads what the turn's recorded.
+    turn_cache: Arc<Mutex<Option<triage_effort::TurnCache>>>,
     /// The endpoint's refusal, set once it refused a request carrying images and
     /// the same request without them succeeded (docs/transport.md): every later
     /// request from this client and its clones goes with its images replaced by a
@@ -288,6 +301,10 @@ impl Client {
             upstream_failure,
             upstream_retry: upstream_retry_state(),
             forced_choice_refused: Arc::default(),
+            triage_reasoning_floor: Arc::default(),
+            foreground_triage: None,
+            low_effort_evidence: Arc::default(),
+            turn_cache: Arc::default(),
             images_refused: Arc::default(),
             images_accepted: Arc::default(),
             upstream_attempts,
@@ -567,6 +584,12 @@ impl Client {
     }
 
     pub fn with_upstream(mut self, upstream: Option<Upstream>) -> Self {
+        if self.upstream != upstream {
+            // What triage learned about reasoning on one route says nothing about another.
+            self.triage_reasoning_floor = Arc::default();
+            self.low_effort_evidence = Arc::default();
+            self.turn_cache = Arc::default();
+        }
         self.upstream = upstream;
         self
     }
@@ -579,12 +602,9 @@ impl Client {
         self
     }
 
-    /// Set the effort level: the session's (`--effort`, `[transport] effort` —
-    /// docs/transport.md), or the spotter's own (docs/permissions.md). Boot-time
-    /// only: it is set before the first request and never changed, since a
-    /// mid-session change would move the cached prefix. Applies to every
-    /// [`Self::complete`] this client makes, so the turn and the triage carry
-    /// the same envelope; the keepalive is not built from it.
+    /// Set the effort carried by this client's requests (docs/transport.md).
+    /// A session sets its effort at boot; result triage overrides it on a
+    /// request-local clone (docs/triage.md).
     pub fn with_effort(mut self, effort: Option<String>) -> Self {
         self.effort = effort;
         self
@@ -602,7 +622,10 @@ impl Client {
     /// field omitted, so the switch this client requested must use
     /// OpenRouter's own spelling. `None` everywhere else, which serializes nothing.
     pub(super) fn reasoning_off(&self, thinking: Thinking) -> Option<ReasoningOff> {
-        (self.thinking_off && thinking.is_omit() && self.endpoint.provider == Provider::OpenRouter)
+        (self.foreground_triage.is_none()
+            && self.thinking_off
+            && thinking.is_omit()
+            && self.endpoint.provider == Provider::OpenRouter)
             .then_some(ReasoningOff { enabled: false })
     }
 

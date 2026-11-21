@@ -21,17 +21,16 @@ pub fn recorded_selections(recording: &LoadedRecording) -> ResumeSwitch {
         selections.spotter_model = Some(spotter.model);
         selections.triage = Some(match triage {
             TriageModel::Shared => TriageChoice::Shared,
+            // The recorded reasoning was that session's fact, not a setting a resume
+            // restores: boot resolves the live reasoning, so it stops at this read.
             TriageModel::Separate {
                 selection,
-                thinking,
                 auto_choice,
-                effort,
+                ..
             } => TriageChoice::Separate {
                 connection: Some(selection.connection),
                 model: selection.model,
-                thinking,
                 auto_choice,
-                effort,
             },
         });
     }

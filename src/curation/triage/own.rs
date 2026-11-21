@@ -8,6 +8,21 @@ use crate::inference::api::{Endpoint, ModelCapabilities};
 use std::time::Duration;
 
 impl Triager {
+    /// A live session's separate-model triager: [`Self::for_triage_model`], with result
+    /// triage choosing its own reasoning rather than sending the settings in `triage`
+    /// (docs/triage.md).
+    pub async fn for_live_triage_model(
+        endpoint: &Endpoint,
+        triage: &TriageModel,
+        system: String,
+        stream_ceiling: Duration,
+    ) -> Result<(Triager, ModelCapabilities), String> {
+        let (mut triager, caps) =
+            Self::for_triage_model(endpoint, triage, system, stream_ceiling).await?;
+        triager.automatic_reasoning = true;
+        Ok((triager, caps))
+    }
+
     /// The separate-model triage for `triage` (docs/triage.md): the model's
     /// capabilities looked up like the agent's, a client on [`Endpoint::for_triage`]
     /// with the given `system`, thinking off unless asked, a triage-sized output cap,

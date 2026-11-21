@@ -52,9 +52,10 @@ impl Triager {
         record: &TriageRecord,
     ) -> Option<SentTriage> {
         let usage = record.usage.last()?.clone();
-        let request = client
+        let mut request = client
             .sent_form(turns, tools, choice)
             .through_last_breakpoint()?;
+        request.triage_reasoning = record.reasoning;
         Some(SentTriage { request, at, usage })
     }
 }

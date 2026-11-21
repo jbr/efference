@@ -174,8 +174,6 @@ auth = { kind = "env", key = "OPENAI_KEY" }
             Some(TriageChoice::separate(
                 "responses/gpt-5.6".to_string(),
                 false,
-                false,
-                None,
             )),
         )
         .expect("a cross-dialect triage resolves");
@@ -408,17 +406,15 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
         .resolve(
             Some("main/claude"),
             None,
-            Some(TriageChoice::separate(
-                "main/claude".to_string(),
-                true,
-                false,
-                None,
-            )),
+            Some(TriageChoice::separate("main/claude".to_string(), false)),
         )
         .unwrap();
     let (selection, _, options) = own.triage().unwrap();
     assert_eq!(selection.model, "claude");
-    assert!(options.thinking);
+    assert!(
+        !options.thinking && options.effort.is_none(),
+        "a live triage takes no reasoning from the request, whatever the request says"
+    );
     assert!(!own.identity().triage.shared);
 }
 

@@ -88,9 +88,7 @@ fn a_native_id_with_a_slash_keeps_its_connection_separate() {
         Some(crate::inference::TriageChoice::Separate {
             connection: Some("work".into()),
             model: "vendor/new-model".into(),
-            thinking: false,
             auto_choice: false,
-            effort: None,
         })
     );
 }

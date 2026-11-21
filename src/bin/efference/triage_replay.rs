@@ -63,6 +63,8 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
         model,
         out,
         table,
+        shared_effort,
+        idle_candidate_effort,
         ..
     } = args;
     let model = model.as_str();
@@ -74,12 +76,7 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
         Some(model),
         None,
         triage.clone().map(|triage| {
-            efference::inference::TriageChoice::separate(
-                triage.model,
-                triage.thinking,
-                triage.auto_choice,
-                triage.effort,
-            )
+            efference::inference::TriageChoice::separate(triage.model, triage.auto_choice)
         }),
     );
     let recorded_identity = efference::record::log::recorded_inference(&entries);
@@ -128,17 +125,25 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
         .unwrap_or_else(|| model.to_string());
     let (triage, model) = replayed_triager(
         &inference,
+        triage.as_ref(),
         endpoint.session_id.as_deref(),
         &agent_model,
         context_block.as_deref(),
         model,
     )
     .await?;
-    let client = Client::new(endpoint, model, system);
+    let client = replay_client(endpoint, model, system, shared_effort).await?;
     let sink = match &out {
         Some(path) => Some(std::io::BufWriter::new(std::fs::File::create(path)?)),
         None => None,
     };
+    if let Some(candidate) = idle_candidate_effort {
+        use efference::curation::triage::{HISTORICAL_LIMITS, run_synthetic};
+        let effort = (candidate != "default").then_some(candidate.as_str());
+        let comparison = run_synthetic(&client, &tools, effort, repeat).await;
+        println!("{}\n{HISTORICAL_LIMITS}", comparison.report());
+        return Ok(());
+    }
 
     eprintln!(
         "replaying {} triage(s) from {label} × {repeat} on {model} — first attempt only, no retries",
@@ -155,6 +160,34 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
     sweep.run().await?;
     sweep.print_summary(model, table, out.as_deref());
     Ok(())
+}
+
+// Ordinary replay keeps its existing client setup. For an effort comparison,
+// both arms use the same capability-derived envelope.
+async fn replay_client(
+    endpoint: efference::inference::api::Endpoint,
+    model: &str,
+    system: String,
+    effort: Option<String>,
+) -> Result<Client, CliError> {
+    let Some(level) = effort else {
+        return Ok(Client::new(endpoint, model, system));
+    };
+    let caps = endpoint.fetch_capabilities(model, &[]).await?;
+    let effort = (level != "default").then_some(level);
+    eprintln!(
+        "shared triage effort: {}",
+        effort.as_deref().unwrap_or("omitted")
+    );
+    Ok(Client::new(endpoint, model, system)
+        .with_thinking(caps.thinking)
+        .with_prompt_cache(caps.prompt_cache)
+        .with_max_output(
+            caps.max_output_tokens
+                .unwrap_or(efference::inference::api::UNKNOWN_OUTPUT_CAP),
+        )
+        .with_context_window(caps.context_length)
+        .with_effort(effort))
 }
 
 /// The image and cache-breakpoint placement the replay projects with. Replays use the
@@ -301,18 +334,23 @@ fn dry_run_report(
 }
 
 /// The triager the replay asks, and the model it is named by. A separate triage model
-/// replays the exact live shape (docs/triage.md); the shared triage replays on the agent
-/// client, whose model is `model`. `session_id` is the sticky-routing key the main endpoint
-/// carries.
+/// replays the exact live shape (docs/triage.md), with `triage_model` — the dev flags'
+/// override — supplying the reasoning and tool-choice settings; the shared triage replays
+/// on the agent client, whose model is `model`. `session_id` is the sticky-routing key the
+/// main endpoint carries.
 async fn replayed_triager<'a>(
     inference: &'a efference::inference::SessionInference,
+    triage_model: Option<&'a TriageModel>,
     session_id: Option<&str>,
     agent_model: &str,
     context_block: Option<&str>,
     model: &'a str,
 ) -> Result<(Triager, &'a str), CliError> {
     match inference.triage() {
-        Some((_, mut triage_endpoint, t)) => {
+        // The flags' override wins when given; otherwise the shape resolves from the
+        // session's own triage choice, as a live boot would resolve it.
+        Some((_, mut triage_endpoint, resolved)) => {
+            let t = triage_model.unwrap_or(resolved);
             triage_endpoint.session_id = session_id.map(str::to_string);
             let triage_system =
                 efference::config::env::triage_system_prompt(&t.model, agent_model, context_block);

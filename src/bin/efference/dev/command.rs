@@ -395,6 +395,19 @@ pub(crate) struct TriageArgs {
     /// With --triage-model: its reasoning level (implies thinking on).
     #[arg(long, value_name = "LEVEL")]
     pub(crate) triage_effort: Option<String>,
+    /// Compare shared-lineage effort levels without changing the model or tools.
+    /// Use `default` to omit effort with the same model capabilities as a named level.
+    #[arg(long, value_name = "LEVEL", conflicts_with = "triage_model")]
+    pub(crate) shared_effort: Option<String>,
+    /// Compare the labeled synthetic idle cases with this candidate effort.
+    /// The baseline is --shared-effort (usually `default`).
+    #[arg(
+        long,
+        value_name = "LEVEL",
+        requires = "shared_effort",
+        conflicts_with = "triage_model"
+    )]
+    pub(crate) idle_candidate_effort: Option<String>,
     /// The history the triage request reads: `transcript` (the shared triage's view),
     /// `text` (the separate triage's text view: digest, triaged tail, current step),
     /// or an experiment arm: `tail:N` (the digest of the last N assistant turns before
