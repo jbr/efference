@@ -37,6 +37,9 @@ one line per feature.
 
 - Result triage asks for less reasoning: a shared triage keeps the agent's thinking and sends effort `low` until its cache reads show the level splits the agent's cache, then sends the agent's effort; a separate triage model sends thinking off, else `low`, else the provider default. The idle triage is unchanged; a creation request's triage `thinking`/`effort` options are ignored.
 
+- Setup links to the Credentials manual beside the API key source choices.
+- The approval tool and supervising guide recommend leaving approval notes blank unless they contain useful guidance.
+
 - The decision-model spotter (jev) reads the session's conversation and the prose spotter's guidance, and decides from yes/no questions asked in both wordings — reasons to clear (asked for, agreed to, contained, read-only) against hazards (goes further, against a limit, a secret, one-way, self-modifying, opaque) — instead of a concern level and earlier approved calls; its default is pinned to `jev-1.14.0` (`typesafe/jev-1.14` on OpenRouter).
 
 - The web client's dev builds no longer install the stream scrubber or the stream debug overlay unless each is switched on in app settings.
@@ -48,6 +51,15 @@ one line per feature.
 - A session's `agents__archive` of a session it supervises clears without a spotter request.
 
 ### Fixed
+
+- Newer Claude models that reject thinking off get one retry with adaptive thinking at low effort, including when the spotter asks for a named tool call.
+- A failed cache keepalive waits a full ping interval before trying again instead of resending the context at every scheduler check.
+- A partially written session-log entry is rolled back before another append is accepted.
+- The web client checks for a stale connection on focus or page restore, so it can pick up pending questions without waiting for the old connection to time out.
+- Typing a `~` path in the web session form selects the corresponding remembered location instead of showing a duplicate.
+- The installed web app uses the bare session title, while ordinary tabs keep the app-name suffix.
+- Gallery section links scroll to their section and update the URL fragment.
+- The TUI shows a compact upstream error indicator even when the failure has no HTTP status.
 
 - `efference control settle --help` explains that omitting `--agent` targets the sole live session in the current directory.
 
