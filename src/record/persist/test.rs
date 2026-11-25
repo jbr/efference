@@ -249,6 +249,92 @@ fn source_round_trips_and_is_skipped_when_absent() {
 
     std::fs::remove_file(&path).unwrap();
 }
+/// A write that fails partway leaves no bytes and consumes no `seq`: the next
+/// append reuses it, and a reopen loads every acknowledged entry in order with
+/// no torn tail (docs/log-and-projection.md).
+#[test]
+fn failed_append_is_rolled_back_and_its_seq_is_reused() {
+    let path = temp_path("append-rollback");
+    let mut log = Log::create(&path, None).unwrap();
+    log.append(0, Payload::user("first")).unwrap();
+    let before = std::fs::read(&path).unwrap();
+
+    log.fail_next_append(10, false);
+    let error = log.append(0, Payload::user("lost")).unwrap_err();
+    assert!(
+        error.to_string().contains("injected partial write"),
+        "a successful rollback reports the write's own error: {error}"
+    );
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "the partial line was cut back"
+    );
+    assert_eq!(log.entries().len(), 1, "a failed append is not an entry");
+
+    let seq = log.append(0, Payload::user("second")).unwrap();
+    assert_eq!(seq, 1, "the failed append did not consume its seq");
+    drop(log);
+
+    let recording = load_recording(&path).unwrap();
+    assert!(
+        recording.trailing.is_none(),
+        "a rolled-back append leaves no tail to repair"
+    );
+    let seqs: Vec<Seq> = recording.entries.iter().map(|entry| entry.seq).collect();
+    assert_eq!(seqs, vec![0, 1]);
+    assert_eq!(
+        serde_json::to_string(&recording.entries[1].payload).unwrap(),
+        serde_json::to_string(&Payload::user("second")).unwrap(),
+        "the re-read entry is the one appended after the rollback"
+    );
+
+    std::fs::remove_file(&path).unwrap();
+}
+
+/// A rollback that fails too leaves the bytes on disk and poisons the sink: the
+/// append names both failures, and every later append is refused before it
+/// writes, leaving the file exactly as the failed one left it.
+#[test]
+fn failed_rollback_poisons_the_sink_and_refuses_later_appends() {
+    let path = temp_path("append-poisoned");
+    let mut log = Log::create(&path, None).unwrap();
+    log.append(0, Payload::user("first")).unwrap();
+    let before = std::fs::read(&path).unwrap();
+
+    log.fail_next_append(10, true);
+    let error = log.append(0, Payload::user("lost")).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("injected partial write"), "{message}");
+    assert!(message.contains("injected rollback failure"), "{message}");
+    // `io::Error`'s source is its custom error's source, and `RollbackFailed`
+    // names the rollback there: it is the failure that leaves the tail.
+    let source = std::error::Error::source(&error).expect("the rollback is the source");
+    assert_eq!(source.to_string(), "injected rollback failure");
+
+    let damaged = std::fs::read(&path).unwrap();
+    assert!(damaged.starts_with(&before));
+    assert!(
+        damaged.len() > before.len(),
+        "the unrolled-back partial bytes stay for `open` to repair"
+    );
+    let entries_after_failure = log.entries().len();
+
+    let refused = log.append(0, Payload::user("never")).unwrap_err();
+    assert!(
+        refused.to_string().contains("refuses appends"),
+        "the poisoned sink refuses before writing: {refused}"
+    );
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        damaged,
+        "a refused append writes nothing"
+    );
+    assert_eq!(log.entries().len(), entries_after_failure);
+    drop(log);
+
+    std::fs::remove_file(&path).unwrap();
+}
 
 /// `submission_id` is log metadata like `at` (docs/log-and-projection.md):
 /// two logs identical except for it must project to the same wire bytes.

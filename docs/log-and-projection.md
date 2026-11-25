@@ -617,8 +617,8 @@ persists; boot writes it.
 
 ### Creating
 
-`Log::create` creates the file **exclusively** and writes and flushes the
-header before returning, so a file that exists is already a readable log and
+`Log::create` creates the file **exclusively** and writes the header before
+returning, so a file that exists is already a readable log and
 an existing file is an error left byte-for-byte untouched. Opening an existing
 log for append while starting from an empty `entries` would restart `seq` at 0
 inside a file that already numbers its entries — every offline reader
@@ -634,7 +634,7 @@ implies; it takes it so that every sink holds one.
 A log has one writer, including across host processes. `Log::create` and
 `Log::open` each take an exclusive advisory lock (`File::try_lock`) on the file
 and hold it until the log is closed — the lock rides on the `File` the sink
-owns, so it is released when the sink goes, after the last line is flushed.
+owns, so it is released when the sink goes.
 `Log::close` drops the sink explicitly, and an archive calls it once its last
 append (the worktree retirement) has landed: a `Session` can outlive its
 teardown in whatever still holds it (an open SSE stream, a handler), and the
@@ -649,6 +649,36 @@ log is in use (`OpenError::Held`, and an `io::Error` of kind `WouldBlock` from
 Reading takes no lock, so a session running elsewhere — or one being
 reopened — can still be read by `load_recording`, the offline verbs, or
 another host process.
+
+### Appending
+
+An append serializes the entire line — the entry's JSON and its newline —
+before it touches the file, then writes it to the file the sink holds the lock
+on, and only after a clean write adds the entry to memory. The sink is
+unbuffered: the line goes straight to the file, so no bytes of it can be left
+waiting in a buffer while the write reports an error.
+
+A failed write is cut back. The sink records the offset just past the last
+complete line; on failure it truncates back to that offset, puts the write
+position there, and returns the write's own error. The next
+append therefore writes the `seq` the failed one would have taken, after an
+intact final line, and a reader sees a contiguous sequence. The failed append
+is not an entry: it is never added to `entries`, so nothing curates or projects
+it.
+
+If the truncation fails too, the sink is **poisoned**: it reports both failures
+and refuses every later append before writing, because bytes past the last
+complete line are now of unknown extent and a complete line written behind them
+would be a line the reader rejects. The file is then repaired by reopening it,
+exactly as after a writer killed mid-append: the writable reopen keeps the
+fragment beside the log and truncates it (see *An interrupted append* and
+*Continuing a log*). `Log::close` releases the lock without rewriting the
+tail.
+
+A line written to the file is not `fsync`ed: it is in the operating system's
+hands, not necessarily on stable storage. Rollback covers a write that returned
+an error, not a crash after a successful one; the interrupted-append repair
+covers the latter.
 
 ### Reading
 

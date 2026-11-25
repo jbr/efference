@@ -16,11 +16,11 @@
 //! A file is a **versioned** log: line 1 is a header carrying the format and
 //! version plus the session metadata boot recorded ([`LogHeader`]), and the
 //! entries follow from index 0. The header is not an entry — it takes no
-//! `seq` and never reaches `project` — and readers require it, so a headerless
+//! `seq` and `project` never receives it — and readers require it, so a headerless
 //! log is refused rather than read on the assumption that it parses.
-//! that line before returning, so a file that exists is already a readable
-//! log and a second run over the same path cannot append to a `seq` space
-//! somebody else owns.
+//! Creation writes that line before returning, so a file that exists is
+//! already a readable log and a second run over the same path cannot append
+//! to a `seq` space somebody else owns.
 //!
 //! A log has one writer. Every sink holds an **exclusive lock** on its file for
 //! as long as it is open — taken by [`Log::create`] and by [`Log::open`],
@@ -34,7 +34,7 @@
 //! refuse.
 
 use std::fs::{File, OpenOptions, TryLockError};
-use std::io::{self, BufWriter, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use std::sync::Arc;
@@ -62,7 +62,7 @@ enum LockRefused {
 
 /// Take the exclusive writer lock (docs/log-and-projection.md), so this
 /// `File` is the log's only writer for as long as it is held — which is as long
-/// as the `BufWriter` owning it lives. An existing lock is refused rather than
+/// as the [`Sink`] owning it lives. An existing lock is refused rather than
 /// waited on: a second writer queued behind a live session would be a decision
 /// made at a moment nothing is asking for, and the caller is told instead.
 fn writer_lock(file: &File) -> Result<(), LockRefused> {
@@ -73,6 +73,139 @@ fn writer_lock(file: &File) -> Result<(), LockRefused> {
     }
 }
 
+/// The writable end of a log, and the file's exclusive writer lock.
+///
+/// A buffered sink would leave a failed write's bytes split between its buffer
+/// and the file, with the line's `seq` still free — so the next append would
+/// reuse that `seq` behind bytes the reader rejects as a torn line. This writes
+/// each line straight to the file instead, remembers the offset just past the
+/// last complete line, and truncates back to it when a write fails: an append
+/// that returns an error leaves the file exactly as it was.
+///
+/// A write that cannot be undone leaves the sink **poisoned**. The bytes after
+/// `end` are then of unknown extent, so later appends are refused before writing
+/// anything; only reopening the log repairs the tail (docs/log-and-projection.md).
+struct Sink {
+    /// The log file, holding the writer lock for as long as the sink lives.
+    file: File,
+    /// The offset just past the last complete line, which is where the next
+    /// append begins and where a failed one is cut back to.
+    end: u64,
+    /// Set when a failed append could not be rolled back.
+    failed: bool,
+    /// One-shot fault injection for the partial-write test (process/testing.md):
+    /// write this many bytes of the next line, then report an error.
+    #[cfg(test)]
+    inject_write_bytes: Option<usize>,
+    /// One-shot fault injection: the rollback after the next failed write fails.
+    #[cfg(test)]
+    inject_rollback_failure: bool,
+}
+
+impl Sink {
+    /// Wrap a file this `Log` holds the writer lock on, recording where its
+    /// last complete line ends.
+    fn at(mut file: File) -> io::Result<Self> {
+        let end = file.stream_position()?;
+        Ok(Self {
+            file,
+            end,
+            failed: false,
+            #[cfg(test)]
+            inject_write_bytes: None,
+            #[cfg(test)]
+            inject_rollback_failure: false,
+        })
+    }
+
+    /// Write one complete line, or leave the file as it was.
+    fn append(&mut self, line: &[u8]) -> io::Result<()> {
+        if self.failed {
+            return Err(io::Error::other(
+                "the log refuses appends: an earlier partial line could not be removed",
+            ));
+        }
+        let prior = self.end;
+        match self.write(line) {
+            Ok(()) => {
+                self.end = prior + line.len() as u64;
+                Ok(())
+            }
+            Err(cause) => self.roll_back(prior, cause),
+        }
+    }
+
+    fn write(&mut self, line: &[u8]) -> io::Result<()> {
+        #[cfg(test)]
+        if let Some(written) = self.inject_write_bytes.take() {
+            let written = written.min(line.len());
+            self.file.write_all(&line[..written])?;
+            return Err(io::Error::other("injected partial write"));
+        }
+        self.file.write_all(line)
+    }
+
+    /// Cut the file back to `prior` after a failed write, and report the write's
+    /// own error — the reason the append failed, not the cleanup that followed.
+    ///
+    /// If the truncation fails too, the sink is poisoned and the returned error
+    /// names both failures, with the rollback as its source: it is the one that
+    /// leaves bytes on disk no later append may write behind.
+    fn roll_back(&mut self, prior: u64, cause: io::Error) -> io::Result<()> {
+        match self.undo(prior) {
+            Ok(()) => Err(cause),
+            Err(rollback) => {
+                self.failed = true;
+                Err(io::Error::new(
+                    rollback.kind(),
+                    RollbackFailed {
+                        write: cause,
+                        rollback,
+                    },
+                ))
+            }
+        }
+    }
+
+    /// Truncate to `prior` and put the write position there.
+    fn undo(&mut self, prior: u64) -> io::Result<()> {
+        #[cfg(test)]
+        if std::mem::take(&mut self.inject_rollback_failure) {
+            return Err(io::Error::other("injected rollback failure"));
+        }
+        self.file.set_len(prior)?;
+        self.file.seek(SeekFrom::Start(prior)).map(|_| ())
+    }
+}
+
+/// An append that failed to write and whose partial line could not be removed.
+/// Both failures are in the message; the rollback is the [`source`], because it
+/// is what leaves the file unappendable.
+///
+/// [`source`]: std::error::Error::source
+#[derive(Debug)]
+struct RollbackFailed {
+    write: io::Error,
+    rollback: io::Error,
+}
+
+impl std::fmt::Display for RollbackFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "an append failed ({}) and its partial line could not be removed ({}); \
+             the log refuses further appends",
+            self.write, self.rollback
+        )
+    }
+}
+
+impl std::error::Error for RollbackFailed {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.rollback)
+    }
+}
+
 /// The live append-only log: the in-memory entries plus an optional JSONL sink.
 /// Construction is the only place that touches the clock and `seq` allocation,
 /// so those non-deterministic inputs never leak toward the wire (docs/log-and-projection.md).
@@ -80,8 +213,8 @@ pub struct Log {
     entries: Vec<LogEntry>,
     /// The JSONL sink, which also holds the file's exclusive writer lock: the
     /// lock lives on the `File` inside it, so dropping the `Log` (or [`Log::close`])
-    /// flushes the last line and then releases it.
-    sink: Option<BufWriter<File>>,
+    /// releases it.
+    sink: Option<Sink>,
     /// Set by [`Log::close`]: the session has ended, and an append is an error
     /// rather than an entry that reaches memory and no file.
     closed: bool,
@@ -109,8 +242,8 @@ impl Log {
     /// sequence with duplicates in it — so the refusal is the only way that
     /// stays unreachable, and it fails before anything is written.
     ///
-    /// The header line is written and flushed before returning, so a file that
-    /// exists at any point after this is a log a reader can open.
+    /// The header line is written before returning, so a file that exists at
+    /// any point after this is a log a reader can open.
     ///
     /// The sink holds the exclusive writer lock for the `Log`'s lifetime. The
     /// directory it was given was minted exclusively too, so the lock is not
@@ -119,7 +252,7 @@ impl Log {
     pub fn create(path: impl AsRef<Path>, metadata: Option<SessionMetadata>) -> io::Result<Self> {
         use std::os::unix::fs::OpenOptionsExt;
         let path = path.as_ref();
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(crate::record::session_dir::FILE_MODE)
@@ -142,9 +275,8 @@ impl Log {
                 ));
             }
         }
-        let mut sink = BufWriter::new(file);
-        LogHeader::new(metadata).write_to(&mut sink)?;
-        sink.flush()?;
+        LogHeader::new(metadata).write_to(&mut file)?;
+        let sink = Sink::at(file)?;
         Ok(Self {
             entries: Vec::new(),
             sink: Some(sink),
@@ -199,10 +331,11 @@ impl Log {
     }
 
     /// Append a payload: assign the next `seq` (gap-free — append-only, so
-    /// `seq == index`), stamp the wall clock, **durably write the JSONL line**,
-    /// then keep it in memory. The line is flushed before returning so a crash
-    /// can't lose an acknowledged entry. It stops short of `fsync` per line — a
-    /// deliberate durability/throughput tradeoff.
+    /// `seq == index`), stamp the wall clock, **write the JSONL line**, then
+    /// keep it in memory. The line is written before returning, so a crash
+    /// can't lose an acknowledged entry; one that fails to write is rolled back
+    /// and keeps neither its bytes nor its `seq`. It stops short of `fsync` per
+    /// line — a deliberate durability/throughput tradeoff.
     pub fn append(&mut self, turn: Turn, payload: Payload) -> io::Result<Seq> {
         self.append_submission(turn, payload, None, None)
     }
@@ -240,25 +373,41 @@ impl Log {
             payload,
         };
         if let Some(sink) = &mut self.sink {
-            serde_json::to_writer(&mut *sink, &entry).map_err(io::Error::other)?;
-            sink.write_all(b"\n")?;
-            sink.flush()?;
+            // Serialize the whole line first: the sink writes bytes, and only a
+            // clean line is written to the file (docs/log-and-projection.md).
+            let mut line = serde_json::to_vec(&entry).map_err(io::Error::other)?;
+            line.push(b'\n');
+            sink.append(&line)?;
         }
         self.entries.push(entry);
         Ok(seq)
     }
 
-    /// End the log's writing: flush the sink and release the file's writer lock
-    /// now, rather than when the last holder of the `Log` lets go of it. A
-    /// session's teardown calls this, so a log can be reopened as soon as its
-    /// session has ended even while a reader (an SSE stream, a handler) still
-    /// holds the session. The entries stay readable; appends after it fail.
-    pub fn close(&mut self) -> io::Result<()> {
+    /// Make the next append fail after writing `written` bytes of its line, and
+    /// optionally make the rollback that follows fail too: the two states the
+    /// partial-write tests need, set here rather than reached through a race
+    /// (process/testing.md).
+    #[cfg(test)]
+    fn fail_next_append(&mut self, written: usize, rollback_fails: bool) {
+        let sink = self
+            .sink
+            .as_mut()
+            .expect("fault injection needs a log that writes to disk");
+        sink.inject_write_bytes = Some(written);
+        sink.inject_rollback_failure = rollback_fails;
+    }
+
+    /// End the log's writing: release the file's writer lock now, rather than
+    /// when the last holder of the `Log` lets go of it. A session's teardown
+    /// calls this, so a log can be reopened as soon as its session has ended
+    /// even while a reader (an SSE stream, a handler) still holds the session.
+    /// The entries stay readable; appends after it fail.
+    pub fn close(&mut self) {
         self.closed = true;
-        match self.sink.take() {
-            Some(mut sink) => sink.flush(),
-            None => Ok(()),
-        }
+        // Nothing is buffered: each append wrote its line through. Dropping the
+        // sink closes the file and releases its lock. A poisoned sink's tail is
+        // left for `open`'s repair, exactly as a killed writer's would be.
+        drop(self.sink.take());
     }
 
     /// Whether [`close`](Self::close) has run.

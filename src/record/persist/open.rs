@@ -21,13 +21,13 @@
 //! into the wrong place.
 
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufWriter, Seek, SeekFrom, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use super::error::OpenError;
 use super::header::LogHeader;
 use super::read::{Trailing, load_recording_from};
-use super::{LockRefused, Log, writer_lock};
+use super::{LockRefused, Log, Sink, writer_lock};
 
 /// What an open had to resolve past the last entry before it could append. The
 /// variants are the [`Trailing`] cases of the same name: this is the answer to
@@ -106,7 +106,7 @@ impl Log {
         Ok(Opened {
             log: Log {
                 entries: recording.entries,
-                sink: Some(BufWriter::new(file)),
+                sink: Some(Sink::at(file).map_err(|error| OpenError::io(path, error))?),
                 closed: false,
                 masker: None,
             },
