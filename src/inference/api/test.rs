@@ -52,6 +52,7 @@ mod live;
 mod partials;
 mod retry;
 mod stages;
+mod thinking_off;
 mod triage_ping;
 mod usage_accounting;
 mod window_retry;

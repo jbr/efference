@@ -21,7 +21,8 @@ impl Client {
     ///
     /// The operator's interrupt (docs/control-channel.md) is armed here, before anything
     /// is sent, and the one armed future serves every attempt below — the image-withheld
-    /// retry ([`Self::send_with_image_fallback`]), a reservation or credential retry — so a
+    /// retry ([`Self::send_with_image_fallback`]), the thinking-off retry
+    /// ([`Self::send_with_thinking_fallback`]), a reservation or credential retry — so a
     /// press between two attempts interrupts the later one. Armed before sending rather than
     /// once a stream opens: `notify_waiters` stores no permit, so a press made after
     /// the upstream received the request but before the read loop registered would
@@ -253,7 +254,7 @@ impl Client {
         max_tokens: u32,
         stream: bool,
     ) -> Request<'a> {
-        let thinking = Thinking::for_request(&tool_choice, self.thinking, self.thinking_off);
+        let thinking = self.request_thinking(&tool_choice);
         Request {
             model: &self.model,
             max_tokens,
@@ -262,7 +263,9 @@ impl Client {
             tool_choice,
             thinking,
             reasoning: self.reasoning_off(thinking),
-            output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
+            output_config: self
+                .request_effort(&tool_choice)
+                .map(|effort| OutputConfig { effort }),
             temperature: self.wire_temperature(),
             upstream: self.upstream.as_ref(),
             prompt_cache_key: self.prompt_cache_key(),

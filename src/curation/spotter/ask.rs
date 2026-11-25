@@ -33,7 +33,8 @@ const SPOT_REQUESTS: u32 = 3;
 
 /// The effort the spotter's requests carry on `dialect`: [`SPOT_EFFORT`] on Responses,
 /// and none where the forced call's thinking off is how the request asks for no
-/// reasoning.
+/// reasoning. On Messages a model that refuses that spelling sends the thinking-off
+/// recovery's `low` instead, once that recovery's record is set (docs/transport.md).
 pub(super) fn spot_effort(dialect: WireDialect) -> Option<&'static str> {
     match dialect {
         WireDialect::Responses => Some(SPOT_EFFORT),

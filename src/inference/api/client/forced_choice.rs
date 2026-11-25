@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::record::project::UserPart;
+use std::sync::atomic::Ordering;
 
 /// The user line a forced call sent as `auto` ends with (docs/transport.md).
 pub(crate) fn forced_choice_instruction(tool: &str) -> String {
@@ -12,6 +13,15 @@ pub(crate) fn forced_choice_instruction(tool: &str) -> String {
 }
 
 impl Client {
+    /// Whether this client sends a forced request as `auto` with
+    /// [`forced_choice_instruction`]: the model refused the forced choice itself, or
+    /// refused the thinking-off a forced request sends, which leaves `auto` the only
+    /// form with thinking on (docs/transport.md).
+    fn sends_forced_as_auto(&self) -> bool {
+        self.forced_choice_refused.load(Ordering::Relaxed)
+            || self.thinking_off_refused.load(Ordering::Relaxed)
+    }
+
     /// One streaming round-trip: serialize `messages`, POST with `stream: true`,
     /// and fold the SSE event stream back into a [`Completion`]. Each live signal
     /// — prose, thinking, a tool call opening, its arguments arriving — is handed
@@ -35,7 +45,9 @@ impl Client {
     /// and their metadata does not indicate it; the retry is how the client detects it.
     /// When the retry succeeds, the client records that, and later forced requests go
     /// straight to the fallback. When it fails too, the rejection had another cause: the
-    /// first error is returned and nothing is learned.
+    /// first error is returned and nothing is learned. Where this client has recorded
+    /// that the endpoint refuses thinking off, the fallback sends adaptive thinking at
+    /// effort `low` instead, and later forced requests go straight to it as well.
     pub async fn complete(
         &self,
         turns: &[WireTurn],
@@ -43,11 +55,10 @@ impl Client {
         tool_choice: ToolChoice,
         mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
-        use std::sync::atomic::Ordering;
         let Some(forced) = tool_choice.forced() else {
             return self.send(turns, tools, tool_choice, None, on_delta).await;
         };
-        if self.forced_choice_refused.load(Ordering::Relaxed) {
+        if self.sends_forced_as_auto() {
             return self
                 .send_unforced(turns, tools, forced, &mut on_delta)
                 .await;
@@ -83,8 +94,10 @@ impl Client {
         }
     }
 
-    /// A forced call sent as `auto`: the turns plus [`forced_choice_instruction`],
-    /// with thinking off, which is what the forced request would have sent.
+    /// A forced call sent as `auto`: the turns plus [`forced_choice_instruction`], with
+    /// thinking off as the forced request would have sent it — or adaptive at `low`,
+    /// where the thinking-off recovery's record replaces that spelling
+    /// (docs/transport.md).
     async fn send_unforced(
         &self,
         turns: &[WireTurn],
@@ -100,26 +113,28 @@ impl Client {
     }
 
     /// The client the fallback is sent with: thinking off, as the forced request had it,
-    /// and off the cache chain, since the fallback's body is not the turn's prompt.
+    /// and off the cache chain, since the fallback's body is not the turn's prompt. The
+    /// thinking-off recovery's record replaces that spelling when it is set, so the
+    /// request sends adaptive at `low` instead (docs/transport.md).
     pub(super) fn unforced(&self) -> Client {
         self.clone().without_thinking().without_cache_chain()
     }
 
     /// The request a [`Self::complete`] over these inputs went out as, read after it
-    /// returned (docs/transport.md): as given, or — once this client has recorded that the
-    /// model refuses a forced choice — `auto`, with [`forced_choice_instruction`]
-    /// appended and thinking off. The refusal is only ever recorded after a fallback that
-    /// succeeded, so after an answered `complete` the flag shows which form its last
-    /// attempt took.
+    /// returned (docs/transport.md): as given, or — once this client has recorded that
+    /// the model refuses a forced choice, or refuses the thinking-off a forced request
+    /// sends — `auto`, with [`forced_choice_instruction`] appended, and thinking off
+    /// unless the thinking-off recovery's record replaces that spelling. Each record
+    /// is only made after a fallback that succeeded, so after an answered `complete`
+    /// the flags show which form its last attempt took.
     pub(crate) fn sent_form(
         &self,
         turns: Vec<WireTurn>,
         tools: &[Value],
         choice: ToolChoice,
     ) -> SentRequest {
-        use std::sync::atomic::Ordering;
         match choice.forced() {
-            Some(forced) if self.forced_choice_refused.load(Ordering::Relaxed) => {
+            Some(forced) if self.sends_forced_as_auto() => {
                 let mut turns = turns;
                 turns.push(WireTurn::text(forced_choice_instruction(forced)));
                 SentRequest {
@@ -145,7 +160,8 @@ pub struct SentRequest {
     pub tools: Vec<Value>,
     pub choice: ToolChoice,
     /// Sent by the forced-choice fallback: `choice` is the `auto` it went out with, and
-    /// the request carried no thinking.
+    /// the request carried no thinking — unless the thinking-off recovery's record
+    /// replaces that spelling, in which case it carried adaptive at `low`.
     pub unforced: bool,
     pub(crate) triage_reasoning: Option<TriageReasoning>,
 }

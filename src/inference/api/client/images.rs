@@ -34,12 +34,16 @@ impl Client {
         let _ = self.images_refused.set(refusal.into());
     }
 
-    /// [`Self::send_request`], with image refusal learned on the way
-    /// (docs/transport.md). The recovery runs only while no request carrying images
-    /// has succeeded on this client: once one has, the model reads images, a later
-    /// rejection has another cause, and stripping the history's images would move a
-    /// prefix the provider has already cached. Every attempt reads against `abort`, the
-    /// interrupt [`Self::send`] armed.
+    /// [`Self::send_with_thinking_fallback`], with image refusal learned on the way
+    /// (docs/transport.md): every attempt below passes through the thinking-off
+    /// recovery, which sits between this and [`Self::send_request`] and matches a
+    /// refusal by its wording, so a request refused for its thinking is answered
+    /// there while one refused for its images falls through to this. The image
+    /// recovery runs only while no request carrying images has succeeded on this
+    /// client: once one has, the model reads images, a later rejection has another
+    /// cause, and stripping the history's images would move a prefix the provider has
+    /// already cached. Every attempt reads against `abort`, the interrupt
+    /// [`Self::send`] armed.
     pub(super) async fn send_with_image_fallback(
         &self,
         turns: &[WireTurn],
@@ -51,7 +55,7 @@ impl Client {
     ) -> Result<Completion, Error> {
         if self.images_refused().is_some() {
             return self
-                .send_request(
+                .send_with_thinking_fallback(
                     &withhold_images(turns),
                     tools,
                     tool_choice,
@@ -63,11 +67,11 @@ impl Client {
         }
         if !carries_images(turns) {
             return self
-                .send_request(turns, tools, tool_choice, cap, abort, on_delta)
+                .send_with_thinking_fallback(turns, tools, tool_choice, cap, abort, on_delta)
                 .await;
         }
         let refusal = match self
-            .send_request(
+            .send_with_thinking_fallback(
                 turns,
                 tools,
                 tool_choice,
@@ -88,7 +92,7 @@ impl Client {
             }
         };
         match self
-            .send_request(
+            .send_with_thinking_fallback(
                 &withhold_images(turns),
                 tools,
                 tool_choice,

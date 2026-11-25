@@ -88,7 +88,8 @@ impl Client {
     /// takes the caller's request — turns, `tools`, and `tool_choice` — and reuses the
     /// client's own `system`, rather than reconstructing any of them. A request the
     /// forced-choice fallback sent ([`SentRequest::unforced`]) goes out as the fallback
-    /// did, thinking off.
+    /// did: thinking off, or adaptive at `low` where the thinking-off recovery's
+    /// record replaces that spelling (docs/transport.md).
     ///
     /// On the Responses and Completions dialects the ping is an ordinary streamed
     /// request with the output capped at [`Provider::keepalive_output_cap`]

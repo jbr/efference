@@ -158,8 +158,9 @@ thinking off (`ThinkingOff`):
 An `auto` turn sends `adaptive` (`display: "summarized"`) where the model takes
 it. Everything else sends the model's spelling of off: a forced `tool_choice`
 (Anthropic answers forced choice with thinking on with a 400), a model without
-adaptive, and a client built `without_thinking`. The main agent turn and the shared
-triage both send `auto` with the agent's thinking — the shared envelope
+adaptive, and a client built `without_thinking`. Where the endpoint refuses that
+spelling too, the request is retried at adaptive `low` (below). The main agent turn
+and the shared triage both send `auto` with the agent's thinking — the shared envelope
 ([triage.md](triage.md)): on Anthropic a thinking change misses the messages-tier
 cache on every model that accepts it (probed 2026-11-20), so the triage keeps the
 turn's thinking to read the agent lineage's cache, and may think (the fork's thinking
@@ -185,6 +186,28 @@ the first error is returned and nothing is learned. A caller's parse already
 treats a reply without the asked-for call as unusable, so an `auto` answer that
 skips the tool fails the way a malformed forced answer does. The switch writes one
 fresh cache entry, since `tool_choice` is part of the cached envelope.
+
+A model can refuse the thinking-off spelling itself: Opus 5.5 and Fable 5.x answer
+`between_tools` with a 400 (probed 2026-11-20), which leaves a forced `tool_choice`
+and a client built `without_thinking` with no way to ask for no thinking.
+`api/client/thinking_off.rs` recovers from that refusal where the model takes
+adaptive thinking: a rejection whose message names the thinking type is retried once
+with adaptive thinking at effort `low`, the form that replaces the refused spelling,
+on the Messages dialect, which is the only one with a spelling to refuse. The match
+is the one the separate-model result triage's ladder makes (`TriageReasoning::Off`),
+so an unrelated 400 costs nothing, and that ladder keeps the refusal for itself: its
+off → `low` → unset sequence has the first step, recorded in `retries`
+([triage.md](triage.md)), and a retry on top of it would take the step instead. A
+forced choice goes as `auto` with `forced_choice_instruction`, since a forced choice
+and thinking on are a 400 together; the instruction appends a turn, so that retry is
+off the cache chain as the forced-choice fallback is, while an `auto` retry sends the
+turns the request did and stays on it. When the retry succeeds the client — and its
+clones, which share the flag — sends that form from then on, so the refusal is paid
+once; when it fails too, the rejection had another cause, the first error is returned
+and nothing is learned. The retry is also what establishes that the model takes
+`low`: the client holds no effort list, so a model that refuses the level returns the
+original refusal and learns nothing. A ping of a recovered request re-sends it in the
+recovered form, since the form is read off the client as the body is built.
 
 Image input is learned the same way (`api/client/images.rs`). Where a model's
 metadata has no information about images, `supports_image_input` reads `true`: a model
@@ -230,8 +253,10 @@ never elided today — that's a deferred generalization of the triage model
 changing a thinking parameter mid-session invalidates the message-tier cache on
 Anthropic, as does changing the effort level on some models, and a replayed
 thinking block's signature under a changed config is its own unanswered question.
-The one per-request override is the shared result triage's `low`, which is
-measured against the cache it reads (below, and [triage.md](triage.md)). Unset, the field is omitted entirely and the
+The per-request overrides are the shared result triage's `low`, which is
+measured against the cache it reads (below, and [triage.md](triage.md)), and the
+thinking-off recovery's `low` (above), which applies only to a request that would
+spell thinking off. Unset, the field is omitted entirely and the
 provider's own default stands — which is why every session that sets nothing
 sends the bytes it always did (`request_envelope_matches_expected_wire_bytes`
 is unmoved; `with_effort_envelope_matches_expected_wire_bytes` pins the other
@@ -2177,14 +2202,17 @@ sent and re-sent byte for byte (`api::SentRequest`, `Session::store_triage_reque
 
 The ping is the stored request as sent, never a re-projection. `Client::complete` records
 when a model refuses a forced `tool_choice` and sends later forced requests as the
-fallback (`auto`, `forced_choice_instruction` appended, thinking off), while
+fallback (`auto`, `forced_choice_instruction` appended, thinking off — or adaptive at
+`low`, where the thinking-off recovery's record replaces that spelling), while
 `Client::keepalive` sends the request it is given; a rebuilt forced ping to such a model
 would draw a 400, which `is_permanent` treats as terminal, and on Anthropic a different
 `tool_choice` or thinking setting misses the message cache. So the triage reads back the
 form its last attempt took (`Client::sent_form`, after the round trip: the lesson is
 learned only by a fallback that succeeded), and a stored fallback request
-(`SentRequest::unforced`) is pinged on the fallback's client, `auto` and thinking off. The
-fallback's instruction rides after the breakpoint and is dropped with the current step.
+(`SentRequest::unforced`) is pinged on the fallback's client, `auto` and thinking off
+unless the recovery's record replaces that spelling, in which case the ping sends
+adaptive at `low` as the request did. The fallback's instruction rides after the
+breakpoint and is dropped with the current step.
 
 - **Arming.** Armed off the triage client's prompt-cache policy (`Triager::keepalive_client`,
   `PromptCachePolicy::is_supported`), the check the main keepalive arms on: a triage

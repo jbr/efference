@@ -57,7 +57,7 @@ pub(super) fn scripted(replies: Vec<(u16, &'static str)>) -> (Client, Replies) {
     (client, Replies { upstream, count })
 }
 
-fn last_user_text(body: &Value) -> String {
+pub(super) fn last_user_text(body: &Value) -> String {
     body["messages"]
         .as_array()
         .unwrap()

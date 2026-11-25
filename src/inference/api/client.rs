@@ -3,7 +3,8 @@
 //! This file holds the client's configuration. `complete` and its forced-choice
 //! fallback are `client/forced_choice.rs`, one request's pipeline is `client/send.rs`,
 //! the keepalive and primer are `client/keepalive.rs`, the per-response observer is
-//! `client/upstream_status.rs`, and the image-refusal recovery is `client/images.rs`.
+//! `client/upstream_status.rs`, the image-refusal recovery is `client/images.rs`, and
+//! the thinking-off recovery is `client/thinking_off.rs`.
 
 use super::*;
 
@@ -29,6 +30,7 @@ mod forced_choice;
 mod images;
 mod keepalive;
 mod send;
+mod thinking_off;
 mod triage_effort;
 mod upstream_status;
 
@@ -151,6 +153,11 @@ pub struct Client {
     /// clones, goes as `auto` with [`forced_choice::forced_choice_instruction`]
     /// instead. Shared across clones, so the lesson is learned once per client.
     forced_choice_refused: Arc<std::sync::atomic::AtomicBool>,
+    /// Set once the endpoint refused this client's thinking-off spelling and a retry
+    /// at adaptive `low` cured it (docs/transport.md): every later request from this
+    /// client and its clones that would spell thinking off sends that form instead.
+    /// Shared across clones, so the lesson is learned once per client.
+    thinking_off_refused: Arc<std::sync::atomic::AtomicBool>,
     /// The furthest separate-model triage reasoning setting a completed fallback has
     /// used on this route (docs/triage.md). Shared across clones; reset when the
     /// upstream changes.
@@ -301,6 +308,7 @@ impl Client {
             upstream_failure,
             upstream_retry: upstream_retry_state(),
             forced_choice_refused: Arc::default(),
+            thinking_off_refused: Arc::default(),
             triage_reasoning_floor: Arc::default(),
             foreground_triage: None,
             low_effort_evidence: Arc::default(),
