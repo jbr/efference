@@ -123,9 +123,8 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
   }
 
   async function run() {
-    // `visibilitychange` reaches the document; `focus` and `pageshow` are
-    // window events. Listening for all three means a resume is acted on
-    // whichever one the platform delivers.
+    // The document receives `visibilitychange`; the window receives `focus`
+    // and `pageshow`. Check for a stale stream on any of the three events.
     const doc = globalThis.document;
     const win = globalThis.window;
     doc?.addEventListener("visibilitychange", onWake);
