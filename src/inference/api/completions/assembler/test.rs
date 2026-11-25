@@ -181,6 +181,60 @@ fn mistral_parallel_calls_in_one_chunk() {
     assert_eq!(completion.usage.output_tokens, 27);
 }
 
+/// Gemini's own endpoint sends each parallel call whole in its own chunk, with no
+/// `index` and the same `type`: the differing `id`s keep them three calls, each
+/// with its own live slot. Only the first carries the thought signature, and
+/// `finish_reason` is `stop`.
+#[test]
+fn gemini_parallel_calls_without_index() {
+    let (completion, live) = assemble(include_str!("../gemini_parallel_tool.sse"));
+    let stored = message(&completion);
+    let calls = stored.tool_calls().unwrap();
+    assert_eq!(
+        calls,
+        vec![
+            ToolCall::new(
+                "read",
+                "call_16012398369532302391",
+                serde_json::json!({"paths": ["CHANGELOG.md"]})
+            ),
+            ToolCall::new(
+                "search",
+                "call_16012398369532304716",
+                serde_json::json!({"pattern": "TODO"})
+            ),
+            ToolCall::new(
+                "bash",
+                "call_16012398369532303499",
+                serde_json::json!({"command": "git status"})
+            ),
+        ]
+    );
+    let raw = stored.as_map()["tool_calls"].as_array().unwrap();
+    assert!(raw[0]["extra_content"]["google"]["thought_signature"].is_string());
+    assert!(raw[1].get("extra_content").is_none());
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&FinishReason::ToolCalls)
+    );
+    assert!(failure(&completion).is_none());
+    let starts: Vec<_> = live
+        .iter()
+        .filter_map(|s| match s {
+            Streamed::ToolStart { index, name, .. } => Some((*index, name.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        starts,
+        [
+            (TOOL_BASE, "read"),
+            (TOOL_BASE + 1, "search"),
+            (TOOL_BASE + 2, "bash")
+        ]
+    );
+}
+
 #[test]
 fn mistral_plain_text() {
     let (completion, live) = assemble(include_str!("../mistral_text.sse"));

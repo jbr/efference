@@ -25,12 +25,12 @@ mod test;
 /// Keys a server repeats whole in every fragment rather than splitting: the last
 /// value is retained instead of concatenating. OpenRouter repeats `role` in every delta
 /// and `type` / `format` in every `reasoning_details` fragment (measured,
-/// backlog/inbox/completions-dialect.md).
+/// docs/transport.md).
 const IDENTITY: [&str; 5] = ["id", "type", "role", "format", "index"];
 
 /// Live-view indices. Completions has no block index of its own, so each kind of
-/// output takes a fixed slot and a tool call `i` takes `TOOL_BASE + i`, which keeps
-/// a client's per-index buffers apart.
+/// output takes a fixed slot and the tool call at position `i` of the assembled
+/// `tool_calls` takes `TOOL_BASE + i`, which keeps a client's per-index buffers apart.
 const THINKING_INDEX: usize = 0;
 const TEXT_INDEX: usize = 1;
 const TOOL_BASE: usize = 2;
@@ -45,8 +45,9 @@ pub(crate) struct CompletionsAssembler {
     finalized: bool,
     usage: Usage,
     receipt: Receipt,
-    /// Tool-call indices whose [`Streamed::ToolStart`] has been sent.
-    started: BTreeSet<u64>,
+    /// Positions in the assembled `tool_calls` whose [`Streamed::ToolStart`] has
+    /// been sent.
+    started: BTreeSet<usize>,
     failure: Option<String>,
     failure_class: FailureClass,
     response: Option<ResponseMeta>,
@@ -202,11 +203,19 @@ impl CompletionsAssembler {
     /// committed message is the merge, so nothing depends on this choice.
     fn live(&mut self, delta: &Value) -> Option<Streamed> {
         if let Some(Value::Array(calls)) = delta.get("tool_calls") {
+            let assembled = self
+                .message
+                .get("tool_calls")
+                .and_then(Value::as_array)
+                .map_or(&[][..], Vec::as_slice);
             for call in calls {
-                let index = call.get("index").and_then(Value::as_u64).unwrap_or(0);
-                let slot = TOOL_BASE + index as usize;
+                // A call that would append returns its start below, so every call
+                // before it in this delta joins an existing element and the
+                // pre-merge array gives each one's position.
+                let position = landing(assembled, call).unwrap_or(assembled.len());
+                let slot = TOOL_BASE + position;
                 let function = call.get("function");
-                if self.started.insert(index) {
+                if self.started.insert(position) {
                     let field = |value: Option<&Value>| {
                         value
                             .and_then(Value::as_str)
@@ -329,8 +338,8 @@ impl CompletionsAssembler {
     }
 }
 
-/// Merge one delta into what has arrived (backlog/inbox/completions-dialect.md,
-/// where each clause's measured cause is recorded):
+/// Merge one delta into what has arrived (docs/transport.md, where each clause's
+/// measured cause is recorded):
 ///
 /// - `null` is absent and never overwrites;
 /// - strings concatenate, except under [`IDENTITY`] keys, where the last value is retained;
@@ -341,6 +350,9 @@ impl CompletionsAssembler {
 ///   `reasoning.encrypted` detail at the same `index` as its `reasoning.text`;
 /// - an element without `index` continues the last element when that one has none
 ///   either and the same `type` (Mistral's `thinking` parts), else appends;
+/// - in either case, two elements that both have an `id` and differ in it are
+///   different elements: Gemini's own endpoint sends each parallel call whole,
+///   index-less, with its own `id`;
 /// - `content` is a string or a parts array, a string being one `text` part: when
 ///   the two meet, the string becomes a part and an empty one is dropped;
 /// - any other value: the last wins.
@@ -378,25 +390,7 @@ fn merge(acc: Value, delta: Value, key: Option<&str>) -> Value {
 
 fn merge_elements(mut acc: Vec<Value>, delta: Vec<Value>) -> Vec<Value> {
     for item in delta {
-        let hit = match item.get("index") {
-            Some(index) => acc.iter().position(|prior| {
-                prior.get("index") == Some(index)
-                    && match item.get("type") {
-                        None => true,
-                        kind => prior.get("type") == kind,
-                    }
-            }),
-            None if item.is_object() => acc
-                .last()
-                .filter(|last| {
-                    last.is_object()
-                        && last.get("index").is_none()
-                        && last.get("type") == item.get("type")
-                })
-                .map(|_| acc.len() - 1),
-            None => None,
-        };
-        match hit {
+        match landing(&acc, &item) {
             Some(i) => {
                 let prior = std::mem::take(&mut acc[i]);
                 acc[i] = merge(prior, item, None);
@@ -405,6 +399,35 @@ fn merge_elements(mut acc: Vec<Value>, delta: Vec<Value>) -> Vec<Value> {
         }
     }
     acc
+}
+
+/// The position of the element in `acc` that `item` merges into under the array
+/// clauses of [`merge`], or `None` when it appends.
+fn landing(acc: &[Value], item: &Value) -> Option<usize> {
+    let same_id = |prior: &Value| match (prior.get("id"), item.get("id")) {
+        (Some(prior), Some(id)) => prior == id,
+        _ => true,
+    };
+    match item.get("index") {
+        Some(index) => acc.iter().position(|prior| {
+            prior.get("index") == Some(index)
+                && match item.get("type") {
+                    None => true,
+                    kind => prior.get("type") == kind,
+                }
+                && same_id(prior)
+        }),
+        None if item.is_object() => acc
+            .last()
+            .filter(|last| {
+                last.is_object()
+                    && last.get("index").is_none()
+                    && last.get("type") == item.get("type")
+                    && same_id(last)
+            })
+            .map(|_| acc.len() - 1),
+        None => None,
+    }
 }
 
 fn as_parts(content: Value) -> Vec<Value> {

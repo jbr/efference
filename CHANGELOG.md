@@ -52,6 +52,7 @@ one line per feature.
 
 ### Fixed
 
+- Parallel tool calls from Gemini's OpenAI-compatible endpoint, which streams each call without an index, stay separate calls instead of merging into one with unparseable arguments.
 - Newer Claude models that reject thinking off get one retry with adaptive thinking at low effort, including when the spotter asks for a named tool call.
 - A failed cache keepalive waits a full ping interval before trying again instead of resending the context at every scheduler check.
 - Streamed keepalives accept accounted input usage when the output cap cuts off unused tool arguments.

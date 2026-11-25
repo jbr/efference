@@ -1084,7 +1084,8 @@ by a heuristic that is never used on the wire.
 - an array element with `index` merges into the element with the same `index` and a
   matching `type` (a fragment without `type` matches), and otherwise appends; an
   element without `index` continues the last element when that one has none either
-  and the same `type`, and otherwise appends;
+  and the same `type`, and otherwise appends; in either case two elements that both
+  have an `id` and differ in it are different elements;
 - `content` is a string or a parts array, a string being one `text` part: when the two
   meet, the string becomes a part, and an empty one is dropped;
 - any other value: the last wins.
@@ -1107,6 +1108,11 @@ Each clause was measured on 2026-10-09 against captures now kept as test fixture
   `[{thinking…}, {text…}]`. Reasoning there is opt-in (`reasoning_effort`).
 - OpenRouter and DeepSeek stream `arguments` in fragments; Mistral and Inception send
   each call whole in one chunk, Mistral two parallel calls in one.
+- Gemini's own endpoint (measured 2026-11-25) sends each parallel call whole in its
+  own chunk with no `index`, all `"type": "function"`, so the index-less clause alone
+  folds them into one call with concatenated `name` and `arguments`; the `id` clause
+  keeps them apart. The thought signature is in `extra_content` on the first call
+  only, and `finish_reason` is `stop`.
 - Keys outside `delta` are ignored except `id`, `model`, `usage`, `provider` (the
   upstream that served, as on OpenRouter's Messages skin), and an `error` object.
   Mistral pads every chunk with a `p` string; Inception adds `reasoning_summary` and
@@ -1114,7 +1120,8 @@ Each clause was measured on 2026-10-09 against captures now kept as test fixture
 
 Assembly drops `null` values, `role`, and each call's `index` from the stored
 message. The live view gets one `Streamed` event per chunk at fixed indices (thinking
-0, text 1, call `i` at 2 + `i`), the first non-empty kind in the order call,
+0, text 1, the call at position `i` of the assembled `tool_calls` at 2 + `i`, so
+index-less calls get their own slots), the first non-empty kind in the order call,
 reasoning, prose; a chunk carrying two parallel calls starts only the first live.
 `finish_reason` maps through `Finish::completions`. Usage arrives under
 `stream_options: {include_usage: true}`: `prompt_tokens` is the whole prompt, so

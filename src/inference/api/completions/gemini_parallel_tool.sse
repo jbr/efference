@@ -1,0 +1,10 @@
+data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"extra_content":{"google":{"thought_signature":"EuYDCuMDAWkUfRPAuEDZSf9jhY4KFnXA+9iv83Fh9bnD3yyb1U0bZPifq4rMS3EMfIv3Xso9qvEubq5F1rkHD/0ZDfq7W7hJZX8oPsNuXacC2Vfr05e2UjXN4uDcgkNX4ScVsLdj5PR2pkRaX4+dv2P468t0BHLAoLTVyua/bRvQtSBkzC/vnIUXSce5ZWl8AMr0DjFl4jZRUOVOtDCnEnyuDYXQaTMu0LyeAKzgD4yTe2b+TbN1C27cUDxIP0PVao4KC0pXe+vhH0rfUBrNujj7c2BIucm2nb7sMH5FjRHRt4a3ORPQabmJ1avm91wJqrh9K4LczvJGG078OHpy+5bkWduUol/Cv8gpPcx2w3/U2ZjfFs3yYYxtc9hEVKKLwh5MY7YpMkuRlHdoKAbiAbNwWaPm6Y4eWugS0x/04NLk8PrfxbCM9vmkoVY+0+GTxqgic0YyBAK+tPUMpxz9ba3WF4kutkfIjFXdarHO0PGd1uJyJl0JoHk8/23doE/VjT32y4DcKLsz0Rf0KSrDOsNcdA+EObFGn5Y8uJfBQYW79WIFQ8sNUZFWbAlvNm20KCf4pOxx8N0kfG9tkGYOa2/IQHMIzn1q3l1DgRFYZvaO04ZCviFEK89I2QZJ4U9tazF17C1al8qF"}},"function":{"arguments":"{\"paths\":[\"CHANGELOG.md\"]}","name":"read"},"id":"call_16012398369532302391","type":"function"}]},"index":0}],"created":1795647196,"id":"2mYHa9W8KIWF0PEPl9Dx6AM","model":"models/gemini-4-neon","object":"chat.completion.chunk","usage":{"completion_tokens":16,"prompt_tokens":212,"total_tokens":306}}
+
+data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"{\"pattern\":\"TODO\"}","name":"search"},"id":"call_16012398369532304716","type":"function"}]},"index":0}],"created":1795647196,"id":"2mYHa9W8KIWF0PEPl9Dx6AM","model":"models/gemini-4-neon","object":"chat.completion.chunk","usage":{"completion_tokens":30,"prompt_tokens":212,"total_tokens":320}}
+
+data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"{\"command\":\"git status\"}","name":"bash"},"id":"call_16012398369532303499","type":"function"}]},"index":0}],"created":1795647196,"id":"2mYHa9W8KIWF0PEPl9Dx6AM","model":"models/gemini-4-neon","object":"chat.completion.chunk","usage":{"completion_tokens":45,"prompt_tokens":212,"total_tokens":335}}
+
+data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":"stop","index":0}],"created":1795647196,"id":"2mYHa9W8KIWF0PEPl9Dx6AM","model":"models/gemini-4-neon","object":"chat.completion.chunk","usage":{"completion_tokens":52,"prompt_tokens":212,"total_tokens":342}}
+
+data: [DONE]
+
