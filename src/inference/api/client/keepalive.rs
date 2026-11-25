@@ -211,7 +211,14 @@ impl Client {
                 },
                 None => KeepaliveError::Other(e),
             })?;
-        if let Some(why) = completion.upstream_failure() {
+        // The one marked completion a ping returns usage for is the output cap's cut of
+        // a tool call, with the input accounted for (`cut_at_the_cap`,
+        // docs/transport.md). Every other mark is the failure it says: a stream that
+        // died, a failed response, arguments unparseable for a reason the cap had no
+        // part in.
+        if let Some(why) = completion.upstream_failure()
+            && !cut_at_the_cap(&completion)
+        {
             return Err(KeepaliveError::other(why.to_string()));
         }
         Ok(completion.request_usage())
@@ -271,6 +278,32 @@ impl Client {
         }
         Some(Ok(usage))
     }
+}
+
+/// Whether `completion` is the output cap cutting a tool call off mid-arguments,
+/// with the input accounted for — the one mark a ping returns usage for.
+///
+/// The cap is the discriminator, and it is structural: the assembler marks the cut
+/// only on a terminal event, so a stream that ended without one and a
+/// `response.failed` answer are both unmarked. A call has to be present for the cut
+/// to be a cut, which the derived view's `Err` shows as surely as a non-empty list
+/// does — it refuses exactly the arguments the cap cut. The input has to be
+/// accounted for, counted with the cache reads and writes a fully cached ping's
+/// answer carries, so a response with no usage behind it still fails. An operator's
+/// interrupt and a terminal condition the provider named are failures whatever
+/// finish they arrived with.
+///
+/// (docs/transport.md)
+fn cut_at_the_cap(completion: &Completion) -> bool {
+    let has_call = match completion.assistant_output().tool_calls() {
+        Ok(calls) => !calls.is_empty(),
+        Err(_) => true,
+    };
+    completion.hit_output_cap()
+        && has_call
+        && completion.usage.prompt_tokens() > 0
+        && !completion.operator_abort()
+        && completion.terminal_failure().is_none()
 }
 
 /// The non-streamed Messages body a keepalive ping returns: the id, model and serving

@@ -2116,6 +2116,16 @@ failed request refreshes nothing; without it, the check cadence (a quarter of th
 interval, capped at 20s, above) would resend the whole context on every check for
 as long as the upstream stays down.
 
+On the streamed dialects a ping whose own output cap cuts a tool call is accepted
+rather than failed, provided the response carries accounted input usage — prompt
+tokens counted with the cache reads and writes, so a fully cached ping qualifies
+(`cut_at_the_cap`). The ping exists to touch the cache and return usage, and the
+cut is the cap's doing; the acceptance is the ping's alone, since a real turn
+fails on the same response, a call whose arguments the cap cut being one no turn
+can execute. Every other mark still fails the ping: a `response.failed` answer,
+a stream that never finalizes, an operator's interrupt, and a terminal condition
+the provider named.
+
 The prefix bytes sent by a keepalive must be byte-identical to what a real turn
 sends, or the ping writes a new cache entry instead of refreshing the live one.
 `Client::keepalive` takes a request (`api::SentRequest`) carrying the same turns,
