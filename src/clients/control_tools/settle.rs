@@ -1,6 +1,7 @@
 //! The `settle` session-control verb (docs/tools.md).
 
 use super::ClientExecutor;
+use super::args::AgentOrHere;
 use super::results::{StateResult, pretty};
 use super::verb::{ControlVerb, VerbCall};
 use anyhow::Result;
@@ -19,10 +20,9 @@ pub struct Settle {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub timeout_s: Option<u64>,
-    /// The agent's id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "AgentOrHere::is_none")]
+    #[command(flatten)]
+    pub agent: AgentOrHere,
 }
 
 impl ToolMeta for Settle {
@@ -47,7 +47,7 @@ impl ControlVerb for Settle {
     type Output = String;
 
     async fn client(self, state: &ClientExecutor, _call: &VerbCall<'_>) -> Result<String> {
-        let client = state.client(self.agent.as_deref()).await?;
+        let client = state.client(self.agent.id()).await?;
         let waited = state
             .settle_within(&client, self.timeout_s, client.settle())
             .await?;

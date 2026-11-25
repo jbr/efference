@@ -353,5 +353,5 @@ orientation `exec` entry.
 
 ## Deferred
 
-Live mid-session discovery of context files (`backlog/inbox/live-context-update.md`) and glob
-paths (`backlog/inbox/context-globs.md`).
+Live mid-session discovery of context files (`backlog/parked/live-context-update.md`) and glob
+paths (`backlog/parked/context-globs.md`).

@@ -56,8 +56,8 @@ impl TriageAttempt {
     }
 }
 
-/// Rebuild the exact request a recorded triage sent — the same `triage_messages` the
-/// live triage calls, so a replay can't drift from production (docs/triage.md).
+/// Rebuild the recorded triage's messages with the live `triage_messages` builder
+/// (docs/triage.md).
 /// Split out for the `triage` dev tool's dry run, which reviews an ask without spending a
 /// request on it.
 ///

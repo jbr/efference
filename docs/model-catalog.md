@@ -182,7 +182,3 @@ advice, so query guidance is returned as contents to reach the agent. Discovery
 keeps parameter descriptions on both the concrete resource and template: Claude
 Code exposes the former but not template discovery. There are no
 resource subscriptions or update notifications.
-
-The resource API is currently exercised against a local Cargo patch pointing to
-the sibling mcplease checkout; replacing that patch requires a published version
-with the resource-provider API.

@@ -200,8 +200,8 @@ pub(crate) enum DevCommand {
     /// answer with a verdict, or reach for a work tool? The live triage retries, so a
     /// session's own record shows that a first attempt failed but can't score one ask
     /// against another. Each triage carries its own prefix at its own session depth, and
-    /// replaying one is a single warm prefix read, so a whole session is an eval set.
-    /// Sends real requests unless `--dry-run`.
+    /// each replay makes one attempt without applying live result triage's reasoning
+    /// policy or cache evidence. Sends real requests unless `--dry-run`.
     // docs/triage.md
     Triage(TriageArgs),
     /// Plant triage primers at controlled gaps against one recorded triage and replay
@@ -379,8 +379,7 @@ pub(crate) struct TriageArgs {
     /// aren't comparable to its record.
     #[arg(long, default_value = "claude-haiku-4-5")]
     pub(crate) model: String,
-    /// Replay under the separate-model triage instead: this model on its own client,
-    /// the same shape `--triage-model` boots. Every draw's verdict is
+    /// Replay with a separate triage model on its own client. Every draw's verdict is
     /// compared line-for-line against the session's recorded verdict — what the
     /// agent chose to see — and the summary reports kept fractions, over- and
     /// under-retention, and a table of the triages that disagreed most.

@@ -49,6 +49,8 @@ one line per feature.
 
 ### Fixed
 
+- `efference control settle --help` explains that omitting `--agent` targets the sole live session in the current directory.
+
 - The prose spotter asks again once, instead of failing closed to the human gate, when a reasoning model's answer is cut off by its output cap or ends without the `spot` call; its cap rises from 4096 to 16384, and on Responses it asks for `low` effort rather than the model's default.
 - `efference --host` refuses to start when another host is answering its socket, and a host whose web bind fails exits with the error instead of running on the socket alone.
 - Inline composer image uploads use bounded thumbnails rather than their intrinsic image dimensions.

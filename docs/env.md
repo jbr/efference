@@ -194,25 +194,16 @@ it should not). Neither subsumes the other, and neither is adversary-grade.
 
 ### The choke point is log append
 
-Every string about to enter the log is scanned, at
-`Log::append_submission` (`src/record/persist.rs`) — the one function both `append`
-paths funnel through. That single point covers tool results, the boot
-`Preamble` (including a `[context]` exec snapshot of the environment),
-`Ambient` notifications, user paste, and harness-written error text, and because
-every downstream surface reads the log, one choke point secures all of them: the
-wire, the jsonl on disk, the TUI, and the `control transcript`/`entries` reads.
-The log holds the mask as a `PayloadMask`, a one-method trait `src/record/persist.rs` defines
-and `Masker` (`src/config/env_table/mask.rs`) implements, so the log imports nothing from the
-`[env]` table; a log with none installed masks nothing.
+At `Log::append_submission` (`src/record/persist.rs`), the log applies a `PayloadMask`
+to the entry before storing it. `Masker` (`src/config/env_table/mask.rs`) implements
+that trait and scans selected payload fields for known secret values. These include
+text from Bash, file reads, and searches in `ToolResult`, ordinary assistant text,
+user text, the boot preamble, and selected diagnostics. The masker does not walk every
+string in an entry. A log with no mask installed performs no substitutions.
 
-The payload paths it filters, exhaustively: `User` text blocks; `Assistant` text
-blocks, tool-call `input` strings, and an upstream `excluded` mark (its `why` and, when
-the empty-stream path attached them, its captured header values, `message_start`
-body, and frames); `ToolResult`'s
-`raw.content`; `Mark.note`; `Triage`'s `raw_keep` / `surfaced` / `retries` /
-`thinking`; `Ambient`'s `source` / `body` / `slot`; `Spot`'s `reason` and
-`probed_prefix`; `ConfigEdit`'s `note` and its change payload; `Preamble`'s
-`identity`, `body` and its resolved `[context]` listing.
+Result triage and later model requests use the recorded tool result, so they receive
+the masked text. Clients also read the masked text from the log, but live output can
+appear before append and is not covered by this filter.
 
 One string is masked *before* the append as well as at it: the boot preamble.
 It is both included in the request's `system` field and snapshotted into the log, and

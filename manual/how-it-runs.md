@@ -40,7 +40,7 @@ keychain. For project tools and variables, an
 [`env_hook`](configuration.md#give-sessions-your-project-environment) can prepare the
 environment for sessions the host resumes or creates for the web client.
 <!-- src: absence of service integration in src/; src/bin/efference/serve.rs::host (EnvSnapshot::capture, Secrets::configured); src/platform/secrets/commands.rs; src/host/preparation.rs::establish_environment; src/config/env_table/launch.rs::run_hook -->
-<!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. The service examples are host-as-a-service (backlog/inbox/host-as-a-service.md). -->
+<!-- TODO: include the launchd plist and systemd unit from assets/guide/host.md once verified end to end. -->
 
 ## Understand what leaves your machine
 

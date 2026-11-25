@@ -191,9 +191,11 @@ project can opt one back in, for a project that calls the provider itself.
 
 ### Masking secrets in the record
 
-Before anything is written to a session's log, efference replaces the secret values it
-knows with a marker, such as `⟦anthropic (ANTHROPIC_API_KEY): elided by harness⟧` for a
-connection's key. The values it knows are:
+When efference writes a session log entry, it scans selected text for known secret
+values. This includes Bash output, file read and search results, and ordinary model
+replies. It replaces matches with a marker, such as
+`⟦anthropic (ANTHROPIC_API_KEY): elided by harness⟧` for a connection's key. The values
+it can recognize are:
 <!-- src: src/record/persist.rs::Log::append_submission; src/config/env_table/mask.rs::Masker::mask_payload, marker, secret_marker -->
 
 - the keys the session's model connections use, however they are stored;

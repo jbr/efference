@@ -3,8 +3,8 @@
 //! A dev tool, like `wire`/`gallery`/`spotter`. The live triage retries, so a session's
 //! `Triage.retries` records *that* a first attempt failed but can't compare two asks —
 //! a change that halves first-attempt non-compliance and one that changes nothing both
-//! end in a usable verdict. This re-sends a recorded triage's exact request, once, and
-//! reports whether the first attempt answered.
+//! end in a usable verdict. This rebuilds the inputs from a recorded triage and reports
+//! whether a single attempt answered (docs/triage.md).
 //!
 //! The eval set is the session itself: every triage carries its own prefix, at its own
 //! session depth, and replaying one is a single warm prefix read.
@@ -115,10 +115,6 @@ pub(crate) async fn triage(args: TriageArgs) -> CliResult {
     if let Some(dir) = path.parent() {
         endpoint.session_id = Some(efference::inference::api::sticky_session_id(dir));
     }
-    // The own triage replays the exact live shape (docs/triage.md): the same
-    // constructor boot uses, the same system prompt over the recorded context
-    // block, the session's own model named as the agent. The shared triage replays on
-    // the agent client, whose model is `--model`.
     let agent_model = recorded_identity
         .map(|identity| identity.model.clone())
         .or_else(|| session_model(&system))
@@ -333,11 +329,8 @@ fn dry_run_report(
     Ok(())
 }
 
-/// The triager the replay asks, and the model it is named by. A separate triage model
-/// replays the exact live shape (docs/triage.md), with `triage_model` — the dev flags'
-/// override — supplying the reasoning and tool-choice settings; the shared triage replays
-/// on the agent client, whose model is `model`. `session_id` is the sticky-routing key the
-/// main endpoint carries.
+/// The triager and its model label (docs/triage.md). `session_id` is the sticky-routing
+/// key the main endpoint carries.
 async fn replayed_triager<'a>(
     inference: &'a efference::inference::SessionInference,
     triage_model: Option<&'a TriageModel>,

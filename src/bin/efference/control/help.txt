@@ -378,7 +378,7 @@ Options:
           Seconds to wait before answering with where it is then. Omitted, the wait has no bound
 
       --agent <AGENT>
-          The agent's id
+          The agent's id. Defaults to the one session live here
 
   -h, --help
           Print help (see a summary with '-h')
@@ -392,7 +392,7 @@ Options:
       --bind <ADDR:PORT>       Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
       --host-socket <PATH>     The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
       --timeout-s <TIMEOUT_S>  Seconds to wait before answering with where it is then. Omitted, the wait has no bound
-      --agent <AGENT>          The agent's id
+      --agent <AGENT>          The agent's id. Defaults to the one session live here
   -h, --help                   Print help (see more with '--help')
 
 $ efference control state --help
