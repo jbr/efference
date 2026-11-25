@@ -114,6 +114,18 @@ export function installLinkNavigation(): () => void {
     if (anchor === null) return;
     const url = new URL(anchor.href, location.href);
     if (!isClientRoute(url)) return;
+    // A link to the page already shown, differing only by fragment, is the
+    // browser's own same-document navigation: it scrolls to the named part and
+    // records the fragment in the address bar, neither of which a `pushState`
+    // does. `navigate` would drop the fragment and, the path and query being
+    // unchanged, return early — so leave the click to the browser.
+    if (
+      url.pathname === location.pathname &&
+      url.search === location.search &&
+      url.hash !== ""
+    ) {
+      return;
+    }
     event.preventDefault();
     navigate(url.pathname + url.search);
   };
