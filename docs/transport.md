@@ -1697,6 +1697,11 @@ turn commits whatever arrived and posts a notification naming the cap
 (`agent.rs` on `stop_reason: "max_tokens"`) — before that existed, the
 session just sat idle, reading as a hang.
 
+For OpenRouter main turns, the reservation has a ceiling of 65,536 output tokens.
+This limits the credit reservation OpenRouter can require before generation. A
+smaller model cap or remaining context budget still applies. Result triage,
+spotter requests, keepalive, and HTTP 402 handling are unchanged.
+
 **`max_tokens` is a reservation, not a prediction** (`api/reservation.rs`).
 The provider sets the tokens aside before generating and rejects a request
 whose prompt plus `max_tokens` exceeds `context_length` — Anthropic as

@@ -698,10 +698,18 @@ impl Client {
     }
 
     /// The `max_tokens` for a request whose variable parts serialize to
-    /// `body_bytes` bytes (`api/reservation.rs`).
+    /// `body_bytes` bytes (`api/reservation.rs`, docs/transport.md).
     fn reserve(&self, body_bytes: usize) -> u32 {
+        const OPENROUTER_TURN_CAP: u32 = 65_536;
+        let cap = if matches!(self.origin, RequestOrigin::Turn)
+            && matches!(self.endpoint.provider, Provider::OpenRouter)
+        {
+            self.max_tokens.min(OPENROUTER_TURN_CAP)
+        } else {
+            self.max_tokens
+        };
         let reserved = self.reservation.lock().unwrap().compute(
-            u64::from(self.max_tokens),
+            u64::from(cap),
             self.context_length,
             body_bytes,
         );

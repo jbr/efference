@@ -54,6 +54,39 @@ fn client(upstream: &ScriptedUpstream) -> Client {
     .with_context_window(Some(131_072))
 }
 
+#[tokio::test]
+async fn openrouter_output_ceiling_only_limits_main_turns() {
+    use crate::record::log::RequestOrigin;
+
+    let upstream = serve(vec![ANSWER; 5]);
+    for (provider, origin, cap, window) in [
+        (Provider::OpenRouter, RequestOrigin::Turn, 200_000, None),
+        (Provider::OpenRouter, RequestOrigin::Turn, 24_000, None),
+        (
+            Provider::OpenRouter,
+            RequestOrigin::Turn,
+            200_000,
+            Some(32_768),
+        ),
+        (Provider::Anthropic, RequestOrigin::Turn, 200_000, None),
+        (Provider::OpenRouter, RequestOrigin::Triage, 200_000, None),
+    ] {
+        let client = Client::new(upstream.endpoint(provider, "/v1/messages"), "m", "sys")
+            .with_max_output(cap)
+            .with_context_window(window)
+            .with_origin(origin);
+        let response = client
+            .complete(&[WireTurn::text("hello")], &[], ToolChoice::auto(), |_| {})
+            .await
+            .unwrap();
+        assert!(response.upstream_failure().is_none());
+    }
+    let budgets = reserved(&upstream);
+    assert_eq!(budgets[0..2], [65_536, 24_000]);
+    assert!((1..32_768).contains(&budgets[2]), "budgets: {budgets:?}");
+    assert_eq!(budgets[3..5], [200_000, 200_000]);
+}
+
 /// A refusal inside a 200 stream halves the reservation and resends, as the 400 at
 /// open does, whether or not the refusal names a terminal type: the answer to the
 /// second request is the completion, and the refused attempt leaves nothing behind.
