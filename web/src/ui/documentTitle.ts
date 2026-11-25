@@ -4,12 +4,11 @@ import { standaloneApp } from "./tabShortcuts.ts";
 
 export const APP_TITLE = "efference";
 
-/** The title for a session's view: the app title alone when no session is open,
- * the bare session name in the installed app (whose window frame already shows
- * the app name), and `<name> · efference` in an ordinary browser tab. */
+/** Use the app name first in standalone mode: the installed Chrome window
+ * tested on macOS showed the session name only with that prefix. */
 export function sessionDocumentTitle(name: string | null): string {
   if (name === null) return APP_TITLE;
-  return standaloneApp() ? name : `${name} · ${APP_TITLE}`;
+  return standaloneApp() ? `${APP_TITLE} - ${name}` : `${name} - ${APP_TITLE}`;
 }
 
 /** null leaves ownership to the session view; other views restore the app title. */

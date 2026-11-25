@@ -10,6 +10,8 @@ import { apiFetch, throwIfFailed } from "./http.ts";
 import { checkBundle } from "./bundle.ts";
 
 export interface StreamHandle {
+  /** Reconnect immediately from the current cursor, even after a recent read. */
+  reconnect(): void;
   close(): void;
 }
 
@@ -68,7 +70,7 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
   let attempt = 0;
   let lastRead = Date.now();
   // Why the reader aborted the current attempt itself, if it did.
-  let aborted: "stalled" | "visible" | null = null;
+  let aborted: "stalled" | "visible" | "requested" | null = null;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
   let cancelBackoff: (() => void) | null = null;
 
@@ -89,7 +91,10 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
     watchdog = null;
   }
 
-  function abort(mine: AbortController, why: "stalled" | "visible") {
+  function abort(
+    mine: AbortController,
+    why: "stalled" | "visible" | "requested",
+  ) {
     if (mine.signal.aborted) return;
     aborted = why;
     mine.abort();
@@ -175,12 +180,14 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
                 )
               : aborted === "visible"
                 ? new Error("events: stale on wake; reconnecting")
-                : error,
+                : aborted === "requested"
+                  ? new Error("events: reconnect requested")
+                  : error,
           );
           if (closed) return;
           // End the response if a callback threw and left it open.
           mine.abort();
-          if (aborted === "visible") continue;
+          if (aborted === "visible" || aborted === "requested") continue;
           attempt += 1;
           disarm();
           await backoff(Math.min(500 * 2 ** attempt, 15_000));
@@ -197,6 +204,11 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
 
   void run();
   return {
+    reconnect() {
+      if (closed) return;
+      if (cancelBackoff !== null) cancelBackoff();
+      else abort(controller, "requested");
+    },
     close() {
       closed = true;
       controller.abort();

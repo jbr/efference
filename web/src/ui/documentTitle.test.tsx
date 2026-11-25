@@ -55,52 +55,34 @@ function stubDisplay(standalone: boolean) {
   vi.stubGlobal("navigator", { standalone: false });
 }
 
-test("title follows active views and renames without retaining an unmounted title", () => {
-  stubDisplay(false);
-  withTitlePage((render) => {
-    render("first", "First task");
-    expect(document.title).toBe("First task · efference");
-    render("first", "Renamed task");
-    expect(document.title).toBe("Renamed task · efference");
-    render("second", "second");
-    expect(document.title).toBe("second · efference");
-    render("root-session", null);
-    expect(document.title).toBe(APP_TITLE);
-    render("first", "First task");
-    render(null, null);
-    expect(document.title).toBe(APP_TITLE);
-    render("second", "Second task");
-  });
-});
-
-test("the installed app shows the bare session name through rename and app title", () => {
-  stubDisplay(true);
-  withTitlePage((render) => {
-    render("first", "First task");
-    expect(document.title).toBe("First task");
-    render("first", "Renamed task");
-    expect(document.title).toBe("Renamed task");
-    render(null, null);
-    expect(document.title).toBe(APP_TITLE);
-  });
-});
-
-test("the title names the app once in an installed app and beside the session in a tab", () => {
-  stubDisplay(true);
-  expect(sessionDocumentTitle("Diagnosing CI")).toBe("Diagnosing CI");
-  expect(sessionDocumentTitle(null)).toBe(APP_TITLE);
-
-  vi.stubGlobal("matchMedia", () => ({ matches: false }));
-  expect(sessionDocumentTitle("Diagnosing CI")).toBe(
-    "Diagnosing CI · efference",
-  );
-  expect(sessionDocumentTitle(null)).toBe(APP_TITLE);
-});
+test.each([
+  { standalone: false, format: (name: string) => `${name} - efference` },
+  { standalone: true, format: (name: string) => `efference - ${name}` },
+])(
+  "title follows active views and renames (standalone: $standalone)",
+  ({ standalone, format }) => {
+    stubDisplay(standalone);
+    withTitlePage((render) => {
+      render("first", "First task");
+      expect(document.title).toBe(format("First task"));
+      render("first", "Renamed task");
+      expect(document.title).toBe(format("Renamed task"));
+      render("second", "second");
+      expect(document.title).toBe(format("second"));
+      render("root-session", null);
+      expect(document.title).toBe(APP_TITLE);
+      render("first", "First task");
+      render(null, null);
+      expect(document.title).toBe(APP_TITLE);
+      render("second", "Second task");
+    });
+  },
+);
 
 test("iOS standalone counts as the installed app", () => {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
   vi.stubGlobal("navigator", { standalone: true });
-  expect(sessionDocumentTitle("Task")).toBe("Task");
+  expect(sessionDocumentTitle("Task")).toBe("efference - Task");
 });
 
 test("loading and untitled sessions use the same name fallback as the header", () => {

@@ -199,14 +199,16 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clients) => {
+      .then(async (clients) => {
         // A window already on that path is focused rather than duplicated —
         // the notification is a summons back to a page that is probably still
         // open, not a request for a second copy of it.
         const open = clients.find(
           (client) => new URL(client.url).pathname === target.pathname,
         );
-        return open ? open.focus() : self.clients.openWindow(target.href);
+        if (!open) return self.clients.openWindow(target.href);
+        await open.focus();
+        open.postMessage({ kind: "notification-open", path: target.pathname });
       }),
   );
 });

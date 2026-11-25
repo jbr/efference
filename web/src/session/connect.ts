@@ -11,7 +11,7 @@
 // hidden: whether a person is attending is reported separately (attention.ts),
 // not inferred from the connection.
 
-import { apiBase } from "../api/base.ts";
+import { apiBase, deriveBase } from "../api/base.ts";
 import type { Frame } from "../api/frames.ts";
 import { ApiError, fetchLogTail } from "../api/http.ts";
 import type { StreamHandle } from "../api/sse.ts";
@@ -115,11 +115,30 @@ export function connect(
     );
   }
 
+  const worker = globalThis.navigator?.serviceWorker;
+  function onNotificationOpen(event: MessageEvent<unknown>) {
+    const data = event.data;
+    const path = globalThis.location?.pathname;
+    if (
+      path !== undefined &&
+      deriveBase(path) === base &&
+      typeof data === "object" &&
+      data !== null &&
+      "kind" in data &&
+      data.kind === "notification-open" &&
+      "path" in data &&
+      data.path === path
+    ) {
+      stream?.reconnect();
+    }
+  }
+  worker?.addEventListener("message", onNotificationOpen);
   void establish();
   return {
     retry: () => void establish(),
     close() {
       closed = true;
+      worker?.removeEventListener("message", onNotificationOpen);
       stream?.close();
     },
   };

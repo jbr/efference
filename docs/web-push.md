@@ -128,7 +128,9 @@ names an end state.
 `web/public/sw.js` handles `push` (show the payload's title/body; a payload that does
 not parse still shows a generic notification, since the platforms require a visible
 notification per delivery) and `notificationclick` (focus a window already on the
-payload's path, else open one). The handlers touch none of the caching rules above
+payload's path and message that window to reconnect its session stream, else open
+one). The page reconnects from its current cursor without reloading, even if the
+last read was recent. The handlers touch none of the caching rules above
 them ([web-client.md](web-client.md)).
 
 The opt-in is a "receive notifications" checkbox in the Interface tab

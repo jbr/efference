@@ -44,3 +44,51 @@ it("sends the bearer on each of the push repair's requests", () => {
     "token === null ? {} : { authorization: `Bearer ${token}` }",
   );
 });
+
+it("focuses the existing notification target and messages it, or opens a new window", async () => {
+  const handlers = new Map<string, (event: unknown) => void>();
+  const messages: unknown[] = [];
+  const focused: string[] = [];
+  const opened: string[] = [];
+  const origin = "https://example.test";
+  const path = "/sessions/work";
+  const client = {
+    url: origin + path,
+    focus: () => {
+      focused.push(path);
+    },
+    postMessage: (message: unknown) => {
+      messages.push(message);
+    },
+  };
+  let clients = [client];
+  new Function("self", worker)({
+    location: new URL(origin + "/sw.js?dev=1"),
+    addEventListener: (name: string, handler: (event: unknown) => void) =>
+      handlers.set(name, handler),
+    clients: {
+      matchAll: () => Promise.resolve(clients),
+      openWindow: (url: string) => {
+        opened.push(url);
+      },
+    },
+  });
+  let pending: Promise<unknown> | undefined;
+  function tap() {
+    handlers.get("notificationclick")?.({
+      notification: { close() {}, data: { path } },
+      waitUntil: (task: Promise<unknown>) => {
+        pending = task;
+      },
+    });
+    return pending;
+  }
+  await tap();
+  expect(focused).toEqual([path]);
+  expect(messages).toEqual([{ kind: "notification-open", path }]);
+  expect(opened).toEqual([]);
+  clients = [];
+  await tap();
+  expect(opened).toEqual([origin + path]);
+  expect(messages).toHaveLength(1);
+});

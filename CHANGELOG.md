@@ -60,7 +60,7 @@ one line per feature.
 - Interrupt ends a retry wait immediately for a main request or its result triage, without sending another attempt.
 - The web client checks for a stale connection on focus or page restore, so it can pick up pending questions without waiting for the old connection to time out.
 - Typing a `~` path in the web session form selects the corresponding remembered location instead of showing a duplicate.
-- The installed web app uses the bare session title, while ordinary tabs keep the app-name suffix.
+- Installed web windows show the app name before the session title; regular tabs show it after.
 - Gallery section links scroll to their section and update the URL fragment.
 - The TUI shows a compact upstream error indicator even when the failure has no HTTP status.
 
