@@ -183,7 +183,7 @@ fn mistral_parallel_calls_in_one_chunk() {
 
 /// Gemini's own endpoint sends each parallel call whole in its own chunk, with no
 /// `index` and the same `type`: the differing `id`s keep them three calls, each
-/// with its own live slot. Only the first carries the thought signature, and
+/// with its own live slot. Only the first has the thought signature, and
 /// `finish_reason` is `stop`.
 #[test]
 fn gemini_parallel_calls_without_index() {
