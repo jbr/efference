@@ -28,8 +28,7 @@ fn a_tmtheme_path_is_accepted_without_membership() {
     let p = "/tmp/Custom.tmTheme";
     assert_eq!(resolve_theme(Some(p.into())).unwrap(), p);
 }
-/// The failure indicator shows the upstream's status and how many times in a row it came
-/// back. A failure the upstream gave no status for names nothing, and the bar shows none.
+/// The indicator includes the count even when the failure has no HTTP status.
 #[test]
 fn failure_indicator_names_the_status_and_the_count() {
     let mut failure = UpstreamFailure::new(Some(429), "slow down");
@@ -38,8 +37,11 @@ fn failure_indicator_names_the_status_and_the_count() {
         upstream_failure_indicator(Some(&failure)).unwrap(),
         "upstream 429 ×2"
     );
-    assert!(
-        upstream_failure_indicator(Some(&UpstreamFailure::new(None, "stream reset"))).is_none()
+    let mut reset = UpstreamFailure::new(None, "stream reset");
+    reset.count = 2;
+    assert_eq!(
+        upstream_failure_indicator(Some(&reset)).unwrap(),
+        "upstream error ×2"
     );
     assert!(upstream_failure_indicator(None).is_none());
 }

@@ -28,6 +28,7 @@ async fn first_run_with_key_in_environment() {
     )
     .await;
     let draft = draft.unwrap();
+    assert!(script.said("Credential options: https://efference.net/credentials"));
     assert!(script.said("ANTHROPIC_API_KEY is set in this shell"));
     assert!(script.said("accepted the key (test key)"));
     assert!(

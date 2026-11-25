@@ -288,6 +288,10 @@ pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
         Choice::new("An environment variable").detail("read from the host's environment at launch"),
         keep,
     ];
+    prompter.say(
+        Tone::Note,
+        "Credential options: https://efference.net/credentials",
+    );
     if prompter.select("Where will the API key come from?", &choices)? == 1 {
         return keychain_source(prompter, probe, target, connection).await;
     }

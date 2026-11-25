@@ -190,16 +190,15 @@ fn session_options_response(host: &Host, decoded: DecodedOptions, worktree: bool
     } = decoded;
     // The omitted branch defaults to past picks in the proposed root, keyed
     // the way creation keys them — so preview reports the default creation
-    // would build. Scoped before the effort match moves the root; a root that
-    // will not scope reads as no history, never an error.
+    // would build. If the root cannot be scoped, there is no history to use.
     let scope = cwd
         .as_ref()
         .map(|cwd| crate::config::history::Scope::for_request(cwd, config.as_deref()));
     // Effort can be inherited from the project config, so preview reads the one
     // creation would select. A config that will not load is an issue, never its
     // contents or the parser's view of them.
-    let project_effort = match cwd {
-        Some(cwd) => match crate::config::load_in(&cwd, config.as_deref()) {
+    let project_effort = match cwd.as_deref() {
+        Some(cwd) => match crate::config::load_in(cwd, config.as_deref()) {
             Ok(loaded) => loaded.role.transport.effort,
             Err(_) => {
                 issues.push(Issue::new(
@@ -228,6 +227,7 @@ fn session_options_response(host: &Host, decoded: DecodedOptions, worktree: bool
     issues.append(&mut resolved.issues);
     resolved.issues = issues;
     resolved.worktree = worktree;
+    resolved.cwd = cwd;
     serde_json::to_string(&resolved).unwrap_or_else(|_| {
         // Every field is plain data; a failure here would be a serde bug, not a
         // request the caller can fix.

@@ -16,10 +16,12 @@ use anyhow::{Result, anyhow};
 use mcplease::{traits::ToolMeta, types::ToolAnnotations};
 use serde::{Deserialize, Serialize};
 
-/// Decide the call an agent is holding for a decision. `allow` runs it, and a
-/// message rides with its result; `deny` refuses it — with a message the agent goes
-/// on under it, and a bare deny ends its turn; `escalate` leaves it held and passes it
-/// to whoever decides above you, with a message as a note to them.
+/// Decide the call an agent is holding for a decision. `allow` runs it. Leave the
+/// message blank unless you have useful guidance to deliver with the result; give
+/// just the guidance, not an approval announcement. `deny` refuses the call — with
+/// a message the agent goes on under it, and a bare deny ends its turn. `escalate`
+/// leaves the call held and passes it to whoever decides above you, with a message
+/// as a note to them.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "decide")]
 pub struct Decide {
@@ -32,8 +34,10 @@ pub struct Decide {
     /// `allow`, `deny`, or `escalate`.
     #[arg(value_enum)]
     pub decision: Decision,
-    /// With `allow`, a note the agent reads with the call's result; with `deny`, the
-    /// message it goes on under; with `escalate`, a note to whoever decides next.
+    /// With `allow`, an optional supervisor note delivered with the result. Leave
+    /// it blank unless you have useful guidance, e.g. "Put scratch files under
+    /// $TMPDIR," not "Approved." With `deny`, the message the agent goes on under;
+    /// with `escalate`, a note to whoever decides next.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub message: Option<String>,

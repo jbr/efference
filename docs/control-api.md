@@ -194,7 +194,9 @@ sessions from one process. Its own routes are the listener's, not a session's:
   **`worktree` indicates whether the `cwd` can start a worktree**: it is inside a git work
   tree whose `HEAD` resolves, the two preconditions creation checks
   ([worktrees.md](worktrees.md)). It is `false` for a `cwd` that did not decode, and a
-  form offers the worktree option only when it is `true`. Creation keeps its own
+  form offers the worktree option only when it is `true`. The response also
+  contains `cwd` when it can resolve the proposed directory, with host-side
+  home expansion but no additional canonicalization. Creation keeps its own
   refusal for a request that sends `worktree: true` anyway. The answer costs one git
   process per preview, run with the host's environment.
 

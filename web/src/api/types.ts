@@ -4473,6 +4473,10 @@ export interface RemovedDevice {
  * via the `definition` "ResolvedOptions".
  */
 export interface ResolvedOptions {
+  /**
+   * The proposed directory after home expansion, if it resolved.
+   */
+  cwd?: string | null;
   effective: EffectiveOptions;
   issues: PreviewIssue[];
   /**

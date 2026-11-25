@@ -98,9 +98,10 @@ pub(super) fn pace_indicator(pace: Option<PaceView>) -> Option<String> {
 /// current rather than one already survived (docs/transport.md).
 pub(super) fn upstream_failure_indicator(failure: Option<&UpstreamFailure>) -> Option<String> {
     let failure = failure?;
-    // A failure the upstream gave no status for (a stream that died mid-flight) has no
-    // status to name, and the bar shows only the ones that do.
-    Some(format!("upstream {} ×{}", failure.status?, failure.count))
+    Some(match failure.status {
+        Some(status) => format!("upstream {status} ×{}", failure.count),
+        None => format!("upstream error ×{}", failure.count),
+    })
 }
 
 /// The status-bar retry indicator (docs/transport.md). The daemon's `message`

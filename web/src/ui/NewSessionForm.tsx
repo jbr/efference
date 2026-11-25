@@ -64,7 +64,9 @@ export function NewSessionForm({
   const [editing, setEditing] = useState(false);
   const [projects, setProjects] = useState<ProjectEntry[] | null>(null);
   const [typed, setTyped] = useState("");
-  const [answered, setAnswered] = useState<Answered | null>(null);
+  const [answered, setAnswered] = useState<
+    (Answered & { draft: Draft }) | null
+  >(null);
   const [note, setNote] = useState<string | null>(null);
   // Why the last start from this draft failed, when the form reopened for a retry
   // (ui/launchRetry.ts). Apart from `note`, which a resolved preview clears.
@@ -101,7 +103,7 @@ export function NewSessionForm({
         // A draft that resolved clears the last failure's reason: it described
         // a draft that is no longer on screen.
         setNote(null);
-        setAnswered({ request: id, answer });
+        setAnswered({ request: id, answer, draft: next });
       })
       .catch((failure: unknown) => {
         if (id !== counter.current) return;
@@ -262,7 +264,21 @@ export function NewSessionForm({
 
   const hint = startRefusal(draft, answered, request);
   const ready = canStart(draft, answered, request, creating);
-  const rows = withDraftLocation(projects ?? [], draft);
+  const resolvedCwd =
+    answered !== null &&
+    answered.draft === draft &&
+    answered.request === request
+      ? answered.answer.cwd
+      : undefined;
+  const location =
+    draft !== null &&
+    resolvedCwd != null &&
+    projects?.some(
+      (entry) => entry.cwd === resolvedCwd && entry.config === draft.config,
+    )
+      ? { ...draft, cwd: resolvedCwd }
+      : draft;
+  const rows = withDraftLocation(projects ?? [], location);
   const currentLocation = rows.find((entry) => entry.config_key === "");
   const issues = answered?.answer.issues ?? [];
 
@@ -378,8 +394,8 @@ export function NewSessionForm({
                         entry={entry}
                         projects={rows}
                         selected={
-                          draft?.cwd === entry.cwd &&
-                          draft?.config === entry.config
+                          location?.cwd === entry.cwd &&
+                          location?.config === entry.config
                         }
                         editing={editing}
                         onSelect={() => chooseLocation(entry)}

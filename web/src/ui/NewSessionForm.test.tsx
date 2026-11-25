@@ -315,6 +315,41 @@ const previewAnswer = (worktree = true): ResolvedOptions => ({
   worktree,
 });
 
+test("only the current preview can match a typed home path to a remembered location", async () => {
+  let answerOld!: (answer: ResolvedOptions) => void;
+  vi.mocked(previewSession)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerOld = resolve;
+        }),
+    )
+    .mockResolvedValueOnce({ ...previewAnswer(), cwd: alpha.cwd })
+    .mockResolvedValueOnce({ ...previewAnswer(), cwd: "/work/elsewhere" });
+
+  await render({ draft: emptyDraft("~/old") });
+  const draft = emptyDraft("~/alpha");
+  const props = await render({ draft });
+  expect(host.querySelector('[aria-label="Current location"]')).toBeNull();
+  expect(host.querySelector(".location.selected")?.textContent).toContain(
+    "alpha",
+  );
+  expect(previewSession).toHaveBeenLastCalledWith(
+    expect.objectContaining({ cwd: "~/alpha" }),
+  );
+  expect(props.onDraft).not.toHaveBeenCalled();
+
+  await act(async () => answerOld({ ...previewAnswer(), cwd: beta.cwd }));
+  expect(host.querySelector(".location.selected")?.textContent).toContain(
+    "alpha",
+  );
+
+  await render({ draft: emptyDraft("~/elsewhere") });
+  expect(
+    host.querySelector('[aria-label="Current location"]')?.textContent,
+  ).toContain("~/elsewhere");
+});
+
 test("directory disclosure commits a path without discarding settings and collapses afterward", async () => {
   const draft = { ...emptyDraft(alpha.cwd), temperature: 42 };
   const props = await render({ draft });

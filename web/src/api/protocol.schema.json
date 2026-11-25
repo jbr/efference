@@ -6157,6 +6157,13 @@
     "ResolvedOptions": {
       "description": "Every effective field plus the issues that would stop creation. Preview\nserializes this; creation refuses a non-empty `issues` and then resolves\ncredentials for the same selections.",
       "properties": {
+        "cwd": {
+          "description": "The proposed directory after home expansion, if it resolved.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "effective": {
           "$ref": "#/definitions/EffectiveOptions"
         },

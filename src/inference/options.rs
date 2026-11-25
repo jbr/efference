@@ -10,6 +10,8 @@
 //! validate" and "nothing known wrong with it" are the same answer here, and
 //! creation and boot stay authoritative either way.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -203,6 +205,9 @@ pub struct ResolvedOptions {
     // (docs/worktrees.md) Resolution here has no directory information, so it returns
     // `false`; the preview route, in a group above this one, sets it from git.
     pub worktree: bool,
+    /// The proposed directory after home expansion, if it resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -300,6 +305,7 @@ impl InferenceRegistry {
             },
             issues,
             worktree: false,
+            cwd: None,
         }
     }
 

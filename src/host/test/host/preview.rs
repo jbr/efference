@@ -44,6 +44,7 @@ async fn query_sessions_previews_a_proposed_session_without_creating_one() {
             },
             "issues": [],
             "worktree": false,
+            "cwd": request.cwd,
         })
     );
     assert!(host.ids().is_empty());
@@ -58,6 +59,7 @@ async fn a_preview_keeps_its_bytes() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry(), baseline_env());
     let server = host_server(&host).await;
+    let cwd_json = serde_json::to_string(&roots.0.join("one")).unwrap();
     let preview = async |body: Value| {
         let response = server
             .build(trillium::Method::Query, "/sessions")
@@ -72,13 +74,13 @@ async fn a_preview_keeps_its_bytes() {
             "cwd": roots.0.join("one"), "connection": "test", "model": "m",
         }))
         .await,
-        concat!(
+        [concat!(
             r#"{"effective":{"main":{"value":{"connection":"test","provider":"anthropic","model":"m"},"source":"request"},"#,
             r#""spotter":{"value":{"connection":"test","provider":"anthropic","model":"claude-haiku-4-5"},"source":"main_provider"},"#,
             r#""triage":{"value":{"mode":"shared"},"source":"shared_main"},"#,
             r#""effort":{"value":null,"source":"provider_default"},"#,
-            r#""temperature":{"value":null,"source":"provider_default"}},"issues":[],"worktree":false}"#
-        )
+            r#""temperature":{"value":null,"source":"provider_default"}},"issues":[],"worktree":false,"cwd":"#
+        ), cwd_json.as_str(), "}"].concat()
     );
     assert_eq!(
         preview(serde_json::json!({
@@ -89,14 +91,14 @@ async fn a_preview_keeps_its_bytes() {
             "temperature": "260", "effort": "high",
         }))
         .await,
-        concat!(
+        [concat!(
             r#"{"effective":{"main":{"value":{"connection":"test","provider":"anthropic","model":"m"},"source":"request"},"#,
             r#""spotter":{"value":{"connection":"test","provider":"anthropic","model":"claude-haiku-4-5"},"source":"main_provider"},"#,
             r#""triage":{"value":{"mode":"separate","connection":"test","provider":"anthropic","model":"t","auto_choice":false},"source":"request"},"#,
             r#""effort":{"value":"high","source":"request"},"#,
             r#""temperature":{"value":null,"source":null}},"#,
-            r#""issues":[{"field":"temperature","code":"invalid_type","message":"must be a whole number from 0 to 100"}],"worktree":false}"#
-        )
+            r#""issues":[{"field":"temperature","code":"invalid_type","message":"must be a whole number from 0 to 100"}],"worktree":false,"cwd":"#
+        ), cwd_json.as_str(), "}"].concat()
     );
     host.swansong().shut_down().await;
 }

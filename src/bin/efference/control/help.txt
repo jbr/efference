@@ -8,7 +8,7 @@ Usage: efference control [OPTIONS] <COMMAND>
 Commands:
   create        Start an agent: a new session on this host, optionally with its first message. Answers with its id, model, working directory, where its gates go, and its status. The model is `<connection>/<model>`; omitted, it takes past picks
   message       Send an agent a message. From a session that drives it — the one that created it, its supervisor, or the operator — the message is its next user message, and an empty one continues it; from anyone else it is a note the agent may set aside. The answer says which happened
-  decide        Decide the call an agent is holding for a decision. `allow` runs it, and a message rides with its result; `deny` refuses it — with a message the agent goes on under it, and a bare deny ends its turn; `escalate` leaves it held and passes it to whoever decides above you, with a message as a note to them
+  decide        Decide the call an agent is holding for a decision. `allow` runs it. Leave the message blank unless you have useful guidance to deliver with the result; give just the guidance, not an approval announcement. `deny` refuses the call — with a message the agent goes on under it, and a bare deny ends its turn. `escalate` leaves the call held and passes it to whoever decides above you, with a message as a note to them
   interrupt     Stop what an agent is doing now. A running tool is stopped (a command with its process group) and the agent's turn ends; its next turn reads that you interrupted it. A generation in flight ends and the agent goes idle
   archive       End an agent, and the agents it created that end with it. Their logs stay on disk
   status        Where an agent stands and the call that answers it. With no agent, one line for each agent in view
@@ -156,7 +156,7 @@ Options:
   -h, --help                 Print help (see more with '--help')
 
 $ efference control decide --help
-Decide the call an agent is holding for a decision. `allow` runs it, and a message rides with its result; `deny` refuses it — with a message the agent goes on under it, and a bare deny ends its turn; `escalate` leaves it held and passes it to whoever decides above you, with a message as a note to them
+Decide the call an agent is holding for a decision. `allow` runs it. Leave the message blank unless you have useful guidance to deliver with the result; give just the guidance, not an approval announcement. `deny` refuses the call — with a message the agent goes on under it, and a bare deny ends its turn. `escalate` leaves the call held and passes it to whoever decides above you, with a message as a note to them
 
 Usage: efference control decide [OPTIONS] --agent <AGENT> <SEQ> <DECISION>
 
@@ -182,13 +182,13 @@ Options:
           The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
 
       --message <MESSAGE>
-          With `allow`, a note the agent reads with the call's result; with `deny`, the message it goes on under; with `escalate`, a note to whoever decides next
+          With `allow`, an optional supervisor note delivered with the result. Leave it blank unless you have useful guidance, e.g. "Put scratch files under $TMPDIR," not "Approved." With `deny`, the message the agent goes on under; with `escalate`, a note to whoever decides next
 
   -h, --help
           Print help (see a summary with '-h')
 
 $ efference control decide -h
-Decide the call an agent is holding for a decision. `allow` runs it, and a message rides with its result; `deny` refuses it — with a message the agent goes on under it, and a bare deny ends its turn; `escalate` leaves it held and passes it to whoever decides above you, with a message as a note to them
+Decide the call an agent is holding for a decision. `allow` runs it. Leave the message blank unless you have useful guidance to deliver with the result; give just the guidance, not an approval announcement. `deny` refuses the call — with a message the agent goes on under it, and a bare deny ends its turn. `escalate` leaves the call held and passes it to whoever decides above you, with a message as a note to them
 
 Usage: efference control decide [OPTIONS] --agent <AGENT> <SEQ> <DECISION>
 
@@ -200,7 +200,7 @@ Options:
       --agent <AGENT>       The agent's id
       --bind <ADDR:PORT>    Listen on a TCP address as well: the web client's front door. A port (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or `host:port`; a bare port means loopback, and a cleartext bind is accepted only there, so the short spelling never widens exposure. With `--host`, overrides `[host] bind`; `--bind ""` serves the Unix socket alone whatever the table says
       --host-socket <PATH>  The host's control socket every verb addresses; a named session resolves through it. Defaults to `~/.efference/host.sock`
-      --message <MESSAGE>   With `allow`, a note the agent reads with the call's result; with `deny`, the message it goes on under; with `escalate`, a note to whoever decides next
+      --message <MESSAGE>   With `allow`, an optional supervisor note delivered with the result. Leave it blank unless you have useful guidance, e.g. "Put scratch files under $TMPDIR," not "Approved." With `deny`, the message the agent goes on under; with `escalate`, a note to whoever decides next
   -h, --help                Print help (see more with '--help')
 
 $ efference control interrupt --help

@@ -87,7 +87,9 @@ escalated to, for that call alone; for any other agent `decide` is refused, nami
 decides. `agents__decide` names the held call by the seq its status
 gives (`8`, or `8.2` when one turn made several calls):
 
-- `allow` runs it. A `message` with it is delivered to the agent as your message, after the result.
+- `allow` runs it. Leave `message` blank for routine approvals. If you have useful
+  guidance, give just that guidance so the agent can act on it without knowing the
+  call was held. The agent receives it as your message after the result.
 - `deny` with a `message` refuses it, and the agent goes on under your message.
 - `deny` alone refuses it and ends the agent's turn.
 - `escalate` leaves it held and passes it to whoever supervises you — the operator, when no

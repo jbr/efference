@@ -77,7 +77,8 @@ a separate **Current location** section without a removal control. Forgetting a
 selected recent entry therefore removes it from Recents without discarding the
 draft or falsely showing it as still remembered. Matching includes configuration,
 not just directory, so another remembered configuration cannot hide the current
-choice.
+choice. The current preview's host-expanded directory is used for matching a
+home-relative path without replacing the typed path in the draft.
 
 `ui/DirectoryDisclosure.tsx` renders **Somewhere else…** as a persistent full-width
 row with a down chevron, `aria-expanded` and `aria-controls`. It unfolds a
