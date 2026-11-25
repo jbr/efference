@@ -2096,13 +2096,20 @@ is **terminal for the session's keepalive** (the one stance that does not end: t
 stops and `usage.keepalive_skipped` is `rejected`) — the upstream rejected the request
 itself, so the next tick would be rejected identically, and retrying only reprints
 the same line for the life of the pause. 408 and 429 describe the moment rather
-than the request; they, 5xx, and network failures keep the print-and-retry
-behavior — except a failure whose body identifies a terminal condition
+than the request; they, 5xx, and network failures are retried — except a failure
+whose body identifies a terminal condition
 (`api/failure.rs`, e.g. the Codex backend's 429 `usage_limit_reached`). That one
 holds until a reset hours away, so the keepalive stops pinging and publishes
 `exhausted` with the refusal and its `resets_at`, until the next real turn: that
 turn is the first request that can find the limit lifted, and a turn that fails
 on it stalls the loop on its own account.
+
+A retry is never faster than the ping interval: the loop schedules the next
+attempt a full interval after the failure, and the checks in between send
+nothing. The deadline is the loop's own, separate from the touch clock, since a
+failed request refreshes nothing; without it, the check cadence (a quarter of the
+interval, capped at 20s, above) would resend the whole context on every check for
+as long as the upstream stays down.
 
 The prefix bytes sent by a keepalive must be byte-identical to what a real turn
 sends, or the ping writes a new cache entry instead of refreshing the live one.
@@ -2179,7 +2186,10 @@ cache is judged by when it was last read, not by when the host started.
 
 A keepalive refreshes the TTL (`record_keepalive` stamps the touch clock) but
 does not reset the give-up deadline (the real-turn clock is untouched). This
-prevents a keepalive loop from keeping itself alive forever.
+prevents a keepalive loop from keeping itself alive forever. A failed ping stamps
+neither clock: the next attempt falls due a ping interval after the failure, on
+the loop's own deadline (above), so a failing upstream leaves both the cache
+belief and the give-up cap where the last real request put them.
 
 The loop pings when the touch clock exceeds the configured interval
 (`[transport] keepalive-interval`, above) and stops once the real-turn clock exceeds `CAP` (30

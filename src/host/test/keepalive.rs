@@ -307,6 +307,55 @@ pub(super) fn idle_for(shared: &Session, idle: Duration) {
     back(&mut metrics.last_triage_at);
 }
 
+/// Drive a loop already pinging `upstream` through two retryable failures and assert the
+/// cadence between them: the checks in the interval after a failure send nothing, and each
+/// retry goes out an interval after the failure it answers — not at the check in between,
+/// and not two intervals later. `shared` is the session the loop pings for and `ping_at`
+/// the interval it was spawned at.
+///
+/// The scripted failure is a 408 rather than a 5xx: the transport retries the 5xx set
+/// itself (`RETRY_STATUSES`, `api/client.rs`), which would put its own attempts and its
+/// own backoff between the loop's failure and the reading taken here. A 408 is retryable
+/// for the loop — not permanent, and its body names no terminal condition — and costs one
+/// request, so the upstream's count is the loop's attempt count.
+pub(super) async fn assert_retries_wait_out_the_interval(
+    upstream: &ScriptedUpstream,
+    shared: &Session,
+    ping_at: Duration,
+) {
+    // Wake this far short of the interval: the retry falls due on it, and the check that
+    // sends is the one after.
+    let before = Duration::from_millis(500);
+    let mut previous: Option<tokio::time::Instant> = None;
+    for sent in 1..=2 {
+        shared
+            .wait_until_with(upstream, &format!("ping {sent} went out"), || {
+                upstream.count() == sent
+            })
+            .await;
+        let failed_at = tokio::time::Instant::now();
+        if let Some(previous) = previous {
+            let gap = failed_at - previous;
+            assert!(
+                gap >= ping_at,
+                "a retry went out {gap:?} after the failure it answers, under {ping_at:?}"
+            );
+            assert!(
+                gap <= ping_at * 2,
+                "a retry went out {gap:?} after the failure it answers, over {:?}",
+                ping_at * 2
+            );
+        }
+        tokio::time::sleep_until(failed_at + ping_at - before).await;
+        assert_eq!(
+            upstream.count(),
+            sent,
+            "the checks after a retryable failure send nothing"
+        );
+        previous = Some(failed_at);
+    }
+}
+
 fn skipped(shared: &Session) -> Value {
     let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
     state["usage"]["keepalive_skipped"].clone()
@@ -421,5 +470,41 @@ async fn an_exhausted_limit_pauses_until_the_next_turn() {
     shared
         .wait_until("the skip stance cleared", || skipped(&shared).is_null())
         .await;
+    task.abort();
+}
+
+/// The check after a retryable failure sends nothing: the loop schedules the next attempt
+/// a full ping interval after it, so a failing upstream is sent the context once per
+/// interval rather than once per check. The deadline is the loop's own, so a failed
+/// request refreshes nothing — the touch clock still reads the time of the last real
+/// request, and the session stays inside the idle window throughout.
+///
+/// On a paused clock: the interval is read off tokio's, the clock the loop's own sleep
+/// runs on, while the two session clocks are `std` readings a paused clock does not move
+/// and are set back (`idle_for`) instead of waited out.
+#[tokio::test(start_paused = true)]
+async fn a_transient_failure_waits_out_the_ping_interval() {
+    const PING_AT: Duration = Duration::from_secs(8);
+    let upstream = ScriptedUpstream::new(|_| Canned::json(408, r#"{"error":"timed out"}"#));
+    let (shared, client) = pinged_session(&upstream, 5_000);
+    // A minute idle: the ping is due at once, and the thirty-minute cap is nowhere near.
+    idle_for(&shared, Duration::from_secs(60));
+    let task = tokio::spawn(main_loop(
+        client,
+        Arc::clone(&shared),
+        Vec::new(),
+        PING_AT,
+        None,
+    ));
+    assert_retries_wait_out_the_interval(&upstream, &shared, PING_AT).await;
+    let (touch, turn) = shared.keepalive_clocks(CacheLineage::Main);
+    assert!(
+        touch.is_some_and(|t| t >= Duration::from_secs(60)),
+        "a failed request refreshes nothing"
+    );
+    assert!(
+        turn.is_some_and(|t| t < Duration::from_secs(30 * 60)),
+        "both retries went out inside the idle window"
+    );
     task.abort();
 }

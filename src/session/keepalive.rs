@@ -168,6 +168,12 @@ impl PingCost {
 ///
 /// Two clocks ([`Session::keepalive_clocks`]): ping off the lineage's cache-touch clock,
 /// give up off the *real-turn* clock, so a ping can never reset its own deadline.
+///
+/// A retryable failure adds a deadline of the loop's own: the next attempt falls due a
+/// ping interval after it, so a failing upstream is sent the context once per interval
+/// rather than once per check. The deadline is separate from both session clocks — a
+/// failed ping stamps neither, so the touch clock keeps measuring the cache and the
+/// real-turn clock the idle.
 pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
     const CAP: Duration = Duration::from_secs(30 * 60); // give up after 30 min idle
     let KeepaliveSpec {
@@ -189,8 +195,16 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
     // stays off while that clock keeps running from the same turn; a new real turn
     // restarts it below this reading, and the pings resume.
     let mut exhausted_at: Option<Duration> = None;
+    // When a retryable failure's next attempt falls due: a full ping interval after it,
+    // so a failing upstream is sent the context once per interval rather than once per
+    // check. Kept off both session clocks, which a failed ping does not stamp.
+    let mut retry_at: Option<tokio::time::Instant> = None;
     loop {
         tokio::time::sleep(check).await;
+        // Until a retryable failure's interval is up, the checks below send nothing.
+        if retry_at.is_some_and(|due| tokio::time::Instant::now() < due) {
+            continue;
+        }
         // Need a real turn to have happened (a prefix worth keeping warm) and to be
         // inside the window: nearing eviction but not yet past the give-up cap.
         let (Some(touch), Some(turn)) = shared.keepalive_clocks(lineage) else {
@@ -231,6 +245,8 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
             Ok(request) => {
                 let cache_read = request.usage.cache_read_input_tokens;
                 estimate = Some(PingCost::of(&request, prices.as_ref()));
+                // No failure is outstanding once a ping succeeds.
+                retry_at = None;
                 match lineage {
                     CacheLineage::Main => shared.record_keepalive(request),
                     CacheLineage::Triage => shared.record_triage_keepalive(request),
@@ -239,8 +255,9 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
             }
             // A rejected *request* is rejected identically next tick, so retrying it
             // at the check cadence only reprints the same line for the life of the
-            // pause. Terminal for the session; transient failures (5xx, network,
-            // timeouts, rate limits) keep retrying.
+            // pause. Terminal for the session; a transient failure (5xx, network,
+            // timeout, rate limit) is retried a ping interval later, not at the check
+            // cadence (`retry_at`).
             Err(e) if e.is_permanent() => {
                 log::debug!("{name} rejected by the upstream: {e}; {name} off for this session");
                 shared.set_keepalive_skipped(
@@ -271,7 +288,10 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
                 );
                 exhausted_at = Some(turn);
             }
-            Err(e) => log::debug!("{name} failed: {e}"),
+            Err(e) => {
+                log::debug!("{name} failed: {e}");
+                retry_at = Some(tokio::time::Instant::now() + ping_at);
+            }
         }
     }
 }

@@ -369,3 +369,47 @@ async fn a_model_that_refused_forced_choice_is_pinged_unforced() {
     );
     assert_ping_is_the_request_through_its_breakpoint(&request, &ping);
 }
+
+/// The triage lineage runs the same loop, so a retryable failure schedules its next ping
+/// an interval out as well: the checks after a failure send nothing, each retry goes out
+/// at least an interval after the failure it answers, and the lineage's own touch clock —
+/// which a failed request does not stamp — still reads the time of the last triage request
+/// that succeeded. On a paused clock, as in the main lineage's test in `keepalive.rs`.
+#[tokio::test(start_paused = true)]
+async fn a_transient_failure_waits_out_the_interval_on_the_triage_lineage() {
+    const PING_AT: Duration = Duration::from_secs(8);
+    let upstream = ScriptedUpstream::new(|_| Canned::json(408, r#"{"error":"timed out"}"#));
+    let (shared, _main) = pinged_session(&upstream, 5_000);
+    shared.store_triage_request(
+        stored(vec![WireTurn::text("the triage's history")]),
+        Timestamp::now(),
+        &prompt_usage(5_000),
+    );
+    shared.record_triage(false, prompt_usage(5_000));
+    keepalive::idle_for(&shared, Duration::from_secs(60));
+    let task = tokio::spawn(keepalive_loop(
+        KeepaliveSpec {
+            lineage: CacheLineage::Triage,
+            client: Arc::new(Client::new(
+                messages_endpoint(&upstream),
+                TRIAGE_MODEL,
+                "sys",
+            )),
+            tools: Vec::new(),
+            ping_at: PING_AT,
+            prices: None,
+        },
+        Arc::clone(&shared),
+    ));
+    keepalive::assert_retries_wait_out_the_interval(&upstream, &shared, PING_AT).await;
+    let (touch, turn) = shared.keepalive_clocks(CacheLineage::Triage);
+    assert!(
+        touch.is_some_and(|t| t >= Duration::from_secs(60)),
+        "a failed request refreshes nothing"
+    );
+    assert!(
+        turn.is_some_and(|t| t < Duration::from_secs(30 * 60)),
+        "both retries went out inside the idle window"
+    );
+    task.abort();
+}
