@@ -57,6 +57,7 @@ one line per feature.
 - Streamed keepalives accept accounted input usage when the output cap cuts off unused tool arguments.
 - OpenRouter main turns request at most 65,536 output tokens to avoid unnecessary credit refusals.
 - A partially written session-log entry is rolled back before another append is accepted.
+- Interrupt ends a retry wait immediately for a main request or its result triage, without sending another attempt.
 - The web client checks for a stale connection on focus or page restore, so it can pick up pending questions without waiting for the old connection to time out.
 - Typing a `~` path in the web session form selects the corresponding remembered location instead of showing a duplicate.
 - The installed web app uses the bare session title, while ordinary tabs keep the app-name suffix.
