@@ -11,7 +11,7 @@ const REFUSAL: &str =
     r#"{"type":"error","error":{"type":"invalid_request_error","message":"bad request"}}"#;
 
 /// A history whose one tool result contains an image.
-fn with_image() -> Vec<WireTurn> {
+pub(super) fn with_image() -> Vec<WireTurn> {
     vec![WireTurn::User(vec![UserPart::ToolResult {
         call_id: CallId("c".into()),
         seq: Some(3),
@@ -26,7 +26,7 @@ fn with_image() -> Vec<WireTurn> {
     }])]
 }
 
-fn carries_image(body: &Value) -> bool {
+pub(super) fn carries_image(body: &Value) -> bool {
     body["messages"].to_string().contains(r#""type":"image""#)
 }
 

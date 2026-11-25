@@ -54,23 +54,21 @@ impl Client {
             && self.recovers_thinking_off(tool_choice)
     }
 
-    /// The `thinking` this request sends: the recovered form where this client has
-    /// recorded a refusal of its thinking-off spelling (docs/transport.md).
-    pub(super) fn request_thinking(&self, tool_choice: &ToolChoice) -> Thinking {
+    /// The `thinking` and the effort one request sends, read against one snapshot of
+    /// the recovery's record (docs/transport.md): the two ride the same body, and the
+    /// record is shared with this client's clones, so one load determines both —
+    /// two loads could differ and put thinking off beside the recovery's `low`.
+    pub(super) fn request_thinking_effort(
+        &self,
+        tool_choice: &ToolChoice,
+    ) -> (Thinking, Option<String>) {
         if self.recovered(tool_choice) {
-            THINKING_ADAPTIVE
+            (THINKING_ADAPTIVE, Some(LOW_EFFORT.to_string()))
         } else {
-            Thinking::for_request(tool_choice, self.thinking, self.thinking_off)
-        }
-    }
-
-    /// The effort this request carries: `low` where the recovery applies, the
-    /// session's own otherwise (docs/transport.md).
-    pub(super) fn request_effort(&self, tool_choice: &ToolChoice) -> Option<String> {
-        if self.recovered(tool_choice) {
-            Some(LOW_EFFORT.to_string())
-        } else {
-            self.effort.clone()
+            (
+                Thinking::for_request(tool_choice, self.thinking, self.thinking_off),
+                self.effort.clone(),
+            )
         }
     }
 
@@ -92,8 +90,14 @@ impl Client {
     /// since a forced choice and thinking on are a 400 together. When the retry
     /// succeeds the client sends that form from then on, so the refusal is paid once;
     /// when it fails too, the rejection had another cause, the first error is
-    /// returned, and nothing is learned. Every attempt reads against `abort`, the
-    /// interrupt [`Self::send`] armed.
+    /// returned, and nothing is learned. That error comes back marked
+    /// ([`mark_recovery_retried`]), so this refusal is this recovery's alone: the
+    /// forced-choice fallback and the image recovery above it would each send what
+    /// the endpoint just refused, and the same refusal would be met twice. The
+    /// refusal counts as cured only when the retry's stream finalized cleanly — a
+    /// mid-stream death and the operator's interrupt both arrive as a `Completion`,
+    /// and neither shows the endpoint taking the recovered form. Every attempt reads
+    /// against `abort`, the interrupt [`Self::send`] armed.
     pub(super) async fn send_with_thinking_fallback(
         &self,
         turns: &[WireTurn],
@@ -145,7 +149,10 @@ impl Client {
             .send_request(&turns, tools, tool_choice, cap, abort, on_delta)
             .await
         {
-            Ok(completion) => {
+            // A stream that finalized cleanly is the cure: a mid-stream death and the
+            // operator's interrupt are `Completion`s too, and neither shows the
+            // endpoint taking the recovered form, so neither is learned.
+            Ok(completion) if completion.upstream_failure().is_none() => {
                 log::warn!(
                     "{} refused thinking off ({refusal}); this client sends adaptive \
                      thinking at effort `{LOW_EFFORT}` from here on",
@@ -154,7 +161,10 @@ impl Client {
                 self.thinking_off_refused.store(true, Ordering::Relaxed);
                 Ok(completion)
             }
-            Err(_) => Err(refusal),
+            Ok(completion) => Ok(completion),
+            // The retry failed, so the refusal it answered is what the caller gets —
+            // marked, so the fallbacks above leave it to this recovery (the doc above).
+            Err(_) => Err(mark_recovery_retried(refusal)),
         }
     }
 }

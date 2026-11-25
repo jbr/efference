@@ -9,9 +9,11 @@ use crate::record::project::WireTurn;
 /// The refusal Sonnet 5.5 answers a forced `tool_choice` with.
 const REFUSAL: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"tool_choice: type \"tool\" and \"any\" are not supported for this model."}}"#;
 
-/// An empty stream that assembles into a completion.
+/// An empty stream that assembles into a completion nothing marks: it finalizes, and
+/// its usage counts output, so it reads as the reply a request the endpoint accepted
+/// comes back as — not the empty finalized stream the assembler treats as a failure.
 pub(super) const STREAM: &str = "event: message_start\ndata: {\"message\":{\"id\":\"msg-1\",\
-     \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
+     \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":1}}}\n\n\
      event: data\ndata: [DONE]\n\n";
 
 /// An upstream answering a list of replies, and how many the list holds ([`scripted`]).

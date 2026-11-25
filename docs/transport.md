@@ -204,10 +204,19 @@ off the cache chain as the forced-choice fallback is, while an `auto` retry send
 turns the request did and stays on it. When the retry succeeds the client — and its
 clones, which share the flag — sends that form from then on, so the refusal is paid
 once; when it fails too, the rejection had another cause, the first error is returned
-and nothing is learned. The retry is also what establishes that the model takes
+and nothing is learned. That error carries a mark for a recovery that has already
+retried it (`OpenError::recovery_retried`), so the refusal has one owner: it is not
+the forced-choice fallback's or the image recovery's to answer — each of their retries
+would send what the endpoint just refused (`auto` with thinking off, or the same
+request without its images), and the same refusal would be met twice. The refusal
+counts as cured only when the retry's stream finalized cleanly: a mid-stream death and
+the operator's interrupt both arrive as a completion, and neither shows the endpoint
+taking the recovered form, so nothing is learned and the next request meets the
+refusal again. The retry is also what establishes that the model takes
 `low`: the client holds no effort list, so a model that refuses the level returns the
 original refusal and learns nothing. A ping of a recovered request re-sends it in the
-recovered form, since the form is read off the client as the body is built.
+recovered form, since the form is read off the client as the body is built — one read
+of the record gives that body its thinking and its effort together.
 
 Image input is learned the same way (`api/client/images.rs`). Where a model's
 metadata has no information about images, `supports_image_input` reads `true`: a model

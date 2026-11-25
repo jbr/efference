@@ -38,12 +38,14 @@ impl Client {
     /// (docs/transport.md): every attempt below passes through the thinking-off
     /// recovery, which sits between this and [`Self::send_request`] and matches a
     /// refusal by its wording, so a request refused for its thinking is answered
-    /// there while one refused for its images falls through to this. The image
-    /// recovery runs only while no request carrying images has succeeded on this
-    /// client: once one has, the model reads images, a later rejection has another
-    /// cause, and stripping the history's images would move a prefix the provider has
-    /// already cached. Every attempt reads against `abort`, the interrupt
-    /// [`Self::send`] armed.
+    /// there while one refused for its images falls through to this. A refusal that
+    /// recovery has already retried comes back marked ([`recovery_retried`]), and
+    /// this one leaves it alone: withholding the images would send the spelling the
+    /// endpoint just refused. The image recovery runs only while no request carrying
+    /// images has succeeded on this client: once one has, the model reads images, a
+    /// later rejection has another cause, and stripping the history's images would
+    /// move a prefix the provider has already cached. Every attempt reads against
+    /// `abort`, the interrupt [`Self::send`] armed.
     pub(super) async fn send_with_image_fallback(
         &self,
         turns: &[WireTurn],
@@ -81,7 +83,15 @@ impl Client {
             )
             .await
         {
-            Err(e) if is_request_rejection(&e) && !self.images_accepted.load(Ordering::Relaxed) => {
+            // A refusal the thinking-off recovery has already retried is not this
+            // recovery's to answer: withholding the images would send the spelling the
+            // endpoint just refused, and the same refusal would be met twice
+            // (docs/transport.md).
+            Err(e)
+                if is_request_rejection(&e)
+                    && !self.images_accepted.load(Ordering::Relaxed)
+                    && !recovery_retried(&e) =>
+            {
                 e
             }
             answered => {

@@ -18,7 +18,10 @@ use trillium_client_retry::RetryHandler;
 use crate::inference::api::assembler::ResponseMeta;
 use crate::inference::api::auth_value::Reloaded;
 use crate::inference::api::completions::assembler::CompletionsAssembler;
-use crate::inference::api::failure::{FailureClass, OpenError, classify_body, rejects_credential};
+use crate::inference::api::failure::{
+    FailureClass, OpenError, classify_body, mark_recovery_retried, recovery_retried,
+    rejects_credential,
+};
 use crate::inference::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::inference::api::responses::assembler::ResponsesAssembler;
 use crate::inference::api::stages::{ActiveTrace, StageSink, Trace};

@@ -151,6 +151,12 @@ pub struct OpenError {
     message: String,
     class: FailureClass,
     status: Option<u16>,
+    /// Whether a recovery has already retried this refusal once (docs/transport.md).
+    /// On the error rather than re-derived by each caller: the fallbacks above a
+    /// recovery read it off the refusal they are deciding about, and the recovery's
+    /// own gate is a function of state another clone can change between the retry and
+    /// their read.
+    recovery_retried: bool,
 }
 
 impl OpenError {
@@ -174,6 +180,7 @@ impl OpenError {
             message,
             class,
             status,
+            recovery_retried: false,
         }
     }
 
@@ -218,6 +225,28 @@ pub fn error_status(error: &super::Error) -> Option<u16> {
 pub fn is_request_rejection(error: &super::Error) -> bool {
     error_status(error)
         .is_some_and(|s| (400..500).contains(&s) && ![401, 403, 408, 429].contains(&s))
+}
+
+/// Whether a recovery has already retried `error` once (docs/transport.md). The
+/// fallbacks above a recovery read it before claiming the same refusal: their retry
+/// would send what the endpoint just refused, and the same refusal would be met
+/// twice.
+pub fn recovery_retried(error: &super::Error) -> bool {
+    error
+        .downcast_ref::<OpenError>()
+        .is_some_and(|open| open.recovery_retried)
+}
+
+/// `error` marked as [recovery-retried](recovery_retried), which is how a recovery
+/// returns the refusal its retry failed to cure: the first error, as every other
+/// failed recovery returns it, and one the fallbacks above leave untouched. An error
+/// with no status is not a refusal the endpoint worded, so no recovery matched it, and
+/// it passes through unchanged.
+pub(super) fn mark_recovery_retried(mut error: super::Error) -> super::Error {
+    if let Some(open) = error.downcast_mut::<OpenError>() {
+        open.recovery_retried = true;
+    }
+    error
 }
 
 #[cfg(test)]

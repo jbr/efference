@@ -48,6 +48,9 @@ impl Client {
     /// first error is returned and nothing is learned. Where this client has recorded
     /// that the endpoint refuses thinking off, the fallback sends adaptive thinking at
     /// effort `low` instead, and later forced requests go straight to it as well.
+    /// A refusal that recovery has already retried ([`recovery_retried`]) is not this
+    /// fallback's to answer: `auto` with thinking off would meet the same refusal a
+    /// second time (docs/transport.md).
     pub async fn complete(
         &self,
         turns: &[WireTurn],
@@ -67,8 +70,12 @@ impl Client {
             .send(turns, tools, tool_choice, None, &mut on_delta)
             .await
         {
+            // A refusal the thinking-off recovery has already retried is not this
+            // fallback's to answer: `auto` with thinking off would meet the same
+            // refusal a second time (docs/transport.md).
             Err(e)
                 if is_request_rejection(&e)
+                    && !recovery_retried(&e)
                     && !self
                         .foreground_triage
                         .is_some_and(|mode| mode.rejection(&e).is_some()) =>

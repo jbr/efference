@@ -254,7 +254,7 @@ impl Client {
         max_tokens: u32,
         stream: bool,
     ) -> Request<'a> {
-        let thinking = self.request_thinking(&tool_choice);
+        let (thinking, effort) = self.request_thinking_effort(&tool_choice);
         Request {
             model: &self.model,
             max_tokens,
@@ -263,9 +263,7 @@ impl Client {
             tool_choice,
             thinking,
             reasoning: self.reasoning_off(thinking),
-            output_config: self
-                .request_effort(&tool_choice)
-                .map(|effort| OutputConfig { effort }),
+            output_config: effort.map(|effort| OutputConfig { effort }),
             temperature: self.wire_temperature(),
             upstream: self.upstream.as_ref(),
             prompt_cache_key: self.prompt_cache_key(),
