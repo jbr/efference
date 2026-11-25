@@ -153,13 +153,19 @@ silence meaningful:
   aborts the attempt and reconnects the ordinary way: `onDisconnect` receives a
   "no read" error, the backoff's first wait is one second, and the retry resumes
   from the cursor.
-- **A visibility check** — when the page becomes visible, an attempt whose last read
-  is older than 20 s (`VISIBLE_STALE_MS`) is aborted and reopened at once, without
-  the backoff; a reader sitting in a backoff retries at once. A stream read within
-  20 s is left alone, and hiding the page does nothing. The check exists because a
-  phone's sleep or a network change can leave a socket dead without the transport
-  reporting it, and a hidden tab no longer drops its stream (the drop went with push
-  suppression, [web-push.md](web-push.md)).
+- **A wake check** — when the page comes back — on `visibilitychange` to visible,
+  on `focus`, and on `pageshow` — an attempt whose last read is older than 20 s
+  (`VISIBLE_STALE_MS`) is aborted and reopened at once, without the backoff; a
+  reader sitting in a backoff retries at once. A stream read within 20 s is left
+  alone, and hiding the page does nothing. The check exists because a phone's sleep
+  or a network change can leave a socket dead without the transport reporting it,
+  and a hidden tab no longer drops its stream (the drop went with push
+  suppression, [web-push.md](web-push.md)). All three signals are watched because
+  a suspended client need not deliver `visibilitychange`: a service worker
+  focusing the app on a notification tap produces `focus`, and a page restored from
+  the back/forward cache produces `pageshow`. Without one of them the dead socket
+  is not noticed until the 35 s read deadline, so a client that had been away
+  showed its last transcript without the question that had since been asked.
 
 Every request the client makes — reads, verbs, streams, and the bytes of images —
 goes through one function, `apiFetch` in `api/http.ts`, which calls the global

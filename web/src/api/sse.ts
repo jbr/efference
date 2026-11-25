@@ -23,11 +23,12 @@ export interface StreamHandle {
 export const STALL_DEADLINE_MS = 35_000;
 
 /**
- * How old the last read may be, in ms, when the page becomes visible again
- * before the attempt is dropped and reopened at once rather than waiting out
- * `STALL_DEADLINE_MS`. A healthy stream has been read within one 15 s
- * heartbeat; 20 s is that interval and a margin, so only a stream that missed a
- * heartbeat while the page was away is replaced.
+ * How old the last read may be, in ms, when the page comes back — to view, to
+ * focus, or from the back/forward cache — before the attempt is dropped and
+ * reopened at once rather than waiting out `STALL_DEADLINE_MS`. A healthy
+ * stream has been read within one 15 s heartbeat; 20 s is that interval and a
+ * margin, so only a stream that missed a heartbeat while the page was away is
+ * replaced.
  */
 export const VISIBLE_STALE_MS = 20_000;
 
@@ -54,12 +55,12 @@ export interface EventStreamOptions {
 /**
  * Hold `GET url` open as an event stream until `close()`, reconnecting after a
  * refused or failed request, a stream that ends, an `onEvent` that throws, a
- * silence past `STALL_DEADLINE_MS`, or the page returning to view with a stream
- * last read more than `VISIBLE_STALE_MS` ago. The wait before a retry doubles
- * from 1 s to a 15 s cap and resets once a request succeeds; a retry for the
- * page returning to view does not wait. A `401` is the page's bearer being
- * refused, handled in `apiFetch`, which clears it and closes the views that held
- * streams (docs/web-client.md).
+ * silence past `STALL_DEADLINE_MS`, or the page waking (return to view, focus,
+ * or a back/forward cache restore) with a stream last read more than
+ * `VISIBLE_STALE_MS` ago. The wait before a retry doubles from 1 s to a 15 s cap
+ * and resets once a request succeeds; a retry for a wake does not wait. A `401`
+ * is the page's bearer being refused, handled in `apiFetch`, which clears it and
+ * closes the views that held streams (docs/web-client.md).
  */
 export function readEventStream(options: EventStreamOptions): StreamHandle {
   let closed = false;
@@ -94,7 +95,13 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
     mine.abort();
   }
 
-  function onVisibility() {
+  /** Run the stale check when the page may have come back from being away: on
+   * return to view, on regaining focus, and when the back/forward cache
+   * restores it. A suspended client need not deliver every one of these — a
+   * phone resuming from sleep or a service worker focusing the app on a
+   * notification tap — and a socket that died while away is otherwise only
+   * noticed at `STALL_DEADLINE_MS`. */
+  function onWake() {
     if (closed || globalThis.document?.visibilityState !== "visible") return;
     // A reader waiting out a backoff has no stream to judge; try again now.
     if (cancelBackoff !== null) cancelBackoff();
@@ -116,7 +123,14 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
   }
 
   async function run() {
-    globalThis.document?.addEventListener("visibilitychange", onVisibility);
+    // `visibilitychange` reaches the document; `focus` and `pageshow` are
+    // window events. Listening for all three means a resume is acted on
+    // whichever one the platform delivers.
+    const doc = globalThis.document;
+    const win = globalThis.window;
+    doc?.addEventListener("visibilitychange", onWake);
+    win?.addEventListener("focus", onWake);
+    win?.addEventListener("pageshow", onWake);
     try {
       while (!closed) {
         const mine = new AbortController();
@@ -161,7 +175,7 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
                   `events: no read for ${STALL_DEADLINE_MS / 1000} s; reconnecting`,
                 )
               : aborted === "visible"
-                ? new Error("events: stale on return to view; reconnecting")
+                ? new Error("events: stale on wake; reconnecting")
                 : error,
           );
           if (closed) return;
@@ -176,10 +190,9 @@ export function readEventStream(options: EventStreamOptions): StreamHandle {
         }
       }
     } finally {
-      globalThis.document?.removeEventListener(
-        "visibilitychange",
-        onVisibility,
-      );
+      doc?.removeEventListener("visibilitychange", onWake);
+      win?.removeEventListener("focus", onWake);
+      win?.removeEventListener("pageshow", onWake);
     }
   }
 

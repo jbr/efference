@@ -107,20 +107,33 @@ function liveFetch() {
   return { attempts, fetchMock };
 }
 
-/** A stand-in for the page's `document`: an event target with a visibility. */
+/** A stand-in for the page: one event target serving as both the document
+ * (visibility and `visibilitychange`) and the window (`focus`, `pageshow`). */
 function stubDocument() {
-  const doc = Object.assign(new EventTarget(), {
+  const page = Object.assign(new EventTarget(), {
     visibilityState: "visible" as "visible" | "hidden",
   });
-  vi.stubGlobal("document", doc);
+  vi.stubGlobal("document", page);
+  vi.stubGlobal("window", page);
   return {
     show() {
-      doc.visibilityState = "visible";
-      doc.dispatchEvent(new Event("visibilitychange"));
+      page.visibilityState = "visible";
+      page.dispatchEvent(new Event("visibilitychange"));
     },
     hide() {
-      doc.visibilityState = "hidden";
-      doc.dispatchEvent(new Event("visibilitychange"));
+      page.visibilityState = "hidden";
+      page.dispatchEvent(new Event("visibilitychange"));
+    },
+    /** The page is visible again and focused, without `visibilitychange` being
+     * delivered — a service worker raising the app on a notification tap. */
+    focus() {
+      page.visibilityState = "visible";
+      page.dispatchEvent(new Event("focus"));
+    },
+    /** Restored from the back/forward cache. */
+    restore() {
+      page.visibilityState = "visible";
+      page.dispatchEvent(new Event("pageshow"));
     },
   };
 }
@@ -205,6 +218,56 @@ describe("the reconnecting reader's watchdog", () => {
     expect(attempts[0]!.signal.aborted).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(attempts[1]!.url).toBe("/x?since=4");
+    handle.close();
+  });
+  it("reconnects at once when focus returns to a stale stream with no visibility event", async () => {
+    const page = stubDocument();
+    const { attempts, fetchMock } = liveFetch();
+    const { handle } = cursorReader();
+    await advance(0);
+    attempts[0]!.send("data: 3\n\n");
+    page.hide();
+    await advance(VISIBLE_STALE_MS + 1);
+    expect(attempts[0]!.signal.aborted).toBe(false);
+
+    // A notification tap raises and focuses the app without a
+    // `visibilitychange` reaching the reader.
+    page.focus();
+    await advance(0);
+    expect(attempts[0]!.signal.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(attempts[1]!.url).toBe("/x?since=4");
+    handle.close();
+  });
+
+  it("reconnects at once when the page is restored from the back/forward cache", async () => {
+    const page = stubDocument();
+    const { attempts, fetchMock } = liveFetch();
+    const { handle } = cursorReader();
+    await advance(0);
+    attempts[0]!.send("data: 3\n\n");
+    page.hide();
+    await advance(VISIBLE_STALE_MS + 1);
+    expect(attempts[0]!.signal.aborted).toBe(false);
+
+    page.restore();
+    await advance(0);
+    expect(attempts[0]!.signal.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(attempts[1]!.url).toBe("/x?since=4");
+    handle.close();
+  });
+
+  it("leaves a recently read stream alone when focus returns", async () => {
+    const page = stubDocument();
+    const { attempts, fetchMock } = liveFetch();
+    const { handle } = cursorReader();
+    await advance(0);
+    attempts[0]!.send("data: 3\n\n");
+    page.focus();
+    await advance(0);
+    expect(attempts[0]!.signal.aborted).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     handle.close();
   });
 

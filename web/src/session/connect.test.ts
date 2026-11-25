@@ -1,7 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { bearer } from "../api/bearer.ts";
+import { VISIBLE_STALE_MS } from "../api/sse.ts";
 import { connect } from "./connect.ts";
 import { Store } from "./store.ts";
+import { buildTree } from "./tree.ts";
 
 const base = "/sessions/test";
 const connectors: ReturnType<typeof connect>[] = [];
@@ -160,6 +162,116 @@ it("retains a fetched tail and opens its stream when a boundary reference is mis
     `${base}/v1/events?since=51`,
     expect.anything(),
   );
+});
+
+// The scenario the notification-tap report describes, without an iPhone: a live
+// stream, the app put away with nothing read while it is gone, a question asked
+// in the meantime, and the app raised by a focus event. The reader reconnects at
+// once, replays the `Assistant` entry that put the question and folds the `ask`
+// state topic — so the question is present without the 35 s read deadline.
+it("delivers a question posed while away when a wake reconnects the stream", async () => {
+  vi.useFakeTimers();
+  const encoder = new TextEncoder();
+  // The page: one event target serving as document (visibility,
+  // `visibilitychange`) and window (`focus`, `pageshow`).
+  const page = Object.assign(new EventTarget(), {
+    visibilityState: "visible" as "visible" | "hidden",
+  });
+  vi.stubGlobal("document", page);
+  vi.stubGlobal("window", page);
+
+  const assistant = {
+    seq: 2,
+    turn: 1,
+    at: 0,
+    payload: {
+      Assistant: {
+        output: {
+          Messages: [
+            {
+              ToolUse: {
+                id: "toolu_ask",
+                name: "ask",
+                input: { question: "Ready to continue?" },
+              },
+            },
+          ],
+        },
+      },
+    },
+  };
+  const ask = {
+    call_id: "toolu_ask",
+    n: 1,
+    of: 1,
+    question: "Ready to continue?",
+    recalled: [],
+  };
+  const replay =
+    `data: ${JSON.stringify({ class: "log", kind: "assistant", seq: 2, data: assistant })}\n\n` +
+    `data: ${JSON.stringify({ class: "state", kind: "ask", data: ask })}\n\n`;
+
+  // A response whose body errors when its request's signal aborts, as a real
+  // fetch body does when the reader drops a dead attempt.
+  const open = (
+    signal: AbortSignal | null | undefined,
+    chunks: string[] = [],
+  ) => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        for (const chunk of chunks) c.enqueue(encoder.encode(chunk));
+      },
+    });
+    signal?.addEventListener("abort", () => {
+      try {
+        controller.error(new DOMException("aborted", "AbortError"));
+      } catch {
+        // Already errored; there is nothing left to abort.
+      }
+    });
+    return new Response(body, { status: 200 });
+  };
+
+  let call = 0;
+  const fetch = vi.fn((_url: string, init: RequestInit) => {
+    call += 1;
+    if (call === 1) return Promise.resolve(Response.json([]));
+    if (call === 2) return Promise.resolve(open(init.signal));
+    return Promise.resolve(open(init.signal, [replay]));
+  });
+  vi.stubGlobal("fetch", fetch);
+  const store = new Store((flush) => flush());
+  connectors.push(connect(store, undefined, base));
+
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.snapshot().connection).toBe("live");
+
+    // The app is put away; the socket dies and nothing more is read. A question
+    // is asked. The page is raised and focused, with no `visibilitychange`.
+    page.visibilityState = "hidden";
+    await vi.advanceTimersByTimeAsync(VISIBLE_STALE_MS + 1);
+    page.visibilityState = "visible";
+    page.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const snapshot = store.snapshot();
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(snapshot.connection).toBe("live");
+    expect(snapshot.topics.ask).toEqual(ask);
+    expect(
+      buildTree(snapshot.entries).flatMap((node) =>
+        node.kind === "leaf" && node.ask !== undefined
+          ? [node.ask.question]
+          : [],
+      ),
+    ).toEqual(["Ready to continue?"]);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("stops at a failed start instead of reconnecting to it", async () => {
