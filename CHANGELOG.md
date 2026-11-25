@@ -54,6 +54,8 @@ one line per feature.
 
 - Newer Claude models that reject thinking off get one retry with adaptive thinking at low effort, including when the spotter asks for a named tool call.
 - A failed cache keepalive waits a full ping interval before trying again instead of resending the context at every scheduler check.
+- Streamed keepalives accept accounted input usage when the output cap cuts off unused tool arguments.
+- OpenRouter main turns request at most 65,536 output tokens to avoid unnecessary credit refusals.
 - A partially written session-log entry is rolled back before another append is accepted.
 - The web client checks for a stale connection on focus or page restore, so it can pick up pending questions without waiting for the old connection to time out.
 - Typing a `~` path in the web session form selects the corresponding remembered location instead of showing a duplicate.
