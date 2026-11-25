@@ -55,6 +55,10 @@ pub(super) const FIRST_PAUSE: Duration = Duration::from_secs(1);
 
 const REFUSED: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"no"}}"#;
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
+/// A failure the loop retries and the transport does not: 408 is outside
+/// `RETRY_STATUSES`, so one scripted answer is one upstream request, and a body naming
+/// no terminal condition classifies transient (`api/failure.rs`).
+const TIMED_OUT: &str = r#"{"error":"timed out"}"#;
 
 /// **A triage without a verdict holds; continue retries it.** The triage's
 /// request is refused, so the triage has no verdict. Nothing is logged for the
@@ -343,5 +347,276 @@ async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
             .any(|block| matches!(block, crate::record::project::ApiBlock::ToolResult { .. })),
         "nothing about the held call reaches the main wire"
     );
+    host.shut_down().await;
+}
+
+/// **An interrupt during the retry wait ends the retry sequence.** The press lands while
+/// the loop waits out the first pause: the wait ends at once, the retry state clears, the
+/// loop is idle before the pause could have elapsed, and the attempt the wait was holding
+/// never goes out — not then, and not after the clock is given the time the wait would
+/// have taken. Continue afterwards starts a fresh request on a full budget: its failure
+/// is attempt 1 of 12, so the schedule's first delay, one second, is what comes next.
+#[tokio::test(start_paused = true)]
+async fn an_interrupt_during_the_retry_wait_ends_the_sequence() {
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0..2 => Canned::json(408, TIMED_OUT),
+        _ => Canned::stream(end_turn()),
+    });
+    let (host, runtime, _dir) = start(&upstream).await;
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    session
+        .wait_until("the loop is waiting to retry", || {
+            session.upstream_retry_for_test().get().is_some()
+        })
+        .await;
+    assert_eq!(upstream.count(), 1, "one attempt has failed");
+    let pressed = tokio::time::Instant::now();
+    session.interrupt(Default::default());
+    session
+        .wait_until("the loop is idle", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
+    assert!(
+        pressed.elapsed() < FIRST_PAUSE,
+        "the press ended the wait, not its timer: {:?}",
+        pressed.elapsed()
+    );
+    assert!(
+        session.upstream_retry_for_test().get().is_none(),
+        "the retry status clears with the sequence"
+    );
+    assert!(!session.interrupt_pending(), "the press was consumed");
+    // Room for the attempt the wait was holding, and then some.
+    tokio::time::sleep(FIRST_PAUSE * 30).await;
+    assert_eq!(upstream.count(), 1, "no request after the interrupted wait");
+
+    assert_eq!(
+        session.request_continue(Default::default()),
+        Ok(()),
+        "continue starts a fresh request"
+    );
+    session
+        .wait_until("the fresh request fails and is scheduled", || {
+            session
+                .upstream_retry_for_test()
+                .get()
+                .is_some_and(|retry| retry.attempt == 1)
+        })
+        .await;
+    let retry = session.upstream_retry_for_test().get().unwrap();
+    assert_eq!(
+        retry.budget,
+        crate::inference::api::STREAM_ABORT_ATTEMPTS,
+        "a full retry budget"
+    );
+    let now = crate::record::log::Timestamp::now().0;
+    assert!(
+        retry.next_attempt_at <= now + 1000,
+        "the first delay is the schedule's one second, not a later doubling: {}ms",
+        retry.next_attempt_at.saturating_sub(now)
+    );
+    host.shut_down().await;
+}
+
+/// **An interrupt during the triage's retry wait withholds the result.** The triage's
+/// first attempt fails transiently, so the triage is waiting between attempts when the
+/// press lands: the wait ends at once, no further attempt goes out, the retry state
+/// clears, and the result is withheld under the same interrupted verdict a press during
+/// the triage's request produces — the loop consumes the latch after the gate and ends
+/// the turn. Continue afterwards starts a fresh main request; the tool does not run again.
+#[tokio::test]
+async fn an_interrupt_during_the_triage_retry_wait_withholds_the_result() {
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        1 => Canned::json(408, TIMED_OUT),
+        _ => Canned::stream(end_turn()),
+    });
+    let (host, runtime, _dir) = start(&upstream).await;
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    session
+        .wait_until("the triage is waiting to retry", || {
+            session
+                .upstream_retry_for_test()
+                .get()
+                .is_some_and(|retry| retry.surface == crate::inference::api::RetrySurface::Triage)
+        })
+        .await;
+    assert_eq!(
+        upstream.count(),
+        2,
+        "the call ran and the triage's first attempt failed"
+    );
+    // The call's result is in, so the clock can be paused for what follows
+    // (`upstream_hold.rs`): the wait's timer and the room after it are the test's to
+    // control from here.
+    tokio::time::pause();
+    let pressed = tokio::time::Instant::now();
+    session.interrupt(Default::default());
+    session
+        .wait_until("the loop is idle", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
+    assert!(
+        pressed.elapsed() < FIRST_PAUSE,
+        "the press ended the wait, not its timer: {:?}",
+        pressed.elapsed()
+    );
+    assert!(
+        session.upstream_retry_for_test().get().is_none(),
+        "the retry status clears with the sequence"
+    );
+    assert!(
+        !session.interrupt_pending(),
+        "the loop consumed the press after the triage"
+    );
+    tokio::time::sleep(FIRST_PAUSE * 30).await;
+    assert_eq!(upstream.count(), 2, "no attempt after the interrupted wait");
+
+    let log = session.snapshot();
+    let captured_seq = log
+        .iter()
+        .find_map(|e| match &e.payload {
+            Payload::ToolResult { .. } => Some(e.seq),
+            _ => None,
+        })
+        .expect("the ran call's result is in the log");
+    assert!(
+        log.iter().any(|e| matches!(
+            &e.payload,
+            Payload::ResultVerdict {
+                for_result,
+                wire: WireState::Interrupted(_),
+            } if *for_result == captured_seq
+        )),
+        "the interrupted triage withholds the result it captured"
+    );
+
+    assert_eq!(
+        session.request_continue(Default::default()),
+        Ok(()),
+        "continue starts a fresh request"
+    );
+    session
+        .wait_until_with(&upstream, "the fresh request answered", || {
+            upstream.count() == 3
+        })
+        .await;
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
+    assert_eq!(
+        session
+            .snapshot()
+            .iter()
+            .filter(|e| matches!(e.payload, Payload::ToolResult { .. }))
+            .count(),
+        1,
+        "the tool did not run again"
+    );
+    host.shut_down().await;
+}
+
+/// **Continue during a backoff skips the wait and keeps the attempt count.** The press
+/// that is not an interrupt ends the pause early and the sequence runs on: the next
+/// failure is attempt 2 of the same budget, not a fresh sequence's attempt 1.
+#[tokio::test(start_paused = true)]
+async fn continue_skips_the_wait_and_keeps_the_attempt_count() {
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0..2 => Canned::json(408, TIMED_OUT),
+        _ => Canned::stream(end_turn()),
+    });
+    let (host, runtime, _dir) = start(&upstream).await;
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    session
+        .wait_until("the loop is waiting to retry", || {
+            session.upstream_retry_for_test().get().is_some()
+        })
+        .await;
+    // Most of the first pause passes with the loop still waiting.
+    tokio::time::sleep(FIRST_PAUSE * 9 / 10).await;
+    assert!(
+        session.upstream_retry_for_test().get().is_some(),
+        "the loop waits out the pause"
+    );
+    assert_eq!(
+        session.request_continue(Default::default()),
+        Ok(()),
+        "continue skips the wait"
+    );
+    session
+        .wait_until("the second attempt fails and is scheduled", || {
+            session
+                .upstream_retry_for_test()
+                .get()
+                .is_some_and(|retry| retry.attempt == 2)
+        })
+        .await;
+    assert_eq!(
+        session.request_continue(Default::default()),
+        Ok(()),
+        "continue skips the second wait too"
+    );
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
+    assert_eq!(
+        upstream.count(),
+        3,
+        "two failed attempts and the one that answered"
+    );
+    host.shut_down().await;
+}
+
+/// **A press at idle cuts no later wait.** The interrupt's wake is delivered only to a
+/// wait already armed: fired with the loop idle it lands nowhere, so the next turn's
+/// failed request waits out its whole pause and the attempt it scheduled goes out.
+#[tokio::test(start_paused = true)]
+async fn a_press_at_idle_cuts_no_later_retry_wait() {
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::json(408, TIMED_OUT),
+        _ => Canned::stream(end_turn()),
+    });
+    let (host, runtime, _dir) = start(&upstream).await;
+    let session = Arc::clone(runtime.session());
+    // Nothing to stop at idle: the press stays latched until a turn starts.
+    session.interrupt(Default::default());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    session
+        .wait_until("the loop is waiting to retry", || {
+            session.upstream_retry_for_test().get().is_some()
+        })
+        .await;
+    // Most of the pause passes with the loop still waiting: the press at idle armed
+    // no wait, so it cut nothing.
+    tokio::time::sleep(FIRST_PAUSE * 9 / 10).await;
+    assert!(
+        session.upstream_retry_for_test().get().is_some(),
+        "the wait runs its course: {:?}",
+        session.loop_phase()
+    );
+    session
+        .wait_until_with(&upstream, "the scheduled attempt goes out", || {
+            upstream.count() == 2
+        })
+        .await;
+    session
+        .wait_until("the turn finishes", || {
+            session.loop_phase() == LoopPhase::Idle
+        })
+        .await;
+    assert_eq!(upstream.count(), 2, "the retry ran after the press at idle");
     host.shut_down().await;
 }

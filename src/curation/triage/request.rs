@@ -2,6 +2,11 @@
 
 use super::*;
 
+use std::pin::Pin;
+use std::time::Duration;
+
+use tokio::sync::futures::Notified;
+
 /// Fork round-trips per fork: the ask plus bounded in-fork retries
 /// (docs/triage.md). Each retry re-reads the warm prefix and appends only to
 /// the throwaway tail.
@@ -15,9 +20,10 @@ pub(super) const TRIAGE_ATTEMPTS: usize = 3;
 /// answered each time, and the ask or the parse is what failed.
 pub const TRIAGE_RESTARTS: usize = 3;
 
-/// How long a triage keeps trying, and which reasoning its requests carry
-/// (docs/triage.md). The triage waits failures out, because its results are shown to the
-/// agent only through a verdict; the asides — the idle triage and the title — give up early,
+/// How long a triage keeps trying, which reasoning its requests carry, and whether a press
+/// during its wait between attempts ends the sequence (docs/triage.md,
+/// docs/control-channel.md). The triage waits failures out, because its results are shown to
+/// the agent only through a verdict; the asides — the idle triage and the title — give up early,
 /// because each has a harmless fallback and the loop is blocked on it meanwhile.
 #[derive(Clone, Copy)]
 pub(super) struct Patience {
@@ -26,6 +32,12 @@ pub(super) struct Patience {
     /// Upstream attempts per request before giving up.
     upstream: u32,
     reasoning: Reasoning,
+    /// Whether the wait between attempts races the operator's interrupt. The result
+    /// triage's does, so its results are withheld at once; a detached aside's does not —
+    /// a title peek and the idle triage wait their timers out as they always have, and
+    /// a press during one of their requests still ends that request, while the wait
+    /// between attempts is the timer alone.
+    interruptible: bool,
 }
 
 /// The reasoning a triage's requests carry (docs/triage.md).
@@ -47,6 +59,7 @@ impl Patience {
         forks: TRIAGE_RESTARTS,
         upstream: STREAM_ABORT_ATTEMPTS,
         reasoning: Reasoning::Client,
+        interruptible: true,
     };
     /// A live result triage on the agent's client.
     pub(super) const SHARED_RESULTS: Self = Self {
@@ -58,11 +71,12 @@ impl Patience {
         reasoning: Reasoning::Separate,
         ..Self::TRIAGE
     };
-    /// An aside's: one fork, and a short upstream schedule.
+    /// An aside's: one fork, a short upstream schedule, and a wait no press cuts.
     pub(super) const ASIDE: Self = Self {
         forks: 1,
         upstream: 3,
         reasoning: Reasoning::Client,
+        interruptible: false,
     };
 }
 
@@ -219,7 +233,9 @@ pub(super) async fn triage_with_retries<T>(
 /// happened and slid the prefix's TTL whether or not it finalized — and every failure
 /// leaves an attempt-stamped breadcrumb in `record.retries`, so a recovered failure is
 /// still visible in the corpus rather than silently absorbed. The wait is published on
-/// `retry` and ends early on the operator's "retry now".
+/// `retry` and ends early on the operator's "retry now"; the operator's interrupt ends
+/// the sequence instead, returning [`TriageFailure::Interrupted`] rather than trying
+/// again (docs/control-channel.md).
 // Called only by `triage_with_retries`, which holds every input except the attempt's
 // messages fixed across its loop and passes them through.
 #[allow(clippy::too_many_arguments)]
@@ -235,6 +251,13 @@ pub(super) async fn triage_completion(
 ) -> Result<Completion, TriageFailure> {
     let mut failed: u32 = 0;
     let budget = patience.upstream;
+    // Armed before the first attempt, and only where a press during the wait ends the
+    // sequence: the result triage's does, so its results are withheld at once; an aside's
+    // — the title peek and the idle triage — arms nothing and waits its timer out as it
+    // always has (docs/control-channel.md). Arming at the wait itself would miss the
+    // press that lands just before it, and `notify_waiters` stores no permit to deliver
+    // that one later.
+    let mut interrupted = patience.interruptible.then(|| retry.armed_interrupt());
     loop {
         // The fragments go to `on_delta`, which publishes them on their own `output`
         // kinds (docs/control-api.md) — never as the main loop's response.
@@ -323,13 +346,56 @@ pub(super) async fn triage_completion(
             pause,
             &why,
         ));
-        // The loop's own wait, published as its `delayed` phase; a title ask is a
-        // detached aside, so its wait is not the loop's (docs/control-api.md).
-        if client.origin() == RequestOrigin::Title {
-            retry.pause(Some(pause)).await;
-        } else {
-            retry.delay(pause).await;
+        let cut = wait_out(
+            retry,
+            client.origin() == RequestOrigin::Title,
+            pause,
+            &mut interrupted,
+        )
+        .await;
+        if cut {
+            // The press ends the retry sequence where it stands: no further attempt
+            // goes out, and the attempt count goes with this call. The latch stays
+            // set — the loop consumes it after the triage and ends the turn, as it
+            // does for a press that landed during the request.
+            record.retries.push(format!(
+                "triage ended: interrupted between attempts (attempt {failed})"
+            ));
+            retry.clear(RetrySurface::Triage);
+            return Err(TriageFailure::Interrupted);
         }
+    }
+}
+
+/// Wait out `pause` on the retry's published topic — the loop's `delayed` phase, or
+/// `pause` for a title ask, whose wait is its own (docs/control-api.md) — and report
+/// whether the operator's press ended the sequence instead of the timer running out.
+/// Only a scope that armed one races the press here; an aside's wait is the timer
+/// alone, as it was before the press had a wait to cut (docs/control-channel.md).
+async fn wait_out(
+    retry: &UpstreamRetryCell,
+    title: bool,
+    pause: Duration,
+    interrupted: &mut Option<Pin<Box<Notified<'_>>>>,
+) -> bool {
+    let wait = async {
+        if title {
+            retry.pause(Some(pause)).await
+        } else {
+            retry.delay(pause).await
+        }
+    };
+    if let Some(armed) = interrupted.as_mut() {
+        // Biased to the press: a press landing as the timer expires ends the
+        // sequence rather than starting one more attempt.
+        tokio::select! {
+            biased;
+            () = armed => true,
+            _ = wait => false,
+        }
+    } else {
+        wait.await;
+        false
     }
 }
 

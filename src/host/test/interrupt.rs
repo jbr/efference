@@ -262,6 +262,64 @@ async fn a_press_at_idle_leaves_the_idle_triage_alone() {
     runtime.finished().await.unwrap();
 }
 
+/// **A press during an aside's retry wait cuts nothing.** The idle triage answers only to
+/// a press during its request; its wait between attempts is the timer alone, so a press
+/// landing there leaves the retry to go out and the triage to end, and the latch stays set
+/// for the next turn as any press at idle does.
+#[tokio::test(start_paused = true)]
+async fn a_press_during_an_asides_retry_wait_cuts_nothing() {
+    let upstream = ScriptedUpstream::new(|n| match n {
+        0 => Canned::json(408, r#"{"error":"timed out"}"#),
+        _ => Canned::stream(end_turn()),
+    });
+    let (host, runtime, _dir) = start(&upstream).await;
+    let session = Arc::clone(runtime.session());
+    session.notify(Notification::new("ci", "the build finished", None));
+
+    session
+        .wait_until_with(&upstream, "the aside's retry wait is out", || {
+            session
+                .upstream_retry_for_test()
+                .get()
+                .is_some_and(|retry| retry.surface == crate::inference::api::RetrySurface::Triage)
+        })
+        .await;
+    session.interrupt(Default::default());
+    assert_eq!(
+        upstream.count(),
+        1,
+        "the press landed during the wait: the failed attempt is the only request so far"
+    );
+    assert!(
+        session.upstream_retry_for_test().get().is_some(),
+        "the press cut no wait: the aside still holds its retry"
+    );
+
+    session
+        .wait_until_with(&upstream, "the aside ended", || {
+            session.loop_phase() == LoopPhase::Idle
+                && session.snapshot().iter().any(|entry| {
+                    stage_of(entry, RequestOrigin::Triage, |stage| {
+                        *stage == crate::record::log::RequestStageKind::Ended
+                    })
+                })
+        })
+        .await;
+
+    assert!(
+        upstream.count() >= 2,
+        "the press cut no attempt: the retry went out after it ({})",
+        upstream.count()
+    );
+    assert!(
+        session.interrupt_pending(),
+        "the press stays latched: an aside consumes nothing"
+    );
+
+    host.shut_down().await;
+    runtime.finished().await.unwrap();
+}
+
 /// **A press during the turn's stream still ends it.** The request found the latch clear
 /// before it was sent; the press then wakes the read it armed: the attempt is kept as the
 /// aborted one, the press is consumed, and the loop goes idle without another request.

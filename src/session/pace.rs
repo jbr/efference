@@ -417,6 +417,10 @@ impl Session {
         // Latch first, then wake: a bash tool racing the abort future must never
         // resolve and reach the loop's juncture check before the flag is visible.
         self.interrupt_latch.store(true, Ordering::SeqCst);
+        // A wait between attempts races the same press (docs/control-channel.md):
+        // the retry cell holds it for the triage's wait, the triage holding a client
+        // and no session.
+        self.upstream_retry.interrupt_signal().notify_waiters();
         self.interrupt.notify_waiters();
     }
 

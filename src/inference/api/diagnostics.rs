@@ -20,6 +20,7 @@
 //! [`stream_abort_retry`] — sits beside the cell that holds it.
 
 use std::collections::VecDeque;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -191,6 +192,13 @@ pub struct UpstreamRetryCell {
     /// is not lost.
     hurried: AtomicBool,
     hurry: Notify,
+    /// The operator's interrupt, fired beside the session's own notifier on every
+    /// press (docs/control-channel.md): the wake a wait between attempts races, so a
+    /// press during the wait ends the retry sequence instead of waiting the pause out.
+    /// On the cell rather than on `Session` because the triage's wait holds this cell
+    /// and no session. `notify_waiters` stores no permit, so a press with no wait
+    /// armed is dropped: a later, unrelated wait is not cut by it.
+    interrupt: Notify,
     /// When the loop's own wait between attempts ends (absolute Unix millis), while
     /// one lasts: the `delayed` loop phase (docs/control-api.md). Set by
     /// [`delay`](Self::delay) only, so a detached aside retrying on the same cell
@@ -250,6 +258,23 @@ impl UpstreamRetryCell {
     pub fn hurry(&self) {
         self.hurried.store(true, Ordering::SeqCst);
         self.hurry.notify_waiters();
+    }
+
+    /// The operator's interrupt, for the session to fire beside its own notifier.
+    pub fn interrupt_signal(&self) -> &Notify {
+        &self.interrupt
+    }
+
+    /// This cell's interrupt **armed for a wait that has not started yet**:
+    /// registered now, so a press landing between the attempt that failed and the
+    /// wait that follows it still ends that wait (docs/control-channel.md). Held
+    /// across the attempt and awaited at the wait, beside the pause's own timer.
+    /// Arming at the wait instead would miss the press that lands just before it,
+    /// and `notify_waiters` stores no permit to deliver that one later.
+    pub fn armed_interrupt(&self) -> Pin<Box<Notified<'_>>> {
+        let mut armed = Box::pin(self.interrupt.notified());
+        armed.as_mut().enable();
+        armed
     }
 
     /// Wait out `pause`, or until [`hurry`](Self::hurry) — with `None`, only until

@@ -40,6 +40,13 @@ pub(super) async fn complete_with_retries(
     turn: &mut Turn,
 ) -> Result<Option<Completion>, Error> {
     let mut aborted_attempts: u32 = 0;
+    let retry = client.upstream_retry();
+    // Armed before the first attempt: a press landing anywhere in this retry sequence
+    // — during a request, between the attempt and its wait, or during the wait — ends
+    // it (docs/control-channel.md). Arming at the wait itself would miss the press
+    // that lands just before it, and `notify_waiters` stores no permit to deliver that
+    // one later.
+    let mut interrupted = retry.armed_interrupt();
     loop {
         // A failed attempt, in either of its two shapes, becomes the same
         // three things: its words, whether the provider named it as one no
@@ -91,8 +98,8 @@ pub(super) async fn complete_with_retries(
         );
         // The wait is the state: publish it before sleeping, so a client can
         // tell "retrying, attempt 3 of 12" from "the model is thinking hard"
-        // (docs/transport.md). The operator's continue cuts it short.
-        let retry = client.upstream_retry();
+        // (docs/transport.md). The operator's continue cuts it short; the
+        // operator's interrupt ends the sequence (docs/control-channel.md).
         retry.set(stream_abort_retry(
             RetrySurface::Turn,
             aborted_attempts,
@@ -100,7 +107,22 @@ pub(super) async fn complete_with_retries(
             pause,
             &why,
         ));
-        retry.delay(pause).await;
+        // Biased to the press: a press landing as the timer expires ends the sequence
+        // rather than starting one more attempt.
+        tokio::select! {
+            biased;
+            () = &mut interrupted => {
+                // The press ends the retry sequence where it stands: no further
+                // attempt goes out, and the attempt count goes with this call — the
+                // record-only entries the failed attempts wrote are the history that
+                // stays. The latch this press set is consumed here, as an aborted
+                // generation's is, so the next turn's first call is not stopped by it.
+                log::debug!("retry sequence ended by the operator");
+                shared.take_interrupt();
+                return Ok(None);
+            }
+            _ = retry.delay(pause) => {}
+        }
     }
 }
 
