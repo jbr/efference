@@ -1,85 +1,133 @@
 # Changelog
 
-All notable changes to efference. Format follows [keep-a-changelog](https://keepachangelog.com);
-one line per feature.
+All notable changes to efference. Format follows [keep-a-changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
+## [2026.11.0] - 2026-11-25
+
+This release focuses on making day-to-day work in efference smoother and quieter:
+richer composer input in the web client, more accurate permission review with fewer
+unnecessary stops, faster tool-output triage, and MCP resource support.
+
+In the web composer, you can now reference files, directories, and other sessions
+inline with path and `@` completion, and paste, drop, or pick files and images right
+into a message — referencing a path automatically grants the session access when you
+send. Behind the scenes, both permission spotters now review calls with the full
+session conversation and managed-worktree context, cutting down false escalations,
+while result triage uses lower reasoning effort without breaking prompt caching.
+Rounding out the release are MCP resource tools, agent model discovery, installed
+web-app shortcuts, shared worktree lifecycles across hand-offs, proxy support, and
+provider compatibility fixes for Gemini, Claude, OpenRouter, and HTTP/3 endpoints.
+
+Starting with this release, efference uses [Calendar Versioning (CalVer)](https://calver.org/)
+— `YYYY.M.N` (year, month, and zero-based release number within that month) — rather than
+semantic versioning. Semver's major/minor/patch compatibility levels are designed for
+libraries, not a standalone binary where there is just one size of release. Durable files
+on disk (configuration and session logs) keep a migration or compatibility path across
+upgrades (with published deprecation windows if a format is ever retired), while running
+components are only guaranteed to be compatible within the same version — restart the
+host after upgrading rather than mixing a client from one release with a host from another.
+
 ### Added
 
-- Sent web messages show filesystem, session, and download chips; attached images appear on their own lines where they were inserted and open in the lightbox.
-
-- The web composer completes host paths and other session handles into inline references: Tab or Enter opens a folder or inserts the selected reference without sending; filesystem chips request read access with optional write.
-
-- A file or directory referenced in a composer message grants the session read — or read and write, if asked — access to it once the message reaches the agent, and says so in the inbox.
-
-- A composer turn can carry inline references: a user message is one structured document of prose and reference occurrences, submitted as `content`+`references` and rendered to the model with a `references:` block. The web composer edits that document directly, with atomic chips, undo, and reference identity through copy/paste within the session; the TUI recalls such a turn with its references held and puts an edited hold back to its spliced spelling rather than silently flattening them. Both clients show attachments by name beside the readable form.
-
-- A web-composer file is an inline upload at the point it was pasted, dropped, or picked: its chip reads upload status without replacing editor content, a pending or failed upload blocks the send by name, an upload a send named is never deleted as unused, and one this draft never sent is cleaned up only once undo can no longer restore it.
-
-- A composer can ask the control channel for discovery candidates: one directory's entries for a typed path prefix (`GET /v1/discovery/paths`) and the host's sessions for a typed `@` prefix (`GET /v1/discovery/agents`), read from names and metadata only.
-
-- Hosted agents and external MCP clients can read `efference://models` to discover exact model slugs, known prices and capabilities, with combined filters and pagination.
-- A declared MCP server that offers resources gets a `resources__<server>` tool that lists its resources and templates, or reads one by URI. It is on with the server; `"resources.<server>"` in `[tools]` grants it or turns it off.
-
-- efference's http client now picks up HTTP proxy related environment variables: `http_proxy`/`HTTP_PROXY`, `https_proxy`/`HTTPS_PROXY`, `all_proxy`/`ALL_PROXY`, and `no_proxy`/`NO_PROXY`. Lowercase variables take precedence, including when empty. A missing or empty per-scheme proxy uses the all-proxy fallback.
-- The installed web app cycles session tabs with platform keyboard shortcuts, including sessions in the overflow menu.
-- A session's tab row offers a right-aligned `+` to start another session in the same project without returning to the overview first.
-- Cmd+N in the installed web app opens same-project session settings from a session, or location selection from the home screen.
-- The TUI's approval gate names who escalated it and shows their note, as the web client does.
-- Fixed the TUI linking artifact fences to loopback pages that loaded broken outside the web client; it now says the fence renders in the web client, and the host no longer binds the extra listener.
-- `efference --version` names the git revision and cargo profile the binary was built from.
-- `efference dev spotter-request` prints the request a spotter rung was given for a recorded call, rebuilt from the session's log, config and tools; `dev spotter-eval` replays each case with what its session log held before the verdict, or with `--no-session-log` from its corpus line alone.
-- A web page left open across a host upgrade now notices that the host serves a newer build and offers a reload, instead of going on rendering with the old one.
-- A supplied session name is a preferred base: `POST /sessions {"name": "foo"}` takes `foo`, or the first free `foo-1`, `foo-2`, … when the name is held by a live session, a session directory, or a worktree checkout an earlier session left behind — instead of being refused.
+- **Inline file, folder, and session references:** In the web composer, complete host
+  paths and `@session` handles into inline chips (`Tab` or `Enter` opens a folder or
+  inserts a reference without sending) and paste, drop, or pick files and images
+  directly into your message. Referencing a file or directory grants the session read
+  access — or read and write, when toggled on the chip — once the message is sent.
+  Sent messages display reference chips and inline images with a lightbox, and the TUI
+  preserves references when recalling a message rather than flattening them.
+- **MCP resources:** Declared MCP servers that expose resources automatically get a
+  `resources__<server>` tool so your agent can list and read them. Controlled in
+  `[tools]` via `"resources.<server>"`.
+- **Agent model discovery:** Your agent and external MCP clients can read
+  `efference://models` to discover available model slugs, capabilities, and known
+  prices, with filtering and pagination.
+- **Installed web-app shortcuts and session creation:** Cycle session tabs (including
+  sessions in the overflow menu) with platform keyboard shortcuts, start another
+  session in the same project from the `+` button on the tab bar, or press `Cmd+N` to
+  open a new session from anywhere in the installed web app.
+- **Host-upgrade reload banner:** Open web tabs detect when the host is running a
+  newer build and offer a reload instead of continuing with stale client assets.
+- **HTTP proxy support:** Outbound HTTP requests honor `http_proxy`, `https_proxy`,
+  `all_proxy`, and `no_proxy` (and their uppercase equivalents, with lowercase taking
+  precedence).
+- **Automatic suffixing for taken session names:** Requesting a session name that is
+  already in use picks the next free suffix (`foo-1`, `foo-2`, …) instead of failing.
+- **`spotter-notes` in `efference.toml`:** Replaces `watch-for` (which is still
+  accepted) so you can give the permission spotter both cautions to look out for and
+  routine facts about your project.
 
 ### Changed
 
-- Result triage asks for less reasoning: a shared triage keeps the agent's thinking and sends effort `low` until its cache reads show the level splits the agent's cache, then sends the agent's effort; a separate triage model sends thinking off, else `low`, else the provider default. The idle triage is unchanged; a creation request's triage `thinking`/`effort` options are ignored.
-
-- Setup links to the Credentials manual beside the API key source choices.
-- The approval tool and supervising guide recommend leaving approval notes blank unless they contain useful guidance.
-
-- The decision-model spotter (jev) reads the session's conversation and the prose spotter's guidance, and decides from yes/no questions asked in both wordings — reasons to clear (asked for, agreed to, contained, read-only) against hazards (goes further, against a limit, a secret, one-way, self-modifying, opaque) — instead of a concern level and earlier approved calls; its default is pinned to `jev-1.14.0` (`typesafe/jev-1.14` on OpenRouter).
-
-- The web client's dev builds no longer install the stream scrubber or the stream debug overlay unless each is switched on in app settings.
-
-- The prose spotter is told the session's supervisor and the sessions it supervises, with whether it created each and its status, when the move is an `agents__*` call.
-
-- The prose spotter reads the session's whole conversation, unabridged — the operator's, a supervising agent's and the agent's own messages, each tagged with its writer — and judges a move against what was asked for; a tool's description and schema reach it whole.
-
-- A session's `agents__archive` of a session it supervises clears without a spotter request.
+- **More accurate permission review:** Both permission spotters now evaluate tool
+  calls with the full session conversation (attributed by operator, supervisor, and
+  agent), unclipped tool schemas, supervision relationships, and managed-worktree path
+  rules. The decision spotter (`jev`, now defaulting to `jev-1.14.0`) weighs reasons to
+  allow against concrete hazards, and the prose spotter retries once if a reasoning
+  model hits its output cap or finishes without a verdict instead of escalating
+  straight to you.
+- **Quieter multi-agent archiving:** Archiving a session that an agent supervises now
+  clears without a permission spotter request.
+- **Faster, cheaper result triage:** Tool-result triage uses lower reasoning effort —
+  keeping the agent's prompt cache intact when sharing the agent's model (falling back
+  automatically if a provider splits caches by effort), and disabling thinking or
+  using `low` effort on a separate triage model.
+- **Shared worktree occupancy:** Archiving a session no longer deletes a managed
+  worktree that another session (such as a hand-off successor) is still using. The
+  worktree is retired only when its last occupant is archived, and resuming a former
+  occupant restores it at its original path.
+- **TUI approval gates and artifacts:** Approval gates in the TUI now show who
+  escalated a call and their note, matching the web client. Artifact fences in the TUI
+  note that they render in the web client instead of linking to broken loopback pages.
+- **And more:** `efference --version` includes the git revision and build profile;
+  interactive setup links to the Credentials manual beside API key choices; and
+  `efference control settle --help` notes that omitting `--agent` targets the sole
+  live session in the current directory.
 
 ### Fixed
 
-- HTTP/3 requests whose response takes more than 30 s to start, such as a reasoning model's first token on Gemini's endpoint, keep their connection instead of failing with "connection lost".
-- Parallel tool calls from Gemini's OpenAI-compatible endpoint, which streams each call without an index, stay separate calls instead of merging into one with unparseable arguments.
-- Newer Claude models that reject thinking off get one retry with adaptive thinking at low effort, including when the spotter asks for a named tool call.
-- A failed cache keepalive waits a full ping interval before trying again instead of resending the context at every scheduler check.
-- Streamed keepalives accept accounted input usage when the output cap cuts off unused tool arguments.
-- OpenRouter main turns request at most 65,536 output tokens to avoid unnecessary credit refusals.
-- A partially written session-log entry is rolled back before another append is accepted.
-- Interrupt ends a retry wait immediately for a main request or its result triage, without sending another attempt.
-- The web client checks for a stale connection on focus or page restore, so it can pick up pending questions without waiting for the old connection to time out.
-- Typing a `~` path in the web session form selects the corresponding remembered location instead of showing a duplicate.
-- Installed web windows show the app name before the session title; regular tabs show it after.
-- Gallery section links scroll to their section and update the URL fragment.
-- The TUI shows a compact upstream error indicator even when the failure has no HTTP status.
-
-- `efference control settle --help` explains that omitting `--agent` targets the sole live session in the current directory.
-
-- The prose spotter asks again once, instead of failing closed to the human gate, when a reasoning model's answer is cut off by its output cap or ends without the `spot` call; its cap rises from 4096 to 16384, and on Responses it asks for `low` effort rather than the model's default.
-- `efference --host` refuses to start when another host is answering its socket, and a host whose web bind fails exits with the error instead of running on the socket alone.
-- Inline composer image uploads use bounded thumbnails rather than their intrinsic image dimensions.
-
-- Both permission spotters receive an explicit explanation of managed worktree path mapping, distinguishing project grants from the session-storage deny.
-
-- Archiving a session removed a managed worktree other sessions still worked in (the hand-off case): a worktree is now shared occupancy — any session whose working directory sits in it holds it, it is retired at the last occupant leaving, and any former occupant restores it at its original path on resume.
-- A create retried after a failed one could start in the broken checkout the failure left behind: a creation now refuses an existing checkout path or `efference/<id>` branch instead of adopting it, and archiving a session while its worktree is still being checked out no longer leaves the checkout behind.
-- Mounting an HTTP MCP server intermittently failed with `connection aborted`: the HTTP/2 client closed its shared connection when a late frame arrived for an SSE response it had already canceled (fixed in trillium-http 1.8.2). A mount error now names the JSON-RPC method that was pending.
-- Removed false-positive truncation errors caused by providers' token accounting; local-server setup now explains how to configure Ollama's context window.
-- A session created under another spelling of its directory (`/users/…` for `/Users/…` on macOS, or through a symlink) refused to resume from the directory's usual spelling; the host now canonicalizes every working directory a client names.
-- The recent-locations list showed a directory twice when it gained an `efference.toml` between two launches with no configuration specified.
+- **Provider compatibility:**
+  - Long inference requests to HTTP/3 providers (such as Google) no longer drop after
+    ~30 seconds of silence while waiting for a response.
+  - Parallel tool calls from Gemini's OpenAI-compatible endpoint (streamed without
+    indices) now stay separate instead of merging into malformed arguments.
+  - Newer Claude models that reject turning thinking off retry once with adaptive
+    thinking at low effort, including for permission spotter calls.
+  - OpenRouter main turns cap requested output tokens at 65,536 to avoid unnecessary
+    credit refusals.
+  - Removed false-positive truncation errors caused by providers' prompt-token
+    accounting, and documented Ollama context-window configuration in the manual.
+- **HTTP MCP server mounts:** Fixed intermittent `connection aborted` failures over
+  HTTP/2 SSE connections; mount errors now name the pending JSON-RPC method.
+- **Web client reconnection and polish:**
+  - Stale connections are detected on window focus, page restore, and notification
+    taps so pending questions appear without waiting for a timeout.
+  - Installed web windows show the app name before the session title, while regular
+    browser tabs show it after.
+  - Typing a `~` path in the new-session form selects the matching saved location
+    instead of showing a duplicate.
+- **Worktree and directory handling:**
+  - Failed or cancelled worktree creation no longer leaves behind broken checkouts
+    that interfere with later sessions.
+  - Resuming a session from a symlinked path or alternate macOS case spelling
+    (`/users/…` vs. `/Users/…`) now works reliably.
+  - Recent locations no longer list a directory twice after it gains an
+    `efference.toml`.
+- **Host, loop, and TUI reliability:**
+  - Interrupting a turn immediately cancels an active retry wait for both the main
+    request and result triage.
+  - Failed cache keepalives wait a full ping interval before retrying, and streamed
+    keepalives accept accounted input usage when the output cap cuts off unused tool
+    arguments.
+  - Partially written session-log entries are rolled back before the next append is
+    accepted.
+  - `efference --host` refuses to start when another host is already answering its
+    socket, and exits with an error if the web bind fails instead of silently serving
+    the Unix socket alone.
+  - The TUI shows a compact upstream error indicator even when a failure has no HTTP
+    status.
 
 ## [0.1.1] - 2026-11-01
 

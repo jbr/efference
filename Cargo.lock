@@ -1401,7 +1401,7 @@ dependencies = [
 
 [[package]]
 name = "efference"
-version = "0.1.2-dev"
+version = "2026.11.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
