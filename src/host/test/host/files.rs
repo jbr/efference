@@ -42,7 +42,7 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
         .iter()
         .map(|entry| entry["name"].as_str().unwrap().to_string())
         .collect();
-    assert!(names.contains(&"scratch".to_string()), "{names:?}");
+    assert!(names.iter().any(|name| name == "scratch"), "{names:?}");
 
     for path in [
         "/sessions/one/files/scratch",

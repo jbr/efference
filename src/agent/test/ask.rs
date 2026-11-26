@@ -395,6 +395,10 @@ fn ask_is_advertised_with_a_required_question() {
             .contains("one at a time"),
         "the parallel behaviour is stated to the model"
     );
-    assert!(callable_names(&toolbox).contains(&crate::record::names::tools::ASK.to_string()));
+    assert!(
+        callable_names(&toolbox)
+            .iter()
+            .any(|name| name == crate::record::names::tools::ASK)
+    );
     assert!(tool_catalog(&toolbox).contains_key(crate::record::names::tools::ASK));
 }

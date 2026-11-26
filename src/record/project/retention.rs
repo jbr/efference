@@ -79,7 +79,7 @@ impl Retention {
     /// Kept as a fraction of shown, or `None` before the first triaged result —
     /// which is *unknown*, not zero, and renders as absent rather than as 0%.
     pub fn ratio(&self) -> Option<f64> {
-        (self.shown_lines > 0).then(|| self.kept_lines as f64 / self.shown_lines as f64)
+        (self.shown_lines > 0).then_some(self.kept_lines as f64 / self.shown_lines as f64)
     }
 
     /// Count one result under the wire it was decided with.
