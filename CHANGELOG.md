@@ -52,6 +52,7 @@ one line per feature.
 
 ### Fixed
 
+- HTTP/3 requests whose response takes more than 30 s to start, such as a reasoning model's first token on Gemini's endpoint, keep their connection instead of failing with "connection lost".
 - Parallel tool calls from Gemini's OpenAI-compatible endpoint, which streams each call without an index, stay separate calls instead of merging into one with unparseable arguments.
 - Newer Claude models that reject thinking off get one retry with adaptive thinking at low effort, including when the spotter asks for a named tool call.
 - A failed cache keepalive waits a full ping interval before trying again instead of resending the context at every scheduler check.

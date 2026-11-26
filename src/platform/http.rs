@@ -39,12 +39,21 @@
 //! reactor is gone. A test's in-process upstream (`testing/upstream.rs`) has a pool
 //! of its own instead, from a client `client_over` builds.
 
-use std::sync::{LazyLock, OnceLock};
+use std::sync::{Arc, LazyLock, OnceLock};
+use std::time::Duration;
 
 use trillium_client::{Client, KnownHeaderName, Proxy};
 use trillium_quinn::ClientQuicConfig;
+use trillium_quinn::quinn::TransportConfig;
 use trillium_rustls::RustlsConfig;
 use trillium_tokio::ClientConfig;
+
+/// How long an HTTP/3 connection stays silent before the client sends a QUIC PING
+/// (docs/transport.md). quinn's default transport closes a connection after 30 s with
+/// no packet received, and a healthy server sends none while its handler works: a
+/// model that takes longer than that to its first token lost the request. A PING
+/// needs an ACK, so a dead peer still times out at the idle timeout.
+pub(crate) const QUIC_KEEP_ALIVE: Duration = Duration::from_secs(10);
 
 /// This harness's `User-Agent`: its own product token followed by the transport's,
 /// e.g. `efference/0.1.0 trillium-client/0.9.18`. Sent to every host, which is what
@@ -74,7 +83,7 @@ pub fn client() -> Client {
         .get_or_init(|| {
             configured(Client::new_with_quic(
                 RustlsConfig::<ClientConfig>::default(),
-                ClientQuicConfig::default(),
+                quic_config(),
             ))
         })
         .clone()
@@ -86,6 +95,18 @@ pub fn client() -> Client {
 #[cfg(test)]
 pub(crate) fn client_over(connector: impl trillium_client::Connector) -> Client {
     configured(Client::new(connector))
+}
+
+/// trillium-quinn's default QUIC client with [`QUIC_KEEP_ALIVE`] set; the rest of
+/// the transport is quinn's default, as `ClientQuicConfig::default` leaves it.
+fn quic_config() -> ClientQuicConfig {
+    ClientQuicConfig::default().with_transport_config(Arc::new(quic_transport()))
+}
+
+fn quic_transport() -> TransportConfig {
+    let mut transport = TransportConfig::default();
+    transport.keep_alive_interval(Some(QUIC_KEEP_ALIVE));
+    transport
 }
 
 /// What every request this process sends carries, whatever it is sent over.

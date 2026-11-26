@@ -375,11 +375,23 @@ The one portable shape for asking again is a request without the model-turn tail
 
 ---
 
-## HTTP/2 over trillium-rustls
+## HTTP/2 and HTTP/3
 
-`Client` uses `trillium-client` with `trillium-rustls` for TLS. ALPN
-negotiates HTTP/2 — Anthropic is fronted by Cloudflare, which does not
-advertise `alt-svc: h3`, so HTTP/3 is not a live option. HTTP/2 is the path.
+`Client` uses `trillium-client` with `trillium-rustls` for TLS over TCP and
+`trillium-quinn` for QUIC. ALPN negotiates HTTP/2 on an origin's first connection.
+An origin that advertises `alt-svc: h3` gets HTTP/3 on a later new connection, once
+its pooled HTTP/2 connection has expired: Google's Gemini endpoint advertises it;
+Anthropic, fronted by Cloudflare, does not. Which protocol a request uses therefore
+depends on pool state, not on the caller.
+
+The QUIC transport sends a PING after 10 s of silence (`QUIC_KEEP_ALIVE` in
+`src/platform/http.rs`). quinn's default transport closes a connection after 30 s
+with no packet received and sends no keep-alive, and a healthy server sends nothing
+while it works on a response. Without the PING, an HTTP/3 request whose first
+response byte took longer than 30 s failed with `connection lost` (its source chain
+holds `timed out`), and the transport's four attempts made that about 121 s per
+logged failure (journal/2026-11-25-gemini-direct-endpoint.md). A PING needs an ACK,
+so a dead peer still times out at 30 s.
 
 ## One client per process (`src/platform/http.rs`)
 

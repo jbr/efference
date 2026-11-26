@@ -46,3 +46,17 @@ fn the_shared_client_defaults_to_nothing_that_identifies_the_caller() {
         "unexpected default header among {names:?}"
     );
 }
+
+/// The shared client's QUIC transport pings a silent connection well inside quinn's
+/// 30 s idle timeout, so an HTTP/3 request whose response is slow to start keeps its
+/// connection (docs/transport.md). `TransportConfig` has no getters; its `Debug`
+/// output is the readable view.
+#[test]
+fn the_quic_transport_keeps_a_silent_connection_alive() {
+    assert!(QUIC_KEEP_ALIVE < Duration::from_secs(30));
+    let transport = format!("{:?}", quic_transport());
+    assert!(
+        transport.contains(&format!("keep_alive_interval: Some({QUIC_KEEP_ALIVE:?})")),
+        "{transport}"
+    );
+}
