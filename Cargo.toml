@@ -135,12 +135,12 @@ brush-parser = "0.4.0"
 # reads the config and writes the harness's auto-persisted edits back, comments intact. A parse
 # error carries a source span; its `Display` renders the offending line (the load-time diagnostic
 # that stands in for KDL's miette report).
-toml_edit = { version = "0.25.19", features = ["serde"] }
+toml_edit = { version = "0.25.21", features = ["serde"] }
 # Order-preserving map. `[context]` entries render as preamble sections in the operator's
 # document order (backlog/preamble-context.md), so they can't ride the sorted BTreeMap the
 # policy tables use. Already compiled in-tree via toml_edit; this just promotes it to direct.
 indexmap = { version = "2", features = ["serde"] }
-notify-debouncer-full = "0.7"
+notify-debouncer-full = "0.8"
 # The discovery ignore set (docs/web-bind.md): `/files` listings, the recursive
 # listing behind the finder, and directory-scope change streams all hide what
 # git hides. Already compiled in-tree; this promotes it to direct.
@@ -155,8 +155,8 @@ trillium-redirect = { version = "0.3.0", features = ["client"] }
 # secret — so PKCE is what stands between an intercepted authorization code and
 # a token, and these three are load-bearing rather than incidental.
 base64 = "0.23.1"
-sha2 = "0.11.1"
-rand = "0.10.3"
+sha2 = "0.11.2"
+rand = "0.10.4"
 # Root-derived credentials for the TCP bind (docs/web-bind.md): HKDF with per-purpose
 # context strings turns the one injected root into the key device tokens are tagged
 # under — same root in, same secrets out, nothing secret on disk. data-encoding
@@ -167,7 +167,7 @@ data-encoding = "2"
 # Opens the operator's browser for the MCP authorization step (docs/mcp-auth.md).
 # Only reached from `efference serve` with a tty; a headless boot prints the URL
 # instead, since there is no browser to hand a redirect back to.
-webbrowser = "1.2.6"
+webbrowser = "1.2.7"
 jiter = { version = "0.19.0", default-features = false }
 image = { version = "0.25.10", default-features = false, features = [
   "png",
@@ -194,7 +194,7 @@ aes-gcm = "0.11"
 # session creation, read back as the model default and the recent menu. Bundled
 # build, so no system sqlite is needed; concurrent readers/writers are why this
 # is a real store rather than one more machine-written text file.
-rusqlite = { version = "0.41.1", features = ["bundled"] }
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 
 # The secret store (docs/secrets.md): one get/set/delete over the user's OS
 # credential store. `keyring-core` is the store-agnostic entry API; the platform
